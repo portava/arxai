@@ -1,0 +1,584 @@
+ARX AI TRADE TICKET UPGRADE — SL/TP + MARKET ORDERS + PENDING ORDERS
+
+Add full Stop Loss, Take Profit, market order, and pending order support to the ARX AI trading app.
+
+Do NOT rebuild the app.
+Do NOT redesign the app.
+Do NOT replace the current trade system.
+Do NOT bypass existing confirmation, risk, Shared Master, MT5, AI, trade routing, or trade action guards.
+Inspect the current trade placement and trade action flow first, then patch only what is needed.
+
+Goal:
+Users must be able to:
+
+1. Place market Buy and Sell trades.
+2. Place pending orders:
+   - Buy Limit
+   - Sell Limit
+   - Buy Stop
+   - Sell Stop
+   - Buy Stop Limit
+   - Sell Stop Limit
+3. Enter Stop Loss and Take Profit when placing any supported trade/order.
+4. Edit Stop Loss and Take Profit while a trade is open.
+5. Edit Stop Loss and Take Profit on pending orders before they are triggered.
+6. Edit saved/default Stop Loss and Take Profit settings outside of an active trade.
+7. Cancel pending orders if pending-order cancellation is supported by the bridge.
+8. See validation, estimated risk, reward, risk/reward ratio, mode status, and confirmation before anything is submitted.
+
+==================================================
+PHASE 1 — INSPECT CURRENT TRADE FLOW FIRST
+==================================================
+
+Before changing code, inspect and report:
+
+1. Current trade placement UI/components.
+2. Current trade action backend routes.
+3. Current MT5 bridge action format.
+4. Current risk governor / trade guard flow.
+5. Current open trade card / position management UI.
+6. Current pending-order support, if any.
+7. Current journal/history model.
+8. Current Shared Master routing logic.
+9. Current demo/live/preview/read-only mode rules.
+10. Current confirmation modal/prompt system.
+
+Do not create duplicate trade systems.
+
+Use the existing trade action flow if possible.
+
+==================================================
+PHASE 2 — TRADE TICKET ORDER TYPES
+==================================================
+
+Update the trade ticket so users can choose order type.
+
+Supported order types:
+
+Market Orders:
+1. Buy Market
+2. Sell Market
+
+Pending Orders:
+3. Buy Limit
+4. Sell Limit
+5. Buy Stop
+6. Sell Stop
+7. Buy Stop Limit
+8. Sell Stop Limit
+
+The UI should show only the fields required for the selected order type.
+
+For Buy Market / Sell Market:
+- Symbol
+- Direction
+- Lot size
+- Stop Loss
+- Take Profit
+
+For Buy Limit / Sell Limit / Buy Stop / Sell Stop:
+- Symbol
+- Order type
+- Lot size
+- Entry price
+- Stop Loss
+- Take Profit
+- Optional expiration if already supported
+
+For Buy Stop Limit / Sell Stop Limit:
+- Symbol
+- Order type
+- Lot size
+- Stop trigger price
+- Stop-limit price
+- Stop Loss
+- Take Profit
+- Optional expiration if already supported
+
+Keep UI clean and mobile-friendly. Use a collapsible “Risk Protection” section if needed.
+
+==================================================
+PHASE 3 — PENDING ORDER VALIDATION RULES
+==================================================
+
+Validate all order types before submission.
+
+Use current Bid/Ask where available.
+
+Market Buy:
+- Stop Loss must be below current ask/entry.
+- Take Profit must be above current ask/entry.
+
+Market Sell:
+- Stop Loss must be above current bid/entry.
+- Take Profit must be below current bid/entry.
+
+Buy Limit:
+- Entry price should be below current market/ask.
+- Stop Loss must be below entry price.
+- Take Profit must be above entry price.
+
+Sell Limit:
+- Entry price should be above current market/bid.
+- Stop Loss must be above entry price.
+- Take Profit must be below entry price.
+
+Buy Stop:
+- Entry price should be above current market/ask.
+- Stop Loss must be below entry price.
+- Take Profit must be above entry price.
+
+Sell Stop:
+- Entry price should be below current market/bid.
+- Stop Loss must be above entry price.
+- Take Profit must be below entry price.
+
+Buy Stop Limit:
+- Stop trigger price should be above current ask.
+- Stop-limit price should be at or below the stop trigger price unless MT5 symbol rules require otherwise.
+- Stop Loss must be below the eventual limit entry price.
+- Take Profit must be above the eventual limit entry price.
+
+Sell Stop Limit:
+- Stop trigger price should be below current bid.
+- Stop-limit price should be at or above the stop trigger price unless MT5 symbol rules require otherwise.
+- Stop Loss must be above the eventual limit entry price.
+- Take Profit must be below the eventual limit entry price.
+
+Also validate:
+- Numeric input only
+- Correct symbol digits/precision
+- Minimum stop distance if available from MT5/symbol info
+- Minimum pending order distance if available
+- Lot size rules
+- Margin availability if available
+- Do not allow impossible SL/TP placement
+- Allow empty SL or TP only if risk rules permit it
+- If risk rules require Stop Loss, block trade/order until SL is entered
+
+If MT5/symbol data is unavailable, fail gracefully or preview honestly. Do not fake live validation.
+
+==================================================
+PHASE 4 — TRADE TICKET SL/TP FIELDS
+==================================================
+
+On the trade placement screen/ticket, add:
+
+1. Stop Loss input
+2. Take Profit input
+3. Estimated risk amount
+4. Estimated reward amount
+5. Risk/reward ratio
+6. SL distance in pips/points
+7. TP distance in pips/points
+8. Warning if SL/TP is invalid
+9. Warning if order entry price is invalid
+10. Mode/status label:
+   - Demo
+   - Live
+   - Live locked
+   - Shared Master
+   - Preview
+   - Bridge disconnected
+   - Read-only
+
+Use price-based SL/TP first.
+
+If the app already supports pips/points input, keep it. If not, do not overbuild.
+
+==================================================
+PHASE 5 — CONFIRMATION BEFORE SUBMIT
+==================================================
+
+Before submitting any market trade or pending order, show confirmation.
+
+Confirmation should include:
+
+- Symbol
+- Order type
+- Direction
+- Lot size
+- Market price or pending entry price
+- Stop trigger price, if stop-limit order
+- Stop-limit price, if stop-limit order
+- Stop Loss
+- Take Profit
+- Estimated risk
+- Estimated reward
+- Risk/reward ratio
+- Account mode
+- Demo/live/shared master status
+- MT5 bridge status
+- Risk governor result
+- Any warnings
+
+User must explicitly confirm.
+
+Do not allow live execution or live pending-order placement without explicit confirmation.
+
+==================================================
+PHASE 6 — BACKEND TRADE ACTION UPDATE
+==================================================
+
+Update the backend trade action payload to support:
+
+- symbol
+- orderType
+- direction
+- lotSize
+- entryPrice
+- stopTriggerPrice
+- stopLimitPrice
+- stopLoss
+- takeProfit
+- expiration
+- confirmedByUser
+- accountRoutingMode
+- platformMode
+
+Use whichever naming convention already exists, but normalize internally so the backend has one consistent format.
+
+Supported backend action types should include, using existing naming style if present:
+
+1. placeMarketOrder
+2. placePendingOrder
+3. modifyPositionProtection
+4. modifyPendingOrderProtection
+5. cancelPendingOrder, only if already supported or easy/safe to add
+
+Rules:
+- Do not accept SL/TP silently without validation.
+- Do not accept pending order prices silently without validation.
+- Do not bypass runActionGuards().
+- Do not bypass riskGovernorEnforcement.
+- Do not bypass explicit_confirmation guard.
+- Do not bypass Shared Master routing/attribution.
+- Do not allow live execution unless live execution is explicitly enabled and all guards pass.
+- In preview/demo/locked/read-only mode, return preview results honestly.
+- Do not fake success.
+
+==================================================
+PHASE 7 — MT5 BRIDGE SUPPORT
+==================================================
+
+Inspect the current MT5 bridge command format.
+
+If trade placement already sends order commands to MT5, include SL/TP and pending-order fields in that command.
+
+For market orders:
+- Send Stop Loss and Take Profit at order open if bridge supports it.
+- If bridge only supports opening first and modifying after, implement the safest supported flow and report it.
+
+For pending orders:
+- Send correct MT5 pending order type:
+  - BUY_LIMIT
+  - SELL_LIMIT
+  - BUY_STOP
+  - SELL_STOP
+  - BUY_STOP_LIMIT
+  - SELL_STOP_LIMIT
+
+For stop-limit orders:
+- Pass both trigger price and stop-limit price in the format the bridge/EA expects.
+
+For open trade modification:
+- Add/connect modifyPositionProtection.
+- Payload:
+  - positionId / ticket
+  - symbol
+  - stopLoss
+  - takeProfit
+  - confirmedByUser
+
+For pending order modification:
+- Add/connect modifyPendingOrderProtection.
+- Payload:
+  - orderId / ticket
+  - symbol
+  - entryPrice if editable
+  - stopTriggerPrice if stop-limit
+  - stopLimitPrice if stop-limit
+  - stopLoss
+  - takeProfit
+  - expiration if supported
+  - confirmedByUser
+
+If the EA/bridge does not currently support pending orders or SL/TP modification:
+- Add backend/UI support safely.
+- Return a clear unsupported message.
+- Do not fake success.
+- Report exactly what EA/bridge action still needs to be added.
+
+==================================================
+PHASE 8 — EDIT SL/TP WHILE IN TRADE
+==================================================
+
+On each open trade/position card, add an “Edit SL/TP” action.
+
+When clicked:
+1. Open modal/sheet.
+2. Show current trade info:
+   - Symbol
+   - Direction
+   - Entry price
+   - Current price
+   - Current Stop Loss
+   - Current Take Profit
+   - Floating P/L
+3. User can update Stop Loss and/or Take Profit.
+4. Validate values based on Buy/Sell direction.
+5. Show risk impact before save.
+6. Require confirmation.
+7. Submit to backend.
+8. Backend validates again.
+9. MT5 bridge modifies the position if allowed.
+10. UI refreshes open positions after success.
+11. Journal/audit log records the SL/TP update.
+
+Do not let the user edit a closed trade as if it is live.
+
+Closed trades can show historical SL/TP, but should not show live edit actions.
+
+==================================================
+PHASE 9 — EDIT SL/TP OUTSIDE OF ACTIVE TRADE
+==================================================
+
+Outside of an active trade means:
+
+A. Before placing trade/order:
+- User can enter/edit SL/TP on the trade ticket before submitting.
+
+B. Pending orders:
+- User can edit SL/TP on pending orders before they trigger.
+- User can edit entry/trigger/stop-limit price only if supported and validated.
+- User can cancel pending order only if supported.
+
+C. Saved user defaults:
+- Add or connect saved default Stop Loss / Take Profit settings if settings already exist.
+- Defaults should prefill the trade ticket.
+- Store per user, not globally.
+
+D. Closed/no trade:
+- Do not allow live SL/TP modification when no open position or pending order exists.
+- Show:
+  “No active position or pending order to modify. You can update your default SL/TP for the next trade.”
+
+==================================================
+PHASE 10 — RISK GOVERNOR INTEGRATION
+==================================================
+
+SL/TP and pending order prices must feed into risk logic.
+
+Risk governor should calculate or validate:
+
+1. Estimated loss if SL is hit.
+2. Risk percentage of account.
+3. Estimated reward if TP is hit.
+4. Risk/reward ratio.
+5. Whether SL is required for this user/mode.
+6. Whether max risk per trade is exceeded.
+7. Whether daily loss guard would be violated.
+8. Whether prop firm mode rules are violated, if present.
+9. Whether minimum stop distance is invalid.
+10. Whether pending order price is invalid.
+11. Whether stop-limit trigger/limit relationship is invalid.
+12. Whether Shared Master routing/attribution allows this action.
+
+If unsafe:
+- Block the trade/order.
+- Show the reason clearly.
+- Do not hide the reason.
+- Do not allow AI or frontend to bypass this.
+
+==================================================
+PHASE 11 — AI ASSISTANT CONTEXT UPDATE
+==================================================
+
+Update ARX AI assistant context so it understands market orders, pending orders, SL, and TP.
+
+AI should be able to answer:
+
+- What is my stop loss?
+- What is my take profit?
+- Is my stop loss too tight?
+- Is my take profit realistic?
+- What is my risk/reward?
+- Should I move my stop loss?
+- Where is my invalidation point?
+- How much can I lose if SL hits?
+- What happens if I change my TP?
+- Am I risking too much?
+- What is a Buy Limit?
+- What is a Sell Limit?
+- What is a Buy Stop?
+- What is a Sell Stop?
+- What is a Buy Stop Limit?
+- What is a Sell Stop Limit?
+- Which order type fits this setup?
+
+AI must not claim certainty or guaranteed profit.
+
+AI should explain:
+- Available trade data
+- Whether data is live/demo/preview/disconnected
+- Risk estimate
+- Invalid/unsafe SL/TP
+- Pending order logic
+- Market context if scanner/MT5 data is available
+
+==================================================
+PHASE 12 — DATABASE / JOURNAL / AUDIT
+==================================================
+
+If trade/order records already store SL/TP and pending-order fields, use existing fields.
+
+If not, add only minimal safe fields needed.
+
+Track:
+- orderType
+- entryPrice
+- stopTriggerPrice
+- stopLimitPrice
+- initial stopLoss
+- initial takeProfit
+- updated stopLoss
+- updated takeProfit
+- pending order status
+- position ticket/order ticket
+- updatedAt
+- updatedByUserId
+- mode: demo/live/shared-master/preview
+- whether action was accepted/rejected
+- rejection reason if blocked
+
+Journal should show:
+- Market trade opened with SL/TP
+- Pending order placed with SL/TP
+- Pending order modified
+- Pending order canceled
+- Pending order triggered, if available from MT5
+- SL/TP modified
+- Trade closed
+
+Do not break existing history.
+
+==================================================
+PHASE 13 — UI REQUIREMENTS
+==================================================
+
+Keep the UI clean and mobile-first.
+
+Trade ticket:
+- Order type selector
+- Symbol
+- Lot size
+- Entry/trigger/limit fields only when needed
+- Risk Protection section:
+  - Stop Loss
+  - Take Profit
+  - Risk estimate
+  - Reward estimate
+  - Risk/reward ratio
+
+Open trade card:
+- Show SL and TP clearly.
+- Add small “Edit SL/TP” button.
+
+Pending order card:
+- Show order type.
+- Show entry price.
+- Show trigger price and stop-limit price when relevant.
+- Show SL and TP.
+- Add “Edit Order” / “Edit SL/TP” action.
+- Add “Cancel Order” only if supported.
+
+Required display states:
+- No SL set
+- No TP set
+- Invalid SL/TP
+- Invalid pending price
+- Pending update
+- Update success
+- Update failed
+- Bridge disconnected
+- Read-only mode
+- Live locked
+- Demo mode
+- Shared Master mode
+- Unsupported by bridge
+
+==================================================
+PHASE 14 — TESTING
+==================================================
+
+Run available checks:
+
+- npm run lint if available
+- npm run typecheck if available
+- npm test if available
+- npm run build
+- Backend/API tests if available
+- Route health checks if available
+
+Manual tests:
+
+1. Place Buy Market with valid SL below entry and TP above entry.
+2. Place Buy Market with invalid SL above entry — should block.
+3. Place Sell Market with valid SL above entry and TP below entry.
+4. Place Sell Market with invalid TP above entry — should block.
+5. Place Buy Limit below current price with valid SL/TP.
+6. Place Buy Limit above current price — should block.
+7. Place Sell Limit above current price with valid SL/TP.
+8. Place Sell Limit below current price — should block.
+9. Place Buy Stop above current price with valid SL/TP.
+10. Place Buy Stop below current price — should block.
+11. Place Sell Stop below current price with valid SL/TP.
+12. Place Sell Stop above current price — should block.
+13. Place Buy Stop Limit with valid trigger/limit relationship.
+14. Place Buy Stop Limit with invalid trigger/limit relationship — should block.
+15. Place Sell Stop Limit with valid trigger/limit relationship.
+16. Place Sell Stop Limit with invalid trigger/limit relationship — should block.
+17. Submit trade/order without SL when risk settings require SL — should block.
+18. Edit SL/TP on open trade.
+19. Edit SL/TP on pending order.
+20. Try to edit SL/TP on closed trade — should not allow.
+21. Try to place pending order while MT5 bridge disconnected — should show clear error/preview, not fake success.
+22. Try to place live order in read-only/live locked mode — should block or preview honestly.
+23. Confirm AI can read order type and SL/TP context.
+24. Confirm journal records SL/TP and pending-order changes.
+25. Confirm Shared Master attribution is not broken.
+26. Confirm no fake live data was added.
+
+==================================================
+FINAL REPORT
+==================================================
+
+When finished, report:
+
+1. What already existed
+2. What was added
+3. Files changed
+4. Backend routes changed/added
+5. MT5 bridge support status
+6. Pending order support status
+7. Risk governor updates
+8. UI changes
+9. AI context changes
+10. Database/journal changes
+11. Tests run
+12. Any remaining limitations
+13. Whether users can now:
+   - Place Buy Market and Sell Market
+   - Place Buy Limit
+   - Place Sell Limit
+   - Place Buy Stop
+   - Place Sell Stop
+   - Place Buy Stop Limit
+   - Place Sell Stop Limit
+   - Add SL/TP before placing trade/order
+   - Edit SL/TP while in trade
+   - Edit SL/TP on pending orders
+   - Save/edit default SL/TP outside of trade
+14. Confirmation that no rebuild/redesign was done
+15. Confirmation that trade/risk safety guards remain enforced
+16. Confirmation that no fake live data was added

@@ -1,0 +1,106 @@
+Run a full ARX system regression and runtime readiness gate.
+
+Do not auto-place live trades.
+Do not enable public master live trading.
+Do not bypass master live user approval toggles.
+Do not expose secrets.
+
+Verify everything built so far still works together:
+
+1. MT5 Bridge
+- current connected bridge is detected
+- stale/mock bridges are ignored
+- v1.27 heartbeat is recognized
+- demo bridge still works
+- live bridge remains gated
+
+2. Master Bridge
+- PER_USER_BRIDGE still works
+- MASTER_BRIDGE_DEMO still works
+- MASTER_BRIDGE_LIVE_LOCKED blocks users
+- MASTER_BRIDGE_LIVE_ENABLED requires backend/admin user toggle
+- current connected bridge is used as the platform master bridge
+- unapproved users cannot trade through master live
+
+3. User Approval / Admin
+- admin login works
+- admin-only pages are protected server-side
+- admin can approve/disable/suspend/risk-lock users
+- all user approval toggle actions are audit logged
+- regular users cannot access admin tools
+
+4. Trade Safety
+- one-click trading defaults OFF
+- one-click requires typed confirmation
+- one-click still obeys all risk/live/master/user gates
+- stop loss required where configured
+- max lot guard works
+- daily loss guard works
+- kill switch works
+- emergency stop works
+
+5. Concurrency / Performance
+- same-user double tap creates only one command
+- 10 simultaneous trade requests queue safely
+- exposure reservation is atomic
+- overflow trades are blocked with MASTER_ACCOUNT_EXPOSURE_LIMIT_REACHED
+- bridge dispatch lock prevents unsafe parallel sends
+- admin performance dashboard shows queue depth, pending commands, dispatch rate, fill time, rejects, failures, bridge latency, heartbeat age, active users, and commands per minute
+
+6. Market Scanner
+- grouped scanner works
+- direct symbol/pair selector works
+- broker suffix mapping works
+- scanner trade modal works
+- scanner master demo/live routing respects gates
+- Market Scanner live remains locked for unapproved users
+
+7. Ruby
+- Ruby name appears everywhere AI/system assistant responses appear
+- saved chat/memory still works
+- clear chat/memory controls still work
+- Ruby Market Intelligence appears for selected market
+- Ruby explains master bridge routing correctly
+- Ruby does not promise profit
+
+8. Calendar / Events
+- economic calendar exists
+- impact calendar exists
+- high-impact event badges appear
+- surprise/event warning path exists
+- event badges map forex, metals, indices, crypto, stocks, and synthetic symbols
+
+9. Position Chart Side Window
+- existing TradingView chart still works
+- position side window opens
+- mini Position Chart Preview shows entry/current/SL/TP lines
+- Ask Ruby works
+- Refresh analysis works
+- close/modify buttons respect permission gates
+- users cannot view/modify/close another user’s position
+
+10. UI Language
+- normal users see clean labels
+- raw backend codes appear only in admin/debug/technical details
+- onboarding does not repeatedly block trading-critical pages
+
+11. Security
+- no bridge token exposed
+- no API keys exposed
+- no broker passwords exposed
+- no secrets in Ruby memory/logs/UI
+- arx_live_commands remains unchanged unless a manual live test is intentionally run
+
+Required output:
+- full test matrix with pass/fail counts
+- exact blockers if any
+- confirmation no live trade auto-fired
+- confirmation arx_live_commands count before/after
+- confirmation all safety gates still pass
+
+If all pass, output:
+ARX_FULL_SYSTEM_READY_FOR_NEXT_PHASE
+
+If anything fails, output:
+ARX_FULL_SYSTEM_NOT_READY
+with exact blockers.

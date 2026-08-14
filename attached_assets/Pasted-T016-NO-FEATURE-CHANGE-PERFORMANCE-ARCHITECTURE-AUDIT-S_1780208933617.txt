@@ -1,0 +1,460 @@
+T016 — NO-FEATURE-CHANGE PERFORMANCE ARCHITECTURE AUDIT + SAFE OPTIMIZATION PASS
+
+Continue from T015/T014 readiness work.
+
+Product direction:
+ARX AI is LIVE-first for owner/admin operation.
+Do not suggest Demo.
+Do not use Paper Trading.
+Do not use fake execution.
+Do not use simulated trade data.
+Do not add new product features unless they replace/remove a redundant feature.
+
+This is not a rebuild.
+Do not redesign the app.
+Do not duplicate Scanner, Ruby, MT5 bridge, trade execution, auth, admin, account modes, or ledger systems.
+Do not change the product’s active feature set except removing, hiding, collapsing, or archiving redundant/dead/non-product surfaces.
+Do not place a live trade in this task.
+Do not reset live broker execution config.
+Do not weaken permissions, ownership checks, kill switch, allocation checks, freeze checks, live approval, or MT5 confirmation rules.
+Do not bypass safety to gain speed.
+
+Goal:
+Make ARX AI faster and more efficient without changing the app’s intended functionality.
+
+This pass should focus on four lanes:
+
+1. Measure — preserve/add real browser timing and route/action performance visibility.
+2. Defer — move noncritical work after first paint.
+3. Reduce — remove duplicate work, duplicate fetches, dormant UI, and repeated renders.
+4. Protect — keep live trading safety, server-side filtering, route containment, and MT5 truth intact.
+
+Core performance standard:
+
+1. Bottom-nav tap feedback under 100ms.
+2. Page shell visible under 1 second.
+3. Scanner shell visible under 1 second.
+4. Chart skeleton visible under 1 second.
+5. Symbol search usable under 1 second.
+6. Market selection feedback under 300ms.
+7. Buy/Sell modal open under 1 second.
+8. Trade pending state under 100ms after Confirm.
+9. Ruby thinking dots under 100ms.
+10. No page feels frozen.
+11. Slow external calls must show immediate loading/pending state.
+
+PART 1 — Start with runtime health
+
+Run first:
+pnpm run health:workflows
+
+Confirm:
+
+1. frontend serving
+2. api-server serving
+3. /api/healthz 200
+4. Scanner candles auth behavior correct
+5. no stale/orphaned workflow issue
+6. bridge/EA heartbeat visible where applicable
+7. live MT5 path healthy
+8. no live trade placed
+
+If workflow health fails:
+
+1. Do not continue to performance changes.
+2. Fix workflow/runtime health first.
+3. Do not disturb live MT5 unless the health failure directly requires it and operator approval exists.
+4. Report exact failure.
+
+PART 2 — Build a performance architecture map before changing code
+
+Inspect and document the current app performance architecture.
+
+Create/update:
+docs/PERFORMANCE_ARCHITECTURE_AUDIT.md
+
+Include:
+
+1. Route list:
+    * Cockpit
+    * Scanner
+    * Ruby/AI
+    * More/Settings
+    * Trade if still present
+    * Admin-only pages
+    * Any remaining manual-review/dormant routes
+2. For each route:
+    * first-load dependencies
+    * heavy imports
+    * API calls triggered on mount
+    * polling behavior
+    * hidden tabs loaded early
+    * admin-only modules loaded for normal users
+    * chart/Ruby/voice imports
+    * notification dependencies
+    * page shell render blockers
+    * duplicate requests
+    * localStorage/sessionStorage usage
+    * large list rendering
+    * performance risk level
+3. For Scanner specifically:
+    * shell dependencies
+    * chart dependencies
+    * quote/candles dependencies
+    * user trade overlay dependencies
+    * Broad Scan dependencies
+    * Focus Scan dependencies
+    * Ruby explanation dependencies
+    * news/history/backtest dependencies
+    * trade modal dependencies
+    * which parts load before first paint
+    * which parts can be deferred
+4. For Ruby:
+    * chat shell dependencies
+    * voice/speech imports
+    * memory/history loading
+    * market context loading
+    * streaming/progressive response support
+    * whether Ruby blocks Scanner or trade actions
+5. For trade actions:
+    * Buy/Sell button path
+    * modal open path
+    * Confirm → pending state path
+    * Confirm → backend dispatch path
+    * backend validation path
+    * MT5 bridge dispatch path
+    * ledger update path
+    * UI success/failure update path
+    * noncritical work that can be moved after user feedback
+
+Do not change code until the map identifies safe optimizations.
+
+PART 3 — Measure browser interaction timing
+
+Use existing admin-only performance markers or add lightweight markers if missing.
+
+Capture exact browser timing for:
+
+1. bottom nav tap → feedback
+2. bottom nav tap → route shell
+3. Cockpit shell
+4. Scanner shell
+5. chart skeleton
+6. search input ready
+7. market selection feedback
+8. Plan Buy modal open
+9. Plan Sell modal open
+10. lot input response
+11. Confirm → pending state
+12. Ruby open
+13. Ruby thinking dots
+14. Ruby first visible response
+15. More/Settings shell
+
+Store/show timing only in admin/dev mode:
+
+1. console table, or
+2. admin-only performance panel, or
+3. admin-only timing report
+
+Normal users must not see debug timing.
+
+PART 4 — Safe optimization lane: Defer noncritical work
+
+Move noncritical work after first paint.
+
+Safe defer candidates:
+
+1. news
+2. history
+3. backtest
+4. deep scanner analytics
+5. Ruby market explanation
+6. Ruby memory/history loading
+7. notifications badge/count
+8. admin diagnostics
+9. performance history
+10. records/system pages
+11. bridge detail panels
+12. advanced settings
+13. hidden tab content
+14. long legal/risk disclosure text
+15. large symbol/reference lists
+
+Rules:
+
+1. Do not remove the feature if it is useful.
+2. Do not block route shell on it.
+3. Show skeleton/pending/compact state immediately.
+4. Load only when visible, selected, or requested.
+5. Use timeouts for slow external calls.
+6. One failed widget must not fail the whole page.
+7. Normal trading actions must remain available.
+
+PART 5 — Safe optimization lane: Reduce duplicate work
+
+Find and fix duplicate or unnecessary work.
+
+Check for:
+
+1. repeated auth/session requests on route change
+2. repeated account-mode requests
+3. repeated bridge health polling
+4. repeated scanner calls
+5. repeated notification calls
+6. duplicate route data calls
+7. duplicate React Query keys
+8. overly aggressive refetchOnWindowFocus
+9. unnecessary refetch on tab switch
+10. components remounting when they should update
+11. full Scanner rerender when Ruby changes
+12. chart remount when only quote changes
+13. trade modal remount when only input changes
+14. admin data loaded for normal users
+15. hidden tabs rendering heavy content
+16. unbounded long lists rendering all at once
+
+Fix safely:
+
+1. batch duplicate calls
+2. cache safe static metadata
+3. set proper staleTime where appropriate
+4. disable refetchOnWindowFocus only where safe
+5. pause polling on hidden tabs
+6. debounce search
+7. cancel stale search/scanner requests
+8. memoize heavy components
+9. split context providers if one global context rerenders the whole app
+10. virtualize long lists if needed
+11. create stable query keys
+12. avoid chart remounts; update series/markers incrementally
+
+Do not cache user-specific trade data in a way that can leak between users.
+All trade data must remain server-filtered.
+
+PART 6 — Safe optimization lane: Chart and Scanner efficiency
+
+Scanner must stay the fastest trading surface.
+
+Requirements:
+
+1. Scanner shell renders first.
+2. Chart skeleton renders fast.
+3. Search is usable fast.
+4. Buy/Sell controls appear fast.
+5. Quote/candles load independently.
+6. User trade overlays load independently.
+7. Broad/Focus Scan load independently.
+8. Ruby explanation loads independently.
+9. News/history/backtest load after main UI.
+10. Notification badge does not block Scanner.
+
+Chart rules:
+
+1. Do not remount the chart for every quote.
+2. Do not remount the chart because Ruby updates.
+3. Do not remount the chart because notifications update.
+4. Update candle series incrementally.
+5. Update price lines/markers incrementally.
+6. Throttle or debounce noncritical overlay updates.
+7. Keep chart state separate from Scanner result state.
+8. Keep trade overlay state server-filtered.
+
+PART 7 — Safe optimization lane: Ruby efficiency
+
+Ruby must feel instant without blocking trading.
+
+Requirements:
+
+1. Ruby thinking dots appear under 100ms.
+2. Ruby shell opens quickly.
+3. Ruby response may take longer, but UI must not freeze.
+4. Ruby should stream or progressively render if supported.
+5. Ruby should reuse current chart/scan state instead of refetching whenever safe.
+6. Ruby memory/history loads after shell.
+7. Ruby memory writes happen after user-visible response where safe.
+8. Ruby must not block Scanner render.
+9. Ruby must not block trade Confirm.
+10. Ruby must not bypass backend permissions.
+
+PART 8 — Safe optimization lane: Backend/event-loop efficiency
+
+Inspect backend for blocking work on critical paths.
+
+Critical live trade path should stay lean:
+
+1. auth
+2. permission
+3. allocation
+4. kill switch
+5. freeze check
+6. symbol/lot validation
+7. bridge readiness
+8. MT5 dispatch
+9. ledger write
+10. response
+
+Move outside critical path where safe:
+
+1. Ruby explanation
+2. news analysis
+3. historical backtest
+4. deep scan scoring
+5. admin log enrichment
+6. noncritical notifications
+7. performance summaries
+8. long diagnostics
+
+Check for:
+
+1. synchronous heavy loops
+2. blocking JSON parsing/stringifying
+3. huge response payloads
+4. large unpaginated queries
+5. expensive logs before response
+6. slow external calls without timeout
+7. duplicate bridge calls
+8. retrieving master trades when only user-filtered trades are needed
+
+Do not remove backend validation.
+Do not move security validation to frontend.
+
+PART 9 — Safe optimization lane: Database/index review
+
+Use query inspection rather than guessing.
+
+Inspect slow/frequent queries for:
+
+1. live positions by user/status
+2. live positions by user/symbol/status
+3. live commands by user/created_at
+4. allocations by user/account mode
+5. notifications by user/read/created_at
+6. Ruby chats by user/created_at
+7. scanner results by symbol/created_at
+8. admin runtime health reads
+9. ledger verification reads
+
+If indexes are missing and safe, add them through a proper migration.
+
+Do not delete data.
+Do not alter real trade records.
+Do not change financial logic.
+Do not expose master-account data.
+
+PART 10 — Redundant UI/product cleanup
+
+Remove, collapse, or admin-hide redundant product clutter.
+
+Candidates:
+
+1. Paper Trading remnants
+2. old QA/test pages
+3. old route experiments
+4. duplicate trade modals
+5. duplicate scanner versions
+6. debug panels visible to normal users
+7. giant legal/risk footer on trading screens
+8. repeated bridge status cards
+9. repeated account mode banners
+10. advanced admin diagnostics in normal flow
+11. raw backend/internal labels
+12. dead result-card quick links
+13. unused buttons
+14. disconnected tabs
+15. dormant manual-review routes
+
+Rules:
+
+1. Remove from normal UI first.
+2. Route-gate/admin-gate if still needed.
+3. Archive if historical.
+4. Delete only if import/routing/build checks prove safe.
+5. If uncertain, mark manual-review and leave code in place.
+6. Do not remove safety gates or trade controls.
+
+PART 11 — Apply only safe fixes
+
+After the audit map, apply only safe low-risk optimizations.
+
+Safe examples:
+
+1. defer notification count after first paint
+2. lazy-load a hidden admin-only panel
+3. prevent hidden tab polling
+4. debounce symbol search
+5. cancel stale scanner calls
+6. memoize Scanner result cards
+7. stop chart remounting on unrelated state
+8. move long disclosure to More/Legal link
+9. collapse repeated status cards
+10. add missing safe indexes
+11. trim duplicate network calls
+12. add section-level local fallback
+13. add admin-only timing markers
+
+Do not apply high-risk rewrites in this pass.
+If a deeper rewrite is needed, document it as a proposed next step.
+
+PART 12 — Regression and safety checks after each change
+
+After every meaningful change:
+
+1. run pnpm run health:workflows
+2. run typecheck
+3. run ci:guards
+4. run route containment tests
+5. run Scanner smoke test
+6. run live-readiness gate check
+7. test bottom nav
+8. test Scanner shell
+9. test Buy/Sell modal open
+10. test Ruby shell/thinking indicator
+11. confirm no live trade placed
+12. confirm live MT5 path untouched unless explicitly tested
+13. confirm no Paper/Demo fallback appears
+14. confirm no normal user gained admin/live access
+
+If anything breaks:
+
+1. stop
+2. revert or repair the exact change
+3. retest
+4. continue only after stable
+
+PART 13 — Final report required
+
+Final report must include:
+
+1. health:workflows result
+2. performance architecture map created/updated
+3. browser timing before/after table
+4. mobile timing table if captured
+5. desktop timing table if captured
+6. Scanner timing
+7. chart skeleton timing
+8. search usability timing
+9. Buy/Sell modal timing
+10. Confirm pending-state timing if tested
+11. Ruby thinking timing
+12. Ruby response timing
+13. slowest remaining frontend dependency
+14. slowest remaining backend dependency
+15. duplicate requests found/removed
+16. polling changes made
+17. lazy-loaded/deferred modules
+18. chart remount reductions
+19. database indexes added, if any
+20. redundant UI removed/collapsed/admin-hidden
+21. files changed
+22. tests passed
+23. tests failed and fixed
+24. confirmation no live trade placed
+25. confirmation no safety gate bypassed
+26. confirmation no Paper/Demo active flow introduced
+27. remaining risks
+28. recommended next safe optimization
+29. recommended deeper optimization, if any, clearly marked as future/high-risk
+
+Completion standard:
+T016 is complete only when Replit provides a performance architecture map, applies safe no-feature-change optimizations, proves app timing did not regress, and confirms the live trading safety system remains intact.

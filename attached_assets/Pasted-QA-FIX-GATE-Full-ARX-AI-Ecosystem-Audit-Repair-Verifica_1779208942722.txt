@@ -1,0 +1,70 @@
+QA/FIX GATE — Full ARX AI Ecosystem Audit + Repair Verification
+
+Inspect the full ecosystem audit and repair pass.
+
+Do not rebuild unrelated systems.
+Only repair remaining critical/high blockers.
+Do not fire live trades.
+Do not create real live bridge commands.
+
+Verify:
+
+1. Full ecosystem inventory was completed.
+2. Existing/missing/broken matrix was returned.
+3. User login works.
+4. Admin login works.
+5. Invite-gated registration works.
+6. Beta cap of 10 is server-enforced.
+7. User privacy isolation passes.
+8. Logout/login clears cached state.
+9. Saved symbols/watchlist/alerts/Ruby memory are private per user.
+10. Ruby understands app features.
+11. Ruby uses current user context only.
+12. Ruby learning/memory is user-scoped.
+13. Ruby does not expose other users/admin/secrets.
+14. Ruby voice cannot bypass confirmation or safety.
+15. Scanner direct symbol search works.
+16. Scanner Ruby market explanation works.
+17. Scanner-to-trade uses confirmation and safety gates.
+18. Watchlist works.
+19. Watch calendar/alert system works or missing parts are clearly listed.
+20. Economic calendar connects to scanner/Ruby where available.
+21. Impact calendar connects to scanner/Ruby where available.
+22. Alerts are private and do not spam/duplicate.
+23. Demo trading works without live commands.
+24. Personal MT5 setup remains separate.
+25. Operator-funded live pilot requires every safety gate.
+26. Trade ticket works.
+27. Pending order types work or missing parts are listed.
+28. SL/TP editing works safely.
+29. Close trade works safely.
+30. Close-only mode blocks opens and allows only verified exits.
+31. Kill switches work.
+32. Queue/concurrency/idempotency protections work.
+33. Reconciliation/NEEDS_REVIEW works.
+34. Audit logs cover critical actions.
+35. Evidence export masks secrets.
+36. Admin/operator dashboards are protected.
+37. Non-admin cannot access admin APIs.
+38. Production live defaults OFF.
+39. Feature flags fail closed.
+40. Mobile/iPhone Safari critical flows work.
+41. No fake first-load data appears.
+42. No raw backend errors show to users.
+43. Master QA script exists: npm run qa:arx-full-ecosystem or equivalent.
+44. Secret leak probes pass.
+45. No bridge tokens, API keys, account credentials, session secrets, token hashes, invite hashes, raw audio, private prompts, or sensitive bridge payloads are exposed.
+46. No live trade is fired during QA.
+47. arx_live_commands count remains unchanged.
+
+Return:
+- PASS/FAIL table
+- files inspected
+- tests run
+- master QA script result
+- issues found
+- fixes applied
+- remaining blockers
+- remaining risks
+- confirmation no live trade was fired
+- confirmation arx_live_commands count stayed unchanged

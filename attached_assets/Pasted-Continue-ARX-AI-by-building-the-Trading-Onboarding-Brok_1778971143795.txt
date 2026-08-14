@@ -1,0 +1,335 @@
+Continue ARX AI by building the Trading Onboarding, Broker Connection, and User Readiness Wizard.
+
+Do not rebuild blindly. Inspect the current:
+- login/auth system
+- user profile/settings
+- admin trading controls
+- platform trading mode: Trading Off / Demo / Live
+- account routing mode: USER_OWNED_MT5 / SHARED_MASTER_MT5
+- MT5 bridge connection flow
+- per-user bridge tokens
+- shared master account routing
+- user risk profiles
+- alert preferences
+- strategy playbooks
+- Risk Governor
+- Broker Symbol Specs Engine
+- Trade Action Center
+- AI assistant context builder
+- notification system
+- mobile layout
+
+Goal:
+Create a guided onboarding system so every user can safely set up their account before trading.
+
+Important:
+Do not expose MT5 credentials, bridge tokens, API keys, session secrets, shared master credentials, or any private admin secrets.
+Do not enable live trading automatically.
+Do not bypass admin approval.
+Do not let users trade until required setup steps are complete.
+Live trading still requires approval, disclosure, verified live account, and explicit confirmation.
+
+PART 1 — User Trading Readiness Wizard
+
+Create a step-by-step onboarding flow:
+
+Step 1 — Welcome
+- Explain ARX AI trading modes:
+  - Trading Off
+  - Demo Trading
+  - Live Trading
+- Explain routing modes:
+  - Your connected MT5 account
+  - Shared master account if admin enables it
+- Explain that AI gives decision support, not guaranteed outcomes.
+
+Step 2 — Risk Profile
+User selects:
+- Conservative
+- Balanced
+- Aggressive
+- Custom
+
+Collect:
+- max daily loss
+- risk per trade
+- max trades per day
+- max open trades
+- preferred symbols
+- preferred trading style:
+  - scalping
+  - intraday
+  - swing
+  - custom
+
+Step 3 — Account Routing
+Show the routing mode available to this user:
+- User-owned MT5
+- Shared master MT5
+- Admin-selected/inherited mode
+
+If USER_OWNED_MT5:
+- guide user to connect their MT5 account
+- show demo/live account type after sync
+
+If SHARED_MASTER_MT5:
+- show user virtual account/allocation status
+- do not show master credentials
+- explain that trades are tracked by ARX AI allocation ledger
+
+Step 4 — MT5 Connection
+For user-owned MT5:
+- show bridge connection instructions
+- show backend base URL
+- show token setup instructions safely
+- do not reveal raw token after initial secure generation
+- show heartbeat status
+- show sync-account status
+- show sync-positions status
+- show command polling status
+- show account type demo/live
+
+Step 5 — Alerts
+User configures:
+- trade exit alerts
+- push alerts if available
+- in-app alerts
+- profit giveback alerts
+- news/event risk alerts
+- MT5 disconnect alerts
+- broker rejection alerts
+- quiet hours
+- alert sensitivity
+
+Step 6 — Strategy Setup
+User can:
+- choose a default strategy template
+- create first playbook
+- skip and use “manual trading”
+- set preferred symbols/timeframes/sessions
+
+Step 7 — Live Trading Disclosure
+Only show when user is live eligible or requesting live.
+Require:
+- live risk disclosure acceptance
+- acknowledgement that live trades can lose real money
+- confirmation that user understands AI is not guaranteed
+- timestamp acceptance
+- store acceptance record
+
+Step 8 — Readiness Check
+Show final checklist:
+- profile complete
+- risk profile set
+- routing mode resolved
+- MT5 connected or shared allocation active
+- account type detected
+- alerts configured
+- strategy/playbook selected or skipped
+- live disclosure accepted if live
+- admin approval status
+- Risk Governor status
+- trading mode status
+
+Output:
+- Ready for Demo
+- Ready for Live Pending Admin Approval
+- Ready for Live
+- Not Ready, with blockers
+
+PART 2 — Readiness Status Engine
+
+Create a backend readiness engine that calculates each user’s trading readiness.
+
+Statuses:
+- NOT_STARTED
+- PROFILE_INCOMPLETE
+- RISK_PROFILE_REQUIRED
+- ROUTING_REQUIRED
+- MT5_CONNECTION_REQUIRED
+- WAITING_FOR_MT5_HEARTBEAT
+- WAITING_FOR_SYMBOL_SPECS
+- READY_FOR_DEMO
+- LIVE_DISCLOSURE_REQUIRED
+- LIVE_ADMIN_APPROVAL_REQUIRED
+- LIVE_ACCOUNT_REQUIRED
+- READY_FOR_LIVE
+- SUSPENDED
+- TRADING_DISABLED_BY_ADMIN
+
+Readiness should respect:
+- platform mode
+- account routing mode
+- user permissions
+- live approval
+- account type
+- emergency stop
+- risk profile
+- alert preferences
+- broker symbol specs
+- shared master allocation
+- user suspension
+
+PART 3 — Admin User Readiness Dashboard
+
+Add Admin Readiness view.
+
+Admin should see:
+- all users
+- readiness status
+- missing setup steps
+- demo-ready users
+- live-ready users
+- users blocked by MT5
+- users blocked by risk profile
+- users blocked by missing disclosure
+- users blocked by no admin approval
+- users using own MT5
+- users using shared master
+- users suspended
+
+Admin actions:
+- approve demo
+- approve live
+- revoke live
+- suspend trading
+- assign shared allocation
+- force readiness recheck
+- send setup reminder
+- view onboarding progress
+
+PART 4 — User Dashboard Readiness Card
+
+Add a readiness card to the dashboard.
+
+Examples:
+- “Demo Ready — you can place demo trades when Demo Trading is active.”
+- “MT5 Waiting — heartbeat not received yet.”
+- “Live Pending — admin approval required.”
+- “Shared Account Ready — your virtual allocation is active.”
+- “Trading Disabled — admin has Trading Off.”
+
+Card buttons:
+- Continue Setup
+- Connect MT5
+- Configure Risk
+- Accept Live Disclosure
+- View Admin Status
+- Ask AI
+
+PART 5 — AI Onboarding Assistant
+
+Update AI so users can ask:
+
+- Am I ready to trade?
+- What setup am I missing?
+- Is my MT5 connected?
+- Am I using my own MT5 or shared account?
+- Can I trade demo?
+- Can I trade live?
+- Why am I blocked?
+- What do I need to do next?
+- Is my risk profile complete?
+- Are my alerts turned on?
+- Is my live disclosure accepted?
+
+AI must answer from real readiness data only.
+AI must not imply live trading is enabled unless all gates pass.
+AI must not expose secret tokens or master credentials.
+
+PART 6 — Mobile Onboarding
+
+Make the wizard work well on iPhone Safari:
+- large readable steps
+- sticky progress indicator
+- no hidden buttons behind bottom menu
+- secure token instructions are readable
+- MT5 connection statuses are easy to understand
+- modals fit screen
+- sidebar stays collapsed where needed
+
+PART 7 — Backend/API
+
+Add endpoints:
+
+- GET /api/onboarding/status
+- PATCH /api/onboarding/profile
+- PATCH /api/onboarding/risk-profile
+- PATCH /api/onboarding/alert-preferences
+- PATCH /api/onboarding/strategy
+- POST /api/onboarding/live-disclosure
+- POST /api/onboarding/recheck
+- GET /api/admin/onboarding/readiness
+- POST /api/admin/onboarding/users/:id/recheck
+- POST /api/admin/onboarding/users/:id/send-reminder
+
+Add tables if missing:
+
+user_onboarding_progress:
+- id
+- user_id
+- profile_completed
+- risk_profile_completed
+- routing_selected
+- mt5_connected
+- symbol_specs_synced
+- alerts_configured
+- strategy_selected
+- live_disclosure_completed
+- readiness_status
+- blockers
+- completed_at
+- updated_at
+
+live_trading_disclosures:
+- id
+- user_id
+- disclosure_version
+- accepted_at
+- ip_address
+- user_agent
+- accepted_text_hash
+- created_at
+
+user_readiness_checks:
+- id
+- user_id
+- readiness_status
+- blockers
+- warnings
+- checked_at
+- created_at
+
+PART 8 — Tests
+
+Add or update tests for:
+1. New user starts as NOT_STARTED.
+2. User cannot trade until required readiness gates pass.
+3. Demo readiness requires risk profile and valid routing.
+4. User-owned demo readiness requires MT5 demo connection.
+5. Shared demo readiness requires active virtual allocation.
+6. Live readiness requires live disclosure.
+7. Live readiness requires admin approval.
+8. Live readiness requires verified live account or shared live allocation.
+9. Suspended user is not ready.
+10. Trading Off shows disabled status.
+11. AI explains readiness blockers using real data.
+12. AI does not expose tokens or secrets.
+13. Admin can view user readiness.
+14. Admin can force readiness recheck.
+15. Mobile onboarding works on iPhone Safari.
+16. No secrets are exposed.
+
+Final report:
+Return:
+- PASS or FAIL
+- onboarding wizard status
+- readiness engine status
+- MT5 connection setup status
+- live disclosure status
+- admin readiness dashboard status
+- user dashboard readiness card status
+- AI onboarding awareness status
+- mobile status
+- tests passed
+- remaining blockers

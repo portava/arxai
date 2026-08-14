@@ -1,0 +1,252 @@
+BUILD PHASE — Ruby Voice Trading Command Guardrails + Confirmation Flow
+
+Use the current codebase. Do not rebuild unrelated systems.
+
+Goal:
+Allow users to speak natural trading commands to Ruby, while making sure voice can never bypass trade confirmations, risk checks, one-click rules, live safety gates, admin approval, allocation, shared master mapping, bridge health, exposure reservations, cooldowns, or user ownership checks.
+
+Ruby should be able to understand voice commands like:
+- “Buy EURUSD”
+- “Sell gold”
+- “Open a trade ticket for NAS100”
+- “Close my XAUUSD trade”
+- “Move my stop loss to break even”
+- “Set take profit at 1.0950”
+- “Cancel my pending order”
+- “Why was my trade blocked?”
+- “What’s my risk before I enter?”
+
+But Ruby must prepare, explain, and confirm — not silently execute.
+
+1. Inspect existing systems first
+Inspect and reuse:
+- Ruby voice auto-listen system
+- Ruby text chat brain
+- trade ticket flow
+- trade command queue
+- liveCommandPipeline
+- one-click safety
+- confirmation modals
+- user account shell
+- risk profile
+- shared master ledger
+- admin approval system
+- bridge health/mapping checks
+- exposure reservations
+- cooldowns
+- audit logs
+- trade ownership checks
+
+Do not create a second trade execution path.
+
+2. Voice intent detection
+Add safe voice intent detection for trading commands.
+
+Supported intent types:
+- open trade ticket
+- prepare market buy
+- prepare market sell
+- prepare pending order
+- close trade
+- partial close if supported
+- edit stop loss
+- edit take profit
+- move stop loss to break even
+- cancel pending order
+- ask Ruby for trade analysis
+- ask Ruby why trade was blocked
+- ask Ruby risk/account question
+
+Ruby must distinguish between:
+- information request
+- trade preparation request
+- actual execution request
+- unsafe/unclear command
+
+If unclear, Ruby should ask a follow-up question instead of guessing.
+
+3. Command extraction
+For voice trade commands, extract:
+- symbol
+- direction
+- order type
+- lot size
+- entry price if pending order
+- stop loss
+- take profit
+- trade/position reference if closing or editing
+- account mode
+- source: voice
+- confidence score
+- missing fields
+
+Examples:
+- “Buy gold” → symbol XAUUSD if symbol alias mapping supports it, direction buy, missing lot/SL/TP unless defaults exist.
+- “Close my gold trade” → find current user’s XAUUSD open position only.
+- “Move my stop to break even” → only allowed if exactly one current user trade is selected or clearly referenced.
+
+Never use another user’s trade to resolve ambiguity.
+
+4. Voice trade preparation
+When a voice command involves a trade action:
+- open or populate the existing trade ticket
+- show extracted details
+- show missing fields
+- show risk estimate
+- show SL/TP if available
+- show account mode
+- show whether the action is demo or live
+- show Ruby’s plain-language explanation
+- require confirmation before submitting
+
+Do not create a live command from voice directly.
+
+5. Confirmation flow
+Add a voice-safe confirmation flow.
+
+For demo:
+- User can confirm with a button or clear voice phrase like “Confirm demo trade.”
+- Still prevent accidental duplicate submits.
+
+For live/personal MT5/shared master:
+- Always require clear confirmation.
+- Require the existing live safety flow.
+- If one-click is OFF, use normal confirmation.
+- If one-click is ON, still require the approved one-click path and all safety gates.
+- For risky actions, require stronger confirmation:
+  - “Confirm live trade”
+  - “Confirm close trade”
+  - “Confirm stop loss change”
+  - “Confirm take profit change”
+
+Ruby must read back the action before confirmation:
+“You’re about to place a live buy on EURUSD for 0.10 lots with stop loss at ___ and take profit at ___. Confirm or cancel.”
+
+6. Hard safety rules
+Voice must never bypass:
+- authenticated session userId
+- account ownership
+- admin approval
+- allocation/risk profile
+- max lot size
+- max open trades
+- max daily loss
+- allowed symbols
+- bridge health
+- shared master mapping
+- EA read-only/live settings
+- global backend live flag
+- exposure reservations
+- cooldowns
+- one-click permissions
+- queue paused state
+- trade confirmation
+
+If any gate fails, block with a clean Ruby explanation.
+
+7. Ambiguity handling
+Ruby should not guess on dangerous actions.
+
+Examples:
+- If user says “Close it” and no trade is selected, Ruby asks which trade.
+- If multiple XAUUSD trades exist, Ruby asks which one.
+- If lot size is missing, Ruby asks for lot size or uses safe preset only if already configured.
+- If SL/TP is missing, Ruby warns and asks whether to continue only if the app allows trades without SL/TP.
+- If symbol alias is unclear, Ruby asks for clarification.
+
+8. Voice cancel and undo-safe behavior
+Support:
+- “Cancel”
+- “Never mind”
+- “Stop”
+- “Don’t place it”
+- “Clear trade ticket”
+- “Change lot size to…”
+- “Change stop loss to…”
+- “Change take profit to…”
+
+Cancel must stop pending voice confirmation and clear unsafe pending action.
+
+Do not implement true undo for executed live trades unless the existing system safely supports it.
+
+9. Trade ownership protection
+For close/edit/cancel commands:
+- only search current authenticated user’s positions/orders
+- never close another user’s trade
+- never edit another user’s SL/TP
+- never cancel another user’s order
+- if ownership cannot be verified, block and mark NEEDS_REVIEW where appropriate
+
+10. Ruby voice response style
+Ruby should speak clearly and briefly:
+- “I prepared the ticket. Please review and confirm.”
+- “I can’t place that yet because your account is waiting for approval.”
+- “I found two gold trades. Which one do you want to close?”
+- “This live trade needs confirmation before I send it.”
+- “Your daily loss limit blocks this trade.”
+
+Ruby should not over-talk during fast trading moments.
+
+11. UI additions
+Add voice command confirmation UI:
+- pending voice action card
+- extracted trade details
+- missing fields
+- risk estimate
+- confirm button
+- cancel button
+- edit fields button
+- voice confirmation phrase hint
+- safety block reason if blocked
+
+Mobile layout must be clean and not block the chart/trade ticket.
+
+12. Audit logs
+Add safe audit logs for:
+- voice trade intent detected
+- voice trade ticket prepared
+- voice confirmation requested
+- voice confirmation accepted
+- voice confirmation cancelled
+- voice command blocked by safety gate
+- voice close/edit request prepared
+- voice action submitted to existing command queue
+- duplicate voice command ignored
+- ambiguous voice command clarification requested
+
+Do not log raw audio, secrets, bridge tokens, API keys, session secrets, token hashes, or account credentials.
+
+13. Tests
+Add or update tests for:
+- “Buy EURUSD” prepares ticket but does not execute
+- “Sell XAUUSD” prepares ticket but does not execute
+- voice live trade requires confirmation
+- voice close trade requires confirmation
+- voice SL edit requires confirmation
+- voice TP edit requires confirmation
+- voice cannot bypass one-click rules
+- voice cannot bypass live safety gates
+- voice cannot bypass admin approval
+- voice cannot bypass allocation/risk profile
+- voice cannot trade disallowed symbol
+- voice cannot exceed max lot size
+- voice cannot close another user’s trade
+- voice cannot edit another user’s SL/TP
+- ambiguous close command asks clarification
+- duplicate voice transcript does not duplicate trade ticket/command
+- “cancel” clears pending voice action
+- Ruby explains blocked voice trade reason
+- no secrets exposed
+- no live command created during tests unless full safety flow and confirmation pass
+
+Return:
+- what was built
+- files changed
+- voice intent behavior
+- confirmation flow behavior
+- safety gate behavior
+- UI route/component changes
+- tests added/run
+- manual test steps
+- remaining risks
+- confirmation that no live trade was fired during this build

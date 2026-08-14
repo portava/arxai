@@ -1,0 +1,57 @@
+QA/FIX GATE — Operator Per-User Trading Mode Control: Paper / Demo / Live
+
+Inspect the per-user trading mode control work from the previous pass.
+
+Do not rebuild unrelated systems.
+Only repair missing or broken mode-control-critical pieces.
+Do not fire live trades.
+Do not create real live bridge commands.
+
+Verify:
+
+1. Each user has a backend-controlled tradingMode: PAPER, DEMO, or LIVE.
+2. New users never default to LIVE.
+3. Admin can set an individual user to PAPER.
+4. Admin can set an individual user to DEMO.
+5. Admin can set an individual user to LIVE only with confirmation and reason.
+6. Non-admin users cannot change tradingMode.
+7. Users cannot self-enable LIVE.
+8. PAPER mode cannot create demo commands.
+9. PAPER mode cannot create live commands.
+10. DEMO mode cannot create live commands.
+11. LIVE mode still requires all live safety gates.
+12. LIVE mode blocks when disclosure is missing.
+13. LIVE mode blocks when risk profile is missing.
+14. LIVE mode blocks when allocation is missing for shared master.
+15. LIVE mode blocks when bridge is unhealthy.
+16. LIVE mode blocks when shared master is unmapped.
+17. LIVE mode blocks when global live flag is off.
+18. LIVE mode blocks when kill switch is active.
+19. LIVE mode blocks when close-only blocks new opens.
+20. LIVE mode blocks when force-review is active unless review mode is intended.
+21. LIVE mode blocks when queue is paused.
+22. LIVE mode blocks when risk/exposure/cooldown checks fail.
+23. One-click live remains OFF by default.
+24. Mode switch does not convert old paper/demo/live trades.
+25. P/L and trade history remain labeled or filtered by mode.
+26. User A cannot view or change User B mode.
+27. Normal users see clean mode labels and explanations.
+28. Ruby explains only the current user’s mode.
+29. Ruby cannot change mode or bypass safety gates.
+30. Bulk mode tools cannot set users to LIVE unless each user passes readiness.
+31. Audit logs are created for mode changes, failed live readiness, and blocked live attempts.
+32. No bridge tokens, API keys, account credentials, session secrets, token hashes, raw audio, private prompts, or sensitive bridge payloads are exposed.
+33. No live trade is fired during QA.
+34. arx_live_commands count remains unchanged.
+
+Return:
+- PASS/FAIL table
+- files inspected
+- tests run
+- mode routes/screens checked
+- issues found
+- fixes applied
+- remaining blockers
+- remaining risks
+- confirmation no live trade was fired
+- confirmation arx_live_commands count stayed unchanged

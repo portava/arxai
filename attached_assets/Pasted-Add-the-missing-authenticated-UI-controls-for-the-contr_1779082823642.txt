@@ -1,0 +1,98 @@
+Add the missing authenticated UI controls for the controlled MT5 DEMO execution test so I do not have to copy browser cookies or run curl manually.
+
+Do NOT unlock live trading.
+Do NOT enable live execution.
+Do NOT enable shared MT5 routing.
+Do NOT enable live auto-close.
+Do NOT expose cookies, bridge tokens, broker credentials, session secrets, API keys, hashes, or private values.
+Do NOT fake broker fills, broker status, P&L, market data, candles, TP targets, or execution results.
+
+Problem:
+The backend demo execution endpoints are ready, but the UI only has the Arm button. Replit said the last four steps require authenticated user action:
+arm → draft → confirm → dispatch.
+I want those actions available from the authenticated browser UI, not by copying cookies into curl.
+
+Build only a minimal owner/operator demo execution test panel.
+
+Requirements:
+
+1. Add to MT5 Setup / Demo Execution Control card:
+- Arm MT5_DEMO_EXECUTION
+- Draft minimum-size demo market order
+- Confirm demo order
+- Dispatch demo order
+- Refresh command status
+- Show EA/broker result
+- Show reconciliation result
+- Show audit status
+
+2. Demo order must be controlled and minimum-size:
+- Volume defaults to smallest allowed, usually 0.01
+- Symbol must be selected from available/demo broker symbols if possible
+- Market order only for this first UI test
+- User must choose Buy or Sell
+- Optional SL/TP fields if valid
+- Show warning: “DEMO ONLY — live trading remains locked.”
+
+3. Confirmation modal must show:
+- Symbol
+- Direction
+- Volume
+- Order type
+- SL/TP if included
+- Account mode: DEMO
+- Bridge status
+- Demo verification status
+- Risk/prop result
+- Final checkbox/text: “I understand this is a demo trade only. Live trading remains locked.”
+
+4. Dispatch rules:
+- Dispatch only after authenticated user confirmation.
+- Dispatch only if VERIFIED_DEMO=true.
+- Dispatch only if bridgeConnected=true and heartbeatFresh=true.
+- Dispatch only if EA v1.26 is connected.
+- Dispatch only if accountType=demo.
+- Dispatch only if MT5_DEMO_EXECUTION is armed.
+- Dispatch only if risk/prop gates pass.
+- Dispatch only if duplicate command check passes.
+- Do not dispatch if any blocker exists.
+
+5. After dispatch:
+- Poll command status.
+- Show SENT_TO_MT5_DEMO / FILLED_DEMO / REJECTED / FAILED / PENDING_RECONCILIATION.
+- Show broker ticket/order id only if safe.
+- Show broker error only if safe.
+- Do not fake fill.
+- Do not fake P&L.
+- Create/update journal, notification, audit, and reconciliation if the backend already supports it.
+
+6. Keep all live safety:
+- Live trading remains BLOCKED.
+- Shared MT5 routing remains BLOCKED.
+- Live auto-close remains ALERT_ONLY.
+- Legacy live endpoints still return 403 NOT_ARMED_FOR_LIVE.
+- No live MT5 command is sent.
+- No secret is exposed.
+
+Run:
+1. Typecheck
+2. CI guards
+3. Demo execution UI test
+4. Confirmation-required test
+5. Dispatch-blocked-without-confirmation test
+6. Verified-demo gate test
+7. Secret leakage scan
+8. Per-user isolation regression
+9. Live trading locked regression
+10. Safety-envelope regression
+11. Browser smoke test
+
+End with:
+- Files changed
+- UI route/card where I can run the test
+- Exact steps I should click
+- Confirmation no command can dispatch without my browser confirmation
+- Confirmation live trading remains BLOCKED
+- Confirmation shared MT5 routing remains BLOCKED
+- Confirmation live auto-close remains ALERT_ONLY
+- Final answer: READY FOR BROWSER DEMO EXECUTION TEST or NOT READY, with reasons.

@@ -1,0 +1,177 @@
+FIX SYMBOL PICKER / APPROVED SYMBOLS — The app has live candles but symbol dropdown says “No enumerated symbols yet.”
+
+Screenshot proof:
+- Route: /market-scanner
+- Current selected symbol: EURUSD
+- Scanner shows live candles: source MT5 broker, candles 201/150, live
+- But symbol search dropdown says:
+  “No enumerated symbols yet. Connect your MT5 EA and run symbol enumeration...”
+- This is wrong because EURUSD is already live and readable.
+- The symbol picker is relying only on MT5 enumerated symbols instead of approved symbols + currently active/live symbols.
+
+Mission:
+Fix the symbol dropdown/search so approved users always see their approved symbols, even if MT5 symbol enumeration has not run yet.
+
+Do NOT remove symbol enumeration.
+Do NOT fake tradeability.
+Do NOT weaken execution safety.
+Do NOT change scanner logic except symbol-source wiring.
+Do NOT block approved users from symbols just because enumeration table is empty.
+
+Root issue to investigate:
+The app has at least one valid symbol/candle feed, but the symbol dropdown source is empty because it only reads broker-enumerated symbols. It should merge multiple symbol sources.
+
+Expected behavior:
+On /market-scanner, approved users should see:
+- EURUSD
+- any approved symbols assigned to the user
+- any bridge/shared account approved symbols
+- any role/default approved symbols
+- any currently active symbols with recent candle data
+- enumerated broker symbols when available
+
+Symbol picker must NOT be empty if scanner/candles already have a working symbol.
+
+Fix symbol source priority:
+
+1. User-specific approved symbols
+2. Shared live bridge approved symbols
+3. Role/group approved symbols
+4. Admin/default approved symbols
+5. Currently active symbols with recent candles/positions/scanner data
+6. MT5 enumerated broker symbols
+7. Safe configured fallback symbols, only for viewing/scanner, not guaranteed execution
+
+Important:
+Execution still must verify actual broker support, symbol tradeability, allowed symbol, live arming, risk, and bridge status before placing trades.
+
+Create/fix one shared symbol resolver:
+
+resolveSymbolsForUser(userId, context)
+
+It should return:
+
+{
+  ok: true,
+  symbols: [
+    {
+      symbol: "EURUSD",
+      displayName: "EURUSD",
+      market: "forex",
+      source: "approved" | "shared_bridge" | "default" | "active_candles" | "enumerated" | "fallback",
+      tradeable: boolean,
+      scannerEnabled: boolean,
+      candlesEnabled: boolean,
+      executionRequiresBrokerConfirmation: boolean
+    }
+  ],
+  sourceSummary: {
+    userApproved: number,
+    sharedBridge: number,
+    defaults: number,
+    activeCandles: number,
+    enumerated: number,
+    fallback: number
+  },
+  warnings: []
+}
+
+Use this resolver for:
+- symbol dropdown
+- market scanner symbol selector
+- chart symbol selector
+- trade ticket symbol selector
+- Ruby chart context symbol selector if applicable
+
+Do not let the frontend symbol dropdown directly depend on enumerated symbols only.
+
+API:
+Find the current symbol search/list endpoint used by the dropdown.
+Patch it so it uses resolveSymbolsForUser.
+
+If no clean endpoint exists, add:
+
+GET /api/me/symbols
+
+Response:
+{
+  ok: true,
+  symbols: [...],
+  warnings: [],
+  enumerationStatus: {
+    available: boolean,
+    count: number,
+    lastEnumeratedAt: string | null
+  }
+}
+
+Frontend:
+Update the symbol picker/search component so:
+- It shows resolved approved symbols first.
+- It can still show enumeration status as a note.
+- It does not display “No enumerated symbols yet” as the primary empty state if approved/active symbols exist.
+- If enumeration is empty but approved symbols exist, show:
+  “Broker enumeration pending — showing approved symbols.”
+- If no symbols exist at all, show:
+  “No approved symbols found. Ask an admin to assign symbols or run MT5 symbol sync.”
+- If current selected symbol exists and has candles, include it in the list even if enumeration is missing.
+
+Specific UI behavior:
+When EURUSD is selected and live candles exist, EURUSD must appear in the dropdown list.
+The list should not be empty.
+The “MISSING” badge should not appear next to search if approved/active symbols are available.
+Replace “MISSING” with:
+- “Pending sync” only if enumeration is missing but approved symbols exist
+- “No symbols” only if resolver returns zero symbols
+
+Bridge/approved-user attachment:
+Also verify approved users are attached to the live shared bridge.
+If a user is approved but not attached, run the targeted auto-attach/backfill from prior instruction:
+- approved trader users get assigned to active shared live bridge
+- do not change live arming
+- do not weaken execution gates
+- investor remains view-only
+- non-approved users not attached
+
+Backfill:
+Run an idempotent backfill:
+- find approved users without shared live bridge assignment
+- attach to active shared live bridge
+- do not modify live arming/risk settings
+- report count attached
+
+Symbols fallback:
+If approved user has no explicit symbols but the system has live candles for EURUSD, include EURUSD as active_candles source.
+If admin defaults exist, include those.
+Do not return an empty list when usable live scanner data exists.
+
+Deriv label:
+Keep Deriv status scoped only to Deriv/synthetic symbols.
+Do not use “Deriv not connected” as a global reason for missing symbols.
+For EURUSD and other MT5 symbols, status should come from MT5/shared bridge, not Deriv.
+
+Tests / verification:
+1. With enumeration empty but EURUSD live candles present, symbol dropdown contains EURUSD.
+2. With approved default symbols configured, dropdown contains approved symbols even before enumeration.
+3. “No enumerated symbols yet” does not appear when approved/active symbols exist.
+4. MISSING badge disappears when resolver returns symbols.
+5. Approved attached user sees symbols.
+6. Non-approved user does not get live/tradeable symbols.
+7. Investor can view symbols but cannot execute unless explicitly allowed.
+8. Trade execution still checks broker support and risk gates.
+9. Scanner still loads EURUSD.
+10. Candle chart still loads EURUSD.
+11. Build/typecheck passes.
+12. No console errors.
+
+Final report:
+- Root cause
+- Symbol endpoint/component fixed
+- Resolver added/updated
+- Sources merged
+- Backfill result for approved users
+- Screenshot-specific verification: EURUSD appears in dropdown while candles are live
+- Any TODOs
+
+Final result:
+The symbol dropdown no longer goes empty just because MT5 enumeration has not run. Approved users see approved/shared/default/active symbols, including EURUSD when live candles are already present, while execution safety still requires broker confirmation and risk gates.

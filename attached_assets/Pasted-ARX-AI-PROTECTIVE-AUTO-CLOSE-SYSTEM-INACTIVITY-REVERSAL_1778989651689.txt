@@ -1,0 +1,480 @@
+ARX AI PROTECTIVE AUTO-CLOSE SYSTEM — INACTIVITY + REVERSAL DETECTION + PRE-AUTHORIZED EXIT ONLY
+
+Add a protected AI auto-close feature for open trades.
+
+Important:
+This is NOT permission for the AI to freely trade.
+This is NOT permission to open trades.
+This is NOT permission to increase risk.
+This is only for closing or partially closing an already-open position when the user has pre-authorized protective exit rules.
+
+Do NOT rebuild.
+Do NOT redesign.
+Do NOT bypass paper-only lock.
+Do NOT bypass live-trading lock.
+Do NOT bypass risk governor.
+Do NOT bypass explicit user opt-in.
+Do NOT bypass Shared Master attribution.
+Do NOT fake live data.
+Do NOT promise profit.
+Do NOT enable live execution by default.
+
+Current app safety rules must stay intact.
+
+==================================================
+PHASE 1 — INSPECT CURRENT CLOSE FLOW FIRST
+==================================================
+
+Before coding, inspect and report:
+
+1. Current close trade route/action.
+2. Current one-click close flow.
+3. Current confirmation guard.
+4. Current MT5 close command path.
+5. Current paper-only/live-lock safety chain.
+6. Current AI close/sniper-close alert logic, if any.
+7. Current user session/inactivity tracking.
+8. Current notification/alert system.
+9. Current risk governor.
+10. Current journal/audit logging.
+11. Current Shared Master attribution logic.
+
+Do not create duplicate close systems.
+Use the existing close-trade path if possible.
+
+==================================================
+PHASE 2 — ADD USER OPT-IN SETTING
+==================================================
+
+Add a user setting called:
+
+Protective Auto-Close
+
+Default:
+OFF
+
+User must explicitly turn it on.
+
+Settings should include:
+
+1. Enable Protective Auto-Close: true/false
+2. Inactivity threshold:
+   - 5 minutes
+   - 10 minutes
+   - 15 minutes
+   - 30 minutes
+   - custom if already supported
+3. Auto-close mode:
+   - Alert only
+   - Require confirmation if user is active
+   - Auto-close only if user inactive
+4. Close type:
+   - Full close
+   - Partial close
+   - Move stop loss / tighten protection if supported
+5. Max auto-close frequency:
+   - once per trade
+   - cooldown period
+6. Minimum confidence threshold:
+   - high only by default
+7. Require multi-signal confirmation:
+   - true by default
+8. Protected profit option:
+   - close if reversal risk appears after trade reaches profit threshold
+9. Max loss protection:
+   - close if reversal risk + loss risk exceeds user limit
+10. Emergency disable / kill switch
+
+No user should inherit this as enabled.
+
+No live account should have this enabled by default.
+
+==================================================
+PHASE 3 — DEFINE INACTIVITY DETECTION
+==================================================
+
+Add or connect inactivity detection.
+
+User is considered inactive only when:
+
+1. No app interaction for selected threshold.
+2. No recent voice command.
+3. No recent trade ticket interaction.
+4. No recent AI chat interaction.
+5. App session is idle or backgrounded if detectable.
+6. User did not recently dismiss the same alert.
+
+Store:
+
+- lastActiveAt
+- lastTradeInteractionAt
+- lastAiInteractionAt
+- lastProtectiveCloseAlertAt
+- inactiveDuration
+- inactivityReason
+
+Do not treat the user as missing based only on weak data.
+
+If activity status is unknown, use alert-only mode.
+
+==================================================
+PHASE 4 — REVERSAL DETECTION ENGINE
+==================================================
+
+Add or connect a reversal detection module.
+
+Name it something like:
+
+protectiveExitEngine
+or
+aiProtectiveCloseEngine
+
+It should analyze only available data.
+
+Signals may include:
+
+1. Price approaching strong support/resistance.
+2. Rejection candle near key level.
+3. Break of structure against the trade.
+4. Liquidity sweep against the position.
+5. Failed breakout.
+6. Momentum divergence if indicator data exists.
+7. ATR exhaustion / overextension.
+8. Higher-timeframe reversal level.
+9. Session high/low rejection.
+10. Previous day high/low rejection.
+11. Scanner/radar reversal warning.
+12. News/event warning only if real news data exists.
+13. Spread/liquidity abnormality if available.
+14. Existing TP/SL proximity.
+15. Profit giving back rapidly from peak.
+16. Risk/reward no longer favorable.
+17. Trade invalidation level reached or nearly reached.
+
+Do not invent signals.
+Do not fake research.
+Do not claim “crucial research” unless there is actual data supporting it.
+
+If data is incomplete, return:
+INSUFFICIENT_DATA
+
+==================================================
+PHASE 5 — PROTECTIVE CLOSE DECISION MODEL
+==================================================
+
+Create a decision object:
+
+{
+  decision: "NO_ACTION" | "ALERT_ONLY" | "RECOMMEND_CLOSE" | "RECOMMEND_PARTIAL_CLOSE" | "AUTO_CLOSE_ELIGIBLE" | "BLOCKED",
+  reason,
+  confidence,
+  dataStatus,
+  reversalSignals,
+  invalidationLevel,
+  currentProfitLoss,
+  peakProfit,
+  givebackPercent,
+  suggestedClosePercent,
+  suggestedAction,
+  userInactive,
+  userOptedIn,
+  guardsPassed,
+  blockedReason
+}
+
+Auto-close is only eligible if ALL are true:
+
+1. User opted into Protective Auto-Close.
+2. User is inactive beyond chosen threshold.
+3. Position is open and belongs to the user/session.
+4. Reversal confidence meets user threshold.
+5. At least two strong reversal/risk signals confirm.
+6. Data status is live or reliable enough.
+7. Risk governor allows protective close.
+8. Close action guard allows it.
+9. Shared Master attribution allows it.
+10. Paper/live lock permits the action.
+11. MT5 bridge supports close command.
+12. No recent duplicate close attempt.
+13. No active user confirmation window is pending.
+14. Trade has not already been closed.
+15. The action reduces risk, never increases risk.
+
+If any condition fails, return alert/recommendation only.
+
+==================================================
+PHASE 6 — SAFETY RULES
+==================================================
+
+Protective Auto-Close must obey these rules:
+
+1. AI can never open a new trade.
+2. AI can never add to a trade.
+3. AI can never increase lot size.
+4. AI can never remove stop loss.
+5. AI can never widen risk without confirmation.
+6. AI can only close, partially close, or tighten protection if supported.
+7. If user is active, ask for confirmation instead of auto-closing.
+8. If user is inactive, auto-close only if pre-authorized.
+9. If paper-only lock blocks execution, return BLOCKED_BY_PAPER_LOCK.
+10. If live trading lock blocks execution, return LIVE_LOCKED.
+11. If bridge is disconnected, send alert only.
+12. If data is stale, send alert only.
+13. If confidence is not high enough, send alert only.
+14. If no opt-in exists, send alert only.
+15. If Shared Master attribution is unclear, block.
+
+==================================================
+PHASE 7 — NOTIFICATION FLOW
+==================================================
+
+Before any auto-close attempt, send an urgent alert if possible:
+
+“ARX AI detected possible reversal risk on your open trade.”
+
+Include:
+
+- Symbol
+- Direction
+- Current P/L
+- Reversal reason
+- Suggested action
+- Close percent
+- Time to respond if user is active
+- Data status
+
+If user is active:
+- Show confirmation prompt.
+- Do not auto-close.
+
+If user is inactive and opted in:
+- Wait a short configured grace window if included.
+- Then attempt protective close only if conditions still hold.
+
+After action:
+- Notify user:
+  - Closed
+  - Partially closed
+  - Blocked
+  - Failed
+  - Alert only
+
+==================================================
+PHASE 8 — CLOSE EXECUTION PATH
+==================================================
+
+Use the existing close-trade path.
+
+Add an action type if needed:
+
+PROTECTIVE_AUTO_CLOSE
+
+Payload:
+
+- positionId / ticket
+- symbol
+- closePercent
+- reason
+- protectiveExitDecisionId
+- userId
+- accountRoutingMode
+- platformMode
+- autoClosePreAuthorized: true
+- userInactive: true
+- confirmedByPolicy: true
+
+Important:
+This is not the same as normal explicit confirmation.
+It is allowed only if the user previously opted into the policy.
+
+Backend must verify:
+
+1. User opt-in exists.
+2. Opt-in was active before the trade close decision.
+3. User inactivity threshold passed.
+4. Decision engine result is still valid.
+5. Risk/guard chain passes.
+6. Close reduces exposure.
+7. Trade belongs to correct user/session.
+8. Shared Master attribution is valid.
+
+Do not allow frontend-only proof.
+Backend must verify everything.
+
+==================================================
+PHASE 9 — AI ASSISTANT BEHAVIOR
+==================================================
+
+Update ARX AI assistant context.
+
+AI should be able to answer:
+
+- Why did you recommend closing?
+- Why did you close my trade?
+- What reversal signs did you see?
+- Was I inactive?
+- Was Protective Auto-Close enabled?
+- Did this reduce my risk?
+- Why did you not close it?
+- Why was auto-close blocked?
+- What data was used?
+- Was this live, demo, preview, or disconnected?
+
+AI must not say:
+- “I guaranteed profit.”
+- “I knew the market would reverse.”
+- “I closed without your authorization.”
+- “I placed a new trade for you.”
+
+AI must be honest:
+- “This was a protective exit based on your pre-authorized settings.”
+- “The signal was based on available data, not certainty.”
+- “The action was blocked because live trading is locked.”
+- “The bridge was disconnected, so I alerted only.”
+
+==================================================
+PHASE 10 — UI REQUIREMENTS
+==================================================
+
+Add a clean settings panel or section:
+
+Protective Auto-Close
+
+Show:
+
+- Enabled / Disabled
+- Inactivity threshold
+- Close mode
+- Confidence threshold
+- Full or partial close
+- Cooldown
+- Last protective alert
+- Last protective action
+- Kill switch
+
+Open trade card should show:
+
+- Protective Auto-Close status
+- “AI watching for reversal risk” if enabled
+- “Alert only” if not authorized for auto-close
+- Last reversal check result if available
+
+Do not overcrowd the UI.
+
+Mobile-first.
+
+==================================================
+PHASE 11 — JOURNAL / AUDIT
+==================================================
+
+Record every protective decision.
+
+Audit log must include:
+
+- userId
+- positionId / ticket
+- symbol
+- decision
+- userOptedIn
+- optInTimestamp
+- userInactive
+- inactiveDuration
+- reversalSignals
+- confidence
+- dataStatus
+- suggestedClosePercent
+- actionTaken
+- blockedReason
+- MT5 result if attempted
+- timestamp
+
+Journal should show:
+
+- AI recommended protective close
+- User confirmed close
+- AI auto-closed under pre-authorized policy
+- AI attempted close but was blocked
+- AI alerted only
+
+This must be reviewable later.
+
+==================================================
+PHASE 12 — SHARED MASTER MODE
+==================================================
+
+Shared Master safety:
+
+1. Auto-close can only affect the user-attributed position/share.
+2. If the platform cannot safely close only the user’s attributed exposure, block auto-close.
+3. If master trade attribution is unclear, block.
+4. If closing would affect other users without proper routing, block.
+5. Use alert-only when attribution is uncertain.
+6. Audit all shared-master protective decisions.
+
+Do not close a shared master trade globally unless the system is explicitly designed to do that safely.
+
+==================================================
+PHASE 13 — TESTING
+==================================================
+
+Run:
+
+- pnpm run typecheck
+- pnpm run ci:guards
+- pnpm test if available
+- pnpm run build if available
+- AI tests if available
+- close-action tests if available
+- risk governor tests if available
+- route smoke tests
+
+Manual tests:
+
+1. User has Protective Auto-Close OFF → AI alerts only.
+2. User has setting ON but is active → confirmation required.
+3. User has setting ON and inactive but confidence low → alert only.
+4. User has setting ON and inactive, confidence high, bridge connected, guards pass → eligible close action.
+5. Paper-only lock active → BLOCKED_BY_PAPER_LOCK, no fake close.
+6. Live locked → LIVE_LOCKED, no fake close.
+7. Bridge disconnected → alert only.
+8. Risk governor blocks → no close, show reason.
+9. Shared Master attribution unclear → block.
+10. AI cannot open a new trade.
+11. AI cannot increase trade size.
+12. AI cannot widen risk.
+13. Duplicate auto-close attempts are blocked.
+14. Journal records every decision.
+15. AI explains why action happened or did not happen.
+
+==================================================
+FINAL REPORT
+==================================================
+
+Create or update:
+
+PROTECTIVE_AUTO_CLOSE_REPORT.md
+
+Include:
+
+1. Existing close flow inspected
+2. Files changed
+3. User settings added
+4. Inactivity detection status
+5. Reversal detection status
+6. Decision model added
+7. Close action integration
+8. Safety guards enforced
+9. Shared Master safety status
+10. AI context update
+11. UI changes
+12. Journal/audit changes
+13. Tests run
+14. Typecheck result
+15. CI guard result
+16. Remaining limitations
+17. Whether paper/live lock blocks actual execution
+18. Confirmation that no live execution was enabled by default
+19. Confirmation that AI cannot open or increase trades
+20. Confirmation that auto-close requires pre-authorization and inactivity
+
+Stop after this slice and report.

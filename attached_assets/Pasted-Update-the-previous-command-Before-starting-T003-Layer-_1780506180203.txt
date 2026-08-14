@@ -1,0 +1,182 @@
+Update the previous command.
+
+Before starting T003 — Layer 3 Governance, first perform a full integration audit of the completed T002 Layer 2 Scoring & Lifecycle work across the entire ARX AI app.
+
+The goal is not to have isolated agent scoring modules sitting in the code. The entire system must interact with itself, or the whole premise of the app is pointless. The AI agent ecosystem must affect real workflows, real recommendations, real scanner ranking, Ruby reasoning, risk interpretation, admin visibility, and agent lifecycle decisions.
+
+PHASE 0 — T002 FULL INTEGRATION CHECK BEFORE T003
+
+Do not begin T003 until you prove T002 is fully wired into the app.
+
+Audit and verify every T002 scoring/lifecycle feature is connected across:
+
+1. Ruby
+
+* Confirm Ruby can access agent scores, agent trust level, agent lifecycle status, and agent confidence.
+* Confirm Ruby explanations can reflect when an agent influenced, downgraded, challenged, muted, or supported a recommendation.
+* Confirm Ruby does not expose backend function names, raw schema names, route names, or internal code language to normal users.
+* If Ruby is not using the scoring/lifecycle layer, wire it in.
+
+2. Scanner
+
+* Confirm scanner rankings are influenced by agent score, agent confidence, agent reliability, lifecycle status, and risk downgrade logic.
+* A weak/low-trust agent should not be able to strongly boost a scanner opportunity.
+* A strong/high-performing agent should be able to add weight to scanner ranking.
+* Risk AI should be able to downgrade poor scanner opportunities.
+* If scanner ranking is not using T002 scoring/lifecycle data, wire it in.
+
+3. Flame Scalp Engine
+
+* Confirm flame/scalp signals are evaluated using agent confidence and lifecycle scoring.
+* Confirm scalp opportunities are not blindly boosted just because candle movement looks fast.
+* Confirm poor historical performance by a flame/scalp agent lowers its influence.
+* Confirm strong performance increases influence.
+* If the flame/scalp system is not using T002 lifecycle data, wire it in.
+
+4. Risk Engine
+
+* Confirm risk scoring is connected to agent lifecycle status.
+* Confirm bad, overconfident, or repeatedly wrong agents are downgraded, muted, or sent to Learning Camp.
+* Confirm agent performance can affect risk warnings, trade caution, scanner quality, and recommendation strength.
+* If risk logic is disconnected from T002, wire it in.
+
+5. Market Explanation Window
+
+* Confirm selected market explanations use agent scoring/lifecycle data.
+* Ruby should be able to say in plain English why a market is strong, weak, risky, downgraded, or needs more confirmation.
+* The explanation must reflect real agent influence, not fake logs or decorative summaries.
+* If disconnected, wire it in.
+
+6. Admin Dashboard
+
+* Confirm admin can view:
+    * each agent’s score
+    * lifecycle state
+    * last actions
+    * failures
+    * promotions
+    * demotions
+    * Learning Camp status
+    * confidence changes
+    * what workflows each agent affected
+* If admin cannot see this clearly, add an admin-only visibility panel or improve the existing one.
+
+7. Agent Lifecycle
+
+* Confirm agents can move between states such as active, reduced influence, muted, Learning Camp, promoted, demoted, or retired.
+* Confirm lifecycle state changes are based on real evidence, not elapsed time alone.
+* Confirm outcome resolution is fail-closed on real evidence.
+* Confirm weak agents cannot keep influencing recommendations as if they are healthy.
+* If lifecycle state exists but does not affect real behavior, finish wiring it.
+
+8. Traffic Controller / Speed Protection
+
+* Confirm the app does not call every agent for every action.
+* Confirm only the agents needed for a specific workflow run.
+* Confirm agents step back when not needed.
+* Confirm slow or low-value agents reduce their own involvement to protect speed.
+* If this is not wired, add routing logic before T003.
+
+9. App-Wide Interaction
+
+* Confirm T002 is not only sitting in isolated files.
+* Search the full codebase for disconnected scoring/lifecycle modules, unused exports, mock-only logic, orphaned admin endpoints, unused tables, unused types, and fake traces.
+* Remove or wire anything that is dormant, duplicated, or decorative.
+* The scoring/lifecycle layer must be part of the real app loop.
+
+PHASE 0 QA REQUIREMENTS
+
+Before starting T003, run proof tests that show:
+
+* Ruby uses agent lifecycle/scoring data in market explanations.
+* Scanner ranking changes when agent trust/confidence changes.
+* Risk AI can downgrade a weak opportunity.
+* Flame/scalp signals are affected by agent reliability.
+* Low-performing agents lose influence.
+* High-performing agents gain influence.
+* Learning Camp is triggered only by real evidence.
+* Admin can see what changed and why.
+* No normal user sees internal backend names.
+* The live trade path remains untouched unless already authorized elsewhere.
+* All checks pass.
+
+If anything is not connected, finish wiring it before moving forward. Do not mark T002 fully complete unless it is actually integrated throughout the app.
+
+ONLY AFTER PHASE 0 PASSES, CONTINUE WITH T003 — LAYER 3 GOVERNANCE
+
+Build the governance/court/factory layer as the next sequenced phase. This layer must make the AI agent ecosystem operational, not just advisory.
+
+1. Governance Court
+
+* Create a governance decision layer where agents can submit opinions, challenges, confirmations, downgrades, escalations, and objections.
+* Allow multiple agents to review the same scanner signal, Ruby recommendation, scalp/flame setup, risk score, or market explanation.
+* If agents disagree, route the decision through a court-style resolution process.
+* The court should decide whether to approve, downgrade, reject, request more data, or escalate to admin/operator visibility.
+
+2. Agent Challenge System
+
+* Agents must be able to challenge weak recommendations from other agents.
+* Risk AI should be able to challenge aggressive entries.
+* Flame/Scalp agents should be challenged if candle momentum is weak, choppy, too late, or unsupported.
+* News/current-event agents should challenge technical-only setups when major news risk exists.
+* Traffic Controller should challenge unnecessary agent activity if too many agents are slowing the system.
+
+3. Governance Outcomes
+    Every governance review must produce a clear outcome:
+
+* approved
+* downgraded
+* rejected
+* escalated
+* needs more data
+* muted due to low confidence
+* delayed due to speed/performance concern
+
+4. Admin Visibility
+
+* Add an admin-only governance trace showing:
+    * which agents participated
+    * what each agent recommended
+    * which agent challenged what
+    * final governance decision
+    * reason for approval/rejection/downgrade
+    * confidence score
+    * whether the decision affected Scanner ranking, Ruby response, risk warning, scalp/flame signal, or recommendation
+
+5. Agent Factory Rules
+
+* Add a controlled agent factory system.
+* High-performing agents can recommend a new specialized agent only when a real missing task is detected.
+* Do not allow uncontrolled random agent creation.
+* New agent proposals must include:
+    * name
+    * purpose
+    * permissions
+    * data inputs
+    * allowed outputs
+    * failure conditions
+    * scorecard
+    * admin visibility
+    * testing requirements
+* New agents should not become active without passing validation.
+
+6. Speed Protection
+
+* Governance must not slow down the app.
+* Add routing rules so only necessary agents run for each situation.
+* Agents must step back when not needed.
+* Traffic Controller should decide which agents are required based on the action type.
+
+7. End-to-End Proof
+    After building T003, run QA proving:
+
+* agents can challenge each other
+* governance produces real outcomes
+* Scanner rankings can be downgraded or changed by governance
+* Ruby can explain governance influence in plain English
+* admin can see the governance trace
+* failed/low-confidence agents lose influence
+* no backend function names or internal code terms are exposed to normal users
+* live trade path remains untouched in this phase unless already explicitly wired in a later approved task
+
+Do not rebuild the app. Continue from completed T002 work, but do not assume it is fully integrated. First prove it, wire anything missing, then proceed into T003. Reuse existing code. Fix anything broken, disconnected, duplicated, fake, or incomplete before marking the task complete.

@@ -1,0 +1,386 @@
+Fix ARX live-feed truth and complete end-to-end live-trade support across every live-capable function.
+
+Problem:
+The chart visually matches other charts, but ARX still says:
+- “Feed not confirmed”
+- “Historical data — analysis only”
+- “Data incomplete — not valid for a live entry”
+
+This means the app may be displaying candles that look correct, but the live-entry gate cannot prove they are fresh broker-confirmed MT5 data for the exact tradable symbol. The system must truthfully support live trading through every function that allows live execution, and this task must not be marked complete until live test trades have been placed and verified through every supported entry point.
+
+Important:
+Do not fake completion with UI screenshots, typechecks, mocked broker responses, or “analysis-only” chart matches. Completion requires broker-confirmed live test order lifecycle proof.
+
+Scope:
+Audit, fix, and verify the entire live-trading path for:
+- Chart trade/order ticket
+- Market Scanner trade button
+- Trade page/manual order ticket
+- Eleanor chat trade command
+- AI Trading
+- Profit Engine
+- Scalp Machine
+- Flare Machine
+- Any other screen/function that can create, confirm, draft, modify, close, or dispatch a live trade
+
+If a function is not intended to place live trades, label it clearly as ALERT-ONLY / ANALYSIS-ONLY and remove or disable misleading live execution controls.
+
+Primary goal:
+The app must be either:
+1. Fully live-capable and proven with real broker order lifecycle tests, or
+2. Honestly labeled as not live-capable for that function.
+
+No vague “Trading enabled” labels are allowed when an entry point cannot actually place a live order.
+
+Part 1 — Live feed truth audit
+
+1. Trace the full feed path
+Trace V75_1S and at least one FX symbol from:
+- MT5 EA / bridge payload
+- tick ingestion
+- CopyRates/bar ingestion
+- backend candle storage
+- feed confidence resolver
+- chart candle endpoint
+- scanner feed resolver
+- Eleanor chart read
+- AI/profit/scalp/flare strategy readers
+- live order preflight feed gate
+- liveCommandPipeline dispatch gate
+
+Report:
+- exact broker symbol
+- normalized app symbol
+- account id / bridge id
+- source provider
+- last tick timestamp
+- last candle timestamp
+- candle timeframe
+- missing interval count
+- freshness threshold
+- why the current screen says “historical” or “incomplete”
+- whether the issue is missing ticks, missing bars, stale timestamp, symbol mapping, timeframe gap, provider fallback, or resolver mismatch
+
+2. Define broker-confirmed live feed
+A symbol should be considered live-entry eligible only when:
+- bridge heartbeat is fresh
+- symbol exists on the connected broker account
+- broker symbol mapping is exact
+- recent MT5 tick exists
+- recent MT5 CopyRates/bar exists for the selected timeframe
+- timestamp is within the expected freshness window
+- source is broker/MT5, not fallback, synthetic estimate, stale cache, or analysis-only provider
+- missing intervals are within allowed tolerance
+- the order route sees the same feed state as the chart/scanner/Eleanor UI
+
+3. Fix false historical classification
+If MT5 is providing fresh broker candles/ticks but ARX still says historical:
+- fix timestamp parsing
+- fix timezone/session offset
+- fix symbol normalization
+- fix brokerSymbol vs appSymbol mismatch
+- fix timeframe aggregation gaps
+- fix feedConfidence resolver mismatch
+- fix stale cache fallback
+- fix chart endpoint/provider labeling
+- fix order route reading a different feed source than the chart
+
+Do not loosen the live feed gate just to get trades through. Fix the proof so true live broker data is recognized correctly.
+
+4. Remove misleading chart confidence
+If the chart is showing candles that are not broker-confirmed, label it clearly:
+“Analysis chart only — not broker-confirmed.”
+
+If it is broker-confirmed, label it clearly:
+“Broker-confirmed MT5 feed.”
+
+Never show live trade controls as ready while the order route will reject the same feed.
+
+Part 2 — Unified live readiness resolver
+
+Create or reuse one shared live readiness resolver that powers every live-capable entry point.
+
+The resolver must return:
+- userId
+- email
+- role
+- accountMode
+- liveApproved
+- sharedBridgeApproved
+- fullLiveActivation
+- liveExecutionActive
+- bridgeMode
+- bridgeHeartbeatFresh
+- allocationSource
+- allocatedAmount
+- availableLiveAllocation
+- brokerAccountId
+- symbol
+- brokerSymbol
+- normalizedSymbol
+- selectedTimeframe
+- lastTickAt
+- lastCandleAt
+- feedSource
+- feedConfirmed
+- missingIntervals
+- symbolLiveEligible
+- riskEligible
+- killSwitchClear
+- final blockers[]
+- liveEntryEligible true/false
+
+Use this same resolver for:
+- chart/manual ticket
+- scanner
+- Eleanor
+- AI Trading
+- Profit Engine
+- Scalp Machine
+- Flare Machine
+- trade order page
+- live dispatch preflight
+
+Do not let each feature invent its own readiness logic.
+
+Part 3 — Function-by-function live support audit
+
+For every live-capable function, classify it as one of:
+
+A. LIVE EXECUTION SUPPORTED
+Can place real broker orders through the sanctioned live pipeline.
+
+B. ALERT-ONLY
+Can produce signals/alerts but cannot place orders.
+
+C. ANALYSIS-ONLY
+Can analyze market data but cannot place orders.
+
+D. BROKEN / MISWIRED
+Claims live ability but cannot place orders or routes through the wrong path.
+
+Audit and fix:
+- Chart trade/order ticket
+- Scanner trade actions
+- Trade page/manual ticket
+- Eleanor chat commands
+- Eleanor chart read trade suggestions
+- AI Trading
+- Profit Engine
+- Scalp Machine
+- Flare Machine
+- one-click trade path
+- close trade path
+- modify SL/TP path
+- drag SL/TP path
+- pending order path if supported
+- auto-close path if supported
+- any “confirm live” or “execute” button
+
+Requirements:
+- Every live function must route through the sanctioned liveCommandPipeline or approved live dispatch chokepoint.
+- No direct mt5_commands inserts outside approved chokepoints.
+- No direct broker-send primitives outside approved chokepoints.
+- No simulator/paper/demo fallback in live path.
+- No fake “executed” state before broker confirmation.
+- No UI saying “live” when backend says alert-only or analysis-only.
+
+Part 4 — Real live test trade proof
+
+This task cannot be marked complete until real live test trades are placed and verified through every supported live entry point.
+
+Use smallest safe lot size available and close immediately after confirmation unless the operator says otherwise.
+
+For each supported entry point, prove full lifecycle:
+
+1. Preflight
+- user live active
+- allocation available
+- bridge connected
+- broker feed confirmed
+- symbol mapped
+- risk checks passed
+- kill switch clear
+
+2. Submit
+- order sent through approved live pipeline
+- command/audit record created
+- broker request id recorded
+
+3. Broker confirmation
+- broker confirms order accepted/opened
+- broker ticket/order id saved
+- position appears in Open Trades / Positions
+
+4. Close
+- close command sent through approved pipeline
+- broker confirms close
+- position disappears or moves to closed/history
+- realized P/L recorded
+- audit trail complete
+
+5. UI refresh
+- chart reflects position lifecycle
+- open trades updates
+- positions updates
+- cockpit balance/allocation updates
+- Eleanor/trade logs explain what happened
+
+Required live test matrix:
+- Chart/manual ticket: open + close
+- Scanner trade button: open + close
+- Trade page/manual order: open + close
+- Eleanor chat command: open + close
+- AI Trading: live order path test or prove alert-only
+- Profit Engine: live order path test or prove alert-only
+- Scalp Machine: live order path test or prove alert-only
+- Flare Machine: live order path test or prove alert-only
+- One-click path: open + close if enabled
+- Modify path: open, modify SL/TP, close
+- Drag SL/TP path: open, drag/modify, close if supported
+
+If any function cannot safely place a live test trade, mark it as not complete and explain exactly why.
+
+Part 5 — Truthful UI labels
+
+Every screen must show the same readiness truth:
+- Account
+- Feed
+- Allocation
+- Bridge
+- Risk
+- Execution
+
+Examples:
+
+If everything is ready:
+“Live ready · Broker feed confirmed · Allocation available”
+
+If feed fails:
+“Live account active · Entry blocked: broker feed not confirmed”
+
+If allocation fails:
+“Live account active · Entry blocked: no available allocation”
+
+If function is alert-only:
+“Alert-only · This engine does not place live orders”
+
+If function is analysis-only:
+“Analysis-only · No live order will be sent”
+
+Do not show “Trading enabled” unless that exact function can actually submit a live order through the live pipeline.
+
+Part 6 — Feed completeness debug panel
+
+Add a support/debug panel for feed issues showing:
+- symbol
+- broker symbol
+- timeframe
+- source
+- last tick time
+- last candle time
+- server time
+- local time
+- age in seconds
+- missing interval count
+- expected interval
+- bridge heartbeat age
+- provider fallback status
+- broker confirmation status
+- liveEntryEligible true/false
+- exact blocker list
+
+This panel should explain why a chart that visually matches another chart is still blocked, if the issue is source proof or freshness proof.
+
+Part 7 — Tests
+
+Add/update tests proving:
+
+Feed truth:
+- broker-confirmed MT5 feed is not mislabeled historical
+- historical/fallback feed cannot pass live gate
+- stale tick blocks live entry
+- stale candle blocks live entry
+- symbol mapping mismatch blocks live entry
+- missing intervals show clearly
+- chart/scanner/Eleanor/order route all agree on feed state
+
+Live readiness:
+- Full Live Activated + shared bridge + allocation + feed resolves liveEntryEligible
+- missing allocation blocks
+- missing feed blocks
+- stale bridge blocks
+- kill switch blocks
+- multiple blockers are returned together
+
+Execution routing:
+- chart routes through approved live pipeline
+- scanner routes through approved live pipeline
+- Eleanor routes through approved live pipeline
+- AI/profit/scalp/flare either route through approved pipeline or are labeled alert-only/analysis-only
+- no direct broker send
+- no direct mt5_commands insert outside approved chokepoint
+- no fake broker confirmation
+
+Lifecycle:
+- open order creates broker command/audit
+- broker accepted state updates open positions
+- close order confirms broker close
+- UI refreshes after close
+- realized P/L is captured
+
+Part 8 — Verification required
+
+Run:
+- feed confidence tests
+- symbol mapping tests
+- chart route tests
+- scanner route tests
+- Eleanor route tests
+- AI/profit/scalp/flare route tests
+- liveCommandPipeline tests
+- allocation resolver tests
+- bridge heartbeat tests
+- open/close lifecycle tests
+- no-direct-execution guards
+- frontend typecheck
+- backend typecheck
+- ci:guards
+- full relevant integration lane
+
+Then perform real live broker test trades using smallest safe lot:
+- chart
+- scanner
+- trade page
+- Eleanor
+- AI trading if live-capable
+- profit engine if live-capable
+- scalp machine if live-capable
+- flare machine if live-capable
+- modify/close paths
+
+Report exact pass/fail counts and broker proof:
+- entry point
+- symbol
+- lot size
+- order side
+- broker ticket/order id
+- opened timestamp
+- closed timestamp
+- realized P/L
+- audit id
+- command id
+- screenshots/log proof if available
+
+Completion rule:
+Do not mark this task complete unless:
+1. Feed truth is fixed or honestly explained.
+2. Every live-capable function either places a real live test trade successfully or is clearly labeled alert-only/analysis-only.
+3. The same readiness resolver powers chart, scanner, Eleanor, AI/profit/scalp/flare, and live dispatch.
+4. Live test trades are proven through all supported entry points.
+5. No live safety gates are weakened.
+6. No simulated/demo/paper path is used as proof.
+7. Remaining failures are listed with exact blockers and next fix.
+
+Acceptance:
+ARX truthfully and fully supports live trading across every function that allows it. If a function shows live execution, it must place a real broker-confirmed live test trade through the approved live pipeline. If it cannot, the app must say why and label it accurately. The task is incomplete until live broker order lifecycle proof exists for chart, scanner, trade page, Eleanor, AI trading, profit engine, scalp machine, flare machine, and every other live-capable path.

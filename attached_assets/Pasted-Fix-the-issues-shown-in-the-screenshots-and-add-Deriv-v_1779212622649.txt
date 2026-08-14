@@ -1,0 +1,242 @@
+Fix the issues shown in the screenshots and add Deriv volatility market feed support.
+
+Check what already exists first.
+Reuse current scanner, trade ticket, Ruby Market Intelligence, auth/session, master bridge routing, safety gates, Deriv/symbol mapping, and event badge code.
+Build only what is missing or broken.
+Do not break the app.
+Do not auto-place live trades.
+Do not enable public master live trading.
+Do not bypass admin/user approval toggles.
+Do not expose bridge tokens, Deriv tokens, API keys, broker passwords, or secrets.
+arx_live_commands must remain unchanged before/after.
+
+ISSUES FROM SCREENSHOTS / USER REPORT:
+
+1. App loads directly to dashboard instead of login.
+2. Bottom menu/nav bar floats over content while scrolling.
+3. Trade ticket risk/reward is unrealistic because stop loss is too close to entry.
+4. Reward-to-risk logic must include a reasonable market-assessed stop loss.
+5. Stop loss cannot be placed directly at entry because broker spread, stop-level, freeze-level, slippage/bleed, and minimum distance can invalidate it.
+6. Synthetic Indices / Volatility markets show “live broker feed required”; now load real feed from Deriv when configured.
+7. Active demo bridge warning shows stale bridge #284 / EA v1.26; scanner ticket should use the current connected bridge and show a clean user message.
+8. Recent Scanner Trades still shows raw FILLED_DEMO language to normal users; normal UI should use clean labels like Filled.
+
+PART 1 — AUTH / LOGIN FLOW FIX
+
+Audit existing auth/session behavior.
+
+Fix:
+- If user is not authenticated, app must load login page first.
+- Protected routes must redirect to login.
+- Dashboard, Market Scanner, Trade, MT5 Setup, Live Trading, Master Bridge Dashboard, Admin pages, and Reconciliation Center must require valid session.
+- If there is a remembered session, app may open dashboard only if session is valid and not expired.
+- If session is expired/invalid, clear it and redirect to login.
+- Do not rely on frontend-only route guards.
+- Add server-side auth checks where missing.
+- Admin pages must still require admin role.
+
+Add QA:
+- logged-out user opening root goes to login
+- logged-out user opening /market-scanner goes to login
+- expired session redirects to login
+- valid session opens dashboard
+- non-admin cannot access admin pages or APIs
+
+PART 2 — BOTTOM MENU / NAV FLOATING FIX
+
+Fix mobile bottom navigation so it does not cover content awkwardly while scrolling.
+
+Requirements:
+- bottom nav can remain fixed/sticky, but content must have safe bottom padding so cards/buttons/tables are not hidden behind it
+- floating Ruby bubble must not cover primary action buttons
+- scanner trade buttons must remain tappable
+- Recent Scanner Trades table must not be hidden by nav
+- support iPhone safe-area inset
+- avoid double scroll containers causing nav to drift/flicker
+- bottom nav should look anchored, not randomly floating over content
+
+Add QA:
+- mobile scanner scroll
+- trade ticket modal scroll
+- Recent Scanner Trades visible
+- Ruby bubble does not block buttons
+- bottom nav does not cover content
+
+PART 3 — RISK / REWARD + REASONABLE STOP LOSS FIX
+
+Fix the trade ticket risk/reward calculation.
+
+Current issue:
+The screenshot shows risk/reward is unrealistic because stop loss is nearly at entry. Do not allow SL to default one tick away from entry.
+
+Build a stop-loss assessment engine:
+
+calculateReasonableStopLoss(symbol, side, entryPrice, timeframe, marketContext)
+
+Use available data:
+- support/resistance
+- recent swing high/low
+- ATR or volatility proxy
+- spread
+- broker minimum stop distance if available
+- freeze level / stop level if available
+- slippage/bleed buffer
+- symbol pip/tick size
+- market session volatility
+- Ruby setup invalidation point
+- scanner confidence
+- news/event risk
+
+Rules:
+1. Stop loss must not default directly at entry.
+2. Stop loss must respect broker minimum stop distance.
+3. Stop loss must include spread/slippage buffer.
+4. For BUY:
+   - SL should usually be below support/swing low/invalidation point.
+5. For SELL:
+   - SL should usually be above resistance/swing high/invalidation point.
+6. If market data is insufficient, use ATR/spread/min-distance fallback.
+7. If a proposed SL is invalid, show:
+   “Stop loss too close to entry. Adjusted to broker-safe distance.”
+8. If no safe SL can be calculated, block review and show:
+   “A valid stop loss is required before review.”
+9. Risk/reward must use the validated SL and TP, not raw unvalidated user input.
+10. Show:
+   - estimated risk in price units
+   - estimated risk in account currency if balance/tick value available
+   - estimated reward
+   - R:R
+   - stop distance
+   - spread buffer
+   - reason for suggested SL
+
+Add UI copy:
+“Suggested SL is based on market structure, volatility, spread, and broker minimum distance.”
+
+Add Ruby explanation:
+“Ruby’s suggested stop loss is placed beyond the invalidation area with a spread/volatility buffer, not directly at entry.”
+
+Fix impossible/absurd R:R:
+- If risk distance is near zero, mark invalid and force recalculation.
+- Do not show huge R:R caused by invalid SL.
+- Cap display or show warning:
+  “R:R unavailable until a valid stop loss is set.”
+
+PART 4 — DERIV VOLATILITY / SYNTHETIC FEED
+
+Add Deriv market-data feed support for Volatility/Boom/Crash/Synthetic indices.
+
+Check if Deriv integration already exists first.
+
+If missing, add a DerivFeedAdapter:
+
+Inputs/config:
+- DERIV_APP_ID
+- optional DERIV_API_TOKEN only if needed
+- DERIV_WS_URL configurable
+- default no-auth market data where supported
+- do not expose app id/token in UI/logs/Ruby memory
+
+Capabilities:
+- fetch active symbols
+- map synthetic/volatility symbols:
+  - V75 / Volatility 75
+  - Volatility 10 / 25 / 50 / 75 / 100
+  - Boom 1000 / Boom 500
+  - Crash 1000 / Crash 500
+  - Step Index if available
+- subscribe to live ticks
+- request ticks history/candle history when available
+- normalize symbol names for scanner display
+- provide price updates to scanner
+- provide recent candles if available
+- reconnect with backoff
+- heartbeat/status diagnostics
+- cache latest ticks/candles
+
+Scanner behavior:
+- If user selects Synthetic Indices, try Deriv feed first.
+- If Deriv feed is configured and connected, scan real Deriv feed.
+- If Deriv feed is not configured, show:
+  “Deriv feed not configured. Add DERIV_APP_ID to enable synthetic index data.”
+- If Deriv feed connected but symbol unavailable, show clean unavailable state.
+- Do not fabricate synthetic candles.
+- Keep the “live broker feed required” warning only when no Deriv feed/MT5 feed is available.
+
+Admin diagnostics:
+- Deriv feed status: Connected / Disconnected / Not configured
+- app id configured: yes/no only
+- token configured: yes/no only
+- active symbol count
+- subscribed symbols
+- last tick time
+- reconnect count
+- error message without secrets
+
+PART 5 — CURRENT CONNECTED BRIDGE SELECTION IN SCANNER TICKET
+
+Fix scanner ticket bridge warning.
+
+Current issue:
+Ticket shows stale bridge #284, EA v1.26, heartbeat stale, not dispatch-ready.
+
+Requirements:
+- Scanner trade ticket must use current connected bridge selection logic.
+- Ignore stale v1.26 bridge if current v1.27 or fresher bridge exists.
+- Show clean message:
+  “Bridge not ready” instead of raw codes.
+- Advanced details can show raw reasons.
+- If demo bridge stale, give action:
+  “Open MT5 Setup and refresh/attach the active EA.”
+- If master bridge mode is active, show:
+  “Routed through ARX Master Bridge.”
+- If current connected bridge is live but ticket is demo, keep demo/live routing clear and safe.
+
+PART 6 — UI LANGUAGE CLEANUP IN SCANNER TABLE
+
+Normal users should not see raw status codes.
+
+Map:
+- FILLED_DEMO → Filled
+- REJECTED_READ_ONLY_MODE_ACTIVE → Bridge read-only
+- HEARTBEAT_STALE → Bridge stale
+- NOT_VERIFIED_DEMO → Demo not verified
+- BRIDGE_NOT_CONNECTED → Bridge disconnected
+- USER_NOT_CONFIRMED → User confirmation required
+- MASTER_ACCOUNT_EXPOSURE_LIMIT_REACHED → Exposure limit reached
+
+Raw codes only in admin/debug/technical details.
+
+PART 7 — QA
+
+Run tests:
+
+1. logged-out root opens login, not dashboard.
+2. protected routes redirect to login.
+3. valid session opens dashboard.
+4. bottom nav does not cover scanner content on mobile.
+5. Ruby bubble does not cover Buy/Sell/Trade Setup buttons.
+6. trade ticket calculates reasonable SL.
+7. invalid too-close SL is blocked or adjusted.
+8. R:R does not show absurd value from near-zero risk.
+9. suggested SL reason appears.
+10. Deriv feed adapter reports Not configured cleanly if env missing.
+11. Deriv feed adapter connects if env configured.
+12. Synthetic Indices scanner uses Deriv feed when available.
+13. Synthetic unavailable state is clean when feed missing.
+14. scanner ticket uses current connected bridge, not stale bridge.
+15. raw scanner statuses are mapped to friendly labels.
+16. admin/debug still shows raw technical details.
+17. master bridge user approval gates still pass.
+18. one-click/concurrency safety still passes.
+19. no live trade auto-fires.
+20. arx_live_commands remains unchanged.
+21. no secrets leak.
+
+Output:
+If all pass:
+ARX_SCANNER_AUTH_RISK_DERIV_FIX_READY
+
+If anything fails:
+ARX_SCANNER_AUTH_RISK_DERIV_FIX_NOT_READY
+with exact blockers and fix only failing areas.

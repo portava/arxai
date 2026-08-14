@@ -1,0 +1,304 @@
+QA/FIX GATE — VERIFY SAFE EA/BRIDGE PREP SLICE WITHOUT BREAKING PAPER LOCK
+
+Do not add new features right now.
+Do not unlock live broker execution.
+Do not weaken the paper-only lock.
+Do not fake queueing.
+Do not fake broker placement.
+Do not change UI unless a small status-wiring fix is required.
+Do not rebuild.
+Do not redesign.
+Do not delete active ecosystem code.
+
+You just completed or are completing the safe EA/bridge prep slice.
+
+Now verify it fully and fix only confirmed issues with the smallest safe patch.
+
+==================================================
+PHASE 1 — CONFIRM THE SAFETY LOCK IS STILL INTACT
+==================================================
+
+Verify these protections are unchanged and still enforced:
+
+1. queueMt5CommandWithGate still blocks broker command queueing under the current paper-only lock.
+2. /mt5/status still reports liveLocked=true if that is the current Phase 12 invariant.
+3. paper_only_isolation guard still passes.
+4. live_trading_locked guard still passes.
+5. ReadOnlyMode default remains safe.
+6. AllowOrderExecution default remains safe.
+7. Existing DEMO_MARKET_ORDER-only path was not expanded into live execution.
+8. No live mt5_commands rows are inserted when paper lock blocks the action.
+9. No fake QUEUED, PLACED, or SUCCESS status is returned.
+
+If any lock was weakened, restore it immediately.
+
+==================================================
+PHASE 2 — VERIFY EA/MQL5 OFFLINE ASSET
+==================================================
+
+Inspect the generated or updated EA/MQL5 file.
+
+Confirm:
+
+1. Exact file path is clear.
+2. EA version is updated.
+3. EA exposes capabilities/version in heartbeat/status.
+4. Pending-order parsing exists if added:
+   - BUY_LIMIT
+   - SELL_LIMIT
+   - BUY_STOP
+   - SELL_STOP
+   - BUY_STOP_LIMIT
+   - SELL_STOP_LIMIT
+5. Modify/cancel parsing exists if added:
+   - MODIFY_POSITION_PROTECTION
+   - MODIFY_PENDING_ORDER
+   - CANCEL_PENDING_ORDER
+6. Broker actions remain disabled by default.
+7. EA requires explicit user input permission before any broker action.
+8. EA never silently returns success if MT5 rejects.
+9. EA result format is documented.
+
+Do not require the app to execute live broker actions yet.
+
+This EA file is an offline install asset only until the safety lock is intentionally upgraded later.
+
+==================================================
+PHASE 3 — VERIFY COMMAND VOCABULARY
+==================================================
+
+Confirm command vocabulary exists and is typed consistently:
+
+- PLACE_PENDING_ORDER
+- MODIFY_POSITION_PROTECTION
+- MODIFY_PENDING_ORDER
+- CANCEL_PENDING_ORDER
+
+Confirm these are vocabulary/capability additions only under the current safety lock.
+
+They must not bypass:
+
+- action guards
+- risk governor
+- confirmation guard
+- Shared Master attribution
+- paper-only lock
+- live trading lock
+- read-only mode
+- tradingDisabled
+
+==================================================
+PHASE 4 — VERIFY CAPABILITY DISCLOSURE
+==================================================
+
+Verify bridge/EA capability disclosure includes:
+
+- marketOrders
+- marketOrderSLTP
+- pendingOrders
+- stopLimitOrders
+- modifyPositionProtection
+- modifyPendingOrders
+- cancelPendingOrders
+- expiration
+- sharedMasterSafeRouting
+- eaVersion
+- bridgeVersion
+- lastHeartbeatAt
+
+Confirm:
+
+1. Capability data is exposed through existing bridge/status context.
+2. Missing capability data fails gracefully.
+3. Frontend does not assume capabilities.
+4. AI does not assume capabilities.
+5. Capability status does not imply live execution is unlocked.
+6. pendingOrders=true should only mean EA understands the feature, not that the app may bypass paper lock.
+
+==================================================
+PHASE 5 — VERIFY SUBMIT-DRAFT ROUTE
+==================================================
+
+Inspect the pending-order submit-draft route.
+
+It must run:
+
+1. authentication/session check
+2. user-scope check
+3. ticket validation
+4. risk governor
+5. action guards
+6. explicit confirmation requirement where applicable
+7. Shared Master routing/attribution check
+8. bridge/capability check
+9. paper lock/live lock/read-only/tradingDisabled check
+
+It must return honest statuses:
+
+- EA_UPGRADE_REQUIRED
+- BRIDGE_UNSUPPORTED
+- BRIDGE_DISCONNECTED
+- BLOCKED_BY_PAPER_LOCK
+- BLOCKED_BY_RISK
+- LIVE_LOCKED
+- READ_ONLY
+- TRADING_DISABLED
+- VALIDATED_DRAFT
+- PREVIEW_ONLY
+
+It must not return:
+
+- QUEUED
+- PLACED
+- SUCCESS
+
+unless the existing safety lock truly allows command queueing and MT5 confirms the action.
+
+Under current paper-only lock, expected result should be blocked/preview/draft status, not live queue.
+
+==================================================
+PHASE 6 — VERIFY FRONTEND STATUS WIRING
+==================================================
+
+Only patch frontend if status display is wrong.
+
+Pending-order UI should clearly show:
+
+1. Draft only
+2. EA upgrade required
+3. Bridge unsupported
+4. Bridge disconnected
+5. Blocked by paper lock
+6. Blocked by risk
+7. Read-only
+8. Live locked
+9. Trading disabled
+
+The UI must not show:
+
+- successfully placed
+- live
+- queued
+- sent to broker
+- broker accepted
+
+unless a real MT5 confirmation exists.
+
+Market order UI should remain unchanged except for safe SL/TP fields already added.
+
+==================================================
+PHASE 7 — VERIFY AI CONTEXT
+==================================================
+
+Verify ARX AI assistant understands the new safe state.
+
+AI must know:
+
+1. Pending-order draft does not mean placed.
+2. Queued does not mean placed.
+3. Pending order is live only after MT5 confirms real ticket/order id.
+4. Paper lock blocks broker execution.
+5. EA capability does not override platform safety.
+6. Risk governor and confirmation cannot be bypassed.
+7. Live execution is not enabled by default.
+
+AI should be able to answer:
+
+- Why is my pending order draft-only?
+- Why can’t this order be sent to MT5 yet?
+- Does the EA support pending orders?
+- Is the app live locked?
+- What does BLOCKED_BY_PAPER_LOCK mean?
+- What has to happen before pending orders can execute live?
+
+AI must not claim broker placement happened unless MT5 confirms it.
+
+==================================================
+PHASE 8 — VERIFY OPENAPI / CODEGEN
+==================================================
+
+If OpenAPI/codegen changed:
+
+1. Confirm schemas match actual route responses.
+2. Confirm typed client builds.
+3. Confirm Zod schemas are regenerated correctly.
+4. Confirm old clients/routes were not broken.
+5. Confirm no unsafe success enum was added without safety gating.
+
+==================================================
+PHASE 9 — RUN TESTS
+==================================================
+
+Run all available checks:
+
+- pnpm run typecheck
+- pnpm run ci:guards
+- pnpm test if available
+- pnpm run build if available
+- API route smoke tests
+- pending-order submit-draft route smoke tests
+- bridge capability/status smoke tests
+- EA file syntax/static check if available
+
+Required expected result:
+
+- paper_only_isolation passes
+- live_trading_locked passes
+- typecheck green
+- no fake success path exists
+- no command queue bypass exists
+
+Fix all real errors.
+
+==================================================
+PHASE 10 — MANUAL SAFETY MATRIX
+==================================================
+
+Manually verify:
+
+1. Pending order with missing auth returns 401.
+2. Pending order with bridge disconnected returns BRIDGE_DISCONNECTED or preview/draft status.
+3. Pending order with paper lock returns BLOCKED_BY_PAPER_LOCK or equivalent honest blocked state.
+4. Pending order with risk violation returns BLOCKED_BY_RISK.
+5. Pending order without confirmation does not queue.
+6. Pending order with EA unsupported returns EA_UPGRADE_REQUIRED or BRIDGE_UNSUPPORTED.
+7. Valid pending order still does not fake QUEUED under paper lock.
+8. Valid pending order still does not fake PLACED under paper lock.
+9. AI explains blocked/draft state correctly.
+10. Capability status shows what EA supports without implying live execution is enabled.
+11. Shared Master attribution is not broken.
+12. No user can see another user’s draft/order state.
+13. No broker execution path is unlocked by default.
+
+==================================================
+FINAL REPORT
+==================================================
+
+Create or update:
+
+SAFE_EA_BRIDGE_PREP_QA_REPORT.md
+
+Include:
+
+1. Safety lock status
+2. EA/MQL5 file path
+3. EA capability summary
+4. Command vocabulary added
+5. Capability disclosure result
+6. Submit-draft route result
+7. Honest statuses verified
+8. Frontend status wiring result
+9. AI context result
+10. OpenAPI/codegen result
+11. Files changed
+12. Tests run
+13. Typecheck result
+14. CI guard result
+15. Any failures fixed
+16. Remaining blockers
+17. Exact manual MT5 installation step still required
+18. Confirmation that no live broker execution was enabled
+19. Confirmation that no fake QUEUED/PLACED/SUCCESS path was added
+20. Confirmation that paper_only_isolation and live_trading_locked still pass
+
+Stop after this QA/fix gate and report.

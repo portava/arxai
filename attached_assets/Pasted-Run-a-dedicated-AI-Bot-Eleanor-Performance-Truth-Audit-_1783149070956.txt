@@ -1,0 +1,351 @@
+Run a dedicated AI Bot / Eleanor Performance Truth Audit for ARX AI.
+
+Goal:
+Make sure the AI bot, Eleanor, can actually perform based on ARX’s real app intelligence — not isolated chat logic, not fake confidence, not local-only suggestions, and not disconnected “AI-sounding” responses.
+
+Eleanor must be able to read and reason from the same central truth systems used by the rest of the app:
+- scanner truth
+- chart action truth
+- selected symbol/timeframe
+- market data freshness
+- MT5 bridge state
+- live account state
+- open positions
+- closed trades/history
+- Profit Mission state
+- Auto Pilot state
+- risk/governance settings
+- one-click state
+- kill switch
+- admin/user live approval
+- notifications/audit events
+- strategy registry/config
+- FVG/flame/trend logic where available
+
+Do not rebuild Eleanor. First inspect what is actually built, then patch only confirmed gaps. No fake validation.
+
+Core rules:
+- Eleanor must not claim she can see something unless backend/app truth proves it.
+- Eleanor must not say a trade was placed unless the live pipeline confirms it.
+- Eleanor must not bypass live execution gates.
+- Eleanor must not invent account balance, P&L, bridge state, scanner verdicts, candle data, or open positions.
+- Eleanor must not give fake confidence scores.
+- Eleanor must not pretend Auto Pilot or Profit Mission is active unless backend truth says so.
+- Eleanor must route any live trade request through the same existing instant-trade / live intent / 18-gate execution pipeline used by the rest of ARX.
+- If Eleanor cannot access a data source, she must say it is unavailable instead of guessing.
+- If voice or chat is only advisory, label it honestly.
+- If a requested action is blocked, Eleanor must explain the exact blocked reason.
+
+Audit scope:
+1. Eleanor chat UI
+2. Voice / speech controls
+3. Chat command parser
+4. AI planner / decision engine
+5. Scanner-to-Eleanor context
+6. Chart-to-Eleanor context
+7. Auto Pilot-to-Eleanor context
+8. Profit Mission-to-Eleanor context
+9. Live execution request path
+10. Account/position/P&L read path
+11. Bridge status read path
+12. Risk/governance read path
+13. Strategy/FVG/flame/trend context
+14. Notification/audit event context
+15. Any AI memory/session/context stores
+16. Any admin-only AI test harnesses
+17. Any API routes used by Eleanor
+
+Part A — Identify the real central intelligence system
+
+Find and document:
+- The actual AI planner/brain module(s)
+- The chat API route(s)
+- The execution intent parser
+- The scanner verdict source
+- The chart action source
+- The Auto Pilot planner source
+- The Profit Mission context source
+- The voice transcript/action path
+- The audit/event logging path
+
+Classify Eleanor’s current intelligence connection:
+- REAL: reads central app truth and can act through proper backend paths
+- PARTIAL: reads some truth but misses key systems
+- SHELL: mostly UI/chat without real app context
+- MISLEADING: claims app awareness/action without backend truth
+- HIDDEN: backend intelligence exists but UI cannot call it
+- DUPLICATE: separate AI logic exists outside central brain and may conflict
+
+Part B — App intelligence access audit
+
+Verify Eleanor can access or honestly report unavailable for each of these:
+
+Scanner:
+- selected symbol
+- selected timeframe
+- scanner verdict
+- actionability state
+- entry/setup score if valid
+- FVG/flame/trend context if available
+- stale/no-confirmation state
+
+Chart:
+- current chart symbol/timeframe
+- chart action button state
+- visible action verdict
+- candle freshness if available
+- no conflict with scanner/header truth
+
+Live account:
+- account balance/equity/margin if available
+- open positions
+- closed trades
+- current P&L
+- bridge connected/stale/offline state
+- broker execution availability
+
+Execution:
+- live approval
+- entitlement
+- one-click state
+- kill switch state
+- bridge freshness
+- risk/governance blocks
+- order submit accepted/rejected result
+- trade filled/failed result
+
+Profit Mission:
+- active mission
+- target
+- starting amount/currentValue
+- progress
+- realized/unrealized P&L contract
+- blocked/completed/failed state
+- mission trade history
+- mission timeline
+
+Auto Pilot:
+- enabled/disabled state
+- armed/running/blocked state
+- blocked reason
+- last decision
+- last rejected action
+- whether Auto Pilot is page-bound or backend-running
+
+Strategy:
+- strategy mode
+- FVG rules
+- trend timeframe agreement
+- flame/scalp state
+- risk mode
+- allowed markets
+- session/news constraints if available
+
+If any context is missing:
+- Decide whether to connect it now, expose it as unavailable, or subdue the claim.
+- Do not fake the missing context.
+
+Part C — Eleanor action audit
+
+Audit all actions Eleanor can claim or attempt:
+
+1. Explain market
+2. Explain scanner verdict
+3. Explain chart action
+4. Explain current position
+5. Place Buy/Sell
+6. Close trade
+7. Modify SL/TP
+8. Start/Pause Auto Pilot
+9. Start/Pause/Explain Profit Mission
+10. Run backtest or explain backtest result
+11. Explain why trade was blocked
+12. Explain account risk
+13. Explain bridge status
+14. Summarize recent trades
+15. Summarize notifications/audit events
+
+For each action, verify:
+- UI command exists or does not exist
+- backend endpoint exists
+- required context exists
+- action is routed through the correct service
+- blocked states are handled honestly
+- result is shown from backend truth
+- audit event is created where needed
+- tests exist
+
+Fix any action that:
+- only updates local chat state
+- says success without backend confirmation
+- calls a fake/mock/demo endpoint
+- bypasses live gates
+- does not include user/account isolation
+- does not include symbol/timeframe context when required
+- does not show blocked reason
+
+Part D — Execution safety audit for Eleanor
+
+For every Eleanor path that can place/close/modify a trade:
+- Trace UI command → API route → service → live queue / 18-gate pipeline.
+- Verify it does not import direct MT5/broker mailbox writer.
+- Verify it cannot call backtest/testing routes for live trading.
+- Verify mission/autopilot/chat execution paths are separate but converge only at the approved live pipeline.
+- Verify kill switch blocks it.
+- Verify bridge stale/offline blocks it.
+- Verify missing approval blocks it.
+- Verify entitlement blocks it.
+- Verify per-user/account isolation.
+- Verify rejected result does not render as success.
+- Verify one-click behavior matches current app contract.
+
+Add/extend guards if missing:
+- Eleanor/chat cannot import direct broker/MT5 writer.
+- Eleanor/chat live actions must route through approved execution service.
+- Eleanor/chat cannot call backtest/testing live paths.
+- Eleanor/chat cannot use Math.random/fake P&L/fake scanner verdicts in user-facing output.
+- Eleanor execution responses must include backend accepted/rejected/blocked truth.
+
+Part E — Honesty audit for AI responses
+
+Search all Eleanor/chat/AI code for:
+- mock
+- demo
+- paper
+- simulator
+- simulated
+- dummy
+- fixture
+- Math.random
+- fake
+- placeholder
+- TODO
+- coming soon
+- sample
+- stub
+- hardcoded
+- inMemory
+- dryRun
+- generateDummy
+- fakeBalance
+- fakeProfit
+- fakeSignal
+- fakeConfidence
+- testOnly
+
+Separate:
+- valid tests
+- valid fixture-only code
+- invalid user-facing fake intelligence
+- invalid fake execution result
+- invalid fake confidence/status
+
+Fix or subdue anything user-facing that lies.
+
+Part F — Voice audit
+
+Verify voice is not just a decorative shell:
+- Push-to-record only, if that is current contract.
+- No auto-listen if disabled by product direction.
+- Transcript correctly enters the same command parser as chat.
+- Voice trade command uses same blocked/approved live path.
+- Voice errors render honestly.
+- Voice does not claim execution until backend confirms it.
+- Voice state does not remain “listening/thinking/executed” after failure.
+- Voice identity says Eleanor, not Ruby, unless legacy naming remains intentionally internal.
+
+Fix naming drift:
+- User-facing assistant should be Eleanor.
+- Remove or subdue Ruby labels from user-facing chat/voice if they still appear.
+- Internal module names may remain if changing them would be risky, but user-facing copy must be Eleanor.
+
+Part G — Central brain coherence
+
+Make sure these do not conflict:
+- Scanner verdict
+- Chart action button
+- Header action
+- Eleanor explanation
+- Auto Pilot decision
+- Profit Mission status
+- Notification/audit stream
+
+If Eleanor explains a different action than the scanner/chart shows, fix the context source so they use the same keyed truth.
+
+Required tests:
+Add or update tests proving:
+
+Context:
+- Eleanor reads selected symbol/timeframe.
+- Eleanor reads scanner/chart action truth.
+- Eleanor reports unavailable when scanner truth is unresolved.
+- Eleanor reads bridge state honestly.
+- Eleanor reads open positions/account state from backend truth.
+- Eleanor reads active Profit Mission state if present.
+- Eleanor reads Auto Pilot blocked/running state if present.
+
+Execution:
+- Eleanor Buy/Sell routes through approved live pipeline only.
+- Eleanor close/modify routes through approved live pipeline only.
+- Kill switch blocks Eleanor execution.
+- Stale bridge blocks Eleanor execution.
+- Missing live approval blocks Eleanor execution.
+- Backend rejected action shows rejected/blocked, not success.
+- Eleanor cannot import direct MT5 writer.
+
+Honesty:
+- No fake P&L, fake balance, fake scanner verdict, or fake confidence in user-facing AI code.
+- Voice command and chat command share the same parser/execution path.
+- User-facing assistant name is Eleanor.
+- Late or stale context for an old symbol cannot override current selected symbol explanation.
+
+Profit Mission / Auto Pilot integration:
+- Eleanor can explain active mission progress from backend truth, or says unavailable.
+- Eleanor can explain why Auto Pilot is blocked/running from backend truth, or says unavailable.
+- Eleanor does not claim mission/autopilot is active from local-only UI state.
+
+Validation:
+Run:
+- Eleanor/chat tests
+- voice tests
+- scanner truth/actionability tests if touched
+- chart/header alignment tests if touched
+- live execution safety tests
+- Profit Mission tests if touched
+- Auto Pilot tests if touched
+- frontend/dashboard typecheck
+- scripts/backend typecheck
+- CI guards
+- full CI lane if available
+
+No fake green:
+- Do not mark validation passed unless logs show explicit PASS.
+- If a lane is killed/timed out/reaped, mark INCOMPLETE and rerun smaller.
+- If a failure is pre-existing, prove it with exact file/test evidence.
+
+Final report must include:
+
+1. What Eleanor can actually do today
+2. What Eleanor claimed but could not really do
+3. Exact central brain/app intelligence sources Eleanor uses
+4. Missing intelligence connections found
+5. Execution path proof for trade commands
+6. Blocked-state proof
+7. Voice truth status
+8. Ruby/Eleanor naming drift found and fixed
+9. Mock/demo/fake AI leaks found
+10. Files changed
+11. Tests/guards added or updated
+12. Exact validation commands and pass/fail counts
+13. Remaining product decisions
+
+Acceptance criteria:
+- Eleanor performs only from real ARX app intelligence.
+- Eleanor uses scanner/chart/live/mission/autopilot/account truth where available.
+- Eleanor says unavailable instead of guessing when truth is missing.
+- Eleanor trade actions use the same gated live pipeline only.
+- No fake trade success.
+- No fake account/market/P&L/scanner confidence.
+- Voice and chat share the same honest action path.
+- User-facing assistant name is Eleanor.
+- Validation is explicit and not assumed.

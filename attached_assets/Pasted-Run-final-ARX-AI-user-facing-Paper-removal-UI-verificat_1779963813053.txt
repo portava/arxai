@@ -1,0 +1,111 @@
+Run final ARX AI user-facing Paper removal UI verification.
+
+Do not place a trade.
+Do not insert arx_live_commands.
+Do not weaken live safety gates, 16-gate evaluator, liveTrading chokepoint, allocation checks, kill switch, or audit logging.
+
+GOAL:
+Confirm Paper Trading is removed from the active ARX product and is not visible anywhere reachable by users or admins.
+
+CHECK USER-FACING SURFACES:
+Search and visually inspect:
+- Login
+- Cockpit
+- Trade page
+- Scanner
+- Trade ticket
+- Ruby chat
+- Ruby setup explanations
+- More page
+- User account status
+- Live bridge request card
+- Live readiness panels
+- User allocation/balance pages
+- Admin User Control Center
+- Manage Access
+- Push Settings
+- Risk Templates
+- Live Shared Account
+- Provider Health
+- Bridge Nodes
+- Walkthroughs/help text
+- Status badges
+- Error/blocker cards
+
+No user-facing screen should show:
+- Paper
+- Paper Trading
+- Paper Only
+- PAPER ONLY
+- paper-trading
+
+Allowed public modes:
+- Demo
+- Live
+- Live Shared Bridge
+- Watch Only
+- Scanner Off
+- Request Live Bridge Access
+
+INTERNAL LEGACY TERMS:
+If internal code still contains paper terminology, verify those are only:
+- hidden safety primitives
+- legacy compatibility mappings
+- test aliases
+- migration guards
+- internal regex/search aliases
+- non-rendered internal enum values
+
+They must not be rendered to users.
+
+ROUTE CHECK:
+If /paper-trading exists:
+- it should not appear in navigation
+- it should redirect to Demo/Trade
+- it should not show a Paper page
+
+RUBY CHECK:
+Ask Ruby:
+- “What modes does ARX support?”
+- “Can I use paper trading?”
+- “Why am I blocked from live?”
+
+Ruby should answer using only:
+- Demo
+- Live
+- Live Shared Bridge
+- Request Live Access
+
+Ruby should not mention Paper as an active product feature.
+
+ADMIN CHECK:
+Admin should not be able to assign Paper as a mode.
+Admin should see:
+- Demo Access
+- Live Access
+- Shared Bridge Access
+- Watch Only
+- Scanner Off
+
+Not:
+- Paper Access
+- Paper Only
+
+SAFETY CHECK:
+Before and after QA:
+- confirm arx_live_commands count unchanged
+- no live trade placed
+- no live command inserted
+- no dispatch executed except safe dry-run if needed
+
+FINAL REPORT:
+Return:
+- Paper removed from reachable user UI: PASS/FAIL
+- Paper removed from admin active controls: PASS/FAIL
+- Ruby no longer mentions Paper as active mode: PASS/FAIL
+- /paper-trading route hidden/redirected: PASS/FAIL
+- Internal legacy terms are hidden only: PASS/FAIL
+- arx_live_commands before/after count
+- any remaining visible Paper strings with file/component location
+
+Run typecheck/build/tests and fix anything that fails before stopping.

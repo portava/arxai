@@ -1,0 +1,468 @@
+Implement the ARX Locked Top 250 Market Universe.
+
+Right now, users should only see the approved ARX Top 250 markets. No extra symbols, random broker symbols, unsupported markets, internal test symbols, simulator-only markets, or provider leftovers should appear in user-facing market search, scanner, chart selector, Ruby symbol picker, trade ticket, market lists, or watchlists.
+
+Ruby must automatically understand a market when the user uses the real name, common nickname, abbreviation, broker alias, or standard symbol.
+
+Any market that has no real data whatsoever must not be selectable by regular users until it becomes available.
+
+Do not change live execution routing.
+Do not change the MT5 bridge.
+Do not weaken Risk Governor, AACI, Security Handshake, Chart Truth, Scanner Truth, or broker mapping.
+Do not let simulator data make a market selectable.
+Do not expose backend/internal/debug labels to regular users.
+
+==================================================
+PRIMARY PRODUCT RULE
+==================================================
+
+The only markets users should see right now are the ARX Top 250 Market Universe.
+
+A market may appear to users only if:
+1. It exists in the approved Top 250 symbol directory.
+2. It has at least one real data source available, or a broker-supported mapping with active/fresh feed.
+3. It is not simulator-only.
+4. It is not internal/test/dev-only.
+5. It has a user-safe display name.
+6. Ruby can resolve aliases/nicknames to the correct symbol.
+
+A market may be tradeable only if:
+1. It is in the approved Top 250 list.
+2. Broker symbol mapping is confirmed.
+3. Real data exists.
+4. Feed is fresh enough.
+5. Chart Truth passes.
+6. Scanner Truth passes if scanner-based.
+7. Risk Governor passes.
+8. AACI passes.
+9. Security Handshake passes.
+10. Bridge/account mode allows trading.
+
+A market may be visible but disabled if:
+- It is in the Top 250 list.
+- It is a planned/approved ARX market.
+- But the provider/broker data is currently unavailable.
+
+Disabled user copy:
+“Data not available yet.”
+
+Do not allow selection until data becomes available.
+
+==================================================
+STEP 1 — CREATE APPROVED TOP 250 SYMBOL DIRECTORY
+==================================================
+
+Create one canonical approved market universe.
+
+Suggested file:
+lib/markets/arxTop250MarketUniverse.ts
+or use the existing symbol directory if one exists.
+
+Each market must have:
+
+type ArxMarket = {
+  id: string;
+  standardSymbol: string;
+  displayName: string;
+  assetClass:
+    | "forex_major"
+    | "forex_cross"
+    | "forex_exotic"
+    | "metal"
+    | "energy"
+    | "index"
+    | "stock"
+    | "etf"
+    | "crypto"
+    | "synthetic"
+    | "commodity";
+
+  approved: true;
+  rank: number;
+
+  aliases: string[];
+  brokerAliases: string[];
+
+  providerSymbols?: {
+    mt5?: string[];
+    deriv?: string[];
+    twelveData?: string[];
+    polygon?: string[];
+    finnhub?: string[];
+    alphaVantage?: string[];
+  };
+
+  riskTier: "low" | "medium" | "high" | "extreme";
+  scannerPriority: "core" | "active" | "extended" | "high_risk";
+  rubyPriority: "core" | "normal" | "low";
+  beginnerFriendly: boolean;
+  scalpEligible: boolean;
+  swingEligible: boolean;
+  newsSensitive: boolean;
+  sessionSensitive: boolean;
+
+  requiresVerifiedBrokerMapping: boolean;
+  requiresFreshFeed: boolean;
+  tradeableOnlyIfBrokerConfirms: boolean;
+
+  visibilityStatus?: "visible" | "disabled_no_data" | "hidden";
+  disabledReason?: string;
+};
+
+Use the Top 250 list already approved in the previous message as the starting universe.
+
+==================================================
+STEP 2 — USER-FACING SYMBOL FILTER
+==================================================
+
+Create or update a helper:
+
+getUserVisibleMarkets(context)
+
+This must return only markets from the approved Top 250 directory.
+
+Filter out:
+- symbols not in Top 250
+- simulator-only symbols
+- internal/dev/test symbols
+- raw broker symbols that are not mapped to approved markets
+- unsupported provider leftovers
+- markets with no data whatsoever unless shown as disabled
+- hidden markets
+
+Regular user UI must never directly list arbitrary provider output.
+
+Provider/broker discovery may return many symbols, but user-facing UI must intersect those results against the approved Top 250 directory.
+
+Rule:
+providerSymbols ∩ approvedTop250 = user-visible candidates
+
+Never:
+providerSymbols = user-visible list
+
+==================================================
+STEP 3 — DATA AVAILABILITY GATE
+==================================================
+
+Add or update market availability resolver.
+
+Suggested:
+
+resolveMarketAvailability(market, context)
+
+It should check:
+
+- approved Top 250 membership
+- provider availability
+- broker symbol mapping
+- MT5 quote/candle availability if present
+- Deriv availability for synthetics
+- TwelveData/Polygon availability for analysis feeds
+- chart feed status
+- last candle time
+- last quote time
+- aiUsable
+- simulator-only status
+- stale/delayed status
+
+Return:
+
+type MarketAvailability = {
+  marketId: string;
+  standardSymbol: string;
+  displayName: string;
+  approved: boolean;
+  visible: boolean;
+  selectable: boolean;
+  tradeable: boolean;
+  disabledReason?: string;
+  dataStatus:
+    | "live"
+    | "fresh"
+    | "delayed"
+    | "stale"
+    | "no_data"
+    | "simulator_only"
+    | "provider_missing"
+    | "broker_mapping_missing";
+  sourcesAvailable: string[];
+  brokerMapped: boolean;
+  feedFresh: boolean;
+  aiUsable: boolean;
+};
+
+User selection rule:
+- selectable = true only if dataStatus is live/fresh/delayed/stale with real provider data, depending on product choice
+- selectable = false if no_data, simulator_only, provider_missing, or unmapped planned market
+- tradeable = true only when all trade gates pass
+
+For the user’s instruction:
+Any market that has no data whatsoever must not be selectable until it becomes available.
+
+==================================================
+STEP 4 — RUBY SYMBOL RESOLUTION / ALIASES
+==================================================
+
+Ruby must understand market names automatically.
+
+Create or update:
+
+resolveUserMarketInput(inputText)
+
+It should match:
+
+- standard symbol
+- display name
+- common abbreviation
+- broker alias
+- common nickname
+- spaced format
+- punctuation differences
+- lowercase/uppercase
+- common spoken versions
+
+Examples:
+
+"gold" → XAUUSD
+"xau" → XAUUSD
+"xauusd" → XAUUSD
+"gold usd" → XAUUSD
+"nasdaq" → US100
+"nas100" → US100
+"ustec" → US100
+"us tech" → US100
+"dow" → US30
+"dow jones" → US30
+"wall street 30" → US30
+"spx" → US500
+"s&p" → US500
+"sp500" → US500
+"oil" → USOIL or ask if ambiguous between USOIL/UKOIL
+"brent" → UKOIL/BRENT depending mapping
+"bitcoin" → BTCUSD
+"btc" → BTCUSD
+"ethereum" → ETHUSD
+"eth" → ETHUSD
+"v75" → Volatility 75 Index
+"vol 75" → Volatility 75 Index
+"volatility 75" → Volatility 75 Index
+"v75 1s" → Volatility 75 1s Index
+"boom 1000" → Boom 1000 Index
+"crash 500" → Crash 500 Index
+
+If input is ambiguous:
+- ask a short clarifying question
+- show only approved Top 250 matches
+- do not guess into a wrong market
+
+Example:
+User says “oil”
+Ruby should ask:
+“Do you mean USOIL/WTI or UKOIL/Brent?”
+
+If input is not in Top 250:
+Ruby should say:
+“That market is not available in ARX right now.”
+
+If input is in Top 250 but no data:
+Ruby should say:
+“That market is approved for ARX, but data is not available yet.”
+
+==================================================
+STEP 5 — APPLY FILTER EVERYWHERE USERS SEE MARKETS
+==================================================
+
+Apply approved Top 250 + availability filtering to:
+
+- Market search
+- Symbol picker
+- Scanner market list
+- Broad Scan universe
+- Focus Scan universe
+- Smart Chart selector
+- Ruby market picker
+- Ruby typed symbol resolver
+- Trade ticket symbol dropdown
+- Watchlists
+- Dashboard market cards
+- Market alerts creation
+- My Alerts symbol selector
+- Backtest market selector if user-facing
+- Admin user-facing impersonation mode
+- Any mobile market list
+- Any sidebar quick-market search
+
+Regular users should never see:
+- random broker symbol list
+- internal provider names
+- unsupported symbols
+- symbols with no data as selectable
+- simulator-only rows as normal markets
+
+Admin diagnostics may still see raw provider/broker symbols for troubleshooting, but clearly separated behind admin-only controls.
+
+==================================================
+STEP 6 — SCANNER RULES
+==================================================
+
+Scanner should scan only the approved Top 250 universe.
+
+Default:
+- Core scanner can prioritize the best subset.
+- Full scanner can scan all Top 250.
+- But no outside markets should appear.
+
+If a Top 250 market has no real data:
+- do not include it as a normal scanner result
+- show it only in admin diagnostics or a disabled “data not available” count
+- do not compute technicals over simulator data for regular users
+- do not show trade buttons
+- do not allow self-trade
+
+Scanner result must include:
+- approvedTop250: true
+- dataStatus
+- selectable
+- tradeable
+- disabledReason if not selectable/tradeable
+
+==================================================
+STEP 7 — CHART / SMART CHART RULES
+==================================================
+
+Users can only open/select charts for approved Top 250 markets with real data.
+
+If data is not available:
+- do not open a fake chart
+- show:
+  “Data not available for this market yet.”
+- if planned:
+  “This market is approved for ARX, but feed support is not active yet.”
+
+Do not fall back to simulator for regular user charts.
+
+Smart Chart can only produce analysis when:
+- chart feed exists
+- Chart Truth has enough data
+- aiUsable rules pass for confident read
+
+If feed is delayed/stale:
+- chart may show delayed/stale badge if real data exists
+- Ruby must give limited read only
+
+==================================================
+STEP 8 — TRADE TICKET RULES
+==================================================
+
+Trade buttons and trade tickets should appear only when:
+
+- market is in Top 250
+- market is selectable
+- broker mapping is confirmed
+- bridge/account mode supports trading
+- feed exists
+- broker symbol is tradable
+- Risk Governor passes
+- AACI passes
+- Security Handshake passes
+
+If market is approved but no data:
+- no trade button
+- no trade ticket
+- disabled reason:
+  “Data not available yet.”
+
+If market has data but broker mapping missing:
+- no trade button
+- reason:
+  “Broker symbol not confirmed.”
+
+If market has analysis feed but no broker support:
+- analysis-only
+- no trade button
+
+==================================================
+STEP 9 — UI COPY
+==================================================
+
+Use simple user-facing labels.
+
+Allowed statuses:
+- Available
+- Delayed
+- Data not available yet
+- Broker not confirmed
+- Analysis only
+- Not available in ARX
+- Waiting for verified feed
+
+Avoid:
+- assistant_real
+- aiUsable
+- feedStatus
+- provider slot
+- simulator
+- route names
+- mt5Provider
+- arx_symbol_specs
+- internal IDs
+
+==================================================
+STEP 10 — TESTS
+==================================================
+
+Add/update tests:
+
+1. User-facing market list contains only approved Top 250 markets.
+2. Random provider symbols outside Top 250 are filtered out.
+3. Raw broker symbols outside Top 250 are filtered out.
+4. Top 250 market with no data is not selectable.
+5. Top 250 market with real data is selectable.
+6. Top 250 market with broker mapping + all gates can be tradeable.
+7. Simulator-only market is not selectable for regular users.
+8. Scanner only scans Top 250.
+9. Scanner does not show simulator-only rows as trade-ready.
+10. Chart selector only shows approved Top 250 markets.
+11. Trade ticket blocks no-data markets.
+12. Ruby resolves “gold” to XAUUSD.
+13. Ruby resolves “nasdaq” to US100.
+14. Ruby resolves “dow” to US30.
+15. Ruby resolves “bitcoin” to BTCUSD.
+16. Ruby resolves “v75” to Volatility 75 Index.
+17. Ruby asks clarification for ambiguous “oil.”
+18. Ruby rejects markets outside Top 250.
+19. Ruby says approved-but-no-data for approved markets without data.
+20. Regular users do not see internal provider labels.
+21. Admin diagnostics can still see raw provider/broker symbols when allowed.
+
+Run:
+- symbol directory tests
+- Ruby resolver tests
+- scanner tests
+- chart selector tests
+- trade ticket gating tests
+- typecheck
+- CI guards if feasible
+
+==================================================
+COMPLETION REPORT
+==================================================
+
+Return:
+
+- files inspected
+- files changed
+- Top 250 directory created/updated
+- all user-facing market surfaces updated
+- Ruby alias resolver updated
+- availability gate added/updated
+- no-data selectability rule confirmed
+- scanner universe locked
+- chart selector locked
+- trade ticket gating confirmed
+- tests added/updated
+- typecheck/guard results
+- remaining blockers
+
+Final rule:
+Users should only see the approved ARX Top 250 markets right now. Ruby should understand real names, abbreviations, nicknames, and broker aliases. Any approved market with no real data must not be selectable until data becomes available.

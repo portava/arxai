@@ -1,0 +1,160 @@
+Move to Step 2: Controlled Paper Session #1.
+
+The 2 CRITICAL alerts have already been resolved/acknowledged. Before starting, verify that the system confirms this.
+
+Goal:
+Run the first controlled PAPER-ONLY trading session to collect real decision-loop data without touching live trading.
+
+Do not enable live trading.
+Do not arm micro-live.
+Do not place real orders.
+Do not modify live MT5 command tables.
+Do not modify live positions.
+Do not bypass any gate.
+
+Step 1 — Verify preflight again
+
+Run and report:
+
+- /api/permission/status
+- /api/risk-governor/status
+- /api/readiness/status
+- /api/broker-readonly/status
+- /api/paper-sessions/preflight
+- full readiness checklist
+- CI guard can-place-trades-invariant
+- CI guard paper-autopilot-isolation
+
+Expected:
+- unacknowledgedCriticalAlerts = 0
+- paper preflight = PASS
+- liveTradingDisabled = true
+- canPlaceLiveTrade = false
+- canPlaceTrades = false for live trading
+- broker remains READ_ONLY for live execution
+- paper execution remains isolated
+
+If any hard blocker remains, STOP and report the exact blocker.
+
+Step 2 — Start Controlled Paper Session #1
+
+Create a new paper session with these limits:
+
+- Session name: Controlled Paper Session #1
+- Mode: PAPER_ONLY
+- Live trading: DISABLED
+- Broker execution: DISABLED
+- Symbols: 1 symbol only
+- Max paper decisions: 3 to 5
+- Max simulated open position: 1
+- Max paper risk per trade: 0.25%
+- No martingale
+- No averaging down
+- No revenge trading
+- No trades without stop loss
+- No trades without take profit or defined exit logic
+- No duplicate decisions
+- No decision without risk-governor approval
+
+The AI may analyze market conditions, but all execution must be simulated/paper only.
+
+Step 3 — Decision logging requirements
+
+For every paper trade decision, log:
+
+- sessionId
+- decisionId
+- timestamp
+- symbol
+- direction
+- market condition
+- setup type
+- entry reason
+- rejection reason if rejected
+- confidence score
+- risk score
+- risk governor result
+- permission gate result
+- proposed entry
+- stop loss
+- take profit
+- risk/reward ratio
+- simulated lot size
+- max loss if wrong
+- expected target
+- final action: APPROVED_PAPER, REJECTED, or SKIPPED
+- reason for final action
+
+Every rejected trade is useful. Do not force trades just to create activity.
+
+Step 4 — Safety monitoring during session
+
+During the session, continuously confirm:
+
+- live trading remains disabled
+- broker stays read-only for live execution
+- no live orders are created
+- no live positions are opened
+- no MT5 live command table is modified
+- emergency stop remains available
+- paper/live data stays isolated
+- all paper actions are audit logged
+
+If any live-trading mutation is detected, immediately stop the session and activate safety lock.
+
+Step 5 — End session and generate report
+
+After 3 to 5 paper decisions, stop the session and generate:
+
+Controlled Paper Session #1 Report
+
+Include:
+
+1. Session status:
+   - PASS / FAIL / CAUTION
+
+2. Number of decisions:
+   - total decisions
+   - approved paper trades
+   - rejected trades
+   - skipped trades
+
+3. Trade breakdown:
+   - each decision
+   - why it was approved or rejected
+   - confidence score
+   - risk score
+   - risk/reward
+   - rule gates passed/failed
+
+4. Risk governor behavior:
+   - did it approve correctly?
+   - did it reject correctly?
+   - any warnings?
+
+5. AI behavior:
+   - did AI follow trading rules?
+   - did AI avoid low-quality setups?
+   - did AI overtrade?
+   - did AI respect confidence threshold?
+
+6. Learning loop:
+   - was decision data stored?
+   - did learning confidence improve?
+   - what needs more sample size?
+
+7. Safety verification:
+   - live trading remained disabled
+   - live broker execution remained blocked
+   - paper/live isolation passed
+   - no live order mutation
+   - no live position mutation
+   - CI guards still passed
+
+8. Final recommendation:
+   - remain in paper testing
+   - run another controlled paper session
+   - or prepare for MICRO_LIVE readiness review
+
+Hard rule:
+This step is about collecting safe paper-trading proof. Do not move to live trading inside this task.

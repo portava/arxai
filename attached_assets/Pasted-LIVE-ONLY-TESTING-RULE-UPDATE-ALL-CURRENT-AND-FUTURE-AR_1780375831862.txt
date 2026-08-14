@@ -1,0 +1,82 @@
+LIVE-ONLY TESTING RULE — UPDATE ALL CURRENT AND FUTURE ARX TASKS
+
+Stop treating validation as non-live unless I explicitly say so.
+
+ARX is being tested as a LIVE trading app. Every execution-path test must prove the real live path works through MT5.
+
+New rule:
+If a test involves BUY/SELL execution, scanner execution, chart execution, instant execution, one-click execution, or trade-ticket execution, it must be tested against the LIVE MT5 path.
+
+Do not mark execution work complete from:
+- typecheck only
+- frontend button behavior only
+- ARX “sent” toast only
+- backend command created only
+- EA received only
+- validate-only only
+- simulated result
+- mock response
+- Demo/Paper behavior
+
+Completion for execution work requires one of these:
+
+A. Real MT5 live fill confirmed:
+- MT5 retcode
+- broker ticket / deal / position ID
+- filled symbol
+- filled lot
+- fill price
+- MT5 terminal confirms it
+- ARX ledger confirms it
+- open position snapshot confirms it if still open
+
+OR
+
+B. Real MT5 live rejection confirmed:
+- command reached EA
+- EA attempted or refused at the correct live layer
+- exact pre-OrderSend or broker/terminal reason is returned
+- no generic “server safety check refused”
+- no fake success
+- no phantom position
+
+Current task:
+Run the V75 scanner/instant path as a LIVE execution test.
+
+Requirements:
+1. Use the real scanner-selected symbol.
+2. Resolve through `/api/me/mt5/resolve-symbol`.
+3. Use exact `brokerSymbol`.
+4. Do not submit displaySymbol as execution symbol.
+5. Do not fallback to EURUSD.
+6. Do not hardcode V75.
+7. Use the smallest broker-valid live lot.
+8. Submit the live BUY/SELL command through ARX.
+9. Confirm EA receives it.
+10. Confirm whether EA calls OrderSend.
+11. If filled, capture the real MT5 ticket/fill.
+12. If rejected, capture the exact EA/MT5/broker reason.
+
+Before the live attempt, report:
+- selected UI symbol
+- resolved brokerSymbol
+- side
+- lot
+- account type
+- EA version
+- ARM #2 status
+- Algo Trading status
+- command payload
+- commandId
+
+After the live attempt, report:
+- command lifecycle
+- MT5 retcode
+- broker message
+- broker ticket/deal/position ID if filled
+- ARX command row before/after
+- ARX position snapshot before/after
+- MT5 terminal confirmation
+- whether any layer still used displaySymbol instead of brokerSymbol
+
+Do not call the task complete unless the real LIVE path is proven by either a real MT5 fill or a real MT5 rejection reason.

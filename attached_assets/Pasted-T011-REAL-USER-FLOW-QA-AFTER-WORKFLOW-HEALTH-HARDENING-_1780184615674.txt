@@ -1,0 +1,113 @@
+T011 — REAL USER FLOW QA AFTER WORKFLOW HEALTH HARDENING
+
+Continue from T010.
+
+T010 added workflow health hardening, runtime health checks, health:workflows, startup readiness self-check, and admin runtime diagnostics. Do not redo T010.
+
+Now perform a real user-flow QA pass on the running app after the workflow-health fix.
+
+This is not a rebuild.
+Do not change live broker execution config.
+Do not place a live trade.
+Do not disturb the live MT5 path.
+Do not weaken permissions, ownership checks, kill switch, allocation checks, freeze checks, or MT5 confirmation rules.
+
+Primary goal:
+Verify the app now feels fast and stable from the user’s perspective, especially Scanner, trade modal, Ruby, and navigation.
+
+Required first step:
+Run:
+pnpm run health:workflows
+
+Confirm:
+1. frontend is serving
+2. api-server is serving
+3. /api/healthz returns 200
+4. scanner candles endpoint returns the expected authenticated behavior
+5. no stale/orphaned workflow issue is present
+6. admin runtime health panel shows healthy or clearly degraded status
+
+Then open the actual Replit preview and test as a real user.
+
+Test normal user flow:
+1. Login.
+2. Cockpit loads.
+3. Bottom navigation responds instantly.
+4. Scanner opens.
+5. Scanner shell appears quickly.
+6. Chart area appears.
+7. Symbol search works.
+8. Select/change market.
+9. Broad Scan works or shows clean local loading/error.
+10. Focus Scan works or shows clean local loading/error.
+11. Plan Buy modal opens quickly.
+12. Plan Sell modal opens quickly.
+13. Lot input responds.
+14. Confirm button shows pending state immediately, but do not execute live trade.
+15. Ruby opens.
+16. Ruby thinking indicator appears instantly.
+17. Ruby response does not freeze the app.
+18. More/Settings opens.
+19. No Paper Trading route appears.
+20. Normal user cannot access blocked admin/dev/dormant/paper URLs.
+
+Test admin/owner flow:
+1. Admin/owner can still access admin areas.
+2. Runtime health panel is visible only to admin/owner.
+3. Runtime health does not expose secrets, account numbers, IPs, tokens, or raw bridge internals.
+4. Admin/owner can see health state clearly.
+5. Admin/owner direct URL access still works where allowed.
+
+Performance targets:
+1. Bottom nav feedback under 100ms.
+2. Page shell under 1 second.
+3. Scanner tab switch under 1 second.
+4. Trade modal open under 1 second.
+5. Ruby spinner under 100ms.
+6. Search input responsive immediately.
+7. No page feels frozen.
+8. No page takes around 7 seconds unless an external service is clearly identified and the UI shows loading immediately.
+
+Check for visible problems:
+1. Blank pages.
+2. This page hit a snag.
+3. Frozen loading.
+4. Dead buttons.
+5. Broken tabs.
+6. Duplicate status cards.
+7. Raw backend/internal names shown to users.
+8. Paper Trading text shown to users.
+9. Admin/dev pages visible to normal users.
+10. Scanner result links leading to blocked pages.
+11. Huge repeated warning/disclosure blocks slowing the app.
+12. Notification badge blocking page load.
+
+Do not make unnecessary code changes.
+Only fix issues actually found during this real QA pass.
+
+If any issue is found:
+1. Identify exact page/component.
+2. Fix the smallest safe area.
+3. Retest the affected flow.
+4. Run health:workflows again.
+5. Run typecheck.
+6. Run ci:guards.
+7. Confirm live MT5 path untouched.
+
+Final report must include:
+1. health:workflows result
+2. mobile preview timing
+3. desktop preview timing
+4. Scanner timing
+5. trade modal timing
+6. Ruby spinner/response timing
+7. routes tested
+8. normal-user blocked route result
+9. admin route result
+10. issues found
+11. fixes applied
+12. typecheck result
+13. ci:guards result
+14. confirmation no live trade placed
+15. confirmation live MT5 path untouched
+16. remaining risks

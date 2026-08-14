@@ -1,0 +1,274 @@
+T012 — LIVE-ONLY BROWSER TIMING HARNESS + QA CLEANUP FIX
+
+Continue from T011.
+
+Important product direction:
+ARX AI is now being treated as a LIVE-first / LIVE-only trading environment for owner/admin testing and operation.
+
+Do not use DEMO as the QA path.
+Do not suggest DEMO-only browser testing.
+Do not create DEMO-only QA users.
+Do not use Paper Trading.
+Do not use fake execution.
+Do not use simulated trade history.
+Do not route timing tests through a demo product mode.
+
+This is not a rebuild.
+Do not disturb the live MT5 path.
+Do not reset live broker execution config.
+Do not weaken permissions, ownership checks, kill switch, allocation checks, freeze checks, live approval, or MT5 confirmation rules.
+Do not bypass backend safety.
+Do not create fake production behavior.
+
+Primary goals:
+
+1. Create a safe LIVE-authorized browser QA path for timing the real app.
+2. Capture true frontend/browser timing for real user interactions.
+3. Fix the qa:seed-dom cleanup glob bug.
+4. Confirm Scanner, trade modal, Ruby, and bottom navigation are fast in the actual browser.
+5. Keep all trading actions truthful and connected to the live environment.
+6. Do not accidentally place a live trade unless this task explicitly reaches the controlled live micro-trade test step.
+
+PART 1 — Fix the QA seed cleanup bug
+
+T011 found:
+qa:seed-dom cleanup glob is buggy because TAG_PREFIX already ends in _, but the cleanup appends \_%, causing the SQL LIKE pattern to require two underscores and miss old qaSDOM_ users.
+
+Fix this QA harness bug only.
+
+Required:
+
+1. Inspect the QA seed/cleanup script.
+2. Correct the cleanup pattern so historical qaSDOM_ test users are matched.
+3. Ensure cleanup only removes QA/test users created by the harness.
+4. Never delete real users.
+5. Never delete owner/admin accounts.
+6. Never delete real trading records.
+7. Make cleanup FK-safe.
+8. Add a dry-run or clearly logged count before deletion if practical.
+9. Retest cleanup.
+10. Report how many stale QA rows were found/removed.
+
+PART 2 — Create a safe LIVE browser timing user/session
+
+Use an approved LIVE owner/admin or live-authorized test session.
+
+This QA path must be:
+
+1. LIVE mode only.
+2. Not Paper.
+3. Not Demo.
+4. Authenticated.
+5. Approved for the app’s LIVE environment.
+6. Bound to the normal backend permission system.
+7. Bound to the normal allocation/freeze/kill-switch/live-readiness checks.
+8. Bound to the normal MT5 confirmation rules.
+9. Clearly tagged as QA/test-only in logs where appropriate.
+10. Not allowed to bypass backend validation.
+
+If a test-only login helper is needed:
+
+1. Gate it behind dev/test only.
+2. Do not expose it in production.
+3. Do not create a hidden permission bypass.
+4. Do not create fake user roles.
+5. Do not bypass live-readiness gates.
+6. Do not bypass allocation, freeze, kill switch, or ownership checks.
+
+PART 3 — Browser timing instrumentation
+
+Capture true browser timing, not only backend timing.
+
+Measure:
+
+1. route tap time
+2. first visual feedback time
+3. page shell render time
+4. first usable content time
+5. first data render time
+6. chart skeleton render time
+7. search usable time
+8. modal open time
+9. Ruby thinking indicator time
+10. final response/render time where applicable
+
+Use one of these safe approaches:
+
+1. Playwright/browser automation against the running preview with the LIVE-authorized QA session.
+2. Dev-only browser performance markers inside the app.
+3. Admin/dev-only performance panel that reads browser marks.
+4. Console table output from browser timing markers.
+
+Do not rely only on:
+
+1. server timing
+2. backend perf sweep
+3. bundle size
+4. static serve timing
+5. typecheck
+6. ci:guards
+
+Those are useful but not enough.
+
+PART 4 — Real browser flows to test
+
+Using the safe LIVE-authorized browser session, test:
+
+Normal trading flow:
+
+1. Login or enter through safe authenticated session.
+2. Cockpit opens.
+3. Bottom navigation tap feedback.
+4. Scanner opens.
+5. Scanner shell appears.
+6. Chart skeleton appears.
+7. Symbol search is usable.
+8. Search a symbol.
+9. Select/change market.
+10. Broad Scan starts or shows clean local state.
+11. Focus Scan starts or shows clean local state.
+12. Plan Buy modal opens.
+13. Plan Sell modal opens.
+14. Lot input responds.
+15. Ruby opens.
+16. Ruby thinking dots appear.
+17. Ruby response does not freeze the app.
+18. More/Settings opens.
+19. Blocked Paper/admin/dev/dormant routes are denied for normal users.
+
+Trade modal safety rule:
+This task is for timing and UI readiness, not live execution, unless explicitly instructed in this task.
+
+Do not click a final live execution Confirm button during this timing pass unless a dedicated controlled live micro-trade test flag is enabled and the task explicitly says to execute one.
+
+If final live execution timing is required:
+
+1. Use the approved LIVE owner/admin account only.
+2. Use the smallest broker-allowed lot size.
+3. Use the approved live-test symbol.
+4. Confirm the kill switch is inactive.
+5. Confirm account is not frozen.
+6. Confirm allocation exists.
+7. Confirm bridge/EA readiness.
+8. Place only one controlled live micro trade.
+9. Confirm MT5 ticket.
+10. Confirm ARX ledger.
+11. Confirm chart display.
+12. Close immediately.
+13. Log result.
+14. Do not repeat.
+
+If live execution is not explicitly required, test only:
+
+1. modal open timing
+2. input timing
+3. pending-state UI readiness
+4. pre-confirm validation timing
+5. Ruby/trade-assist timing
+
+PART 5 — Performance targets
+
+Targets:
+
+1. Bottom nav feedback: under 100ms.
+2. Page shell visible: under 1 second.
+3. Scanner tab switch: under 1 second.
+4. Scanner shell visible: under 1 second.
+5. Chart skeleton visible: under 1 second.
+6. Search input usable: under 1 second.
+7. Market selection feedback: under 300ms.
+8. Plan Buy modal open: under 1 second.
+9. Plan Sell modal open: under 1 second.
+10. Lot input response: under 100ms.
+11. Ruby thinking indicator: under 100ms.
+12. No page appears frozen.
+13. No page takes around 7 seconds.
+
+If something exceeds target:
+
+1. Identify exact blocker.
+2. Fix the smallest safe frontend issue.
+3. Retest.
+4. Do not change live MT5 execution logic unless the blocker is clearly unrelated to trading safety and safe to repair.
+
+PART 6 — Remove DEMO language from this QA flow
+
+Inspect any new or recent QA docs/prompts/scripts related to this browser timing work.
+
+Update wording so this flow does not refer to DEMO-only testing.
+
+Allowed language:
+
+1. LIVE-authorized QA
+2. LIVE owner/admin timing path
+3. controlled live-readiness test
+4. live micro-trade test, only when explicitly enabled
+5. no Paper Trading
+6. no fake execution
+7. no simulated trade data
+
+Do not remove historical archive references unless they are actively confusing the current QA flow.
+Do not break existing code just to rename old archived notes.
+
+PART 7 — Confirm live path remains truthful
+
+Throughout this task verify:
+
+1. No accidental live trade placed.
+2. No live trade endpoint called unless explicitly executing the controlled live micro-trade test.
+3. arx_live_commands count unchanged unless a controlled live micro-trade is explicitly run.
+4. ARX_LIVE_BROKER_EXECUTION_ENABLED unchanged.
+5. MT5 live heartbeat remains healthy.
+6. No permission/ownership/kill-switch/allocation/freeze logic changed.
+7. No backend trade gate weakened.
+8. No master-account data exposed.
+9. No Paper Trading fallback appears.
+
+PART 8 — Regression
+
+Run:
+
+1. pnpm run health:workflows
+2. typecheck
+3. ci:guards
+4. route containment tests
+5. QA seed cleanup test
+6. browser timing harness
+7. Scanner smoke test
+8. normal-user blocked route test
+9. admin/owner route access test if available
+
+PART 9 — Final report required
+
+Do not mark complete without true browser timing.
+
+Final report must include:
+
+1. QA seed cleanup bug fixed.
+2. stale QA users found/removed.
+3. safe LIVE-authorized QA session used.
+4. proof the QA session did not bypass live safety gates.
+5. mobile browser timing table.
+6. desktop browser timing table.
+7. bottom nav feedback timing.
+8. Cockpit shell timing.
+9. Scanner shell timing.
+10. chart skeleton timing.
+11. search usable timing.
+12. market selection timing.
+13. Plan Buy modal open timing.
+14. Plan Sell modal open timing.
+15. Ruby thinking indicator timing.
+16. Ruby response timing if tested.
+17. any action still over target and why.
+18. fixes applied, if any.
+19. confirmation no accidental live trade placed.
+20. confirmation no unauthorized live trade endpoint called.
+21. confirmation live MT5 path remained intact.
+22. health:workflows result.
+23. typecheck result.
+24. ci:guards result.
+25. remaining risks.
+
+Completion standard:
+T012 is complete only when true browser timing is captured using a safe LIVE-authorized QA path, the QA cleanup bug is fixed, and live execution remains truthful, controlled, and protected by the existing app gates.

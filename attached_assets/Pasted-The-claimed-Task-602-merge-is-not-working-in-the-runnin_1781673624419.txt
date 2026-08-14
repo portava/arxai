@@ -1,0 +1,189 @@
+The claimed Task #602 merge is not working in the running app. Ruby Chat still does NOT use the same structural read-layer output as the Scanner Ruby Chart Read panel.
+
+Do not treat this as complete based on tests alone. The authenticated running app proves the bug still exists.
+
+Current running-app proof:
+
+Selected page context:
+- Page: Market Scanner
+- Symbol: Volatility 75 Index / V75
+- Timeframe: 1h
+- Feed: Deriv
+- Data: Historical only
+- Ruby: Limited read
+- Action: Feed limited
+- Live setup: withheld
+
+Scanner Ruby Chart Read panel correctly produces a structural read:
+- Bias: Mixed
+- Confidence: Low
+- HTF Bias: No clear edge
+- Summary: higher-timeframe bias unclear; trend signals mixed; recent downside momentum; price consolidating mid-range
+- Buy Conditions: available
+- Sell Conditions: available
+- Support / Resistance: Support 35977.0 – 36286.4; Resistance 40567.0 – 40876.5
+- Invalidation: available
+- Risk Note: available
+- Exact entry/SL/TP/R:R withheld
+
+Ruby Chat for the same V75 1h context still says:
+- “Data insufficient, no primary timeframe available”
+- “Trend — no live candle trend available; no HTF data”
+- “Key levels — not available”
+- “Bullish scenario — not available”
+- “Bearish scenario — not available”
+- “Exit/hold review — I can’t give a reliable stance on V75 without live candles”
+- “I can’t honestly call trend, continuation, or reversal”
+
+This is a hard failure.
+
+Expected behavior:
+Ruby Chat must return the same structural read the panel already has. It can say low-confidence and feed not confirmed, and it must withhold exact live setup levels, but it must NOT say key levels/scenarios are unavailable when the panel already has them.
+
+Investigate and fix the real running-app routing.
+
+Required diagnostic before coding:
+1. Add temporary server-side trace logging or test-visible diagnostics for one Ruby Chat request from Scanner:
+   - incoming pageContext.pathname
+   - incoming pageContext.label
+   - incoming pageContext.chartSymbol
+   - incoming pageContext.chartTimeframe
+   - user message
+   - selected assistant tool name
+   - whether readChartStructure tool is called
+   - whether old getSymbolMarketContext / getTradeMarketContext is called
+   - resolved symbol
+   - resolved timeframe
+   - readLayer result
+   - support/resistance present?
+   - final assistant payload source
+
+2. Reproduce the exact running-app case:
+   - Ask Ruby chat from Scanner: “read V75 1h” or “analyze V75”
+   - Confirm whether the LLM chooses the new structural-read tool or the old market-context tool.
+
+Likely failure points to check:
+- System prompt may not be forcing chart-read intents to call readChartStructure.
+- Tool definition may exist but the model still chooses getSymbolMarketContext.
+- Frontend may not be sending chartSymbol / chartTimeframe in chat pageContext.
+- Backend may receive pageContext but not pass it into tool dispatch.
+- “V75” alias may resolve differently than “Volatility 75 Index.”
+- Chat may be using a stale route/bundle after merge.
+- The new structural-read tool may be added but not included in the available tool list sent to the model.
+- The final response assembler may still prefer old marketContext text over structural-read output.
+
+Required fix:
+For chart-read style Ruby chat requests, especially from Scanner, route to the same structural read service that powers the Scanner Ruby Chart Read panel.
+
+This must apply when the user asks:
+- “read V75”
+- “analyze V75”
+- “read the chart”
+- “what do you see on V75 1h”
+- “should I hold these V75 buys”
+- “what’s the structure”
+
+Routing rule:
+If the request is chart/symbol/timeframe analysis and the page context is Scanner or Chart:
+- Call shared structural read service first.
+- Use selected chart symbol/timeframe from pageContext when the user does not specify them.
+- If user specifies symbol/timeframe, use that.
+- Do not fall back to old live-snapshot-only market context unless the structural service truly returns no usable candles.
+
+Chat response rule:
+If panel structural read exists for same symbol/timeframe, Ruby Chat must surface:
+- bias
+- confidence
+- summary
+- support/resistance
+- buy conditions
+- sell conditions
+- invalidation
+- risk note
+- feed caveat
+- exact setup withholding
+
+Ruby Chat must NOT say:
+- no primary timeframe available
+- key levels not available
+- bullish scenario unavailable
+- bearish scenario unavailable
+- no trend available
+- cannot read stance without live candles
+
+unless the structural read service truly returns insufficient candles.
+
+Exact expected response for current V75 1h:
+“Feed is not confirmed at read-time, so this is a low-confidence structural read, not a live-entry signal. V75 1h is mixed and mid-range. Recent downside momentum is present, with support around 35977.0 – 36286.4 and resistance around 40567.0 – 40876.5. A buy case improves only if price holds support and pushes back through resistance with momentum. A sell case improves if price rejects resistance or breaks support with momentum. Exact entry, stop, targets, and R:R are withheld until the live feed is confirmed.”
+
+Setup safety remains:
+- no exact entry
+- no exact stop loss
+- no TP1/TP2/TP3
+- no R:R
+- no “enter now” language
+
+Tests required:
+1. Tool-selection/routing test:
+   - from Scanner pageContext
+   - message: “read V75 1h”
+   - asserts structural-read tool/path is used
+   - asserts old live-snapshot-only marketContext is not the final source
+
+2. PageContext transport test:
+   - frontend sends chartSymbol and chartTimeframe
+   - backend receives them
+   - tool resolves V75 1h correctly
+
+3. Parity test:
+   - panel structural read and Ruby Chat read for same V75 1h share:
+     - bias
+     - confidence
+     - summary
+     - support/resistance
+     - buy/sell conditions
+   - chat does not say “key levels not available”
+
+4. Negative test:
+   - truly insufficient candles
+   - chat may say no structure available
+
+5. Safety test:
+   - structural-only read withholds exact entry/SL/TP/R:R
+
+Required authenticated QA before marking complete:
+Use the actual running app, not only tests.
+
+Steps:
+1. Open Market Scanner.
+2. Select Volatility 75 Index.
+3. Select 1h.
+4. Confirm Ruby Chart Read panel shows structural read with support/resistance.
+5. Ask Ruby chat: “read V75 1h.”
+6. Paste/log Ruby chat response.
+7. Confirm Ruby chat returns the same structural read and does not say:
+   - no primary timeframe
+   - key levels unavailable
+   - bullish/bearish scenario unavailable
+   - no trend available
+
+Do not mark complete until the running-app chat response matches the panel’s structural read.
+
+Validation required:
+- api-server typecheck
+- dashboard typecheck if frontend touched
+- Ruby chat structural-read routing tests
+- parity test
+- scanner/read-layer tests
+- ci guards
+- import-boundary guard
+- safety integration if available
+
+Completion standard:
+The exact current V75 1h app state must pass:
+- panel gives structural read
+- chat gives same structural read
+- both say feed not confirmed / low confidence
+- both withhold exact setup levels
+- chat does not fall back to “no live candles / no key levels”
+- no execution gates changed

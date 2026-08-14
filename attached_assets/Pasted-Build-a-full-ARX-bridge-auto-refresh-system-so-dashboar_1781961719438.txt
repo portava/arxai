@@ -1,0 +1,272 @@
+Build a full ARX bridge auto-refresh system so dashboards, balances, open trades, positions, scanner account widgets, investor balances, and trade history stay fresh and do not show closed/ghost trades.
+
+CRITICAL RULE:
+Do not fake freshness. Do not use simulator/paper data. Do not hide stale data by UI tricks. The app must repeatedly check the real bridge/account/positions source and reconcile the UI with the real MT5 bridge truth.
+
+GOAL:
+Add a manual Auto Refresh control plus a background refresh loop that checks the active bridge every 5 seconds while the user is on live/account/trading surfaces. When broker-side trades close, disappear, or update P/L, the UI must reflect that quickly without the user needing to reload the page.
+
+Surfaces affected:
+- Dashboard
+- Cockpit
+- Open Trades
+- Positions
+- Account Analytics
+- Investor dashboard / investor balance
+- Risk cockpit
+- Ruby trade context if Ruby reads account/open-trade state
+- Scanner header/account widgets if they show live account/trade counts
+- Any live P/L or open trade counter in nav/header/sidebar
+
+Build this in a shared way, not page-by-page hacks.
+
+PHASE 1 — FIND EXISTING TRUTH SOURCES
+
+First inspect the existing code before changing anything.
+
+Find:
+1. Current bridge heartbeat endpoint/service.
+2. Current live account snapshot builder.
+3. Current open positions endpoint.
+4. Current dashboard data endpoint.
+5. Current investor balance/allocation calculation.
+6. Current SSE/polling system if one already exists.
+7. Existing reconciliation logic for broker-side closed trades / phantom positions.
+8. Existing hooks used by Dashboard/Open Trades/Positions.
+
+Do not create a second competing truth source. Reuse the existing master bridge/account snapshot/positions services.
+
+PHASE 2 — BACKEND REFRESH SNAPSHOT ENDPOINT
+
+Create or strengthen one shared endpoint:
+
+GET /api/live/refresh-snapshot
+
+It should return one consistent object for the authenticated user:
+
+{
+  ok: true,
+  serverTime,
+  bridge: {
+    id,
+    mode,
+    connected,
+    heartbeatFresh,
+    lastHeartbeatAt,
+    ageMs,
+    eaVersion,
+    accountLogin,
+    broker,
+    readOnlyMode,
+    liveExecutionEnabled
+  },
+  account: {
+    balance,
+    equity,
+    freeMargin,
+    margin,
+    marginLevel,
+    currency,
+    floatingPL,
+    realizedToday,
+    updatedAt,
+    source
+  },
+  positions: {
+    open: [],
+    count,
+    updatedAt,
+    source
+  },
+  reconciliation: {
+    ran: true,
+    closedDetected,
+    staleRemoved,
+    ghostPositionsFixed,
+    warnings: []
+  },
+  freshness: {
+    status: "live" | "delayed" | "stale" | "offline",
+    reason,
+    checkedAt
+  }
+}
+
+Rules:
+- Must use requireUser/auth.
+- Must scope to the logged-in user unless admin/owner rules already allow master visibility.
+- Must not leak other users’ bridge/account/positions.
+- Must not expose raw secrets or EA credentials.
+- Must use the same visibility/governance functions already used by existing live positions endpoints.
+- Must call the real bridge/account state builder, not a frontend cache.
+- Must include freshness status and last checked time.
+
+PHASE 3 — RECONCILIATION ON EACH REFRESH
+
+Every refresh should trigger a safe reconciliation pass:
+
+1. Pull current open positions from MT5 bridge truth.
+2. Compare with ARX database open positions.
+3. If a DB position is marked open but is no longer present on the bridge:
+   - Mark it closed/reconciled.
+   - Set close reason: "broker_closed_detected" or existing equivalent.
+   - Set closedAt based on best available bridge/server time.
+   - Remove it from open-trade UI immediately.
+   - Do not invent P/L if broker close P/L is unavailable. Use null/unknown with honest status.
+4. If MT5 reports an open trade missing from ARX DB:
+   - Surface it as broker-side/open external position if existing architecture supports it.
+   - Otherwise include warning: "broker_position_not_tracked_by_arx".
+5. If heartbeat is stale/offline:
+   - Do not delete trades just because the bridge is offline.
+   - Return stale/offline freshness and preserve last known state with clear status.
+
+Important:
+Closed trades must not remain in Open Trades just because ARX did not initiate the close.
+
+PHASE 4 — FRONTEND SHARED HOOK
+
+Create a shared hook:
+
+useLiveBridgeRefresh(options)
+
+Behavior:
+- Polls /api/live/refresh-snapshot every 5 seconds.
+- Pauses automatically when the tab is hidden.
+- Refreshes immediately when the tab becomes visible again.
+- Uses AbortController so requests do not pile up.
+- If one request is still in flight, do not start another.
+- Uses exponential backoff only after repeated errors, but returns to 5 seconds after success.
+- Exposes:
+
+{
+  snapshot,
+  isRefreshing,
+  lastRefreshAt,
+  nextRefreshInMs,
+  freshnessStatus,
+  error,
+  refreshNow,
+  autoRefreshEnabled,
+  setAutoRefreshEnabled
+}
+
+Default:
+- autoRefreshEnabled true on live/account/trading surfaces.
+- Manual toggle can turn it off for that browser session only.
+- Manual refresh button always works.
+
+PHASE 5 — AUTO REFRESH BUTTON UI
+
+Add a visible Auto Refresh control in the dashboard/open-trades/account header area.
+
+Button behavior:
+- Label when enabled: "Auto Refresh: On"
+- Label when disabled: "Auto Refresh: Off"
+- Manual button: "Refresh Now"
+- Show last checked time: "Checked 4s ago"
+- Show bridge state:
+  - Live
+  - Delayed
+  - Stale
+  - Offline
+- If refresh is running, show small spinner/loader.
+- If stale/offline, show honest reason.
+
+Do not make this a huge banner. It should be compact and professional.
+
+PHASE 6 — UPDATE ALL LIVE STORES FROM SAME SNAPSHOT
+
+When refresh snapshot returns:
+- Update account balance/equity/free margin/margin/margin level/open P/L.
+- Update open trades list.
+- Update open trades count.
+- Update investor balance derived from live open P/L.
+- Update dashboard cards.
+- Invalidate/refetch existing React Query/SWR/cache keys if used.
+- Remove closed trades from open-trade views immediately.
+- Do not leave stale local state overriding fresh bridge truth.
+
+If current app uses React Query:
+- Create a shared query key, for example:
+  ["live-refresh-snapshot", userId, bridgeId]
+- Set refetchInterval: 5000 only when enabled and visible.
+- On success, update dependent caches:
+  ["live-account"]
+  ["live-positions"]
+  ["open-trades"]
+  ["dashboard"]
+  ["investor-balance"]
+
+If current app uses custom stores/context:
+- Add one central liveBridgeSnapshot store and have pages subscribe to it.
+
+PHASE 7 — SSE COMPATIBILITY
+
+If SSE already exists:
+- Keep SSE as the preferred live stream.
+- Use the 5-second refresh as a safety fallback.
+- If SSE heartbeat/account_snapshot arrives fresh, the polling can reset/skip.
+- If SSE stalls, the 5-second poll catches stale/closed trades.
+- Do not create duplicate UI updates that fight each other.
+
+PHASE 8 — INVESTOR BALANCE REAL-TIME UPDATE
+
+Investor dashboard must derive current investor equity from:
+- Starting allocation / investor units
+- Realized P/L
+- Open floating P/L from current live account snapshot
+- Current open positions
+
+When open trades move or close, investor balance should update on refresh.
+
+Do not show investor balance from old static allocation only.
+
+PHASE 9 — SAFETY AND LOAD CONTROL
+
+- Poll every 5 seconds per active visible session only.
+- Pause when document.hidden is true.
+- Do not poll unauthenticated.
+- Do not poll pages that do not need live bridge data.
+- Do not let multiple tabs create runaway backend pressure if BroadcastChannel/localStorage coordination already exists. If easy, implement a simple one-tab leader refresh and broadcast snapshot to other tabs.
+- Backend endpoint must be lightweight and reuse existing snapshot builder.
+- Add rate protection if needed, but do not block normal 5-second UI refresh.
+
+PHASE 10 — TESTING
+
+Add tests or a verification script for:
+
+1. Open trade appears when bridge reports it.
+2. Open P/L changes after refresh.
+3. Trade closed on broker disappears from Open Trades after next refresh.
+4. ARX DB open position not on bridge gets reconciled safely.
+5. Offline/stale bridge does not falsely close trades.
+6. Dashboard balance/equity updates from snapshot.
+7. Investor balance changes with floating P/L.
+8. Poll pauses when tab hidden.
+9. Manual Refresh Now works even when auto-refresh is off.
+10. No duplicate intervals are created when navigating between Dashboard/Open Trades/Positions.
+
+PHASE 11 — ACCEPTANCE CRITERIA
+
+This task is done only when:
+
+- Dashboard data refreshes every 5 seconds while visible.
+- Open Trades removes broker-closed trades within one refresh cycle.
+- Open P/L updates without full browser reload.
+- Investor balance reflects open trades in near real time.
+- The refresh button shows live/delayed/stale/offline truth.
+- The backend reconciliation logs closed/ghost fixes.
+- No page has its own separate fake refresh timer.
+- No simulator/paper fallback is used for live account/trade state.
+- Existing live trade safety gates are not weakened.
+- Existing owner/admin permissions are preserved.
+- Existing MT5 bridge wiring is preserved.
+
+Return:
+1. Files changed.
+2. Existing truth sources found.
+3. New endpoint/hook/component names.
+4. How reconciliation works.
+5. Screens wired.
+6. Test results.
+7. Any remaining limitations.

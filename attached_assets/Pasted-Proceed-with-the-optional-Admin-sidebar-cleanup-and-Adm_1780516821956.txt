@@ -1,0 +1,122 @@
+Proceed with the optional Admin sidebar cleanup and Admin Hub link-drift protection test.
+
+The Admin Hub is now complete and verified. Continue from the current green merged state. Do not rebuild the app. Do not delete active routes. Do not change live broker execution settings.
+
+MAIN GOAL
+
+Now that the Admin Hub at /admin is the main front door for admin tools, slim the old 28-item Admin sidebar group so the sidebar is no longer cluttered or redundant.
+
+Keep all admin tools accessible through the Admin Hub and preserve every direct route. This is a navigation cleanup only.
+
+TASK 1 — SLIM ADMIN SIDEBAR
+
+Review the existing admin-only sidebar group.
+
+Keep the sidebar simple and organized. Recommended visible admin sidebar items:
+
+* Admin Hub
+* Users / Accounts if needed as a high-priority shortcut
+* Live Controls if needed as a high-priority shortcut
+* Bridge / MT5 / Deriv if needed as a high-priority shortcut
+* QA / Health if needed as a high-priority shortcut
+
+Move the rest of the admin tools behind the Admin Hub tabs instead of showing all 28 items in the sidebar.
+
+Do not delete the underlying pages or routes.
+
+Rules:
+
+* Keep /admin as the primary admin entry.
+* Keep direct routes working.
+* Keep command palette access role-gated.
+* Keep admin tools reachable inside Admin Hub tabs.
+* Do not hide critical emergency controls from OWNER/admin if they need quick access.
+* Do not expose admin sidebar items to traders, investors, logged-out users, or admin-preview-as-user mode.
+* Do not remove features.
+* Do not change live broker execution settings.
+
+TASK 2 — ADMIN HUB LINK-DRIFT TEST
+
+Add a small automated test or guard that verifies every link/href inside the Admin Hub resolves to a known route in App.tsx or the app route registry.
+
+The test should catch future broken links if an admin route is renamed or removed.
+
+Requirements:
+
+* Assert every Admin Hub tab/link points to a valid route.
+* Assert no Admin Hub link points to a missing/dead route.
+* Assert links remain admin-gated.
+* Assert non-admin roles cannot access /admin.
+* Keep the test lightweight.
+* Do not create a large rebuild or unrelated route refactor.
+
+TASK 3 — ROLE QA
+
+Verify again:
+
+OWNER/admin:
+
+* sees Admin Hub
+* sees the slimmed admin sidebar
+* can access every Admin Hub tab
+* can still reach preserved direct routes
+
+Trader:
+
+* cannot see Admin Hub
+* cannot see admin sidebar items
+* cannot access /admin or admin direct routes
+
+Investor/view-only:
+
+* cannot see Admin Hub
+* cannot see admin sidebar items
+* cannot access /admin or admin direct routes
+* still remains view-only
+
+Logged-out:
+
+* cannot access /admin
+* cannot bypass login
+
+Admin-preview-as-user:
+
+* blocked from admin routes unless effective admin status is active
+
+TASK 4 — QA / VALIDATION
+
+Run:
+
+* typecheck
+* dashboard/app validation
+* CI guards
+* admin route/link test
+* architect review if available
+
+Fix any broken links, role leaks, or sidebar regressions before completion.
+
+FINAL REPORT
+
+Report:
+
+* which sidebar items remain visible
+* which items were moved behind Admin Hub
+* confirmation that no routes were deleted
+* confirmation that direct routes still work
+* confirmation that every Admin Hub link resolves
+* role-gating results
+* QA results
+* confirmation that live broker execution settings were untouched
+
+COMPLETION STANDARD
+
+Do not mark complete until:
+
+* Admin sidebar is visibly slimmer
+* Admin Hub remains the main admin front door
+* all admin tools remain reachable
+* all direct routes still work
+* admin links have drift protection
+* non-admin roles cannot access admin tools
+* validation passes
+* no live execution setting was changed

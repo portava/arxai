@@ -1,0 +1,218 @@
+Continue with T008: fix admin/operator unrestricted trading limits and trade ticket validation copy.
+
+Current completed state:
+- T003 complete: unified account-mode resolver.
+- T004 complete: /my-account allocation shell.
+- T005 complete: alerts/notifications.
+- T006 complete: mode-scope filters.
+- T007 complete: crash hardening, route cleanup, safe formatting.
+- Typecheck green.
+- CI guards 23/23 PASS.
+- test:account-mode 59/59 PASS.
+- test:mode-scope 29/29 PASS.
+- test:live-phaseB 20/20 PASS.
+- test:demo-arming 18/18 PASS.
+- test:demo-verify 13/13 PASS.
+- arx_live_commands count unchanged.
+- no live trades placed.
+- no operator phrases typed.
+- no safety gates weakened.
+
+Now fix the admin/operator account limits issue.
+
+Current bug from screenshot:
+- Admin/operator opened scanner trade ticket.
+- Lot size was 0.3.
+- UI showed: “Lot size 0.3 exceeds the safe default (0.1). Confirm you want to proceed.”
+- UI required stop loss before review.
+- User requested that all artificial limits should be off for the admin/user account.
+- The admin/operator account should not be bound by demo/default starter caps.
+- Normal users must still obey their assigned caps.
+
+Do not place trades.
+Do not insert arx_live_commands.
+Do not type operator phrases.
+Do not recommend lot size.
+Do not fake validation.
+Do not weaken global kill switch, live bridge checks, account sync, broker validation, confirmation flow, audit logs, or Phase B safety.
+Do not remove limits from normal users.
+Do not create duplicate risk systems.
+
+Create checkpoint first:
+checkpoint: t008-admin-operator-unrestricted-trade-ticket-limits
+
+Task 1 — Define admin/operator unrestricted profile:
+Add or repair an explicit account/risk profile for the admin/operator’s own user account.
+
+For admin/operator unrestricted manual trading:
+- no safe default lot cap
+- no hardcoded 0.1 warning
+- no max lot cap unless admin explicitly sets one
+- no max open position cap unless admin explicitly sets one
+- no daily loss cap unless admin explicitly sets one
+- no forced stop-loss requirement unless admin explicitly enables requireStopLoss
+- no allowedSymbols restriction unless admin explicitly sets allowedSymbols
+- no demo/paper starter caps
+- no simulator/default-user warnings
+
+This applies only to the admin/operator account or users explicitly marked unrestricted by admin.
+
+Task 2 — Keep real safety checks:
+Even with admin/operator unrestricted limits, still require:
+- authenticated user
+- correct account mode
+- live bridge connected when live
+- live account synced
+- broker execution state valid
+- kill switch not active
+- allocation/source valid
+- symbol exists
+- order type valid
+- lot is positive numeric
+- broker accepts symbol/order
+- confirmation button clicked
+- audit log written
+- server-side validation runs
+
+Do not bypass safety. Only remove artificial starter/default caps from the admin/operator user.
+
+Task 3 — Remove hardcoded starter caps from trade ticket:
+Search for and replace hardcoded values:
+- safe default 0.1
+- maxLot 0.1
+- default max lot
+- default requireStopLoss=true
+- starter risk caps
+- beginner/demo cap
+- maxOpenPositions starter cap
+- dailyLossLimit default
+- allowedSymbols default
+- safe default warning
+
+Trade ticket must read from the user’s actual risk profile:
+- normal user: assigned caps apply
+- admin/operator unrestricted: blank/null caps mean unrestricted
+- admin/operator with explicit caps: explicit caps apply
+
+Task 4 — Fix scanner trade ticket behavior:
+In the scanner trade modal:
+- Admin/operator unrestricted account should not show “Lot size exceeds safe default.”
+- Stop loss should be optional unless requireStopLoss is explicitly enabled.
+- Review button should not be blocked by missing SL if requireStopLoss=false.
+- Risk/reward should still calculate if SL/TP are supplied.
+- If SL/TP are blank and optional, show clean “Optional” state.
+- Do not show demo/paper/simulator warning in LIVE_SHARED mode.
+- The ticket should use the unified account-mode resolver and user risk profile.
+
+Task 5 — Fix live/manual trade ticket behavior:
+Apply the same policy to:
+- /trade
+- /live-shared
+- /market-scanner trade setup modal
+- live chart “trade from chart”
+- AI assist review ticket
+- manual ticket
+- any shared TradeTicket / LiveTradeTicket component
+
+All trade-entry surfaces must use the same risk profile resolver.
+
+Task 6 — Admin UI controls:
+In admin allocations/risk settings, allow admin to configure the operator account:
+
+- Unrestricted manual trading: ON/OFF
+- Require stop loss: ON/OFF
+- Allowed symbols: blank = all
+- Max lot: blank = unrestricted
+- Max open positions: blank = unrestricted
+- Daily loss limit: blank = unrestricted
+- AI sleeve limits separate from manual trading limits
+
+Manual trading and AI auto-trading must remain separate:
+- manualTradingEnabled
+- aiAutoTradingEnabled
+- aiSleeveEnabled
+- aiSleeveAllocation
+- aiRiskCaps
+
+Auto-trade ON must not disable manual trading.
+
+Task 7 — Backend validation:
+Update validation so it handles:
+- maxLot null/undefined = unrestricted only for admin/operator unrestricted profile
+- maxOpenPositions null/undefined = unrestricted only for admin/operator unrestricted profile
+- dailyLossLimitUsd null/undefined = unrestricted only for admin/operator unrestricted profile
+- allowedSymbols empty/null = all symbols only for admin/operator unrestricted profile
+- requireStopLoss false = stop loss optional
+
+Normal users:
+- must still obey their assigned caps
+- empty/missing risk caps should block or show “Risk caps required”
+- cannot inherit admin unrestricted behavior
+
+Task 8 — User-facing wording:
+For admin/operator only:
+- show “Admin unrestricted limits active” only in admin/operator UI if needed
+- do not expose raw backend flags
+- do not show “safe default”
+- do not show “starter cap”
+- do not show “demo default”
+
+For normal users:
+- show clean cap messages:
+  - “Lot exceeds your account limit”
+  - “Stop loss required for your account”
+  - “Symbol not allowed for your account”
+  - “Daily loss limit reached”
+  - “Max open positions reached”
+
+Task 9 — Regression tests:
+Add tests proving:
+1. Admin/operator unrestricted user can review lot 0.3 without safe-default warning.
+2. Admin/operator unrestricted user can review without stop loss when requireStopLoss=false.
+3. Admin/operator unrestricted user is not blocked by empty allowedSymbols.
+4. Admin/operator unrestricted user is not blocked by blank/null maxLot.
+5. Normal user is still blocked by maxLot cap.
+6. Normal user is still blocked when stop loss required and missing.
+7. Normal user is still blocked when symbol not allowed.
+8. Auto-trade ON does not disable manual trading.
+9. AI sleeve limits remain separate from manual trading.
+10. Global kill switch still blocks everyone.
+11. Live bridge/account validation still applies.
+12. arx_live_commands count remains unchanged during tests.
+
+Task 10 — QA:
+Run:
+- typecheck
+- build if available
+- ci:guards
+- test:account-mode
+- test:mode-scope
+- test:alert-notification-contract
+- test:crash-hardening
+- test:live-phaseB
+- test:demo-arming
+- test:demo-verify
+- allocation runtime QA
+- new admin-unrestricted-risk tests
+- arx_live_commands count before/after
+
+Verify in real UI:
+1. Admin/operator trade ticket with lot 0.3 does not show safe default 0.1 warning.
+2. Admin/operator can proceed to review without SL when requireStopLoss=false.
+3. Normal users still see their risk caps enforced.
+4. Auto-trade toggle does not disable manual trading.
+5. No live trade is placed during QA.
+6. arx_live_commands remains 0.
+7. No operator phrases are typed.
+8. No safety gates are weakened.
+
+Final report only:
+- where hardcoded safe defaults were found
+- files/routes changed
+- how admin/operator unrestricted profile is stored/resolved
+- whether lot 0.3 warning is removed for admin/operator
+- whether SL is optional when requireStopLoss=false
+- whether normal user limits still work
+- tests added
+- QA results
+- arx_live_commands count

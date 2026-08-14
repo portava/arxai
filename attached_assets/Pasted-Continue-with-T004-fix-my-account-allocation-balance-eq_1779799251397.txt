@@ -1,0 +1,186 @@
+Continue with T004: fix /my-account allocation, balance, equity, AI sleeve, and shared-master account shell for the real user.
+
+T003 is complete:
+- unified account-mode resolver exists
+- useTradingMode() exists
+- live/demo/paper mode resolver passed
+- major pages now consume the resolver
+- typecheck and safety tests are green
+- arx_live_commands count remains 0
+- no safety gates weakened
+
+Now fix the actual user account balance/allocation issue.
+
+Current real bug:
+Admin allocated money to andraie.co@gmail.com and his AI sleeve, but /my-account still showed:
+- My Balance: $0
+- My Equity: $0
+- Assigned Allocation: $0
+- Bridge Preference: Use my own MT5 bridge
+- Risk values inconsistent with allocation
+- User shell not reflecting SHARED_MASTER_MT5 allocation
+
+Do not place trades.
+Do not insert arx_live_commands.
+Do not type operator phrases.
+Do not recommend lot size.
+Do not fake balance, equity, allocation, AI sleeve, P/L, or risk caps.
+Do not show master bridge balance to normal users.
+Do not weaken safety gates.
+Do not create duplicate allocation systems.
+
+Create checkpoint first:
+checkpoint: t004-fix-real-user-account-allocation-shell
+
+Task 1 — Verify the real user identity:
+Trace the logged-in user for /my-account and compare against the admin allocation target.
+
+Check:
+- logged-in userId
+- logged-in email
+- andraie.co@gmail.com user record
+- email casing
+- duplicate user records
+- admin-allocated target userId
+- virtual_trading_accounts userId
+- user_slot_allocation userId
+- SHARED_MASTER_MT5 assignment userId
+- auth session userId
+
+If admin allocated to one user record but /my-account is logged in as another duplicate record, surface this in admin diagnostics and repair with a safe user-selection/merge path if one already exists. Do not silently merge users unless the app already supports audited merges.
+
+Task 2 — Fix /api/me/allocation:
+For the logged-in user, /api/me/allocation must return user-safe values:
+- accountMode: SHARED_MASTER_MT5 when attached
+- assignedAllocation
+- manualAllocatedFunds
+- aiAllocatedFunds
+- aiSleeveEnabled
+- aiAutoTradingEnabled
+- availableCapacity
+- virtualBalance
+- virtualEquity
+- openPnl
+- realizedPnl
+- marginUsed
+- risk caps
+- frozen/locked status
+- approval status
+- clean blocked reason if incomplete
+
+Normal users must never receive:
+- master bridge balance
+- master free margin
+- other users
+- admin diagnostics
+- backend constants
+- table names
+- raw route names
+- secret values
+
+Task 3 — Fix account shell sync:
+If user_slot_allocation has funds but virtual_trading_accounts still shows zero:
+1. Repair refresh-shell so it syncs the user’s SHARED_MASTER_MT5 shell from persisted allocation.
+2. virtualBalance must mirror allocatedFunds plus valid sync deltas.
+3. virtualEquity must mirror virtualBalance plus user P/L where applicable.
+4. virtualPnl must never be overwritten by allocation sync.
+5. Add/Set/Transfer/AI sleeve updates must sync shell in the same transaction or immediately after.
+6. /my-account must update on next poll/refresh.
+
+Task 4 — Fix /api/me/account and /my-account page:
+The /my-account page must use the unified resolver plus /api/me/allocation/account shell.
+
+If user is attached to SHARED_MASTER_MT5:
+- show shared-master account mode
+- show assigned allocation
+- show manual allocation
+- show AI sleeve allocation/status
+- show balance/equity from the user account shell
+- show available capacity
+- show user-only P/L
+- show user risk caps
+- do not show “Use my own MT5 bridge” as active
+- do not show $0 if allocation exists
+
+If user is attached but allocation is zero:
+- show attached with $0 allocation
+- show “allocation required” as clean reason
+
+If user is not attached:
+- show bridge preference options normally
+
+Task 5 — Fix AI sleeve display:
+If admin allocated funds to the user’s AI sleeve:
+- show AI sleeve allocation on /my-account
+- show AI sleeve enabled/disabled
+- AI sleeve allocation must count inside total assigned allocation
+- AI sleeve must not exceed total allocation
+- AI sleeve must stay separate from manual trading allocation
+
+Task 6 — Fix risk cap display:
+Risk panel must read the user’s live risk caps, not defaults.
+
+Show:
+- allowedSymbols
+- maxLot if set
+- maxOpenPositions if set
+- dailyLossLimitUsd if set
+- requireStopLoss true/false from actual saved caps
+- frozen/locked state
+- approval status
+
+If caps are missing, show “Risk caps required” instead of contradictory values.
+
+Task 7 — Admin verification:
+In /admin/allocations:
+- verify andraie.co@gmail.com appears
+- verify user is attached to SHARED_MASTER_MT5
+- verify allocation amount is saved
+- verify AI sleeve amount is saved if configured
+- verify Refresh shell works
+- verify audit log records allocation/shell changes
+- verify normal user view is protected
+
+Task 8 — Real browser verification:
+Use the actual running app or E2E harness to verify:
+1. Log in or simulate as andraie.co@gmail.com.
+2. Open /my-account.
+3. Confirm account mode shows shared master / SHARED_MASTER_MT5.
+4. Confirm assigned allocation is not $0 if admin allocation exists.
+5. Confirm My Balance/My Equity reflect the user allocation shell.
+6. Confirm AI sleeve allocation appears if configured.
+7. Confirm Bridge Preference does not incorrectly show own MT5 bridge as active.
+8. Confirm normal user cannot see master bridge balance.
+9. Confirm refresh does not revert values to zero.
+
+Task 9 — QA:
+Run:
+- typecheck
+- build if available
+- ci:guards
+- test:account-mode
+- test:live-phaseB
+- test:demo-arming
+- test:demo-verify
+- test:live-broker-resolver
+- allocation runtime QA
+- seeded /my-account LIVE_SHARED E2E test
+- arx_live_commands count before/after
+
+Required results:
+- no live trades placed
+- arx_live_commands remains 0
+- no operator phrases typed
+- no safety gates weakened
+- normal users protected
+- admin diagnostics still available only to admin
+
+Final report only:
+- source of $0 balance found
+- whether allocation belonged to the logged-in user
+- whether /api/me/allocation returns correct values
+- whether /my-account now shows assigned allocation/balance/equity
+- whether AI sleeve now displays correctly
+- whether Bridge Preference now reflects shared master account
+- files/routes changed
+- QA results

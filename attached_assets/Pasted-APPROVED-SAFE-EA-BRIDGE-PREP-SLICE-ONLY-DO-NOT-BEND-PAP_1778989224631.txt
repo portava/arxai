@@ -1,0 +1,86 @@
+APPROVED — SAFE EA/BRIDGE PREP SLICE ONLY, DO NOT BEND PAPER-ONLY LOCK
+
+Proceed with the safe slice you recommended.
+
+Do NOT modify or weaken:
+- queueMt5CommandWithGate hard BLOCKED behavior
+- /mt5/status liveLocked=true behavior
+- paper_only_isolation guard
+- live_trading_locked guard
+- documented Phase 12 safety invariants
+- ReadOnlyMode default
+- AllowOrderExecution default
+- existing DEMO_MARKET_ORDER-only safety path
+
+Do NOT fake queue.
+Do NOT fake pending-order execution.
+Do NOT fake broker placement.
+Do NOT insert live mt5_commands rows if the current paper-only lock blocks it.
+Do NOT turn on live execution by default.
+Do NOT break CI guards.
+
+Approved scope:
+
+1. Generate the upgraded EA/MQL5 file as an offline install asset.
+   - It may support pending-order command parsing/execution internally.
+   - It must keep safe defaults.
+   - It must require explicit EA input permission before any broker action.
+   - It must clearly report its capabilities/version.
+
+2. Add new command-type vocabulary only:
+   - PLACE_PENDING_ORDER
+   - MODIFY_POSITION_PROTECTION
+   - MODIFY_PENDING_ORDER
+   - CANCEL_PENDING_ORDER
+
+3. Add bridge/EA capability disclosure:
+   - marketOrders
+   - marketOrderSLTP
+   - pendingOrders
+   - stopLimitOrders
+   - modifyPositionProtection
+   - modifyPendingOrders
+   - cancelPendingOrders
+   - expiration
+   - sharedMasterSafeRouting
+   - eaVersion
+   - bridgeVersion
+   - lastHeartbeatAt
+
+4. Add or update the submit-draft route so it runs all guards and returns honest statuses:
+   - EA_UPGRADE_REQUIRED
+   - BRIDGE_UNSUPPORTED
+   - BRIDGE_DISCONNECTED
+   - BLOCKED_BY_PAPER_LOCK
+   - BLOCKED_BY_RISK
+   - LIVE_LOCKED
+   - READ_ONLY
+   - TRADING_DISABLED
+
+5. Pending-order drafts must remain draft/preview-only unless every existing safety layer allows otherwise.
+
+6. AI tools and system prompt should understand:
+   - pending orders are not live unless MT5 confirms a real ticket
+   - draft does not mean placed
+   - queued does not mean placed
+   - paper lock blocks execution
+   - EA/bridge capability determines what can actually happen
+
+7. OpenAPI/codegen updates are approved if needed.
+
+8. Final report must include:
+   - exact EA file path generated/changed
+   - exact capabilities added
+   - exact routes changed
+   - exact statuses returned
+   - tests run
+   - typecheck result
+   - CI guard result
+   - confirmation that paper_only_isolation and live_trading_locked still pass
+   - confirmation that no fake live success was added
+   - confirmation that no broker execution was enabled by default
+
+Stop after this safe prep slice and report.
+
+Important:
+This is NOT the phase to unlock real broker execution. This phase prepares the EA/bridge capability layer while preserving the current safety lock.

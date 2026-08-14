@@ -1,0 +1,371 @@
+BUILD PHASE — Audit Log Center + Compliance Evidence Export
+
+Use the current codebase. Do not rebuild unrelated systems.
+
+Goal:
+Create an admin-only Audit Log Center where the operator can review safety events, trade lifecycle events, admin actions, Ruby actions, voice actions, bridge events, queue events, kill switch actions, reconciliation actions, user approvals, and blocked trade decisions. Add safe evidence exports for internal review, troubleshooting, and compliance-support documentation.
+
+Important:
+Check what already exists first. Reuse the current audit log model, admin dashboard, liveCommandPipeline, trade queue, bridge masking, reconciliation center, kill switches, user approval system, risk gate, Ruby logs, and auth/session system. Do not create a duplicate logging system.
+
+This is an internal evidence/export system. Do not claim legal, broker-dealer, regulatory, tax, or financial compliance certification unless that framework is separately implemented and reviewed.
+
+1. Inspect existing audit logging first
+Inspect:
+- audit log table/model
+- admin audit APIs
+- trade command lifecycle logs
+- bridge callback logs
+- safety gate block logs
+- user approval logs
+- allocation/risk profile logs
+- kill switch logs
+- queue pause/resume logs
+- close-only logs
+- reconciliation logs
+- Ruby chat/help logs
+- Ruby voice logs
+- onboarding logs
+- auth/admin access logs
+- secret masking tests/probes
+
+Only build missing pieces.
+
+2. Central Audit Log Center
+Create or improve an admin-only page:
+
+Audit Log Center
+
+It should allow admin to search/filter by:
+- event type
+- severity
+- user
+- admin user
+- account mode
+- symbol
+- commandId
+- positionId
+- reservationId
+- bridgeId
+- sharedMasterAccountId
+- source page
+- date/time range
+- status
+- action result
+- risk/safety gate reason
+- NEEDS_REVIEW status
+- kill switch scope
+- IP/device/session metadata if already safely available
+
+Do not expose secrets.
+
+3. Audit event categories
+Make sure audit coverage exists for:
+
+Auth/Admin:
+- admin login
+- failed admin access attempt
+- non-admin blocked from admin route
+- session/user switch
+- logout while voice/listening/trade flow active
+
+User setup:
+- onboarding started/completed
+- account mode selected/switched
+- shared master access requested
+- user approved/revoked
+- allocation assigned/changed
+- risk profile changed
+- account paused/resumed
+
+Trading:
+- trade ticket opened
+- trade submitted
+- command created
+- command blocked
+- command queued
+- command dispatched
+- bridge acknowledged
+- filled/rejected/failed callback
+- close requested
+- close confirmed/rejected
+- SL/TP edit requested
+- pending order cancelled
+- duplicate submit ignored
+- idempotency conflict handled
+
+Safety gates:
+- live blocked by global flag
+- blocked by admin approval missing
+- blocked by allocation missing
+- blocked by risk profile missing
+- blocked by max lot size
+- blocked by max open trades
+- blocked by daily loss
+- blocked by allowed symbol
+- blocked by cooldown
+- blocked by exposure reservation
+- blocked by bridge unhealthy
+- blocked by shared master unmapped
+- blocked by queue paused
+- blocked by kill switch
+- blocked by close-only mode
+- blocked by force-review mode
+
+Operator controls:
+- global live kill switch enabled/disabled
+- shared master dispatch paused/resumed
+- per-user pause/resume
+- per-symbol pause/resume
+- per-bridge pause/resume
+- one-click global disable/enable
+- close-only mode enabled/disabled
+- force-review mode enabled/disabled
+- admin cancelled queued command
+- admin marked NEEDS_REVIEW
+
+Bridge/Reconciliation:
+- heartbeat received
+- heartbeat stale
+- bridge mapping updated
+- duplicate EA callback ignored
+- stuck reservation detected
+- reservation released
+- stale command expired
+- unmapped master execution detected
+- item marked NEEDS_REVIEW
+- reconciliation item resolved
+- ledger updated from verified evidence
+- unsafe retry blocked
+
+Ruby/Voice:
+- Ruby app-help request
+- Ruby trading-help request
+- Ruby user-state lookup
+- blocked private/admin data request
+- Ruby memory cleared
+- voice mode started/stopped
+- transcript submitted
+- voice trade intent detected
+- voice confirmation requested
+- voice action cancelled
+- voice command blocked by safety gate
+
+4. Audit event structure
+Each audit event should safely store:
+- eventId
+- timestamp
+- eventType
+- severity
+- actorUserId
+- actorRole if safe
+- targetUserId if applicable
+- accountMode
+- entityType
+- entityId
+- commandId if applicable
+- positionId if applicable
+- reservationId if applicable
+- bridgeId if applicable
+- sharedMasterAccountId if applicable
+- symbol if applicable
+- source page/action
+- result: success / blocked / failed / needs_review / ignored
+- user-facing reason
+- internal safe reason
+- before/after state summary when safe
+- evidence references
+- request/session metadata if safe
+- masked payload summary only
+
+Never store or show:
+- bridge tokens
+- API keys
+- session secrets
+- token hashes
+- account passwords
+- raw account credentials
+- raw sensitive bridge payloads
+- raw audio
+- full private prompt payloads
+- other-user data to normal users
+
+5. Tamper-evidence where practical
+If not already present, add lightweight tamper-evidence:
+- append-only audit rows where possible
+- immutable eventId
+- createdAt not editable by normal app flows
+- optional hash chain or previousEventHash if practical
+- admin resolution notes added as new events, not overwriting the original event
+- export includes checksum/hash summary
+
+Do not overbuild blockchain-style systems.
+
+6. Admin audit detail view
+Admin can open an event and see:
+- readable summary
+- timeline context
+- related command/trade/reservation/ledger item
+- related user if admin-safe
+- related reconciliation item if any
+- masked bridge evidence
+- reason/action/result
+- before/after state summary
+- export/include toggle
+
+No raw secrets.
+
+7. User-facing activity history
+Add or improve a normal-user “My Activity” view only if it already fits the app structure.
+
+Normal users may see their own:
+- trade submitted
+- trade blocked
+- trade queued
+- trade filled/rejected
+- close requested
+- SL/TP requested
+- onboarding/account status changes
+- approval/allocation status changes
+- Ruby memory cleared
+- voice command cancelled
+
+Normal users must not see:
+- admin notes
+- other users
+- shared master global data
+- internal bridge details
+- raw logs
+- secrets
+
+8. Evidence export
+Add admin-only evidence export for selected filters or selected events.
+
+Export options:
+- CSV for event table review
+- JSON for structured technical evidence
+- PDF or printable HTML summary if easy and existing tooling supports it
+- zipped evidence bundle only if already supported
+
+Each export should include:
+- exportId
+- export timestamp
+- admin userId
+- filters used
+- event count
+- event summaries
+- masked evidence references
+- checksum/hash summary if implemented
+- disclaimer that sensitive secrets are redacted
+- note that export is internal evidence, not legal certification
+
+Do not include secrets.
+
+9. Export filters/presets
+Add useful presets:
+- Live trade safety review
+- No-live-command QA evidence
+- User approval history
+- Kill switch history
+- Trade command lifecycle
+- Bridge heartbeat/callback history
+- Reconciliation/NEEDS_REVIEW history
+- Voice trading guardrail history
+- Secret masking probe evidence
+- Per-user activity evidence
+- Per-symbol risk block history
+
+10. No-live-command evidence
+Add or improve a dashboard/export section that proves:
+- arx_live_commands count before/after QA
+- live commands blocked by safety gates
+- test mode did not fire live orders
+- demo commands stayed demo
+- failed/blocked attempts did not dispatch
+- queue dispatcher did not send live bridge request unless fully approved
+
+If this count/probe already exists, reuse it.
+
+11. Ruby awareness
+Ruby should understand audit and evidence status safely.
+
+For normal users:
+- Ruby can explain their own activity history.
+- Ruby can explain why their trade was blocked.
+- Ruby cannot show admin audit logs or other-user events.
+
+For admins:
+- Ruby can summarize audit trends.
+- Ruby can explain kill switch history.
+- Ruby can summarize NEEDS_REVIEW events.
+- Ruby can help find evidence for a commandId/user/symbol/time range.
+- Ruby must not expose secrets.
+
+12. Security and masking
+Verify/fix:
+- audit APIs are admin-only unless explicitly user-owned activity endpoints
+- user activity endpoints filter by authenticated session userId
+- exports are admin-only
+- export downloads are protected
+- export files expire or are access-controlled
+- bridge evidence masking goes through maskBridgeEvidenceForUser
+- requireAdmin output is production-safe
+- CI/probes catch secret leaks
+- logs/prompts/routes/responses never contain secrets
+
+13. Audit logs for audit actions
+Yes, audit the audit system.
+
+Add audit events for:
+- admin viewed audit center
+- admin searched audit logs
+- admin opened audit detail
+- admin created export
+- admin downloaded export
+- export failed
+- non-admin audit access attempt
+- non-admin export access attempt
+- user viewed own activity
+- secret masking violation blocked if detected
+
+Do not log secrets.
+
+14. Tests
+Add or update tests for:
+- non-admin cannot access audit center
+- non-admin cannot call admin audit APIs
+- non-admin cannot export evidence
+- admin can view audit center
+- admin can filter audit events
+- admin can open audit detail
+- admin can export selected evidence
+- export masks secrets
+- export includes filters, timestamp, admin id, event count, and disclaimer
+- user can only see their own activity
+- User A cannot see User B audit/activity
+- trade command lifecycle creates audit events
+- safety gate block creates audit event
+- kill switch change creates audit event
+- reconciliation resolution creates audit event
+- Ruby/voice blocked trade creates audit event
+- duplicate callback ignored creates audit event
+- no-live-command evidence can be exported
+- requireAdmin output production-safe
+- bridge masking chokepoint used
+- no secrets exposed in UI/logs/routes/prompts/exports
+- no live command created during tests
+
+Return:
+- what was built
+- files changed
+- audit center route
+- audit API routes
+- export route/API names
+- event categories added
+- masking behavior
+- export formats
+- tests added/run
+- manual test steps
+- remaining risks
+- confirmation that no live trade was fired
+- confirmation arx_live_commands count stayed unchanged

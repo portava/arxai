@@ -1,0 +1,160 @@
+Finish the Deriv synthetic/volatility scanner feed wiring.
+
+Check what already exists first and reuse the current DerivFeedAdapter, scanner, symbol mapping, cache adapter, market data provider, and Ruby Market Intelligence logic.
+
+Do not rebuild the whole scanner.
+Do not fabricate candles.
+Do not place live trades.
+Do not enable public master live trading.
+Do not bypass user approval toggles.
+Do not expose DERIV_APP_ID, DERIV_API_TOKEN, bridge tokens, API keys, broker passwords, or secrets.
+arx_live_commands must remain unchanged before/after.
+
+Current status from QA:
+- Trade ticket suggests reasonable SL ✅
+- SL respects spread/min-distance/slippage ✅
+- R:R uses validated SL and avoids absurd values ✅
+- Deriv feed adapter exists ✅
+- Synthetic scanner uses Deriv feed when configured = PARTIAL
+- Clean “Deriv feed not configured” message exists ✅
+
+Now complete the missing PARTIAL item.
+
+PART 1 — DERIV SCANNER DATA ROUTING
+
+Wire Synthetic Indices scanner universe to DerivFeedAdapter.
+
+When scan universe = Synthetic Indices:
+1. Check Deriv feed status.
+2. If DERIV_APP_ID is configured and Deriv WS is connected, use DerivFeedAdapter.
+3. If Deriv feed is not configured, show clean setup message:
+   “Deriv feed not configured. Add DERIV_APP_ID to enable synthetic index data.”
+4. If Deriv feed is connected but selected symbol is unavailable, show:
+   “Symbol unavailable from Deriv feed.”
+5. Do not fall back to fake simulator candles for synthetic/volatility markets.
+6. Existing MT5 provider can still be used for normal forex/metals/indices where appropriate.
+
+PART 2 — DERIV ENDPOINTS / PROVIDER SURFACE
+
+Add or finish backend endpoints as needed:
+
+- GET /api/market-data/deriv/status
+- GET /api/market-data/deriv/symbols
+- GET /api/market-data/deriv/ticks?symbol=
+- GET /api/market-data/deriv/candles?symbol=&granularity=&count=
+
+If equivalent endpoints already exist, reuse them.
+
+Status response should include:
+- configured: true/false
+- connected: true/false
+- activeSymbolCount
+- subscribedSymbols
+- lastTickAt
+- reconnectCount
+- safe error message
+- no secrets
+
+PART 3 — SYMBOL MAPPING
+
+Map clean scanner labels to Deriv symbols.
+
+Support at minimum:
+- Volatility 10
+- Volatility 25
+- Volatility 50
+- Volatility 75
+- Volatility 100
+- Volatility 10 1s
+- Volatility 25 1s
+- Volatility 50 1s
+- Volatility 75 1s
+- Volatility 100 1s
+- Boom 500
+- Boom 1000
+- Crash 500
+- Crash 1000
+- Step Index if available
+
+Show clean display names in UI, but send the exact Deriv symbol code to the provider.
+
+PART 4 — SCANNER UI
+
+Update Market Scanner Synthetic Indices mode:
+
+- If Deriv configured:
+  Show “Deriv feed connected” status.
+- If not configured:
+  Show “Deriv feed not configured.”
+- If connected:
+  Scan actual Deriv ticks/candles.
+- Show last feed update time.
+- Show selected symbol.
+- Show no fabricated results warning removed once real feed is available.
+- If no candles available but ticks are available, use tick-derived analysis carefully and label it:
+  “Tick-based analysis.”
+
+PART 5 — RUBY MARKET INTELLIGENCE
+
+Ruby Market Intelligence should use Deriv data for synthetic symbols when available.
+
+For synthetic/volatility symbols, Ruby should explain:
+- current tick/candle movement
+- volatility warning
+- trend/bias if enough data exists
+- confidence
+- risk warning
+- no fake candle generation
+
+Ruby copy:
+“This synthetic market is using Deriv feed data. Volatility can move quickly; use wider stop-loss spacing and confirm risk.”
+
+PART 6 — ADMIN DIAGNOSTICS
+
+Add Deriv feed status to Admin Diagnostics / Operator Command Center:
+
+- Deriv configured yes/no
+- connected yes/no
+- active symbols count
+- last tick time
+- reconnect count
+- current subscribed symbols
+- latest safe error
+- no secrets
+
+PART 7 — QA
+
+Add/update tests:
+
+1. Deriv adapter status endpoint works.
+2. Missing DERIV_APP_ID shows clean not-configured state.
+3. DERIV_APP_ID configured attempts connection without exposing secrets.
+4. Synthetic Indices scanner calls Deriv provider when configured.
+5. Synthetic scanner does not fabricate candles.
+6. Volatility 75 maps correctly.
+7. Boom 1000 maps correctly.
+8. Crash 1000 maps correctly.
+9. Tick/candle data normalizes into scanner format.
+10. Ruby Market Intelligence uses Deriv data for synthetic symbols.
+11. Admin diagnostics show Deriv status without secrets.
+12. Normal users see clean messages.
+13. No live trade auto-fires.
+14. arx_live_commands remains unchanged.
+15. Existing forex scanner still works.
+16. Existing risk/reward/SL validation still passes.
+
+Acceptance proof:
+- Synthetic scanner uses DerivFeedAdapter when configured.
+- If not configured, clean setup message appears.
+- No fabricated synthetic candles.
+- Admin diagnostics show Deriv feed status.
+- Ruby explains synthetic market using Deriv feed data.
+- No live trade fired.
+- No secrets leaked.
+
+If all pass, output:
+DERIV_SYNTHETIC_SCANNER_FEED_READY
+
+If anything fails, output:
+DERIV_SYNTHETIC_SCANNER_FEED_NOT_READY
+with exact blockers.

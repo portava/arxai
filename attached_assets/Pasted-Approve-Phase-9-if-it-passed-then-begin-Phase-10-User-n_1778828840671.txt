@@ -1,0 +1,392 @@
+Approve Phase 9 if it passed, then begin Phase 10: User notifications, push notification readiness, activity timeline, and event delivery system for the ARX AI trading app.
+
+IMPORTANT SCOPE:
+- Do NOT place live trades.
+- Do NOT enable live execution.
+- Keep liveLocked = true.
+- Keep READ_ONLY / PAPER_ONLY active.
+- Keep AllowOrderExecution = false.
+- Do NOT touch MT5 EA .mq5 files.
+- Do NOT weaken MT5 bridge token security.
+- Do NOT reset or wipe the database.
+- Do NOT change unrelated UI.
+- Do NOT move to Phase 11 until Phase 10 QA passes.
+
+Current status:
+- Phase 1 identity foundation: PASS.
+- Phase 2 per-user data scoping: PASS.
+- Phase 3 per-user MT5 connections/trading sessions: PASS.
+- Phase 4 per-user MT5 command routing: PASS.
+- Phase 5 paper trade lifecycle, journal, calendar: expected PASS.
+- Phase 6 AI trade review/coaching: expected PASS.
+- Phase 7 playbook/checklist: expected PASS.
+- Phase 8 Risk Governor: expected PASS.
+- Phase 9 real-time dashboard intelligence: expected PASS.
+- Now build Phase 10: notifications and activity timeline.
+
+Main goal:
+ARX AI should notify each user about important personal trading events, MT5 bridge status, risk alerts, paper trade events, AI reviews, coaching updates, playbook/checklist warnings, and session reminders. The app should also maintain a user-owned activity timeline so the user can see what happened in their account over time.
+
+Phase 10A — User notification model:
+Create or finalize a user-owned notifications table.
+
+Required fields:
+- id
+- userId
+- notificationType:
+  mt5_connected
+  mt5_disconnected
+  mt5_stale
+  heartbeat_received
+  session_started
+  session_paused
+  session_closed
+  paper_trade_created
+  paper_trade_opened
+  paper_trade_closed
+  paper_trade_cancelled
+  risk_warning
+  risk_block
+  cooldown_started
+  cooldown_ended
+  daily_loss_warning
+  daily_loss_hit
+  ai_review_ready
+  coaching_plan_updated
+  playbook_created
+  checklist_failed
+  checklist_passed
+  journal_reminder
+  command_completed
+  command_failed
+  security_alert
+  system_notice
+- severity: info/warning/critical
+- title
+- message
+- source: mt5/risk/session/trade/ai/playbook/journal/security/system
+- entityType nullable
+- entityId nullable
+- status: unread/read/dismissed
+- actionLabel nullable
+- actionTarget nullable
+- deliveredInApp boolean
+- deliveredPush boolean
+- pushAttemptedAt nullable
+- pushDeliveredAt nullable
+- readAt nullable
+- dismissedAt nullable
+- createdAt
+- updatedAt
+
+Rules:
+- Every notification must belong to userId.
+- Never accept userId from the frontend.
+- Never show another user’s notifications.
+- Never include raw bridge tokens or secrets in notification messages.
+
+Phase 10B — Notification preferences:
+Create or finalize user-owned notification_preferences table.
+
+Required fields:
+- id
+- userId
+- inAppEnabled boolean
+- pushEnabled boolean
+- emailEnabled boolean nullable for future
+- mt5StatusEnabled boolean
+- riskAlertsEnabled boolean
+- tradeEventsEnabled boolean
+- aiCoachingEnabled boolean
+- playbookChecklistEnabled boolean
+- journalRemindersEnabled boolean
+- sessionRemindersEnabled boolean
+- securityAlertsEnabled boolean
+- quietHoursEnabled boolean
+- quietHoursStart nullable
+- quietHoursEnd nullable
+- timezone nullable
+- createdAt
+- updatedAt
+
+Defaults:
+- inAppEnabled = true
+- pushEnabled = false until user opts in
+- riskAlertsEnabled = true
+- securityAlertsEnabled = true
+- mt5StatusEnabled = true
+- tradeEventsEnabled = true
+- aiCoachingEnabled = true
+- playbookChecklistEnabled = true
+- journalRemindersEnabled = true
+- sessionRemindersEnabled = true
+
+Phase 10C — Push subscription readiness:
+Add push notification support safely, but only with explicit user opt-in.
+
+Create or finalize push_subscriptions table:
+- id
+- userId
+- endpointHash
+- endpointEncrypted or endpoint stored safely if current stack supports it
+- subscriptionJson encrypted/text
+- userAgent nullable
+- deviceLabel nullable
+- status: active/revoked/failed
+- lastUsedAt nullable
+- createdAt
+- revokedAt nullable
+
+Routes:
+- GET /api/me/notification-preferences
+- PATCH /api/me/notification-preferences
+- GET /api/me/notifications
+- POST /api/me/notifications/:id/read
+- POST /api/me/notifications/:id/dismiss
+- POST /api/me/notifications/read-all
+- POST /api/me/push/subscribe
+- POST /api/me/push/unsubscribe
+- GET /api/me/push/status
+
+Requirements:
+- requireUser on every route.
+- Scope all routes by req.authUser.id.
+- Do not enable push automatically.
+- Ask user permission from the frontend only when they click an enable push option.
+- If VAPID/Web Push secrets are missing, app should gracefully show “Push setup not configured yet” and still keep in-app notifications working.
+- Do not expose VAPID private keys or secrets to the frontend.
+
+Phase 10D — Activity timeline:
+Create a user-owned activity_timeline table.
+
+Required fields:
+- id
+- userId
+- eventType:
+  login
+  logout
+  mt5_connection_created
+  mt5_heartbeat_received
+  mt5_connection_stale
+  mt5_connection_disconnected
+  trading_session_started
+  trading_session_closed
+  paper_trade_created
+  paper_trade_opened
+  paper_trade_closed
+  paper_trade_cancelled
+  journal_entry_created
+  ai_trade_review_created
+  coaching_plan_updated
+  playbook_created
+  pre_trade_check_completed
+  risk_check_completed
+  risk_trade_blocked
+  command_queued
+  command_completed
+  command_failed
+  settings_updated
+  notification_read
+  system_event
+- title
+- description
+- source
+- entityType nullable
+- entityId nullable
+- metadata json/text nullable
+- createdAt
+
+Routes:
+- GET /api/me/activity
+- GET /api/me/activity/recent
+- GET /api/me/activity/:id
+
+Requirements:
+- Timeline must be user-scoped.
+- Do not log secrets.
+- Do not log raw bridge tokens.
+- Do not show another user’s timeline events.
+
+Phase 10E — Event creation service:
+Create a central event service that other systems can call.
+
+Service should support:
+- createNotification(userId, payload)
+- createActivityEvent(userId, payload)
+- createNotificationAndActivity(userId, payload)
+- dedupe similar notifications within a safe time window
+- respect notification preferences
+- respect quiet hours for non-critical push notifications
+- always allow critical security/risk alerts in-app
+- never duplicate spam heartbeat notifications every few seconds
+
+Dedupe examples:
+- MT5 stale notification should not fire every refresh.
+- Heartbeat received should update status, not spam notifications.
+- Risk block should notify once per blocked trade/check.
+- AI review ready should notify once per completed review.
+- Journal reminder should not repeat constantly.
+
+Phase 10F — Trigger notifications from existing app events:
+Wire notifications/activity timeline into existing user-owned systems.
+
+Trigger events for:
+1. MT5 connection created
+2. MT5 heartbeat accepted
+3. MT5 connection becomes stale
+4. MT5 connection disconnects
+5. Trading session starts/closes
+6. Paper trade opens/closes/cancels
+7. Risk Governor warning/block/cooldown
+8. Daily loss warning/hit
+9. AI trade review completed
+10. Coaching plan updated
+11. Playbook created/activated
+12. Pre-trade checklist pass/warning/block
+13. Journal reminder needed
+14. MT5 command completed/failed
+15. Security event such as token regenerated/revoked
+
+Important:
+- Do not create a notification every time heartbeat arrives. Use heartbeat to update status and only notify on meaningful state changes.
+- Do not notify another user about someone else’s MT5 connection or trades.
+- Do not include fake demo events on first-time user dashboards.
+
+Phase 10G — Frontend notification center:
+Update only notification/timeline/status areas.
+
+Add:
+- Bell icon or notification entry point if missing
+- Unread count badge
+- Notification center/page/panel
+- Filters:
+  All
+  MT5
+  Risk
+  Trades
+  AI
+  Playbooks
+  System
+- Mark as read
+- Mark all as read
+- Dismiss
+- Notification detail view if needed
+- Action buttons based on actionTarget
+
+Notification empty state:
+- “No notifications yet”
+- “Important bridge, risk, trade, and AI updates will appear here”
+
+Do not clutter the main dashboard. Keep it clean.
+
+Phase 10H — Activity timeline UI:
+Add a clean user-owned activity timeline.
+
+Timeline should show:
+- date/time
+- event icon/category
+- event title
+- short description
+- source
+- related action link if available
+
+Filters:
+- All
+- MT5
+- Session
+- Trades
+- Risk
+- AI
+- Playbooks
+- Journal
+- System
+
+First-time state:
+- “No activity yet”
+- “Your timeline will populate as you connect MT5, start sessions, create paper trades, and review your trades.”
+
+Do not show global demo activity.
+
+Phase 10I — Dashboard integration:
+Integrate notification summary with Phase 9 dashboard intelligence.
+
+Dashboard should show:
+- unread notification count
+- latest critical alert
+- latest risk warning
+- latest MT5 status alert
+- latest AI coaching update
+- recent activity summary
+
+Do not let the dashboard show notifications that belong to another user.
+
+Phase 10J — Safety:
+Hard rules:
+- Notifications cannot place trades.
+- Notification action buttons cannot bypass Risk Governor.
+- Push notifications cannot expose account secrets, bridge tokens, or sensitive private data.
+- No live execution commands.
+- No OrderSend path.
+- No MT5 EA changes.
+- AI cannot enable live trading from a notification.
+
+Phase 10K — Tests:
+Add/extend tests:
+
+1. User A receives notification for own paper trade.
+2. User B cannot see User A notification.
+3. User B cannot mark User A notification as read.
+4. User A receives activity event for own MT5 connection.
+5. User B cannot see User A activity event.
+6. Notification preferences are user-scoped.
+7. Push subscribe/unsubscribe is user-scoped.
+8. Missing push configuration does not break in-app notifications.
+9. MT5 heartbeat does not spam notifications.
+10. MT5 stale transition creates one warning notification.
+11. Risk block creates critical notification.
+12. AI review completion creates notification.
+13. Read-all only affects current user.
+14. Dismiss only affects current user.
+15. No raw bridge token appears in notification/activity payload.
+16. No live trade command is created.
+17. MT5 EA files remain untouched.
+
+Phase 10L — QA/fix gate:
+After implementation, run QA and fix every issue before stopping.
+
+QA must confirm:
+- App starts.
+- Login/register/logout/me still work.
+- Phase 2 user scoping still passes.
+- Phase 3 MT5 connection isolation still passes.
+- Phase 4 command isolation still passes.
+- Phase 5 paper trade/journal/calendar still pass.
+- Phase 6 AI review/coaching still pass.
+- Phase 7 playbook/checklist still pass.
+- Phase 8 Risk Governor still passes.
+- Phase 9 dashboard intelligence still passes.
+- Notifications work.
+- Notification preferences work.
+- Push readiness does not crash if secrets are missing.
+- Activity timeline works.
+- User A/User B notification isolation passes.
+- User A/User B activity isolation passes.
+- No fake global notifications appear.
+- No live trades executed.
+- No MT5 EA files changed.
+- Safety contract still passes.
+- Existing unrelated paperIntelligence.ts:123 typecheck issue is reported separately if still present.
+
+Final report format:
+1. Files changed
+2. Tables added/changed
+3. Routes added/changed
+4. Notification system result
+5. Push readiness result
+6. Activity timeline result
+7. Dashboard integration result
+8. User A/User B isolation result
+9. Safety verification
+10. Remaining errors
+11. Phase 10 PASS or FAIL
+12. Stop and wait for my approval before Phase 11

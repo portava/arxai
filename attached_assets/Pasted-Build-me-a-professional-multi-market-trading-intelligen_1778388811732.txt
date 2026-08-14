@@ -1,0 +1,300 @@
+Build me a professional multi-market trading intelligence web app.
+
+App name: High Roll Market AI
+
+Purpose:
+Create a responsive web app that helps analyze forex, indices, stocks, and synthetic volatility markets. It should generate trade ideas, risk scores, market condition labels, alerts, and backtests. Do not guarantee profits. Demo mode first.
+
+Core markets:
+1. Forex
+- All major pairs
+- All minor pairs
+- Optional exotic pairs
+- EUR/USD, GBP/USD, USD/JPY, USD/CHF, USD/CAD, AUD/USD, NZD/USD
+- EUR/JPY, GBP/JPY, EUR/GBP, AUD/JPY, CAD/JPY, CHF/JPY
+- Add symbol selector and market category filter
+
+2. Indices
+- US30 / Dow Jones
+- NAS100
+- SPX500
+- GER40
+- UK100
+- JP225
+
+3. Stocks
+- U.S. stocks
+- Watchlist
+- Sector view
+- Earnings calendar placeholder
+- News sentiment placeholder
+
+4. Synthetic markets
+- Volatility 75
+- Volatility 75 1s
+- Volatility 25 1s
+
+Tech stack:
+- React
+- TypeScript
+- Tailwind CSS
+- Node.js / Express
+- PostgreSQL if available, otherwise local JSON
+- Recharts
+- REST API
+- Modular strategy engine
+- Modular data provider layer
+
+Main pages:
+1. Dashboard
+2. Market Scanner
+3. Forex Center
+4. Indices Center
+5. Stock Market Center
+6. Synthetic Volatility Center
+7. Strategy Builder
+8. Risk Manager
+9. Economic Calendar
+10. News Intelligence
+11. Backtest Lab
+12. Trade Journal
+13. MT5 Bridge Setup
+14. Settings
+
+Dashboard:
+Show:
+- selected market
+- selected symbol
+- current signal: BUY / SELL / WAIT
+- confidence score
+- market condition
+- trend direction
+- volatility state
+- session: Asia, London, New York, overlap
+- daily bias
+- risk warning
+- today’s P/L placeholder
+- win rate placeholder
+- drawdown placeholder
+- bot status: OFF, DEMO, LIVE LOCKED
+
+Market scanner:
+Each symbol should show:
+- symbol
+- category
+- trend
+- volatility
+- spread state
+- signal
+- confidence
+- strategy match
+- risk score
+- reason
+
+Market condition labels:
+- Strong Uptrend
+- Strong Downtrend
+- Range
+- Choppy
+- Breakout Forming
+- Liquidity Sweep
+- Pullback
+- Reversal Risk
+- High Volatility
+- Low Volatility
+- No Trade Zone
+
+Indicators:
+Create functions for:
+- EMA
+- SMA
+- RSI
+- ATR
+- MACD
+- Bollinger Bands
+- VWAP placeholder
+- Support and resistance
+- Swing highs and swing lows
+- Break of structure
+- Change of character
+- Liquidity sweep
+- Candle body strength
+- Wick rejection
+- Volume spike placeholder
+
+Forex intelligence:
+Create a macro scoring system based on:
+- central bank direction
+- interest rate expectations
+- inflation
+- jobs data
+- GDP
+- bond yields
+- risk-on/risk-off sentiment
+- commodity link
+- session liquidity
+
+For each forex pair, show:
+- base currency strength
+- quote currency strength
+- interest rate bias
+- macro bias
+- technical bias
+- combined bias
+
+Indices intelligence:
+For US30, NAS100, SPX500:
+Track:
+- U.S. dollar strength
+- bond yields
+- Fed expectations
+- inflation risk
+- earnings sentiment
+- market breadth placeholder
+- VIX placeholder
+- risk sentiment
+- key session times
+
+US30 logic:
+US30 should react strongly to:
+- Dow component strength
+- Fed rate expectations
+- inflation data
+- jobs data
+- bond yields
+- industrial/financial sector strength
+- risk-on/risk-off sentiment
+
+Stock intelligence:
+For each stock:
+- trend
+- volatility
+- earnings risk
+- news sentiment placeholder
+- sector strength placeholder
+- relative strength placeholder
+- support/resistance
+- buy/sell/wait rating
+
+Synthetic volatility intelligence:
+For Volatility 75, 75 1s, and 25 1s:
+- no news filter
+- focus on volatility, structure, ATR, trend, wick rejection, and momentum
+- 75 1s requires stricter risk settings
+- 25 1s is safer for testing
+- V75 is high volatility and should use smaller lot sizing
+
+Strategies:
+Create modular strategies:
+
+1. Trend Continuation
+Uses EMA 20, EMA 50, EMA 200, RSI, ATR.
+
+2. Break of Structure
+Uses swing highs/lows and close confirmation.
+
+3. Pullback Continuation
+Waits for price to return to EMA zone or support/resistance.
+
+4. Liquidity Sweep Reversal
+Detects stop hunt above/below recent highs/lows.
+
+5. Volatility Expansion
+Uses ATR expansion and strong candle close.
+
+6. Mean Reversion
+Only active in confirmed range conditions.
+
+7. Session Breakout
+For London open and New York open.
+
+8. News Avoidance Mode
+Blocks forex/indices trades near major economic news.
+
+Risk manager:
+This is the most important part.
+Add:
+- max daily loss
+- max weekly loss
+- max trades per day
+- max open trades
+- max lot size
+- risk per trade %
+- stop after losing streak
+- cooldown after loss
+- minimum confidence score
+- no-trade during high spread
+- no-trade during abnormal volatility
+- no-trade during major news
+- emergency kill switch
+- live trading locked by default
+
+Signal object:
+Every scan returns:
+
+{
+  "symbol": "EURUSD",
+  "marketType": "forex",
+  "direction": "BUY | SELL | WAIT",
+  "confidence": 0-100,
+  "entry": 0,
+  "stopLoss": 0,
+  "takeProfit": 0,
+  "strategy": "Trend Continuation",
+  "technicalBias": "Bullish",
+  "macroBias": "Neutral",
+  "marketCondition": "Strong Uptrend",
+  "riskApproved": true,
+  "blockedReason": null,
+  "reason": "EMA alignment bullish, RSI healthy, ATR normal, pullback confirmed."
+}
+
+MT5 Bridge:
+Replit is the brain.
+MT5 is the execution engine.
+
+Create endpoints:
+POST /api/signals
+GET /api/signals/latest
+POST /api/execute-trade
+POST /api/mt5-webhook
+GET /api/mt5/status
+
+Execution stays in mock mode first.
+Live trading must be locked until bridge is connected and user confirms risk warnings.
+
+Backtest Lab:
+Allow CSV upload with:
+time, open, high, low, close, volume
+
+Backtest results:
+- total trades
+- wins
+- losses
+- win rate
+- profit factor
+- max drawdown
+- average win
+- average loss
+- best strategy
+- worst strategy
+- equity curve
+
+Trade Journal:
+Track:
+- trade idea
+- actual result
+- mistake tag
+- strategy used
+- screenshot URL placeholder
+- emotion tag
+- lesson learned
+
+UI:
+Make it premium, clean, dark, professional.
+Do not overcrowd.
+Use large cards, clean spacing, simple tabs, and mobile responsive design.
+
+Disclaimers:
+Add this across the app:
+“Trading is risky. This app is for research and education. No signal guarantees profit. Use demo mode first.”

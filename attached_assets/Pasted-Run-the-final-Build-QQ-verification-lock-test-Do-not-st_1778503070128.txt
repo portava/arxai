@@ -1,0 +1,543 @@
+Run the final Build QQ verification lock-test.
+
+Do not start Build RR.
+Do not add new features unless a Build QQ test fails and must be fixed.
+Do not enable live trading.
+Do not modify MT5 live execution.
+Do not modify canPlaceTrades.
+Do not expose API secrets.
+Do not recommend live trading.
+Do not change Build AA through PP logic except to fix Build QQ cockpit/read-only integration issues.
+
+Build QQ goal:
+Create and verify the Unified Trading Cockpit + UX Simplification layer. QQ must make the app easier to operate by bringing safety status, paper session controls, open paper trades, performance, coach guidance, alerts, autopilot, and system health into one clean paper-only dashboard.
+
+QQ must prove:
+- cockpit page loads
+- navigation is simplified
+- cockpit reads PP session data
+- cockpit reads OO readiness
+- cockpit reads HH Risk Governor
+- cockpit reads LL alerts
+- cockpit reads GG performance
+- cockpit reads II coach
+- cockpit reads EE paper trades
+- cockpit reads FF autopilot
+- cockpit reads MM health
+- cockpit can safely call PP start/pause/resume/end actions
+- critical alerts/readiness/risk blocks disable unsafe actions
+- mobile layout is readable
+- no live trading controls exist
+- no secrets are exposed
+
+1. Typecheck/build health
+
+Run all relevant commands:
+- typecheck
+- build
+- API server validation
+- frontend build validation
+- database/schema validation if available
+- test command if available
+
+Show exact commands run and whether each passed.
+
+2. Trading Cockpit service/page proof
+
+Confirm the Trading Cockpit exists.
+
+Show exact files/functions/components for:
+- tradingCockpitSummaryService
+- tradingCockpitRoutes if created
+- Trading Cockpit frontend page
+- Safety Header component
+- Primary Action Card
+- Active Paper Session panel
+- Paper Trade Monitor panel
+- Today Performance panel
+- Coach Summary panel
+- Alerts panel
+- Autopilot panel
+- System Health mini panel
+- Mobile layout/collapsible panels
+- navigation/menu cleanup
+
+Confirm the cockpit summary returns or displays:
+
+{
+  cockpit_id,
+  generated_at,
+  mode: "PAPER_ONLY",
+  liveTradingStatus: "DISABLED",
+  readiness,
+  riskGovernor,
+  security,
+  activeSession,
+  todayPerformance,
+  openPaperTrades,
+  coachSummary,
+  notifications,
+  autopilot,
+  systemHealth,
+  nextBestAction,
+  warnings
+}
+
+3. Database verification
+
+Confirm whether QQ added any database tables.
+
+If cockpit_user_preferences was created, confirm it includes:
+id,
+user_id,
+default_view,
+collapsed_panels,
+show_advanced_metrics,
+created_at,
+updated_at.
+
+If no database tables were needed, confirm QQ is read-only and uses existing AA-PP data sources.
+
+4. Endpoint verification
+
+Run and show raw output for:
+
+GET /api/trading-cockpit/summary
+
+GET /api/trading-cockpit/layout, if created
+
+POST /api/trading-cockpit/layout, if created
+
+POST /api/trading-cockpit/demo, if created
+
+Also verify the cockpit can safely call or read from:
+
+GET /api/paper-sessions/status
+
+POST /api/paper-sessions/preflight
+
+GET /api/paper-sessions/active
+
+GET /api/readiness/status
+
+GET /api/risk-governor/status
+
+GET /api/notifications/counts
+
+GET /api/performance/ai-command-center
+
+GET /api/trader-coach/daily
+
+GET /api/paper-execution/open
+
+GET /api/paper-autopilot/status
+
+GET /api/system-health/status
+
+5. Navigation cleanup proof
+
+Show the new navigation structure.
+
+Confirm routes are grouped as:
+
+Main:
+- Trading Cockpit
+- Paper Sessions
+- Calendar
+- Coach
+- Playbook
+
+Practice:
+- Replay Simulator
+- Strategy Lab
+- Data Import
+
+System:
+- Notifications
+- Risk Governor
+- Readiness Gate
+- System Health
+- Security
+- Broker Read-Only
+
+Confirm:
+- repetitive menu items were removed or grouped
+- confusing pages are renamed clearly
+- Broker page says READ ONLY
+- live trading controls are not shown
+- Paper Execution is not over-emphasized as a confusing main page
+
+6. Safety header proof
+
+Confirm the cockpit safety header shows:
+- PAPER ONLY badge
+- LIVE TRADING DISABLED badge
+- OO readiness status
+- HH Risk Governor status
+- NN security status
+- unread critical alerts
+- current PP paper session status
+
+Show raw output or screenshot/route proof.
+
+7. Primary action proof
+
+Confirm the cockpit chooses one clear next action based on state:
+
+- Run preflight
+- Start paper session
+- Resume session
+- Pause session
+- End session
+- Review blocked reason
+- Read coach report
+- Acknowledge critical alert
+
+Test at least these states:
+A. No active session and safe system
+B. Active session
+C. Paused session
+D. Readiness blocked
+E. Risk Governor paused
+F. Critical alert unread
+
+Show raw output.
+
+8. Empty-state proof
+
+Load cockpit with no active session and minimal/empty data.
+
+Confirm it shows:
+- no active paper session
+- no paper trades yet
+- no performance data yet
+- no coach report yet
+- no replay reports yet if shown
+- no critical alerts, or current alert state
+- next safe step
+
+Confirm no endpoint crashes.
+
+Show raw output or frontend proof.
+
+9. Active-session proof
+
+Create or use an ACTIVE paper session.
+
+Confirm cockpit shows:
+- session timer
+- symbols/timeframes
+- trades opened
+- trades closed
+- current P&L
+- win rate
+- warnings
+- session rules
+- pause/end buttons
+- autopilot status
+- live trading disabled badge
+
+Show raw output or frontend proof.
+
+10. Paper trade monitor proof
+
+Create or use open paper trades.
+
+Confirm cockpit shows:
+- open paper trades
+- symbol
+- action
+- entry
+- current price
+- stop loss
+- take profit
+- unrealized P&L
+- status
+- link to trade detail
+
+Confirm it reads EE paper trades and does not create trades directly.
+
+Show raw output.
+
+11. Today performance proof
+
+Confirm cockpit reads GG and shows:
+- today net P&L
+- trades
+- wins/losses
+- day rating
+- most repeated mistake
+- top lesson
+
+Show raw output.
+
+12. Coach panel proof
+
+Confirm cockpit reads II and shows:
+- current focus
+- mistake to avoid
+- setups to watch
+- setups to avoid
+- next best actions
+- link to full coach report
+
+Confirm it does not recommend live trading.
+
+Show raw output.
+
+13. Alerts panel proof
+
+Confirm cockpit reads LL and shows:
+- critical alerts
+- high alerts
+- unread count
+- quick acknowledge link if permitted
+- recommended action
+
+Show raw output.
+
+14. Critical-alert blocked-start proof
+
+Simulate or use an unread CRITICAL alert.
+
+Confirm:
+- persistent safety banner appears
+- start session button is disabled
+- recommended action is shown
+- acknowledge action works only if permitted
+- no live trading action appears
+
+Show raw output.
+
+15. Readiness blocked proof
+
+Simulate OO readiness FAIL/BLOCKED.
+
+Confirm:
+- cockpit shows readiness blocked
+- start paper session is disabled
+- recommended fixes are shown
+- link to Readiness page is shown
+- live trading remains disabled
+
+Show raw output.
+
+16. Risk Governor paused proof
+
+Simulate HH WATCH_ONLY, LOCKED, or PAPER_PAUSED.
+
+Confirm:
+- cockpit shows risk status
+- new session/new paper action is disabled as appropriate
+- next best action is shown
+- link to Risk Governor page is shown
+- live trading remains disabled
+
+Show raw output.
+
+17. PP action proof from cockpit
+
+From cockpit, safely test:
+- Run preflight
+- Start Paper Session
+- Pause Session
+- Resume Session
+- End Session
+- View Session Report
+
+Confirm:
+- cockpit calls PP only
+- PP safety rules remain enforced
+- blocked states are respected
+- only one ACTIVE session can exist
+- LL notifications and MM audit still happen through PP
+- no live trade is placed
+
+Show raw output.
+
+18. Autopilot panel proof
+
+Confirm cockpit reads FF and PP and shows:
+- autopilot status
+- paper-only mode
+- last cycle
+- cooldowns
+- whether autopilot is allowed in current session
+- blocked reason if not allowed
+
+Confirm cockpit does not start unsafe autopilot if PP/HH/OO blocks it.
+
+Show raw output.
+
+19. System health mini panel proof
+
+Confirm cockpit reads MM/OO and shows:
+- overall health
+- readiness score
+- major warnings
+- last readiness check time
+- link to System Health / Readiness
+
+Show raw output.
+
+20. Route guard visual state proof
+
+Confirm blocked systems show friendly explanations, not developer errors:
+
+- “Paper session blocked because readiness gate failed.”
+- “Autopilot paused by Risk Governor.”
+- “Paper execution requires an active paper session.”
+- “Critical safety alert must be acknowledged.”
+- “Broker is read-only. Live trading is disabled.”
+
+Show proof.
+
+21. Mobile layout proof
+
+Confirm cockpit is usable on mobile.
+
+Check:
+- sticky safety header
+- large readable cards
+- collapsible panels
+- no crowded tables
+- no crowded sidebar
+- quick action buttons are visible
+- no repeated menu items
+
+Show screenshot or frontend route proof.
+
+22. Frontend route proof
+
+Confirm these frontend routes/pages work:
+- Trading Cockpit
+- Paper Sessions
+- Calendar
+- Coach
+- Playbook
+- Replay Simulator
+- Strategy Lab
+- Data Import
+- Notifications
+- Risk Governor
+- Readiness Gate
+- System Health
+- Security
+- Broker Read-Only
+
+Confirm the Trading Cockpit is the main/default operating page if configured.
+
+23. Secret redaction proof
+
+Search cockpit endpoint output, frontend props, logs, and UI-visible data.
+
+Confirm none include:
+- BROKER_API_KEY
+- BROKER_API_SECRET
+- MARKET_DATA_API_KEY
+- DATABASE_URL
+- session secrets
+- raw broker tokens
+- full account IDs
+
+Confirm broker/account data is masked where shown.
+
+24. Live-trade isolation proof
+
+Search Build QQ files and confirm they do NOT call:
+
+executeTrade,
+execute-trade,
+mt5 order placement,
+MT5 order placement,
+livePosition modification,
+live order,
+setCanPlaceTrades,
+live broker execution,
+broker.placeOrder,
+orderSend,
+positionClose,
+modifyOrder,
+real order placement,
+or anything that can place, close, or modify real trades.
+
+Confirm Build QQ does NOT modify:
+- safetyCore.canPlaceTrades
+- live broker permissions
+- MT5 live execution
+- Build AA safety rules
+- Build EE paper-only execution rules
+- Build FF paper-only autopilot rules
+- Build HH liveTradingAllowed rules
+- Build KK broker read-only rules
+- Build LL critical alert rules
+- Build MM forbidden admin action rules
+- Build NN forbidden permission rules
+- Build OO readiness gate rules
+- Build PP paper session rules
+
+Confirm QQ:
+- reads safe data only
+- calls PP for paper session actions only
+- never executes trades directly
+- never enables live trading
+- never recommends live trading
+- always shows LIVE TRADING DISABLED
+
+25. Existing behavior compatibility
+
+Confirm these still work:
+- AA decision orchestrator
+- BB auto-debrief
+- CC learning engine
+- DD market data
+- EE paper execution
+- FF paper autopilot
+- GG calendar and command center
+- HH risk governor
+- II trader coach and playbook
+- JJ replay and strategy lab
+- KK data import and broker read-only
+- LL notifications
+- MM system health/admin/audit
+- NN security/roles/permissions
+- OO readiness gate
+- PP paper session manager
+- manual debrief
+- manual paper close
+- analytics
+- frontend routes
+
+Required final response format:
+
+1. Verification passed or failed
+2. Commands/tests run
+3. Files changed
+4. New files created
+5. Database proof
+6. Trading Cockpit proof
+7. Raw cockpit summary output
+8. Navigation cleanup proof
+9. Safety header proof
+10. Primary action proof
+11. Empty-state proof
+12. Active-session proof
+13. Paper trade monitor proof
+14. Today performance proof
+15. Coach panel proof
+16. Alerts panel proof
+17. Critical-alert blocked-start proof
+18. Readiness blocked proof
+19. Risk Governor paused proof
+20. PP action proof from cockpit
+21. Autopilot panel proof
+22. System health mini panel proof
+23. Route guard visual state proof
+24. Mobile layout proof
+25. Frontend route proof
+26. Secret redaction proof
+27. Live-trade isolation proof
+28. Any fixes made during verification
+29. Final Build QQ score out of 10
+30. Whether the unified cockpit is safe for controlled PAPER TESTING
+31. Whether live trading remains fully disabled

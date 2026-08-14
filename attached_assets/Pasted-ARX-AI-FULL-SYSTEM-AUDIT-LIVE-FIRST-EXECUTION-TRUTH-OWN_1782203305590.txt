@@ -1,0 +1,1002 @@
+ARX AI FULL SYSTEM AUDIT — LIVE-FIRST EXECUTION TRUTH, OWNER/ADMIN FREEDOM, MT5 REALITY, DEAD CODE, SPEED, AND FINAL LIVE-READINESS REVIEW
+
+Claude, perform a deep, honest, end-to-end audit of the entire ARX AI app.
+
+Do not start by changing code.
+
+This is not a normal bug pass.
+This is a live-readiness audit.
+
+The goal is to determine exactly what is preventing ARX AI from being a fully functional, live-first, fast, clean MT5 trading command center where owner/admin can place real live trades through the ARX bridge/EA without app-added restrictions unless those restrictions are personally enabled inside Admin Risk/Governance.
+
+Be strict.
+Be direct.
+Do not defend old code.
+Do not mark anything complete unless it is actually wired, tested, and truthful.
+Do not assume a UI button works because it renders.
+Do not assume a backend endpoint is live-safe because it exists.
+Do not assume a trade succeeded unless MT5 returned a real confirmation.
+Do not assume a position is open unless MT5 confirms it is open.
+Do not hide behind generic safety messages.
+Do not say “market closed,” “symbol not selectable,” or “server safety check refused” unless the code proves the exact source of that decision.
+
+Critical name correction
+
+The ARX AI assistant is now named Eleanor.
+
+Audit all remaining Ruby, ruby, Ruby AI, rubyBrain, rubyContext, rubyExplanation, or similar references.
+
+Classify each one as:
+
+1. User-facing rename debt.
+2. Internal legacy naming that should be centralized.
+3. Hardcoded AI identity that must be replaced.
+4. Safe internal alias for backward compatibility.
+5. Dead/dormant Ruby-era code.
+6. Active logic that still depends on old Ruby naming.
+
+The product should now refer to the assistant as Eleanor everywhere user-facing.
+
+Ruby references should not remain visible to users.
+
+The AI identity should be centralized so future name changes do not require chasing hardcoded strings across the app.
+
+⸻
+
+Product truth
+
+ARX AI is a LIVE trading application connected to MT5 through the ARX bridge/EA.
+
+The app should let an approved owner/admin trade live with no app-added restrictions unless those restrictions are personally enabled inside Admin Risk/Governance.
+
+If the broker, MT5, or EA rejects a trade, that is valid.
+
+If ARX itself blocks an owner/admin for old hardcoded reasons, legacy demo rules, scanner approval flags, first-live-test logic, EURUSD-only logic, 0.01-only logic, typed confirmation, or stale safety wrappers, that is not acceptable unless it is an active Governance setting.
+
+The biggest current problem:
+
+Anywhere in the app that displays a BUY or SELL button should be able to place a live trade through the correct live path.
+
+If the user is:
+
+* authenticated
+* owner/admin or explicitly live-approved
+* live-connected
+* MT5/EA online
+* symbol mapped correctly
+* broker symbol tradable
+* volume valid
+* broker accepts the order
+
+Then the trade must reach MT5 and return a real ticket/order/position/deal ID.
+
+ARX must not say “sent,” “routed,” “queued,” “placed,” “executed,” or show an open position unless MT5 actually confirms the trade.
+
+⸻
+
+Permanent non-negotiables that must remain
+
+These are not optional and must not be weakened:
+
+1. User must be authenticated.
+2. Owner/admin or explicitly live-approved user only for live trading.
+3. Server-side ownership filtering must remain.
+4. Normal users must never see other users’ trades.
+5. Master MT5 account data must not leak to normal users.
+6. MT5 bridge/EA must be connected for live execution.
+7. Broker symbol must exist and be tradable.
+8. Broker lot/volume/precision/filling/stops rules must be respected.
+9. MT5 must return real execution confirmation before ARX marks success.
+10. ARX ledger must record the real MT5 ticket/order/position/deal ID.
+11. No Demo/Paper/fake fallback in the active product flow.
+12. Admin audit logs must preserve technical truth.
+13. Failed/rejected trades must preserve exact source, stage, retcode, comment, and reason.
+14. A frontend-disabled state must never be the only protection.
+15. Backend must be the final authority for security, ownership, live approval, bridge readiness, and broker truth.
+
+⸻
+
+Everything else must be Governance-controlled, not hardcoded
+
+Audit whether any of these still exist as hardcoded blockers:
+
+1. Stop Loss requirement.
+2. Take Profit requirement.
+3. Max lot cap.
+4. Max open positions.
+5. Daily loss cap.
+6. Symbol allowlist/blocklist.
+7. Spread limits.
+8. Market-hours app checks.
+9. Allocation enforcement.
+10. Eleanor explanation requirement.
+11. Scanner signal requirement.
+12. Backtest requirement.
+13. News requirement.
+14. Risk/reward requirement.
+15. Second confirmation.
+16. First-live-test mode.
+17. EURUSD-only mode.
+18. 0.01-only mode.
+19. Typed confirmation.
+20. Review → Final Confirm double-confirm flow.
+21. One-click disabled.
+22. Single-confirm disabled.
+23. scannerLiveEnabled blocker.
+24. masterLiveApproval blocker.
+25. Any legacy owner/admin restriction.
+26. Any Demo/Paper safety wrapper.
+27. Any fake/live mode fallback.
+28. Any frontend-only disabled button logic that contradicts backend live eligibility.
+
+Classify each restriction as:
+
+1. Permanent security/broker/technical truth.
+2. Governance-controlled app restriction.
+3. Hardcoded legacy restriction to remove.
+4. Warning only.
+5. Dead/dormant.
+6. Broken/miswired.
+7. Dangerous because it gives false live-readiness.
+8. Dangerous because it can block owner/admin incorrectly.
+
+⸻
+
+What ARX should do
+
+ARX AI should function as:
+
+1. Live MT5 trading command center.
+2. Scanner-driven market discovery.
+3. Chart-based trading workstation.
+4. Eleanor, the AI trading assistant.
+5. Owner/admin control hub.
+6. User allocation management system.
+7. Shared master MT5 bridge control layer.
+8. Real-time MT5 balance/equity/open-position sync.
+9. Live Risk/Governance system controlled by admin.
+10. Clean, fast mobile-first UI.
+11. Truthful trade execution system.
+12. Clean alerts/notifications.
+13. No overbearing junk.
+14. No dead pages confusing users.
+15. No fake/demo/paper active product flow.
+
+⸻
+
+Live execution standard
+
+Every BUY/SELL button must follow the same live execution truth path.
+
+The correct flow is:
+
+1. User initiates BUY/SELL.
+2. Frontend sends one normalized live trade request.
+3. Backend authenticates user.
+4. Backend confirms owner/admin or live-approved user.
+5. Backend applies only permanent security/technical checks and active Governance settings.
+6. Backend resolves correct account context.
+7. Backend resolves exact broker symbol.
+8. Backend validates broker volume/stops/filling/precision.
+9. Backend sends command to bridge/EA.
+10. EA receives command.
+11. EA submits to MT5 using OrderSend or equivalent.
+12. MT5 returns retcode/comment/order/deal/position/ticket.
+13. Backend records exact MT5 identifiers.
+14. UI shows success only after real MT5 confirmation.
+15. Open Positions shows only if MT5 confirms the position is open.
+
+ARX must distinguish:
+
+* Draft
+* Sent to bridge
+* EA received
+* Submitted to MT5
+* MT5 executed
+* MT5 rejected
+* Synced to ledger
+* Closed by MT5
+* Failed before OrderSend
+* Failed after OrderSend
+* Failed ledger sync
+* Reconciled closed
+* Orphaned
+* Manual MT5 / Unassigned
+
+ARX must not treat “sent to bridge” or “EA received” as executed.
+
+⸻
+
+PART 1 — Map the actual current app
+
+Audit the actual codebase, prior work history, Replit docs/memory, migrations, tests, and current behavior.
+
+Produce a clear map of:
+
+1. Frontend apps/pages/routes.
+2. Backend services/endpoints.
+3. Database tables/models.
+4. MT5 bridge components.
+5. EA command flow.
+6. Scanner flow.
+7. Trade execution flow.
+8. Admin allocation flow.
+9. Eleanor context/voice/chat flow.
+10. Alert/notification flow.
+11. Governance/risk control flow.
+12. Account/live mode flow.
+13. Open-position reconciliation flow.
+14. Balance/equity sync flow.
+15. Shared MT5/master account flow.
+16. User allocation/visibility flow.
+17. Admin approval/live activation flow.
+18. Symbol mapping flow.
+19. Mobile navigation flow.
+20. Performance-critical data fetching flow.
+
+For each area, state:
+
+* What exists.
+* What is wired.
+* What is partially wired.
+* What is dead/dormant.
+* What is duplicated.
+* What is stale legacy/demo/paper logic.
+* What is risky to delete.
+* What should be hidden from normal users but kept admin-only.
+* What should be route-gated.
+* What should be fully deleted after proof.
+* What should be wired because it is intended but incomplete.
+
+⸻
+
+PART 2 — Audit all trade paths
+
+Find every place in the app where a user can initiate or manage a trade.
+
+Include at minimum:
+
+1. Scanner chart BUY/SELL.
+2. Scanner Focus BUY/SELL.
+3. Broad Scan BUY/SELL.
+4. Scanner setup card trade actions.
+5. Trade page BUY/SELL.
+6. Manual ticket BUY/SELL.
+7. Chart trade panel.
+8. Chart quick trade buttons.
+9. Eleanor trade suggestion actions.
+10. Admin trade tools.
+11. Pending order actions.
+12. Close position.
+13. Partial close.
+14. Reverse.
+15. Move SL/TP.
+16. Break-even.
+17. Close all.
+18. Cancel pending.
+19. Drag-to-modify chart actions.
+20. Any hidden/dev/admin trade endpoint.
+
+For every path, report:
+
+* Component/file.
+* Button label.
+* Whether label violates the new UI standard.
+* Backend endpoint called.
+* Payload sent.
+* Account context sent.
+* Symbol sent.
+* Broker symbol resolved.
+* Whether it uses effective Governance.
+* Whether it uses current live dispatch.
+* Whether it can still hit old restrictions.
+* Whether it can create ARX-only phantom positions.
+* Whether MT5 ticket confirmation is required before success.
+* Whether failure reason is exact.
+* Whether owner/admin can be incorrectly blocked.
+* Whether normal-user privacy is preserved.
+* Whether master MT5 data can leak.
+* Whether Demo/Paper/fake fallback is possible.
+* Whether UI can show “success” too early.
+* Whether pending state is truthful.
+* Whether rollback happens if MT5 rejects.
+
+Goal:
+
+Every BUY/SELL button must have no issue placing a trade if broker/MT5 accepts it.
+
+⸻
+
+PART 3 — Audit all restrictions/gates/blockers
+
+Search deeply for all restrictions, gates, blockers, warnings, disabled states, guards, and legacy safety wrappers.
+
+Include:
+
+* requireStopLoss
+* requireTakeProfit
+* maxLot
+* maxLiveLot
+* maxOpenPositions
+* dailyLossLimit
+* allowedSymbols
+* blockedSymbols
+* scannerLiveEnabled
+* masterLiveApproved
+* liveTestMode
+* firstLiveTest
+* testSymbol
+* requireScannerSignal
+* requireEleanorExplanation
+* requireRubyExplanation
+* requireBacktest
+* requireNewsCheck
+* requireRiskReward
+* requireConfirmation
+* second confirmation
+* typed confirmation
+* Review → Confirm
+* one-click disabled
+* single-confirm disabled
+* spread limit
+* market-hours app block
+* allocation block
+* freeze block
+* kill switch block
+* owner/admin restriction
+* pending order restriction
+* close restriction
+* partial close restriction
+* reverse restriction
+* break-even restriction
+* chart trading restriction
+* V75/synthetic restriction
+* EURUSD-only restriction
+* hardcoded 0.01 restriction
+* Demo/Paper blocker
+* frontend-only disabled button logic
+* hidden backend fallback
+* scanner-only live approval logic
+* master account approval logic
+* old live onboarding gates
+* old phase gates
+* hardcoded live readiness text
+* fake bridge readiness fallbacks
+
+For each, classify as:
+
+1. Permanent security/broker/technical truth.
+2. Governance-controlled app restriction.
+3. Hardcoded legacy restriction to remove.
+4. Warning only.
+5. Dead/dormant.
+6. Broken/miswired.
+7. Owner/admin blocker.
+8. Normal-user protection.
+9. Must preserve.
+10. Must delete after proof.
+
+⸻
+
+PART 4 — Audit dead code / dormant code
+
+Search for:
+
+1. Dead pages.
+2. Dormant routes.
+3. Unused components.
+4. Duplicate components.
+5. Old demo/paper systems.
+6. Old Ruby systems.
+7. Old scanner systems.
+8. Old bridge systems.
+9. Old live-onboarding systems.
+10. Old confirmation systems.
+11. Old admin approval systems.
+12. Duplicate trade dispatch functions.
+13. Duplicate account snapshot logic.
+14. Duplicate position views.
+15. Duplicate alerts logic.
+16. Unused database tables.
+17. Unused migrations.
+18. Unused API endpoints.
+19. Unused hooks.
+20. Unused services.
+21. Unreachable UI cards.
+22. Feature shells with fake buttons.
+23. Test/seed data that can leak into active views.
+
+For each item:
+
+* Name/path.
+* What it appears to do.
+* Whether it is referenced.
+* Whether it is reachable by route.
+* Whether it is used dynamically.
+* Whether it belongs to active ARX product.
+* Whether it is useful but not wired.
+* Whether it is useless/dormant.
+* Whether it should be hidden from normal users.
+* Whether deleting it could break something.
+* Recommended action:
+    * keep
+    * wire
+    * move admin-only
+    * archive
+    * delete after test
+    * leave for manual review
+
+Important:
+
+Do not blindly delete code just because static search says unused.
+
+Verify imports, routes, dynamic references, string-based references, API calls, tests, and database usage.
+
+⸻
+
+PART 5 — Audit phantom positions and execution truth
+
+Find every way ARX can show an open position without real MT5 confirmation.
+
+Audit:
+
+1. arx_live_positions or equivalent.
+2. arx_live_commands or equivalent.
+3. command status transitions.
+4. positions created before MT5 confirmation.
+5. failed/rejected commands shown as open.
+6. reconciled trades shown as open.
+7. manual MT5 trades.
+8. orphan positions.
+9. seed/test positions.
+10. stale cached positions.
+11. optimistic UI positions.
+12. command rows displayed as positions.
+13. paper/demo positions leaking into live views.
+14. admin/master positions leaking to normal users.
+15. closed positions staying open after MT5 closes them.
+16. open P/L coming from stale cache instead of MT5.
+
+Report:
+
+* Where phantom positions are created.
+* Why prior XAUUSD/BTCUSDT rows appeared without MT5 entries.
+* Whether those rows had MT5 ticket/position/deal IDs.
+* Whether they were command rows, ledger rows, simulated rows, orphan rows, or stale snapshot rows.
+* How to reconcile them.
+* How to preserve audit history without showing them as open.
+* How to prevent recurrence.
+* How to ensure live P/L displays.
+* How to ensure closed MT5 positions disappear from active open positions.
+* How to ensure manual MT5 positions appear correctly to owner/admin as Manual MT5 / Unassigned.
+
+Rule:
+
+Open Positions must show only real MT5-confirmed open positions.
+
+⸻
+
+PART 6 — Audit balance/admin allocation sync
+
+Find why Admin Allocation and Shared Master Account do not always reflect real Deriv/MT5 balance in near real time.
+
+Audit:
+
+1. MT5 account snapshot source.
+2. EA heartbeat snapshot.
+3. Bridge snapshot.
+4. Backend account balance cache.
+5. Master pool calculation.
+6. Admin allocation basis.
+7. Manual refresh behavior.
+8. Stale state handling.
+9. Polling interval.
+10. UI timestamp correctness.
+11. Manual MT5 trade detection.
+12. Unattributed manual trade handling.
+13. Whether free margin/equity/balance basis is used.
+14. Whether ARX virtual allocation values override MT5 truth.
+15. Whether open P/L is derived from real MT5 positions.
+16. Whether inactive/orphan positions affect allocation.
+17. Whether refresh actually requests MT5 or just rereads DB.
+18. Whether stale heartbeat data is labeled as current.
+19. Whether owner/admin sees the master truth.
+20. Whether normal users see only their permitted allocation truth.
+
+Report:
+
+* Current source of truth.
+* Where stale values come from.
+* Whether refresh truly pulls MT5 or just DB/heartbeat.
+* How to make the near-real-time snapshot loop reliable.
+* How allocation should calculate available funds.
+* Whether allocation should use balance, equity, free margin, or configurable basis.
+* How to prevent stale allocation.
+* How to show Fresh / Syncing / Stale / Missing.
+* How to detect manual MT5 trades.
+* How to show Manual MT5 / Unassigned trades to owner/admin only.
+
+⸻
+
+PART 7 — Audit V75 / Deriv synthetics execution issue
+
+Since EURUSD filled live but V75 failed before OrderSend, audit the entire symbol path.
+
+Inspect:
+
+1. ARX display symbol.
+2. ARX internal symbol.
+3. brokerSymbol mapping.
+4. symbol sent to backend.
+5. symbol sent to bridge.
+6. symbol received by EA.
+7. SymbolSelect behavior.
+8. SymbolInfo checks.
+9. trade mode checks.
+10. volume min/max/step checks.
+11. filling mode checks.
+12. stops level checks.
+13. bid/ask availability checks.
+14. exact manual MT5 symbol.
+15. whether manual MT5 trade works.
+16. why EA rejects before OrderSend.
+17. whether EA pre-trade guard is stricter than MT5.
+18. whether hidden whitespace/suffix/case mismatch exists.
+19. whether Deriv synthetic symbols require exact spelling.
+20. whether ARX uses different names for:
+    * Volatility 75 Index
+    * Volatility 75 (1s) Index
+    * Volatility 25 (1s) Index
+    * Volatility 10 (1s) Index
+    * Volatility 100 (1s) Index
+
+Goal:
+
+If manual MT5 V75 works, ARX/EA should be able to trade the same exact symbol unless the EA has a documented bug.
+
+If EA rejects before OrderSend, report the exact pre-OrderSend condition.
+
+No generic EA_REJECTED_NO_DETAIL is acceptable.
+
+⸻
+
+PART 8 — Audit Scanner
+
+Scanner must become fast, truthful, and live-actionable.
+
+Audit:
+
+1. Scanner route/page.
+2. Scanner chart loading.
+3. Candle loading.
+4. 6-month/limited-history issue.
+5. Focus scan.
+6. Broad scan.
+7. Symbol filters.
+8. Session filters.
+9. Scanner signal readiness.
+10. AI/Eleanor integration.
+11. Whether Eleanor blocks Scanner rendering.
+12. Whether all scan results block first paint.
+13. BUY/SELL wiring.
+14. Scanner warnings.
+15. False admin approval warnings.
+16. Demo/Paper wording.
+17. Large risk banners.
+18. Scanner Live chip.
+19. Shared MT5 chip.
+20. Symbol tradability state.
+21. User authorization state.
+22. Bridge readiness state.
+23. Governance block state.
+24. Mobile performance.
+25. Duplicate requests.
+26. Chart rerender loops.
+
+Scanner standard:
+
+* Chart appears at the top.
+* Scanner renders fast.
+* Scanner does not wait on Eleanor before rendering.
+* Scanner does not wait on all scan results before rendering.
+* Scanner BUY/SELL uses the same live dispatch path as the Trade page.
+* Scanner does not show false approval warnings to owner/admin.
+* Scanner does not show Demo/Paper active-flow wording.
+* Scanner uses one compact LIVE / Shared MT5 chip.
+* Scanner clearly separates symbol tradability, user authorization, bridge readiness, and Governance blocks.
+
+⸻
+
+PART 9 — Audit chart trading
+
+Chart must be a real trading workstation, not just a visual.
+
+Audit:
+
+1. Chart library/rendering path.
+2. Chart data/candle source.
+3. Chart history depth.
+4. Live update path.
+5. BUY/SELL chart actions.
+6. Pending order placement.
+7. SL/TP movement.
+8. Close position.
+9. Partial close.
+10. Reverse.
+11. Break-even.
+12. Close all.
+13. Cancel pending.
+14. Drag lines.
+15. Position overlays.
+16. User trade visibility.
+17. Admin/master visibility.
+18. Normal-user privacy.
+19. Rejection rollback.
+20. Fake/unwired buttons.
+21. Duplicate chart panels.
+22. Scanner chart vs Trade chart divergence.
+
+Rule:
+
+If a chart feature is not wired, do not fake it.
+
+Either wire it correctly or disable it cleanly with honest text.
+
+Drag lines must roll back if MT5 rejects the modification.
+
+⸻
+
+PART 10 — Audit Eleanor AI
+
+Eleanor should be a real AI trading assistant, not a static chatbot or old setup helper.
+
+Audit:
+
+1. Eleanor frontend UI.
+2. Eleanor backend context builder.
+3. Old Ruby references.
+4. Static greeting loops.
+5. Repeated old setup instructions.
+6. Page context.
+7. User role context.
+8. Selected symbol context.
+9. MT5 bridge state.
+10. Live account state.
+11. Open positions.
+12. Scanner signals.
+13. Market session.
+14. News context if available.
+15. Economic calendar context if available.
+16. Local time/weather if permission/source exists.
+17. Risk/Governance context.
+18. Admin vs normal-user response boundaries.
+19. Whether Eleanor exposes backend route names, stack traces, env names, or internal flags.
+20. Whether Eleanor blocks trades without Governance requiring it.
+21. Whether Eleanor can explain trade risk.
+22. Whether Eleanor can summarize account state.
+23. Whether Eleanor can help read charts.
+24. Whether Eleanor can review performance.
+25. Whether Eleanor identity is centralized.
+
+Rule:
+
+Eleanor can advise, explain, summarize, and warn.
+
+Eleanor must not block trades unless Governance explicitly requires it.
+
+⸻
+
+PART 11 — Audit alerts/notifications
+
+Audit:
+
+1. Alerts page.
+2. Alert creation sources.
+3. Duplicate alert logic.
+4. Poll-based spam.
+5. Holding-longer-than-intraday spam.
+6. Read/unread state.
+7. Delete behavior.
+8. Bulk mark read.
+9. Multi-select delete.
+10. Alert grouping.
+11. Trade alert safety.
+12. Whether deleting alerts can delete trades, ledger records, or audit logs.
+13. Whether normal users can see admin/master alerts.
+14. Whether alert wording is useful or repetitive.
+15. Whether alert count is stale.
+
+Alerts should be grouped, deduped, and useful.
+
+Deleting alerts must never delete trades, ledger records, or audit logs.
+
+⸻
+
+PART 12 — Audit active UI/product mismatch
+
+Identify UI elements that do not suit the active live-first product.
+
+Search for:
+
+1. Demo panels.
+2. Paper Trading references.
+3. Fake execution wording.
+4. Large billboard-style risk banners.
+5. Duplicate live chips.
+6. Repeated account warnings.
+7. False approval warnings.
+8. Old setup instructions.
+9. Dead buttons.
+10. Dormant pages.
+11. Overlong trade buttons.
+12. Backend-sounding copy.
+13. Ruby references.
+14. Repetitive Eleanor messages.
+15. Cluttered cards.
+16. Duplicate sections.
+17. Confusing live/demo copy.
+18. Buttons that imply wired functionality but are not wired.
+19. Stale account status chips.
+20. Admin-only controls shown to normal users.
+21. Normal-user controls shown when not authorized.
+22. Mobile layout crowding.
+23. Scanner clutter.
+24. Trade page clutter.
+25. Chart clutter.
+26. Admin allocation clutter.
+
+For each, decide:
+
+* remove
+* collapse
+* rename
+* move admin-only
+* leave
+* wire properly
+* route-gate
+* hide until wired
+
+UI standard:
+
+* No overbearing banners.
+* No billboard-style “REAL MONEY RISK” banners on active trading screens.
+* Use one compact LIVE chip.
+* BUY buttons are green and say BUY only.
+* SELL buttons are red and say SELL only.
+* No long symbol names inside trade buttons.
+* No Demo/Paper active-flow copy.
+* No stale approval warnings for owner/admin.
+* No repetitive cards, dead panels, or clutter.
+* Mobile must feel fast and clean.
+* Chart and trade actions are visually high priority.
+
+⸻
+
+PART 13 — Audit speed/performance
+
+Run a performance pass.
+
+Find:
+
+1. Slow page loads.
+2. Heavy bundles.
+3. Duplicate requests.
+4. Polling loops.
+5. Blocking chart loads.
+6. Eleanor blocking scanner.
+7. Stale queries.
+8. Refetch storms.
+9. Unnecessary data on initial load.
+10. Pages not lazy-loaded.
+11. Components rerendering too often.
+12. Backend endpoints taking too long.
+13. Queries missing indexes.
+14. Large responses where summaries would work.
+15. Overfetching account/trade/history data.
+16. Excessive bridge polling.
+17. Polling while tab hidden.
+18. Repeated account snapshot requests.
+19. Repeated scanner recomputation.
+20. Repeated alert creation.
+21. Mobile-specific slowdown.
+22. Chart candle rendering bottlenecks.
+23. Long candle-history loading issues.
+24. Admin panels loading before needed.
+
+Report:
+
+* Current bottlenecks.
+* Fast wins.
+* Safe optimizations.
+* Risky optimizations to avoid.
+* Expected user-perceived improvement.
+* What must not be optimized at the cost of execution truth.
+
+Target:
+
+* UI feedback under 1 second wherever possible.
+* Immediate pending state for trade actions.
+* No 7-second page loads.
+* Heavy charts/Eleanor/admin panels lazy-loaded.
+* Polling paused/slowed when tab hidden.
+* No duplicate API calls.
+* No re-render loops.
+* No over-fetching.
+* MT5/EA/broker delay must show clear status.
+
+⸻
+
+PART 14 — Security/privacy assessment
+
+Audit:
+
+1. Authentication.
+2. Live approval.
+3. Owner/admin path.
+4. Normal-user path.
+5. Server-side ownership filtering.
+6. Master MT5 visibility.
+7. Shared account visibility.
+8. Open positions visibility.
+9. Manual MT5/unassigned visibility.
+10. Admin allocation visibility.
+11. Alert visibility.
+12. Scanner visibility.
+13. Trade history visibility.
+14. Ledger/audit visibility.
+15. Eleanor context boundaries.
+16. Whether internal routes/env/stack traces leak to normal users.
+17. Whether frontend-only protection exists without backend protection.
+18. Whether owner/admin bypasses are safe and intentional.
+19. Whether normal users can trigger admin/live endpoints.
+20. Whether stale/demo/test data can leak.
+
+Do not weaken security while removing app-added restrictions for owner/admin.
+
+Owner/admin freedom does not mean normal-user leakage.
+
+⸻
+
+PART 15 — Deliver audit report before fixes
+
+Before changing code, produce a detailed audit report with these sections:
+
+1. Executive summary.
+2. What ARX currently is.
+3. What ARX is supposed to be.
+4. Biggest mismatches.
+5. Live execution truth assessment.
+6. BUY/SELL button path assessment.
+7. MT5 bridge/EA assessment.
+8. Governance/restriction assessment.
+9. Balance/allocation assessment.
+10. Phantom position assessment.
+11. V75/synthetic assessment.
+12. Eleanor assessment.
+13. Scanner assessment.
+14. Chart trading assessment.
+15. Alerts assessment.
+16. UI clutter assessment.
+17. Dead/dormant code inventory.
+18. Speed/performance assessment.
+19. Security/privacy assessment.
+20. What must be fixed first.
+21. What should not be touched.
+22. What can be safely deleted.
+23. What needs wiring.
+24. What needs admin review.
+25. Proposed fix order.
+26. Testing plan.
+27. Known unknowns.
+28. Files requiring manual review.
+29. Files that are risky to edit.
+30. Final live-readiness score.
+
+For every major finding, include:
+
+* File/path.
+* What is wrong.
+* Why it matters.
+* Whether it affects live trading.
+* Whether it affects owner/admin.
+* Whether it affects normal-user privacy.
+* Recommended fix.
+* Risk level.
+* Test needed.
+
+⸻
+
+PART 16 — Fix priority after audit
+
+After the audit report, propose the safest fix order.
+
+Expected priority:
+
+1. BUY/SELL execution truth
+    Every trade button uses one live dispatch path, no phantom success, exact MT5 confirmation required.
+2. Remove remaining owner/admin app-added restrictions
+    Only Governance controls app restrictions.
+3. Fix exact block reasons
+    No more generic “server safety check refused.”
+4. Fix phantom positions
+    Only MT5-confirmed positions show as open, live P/L required.
+5. Fix Deriv/MT5 balance sync
+    Admin allocation uses real MT5 snapshot.
+6. Fix V75 synthetic execution
+    Manual MT5 tradable symbol should be ARX tradable through exact symbol mapping and EA guard.
+7. Clean active UI
+    No billboards, no demo/paper, no confusing labels, Eleanor name everywhere.
+8. Speed
+    Make the app fast without breaking trading truth.
+9. Eleanor
+    Make Eleanor context-aware and useful without blocking trades.
+10. Dead code
+    Wire useful intended functions; remove/archive useless dormant code only after proof.
+
+⸻
+
+PART 17 — Testing expectations
+
+For each future fix, tests should include:
+
+1. health:workflows
+2. typecheck
+3. ci:guards
+4. route containment
+5. owner/admin behavior
+6. normal-user privacy behavior
+7. no Demo/Paper/fake fallback
+8. MT5 bridge readiness
+9. relevant frontend smoke test
+10. relevant backend endpoint test
+11. mobile smoke test where applicable
+12. regression check that no trading logic was broken
+13. audit log truth check
+14. stale snapshot behavior check
+15. Governance ON/OFF behavior check
+
+For live trade tests:
+
+* Use LIVE only.
+* Use owner/admin only.
+* Use smallest broker-valid lot unless I choose otherwise.
+* Do not place unnecessary trades.
+* Do not claim success without MT5 ticket.
+* If broker rejects, show exact broker retcode/comment.
+* If app blocks, show exact app gate and whether it is Governance/security/technical/legacy.
+* If EA rejects before OrderSend, show exact EA preflight reason.
+* If UI shows pending, prove whether command is pending bridge, EA, MT5, or ledger sync.
+* If UI shows success, prove real MT5 ticket/order/position/deal ID exists.
+
+⸻
+
+Final instruction
+
+Be honest.
+
+This audit should be tense, strict, and live-readiness focused.
+
+The purpose is not to make the app look complete.
+
+The purpose is to expose every mismatch between ARX UI promises and MT5 execution truth, then define the exact safest path to make ARX AI ready for real live use.
+
+Do not start fixes until the audit report is complete.
+
+Do not call anything live-ready unless:
+
+1. Owner/admin can press BUY/SELL.
+2. The order reaches MT5 through the bridge/EA.
+3. MT5 returns real confirmation.
+4. ARX stores the real MT5 identifiers.
+5. The UI shows success only after that confirmation.
+6. Open Positions only shows real MT5-confirmed positions.
+7. Normal users cannot see master/other-user data.
+8. Governance is the only source of optional app restrictions.
+9. Eleanor is correctly named and context-aware.
+10. Demo/Paper/fake active-flow logic is removed or fully isolated.
+11. The app is fast enough for live trading.
+12. Every remaining limitation is documented with the exact source.
+
+Final output must be an audit report first, then a fix plan.
+
+No code changes before the audit.

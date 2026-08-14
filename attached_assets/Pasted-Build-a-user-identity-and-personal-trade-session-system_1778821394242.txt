@@ -1,0 +1,221 @@
+Build a user identity and personal trade-session system for ARX AI.
+
+Goal:
+Track individual users so each user has private trade sessions, private MT5 demo connections, private paper trade ideas, private AI analysis history, and private dashboard data.
+
+Critical safety rules:
+- Do not modify the working MT5 EA files.
+- Do not expose or change MT5_BRIDGE_TOKEN.
+- Do not enable live trading.
+- Do not weaken auth/security.
+- Do not show fake trading data.
+- Do not let one user see another user’s account, sessions, trades, analysis, or MT5 data.
+- Live execution must remain disabled.
+- Demo execution must remain gated and demo-only.
+
+Core requirement:
+Every trading-related record must be scoped by userId and, where relevant, tradingSessionId and mt5ConnectionId.
+
+Implement or verify:
+
+1. User accounts
+If auth already exists, use the existing auth system.
+If auth does not exist, create secure auth with:
+- users table
+- email
+- password hash, never plain text
+- createdAt
+- updatedAt
+- lastLoginAt
+- role: USER or ADMIN
+- secure session cookie
+- logout
+- current user endpoint: /api/me
+
+Use httpOnly cookies for sessions.
+Do not store auth tokens in localStorage.
+
+2. Guest vs logged-in behavior
+Logged-in users:
+- can save trade sessions
+- can connect MT5 demo bridge
+- can save AI analysis history
+- can save paper trade ideas
+- can view personal history
+
+Guest users:
+- can view public landing/onboarding only
+- can maybe run temporary local preview if already supported
+- cannot connect MT5
+- cannot save personal trade history
+- cannot queue demo broker commands
+- should be prompted to create an account or log in
+
+3. Trading sessions
+Create a tradingSessions table/service:
+
+Fields:
+- id
+- userId
+- name
+- mode: PAPER, DEMO_OBSERVE, DEMO_EXECUTION_TEST
+- status: ACTIVE, CLOSED
+- startedAt
+- endedAt
+- createdAt
+- updatedAt
+
+Each logged-in user should be able to:
+- create a new trading session
+- view their own sessions
+- open one active session
+- close a session
+- see history only for their own sessions
+
+4. MT5 connection ownership
+Create or update mt5BridgeConnections:
+
+Fields:
+- id
+- userId
+- label
+- environment: demo/live
+- accountNumber
+- broker
+- server
+- tokenHash, not raw token
+- status: CONNECTED, STALE, DISCONNECTED
+- lastHeartbeatAt
+- createdAt
+- updatedAt
+- isActive
+
+Important:
+- Current global bridge token can remain for my owner/admin test account only if needed for backward compatibility.
+- Going forward, each user connection should have its own generated bridge token.
+- Store only the hashed bridge token server-side.
+- Show the raw bridge token only once when the user creates the MT5 connection.
+- The EA will send X-MT5-Bridge-Token.
+- Server should resolve that token to the correct mt5ConnectionId and userId.
+- All heartbeat, account snapshot, and position snapshot data must be stored under that userId and mt5ConnectionId.
+
+5. Scope existing tables
+Audit every trading-related table and add userId where missing:
+
+- paperTradeIdeas
+- aiAnalysisHistory
+- mt5AccountSnapshots
+- mt5PositionSnapshots
+- mt5CommandQueue
+- mt5CommandResults
+- demoExecutionTests
+- riskReports
+- dashboardStats
+- notifications related to trading
+
+Every API query must filter by the authenticated current user.
+
+No backend route should return trading data without checking userId.
+
+6. API security
+Add middleware:
+- requireAuth for private routes
+- requireUserOwnership for session/connection/trade records
+- requireAdmin only for admin diagnostics
+
+Private routes should reject unauthenticated users with 401.
+Routes trying to access another user’s record should return 403.
+
+7. Dashboard behavior
+Update dashboard so it is personal:
+
+If logged out:
+- show clean landing/onboarding
+- show Login / Create Account
+- do not show MT5 account data
+- do not show trade sessions
+- do not show paper ideas
+- do not show AI history
+
+If logged in but new:
+- Welcome to ARX AI
+- No trade sessions yet
+- No MT5 demo account connected yet
+- No paper trade ideas yet
+- No AI analysis yet
+- Create your first trade session
+- Connect MT5 demo account
+- Live execution disabled
+
+If logged in with data:
+- show only that user’s MT5 connection
+- show only that user’s trade sessions
+- show only that user’s paper ideas
+- show only that user’s AI analysis
+- show only that user’s demo command history
+
+8. Session selection
+Add a “Current Trade Session” selector:
+- Start New Session
+- Continue Session
+- Close Session
+- View Past Sessions
+
+All new paper ideas, AI analysis, and demo test actions should attach to the active tradingSessionId.
+
+9. Activity tracking
+Create userActivityEvents table:
+
+Fields:
+- id
+- userId
+- eventType
+- metadata JSON
+- createdAt
+
+Track safe events only:
+- login
+- logout
+- trade session created
+- trade session closed
+- MT5 connection created
+- MT5 heartbeat received
+- paper idea created
+- AI analysis created
+- demo command queued
+- demo command blocked
+- safety guard triggered
+
+Do not log passwords, secrets, bridge token values, or full sensitive account credentials.
+
+10. Data migration
+Do not delete real data blindly.
+
+If old unscoped test records exist:
+- either assign them only to my owner/admin user
+- or archive them as legacy test data
+- do not show legacy test data to new users
+- do not let legacy test data appear on a fresh user dashboard
+
+11. End-to-end tests
+Add tests for:
+- User A cannot see User B’s trade sessions
+- User A cannot see User B’s MT5 data
+- User A cannot see User B’s paper ideas
+- User A cannot see User B’s AI history
+- Logged-out user sees no private trading data
+- New logged-in user sees clean empty states
+- Current MT5 bridge still works for the correct owner/admin user
+- Live execution remains disabled
+- Demo execution remains gated
+- No fake data appears
+
+Return:
+- Files changed
+- Tables added/modified
+- Auth behavior
+- User-scoping behavior
+- Dashboard changes
+- Migration behavior
+- Test results
+- Any remaining issues

@@ -1,0 +1,232 @@
+Begin Sub-phase 3B: EA v1.26 Demo-Only Broker Dispatch Consumer + DB Unique-Index Hardening.
+
+Do NOT build UI changes yet.
+Do NOT build AI execution changes yet.
+Do NOT collapse replit.md history yet.
+Do NOT unlock live trading.
+Do NOT enable live execution.
+Do NOT enable shared MT5 routing.
+Do NOT enable live auto-close.
+Do NOT expose bridge tokens, broker passwords, account passwords, session secrets, API keys, hashes, or private values.
+Do NOT fake broker status, account type, balance, P&L, market data, candles, TP targets, fills, or execution results.
+
+Important:
+This phase may build demo-only broker dispatch code paths, but do NOT run an actual demo broker order from automation yet. Stop after building, exporting EA v1.26, and proving gates/tests. Actual demo order test happens only after I install/compile/attach EA v1.26 on the VPS and explicitly tell you to run the demo execution test.
+
+Preconditions:
+1. Read the latest Sub-phase 3A QA report.
+2. Confirm final answer says READY FOR 3B.
+3. Confirm:
+   - BROKER_DISPATCH_BUILT=false before this phase
+   - canDispatchToMt5Allowed=false before this phase
+   - SENT_TO_MT5_DEMO count = 0 before this phase
+   - EA remains v1.25 before this phase
+   - live trading = BLOCKED
+   - shared MT5 routing = BLOCKED
+   - auto-close = ALERT_ONLY
+   - per-user isolation intact
+   - legacy MT5_BRIDGE_TOKEN rejected on EA endpoints
+4. If any precondition fails, stop and return NOT READY.
+
+Goal:
+Build the demo-only dispatch consumer and EA v1.26 execution support behind strict verified-demo gates, while keeping live execution impossible.
+
+A. DB / Command Queue Hardening
+Add/verify DB unique-index protection for:
+- commandId
+- userId + bridgeConnectionId + idempotencyKey where relevant
+- duplicate command suppression
+- preventing duplicate SENT_TO_MT5_DEMO dispatch
+- preventing cross-user command consume
+
+Confirm:
+- Duplicate command dispatch returns a safe duplicate/suppressed status.
+- Cross-user consume returns COMMAND_NOT_FOUND or 403/404.
+- No command can cross users.
+
+B. Broker Dispatch Built Flag
+Add/verify:
+- BROKER_DISPATCH_BUILT=true only for demo dispatch code paths after this phase.
+- Live dispatch remains impossible.
+- Shared MT5 routing remains blocked.
+- canDispatchToMT5Allowed can only be true when all verified-demo gates pass.
+
+Required demo dispatch gates:
+- authenticated user
+- user owns bridge
+- VERIFIED_DEMO=true
+- account_type_explicit_demo=PASS
+- bridgeConnected=true
+- heartbeatFresh=true
+- EA version >= v1.26
+- executionMode=MT5_DEMO_EXECUTION
+- userArmed=true
+- user confirmation exists
+- risk/prop gates passed
+- duplicate command clear
+- liveLocked=true still preserved for live paths
+- sharedMt5RoutingBlocked=true
+
+C. Command Queue Consumer
+Implement the demo-only queue consumer.
+
+Allowed transitions:
+- DEMO_APPROVED → SENT_TO_MT5_DEMO
+- SENT_TO_MT5_DEMO → FILLED_DEMO / REJECTED / FAILED
+
+Rules:
+- Only DEMO_APPROVED commands can be consumed.
+- Only verified-demo commands can be consumed.
+- Never consume live/shared commands.
+- Never consume if accountType is live/real/unknown.
+- Never consume if heartbeat is stale.
+- Never consume if user confirmation is missing.
+- Every send attempt must create an audit event.
+- Every EA result must be recorded.
+- Duplicate dispatch must be blocked.
+
+D. EA v1.26 Demo Execution
+Update/export ReplitMT5BridgeEA.mq5 as v1.26.
+
+Add demo-only support for:
+- PLACE_MARKET_ORDER
+- PLACE_PENDING_ORDER
+- MODIFY_SLTP
+- CLOSE_POSITION
+- CANCEL_PENDING_ORDER
+
+EA execution gates:
+- ExecutionMode == DEMO_EXECUTION
+- accountType == demo
+- ReadOnlyMode == false
+- AllowOrderExecution == true for place order
+- AllowModification == true for SL/TP modify
+- AllowClose == true for close/cancel
+- account is not live/real/unknown
+
+If any EA gate fails, return:
+- REJECTED_DEMO_ONLY
+- REJECTED_READ_ONLY
+- REJECTED_LIVE_ACCOUNT
+- REJECTED_INVALID_COMMAND
+- REJECTED_RISK_GATE
+- FAILED_BROKER_ERROR
+
+EA must:
+- default to READ_ONLY
+- never print token values
+- never execute on live/real/unknown accounts
+- preserve timer heartbeat/accountType reporting
+- log safe summaries only
+- include a clear version line: #property version "1.26"
+
+Export updated EA to:
+mt5-bridge-export/ReplitMT5BridgeEA.mq5
+
+E. Result Write-Back
+Implement safe result write-back:
+- success result
+- broker ticket/order id if available
+- rejected reason
+- failed reason
+- broker error code/message if safe
+- timestamp
+- reconciliation status
+
+Never store or return secrets.
+
+F. Reconciliation Skeleton Completion
+After a demo command result:
+- record broker-reported result
+- set reconciliation status
+- do not fake fills
+- if broker confirmation is missing, mark PENDING_RECONCILIATION or UNKNOWN_RESULT
+- audit reconciliation result
+
+G. Audit Trail
+Audit:
+- demo dispatch gate evaluated
+- demo dispatch blocked
+- demo command consumed
+- demo command sent to EA
+- EA result received
+- duplicate dispatch suppressed
+- cross-user consume blocked
+- reconciliation result recorded
+- EA rejected read-only
+- EA rejected live/unknown account
+
+Each audit entry must include:
+- userId
+- bridgeConnectionId
+- commandId if relevant
+- accountLogin if relevant
+- action
+- safetyGateSnapshot
+- result
+- reason if blocked/failed/rejected
+- timestamp
+
+H. Preserve Live Safety
+Confirm:
+- Live trading = BLOCKED
+- Live execution = impossible
+- Shared MT5 routing = BLOCKED
+- Live auto-close = ALERT_ONLY
+- No live broker placement path enabled
+- No command executes unless VERIFIED_DEMO and user-confirmed
+- Per-user isolation intact
+- No secrets exposed
+
+Run:
+1. Typecheck
+2. Full CI guard suite
+3. Stop-limit/order-type QA
+4. Frontend build/runtime load check
+5. Browser smoke test
+6. DB unique-index / duplicate suppression tests
+7. Demo dispatch gate tests
+8. Unknown/live account rejection tests
+9. Command queue consumer tests
+10. Demo market order command tests using mocked EA/result only
+11. Demo pending order command tests using mocked EA/result only
+12. Demo SL/TP modify command tests using mocked EA/result only
+13. Demo close position command tests using mocked EA/result only
+14. Demo cancel pending order command tests using mocked EA/result only
+15. User confirmation required tests
+16. Cross-user consume tests
+17. Duplicate dispatch suppression tests
+18. Result write-back tests
+19. Broker reconciliation tests
+20. Notification/audit tests
+21. Secret leakage tests
+22. Per-user isolation regression
+23. Safety-envelope regression
+24. Live trading locked regression
+25. Shared MT5 routing blocked regression
+26. Mandatory code review / architect review
+
+Do not run an actual MT5 demo order against the VPS during this phase.
+
+If any test fails:
+- Fix only confirmed P0/P1 issues.
+- Do not weaken live locks.
+- Rerun checks.
+
+End with:
+- Files inspected
+- Files changed
+- EA export path
+- DB unique-index result
+- Demo dispatch gate result
+- Command queue consumer result
+- EA v1.26 result
+- Result write-back result
+- Reconciliation result
+- Tests run/pass/fail
+- Any blockers
+- Confirmation no actual MT5 command was sent during this build
+- Confirmation LIVE trading remains BLOCKED
+- Confirmation shared MT5 routing remains BLOCKED
+- Confirmation live auto-close remains ALERT_ONLY
+- Final answer: READY TO INSTALL EA v1.26 AND RUN CONTROLLED DEMO EXECUTION TEST or NOT READY, with reasons.

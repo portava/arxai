@@ -1,0 +1,505 @@
+NEXT PHASE: ORDER MANAGEMENT SYSTEM + POSITION MANAGER + P/L ENGINE
+
+Goal:
+Build a complete order and position management layer so the trading app can fully test manual trading, AI trading, demo simulator trading, live tester intents, journal updates, calendar P/L, and future MT5 execution.
+
+MT5 is still deferred.
+Do not fake MT5 connection.
+Do not claim real broker execution.
+Do not place real trades.
+Do not hide live workflows.
+Keep full tester access open.
+
+==================================================
+1. CREATE CENTRAL ORDER MANAGEMENT SYSTEM
+==================================================
+
+Create an OMS that tracks every order lifecycle across:
+
+- PAPER
+- DEMO_SIMULATOR
+- LIVE_TESTER_INTENT
+- FUTURE_MT5_DEMO
+- FUTURE_MT5_LIVE
+
+Order statuses:
+
+- DRAFT
+- RISK_CHECK_PENDING
+- RISK_REJECTED
+- APPROVED_FOR_SIMULATION
+- SUBMITTED_SIMULATOR
+- FILLED_SIMULATOR
+- PARTIALLY_FILLED_SIMULATOR
+- CANCELLED
+- EXPIRED
+- PENDING_MT5_CONNECTION
+- READY_FOR_BROKER_WHEN_CONNECTED
+- SUBMITTED_TO_BROKER, future only
+- FILLED_BROKER, future only
+- REJECTED_BY_BROKER, future only
+- CLOSED
+- ERROR
+
+Order fields:
+
+- orderId
+- environment
+- source: MANUAL | AI_ASSIST | AI_AUTO | SCANNER | BACKTEST | REPLAY
+- symbol
+- direction
+- orderType: MARKET | LIMIT | STOP
+- lotSize
+- entryPrice
+- stopLoss
+- takeProfit
+- riskAmount
+- riskPercent
+- riskRewardRatio
+- confidenceScore
+- riskScore
+- entrySniperScore
+- opportunityScore
+- strategyId
+- status
+- rejectionReason
+- createdAt
+- updatedAt
+- auditLogId
+- idempotencyKey
+
+==================================================
+2. CREATE POSITION MANAGER
+==================================================
+
+Create a complete position manager for simulator/tester mode.
+
+Position fields:
+
+- positionId
+- orderId
+- environment
+- symbol
+- direction
+- lotSize
+- entryPrice
+- currentPrice
+- stopLoss
+- takeProfit
+- unrealizedPnL
+- realizedPnL
+- riskAmount
+- status: OPEN | CLOSED | STOPPED_OUT | TAKE_PROFIT_HIT | MANUALLY_CLOSED | EXPIRED
+- openedAt
+- closedAt
+- closeReason
+
+Position manager must support:
+
+- open simulated position
+- update current price
+- update unrealized P/L
+- close position manually
+- close when stop loss is hit
+- close when take profit is hit
+- partial close, simulator only
+- move stop loss
+- move take profit
+- move stop to break-even
+- trail stop, simulator only
+- audit every change
+
+==================================================
+3. BUILD SIMULATED EXECUTION ENGINE
+==================================================
+
+Create a simulator execution engine.
+
+It should:
+
+- simulate market order fills
+- simulate limit order pending/fill
+- simulate stop order pending/fill
+- apply spread
+- apply slippage setting
+- update open positions with market quote changes
+- trigger stop loss
+- trigger take profit
+- calculate P/L
+- calculate R-multiple
+- send result to journal
+- send result to calendar
+- send result to learning loop
+- send result to performance scorecard
+
+Execution source must always show:
+
+executionEnvironment = SIMULATOR
+
+Never confuse simulator fills with real broker fills.
+
+==================================================
+4. ADD ORDER BLOTTER PAGE
+==================================================
+
+Create:
+
+/orders
+
+The order blotter should show all orders with filters:
+
+- All
+- Paper
+- Demo Simulator
+- Live Tester Intent
+- Pending MT5
+- Rejected
+- Filled
+- Closed
+- AI
+- Manual
+
+Each row/card should show:
+
+- order ID
+- symbol
+- direction
+- lot size
+- entry
+- stop loss
+- take profit
+- status
+- environment
+- source
+- risk amount
+- confidence score
+- created time
+- audit link
+
+==================================================
+5. ADD POSITION CENTER PAGE
+==================================================
+
+Create:
+
+/positions
+
+The position center should show:
+
+- open simulated positions
+- closed simulated positions
+- live tester intent positions, if applicable
+- future MT5 broker positions section, marked deferred
+
+Each position card should show:
+
+- symbol
+- direction
+- lot size
+- entry price
+- current price
+- stop loss
+- take profit
+- unrealized P/L
+- realized P/L
+- R-multiple
+- trade grade
+- status
+- close button
+- move stop to break-even button
+- trail stop button, simulator only
+- audit link
+
+If MT5 is not connected, show:
+
+“Real broker positions require MT5 bridge connection.”
+
+==================================================
+6. ADD P/L ENGINE
+==================================================
+
+Create centralized P/L calculations for:
+
+- open simulated positions
+- closed simulated positions
+- daily P/L
+- weekly P/L
+- monthly P/L
+- P/L by symbol
+- P/L by strategy
+- P/L by source: manual vs AI
+- P/L by environment
+
+Do not mix:
+
+- paper P/L
+- demo simulator P/L
+- live tester intent P/L
+- future real broker P/L
+
+Create P/L response:
+
+{
+  "environment": "DEMO_SIMULATOR",
+  "dailyPnL": number,
+  "weeklyPnL": number,
+  "monthlyPnL": number,
+  "openUnrealizedPnL": number,
+  "closedRealizedPnL": number,
+  "wins": number,
+  "losses": number,
+  "winRate": number,
+  "averageR": number,
+  "maxDrawdown": number
+}
+
+==================================================
+7. CONNECT OMS TO TRADE TICKETS
+==================================================
+
+Connect OMS to:
+
+- manual trade ticket
+- demo manual simulator
+- demo AI simulator
+- live manual tester
+- live AI assist tester
+- live AI auto tester
+- scanner opportunities
+- watchlist
+- strategy lab
+- trade command room
+
+When user submits any trade workflow:
+
+1. Create order draft
+2. Run risk governor
+3. Run market health check
+4. Run news/session filter
+5. Save audit event
+6. Submit to simulator or live-intent queue
+7. Update journal/calendar/decision stream
+
+For MT5 deferred live workflow:
+
+- save order as PENDING_MT5_CONNECTION
+- do not execute broker order
+- show tester confirmation
+- keep workflow fully visible
+
+==================================================
+8. ADD TRADE MANAGEMENT CONTROLS
+==================================================
+
+For simulator positions, allow:
+
+- close full position
+- close partial position
+- move stop loss
+- move take profit
+- move stop to break-even
+- apply trailing stop
+- cancel pending order
+
+Each action must:
+
+- run permission check
+- run risk check when relevant
+- update audit log
+- update journal
+- update position state
+- update P/L
+
+For live tester intents, allow:
+
+- cancel intent
+- edit intent
+- mark as reviewed
+- send to journal
+- keep disabled “Send to Broker” until MT5 connects
+
+==================================================
+9. CONNECT TO JOURNAL + CALENDAR
+==================================================
+
+Journal should receive:
+
+- order created
+- order rejected
+- simulated fill
+- position opened
+- stop loss hit
+- take profit hit
+- manual close
+- partial close
+- AI decision reason
+- trade grade
+- lesson learned
+
+Calendar should update:
+
+- daily simulated P/L
+- number of trades
+- wins
+- losses
+- AI vs manual
+- best trade
+- worst trade
+- live intent count
+
+==================================================
+10. CONNECT TO AI LEARNING LOOP
+==================================================
+
+After every closed simulated trade, send:
+
+- setup type
+- strategy used
+- entry score
+- opportunity score
+- confidence score
+- trade grade
+- result: win/loss/breakeven
+- R-multiple
+- mistake category
+- whether AI was correct
+- what to improve
+
+Learning loop should update:
+
+- AI confidence calibration
+- best/worst setups
+- best/worst symbols
+- strategy ranking
+- common mistake detection
+
+==================================================
+11. ADD RECONCILIATION PLACEHOLDER FOR FUTURE MT5
+==================================================
+
+Create future reconciliation logic, but keep it inactive until MT5 connects.
+
+Page section:
+
+/broker-reconciliation
+
+Show:
+
+- MT5 connection status
+- broker orders, deferred
+- broker positions, deferred
+- local orders
+- local live intents
+- mismatches, future
+- sync status, future
+
+Display:
+
+“Broker reconciliation activates after MT5 bridge is connected.”
+
+==================================================
+12. API ENDPOINTS
+==================================================
+
+Create or update:
+
+GET /api/orders
+GET /api/orders/:id
+POST /api/orders/create
+POST /api/orders/:id/submit-simulator
+POST /api/orders/:id/cancel
+PATCH /api/orders/:id
+
+GET /api/positions
+GET /api/positions/open
+GET /api/positions/closed
+POST /api/positions/:id/close
+POST /api/positions/:id/partial-close
+POST /api/positions/:id/move-stop
+POST /api/positions/:id/move-take-profit
+POST /api/positions/:id/breakeven
+POST /api/positions/:id/trailing-stop
+
+GET /api/pnl/summary
+GET /api/pnl/daily
+GET /api/pnl/by-symbol
+GET /api/pnl/by-strategy
+GET /api/pnl/by-environment
+
+POST /api/execution/simulator/fill
+POST /api/execution/simulator/tick
+GET /api/broker-reconciliation/status
+
+==================================================
+13. UPDATE DASHBOARD
+==================================================
+
+Add cards:
+
+- Open Positions
+- Pending Orders
+- Today’s P/L
+- Weekly P/L
+- Best Trade Today
+- Worst Trade Today
+- Pending MT5 Live Intents
+- AI vs Manual P/L
+- Current Drawdown
+- Order System Status
+
+==================================================
+14. FINAL TEST
+==================================================
+
+Run:
+
+- route smoke test
+- OMS creation test
+- manual simulator order test
+- AI simulator order test
+- live tester intent order test
+- risk rejection test
+- simulated fill test
+- stop loss hit test
+- take profit hit test
+- manual close test
+- partial close test
+- break-even move test
+- trailing stop test
+- P/L calculation test
+- journal update test
+- calendar update test
+- learning loop update test
+- audit logging test
+- environment separation test
+- MT5 deferred honesty test
+
+Generate:
+
+ORDER MANAGEMENT + POSITION MANAGER REPORT
+
+Include:
+
+- OMS active yes/no
+- Position Manager active yes/no
+- Simulated Execution Engine active yes/no
+- Order Blotter active yes/no
+- Position Center active yes/no
+- P/L Engine active yes/no
+- Trade Management controls active yes/no
+- Journal integration active yes/no
+- Calendar integration active yes/no
+- Learning Loop integration active yes/no
+- Broker reconciliation placeholder active yes/no
+- MT5 still deferred yes/no
+- Real broker execution still not faked yes/no
+- Full tester access still active yes/no
+
+Hard rules:
+- Do not fake MT5 connection.
+- Do not claim real broker fills happened.
+- Do not place real orders.
+- Do not mix simulator and future real broker records.
+- Do not remove risk governor.
+- Do not remove kill switch UI.
+- Do not hide live tester workflows.

@@ -1,0 +1,78 @@
+Keep ARX_LIVE_BROKER_EXECUTION_ENABLED="true" because this environment is intentionally being prepared for controlled owner/admin LIVE trade testing.
+
+Do not reset the live broker execution switch to false/unset.
+
+However, reconcile the documented default-deny invariant with the current .replit setting so the app is not confused or contradictory.
+
+This is not a rebuild.
+Do not change unrelated app functionality.
+Do not weaken user privacy, trade ownership, permissions, kill switch, account freeze, allocation checks, or MT5 confirmation rules.
+
+Required work:
+
+1. Inspect the .replit live execution setting:
+   ARX_LIVE_BROKER_EXECUTION_ENABLED="true"
+
+2. Confirm the app treats this as a deliberate environment-level live execution enablement, not an accidental safety violation.
+
+3. Update documentation so it clearly says:
+   - Default-deny is the normal baseline.
+   - This Replit environment is explicitly configured for controlled owner/admin live testing.
+   - The master switch being true does not mean every user can trade live.
+   - All other live gates still apply.
+
+4. Verify all LIVE trade gates still apply:
+   - logged-in user required
+   - account must be LIVE-enabled
+   - user must be owner/admin or explicitly live-approved
+   - account must not be frozen
+   - kill switch must be inactive
+   - allocation must be available
+   - symbol must be allowed
+   - lot size must be valid
+   - market must be open
+   - spread must be acceptable if configured
+   - MT5 bridge must be connected
+   - EA/broker connection must be ready
+   - backend permission validation must pass
+   - trade ownership ledger must be written
+   - MT5 confirmation required before UI success
+   - no Paper Trading fallback
+   - no fake/simulated execution
+
+5. Add or confirm an admin-only status display/log that shows:
+   - Live broker master switch: ON
+   - Kill switch status
+   - Live bridge readiness
+   - EA readiness
+   - Current approved live-test users
+   - Whether the logged-in user can place LIVE trades
+   - Exact blocked reason if LIVE trade is not allowed
+
+6. Normal users must not see raw env names, stack traces, route names, bridge internals, or admin-only logs.
+
+7. Normal users must not be able to trade LIVE just because the master switch is ON.
+
+8. Owner/admin approved live-test account should be able to place a controlled LIVE trade if all readiness gates pass.
+
+9. Run regression tests:
+   - typecheck
+   - build
+   - ci:guards
+   - auth/view-mode tests
+   - endpoint auth tests
+   - Scanner smoke test
+   - MT5 bridge readiness test
+   - LIVE readiness gate test
+   - normal user blocked-from-live test
+   - approved owner/admin live-allowed test
+
+10. Do not place a live trade in this command unless there is already a dedicated LIVE dummy trade test flag enabled and the app’s controlled dummy-trade test flow is explicitly called.
+
+Final report must include:
+- whether the master live broker switch remains ON
+- whether documentation was updated
+- whether all other live gates still pass
+- whether normal users are blocked from LIVE
+- whether approved owner/admin live testing is allowed
+- any remaining risk

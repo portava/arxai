@@ -1,0 +1,223 @@
+BUILD PHASE — Multi-User Trade Queue + Same-Time Execution Safety
+
+Use the current codebase. Do not rebuild unrelated systems.
+
+Goal:
+Make ARX AI safe when multiple users place, close, or modify trades at the same time. Each user must feel like they are using the app alone, even when the backend uses one shared master MT5 bridge.
+
+Also carry forward these previous admin hardening notes:
+- Add audit coverage for UI-side blocked trade decisions where practical, not only backend dispatch attempts.
+- Make sure requireAdmin does not expose unnecessary role detail in production logs/responses.
+- Keep maskBridgeEvidenceForUser as the required bridge-secret masking chokepoint and make sure CI catches any bypass.
+
+1. Inspect current systems first
+Inspect and reuse:
+- liveCommandPipeline
+- one-click safety
+- admin approval
+- shared master account mapping
+- exposure reservations
+- advisory locks
+- cooldowns
+- idempotency
+- bridge routing
+- audit logs
+- user/account shell
+- ledger mappings
+
+Do not create a duplicate trade system.
+
+2. Unified command queue
+Create or harden one unified trade command queue for:
+- open trade
+- close trade
+- edit stop loss
+- edit take profit
+- cancel pending command
+- safe retry only when MT5 state is known
+
+Support statuses:
+- DRAFT
+- VALIDATING
+- BLOCKED
+- RESERVED
+- QUEUED
+- DISPATCHING
+- SENT_TO_BRIDGE
+- ACKNOWLEDGED
+- FILLED
+- PARTIALLY_FILLED if supported
+- REJECTED
+- FAILED
+- CANCELLED
+- EXPIRED
+- NEEDS_REVIEW
+
+Normal users should see clean language, not raw code statuses.
+
+3. Per-user isolation
+Every command must be tied to:
+- authenticated userId
+- account mode
+- bridgeId if available
+- sharedMasterAccountId if applicable
+- symbol
+- direction
+- order type
+- lot size
+- SL/TP
+- source page
+- idempotency key
+- reservationId if used
+
+User A must never see, close, edit, cancel, or affect User B’s trade or command.
+
+4. Same-time execution safety
+When multiple users submit at the same time:
+- use per-user advisory locks
+- use per-user-per-symbol cooldowns
+- use shared master exposure locks
+- use atomic DB transactions
+- use idempotency keys to prevent double submits
+- prevent duplicate bridge requests
+- prevent two commands from consuming the same reservation
+- prevent shared master overexposure
+- do not let one user’s cooldown unfairly block another user
+
+5. Shared master MT5 routing
+For SHARED_MASTER_MT5, require:
+- global backend live flag enabled
+- bridge healthy
+- EA live execution enabled
+- EA not read-only
+- shared master account mapped
+- user admin-approved
+- user has allocation/risk profile
+- symbol allowed
+- exposure reservation passed
+- cooldown passed
+- confirmation or approved one-click path passed
+- queue not paused by admin
+
+If any condition fails, block with a clean user-facing reason.
+
+6. Demo/live separation
+- Demo commands must never create live commands.
+- Live commands must never be created from demo UI state.
+- Demo counters and live counters must stay separate.
+- Demo failures must not affect live reservations.
+- Live safety checks must never be skipped.
+
+7. Dispatcher
+Add or harden a dispatcher that:
+- dispatches eligible commands in order
+- respects per-user locks
+- respects shared master locks
+- supports cancel-before-dispatch
+- has safe retry limits
+- marks stale commands expired
+- marks uncertain commands NEEDS_REVIEW instead of retrying blindly
+- records bridge acknowledgements
+- never sends duplicate bridge requests
+- does not dispatch live commands in QA/test mode unless fully approved
+
+8. Reconciliation
+Handle:
+- sent command with no bridge response
+- bridge acknowledged but no fill callback
+- duplicate EA callback
+- rejected command
+- failed command
+- expired command
+- stuck RESERVED reservation
+- MT5 position exists but app missed callback
+
+When uncertain, mark NEEDS_REVIEW and alert admin.
+
+9. Admin queue controls
+Add admin-only controls to:
+- view queued commands
+- view blocked commands
+- view failed/stale commands
+- pause shared master dispatch
+- resume shared master dispatch
+- cancel queued command before dispatch
+- force NEEDS_REVIEW
+- see why a command was blocked
+
+Non-admin users must not access queue controls or APIs.
+
+10. User-facing status UI
+Show clean trade request status:
+- Trade request received
+- Checking safety
+- Waiting in queue
+- Sending to bridge
+- Trade active
+- Trade rejected
+- Trade failed
+- Trade cancelled
+- Needs review
+
+No raw backend dumps.
+
+11. Ruby awareness
+Ruby should explain:
+- why a trade is queued
+- why it was blocked
+- why it needs review
+- whether admin approval is missing
+- whether bridge is disconnected
+- whether master mapping is missing
+- whether risk/exposure/cooldown blocked the trade
+
+Ruby must not claim a live trade was placed unless system status confirms it.
+
+12. Audit logs
+Add audit logs for:
+- command created
+- UI-side trade block where practical
+- backend trade block
+- command queued
+- command dispatched
+- bridge acknowledged
+- filled/rejected/failed callback
+- duplicate callback ignored
+- reservation fulfilled
+- reservation released
+- command expired
+- command marked NEEDS_REVIEW
+- admin paused/resumed queue
+- admin cancelled queued command
+
+Do not log secrets.
+
+13. Tests
+Add or update tests for:
+- two users submit same symbol at same time
+- one user double-clicks submit and only one command is created
+- unapproved shared-master user is blocked
+- unmapped shared master account is blocked
+- unhealthy bridge blocks dispatch
+- admin queue pause blocks dispatch
+- per-user-per-symbol cooldown does not block other users
+- exposure reservation prevents over-allocation
+- duplicate EA callback does not double-settle
+- stale reservation is released or marked NEEDS_REVIEW
+- cancel before dispatch works
+- failed command does not retry blindly
+- demo command never creates live command
+- non-admin cannot access queue controls
+- no secrets exposed
+- no live command created during tests unless full safety flow passes
+
+Return:
+- what was built
+- files changed
+- queue model/statuses added
+- dispatcher behavior
+- admin route/API names
+- user route/UI names
+- tests added/run
+- remaining risks
+- confirmation that no live trade was fired

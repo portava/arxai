@@ -1,0 +1,174 @@
+export default function ArxLoginPage() {
+  return (
+    <main className="min-h-screen bg-[#050914] text-white overflow-hidden">
+      <div className="grid min-h-screen grid-cols-1 lg:grid-cols-2">
+        <section className="relative hidden lg:flex flex-col justify-between p-12 border-r border-white/10">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_60%_25%,rgba(40,123,255,.22),transparent_35%),radial-gradient(circle_at_80%_70%,rgba(126,58,242,.18),transparent_38%)]" />
+          <div className="absolute inset-0 opacity-30 bg-[linear-gradient(rgba(59,130,246,.08)_1px,transparent_1px),linear-gradient(90deg,rgba(59,130,246,.08)_1px,transparent_1px)] bg-[size:48px_48px]" />
+
+          <div className="relative z-10">
+            <div className="text-4xl font-black tracking-tight">
+              ARX <span className="text-blue-400">AI</span>
+            </div>
+            <p className="mt-3 text-sm tracking-[.28em] text-blue-200">
+              ANALYZE. RISK. eXECUTE.
+            </p>
+
+            <h1 className="mt-14 max-w-xl text-5xl font-black leading-tight">
+              AI-Powered Trading. <br />
+              Discipline <span className="text-blue-400">Wins.</span>
+            </h1>
+
+            <p className="mt-6 max-w-lg text-lg leading-8 text-slate-300">
+              ARX AI combines market intelligence, risk control, and automated
+              insights to help you trade with clarity and confidence.
+            </p>
+          </div>
+
+          <div className="relative z-10 mt-10 rounded-3xl border border-blue-400/20 bg-black/30 p-6 shadow-2xl backdrop-blur">
+            <div className="relative h-64 overflow-hidden rounded-2xl bg-[#06101f]">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(37,99,235,.22),transparent_45%)]" />
+              <div className="absolute bottom-8 left-8 right-8 h-32 border-b border-l border-blue-400/20">
+                <div className="absolute bottom-6 left-4 h-16 w-3 rounded bg-blue-400/80" />
+                <div className="absolute bottom-12 left-12 h-24 w-3 rounded bg-white/70" />
+                <div className="absolute bottom-9 left-20 h-20 w-3 rounded bg-blue-500/80" />
+                <div className="absolute bottom-20 left-28 h-28 w-3 rounded bg-white/70" />
+                <div className="absolute bottom-14 left-36 h-24 w-3 rounded bg-blue-500/80" />
+                <div className="absolute bottom-24 left-44 h-32 w-3 rounded bg-white/70" />
+                <div className="absolute bottom-28 left-52 h-36 w-3 rounded bg-blue-400/80" />
+              </div>
+
+              <div className="absolute left-10 top-8 rounded-xl border border-white/10 bg-black/45 px-4 py-3">
+                <p className="text-xs uppercase text-slate-400">AI Signal</p>
+                <p className="font-bold text-emerald-400">Bullish ↗</p>
+              </div>
+
+              <div className="absolute left-56 top-8 rounded-xl border border-white/10 bg-black/45 px-4 py-3">
+                <p className="text-xs uppercase text-slate-400">Confidence</p>
+                <p className="font-bold text-emerald-400">78%</p>
+              </div>
+
+              <div className="absolute bottom-10 right-10 rounded-xl border border-white/10 bg-black/45 px-4 py-3">
+                <p className="text-xs uppercase text-slate-400">Risk Level</p>
+                <p className="font-bold text-emerald-400">Low</p>
+              </div>
+            </div>
+
+            <div className="mt-6 grid grid-cols-4 gap-4 text-center">
+              {[
+                ["Risk Controls", "Always protecting your capital."],
+                ["AI Insights", "Ruby analyzes markets 24/7 so you don’t have to."],
+                ["Execution Edge", "Tools built to help you execute with precision."],
+                ["Your Permissions", "Live access and features protected by you."],
+              ].map(([title, body]) => (
+                <div key={title} className="rounded-2xl border border-white/10 bg-white/[.03] p-4">
+                  <p className="text-sm font-bold uppercase">{title}</p>
+                  <p className="mt-2 text-xs leading-5 text-slate-400">{body}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-5 rounded-2xl border border-blue-400/20 bg-blue-500/5 p-4 text-sm text-slate-300">
+              <span className="font-bold text-blue-300">Secure by Design</span>
+              <span className="ml-3">
+                Bank-grade encryption • Operator approval for live access • Demo & Live permissions protected
+              </span>
+            </div>
+          </div>
+
+          <p className="relative z-10 text-sm text-slate-500">
+            Trading involves risk. ARX AI is built to support disciplined decisions, not guarantee results.
+          </p>
+        </section>
+
+        <section className="flex items-center justify-center p-6 lg:p-12">
+          <div className="w-full max-w-xl rounded-[2rem] border border-blue-300/30 bg-white/[.035] p-7 shadow-[0_0_70px_rgba(37,99,235,.18)] backdrop-blur-xl lg:p-12">
+            <div className="text-center">
+              <div className="text-5xl font-black tracking-tight">
+                ARX <span className="text-blue-400">AI</span>
+              </div>
+              <p className="mt-3 text-xs tracking-[.28em] text-blue-200">
+                ANALYZE. RISK. eXECUTE.
+              </p>
+              <h2 className="mt-9 text-3xl font-black">Welcome back</h2>
+              <p className="mt-2 text-slate-400">
+                Sign in to continue to your ARX AI account.
+              </p>
+            </div>
+
+            <form className="mt-10 space-y-6">
+              <label className="block">
+                <span className="text-sm font-semibold">Email address</span>
+                <input
+                  type="email"
+                  className="mt-3 w-full rounded-xl border border-white/15 bg-black/25 px-4 py-4 text-white outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-500/15"
+                  placeholder="Enter your email"
+                />
+              </label>
+
+              <label className="block">
+                <span className="text-sm font-semibold">Password</span>
+                <div className="mt-3 flex rounded-xl border border-white/15 bg-black/25 focus-within:border-blue-400 focus-within:ring-4 focus-within:ring-blue-500/15">
+                  <input
+                    type="password"
+                    className="w-full bg-transparent px-4 py-4 text-white outline-none"
+                    placeholder="Enter your password"
+                  />
+                  <button type="button" className="px-4 text-slate-300 hover:text-white">
+                    Show
+                  </button>
+                </div>
+              </label>
+
+              <div className="flex items-center justify-between text-sm">
+                <label className="flex items-center gap-3 text-slate-300">
+                  <input type="checkbox" className="h-5 w-5 rounded border-white/20 bg-black/30" />
+                  Remember me
+                </label>
+                <button type="button" className="text-blue-400 hover:text-blue-300">
+                  Forgot password?
+                </button>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full rounded-xl bg-gradient-to-r from-blue-500 to-blue-600 px-5 py-4 text-lg font-bold shadow-lg shadow-blue-500/20 transition hover:scale-[1.01] active:scale-[.99]"
+              >
+                Sign In →
+              </button>
+            </form>
+
+            <div className="my-7 flex items-center gap-4 text-sm text-slate-500">
+              <div className="h-px flex-1 bg-white/10" />
+              OR
+              <div className="h-px flex-1 bg-white/10" />
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <button className="rounded-xl border border-white/15 px-4 py-4 font-semibold hover:bg-white/5">
+                Use Invite Code
+              </button>
+              <button className="rounded-xl border border-white/15 px-4 py-4 font-semibold hover:bg-white/5">
+                Request Access
+              </button>
+            </div>
+
+            <div className="mt-7 rounded-2xl border border-white/10 bg-black/20 p-4 text-sm leading-6 text-slate-300">
+              <span className="font-bold text-blue-300">Ruby</span> helps analyze markets, risk, and execution — but{" "}
+              <span className="font-bold text-blue-300">final control</span> stays protected by your permissions.
+            </div>
+
+            <p className="mt-7 text-center text-sm text-slate-500">
+              Your data is encrypted. Your permissions protect everything.
+            </p>
+            <p className="mt-2 text-center text-lg">
+              <span className="text-blue-400">Secure.</span>{" "}
+              <span className="text-slate-300">Private.</span>{" "}
+              <span className="text-slate-400">Yours.</span>
+            </p>
+          </div>
+        </section>
+      </div>
+    </main>
+  );
+}

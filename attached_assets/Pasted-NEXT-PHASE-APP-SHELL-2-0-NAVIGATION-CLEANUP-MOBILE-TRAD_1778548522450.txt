@@ -1,0 +1,493 @@
+NEXT PHASE: APP SHELL 2.0 + NAVIGATION CLEANUP + MOBILE TRADING UX POLISH
+
+Goal:
+Clean up the entire trading app UI so it feels like one professional platform instead of many separate pages.
+
+The app now has many systems:
+- dashboard
+- live chart
+- trade command room
+- manual trading
+- demo simulator
+- live tester workflows
+- AI scanner
+- autopilot
+- shadow mode
+- risk governor
+- OMS
+- positions
+- P/L
+- strategy lab
+- backtesting
+- journal
+- calendar
+- alerts
+- watchlist
+- MT5 setup
+- admin/security tools
+
+Now organize everything into a clean, easy-to-use app shell.
+
+Important:
+- Do not remove any existing feature.
+- Do not hide owner/tester workflows.
+- Do not fake MT5 connection.
+- Do not place real broker orders.
+- Do not break full tester access.
+- Keep MT5 deferred until connected later.
+- Keep risk governor and kill switch visible.
+
+==================================================
+1. CREATE APP SHELL 2.0
+==================================================
+
+Build a unified app shell used across every page.
+
+It should include:
+
+- left sidebar on desktop
+- bottom navigation on mobile
+- top global status bar
+- current mode badge
+- selected symbol
+- MT5 status
+- simulator status
+- risk status
+- kill switch status
+- live chart status
+- daily P/L
+- live intent count
+- alerts count
+- current user role
+
+Global banner:
+
+“OWNER TESTER ACCESS ACTIVE — all workflows are open for testing. Real broker execution requires MT5 bridge connection.”
+
+If MT5 is deferred, show:
+
+“MT5 DEFERRED — simulator and live tester workflows active.”
+
+==================================================
+2. REORGANIZE NAVIGATION
+==================================================
+
+Group routes into clean sections:
+
+A. Command
+- Dashboard
+- Trade Command Room
+- Live Chart
+- Testing Control Center
+- Tester Playbook
+
+B. Trading
+- Manual Trade Ticket
+- Demo Trading
+- Paper Trading
+- Live Manual Tester
+- Live AI Assist Tester
+- Live AI Auto Tester
+- Live Intent Queue
+
+C. AI
+- Market Scanner
+- AI Decisions
+- AI Coach
+- Autopilot Control Center
+- Shadow Mode
+- Forward Testing
+- AI Readiness Score
+
+D. Strategy
+- Strategy Lab
+- Backtesting
+- Market Replay
+- Trade Grader
+- Strategy Tournament
+- Strategy Promotion
+- Confidence Calibration
+
+E. Risk
+- Risk Command Center
+- Risk Profile
+- Risk Events
+- Market Health
+- News Risk
+- Data Quality
+- Prop Firm Mode
+
+F. Records
+- Orders
+- Positions
+- Journal
+- Calendar
+- Performance Scorecard
+- Audit Vault
+- Safety Logs
+
+G. Broker
+- Broker
+- MT5 Status
+- MT5 Setup
+- Broker Reconciliation
+
+H. Admin
+- Settings
+- Permissions
+- Data Management
+- Security Status
+- System Health
+
+No duplicate links.
+No dead links.
+No hidden tester pages.
+
+==================================================
+3. CREATE QUICK ACTION CENTER
+==================================================
+
+Add a floating or dashboard quick action panel.
+
+Quick actions:
+
+- Open Trade Command Room
+- Start Demo Manual Test
+- Generate AI Trade Idea
+- Run Market Scanner
+- Start Autopilot Observe-Only
+- Start Shadow Mode
+- Submit Live Intent
+- Open Risk Command Center
+- Open Live Intent Queue
+- Run Full System Health Check
+- Download MT5 Bridge Package
+- Emergency Kill Switch
+
+Each action should route to the right page or trigger the right safe tester workflow.
+
+==================================================
+4. IMPROVE MOBILE UX
+==================================================
+
+Make the entire app mobile-friendly.
+
+Requirements:
+
+- no horizontal overflow
+- readable cards
+- large tap targets
+- sticky bottom nav
+- collapsible panels
+- chart resizes properly
+- trade ticket fits screen
+- AI trade cards easy to read
+- risk warnings visible
+- kill switch always reachable
+- modals fit screen
+- tables convert to cards on mobile
+
+Important pages for mobile polish:
+
+- Dashboard
+- Trade Command Room
+- Live Chart
+- Manual Trade Ticket
+- Live Manual Tester
+- Live AI Assist Tester
+- Market Scanner
+- Autopilot Control Center
+- Risk Command Center
+- Orders
+- Positions
+- Journal
+- Calendar
+- Testing Control Center
+
+==================================================
+5. STANDARDIZE UI COMPONENTS
+==================================================
+
+Create shared components:
+
+- StatusBadge
+- ModeBadge
+- EnvironmentBadge
+- RiskBadge
+- MT5StatusBadge
+- TradeCard
+- AITradeCard
+- OrderCard
+- PositionCard
+- AlertCard
+- MetricCard
+- SystemHealthCard
+- EmptyState
+- ErrorCard
+- LoadingSkeleton
+- ConfirmationModal
+- DangerActionModal
+- KillSwitchButton
+- PageHeader
+- SectionTabs
+- FilterBar
+
+Use the same components across the app.
+
+==================================================
+6. STANDARDIZE STATUS COLORS AND LABELS
+==================================================
+
+Use consistent labels:
+
+Green:
+- PASS
+- ACTIVE
+- READY
+- SIMULATOR_READY
+
+Yellow:
+- CAUTION
+- WAITING
+- MT5_DEFERRED
+- PENDING_MT5_CONNECTION
+
+Red:
+- BLOCKED
+- RISK_BLOCK
+- KILL_SWITCH_ACTIVE
+- ERROR
+
+Blue:
+- TESTER_MODE
+- SHADOW
+- FORWARD_TEST
+- OBSERVE_ONLY
+
+Gray:
+- EMPTY
+- DISABLED
+- FUTURE_LOCKED
+
+Do not use green for anything that depends on MT5 unless MT5 is actually connected.
+
+==================================================
+7. IMPROVE DASHBOARD
+==================================================
+
+Redesign dashboard into clear sections:
+
+Top:
+- current mode
+- MT5 status
+- risk status
+- simulator status
+- kill switch
+- daily P/L
+
+Middle:
+- live chart preview
+- top market opportunity
+- current AI recommendation
+- open positions
+- pending live intents
+
+Bottom:
+- latest orders
+- latest AI decisions
+- alerts
+- journal notes
+- system health
+
+Add clear buttons:
+
+- Start Testing
+- Open Command Room
+- Run Scanner
+- Create Trade
+- Review Risk
+- Open MT5 Setup
+
+==================================================
+8. IMPROVE TRADE COMMAND ROOM
+==================================================
+
+Make /trade-command-room the main workspace.
+
+Desktop layout:
+
+Left:
+- live chart
+- symbol/timeframe controls
+
+Center:
+- scanner opportunities
+- AI explanation
+- trade grade
+- entry sniper score
+
+Right:
+- trade ticket
+- risk governor
+- live intent status
+
+Bottom:
+- decision stream
+- order/position preview
+- audit feed
+
+Mobile layout:
+- tabs:
+  - Chart
+  - Scanner
+  - Trade
+  - Risk
+  - Logs
+
+==================================================
+9. ADD UNIVERSAL SEARCH / COMMAND PALETTE
+==================================================
+
+Create command palette:
+
+Shortcut:
+- Ctrl+K on desktop
+- Search button on mobile
+
+Search should find:
+
+- pages
+- symbols
+- orders
+- positions
+- journal entries
+- strategies
+- AI decisions
+- alerts
+- live intents
+- settings
+
+Example commands:
+
+- “Open live chart”
+- “Run scanner”
+- “Start demo trade”
+- “Open MT5 setup”
+- “Show risk profile”
+- “Open live intent queue”
+
+==================================================
+10. ADD HELP LABELS AND INFO TOOLTIPS
+==================================================
+
+Add small help icons to complex systems:
+
+- MT5 Deferred
+- Live Tester Intent
+- Risk Governor
+- Shadow Mode
+- Forward Testing
+- AI Readiness Score
+- Prop Firm Mode
+- Opportunity Score
+- Entry Sniper Score
+- Confidence Calibration
+
+Tooltips should explain in simple language what each system does.
+
+==================================================
+11. IMPROVE EMPTY STATES
+==================================================
+
+Every page should tell the user what to do next.
+
+Examples:
+
+Orders:
+“No orders yet. Start a demo manual test or generate an AI trade card.”
+
+Positions:
+“No open simulator positions. Submit a demo trade to begin.”
+
+Live Intent Queue:
+“No live intents yet. Submit a live manual tester order or approve an AI tester idea.”
+
+MT5:
+“MT5 is not connected yet. Download the bridge package when ready.”
+
+Shadow Mode:
+“No shadow tests yet. Start Shadow Observe to track AI ideas without trading.”
+
+==================================================
+12. ADD PERFORMANCE OPTIMIZATION
+==================================================
+
+The app now has many systems. Improve performance:
+
+- lazy-load heavy pages
+- lazy-load TradingView chart
+- avoid unnecessary polling
+- pause simulator polling when page is hidden
+- cache static config
+- debounce scanner refresh
+- paginate large logs
+- virtualize long tables/lists where needed
+
+Pages should feel fast on mobile.
+
+==================================================
+13. FINAL TEST
+==================================================
+
+Run:
+
+- desktop route smoke test
+- mobile route smoke test
+- navigation link test
+- sidebar test
+- bottom nav test
+- global header test
+- dashboard UX test
+- trade command room UX test
+- live chart mobile test
+- trade ticket mobile test
+- command palette test
+- empty state test
+- error state test
+- loading state test
+- status badge consistency test
+- performance check
+- full tester access check
+- MT5 deferred honesty check
+
+Generate:
+
+APP SHELL 2.0 + UX POLISH REPORT
+
+Include:
+
+- App Shell active yes/no
+- Navigation grouped yes/no
+- Mobile bottom nav active yes/no
+- Global status bar active yes/no
+- Quick Action Center active yes/no
+- Dashboard improved yes/no
+- Trade Command Room improved yes/no
+- Shared UI components active yes/no
+- Command palette active yes/no
+- Empty states improved yes/no
+- Mobile responsiveness pass/fail
+- Performance optimization pass/fail
+- Full tester access still active yes/no
+- MT5 still deferred yes/no
+- Real broker execution still not faked yes/no
+
+Hard rules:
+- Do not remove features.
+- Do not hide tester workflows.
+- Do not fake MT5 connection.
+- Do not place real broker orders.
+- Do not mark broker execution as ready while MT5 is deferred.
+- Do not remove risk governor.
+- Do not remove kill switch UI.
+- Do not break owner full tester access.

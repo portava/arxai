@@ -1,0 +1,501 @@
+Proceed with Build PP now.
+
+This is NOT an audit.
+This is NOT a planning report.
+Implement the code changes.
+
+Build PP = Controlled Paper Testing Launch Mode + Session Manager.
+
+Goal:
+Create a controlled paper-testing session system that lets the trader safely start, manage, monitor, end, and review structured paper trading sessions.
+
+The session manager should turn the app from “many powerful tools” into one clean workflow:
+
+Preflight check →
+Start paper session →
+Run AA/EE/FF safely →
+Monitor trades and risk →
+End session →
+Generate session report →
+Update coach/readiness/notifications/audit
+
+Important:
+Build PP must NOT place live trades.
+Build PP must NOT enable live trading.
+Build PP must NOT call MT5 live execution.
+Build PP must NOT modify canPlaceTrades.
+Build PP must NOT expose API secrets.
+Build PP must NOT recommend live trading.
+Build PP is paper-session workflow, launch gating, operating discipline, and reporting only.
+
+Current system:
+- AA = trade decision orchestrator
+- BB = auto-debrief
+- CC = learning feedback engine
+- DD = read-only market data
+- EE = paper execution engine
+- FF = paper autopilot
+- GG = calendar + AI command center
+- HH = risk governor
+- II = trader coach + playbook
+- JJ = replay simulator + strategy lab
+- KK = data import + broker read-only connector
+- LL = notification center
+- MM = system health/admin/audit
+- NN = security/roles/permissions/data protection
+- OO = final integration/readiness gate
+- PP = controlled paper testing launch mode/session manager
+
+Core requirement:
+Create one central Paper Session Manager that only allows a paper session to start if OO readiness, HH Risk Governor, NN security, KK data/broker read-only, and LL critical alerts are safe.
+
+The session manager must return:
+
+{
+  paper_session_id,
+  status: "READY" | "ACTIVE" | "PAUSED" | "ENDED" | "BLOCKED" | "FAILED",
+  mode: "PAPER_ONLY",
+  liveTradingStatus: "DISABLED",
+  started_at,
+  ended_at,
+  symbols,
+  timeframes,
+  sessionGoals,
+  sessionRules,
+  preflightStatus,
+  readinessGateStatus,
+  riskGovernorStatus,
+  securityStatus,
+  activeWarnings,
+  paperTradesOpened,
+  paperTradesClosed,
+  netPnl,
+  winRate,
+  mistakesDetected,
+  lessonsGenerated,
+  nextBestActions,
+  generatedAt
+}
+
+Build PP tasks:
+
+1. Inspect existing systems
+
+Find existing files/routes/tables for:
+- OO readiness status
+- HH risk governor
+- NN security status
+- LL notifications
+- MM audit/admin control
+- FF paper autopilot
+- EE paper trades
+- GG performance
+- II coach/playbook
+- BB debriefs
+- CC learning
+- DD market data health
+- KK broker/data status
+
+Do not duplicate existing logic.
+Create PP as an operating workflow layer that reads and coordinates existing systems.
+
+2. Create Paper Session Manager Service
+
+Create a service that supports:
+
+- preflight check
+- start paper session
+- pause paper session
+- resume paper session
+- end paper session
+- get active session
+- get session history
+- get session details
+- generate session report
+
+3. Preflight check
+
+Before any session starts, PP must check:
+
+OO Readiness Gate:
+- overallStatus must be PASS or PASS_WITH_WARNINGS
+- canProceedToPaperTesting must be true
+- canProceedToLiveTrading must always be false
+
+HH Risk Governor:
+- paperTradingAllowed must be true
+- liveTradingAllowed must be false
+- allowedActions.canPlaceLiveTrade must be false
+
+NN Security:
+- role/permission system working
+- user has permission to start paper session
+- forbidden actions blocked
+- secrets redacted
+
+KK Broker/Data:
+- broker mode READ_ONLY
+- live trading disabled
+- market data mode read_only
+- no unsafe broker mode
+
+LL Notifications:
+- no unacknowledged CRITICAL alerts unless session is explicitly blocked
+- safety alerts active
+
+FF Autopilot:
+- must be PAPER_ONLY
+- live_trading_allowed false
+- can only start if session settings permit it
+
+If any hard block exists, return BLOCKED and explain why.
+
+4. Session goals and rules
+
+Create default session rules:
+
+{
+  maxSessionMinutes: 120,
+  maxPaperTrades: 5,
+  maxDailyPaperLoss: 300,
+  maxSessionLoss: 150,
+  maxConsecutiveLosses: 2,
+  maxSameSymbolTrades: 1,
+  requirePreflightPass: true,
+  requireRiskGovernorPass: true,
+  requireReadinessGatePass: true,
+  requireNoCriticalAlerts: true,
+  requirePaperOnlyMode: true,
+  allowPaperAutopilot: true,
+  allowManualPaperTrades: true,
+  requireDebriefAfterClose: true,
+  requireSessionReport: true,
+  liveTradingAllowed: false
+}
+
+Session goals:
+
+{
+  mainGoal: "Practice only high-quality paper setups",
+  focusAreas: [],
+  setupsToWatch: [],
+  setupsToAvoid: [],
+  mistakeToAvoid: [],
+  maxRiskPerPaperTrade,
+  qualityThreshold,
+  notes
+}
+
+Use II Trader Coach and GG/HH data to suggest focus areas.
+
+5. Session states
+
+Support:
+
+- READY
+- ACTIVE
+- PAUSED
+- ENDED
+- BLOCKED
+- FAILED
+
+Rules:
+- Only one ACTIVE session at a time.
+- Cannot start if another ACTIVE session exists.
+- Cannot resume ENDED session.
+- Cannot paper execute if session is BLOCKED.
+- Manual paper close should still be allowed for safety.
+- Session can be paused automatically by HH/OO/LL hard block.
+- Session can be ended manually.
+
+6. Integrate with FF paper autopilot
+
+During an ACTIVE session:
+- FF may run only if session allows autopilot
+- FF must check PP session status before run-once/start
+- if PP is not ACTIVE, FF should not open new paper trades
+- if session hits limits, FF pauses/stops
+- PP records autopilot cycles that happened during session
+
+7. Integrate with EE paper execution
+
+Before opening a paper trade:
+- EE checks PP active session if session enforcement is enabled
+- if no active session, reject or require explicit override setting for manual demo only
+- if session trade limit hit, reject
+- if session loss limit hit, reject
+- if consecutive loss limit hit, reject
+- if same-symbol limit hit, reject
+- if active session exists and allows manual paper trades, allow only if HH/OO/NN approve
+
+8. Integrate with BB and CC
+
+When paper trades close inside a session:
+- BB auto-debrief should still trigger
+- CC learning should still process once
+- PP should attach debrief/learning results to session report
+- PP should track lessons and mistakes per session
+
+9. Integrate with GG and II
+
+At session end:
+- update/read GG performance data
+- generate II coach session review
+- generate session report with:
+  - trades taken
+  - P&L
+  - mistakes
+  - lessons
+  - whether session rules were followed
+  - what to improve next
+
+10. Integrate with LL and MM
+
+LL notifications:
+- session started
+- session paused
+- session ended
+- session blocked
+- session loss limit warning
+- max trades hit
+- critical safety issue
+
+MM audit:
+- session started
+- session paused/resumed/ended
+- forbidden start attempt
+- blocked by readiness/risk/security
+- report generated
+
+11. Database changes
+
+Additive only.
+
+Create:
+
+paper_sessions:
+- id
+- paper_session_id
+- status
+- mode
+- live_trading_status
+- started_at
+- ended_at
+- symbols jsonb
+- timeframes jsonb
+- session_goals jsonb
+- session_rules jsonb
+- preflight_status jsonb
+- readiness_gate_status jsonb
+- risk_governor_status jsonb
+- security_status jsonb
+- active_warnings jsonb
+- paper_trades_opened
+- paper_trades_closed
+- net_pnl
+- win_rate
+- mistakes_detected jsonb
+- lessons_generated jsonb
+- next_best_actions jsonb
+- created_at
+- updated_at
+
+paper_session_events:
+- id
+- paper_session_id
+- event_type
+- severity
+- source_build
+- message
+- details jsonb
+- created_at
+
+paper_session_trade_links:
+- id
+- paper_session_id
+- trade_id
+- decision_id
+- debrief_id
+- learning_event_id
+- symbol
+- action
+- result
+- pnl
+- created_at
+
+paper_session_reports:
+- id
+- session_report_id
+- paper_session_id
+- status
+- started_at
+- ended_at
+- duration_minutes
+- total_trades
+- wins
+- losses
+- break_even
+- net_pnl
+- win_rate
+- rule_violations jsonb
+- mistakes_detected jsonb
+- lessons_generated jsonb
+- coach_summary
+- next_best_actions jsonb
+- warnings jsonb
+- created_at
+
+12. Add endpoints or scripts
+
+Create endpoints or equivalent scripts:
+
+GET /api/paper-sessions/status
+POST /api/paper-sessions/preflight
+POST /api/paper-sessions/start
+POST /api/paper-sessions/pause
+POST /api/paper-sessions/resume
+POST /api/paper-sessions/end
+GET /api/paper-sessions/active
+GET /api/paper-sessions?limit=20
+GET /api/paper-sessions/:id
+GET /api/paper-sessions/:id/events
+GET /api/paper-sessions/:id/trades
+POST /api/paper-sessions/:id/report
+GET /api/paper-sessions/:id/report
+POST /api/paper-sessions/demo
+
+13. Frontend UI
+
+Add or update:
+
+A. Paper Testing Launch page
+Show:
+- preflight checklist
+- readiness gate status
+- risk governor status
+- security status
+- critical alerts
+- paper-only badge
+- live trading disabled badge
+- start session button
+- blocked reasons
+
+B. Active Paper Session panel
+Show:
+- session timer
+- session rules
+- trades opened/closed
+- P&L
+- win rate
+- warnings
+- pause/end buttons
+- autopilot status
+- no live trading controls
+
+C. Session Report page
+Show:
+- session summary
+- trades
+- debrief links
+- learning links
+- mistakes
+- lessons
+- coach summary
+- next best actions
+
+14. Required test scenarios
+
+A. Preflight passes with safe system.
+B. Preflight blocks when OO readiness fails.
+C. Preflight blocks when HH Risk Governor is LOCKED/WATCH_ONLY.
+D. Preflight blocks when NN security has critical finding.
+E. Preflight blocks when LL has unacknowledged CRITICAL alert.
+F. Start session creates ACTIVE paper session.
+G. Starting second session is rejected.
+H. Pause session stops new paper execution.
+I. Resume session works only if safety checks still pass.
+J. End session generates report.
+K. EE refuses new paper trade if no ACTIVE session when enforcement is enabled.
+L. EE refuses when max trades/session loss/consecutive losses hit.
+M. FF refuses to run if no ACTIVE session or session paused.
+N. Paper close links BB debrief and CC learning to session.
+O. Session report includes trades, P&L, mistakes, lessons, rule violations.
+P. LL notification created for session start/pause/end/block.
+Q. MM audit logs session actions.
+R. Frontend pages are accessible.
+S. Live trading remains disabled.
+T. Existing AA-OO systems still work.
+
+15. Safety rules
+
+Hard rules:
+- PP cannot place trades.
+- PP cannot enable live trading.
+- PP cannot set canPlaceTrades true.
+- PP cannot call broker order functions.
+- PP cannot call MT5 live execution.
+- PP cannot expose secrets.
+- PP cannot recommend live trading.
+- PP can only allow paper-session workflow.
+- liveTradingStatus must always be DISABLED.
+- canProceedToLiveTrading must always be false.
+
+16. Preserve existing behavior
+
+Do not break:
+- AA through OO services
+- manual paper close
+- manual debrief
+- paper execution safety
+- risk governor
+- notifications
+- admin controls
+- security permissions
+- frontend routes
+
+Acceptance criteria:
+- Paper Session Manager exists.
+- Preflight check reads OO/HH/NN/KK/LL/FF.
+- Sessions can start/pause/resume/end safely.
+- Only one active session can exist.
+- EE and FF respect active session state.
+- Session reports are generated.
+- BB/CC results are linked to session.
+- LL/MM integrations work.
+- Frontend launch/session/report pages exist.
+- No live trading is enabled or recommended.
+- App typechecks/builds.
+- Raw outputs prove all major scenarios work.
+
+After implementation, show:
+
+1. Files changed
+2. New files created
+3. Database changes
+4. Frontend routes/pages added
+5. Where PP reads OO readiness
+6. Where PP reads HH governor
+7. Where PP reads NN security
+8. Where PP reads KK broker/data status
+9. Where PP reads LL critical alerts
+10. Where PP integrates with EE
+11. Where PP integrates with FF
+12. Where PP links BB/CC results
+13. Raw output from /api/paper-sessions/preflight
+14. Raw output from /api/paper-sessions/start
+15. Raw output from /api/paper-sessions/status
+16. Raw output from /api/paper-sessions/active
+17. Raw output from pause/resume/end
+18. Raw output from session report
+19. Safe preflight proof
+20. Blocked preflight proof
+21. EE session enforcement proof
+22. FF session enforcement proof
+23. BB/CC link proof
+24. LL notification proof
+25. MM audit proof
+26. Frontend route proof
+27. Live-trade isolation proof
+28. Any errors or warnings
+29. Whether Build PP is fully complete or partially complete
+30. Final Build PP score out of 10

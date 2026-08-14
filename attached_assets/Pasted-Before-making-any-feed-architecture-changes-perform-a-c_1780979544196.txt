@@ -1,0 +1,182 @@
+Before making any feed architecture changes, perform a complete market-data/API inventory audit for ARX AI.
+
+Do not change code yet.
+Do not add providers yet.
+Do not rewrite the feed system yet.
+This is discovery only.
+
+Goal:
+Find every API, provider, feed, bridge, env key, service, endpoint, hook, and UI surface currently involved in ARX market data, chart candles, quotes, scanner results, Ruby analysis, live execution, account totals, and open trades.
+
+Audit the following:
+
+1. List every configured market-data provider/API currently present in the codebase.
+Search for:
+- Polygon
+- Massive
+- TwelveData
+- Deriv
+- MT5
+- MetaTrader
+- broker
+- assistant_real
+- candles
+- quote
+- ticks
+- market data
+- scanner
+- symbol directory
+- chart data
+- feed source
+- fallback feed
+- news provider
+- calendar provider
+
+2. List every environment variable related to feeds/APIs.
+Include whether each is:
+- present in code
+- required
+- optional
+- currently missing
+- used at runtime
+- dead/unused
+
+Do not print secret values. Only print key names and status.
+
+3. Identify what is actually feeding each ARX surface right now.
+
+Create a table with:
+- Surface
+- Current endpoint/hook/service
+- Provider actually used
+- Fallback provider
+- Source label shown to UI
+- Freshness rules
+- Stale rules
+- Whether Ruby can use it
+- Whether it can place/affect trades
+- Whether it is broker truth or analysis-only
+
+Surfaces to check:
+- Main market chart
+- Scanner chart
+- Scanner results
+- Ruby chart read
+- Ruby trade recommendation
+- Ruby live trade command
+- Dashboard account totals
+- Open Trades panel
+- Admin live account totals
+- Allocation/headroom calculation
+- Symbol search/directory
+- News section
+- Economic calendar section
+- Backtesting/historical data
+- Any websocket/SSE market streams
+
+4. Determine the real source of truth for each data type.
+
+Create a table:
+
+Data type:
+- Live bid/ask
+- Spread
+- Candles
+- Ticks
+- Broker tradability
+- Open positions
+- Pending orders
+- Fills/rejections
+- Balance/equity/margin/free margin
+- Open P/L
+- Scanner technicals
+- Ruby market analysis
+- News
+- Economic calendar
+- Historical backtest candles/ticks
+
+For each, report:
+- current actual source
+- expected correct source
+- whether current source is safe for live trading
+- whether current source is only safe for analysis
+- known gaps
+
+5. Specifically explain the screenshot state.
+
+Investigate why EURUSD 1m chart shows:
+- Polygon
+- Fallback feed
+- assistant_real:polygon
+- stale
+- last candle 2m ago
+- last tick missing
+- AI usable: not confirmed
+- newest bar trails current bar by 3 intervals
+
+Answer:
+- Which endpoint returned this?
+- Which provider adapter returned this?
+- Why was MT5 not used for broker candles?
+- Was MT5 quote available?
+- Was MT5 candle history unavailable?
+- Did the system correctly fall back?
+- Is Polygon actually stale or is the app’s freshness calculation wrong?
+- Is the displayed chart frozen intentionally?
+- Is Ruby correctly blocked from AI-confirmed analysis?
+
+6. Check whether TwelveData, Deriv, Polygon/Massive, MT5, or any other feed is actually active.
+
+For each provider, report:
+- code exists: yes/no
+- env key configured: yes/no
+- endpoint reachable in current environment: yes/no
+- used by chart: yes/no
+- used by scanner: yes/no
+- used by Ruby: yes/no
+- used by trade execution: yes/no
+- safe to use as execution truth: yes/no
+- current health/freshness
+
+7. Check for duplicate or conflicting feed systems.
+Find whether ARX has multiple separate ways to fetch candles/quotes that do not share the same truth object.
+
+Look for:
+- chart uses one provider
+- scanner uses another
+- Ruby uses another
+- dashboard uses MT5
+- Open Trades uses DB
+- allocation uses DB/MT5
+- stale status calculated differently in different files
+
+Report every mismatch.
+
+8. Check whether external feeds are accidentally being treated as live trade truth.
+Verify:
+- external provider prices cannot update balance/equity/open P/L
+- external provider candles cannot create live fills
+- external provider quotes cannot override MT5 execution price
+- Ruby trade commands use broker bridge only
+- manual trades use broker bridge only
+- scanner trade buttons use broker bridge only
+
+9. Produce a final audit report with these sections:
+- APIs/providers found
+- APIs/providers actually active
+- APIs/providers configured but unused
+- APIs/providers missing env keys
+- Actual current feed path for EURUSD chart
+- Actual current feed path for scanner
+- Actual current feed path for Ruby
+- Actual current feed path for live execution
+- Actual current feed path for dashboard/open trades
+- Feed mismatches
+- Dead/duplicated feed code
+- Safety risks
+- Recommended provider hierarchy
+- Minimal next fix
+- Larger architecture fix
+
+10. Do not pass unless the report clearly answers:
+“What APIs are listed in ARX, what APIs are actually connected, and what is truly feeding each part of the app right now?”

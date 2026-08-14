@@ -1,0 +1,104 @@
+Fix the /mt5-setup Demo Execution UI/state mismatch.
+
+Problem:
+Replit reported DEMO READINESS FIXED and selected bridge row #231 with:
+- heartbeatFresh=true
+- EA version=1.26
+- accountType=demo
+- VERIFIED_DEMO=true
+- canArmExecution=true
+
+But the browser /mt5-setup page still shows stale blockers:
+- HEARTBEAT_STALE
+- ACCOUNT_TYPE_NOT_REPORTED
+- EA_VERSION_TOO_OLD
+- bridge OK but accountType=demo: NO
+- canArmExecution:false
+- canDispatchToMt5:false
+
+Do NOT unlock live trading.
+Do NOT send any MT5 command.
+Do NOT arm demo execution automatically.
+Do NOT expose tokens or secrets.
+Do NOT enable shared MT5 routing.
+Do NOT enable live auto-close.
+
+Goal:
+Make the MT5 Setup page, Demo Execution Readiness card, Demo Execution Control card, and Demo Execution Test Panel all read the same fresh backend-selected bridge connection and same demo verification status.
+
+Required checks/fixes:
+
+1. Inspect all frontend queries used by /mt5-setup:
+- bridge diagnostics query
+- demo readiness query
+- demo execution control query
+- demo execution test panel query
+- verified demo query
+- active bridge row selection query
+
+2. Confirm they all use the same backend-selected active bridge connection:
+- newest fresh user-owned connection
+- heartbeatFresh=true
+- bridgeConnected=true
+- eaVersion >= 1.26
+- accountType=demo
+- selected row #231 or the current fresh row
+
+3. Fix stale frontend caching:
+- invalidate/refetch demo readiness after bridge diagnostics changes
+- invalidate/refetch after heartbeat/status changes
+- do not use stale cached row #184/#224
+- do not mix old connection rows into the active readiness card
+- do not keep old blocker strings once the selected row changes
+
+4. Backend response must include:
+- selectedBridgeConnectionId
+- heartbeatFresh
+- heartbeatAgeSeconds
+- eaVersion
+- accountType
+- verifiedDemo
+- canArmExecution
+- canDispatchToMt5
+- blockers
+- ignoredOldConnections/warnings if relevant
+
+5. UI must show:
+- VERIFIED_DEMO when verifiedDemo=true
+- accountType=demo: YES
+- EA version >=1.26: PASS
+- heartbeatFresh: PASS
+- canArmExecution:true
+- Arm button enabled only when canArmExecution=true
+
+6. If backend says verifiedDemo=true but frontend says false, fix the frontend mapping.
+7. If backend still says false, fix active bridge selection server-side.
+8. Keep dispatch blocked until the user explicitly clicks Arm and confirms a demo command.
+
+Run:
+1. Typecheck
+2. CI guards
+3. Demo readiness backend test
+4. Active bridge row selection test
+5. Stale old connection ignored test
+6. Frontend mapping test
+7. React query/cache invalidation test if applicable
+8. MT5 setup page smoke test
+9. Secret leakage scan
+10. Live trading locked regression
+11. Shared MT5 routing blocked regression
+12. Safety-envelope regression
+
+End with:
+- Which endpoint/card was stale
+- Which bridge row is selected now
+- Whether heartbeatFresh=true
+- Whether EA version=1.26
+- Whether accountType=demo
+- Whether VERIFIED_DEMO=true
+- Whether Arm button is enabled
+- Confirmation no MT5 command was sent
+- Confirmation live trading remains BLOCKED
+- Confirmation shared MT5 routing remains BLOCKED
+- Confirmation live auto-close remains ALERT_ONLY
+- Final answer: MT5 SETUP UI SYNC FIXED or NOT READY, with reasons.

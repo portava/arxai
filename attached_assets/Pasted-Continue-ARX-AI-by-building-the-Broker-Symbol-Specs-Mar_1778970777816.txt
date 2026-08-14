@@ -1,0 +1,333 @@
+Continue ARX AI by building the Broker Symbol Specs, Margin, and Execution Rules Engine.
+
+Do not rebuild blindly. Inspect the current:
+- Risk Governor
+- Position Sizing Engine
+- MT5 bridge
+- EA command polling
+- MT5 account sync
+- MT5 position sync
+- trade ticket risk preview
+- user-owned MT5 routing
+- shared-master routing
+- Trade Action Center
+- MT5 execution reconciliation
+- admin trading controls
+- AI assistant risk awareness
+
+Goal:
+Pull real broker/account/symbol trading rules from MT5 so ARX AI can calculate lot size, margin, pip value, stop distance, spread risk, and broker validity before sending any demo/live command.
+
+Important:
+Do not fake broker specs.
+Do not invent pip value, margin, contract size, or lot rules.
+If data is missing, show limited/unavailable.
+Do not bypass Risk Governor.
+Do not auto-place trades.
+Do not expose secrets.
+
+PART 1 — MT5 Symbol Specs Sync
+
+Update the EA/MT5 bridge so it can send broker symbol specifications to the backend.
+
+For each tradable symbol, collect if available:
+- symbol name
+- display name
+- broker suffix/prefix
+- base symbol mapping if possible
+- digits
+- point size
+- tick size
+- tick value
+- contract size
+- min lot
+- max lot
+- lot step
+- margin initial
+- margin maintenance if available
+- spread
+- spread floating/fixed if available
+- stops level
+- freeze level
+- trade mode
+- execution mode
+- swap long
+- swap short
+- commission if available
+- market/session open/close if available
+- account currency
+- profit currency
+- margin currency
+- last synced time
+
+Add endpoint if missing:
+POST /api/mt5/sync-symbol-specs
+
+Security:
+- validate bridge token
+- validate connection ownership
+- scope specs to the correct MT5 connection
+- never expose credentials or tokens
+
+PART 2 — Symbol Normalization
+
+Create symbol normalization logic.
+
+Examples:
+- EURUSD
+- EURUSD.pro
+- EURUSDm
+- XAUUSD
+- XAUUSDm
+- US30.cash
+- NAS100
+- BTCUSD
+
+The system should:
+- preserve broker symbol exactly for execution
+- create normalized display symbol for AI/UI/search
+- map scanner/watchlist symbols to broker symbols when possible
+- avoid sending unsupported symbols to MT5
+- show “Symbol not available on connected broker” when missing
+
+PART 3 — Margin and Pip Value Engine
+
+Update Position Sizing Engine to use real MT5 symbol specs.
+
+Calculate if data exists:
+- pip value
+- tick value
+- point value
+- estimated loss at stop loss
+- estimated margin
+- risk percent
+- max safe lot size
+- broker-valid rounded lot size
+- minimum valid lot
+- maximum valid lot
+- lot step adjustment
+
+If data is incomplete:
+- return limited calculation
+- show what is missing
+- block live order if critical values are missing and admin requires strict mode
+
+PART 4 — Broker Execution Rules Validator
+
+Before any command queues, validate:
+
+- symbol exists on routed MT5 account
+- market is open if session data exists
+- trade mode allows trading
+- requested lot >= min lot
+- requested lot <= max lot
+- requested lot matches lot step
+- SL/TP distance respects stops level
+- price is valid for pending orders
+- spread is not above user/admin limit
+- margin estimate passes if margin data exists
+- freeze level blocks unsafe modification if applicable
+- account type matches demo/live mode
+- command uses broker symbol, not only normalized symbol
+
+If validation fails:
+- reject before queue
+- write risk_validation_logs
+- show user-friendly reason
+- do not send command to MT5
+
+PART 5 — Trade Ticket Upgrade
+
+Update trade ticket risk preview to show:
+
+- broker symbol being traded
+- min lot / max lot / lot step
+- requested lot adjustment if needed
+- estimated risk at SL
+- estimated margin
+- current spread
+- stop distance validity
+- TP distance validity
+- market status
+- symbol availability
+- risk pass/fail
+- broker rule pass/fail
+
+Examples:
+- “Lot size adjusted from 0.013 to 0.01 to match broker lot step.”
+- “Stop loss is too close. Broker requires minimum 30 points.”
+- “Symbol XAUUSD is not available on this MT5 account.”
+- “Spread is above your risk limit.”
+
+PART 6 — Shared-Master Support
+
+In SHARED_MASTER_MT5 mode:
+- use symbol specs from the shared master MT5 connection
+- do not use the user’s personal MT5 specs
+- users only see safe trading-rule info, never master credentials
+- virtual allocation calculations must use shared master specs
+- validate all orders against shared master broker rules
+
+In USER_OWNED_MT5 mode:
+- use symbol specs from that user’s own MT5 connection only
+
+PART 7 — Admin Symbol/Risk Controls
+
+Add admin controls:
+
+- view synced symbols per MT5 connection
+- search/filter broker symbols
+- block symbols globally
+- block symbols per user
+- set max spread by symbol
+- set strict-mode requirement for live trades
+- set allowed symbols
+- refresh symbol specs
+- view stale symbol specs
+
+Admin should see:
+- connection id
+- account type
+- broker/server
+- symbol count
+- last symbol sync
+- stale/missing specs warning
+
+PART 8 — User Symbol Availability UI
+
+Add or update user-facing symbol selector.
+
+It should:
+- show only symbols available on the routed MT5 account
+- show broker suffix clearly
+- show search by normalized symbol
+- show unavailable symbols as disabled if needed
+- explain why a symbol cannot be traded
+- avoid letting user choose unsupported symbols
+
+PART 9 — AI Awareness
+
+Update AI so users can ask:
+
+- Can I trade EURUSD on my account?
+- Why was my lot size rejected?
+- Why can’t I place this stop loss?
+- What is the minimum lot for gold?
+- What is my broker symbol for NAS100?
+- Is spread too high?
+- How much margin does this trade need?
+- Why did the trade ticket adjust my lot size?
+- Is this symbol available on my MT5?
+
+AI must answer from real synced MT5 symbol specs only.
+If specs are missing, AI must say they are missing.
+AI must not invent margin, pip value, spread, or broker rules.
+
+PART 10 — Backend/API
+
+Add or update endpoints:
+
+- POST /api/mt5/sync-symbol-specs
+- GET /api/broker/symbols
+- GET /api/broker/symbols/:symbol
+- POST /api/broker/validate-trade
+- POST /api/risk/calculate-position-size
+- GET /api/admin/broker-symbols
+- POST /api/admin/broker-symbols/refresh
+- PATCH /api/admin/broker-symbols/rules
+
+Add tables if missing:
+
+broker_symbol_specs:
+- id
+- connection_id
+- account_type
+- broker_name
+- server_name
+- symbol
+- normalized_symbol
+- digits
+- point_size
+- tick_size
+- tick_value
+- contract_size
+- min_lot
+- max_lot
+- lot_step
+- margin_initial
+- margin_maintenance
+- spread
+- stops_level
+- freeze_level
+- trade_mode
+- execution_mode
+- profit_currency
+- margin_currency
+- data_quality
+- last_synced_at
+- created_at
+- updated_at
+
+symbol_risk_rules:
+- id
+- symbol
+- normalized_symbol
+- max_spread
+- allowed_demo
+- allowed_live
+- blocked
+- block_reason
+- created_at
+- updated_at
+
+broker_rule_validation_logs:
+- id
+- user_id
+- connection_id
+- action_request_id
+- symbol
+- requested_lot
+- adjusted_lot
+- validation_status
+- rejection_reason
+- warnings
+- created_at
+
+PART 11 — Tests
+
+Add or update tests for:
+1. Symbol specs sync requires valid bridge token.
+2. Symbol specs are scoped to correct connection.
+3. User-owned mode uses user’s own symbol specs.
+4. Shared-master mode uses shared master symbol specs.
+5. Unsupported symbol is rejected.
+6. Lot below min is rejected or adjusted.
+7. Lot above max is rejected.
+8. Lot step rounding works.
+9. Stop loss too close is rejected.
+10. TP too close is rejected.
+11. High spread blocks trade if over limit.
+12. Missing critical specs blocks live strict-mode orders.
+13. Position sizing uses real tick/pip values when available.
+14. Position sizing shows limited when specs missing.
+15. Admin can block a symbol.
+16. User cannot see another user’s connection specs.
+17. Shared master credentials are never exposed.
+18. AI explains broker-rule rejection using real data.
+19. Trade ticket shows broker rule preview.
+20. No secrets exposed.
+
+Final report:
+Return:
+- PASS or FAIL
+- Symbol Specs Sync status
+- Symbol Normalization status
+- Margin/Pip Value Engine status
+- Broker Execution Rules Validator status
+- Trade Ticket Broker Preview status
+- Shared-Master support status
+- Admin Symbol Controls status
+- User Symbol Selector status
+- AI Broker Rules Awareness status
+- tests passed
+- remaining blockers

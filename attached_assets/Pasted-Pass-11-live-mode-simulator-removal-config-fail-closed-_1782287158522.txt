@@ -1,0 +1,251 @@
+Pass 11 — live-mode / simulator-removal / config fail-closed truth. Read-only. No edits, no tasks, no migrations, no workflow changes.
+
+Goal:
+Prove every place ARX still defaults trading-capable flows to SIMULATED/DEMO/PAPER, and prove whether production live trading is fail-closed or silently downgraded. This pass must respect the new product direction:
+
+Any system built to trade should be LIVE-capable for approved live traders, including Eleanor chat. Simulator/demo may exist only as explicit test/practice/dev mode, not as a hidden production default for users who expect live trading.
+
+Important:
+This is still an audit pass only. Do not implement fixes yet. Identify exact files/lines and classify what must be fixed later.
+
+Known anchors from prior passes:
+- QuickTradeModal defaults mode to SIMULATED.
+- PaperOrderTicket hardcodes mode:"SIMULATED".
+- Eleanor deterministic command path can execute only under AI_ASSISTED and uses safer live pipeline.
+- LLM tool path with requestedBy:"ai-assistant" is blocked by aiActionBoundary.
+- /api/me/trades/close direct queue bypass remains unsafe and must not become Eleanor’s close path.
+- mt5_commands safetyMode defaults paper_only and EA pickup does not enforce safetyMode.
+- ARX_LIVE_BROKER_EXECUTION_ENABLED / bridge token / EA ReadOnlyMode / emergency stop / kill switch decide whether live paths are actually active.
+
+Required proof areas:
+
+1. Trading mode inventory
+Freshly locate every use of:
+- SIMULATED
+- DEMO
+- PAPER
+- paper_only
+- read_only
+- live_locked
+- LIVE
+- mode
+- accountType
+- defaultMode
+- safetyMode
+- demoCommandQueue
+- simulator
+- training mode
+- practice mode
+
+For each relevant hit:
+- file + line
+- frontend/backend/schema/config/test
+- whether it affects production user trading
+- whether it is explicit user-selected practice mode or hidden default
+- whether approved live traders can be silently downgraded
+
+2. Frontend default-mode truth
+Audit all trading-capable UI surfaces:
+- QuickTradeModal
+- PaperOrderTicket
+- Manual Ticket
+- Eleanor chat command UI
+- instant trade command UI
+- scanner-to-ticket flow
+- MyOpenTradesPanel
+- ConfirmCloseModal
+- trade-detail screen
+- admin live controls
+- onboarding/live account switch UI
+
+For each:
+- current default mode
+- whether LIVE can be selected
+- whether approved live traders default to LIVE
+- whether non-approved users are blocked or pushed to practice/demo
+- whether copy labels simulator/demo honestly
+- whether UI can show live-ready while backend sends simulated
+- whether UI can show success before broker confirmation
+
+3. Backend accepted-mode truth
+Audit every endpoint accepting mode/accountType/safetyMode:
+- POST /api/me/trades/open
+- POST /api/trade/place
+- POST /api/me/trades/close
+- Eleanor instant command routes
+- scanner-to-ticket routes
+- manual ticket routes
+- admin execution routes
+- meMt5Commands routes
+- any route that calls placeOrder, dispatchLiveCommand, executeInstant, brokerPlacement, or mt5CommandsTable insert
+
+For each:
+- schema validation
+- whether LIVE is accepted
+- whether LIVE can be client-selected
+- whether backend derives live eligibility from DB/session instead of trusting client
+- whether it silently downgrades to SIMULATED/DEMO
+- whether it blocks with a clear reason when live is unavailable
+- whether investor/non-approved/demo-only users are blocked
+
+4. Config and env fail-closed truth
+Find and prove all live trading config flags:
+- ARX_LIVE_BROKER_EXECUTION_ENABLED
+- MT5_BRIDGE_TOKEN
+- LIVE_TRADING
+- emergency stop
+- kill switch
+- bridge health / heartbeat stale threshold
+- EA ReadOnlyMode
+- AI_ASSISTED / Eleanor execution authority
+- AI_AUTO / autopilot flags
+- DEMO_SIMULATOR / LIVE_TESTER_INTENT
+- any feature flag controlling live execution, demo mode, bridge, scanner execution, or Eleanor execution
+
+For each:
+- source file + line
+- default value when env missing
+- whether missing config blocks live or silently simulates
+- whether production can accidentally run simulator
+- whether config is per-env, per-user, or global
+- whether admin can change it at runtime
+- whether frontend displays config truth honestly
+
+5. No-silent-downgrade audit
+Prove whether any flow receives a user intent for LIVE but routes to:
+- SIMULATED
+- DEMO
+- paper_only
+- read_only
+- training/practice mode
+- dry-run
+- intent-only
+
+For every downgrade:
+- file + line
+- who sees it
+- whether user is clearly told “No live order was sent”
+- whether audit/logs record the downgrade
+- whether UI copy is honest
+- classification
+
+6. Eleanor live-readiness truth
+For Eleanor specifically, prove:
+- typed command can become structured intent
+- spoken command can become structured intent
+- approved live trader can reach live path when AI_ASSISTED is enabled
+- non-approved user is blocked
+- investor is blocked
+- vague command does not execute
+- Eleanor cannot insert mt5_commands directly
+- Eleanor cannot use /api/me/trades/close direct queue bypass
+- Eleanor close path goes through approved live pipeline
+- current default is live, simulated, or blocked
+- what must change to make Eleanor live-by-default for approved live traders
+
+7. Conditional entry / strategy instruction readiness
+Audit whether the system can support instructions like:
+- “Enter at 1.0950, SL 1.0920, TP 1.1010”
+- “Buy after price breaks above 200 EMA and forms FVG”
+- “Enter when 4H and 1H trend align, then 5M FVG forms”
+- “Exit at next liquidity”
+- “Move stop to breakeven after 1R”
+
+Prove:
+- whether conditional execution exists or is copy-only
+- whether condition monitoring exists
+- whether strategy conditions are mechanically evaluable
+- whether subjective conditions require numeric confirmation
+- whether any conditional plan can auto-trigger live
+- whether trigger-time safety gates re-run
+- whether stale scanner data can trigger execution
+
+8. Audit/log truth for live vs simulator
+Find every audit/log field that records:
+- mode
+- accountType
+- safetyMode
+- source
+- requestedBy
+- Eleanor/scanner/manual
+- user confirmation
+- liveCommandId
+- brokerCommandId
+- broker result
+- simulator result
+- final status
+
+Prove:
+- whether logs distinguish live vs demo/simulated
+- whether simulator fills can appear as executed live trades
+- whether paper_only mt5_commands can be confused with live intent
+- whether historical audit rows can be overwritten
+- whether “EXECUTED” means broker-confirmed live execution
+
+9. CI/test coverage
+Find tests/checks/scripts that would catch:
+- approved live trader defaulting to SIMULATED
+- live user intent silently downgraded to demo
+- QuickTradeModal default SIMULATED for approved live user
+- PaperOrderTicket hardcoded SIMULATED in production trading flow
+- Eleanor live command blocked only because of simulator default
+- Eleanor using direct mt5_commands insert
+- Eleanor using /api/me/trades/close bypass
+- missing bridge token causing fake simulator success
+- simulator fill displayed as live fill
+- safetyMode paper_only delivered to EA as live action
+- env flag accidentally enabling live without kill-switch/bridge checks
+- missing env defaulting fail-open
+
+Classify coverage:
+- strong
+- weak
+- not covered
+- located but assertion not proven
+
+10. Classification standard
+Use the same class system:
+- Class 1: clean/proven safe
+- Class 2: active risk
+- Class 3: defense-in-depth or integrity gap
+- Class 4: dormant/config-gated risk
+- Class 5: unresolved/deferred
+
+Required output format:
+
+PASS 11 — Live-Mode / Simulator-Removal / Config Fail-Closed Truth — REPORT
+
+Sections:
+1. Executive verdict
+2. Trading mode inventory
+3. Frontend default-mode truth
+4. Backend accepted-mode truth
+5. Config/env fail-closed truth
+6. No-silent-downgrade findings
+7. Eleanor live-readiness truth
+8. Conditional/strategy-entry readiness
+9. Audit/log live-vs-simulator truth
+10. CI/test coverage
+11. New findings added to held fix-ledger
+12. Net risk ranking
+13. Next remaining audit pass recommendation
+
+Important:
+- Read-only only.
+- Do not edit files.
+- Do not create tasks.
+- Do not run migrations.
+- Do not change workflows.
+- Do not rely on rg/grep matched text if token mangling appears. Use filename/line discovery only, then read files directly.
+- Give exact file:line proof for every claim.
+- If a claim cannot be proven, mark it Class 5 instead of assuming.
+- Do not call the assistant Ruby in the report except when quoting legacy code/file names. Report user-facing Ruby as Eleanor naming drift.
+
+After Pass 11:
+Continue remaining audit sequence unless a Class 2 issue requires pausing for acceptance.
+
+Recommended remaining passes:
+Pass 12 — reporting/P&L/realized-balance/fund-book integrity truth.
+Pass 13 — notifications/alerts/safety-banner honesty truth.
+Pass 14 — market-data/feed-status/economic-calendar honesty truth.
+Pass 15 — final consolidation and fix-task plan.

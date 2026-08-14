@@ -1,0 +1,15 @@
+Read-only verification of the merged "Add 7 Jump/Boom-Crash markets + Focus Lock Phase 2" task. Do NOT edit code or mark anything complete unless a check FAILS. Report each PASS/FAIL with evidence inline.
+
+1. MERGE + REGISTRY COUNT: run `git log --oneline -8 main` and confirm the Jump/Boom-Crash + Phase 2 commit is on main. Open lib/domain/src/market/arxFocusMarkets.ts and report the total market count (should be 43) and list the 7 new entries (Jump 10/25/50/75/100, Boom 300, Crash 300).
+
+2. REAL BROKER SYMBOLS (the make-or-break check): for each of the 7 new markets, paste its canonicalSymbol + mt5Aliases, and confirm each resolves to a REAL subscribed Deriv/broker symbol — not a guessed alias. Check resolveDerivSymbol / the live Deriv subscribed-symbol list / the provider routing map. For each: does a tick actually arrive for that symbol id? Mark any that can't be confirmed as FAIL (don't assume JD10/BOOM300N are right — verify against this deployment).
+
+3. CHART OPENS (proof they're not dead): mint a temp session, hit /api/chart/feed-status (or the candle route) for a Jump (e.g. Jump 75) and a Boom/Crash 300. Confirm each returns real candles / a live-or-honest feed verdict via the per-symbol path — not an alias-resolution failure / empty. Paste the sanitized responses.
+
+4. PER-SYMBOL FEED PATH: confirm each of the 7 routes through the same per-symbol Deriv verdict (resolveSymbolFeedVerdict / getDerivSymbolFeedStatus) as the existing synthetics — so LIVE/LIVE_DELAYED/AWAITING and the synthetic live-entry floor work for them too. Not a synthetic that bypasses the verdict.
+
+5. LIVE-MONEY PATH INTACT: run the synthetic-live-floor unit test, the SL tripwire test, and the superset guard. All must pass. Confirm every currently-open-position + pending-order symbol still resolves approved against the now-43 registry.
+
+6. NO PARALLEL LIST / PHASE 2 ENFORCED: grep that the scanner universe + the new Phase-2 surfaces (backtest/dashboard/watchlist/admin) derive from the ONE registry, no second approved-list. Spot-check one Phase-2 endpoint blocks an unapproved symbol with the clean envelope, no data fetch.
+
+Report PASS/FAIL per item. If item 2 or 3 FAILs for any of the 7 (symbol doesn't resolve / chart won't open), name which markets and propose the alias/symbol fix but DO NOT apply it.

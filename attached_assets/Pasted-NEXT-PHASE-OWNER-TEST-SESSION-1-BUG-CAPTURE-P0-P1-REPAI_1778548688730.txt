@@ -1,0 +1,444 @@
+NEXT PHASE: OWNER TEST SESSION #1 + BUG CAPTURE + P0/P1 REPAIR LOOP
+
+Goal:
+Run the first real owner testing session across the full trading app, capture every issue, fix all P0/P1 blockers, and generate a final owner testing report.
+
+Do not add new features in this phase.
+Do not fake MT5 connection.
+Do not place real broker orders.
+Do not claim broker fills.
+Do not expose secrets.
+Do not block owner tester access.
+Keep full tester access open.
+Keep MT5 deferred until desktop/VPS bridge is connected later.
+
+==================================================
+1. VERIFY ACCEPTANCE STATUS
+==================================================
+
+First check:
+
+- GET /api/release/readiness
+- GET /api/system/full-health
+- GET /api/auth/permissions
+- GET /api/broker/status
+- GET /api/admin/issues
+
+Expected truth:
+
+- owner role active
+- full tester access active
+- MT5 connected = false
+- MT5 deferred = true
+- real broker execution available = false
+- simulator available = true
+- live tester workflows open = true
+- risk governor active = true
+- kill switch UI active = true
+- secrets hidden = true
+
+If any P0/P1 issue exists, fix it before continuing.
+
+==================================================
+2. START OWNER TEST SESSION
+==================================================
+
+Create a new test session:
+
+Session name:
+Owner Test Session #1
+
+Record:
+
+- start time
+- user role
+- current mode
+- device type
+- routes visited
+- actions taken
+- errors encountered
+- issues created
+- simulator trades created
+- live tester intents created
+- AI decisions generated
+- audit events created
+- risk blocks triggered
+
+Show a visible test session banner:
+
+“Owner Test Session #1 Active”
+
+==================================================
+3. TEST CORE OWNER FLOW
+==================================================
+
+Run this exact flow:
+
+1. Open dashboard
+2. Confirm global tester banner
+3. Confirm MT5 deferred banner
+4. Open live chart
+5. Change symbol to XAUUSD
+6. Open trade command room
+7. Confirm selected symbol synced
+8. Open manual trade ticket
+9. Confirm symbol synced
+10. Open testing control center
+11. Confirm tester tools are available
+
+Expected:
+- no blank screens
+- no crashes
+- no MT5 false connection
+- no real broker execution available
+
+==================================================
+4. TEST DEMO TRADING FLOW
+==================================================
+
+Run:
+
+A. Demo manual simulator trade
+- small lot size
+- stop loss
+- take profit
+- submit
+- confirm OMS record
+- confirm position record
+- confirm P/L update
+- confirm journal update
+- confirm calendar update
+- confirm audit log
+
+B. Bad demo trade rejection
+- no stop loss
+- oversized lot
+- poor risk/reward
+
+Expected:
+- valid simulator trade works
+- bad trades are rejected clearly
+- no real broker execution
+
+==================================================
+5. TEST AI TRADING FLOW
+==================================================
+
+Run:
+
+A. Generate AI trade card
+B. Confirm it includes:
+- symbol
+- direction
+- entry
+- stop loss
+- take profit
+- confidence score
+- risk score
+- opportunity score
+- entry sniper score
+- reason for trade
+- invalidation reason
+
+C. Approve one simulator AI idea if risk passes
+D. Reject one AI idea
+E. Confirm decision logs update
+F. Confirm learning loop updates
+
+Expected:
+- AI decisions are explainable
+- risk governor controls approval
+- no silent execution
+
+==================================================
+6. TEST LIVE TESTER WORKFLOWS
+==================================================
+
+Run:
+
+A. Live manual tester intent
+- open /live-manual
+- submit live-style order
+- confirm status = PENDING_MT5_CONNECTION
+- confirm brokerExecution = false
+- confirm live intent queue updates
+
+B. Live AI assist tester intent
+- generate AI live-style idea
+- reject one
+- approve one into intent queue
+- confirm no broker execution
+
+C. Live AI auto tester
+- start tester mode
+- generate only one live-style intent
+- confirm cooldown
+- stop test
+
+Expected:
+- live workflows are open
+- tester can use all screens
+- no real broker order is placed
+- MT5 required message is clear
+
+==================================================
+7. TEST AUTOPILOT + SHADOW SYSTEMS
+==================================================
+
+Run:
+
+A. Autopilot observe-only
+- start observe-only
+- force scan
+- confirm observation logged
+- stop
+
+B. Autopilot demo simulator
+- start with max 1 trade
+- confirm scanner → strategy → risk → OMS pipeline
+- stop
+
+C. Shadow mode
+- create one shadow decision
+- track outcome
+- confirm shadow journal updates
+
+D. Forward testing
+- run one short forward test
+- confirm AI readiness score updates
+
+Expected:
+- systems work without MT5
+- no broker execution
+- results stay separated by environment
+
+==================================================
+8. TEST RECORDS + REPORTING
+==================================================
+
+Verify:
+
+- Orders page
+- Positions page
+- Journal
+- Calendar
+- P/L summary
+- Performance scorecard
+- AI decisions
+- Audit vault
+- Risk events
+- Live intent queue
+- Shadow journal
+- Release status
+- QA checklist
+- Feedback center
+- Diagnostics export
+
+Expected:
+- pages load
+- records appear in correct environment
+- exports do not expose secrets
+
+==================================================
+9. TEST MOBILE OWNER EXPERIENCE
+==================================================
+
+Check mobile layout for:
+
+- dashboard
+- live chart
+- trade command room
+- manual trade ticket
+- demo trading
+- live manual tester
+- market scanner
+- autopilot control center
+- orders
+- positions
+- journal
+- calendar
+- testing control center
+
+Expected:
+- no horizontal overflow
+- bottom nav works
+- chart fits
+- trade form usable
+- kill switch reachable
+- cards readable
+
+==================================================
+10. BUG CAPTURE RULES
+==================================================
+
+For every failure, automatically create an issue.
+
+Use priorities:
+
+P0:
+- app crash
+- owner locked out
+- full tester access broken
+- risk governor missing
+- kill switch missing
+- MT5 falsely connected
+- real broker execution falsely available
+- secrets exposed
+
+P1:
+- route broken
+- demo simulator broken
+- AI cards broken
+- live tester intent broken
+- OMS broken
+- journal/calendar broken
+- audit logs missing
+- mobile nav broken
+
+P2:
+- confusing UI
+- layout issue
+- missing empty state
+- slow page
+- unclear label
+
+P3:
+- copy polish
+- tooltip improvement
+- spacing issue
+
+Fix all P0/P1 immediately.
+Fix quick P2 issues if safe.
+Leave P3 in known issues.
+
+==================================================
+11. RUN HOTFIX PASS
+==================================================
+
+Auto-fix:
+
+- broken routes
+- missing API handlers
+- state mismatches
+- incorrect MT5 labels
+- incorrect green badges
+- failed simulator workflow
+- failed live intent workflow
+- missing audit logs
+- environment mixing
+- missing empty states
+- mobile layout issues
+- owner permission issues
+
+Do not add new features during hotfixing.
+
+==================================================
+12. UPDATE RELEASE READINESS
+==================================================
+
+After fixes, rerun:
+
+- GET /api/release/readiness
+- GET /api/system/full-health
+- npm run test:system
+
+Update:
+
+- readiness score
+- P0 count
+- P1 count
+- P2 count
+- known issues
+- last owner test timestamp
+
+Keep stage:
+
+BETA_TESTER
+
+Do not move to production.
+
+==================================================
+13. GENERATE FINAL REPORT
+==================================================
+
+Generate:
+
+OWNER TEST SESSION #1 REPORT
+
+Include:
+
+1. Session summary:
+- start time
+- end time
+- device
+- owner role confirmed yes/no
+- full tester access confirmed yes/no
+
+2. Core flow:
+- dashboard pass/fail
+- live chart pass/fail
+- symbol sync pass/fail
+- command room pass/fail
+
+3. Trading:
+- demo manual simulator pass/fail
+- demo AI simulator pass/fail
+- live manual tester intent pass/fail
+- live AI assist tester intent pass/fail
+- live AI auto tester pass/fail
+
+4. AI systems:
+- market scanner pass/fail
+- autopilot pass/fail
+- shadow mode pass/fail
+- forward testing pass/fail
+- AI readiness score pass/fail
+
+5. Records:
+- OMS pass/fail
+- positions pass/fail
+- P/L pass/fail
+- journal pass/fail
+- calendar pass/fail
+- audit pass/fail
+
+6. Mobile:
+- usable yes/no
+- broken pages
+- layout issues
+
+7. Bugs:
+- P0 found
+- P0 fixed
+- P1 found
+- P1 fixed
+- P2 remaining
+- P3 remaining
+
+8. Security:
+- secrets hidden yes/no
+- owner access preserved yes/no
+- protected endpoints yes/no
+- diagnostics safe yes/no
+
+9. MT5 truth:
+- MT5 connected yes/no
+- MT5 deferred yes/no
+- real broker execution available yes/no
+- no fake broker execution yes/no
+
+10. Final decision:
+- READY FOR OWNER TESTING
+- NEEDS BUG FIX SPRINT
+- BLOCKED BY P0/P1
+- WAITING ON MT5 SETUP
+
+Hard rules:
+- Do not fake pass results.
+- Do not fake MT5 connection.
+- Do not place real broker orders.
+- Do not claim broker fills.
+- Do not expose secrets.
+- Do not block owner tester access.
+- Do not hide live tester workflows.
+- Fix broken systems before adding features.

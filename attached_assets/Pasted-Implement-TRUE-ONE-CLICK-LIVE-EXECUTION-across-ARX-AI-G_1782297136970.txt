@@ -1,0 +1,289 @@
+Implement TRUE ONE-CLICK LIVE EXECUTION across ARX AI.
+
+Goal:
+Once a trader has enabled the One-Click Live Trading toggle, any BUY or SELL action from anywhere in the app must immediately launch a LIVE trade command. No confirmation popup. No second click. No “review order” modal. No “are you sure?” step. If the user clicks Buy, Sell, or instructs ARX chat to buy/sell, the live trade is submitted immediately through the existing live execution pipeline.
+
+This is not paper trading. This is not demo trading. This is not staged confirmation. This is true one-click live execution.
+
+Core behavior:
+1. Add a global “One-Click Live Trading” toggle for approved live traders.
+2. When OFF:
+   - Keep the current safer confirmation/review behavior.
+   - User may still see normal confirmation flow.
+3. When ON:
+   - BUY button immediately submits a LIVE BUY order.
+   - SELL button immediately submits a LIVE SELL order.
+   - Chart trade buttons immediately submit LIVE orders.
+   - Scanner trade buttons immediately submit LIVE orders.
+   - Trade card actions immediately submit LIVE orders.
+   - ARX chat instructions like “buy V75,” “sell gold,” “close this trade,” or “enter now” immediately dispatch LIVE commands when the instruction is clear.
+   - No confirmation modal.
+   - No second click.
+   - No pending user approval draft.
+   - No “click again to confirm.”
+   - The click itself is the final execution intent.
+
+Required backend truth:
+One-click must still route through the official live command pipeline/chokepoint. Do not create a bypass writer directly into mt5_commands unless that is already the blessed dispatch function. Every one-click order must still pass these hard backend gates:
+
+- User is authenticated.
+- User is live approved.
+- User has live trading enabled.
+- User has One-Click Live Trading enabled.
+- Account is mapped to the live bridge.
+- Bridge/EA heartbeat is fresh.
+- Broker route is live-capable.
+- Kill switch is not engaged.
+- Symbol is live-tradable.
+- Market is available.
+- Required lot/risk parameters resolve safely.
+- Max position/risk limits are enforced.
+- Duplicate-click/idempotency protection is enforced.
+- Command is written to audit logs.
+- Command is traceable from UI click/chat instruction → backend request → live pipeline → MT5 command → broker result.
+
+Important:
+One-click means no extra user confirmation. It does not mean bypassing backend safety gates. If a hard gate fails, block the trade instantly and show the exact reason.
+
+Toggle requirements:
+Add a user-level setting:
+
+oneClickLiveTradingEnabled: boolean
+default: false
+
+The toggle should only be visible/enabled for users who are approved for live trading. If the user is not approved, show it disabled with a clear label: “Available after live approval.”
+
+Admin requirements:
+In the admin live approval area, add visibility for whether each approved trader has One-Click Live Trading ON or OFF.
+
+Admin should be able to:
+- View one-click status.
+- Disable one-click for a trader if needed.
+- Optionally prevent the trader from re-enabling it if the account is restricted.
+
+User toggle location:
+Add the toggle in all relevant live trading settings areas:
+- Live Trading dashboard/settings
+- Account safety/settings
+- Trading preferences
+- Any existing approved-trader live activation area
+
+Toggle copy:
+Title:
+“One-Click Live Trading”
+
+Description:
+“When enabled, Buy/Sell actions and clear ARX chat trade instructions submit live trades immediately with no second confirmation.”
+
+Warning text directly under toggle:
+“Only enable this if you understand that one click can place a real live trade.”
+
+Do not show a confirmation popup every time the user trades. The toggle itself is the standing consent.
+
+Execution behavior:
+Create a single shared one-click execution helper so every surface behaves the same.
+
+Required function behavior:
+executeOneClickLiveTrade({
+  source,
+  symbol,
+  side,
+  intent,
+  lotSize?,
+  riskProfile?,
+  stopLoss?,
+  takeProfit?,
+  clientRequestId
+})
+
+Allowed source values:
+- chart
+- scanner
+- trade_card
+- live_dashboard
+- ai_chat
+- mobile
+- admin_test_only if needed
+
+The helper must:
+1. Check local UI state only for fast UX.
+2. Call the backend execution endpoint immediately.
+3. Include source, side, symbol, resolved risk inputs, and idempotency key.
+4. Never open a confirmation modal when one-click is enabled.
+5. Show immediate status after submission:
+   - “Live BUY submitted”
+   - “Live SELL submitted”
+   - “Blocked: bridge heartbeat stale”
+   - “Blocked: kill switch active”
+   - “Blocked: one-click disabled”
+   - “Blocked: live approval missing”
+6. Update trade state from the backend result, not optimistic fake success.
+
+AI chat behavior:
+When One-Click Live Trading is ON, ARX chat can submit live trades from clear instructions.
+
+Examples that should execute:
+- “Buy V75 now”
+- “Sell XAUUSD”
+- “Enter long on VIX 75”
+- “Close my gold trade”
+- “Sell 0.01 lots on V75”
+
+Examples that should NOT execute because they are ambiguous:
+- “What do you think about gold?”
+- “Should I buy?”
+- “Maybe enter soon”
+- “Looks bullish”
+- “Find a setup”
+
+For ambiguous chat messages, ARX should not ask for a confirmation popup. It should simply respond that the instruction was not specific enough to execute.
+
+Chat execution rules:
+- If the user gives a clear BUY/SELL/CLOSE instruction and one-click is ON, submit immediately.
+- If one-click is OFF, use the existing review/confirmation flow.
+- If symbol or side is missing, do not execute.
+- If lot/risk cannot resolve safely, do not execute.
+- If multiple trades are implied in one message, block unless the system already supports explicit multi-order execution safely.
+- Log all AI-executed trades with source = ai_chat and the raw user instruction.
+
+Duplicate-click protection:
+One-click must not accidentally fire multiple trades from double taps, lag, or repeated render calls.
+
+Implement:
+- clientRequestId generated on click/instruction
+- backend idempotency check
+- short client-side button lock while request is in flight
+- backend duplicate window protection for same user + symbol + side + source + clientRequestId
+- never rely only on frontend disabled state
+
+UI requirements:
+When One-Click Live Trading is ON:
+- Buy/Sell buttons should visually indicate one-click mode.
+- Add a small label near trade buttons:
+  “One-click live”
+- Do not make the user click a second button.
+- Do not open a modal.
+- Do not require typing a phrase.
+- Do not redirect to another screen before execution.
+- Do not convert to demo/paper mode.
+- Do not create an ops draft requiring approval.
+- The first click submits live.
+
+When One-Click Live Trading is OFF:
+- Existing safer flow can remain.
+
+Backend endpoint:
+Add or update endpoint:
+
+POST /api/live-trading/one-click/execute
+
+Payload:
+{
+  "symbol": "string",
+  "side": "BUY" | "SELL" | "CLOSE",
+  "source": "chart" | "scanner" | "trade_card" | "live_dashboard" | "ai_chat" | "mobile",
+  "lotSize": number | null,
+  "stopLoss": number | null,
+  "takeProfit": number | null,
+  "riskProfile": object | null,
+  "clientRequestId": "string",
+  "rawInstruction": "string | null"
+}
+
+Response:
+{
+  "ok": true,
+  "commandId": "string",
+  "status": "SUBMITTED" | "QUEUED" | "EXECUTED",
+  "message": "Live BUY submitted"
+}
+
+Failure response:
+{
+  "ok": false,
+  "code": "ONE_CLICK_DISABLED" | "LIVE_NOT_APPROVED" | "KILL_SWITCH_ACTIVE" | "BRIDGE_STALE" | "SYMBOL_BLOCKED" | "RISK_LIMIT_BLOCKED" | "DUPLICATE_REQUEST" | "AMBIGUOUS_INSTRUCTION",
+  "message": "Human-readable reason"
+}
+
+Database:
+Add migration for one-click user setting and audit fields.
+
+Suggested fields:
+- users.one_click_live_trading_enabled boolean default false
+or
+- live_trader_settings.one_click_live_trading_enabled boolean default false
+
+Add audit table if needed:
+live_one_click_audit_log
+- id
+- user_id
+- account_id
+- symbol
+- side
+- source
+- client_request_id
+- raw_instruction
+- request_payload
+- result_status
+- result_code
+- command_id
+- created_at
+
+Security:
+- Default OFF for every user.
+- Never enable globally by migration.
+- Only live-approved users can enable it.
+- Admin can disable it.
+- Kill switch must override it.
+- Revoked live approval must immediately disable/block it.
+- If bridge freshness fails, block it.
+- If account is no longer mapped to live, block it.
+- If market/symbol is not allowed, block it.
+
+Testing:
+Add tests for:
+
+1. One-click OFF:
+   - Buy click does not directly submit live trade.
+   - Existing confirmation flow remains.
+
+2. One-click ON:
+   - Buy click submits live BUY immediately.
+   - Sell click submits live SELL immediately.
+   - No confirmation modal appears.
+   - No ops draft is created.
+   - Command routes through official live pipeline.
+
+3. Chat:
+   - “Buy V75 now” submits immediately when one-click ON.
+   - “Should I buy V75?” does not submit.
+   - Missing symbol blocks.
+   - Missing side blocks.
+
+4. Safety gates:
+   - Kill switch blocks one-click.
+   - Stale bridge blocks one-click.
+   - Revoked approval blocks one-click.
+   - Risk limit blocks one-click.
+   - Symbol block blocks one-click.
+
+5. Duplicate protection:
+   - Double click with same clientRequestId creates one command only.
+   - Repeated frontend render does not create duplicate command.
+   - Backend idempotency wins even if frontend fails.
+
+6. Audit:
+   - Every one-click attempt is logged.
+   - Blocked attempts are logged.
+   - Chat raw instruction is logged.
+
+Acceptance criteria:
+- With One-Click Live Trading ON, a single Buy/Sell click from any trading surface submits a live trade immediately.
+- No confirmation popup appears.
+- No second click is required.
+- Chat trade commands execute immediately when clear.
+- All commands route through the official live execution pipeline.
+- Backend hard gates still block unsafe or unauthorized trades.
+- Admin can see and disable one-click status.
+- Duplicate-click protection is enforced.
+- Audit trail is complete.

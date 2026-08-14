@@ -1,0 +1,220 @@
+Continue to Phase B for live shared-account trading.
+
+Build the user-facing live shared-account validation and execution endpoints:
+
+- POST /api/trades/live-shared/validate
+- POST /api/trades/live-shared/execute
+
+Do not rebuild from scratch. Inspect and reuse the existing Phase A work, including:
+- master bridge snapshot
+- live shared readiness system
+- admin /admin/live-shared panel
+- user_master_live_access fields
+- master-account columns
+- arx_live_commands queue
+- shared_trade_attribution table
+- global trading settings
+- kill switch logic
+- ARX_LIVE_BROKER_EXECUTION_ENABLED server-side hard kill
+- existing manual trade logic
+- existing pending order logic
+- existing SL/TP validation
+- existing risk engine
+- existing audit logs
+- existing role/session validation
+
+Important architecture:
+This system is EA-pull, not server-push. Do not add MT5 login/password/server secrets to Replit. The live broker credentials stay on the operator’s MT5 Windows VPS where EA v1.27 runs. The backend should queue validated live commands for the EA to poll.
+
+Goal:
+Create the full validation and execution pipeline for approved users trading through the shared live master account, while preserving all gates and hard blocks.
+
+Validation endpoint requirements:
+
+POST /api/trades/live-shared/validate should accept:
+- symbol
+- side: buy / sell
+- orderType: market / buy_limit / sell_limit / buy_stop / sell_stop / buy_stop_limit / sell_stop_limit
+- lotSize
+- entryPrice if pending order
+- stopLoss
+- takeProfit
+- riskAmount
+- riskPercent
+- source: manual / scanner / ruby
+- confirmationIntent optional
+- notes / reason optional
+
+The endpoint must validate:
+- Authenticated user session
+- User has live shared-account approval
+- User has allowed symbol permission
+- User has allowed order type permission
+- User max lot limit
+- User max open trade limit
+- User daily loss limit
+- Global shared live mode
+- Master bridge pinned
+- Master bridge heartbeat not stale
+- Platform mode is LIVE
+- Shared routing is LIVE
+- Master bridge mode is LIVE
+- Kill switch is not active
+- ARX_LIVE_BROKER_EXECUTION_ENABLED is true only for execution readiness
+- Symbol exists in bridge-supported symbol list if available
+- Lot size is valid
+- Stop loss is valid
+- Take profit is valid
+- Broker stop-level distance is respected if bridge data exists
+- Spread/slippage warning if available
+- Margin/free margin estimate if available
+- Risk/reward ratio
+- Duplicate submission protection
+- Missing SL/TP warning or block according to current risk rules
+
+Validation response should return:
+- approved true/false
+- blocked true/false
+- primaryReason
+- errors[]
+- warnings[]
+- finalOrderPreview
+- riskReward
+- estimatedRisk
+- estimatedReward
+- adjustedStopLoss if needed
+- adjustedTakeProfit if needed
+- requiredConfirmationText
+- gateStatus snapshot
+- userLimitSnapshot
+- bridgeSnapshot
+- canExecute true/false
+
+Execution endpoint requirements:
+
+POST /api/trades/live-shared/execute should:
+- Require authenticated session
+- Require confirmationIntent from the user
+- Re-run validation server-side immediately before execution
+- Never trust frontend validation alone
+- Block if validation fails
+- Block if kill switch is active
+- Block if bridge heartbeat is stale
+- Block if user approval is missing
+- Block if ARX_LIVE_BROKER_EXECUTION_ENABLED is not true
+- Block if platform/master/shared routing is not fully LIVE
+- Block if user exceeds risk limits
+- Block if symbol/order type/lot size is not allowed
+- Queue a live command into arx_live_commands for EA v1.27 to poll
+- Create internal ARX trade ID
+- Create shared_trade_attribution row tied to userId
+- Write full audit log
+- Return commandId, internalTradeId, status, and queuedAt
+
+Every queued live command must include:
+- userId
+- internalTradeId
+- commandType: open / modify / close / cancel
+- symbol
+- side
+- orderType
+- lotSize
+- entryPrice
+- stopLoss
+- takeProfit
+- source
+- accountMode: shared
+- tradingMode: live
+- masterBridgeId / snapshotId if available
+- risk snapshot
+- validation snapshot
+- confirmation timestamp
+- request id / idempotency key
+
+Add duplicate protection:
+- Use idempotency key or generated request hash
+- Prevent double-tap duplicate orders
+- Return existing queued command if same request is repeated within a short window
+
+Add support for:
+- Market buy
+- Market sell
+- Buy limit
+- Sell limit
+- Buy stop
+- Sell stop
+- Buy stop limit
+- Sell stop limit
+- Modify SL
+- Modify TP
+- Close trade
+- Cancel pending order
+
+If modify/close/cancel needs separate endpoints, create:
+- POST /api/trades/live-shared/modify
+- POST /api/trades/live-shared/close
+- POST /api/trades/live-shared/cancel
+
+But keep the main validate/execute flow consistent.
+
+User isolation:
+- Regular users can only validate/execute against their own approved access.
+- Regular users can only see their own queued commands, trades, attribution, P/L, and history.
+- Admin can see all users and all live shared commands/trades.
+
+Admin visibility:
+Update the admin live shared panel to show:
+- recent live validation attempts
+- blocked reasons
+- queued commands
+- EA poll status if available
+- shared trade attribution rows
+- command status: queued / picked_up / accepted / rejected / filled / failed / closed
+- last command error
+- last EA response
+
+Manual trading UI integration:
+Connect the existing manual trade form to:
+- /api/trades/live-shared/validate first
+- show the validation preview
+- require second confirmation
+- then call /api/trades/live-shared/execute
+
+Do not let the frontend directly queue live commands without validation.
+
+Scanner/Ruby:
+Do not fully build Phase C yet, but prepare the endpoint contract so scanner and Ruby can call validate first, then execute only after user confirmation.
+
+Testing:
+Add truth-table tests for:
+- unauthenticated user blocked
+- unapproved user blocked
+- approved user but global live off blocked
+- approved user but kill switch on blocked
+- approved user but bridge stale blocked
+- approved user but env hard kill missing blocked
+- approved user with invalid symbol blocked
+- approved user with too large lot blocked
+- approved user exceeding max open trades blocked
+- approved user exceeding daily loss blocked
+- valid approved user with all gates active queues command
+- duplicate submit does not create duplicate command
+- user cannot see another user’s queued command
+- admin can see all queued commands
+
+Acceptance checks:
+- Typecheck passes.
+- Backend tests pass.
+- Existing demo/paper trading still works.
+- Existing manual trade UI does not break.
+- Existing admin dashboard does not break.
+- No MT5 credentials added to Replit.
+- No secrets printed to logs or frontend.
+- /api/trades/live-shared/validate works.
+- /api/trades/live-shared/execute works but only when all gates pass.
+- Live commands are queued for EA-pull execution.
+- UserId is attached to every live command.
+- shared_trade_attribution is created.
+- Audit logs are written.
+- Kill switch blocks execution immediately.
+- ARX_LIVE_BROKER_EXECUTION_ENABLED remains the server-side hard kill.

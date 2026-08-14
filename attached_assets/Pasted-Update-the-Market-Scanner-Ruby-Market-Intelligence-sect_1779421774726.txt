@@ -1,0 +1,262 @@
+Update the Market Scanner / Ruby Market Intelligence section so users can search, load, click, collapse, and switch focus across all available market symbols — not only the few hardcoded quick buttons shown in the screenshots.
+
+Current screenshot issues:
+- “Pick a market — Ruby explains it” only works cleanly for preset buttons like EURUSD, GBPUSD, USDJPY, XAUUSD, US30, NAS100, BTCUSDT, TSLA.
+- Searching “75” returns “75 unavailable” even though synthetic symbols like V75 and V75_1S exist elsewhere on the page.
+- Synthetic index symbols are shown in a large crowded chip list that takes too much space.
+- The market symbol groups are not collapsible enough.
+- Clicking symbols should switch the active market focus immediately.
+- The selected symbol should update Ruby’s explanation, scanner context, chart focus, trade ticket defaults, and app-wide selected symbol badge.
+
+Build a unified Symbol Explorer for this section.
+
+1. Replace hardcoded symbol-only behavior with global symbol search
+
+The search box in “Pick a market — Ruby explains it” must allow the user to search for any supported symbol, including:
+- forex pairs
+- metals
+- indices
+- crypto
+- stocks
+- Deriv synthetic indices
+- broker/MT5 symbols
+- custom configured symbols
+
+Examples that should resolve:
+- EURUSD
+- GBPUSD
+- USDJPY
+- XAUUSD
+- US30
+- NAS100
+- BTCUSDT
+- TSLA
+- V10
+- V25
+- V50
+- V75
+- V100
+- V10_1S
+- V25_1S
+- V50_1S
+- V75_1S
+- V100_1S
+- BOOM500
+- BOOM1000
+- CRASH500
+- CRASH1000
+- STEP
+- Volatility 75
+- Volatility 75 1s
+- Volatility 25 1s
+
+Searching “75” should suggest and allow:
+- V75
+- V75_1S
+- Volatility 75 Index
+- Volatility 75 1s
+
+Do not return “75 unavailable” if matching known aliases exist.
+
+2. Add symbol alias resolver
+
+Create a shared symbol resolver used by scanner, Ruby, trade panel, and chart.
+
+Alias examples:
+- “75” → suggest V75 and V75_1S
+- “v75” → V75
+- “v75 1s” → V75_1S
+- “volatility 75” → V75
+- “volatility 75 1s” → V75_1S
+- “25 1s” → V25_1S
+- “volatility 25 1s” → V25_1S
+- “gold” → XAUUSD
+- “nas” → NAS100
+- “nasdaq” → NAS100
+- “dow” → US30
+- “bitcoin” → BTCUSDT
+- “btc” → BTCUSDT
+
+The resolver should return:
+- canonicalSymbol
+- displayName
+- marketType
+- brokerSymbol if different
+- dataProvider
+- isTradable
+- isScannable
+- isAvailable
+- unavailableReason if unavailable
+
+3. Make all symbol groups collapsible
+
+Replace the large always-visible symbol chip lists with collapsible sections:
+
+- Favorites / Recent
+- Forex
+- Metals
+- Indices
+- Crypto
+- Stocks
+- Synthetic Indices
+- Custom / Broker Symbols
+
+Each group should:
+- collapse/expand
+- show a count
+- keep selected symbol visible
+- allow chips to be clicked
+- support “show more / show less” on mobile
+- remember collapsed state per user locally
+
+Synthetic Indices should not take over the page. It should collapse by default after selection unless the user expands it.
+
+4. Clickable symbols must switch app focus
+
+When the user clicks any symbol chip:
+- set selectedSymbol globally
+- update top symbol badge
+- update Ruby Market Intelligence card
+- update scanner focus
+- update live chart symbol if available
+- update trade panel default symbol
+- update Ruby chat context
+- update one-click trade router default symbol
+- scroll or anchor Ruby’s explanation card into view on mobile
+
+Do not require the user to press Load after clicking a symbol chip.
+Clicking a symbol is enough to switch focus and load Ruby’s explanation.
+
+5. Search behavior
+
+The search box should:
+- autocomplete matching symbols and aliases
+- allow typed symbol submission with Enter or Load
+- show suggestions while typing
+- show market type labels beside suggestions
+- show availability status
+- show “Add to custom symbols” only if the symbol is unknown but valid-looking
+- not clear the typed value unless a symbol is selected
+- support partial search like “75”, “vol”, “gold”, “btc”, “nas”
+
+If exact match exists:
+- Load it directly.
+
+If multiple matches exist:
+- show suggestions and let user tap one.
+
+If no match exists:
+- show a helpful message:
+  “No matching symbol found. Try a broker symbol, forex pair, crypto, index, or synthetic alias.”
+
+6. Data source behavior
+
+If DERIV_APP_ID is missing:
+- still show synthetic symbols as selectable.
+- show a compact badge:
+  “Deriv feed not configured”
+- Ruby can still explain using cached/simulator/scanner logic if available.
+- Do not say the symbol does not exist just because live Deriv feed is not configured.
+
+If a symbol is tradable through MT5 but not scannable yet:
+- allow it to be selected.
+- show:
+  “Symbol selected. Scanner data unavailable until feed is configured.”
+- Still allow trade panel focus if the symbol is tradable and live gates allow it.
+
+7. Ruby explanation behavior
+
+When a symbol is selected, Ruby should explain:
+- current symbol
+- market type
+- timeframe
+- direction bias if available
+- confidence
+- trend state
+- volatility state
+- spread state
+- entry zone if available
+- suggested stop if available
+- possible target if available
+- risk:reward if available
+- why it looks like buy/sell/wait/reject
+
+Ruby’s explanation card should update instantly when symbol focus changes.
+
+If no live/cached data exists:
+Ruby should say:
+“Symbol selected, but scanner data is not available yet for this market. Configure the feed or run a scan.”
+
+8. Integrate with instant trading
+
+When a selected market has BUY/SELL action buttons:
+- If One-Click Live Mode is enabled and user is approved, BUY/SELL executes instantly through the global instant trade router.
+- If not approved or server dispatch is off, show the compact blocker status only.
+- Selecting a symbol itself must never place a trade.
+- Ruby can use the selected symbol as default when the user gives a clear trade command like “buy this” or “sell this.”
+
+9. UI cleanup for mobile
+
+On iPhone Safari:
+- Symbol chips should wrap cleanly.
+- Collapsed sections should reduce page height.
+- The selected symbol should remain obvious.
+- Ruby bubble must not cover symbol chips, BUY/SELL buttons, scanner cards, or explanation text.
+- Bottom nav must not cover scanner cards.
+- No horizontal scrolling.
+- The “Pick a market — Ruby explains it” card should be compact.
+- The Synthetic Indices group should not dominate the page.
+
+10. Remove duplicate symbol logic
+
+Search the repo for old hardcoded symbol lists and unavailable checks that only know:
+EURUSD, GBPUSD, USDJPY, XAUUSD, US30, NAS100, BTCUSDT, TSLA
+
+Replace with the shared symbol registry/resolver.
+
+Do not create duplicate scanner pages.
+Do not create duplicate Ruby market components.
+Do not leave the old “75 unavailable” logic active if alias matches exist.
+
+11. Add admin/dev diagnostics
+
+Add a compact dev-only diagnostics row showing:
+- typed search
+- resolved symbol
+- canonical symbol
+- broker symbol
+- market type
+- data provider
+- availability
+- source: alias / exact / broker / custom
+
+This should only appear in admin/dev/tester mode.
+
+12. Tests
+
+Run:
+- pnpm run typecheck
+- pnpm run ci:guards
+- pnpm --filter @workspace/scripts run test:live-phaseB
+
+Add/update tests proving:
+- Searching “75” suggests V75 and V75_1S.
+- Searching “volatility 75” resolves V75.
+- Searching “volatility 75 1s” resolves V75_1S.
+- Searching “gold” resolves XAUUSD.
+- Searching “btc” resolves BTCUSDT.
+- Clicking V75 switches selected symbol to V75.
+- Clicking V75_1S switches selected symbol to V75_1S.
+- Clicking any symbol chip updates Ruby Market Intelligence.
+- Symbol groups collapse and expand.
+- Selected symbol updates trade panel default symbol.
+- Selected symbol updates global app symbol badge.
+- Missing DERIV_APP_ID does not make synthetic symbols disappear.
+- Unknown symbol shows helpful no-match message.
+- No old “75 unavailable” error appears when alias matches exist.
+- Mobile layout has no horizontal overflow.
+
+Do not auto-place trades when selecting a symbol.
+Do not bypass live trading safety gates.
+Do not enable AI autonomous trading by default.
+The final result should let users search or click any supported market symbol, collapse symbol groups, and instantly switch Ruby/scanner/chart/trade focus across the app.

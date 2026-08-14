@@ -1,0 +1,260 @@
+PHASE 22G — FIX REALTIME VOICE HANDSHAKE + STOP AI CHAT FROM GETTING STUCK
+
+Continue from the ARX AI assistant voice/chat work. Do NOT rebuild the app. Do NOT redesign the full UI. Patch only the existing ARX AI popup, voice handshake, realtime voice session, fallback voice route, and stuck loading states.
+
+CURRENT ISSUE FROM SCREENSHOT:
+The ARX AI popup shows:
+- Status: THINKING...
+- Mic off
+- Auto-listen: off
+- Speak: on
+- Voice: gpt-audio · Realtime ready
+- Error: “Realtime voice handshake failed.”
+- Quick suggestion buttons appear disabled
+- Send button appears stuck/loading
+- Market data: not connected
+
+This means the realtime voice connection/session handshake failed, but the UI still claims voice is ready. The failed voice handshake must not block normal AI chat.
+
+GOAL:
+Fix realtime voice handshake detection, make the voice badge truthful, add fallback voice mode when realtime fails, and ensure text chat/quick suggestions still work even if realtime voice is unavailable.
+
+STRICT RULES:
+1. Do not remove the ARX AI assistant.
+2. Do not rebuild the full popup.
+3. Do not fake realtime voice readiness.
+4. Do not let failed realtime voice disable text chat.
+5. Do not let failed realtime voice disable quick suggestions.
+6. Do not show raw backend errors, OpenAI errors, stack traces, HTML, or JSON dumps.
+7. Keep paper-only/live execution locked unless changed elsewhere.
+8. Market data disconnected must not break AI chat or voice chat.
+
+TASK A — INSPECT REALTIME HANDSHAKE FIRST
+Find and report the files/routes responsible for:
+- ARX AI popup component
+- realtime voice handshake
+- OpenAI realtime/session route
+- ephemeral token/session creation route
+- WebRTC/WebSocket connection logic
+- voice badge state
+- THINKING/loading state
+- quick suggestion disabled state
+- fallback voice upload/transcription route, if it exists
+
+Before editing, identify:
+- what endpoint the frontend calls for realtime voice handshake
+- whether that endpoint exists
+- whether it returns the expected JSON shape
+- whether it requires OPENAI_API_KEY
+- whether it returns 401, 404, 500, CORS error, invalid JSON, or wrong shape
+- whether the frontend is trying to connect directly to OpenAI instead of going through backend
+- whether iPhone/Safari/Replit proxy limitations affect WebRTC/WebSocket realtime voice
+
+TASK B — MAKE VOICE STATUS TRUTHFUL
+The badge must not say “Realtime ready” unless realtime handshake actually succeeds.
+
+Replace current forced badge logic with real state:
+
+voiceConnectionState:
+- "off"
+- "checking"
+- "realtime_ready"
+- "fallback_ready"
+- "unavailable"
+- "error"
+
+Badge behavior:
+- If realtime handshake succeeds:
+  “Voice: realtime ready”
+- If realtime fails but fallback voice upload/transcription works:
+  “Voice: fallback ready”
+- If mic permission is missing:
+  “Mic permission needed”
+- If voice is unavailable:
+  “Voice unavailable”
+- If currently checking:
+  “Voice checking…”
+- If auto-listen is off:
+  keep “Auto-listen: off” separate
+
+Do NOT show “Realtime ready” when the app just failed the realtime handshake.
+
+TASK C — FIX REALTIME SESSION HANDSHAKE
+Patch the backend realtime/session route.
+
+Requirements:
+- The frontend should call the app backend, not expose OpenAI API keys in the browser.
+- Backend should create the realtime/session or ephemeral token securely.
+- Backend should return one stable JSON shape to frontend:
+  {
+    "ok": true,
+    "mode": "realtime",
+    "session": { ...safe session data... }
+  }
+
+On failure, return:
+  {
+    "ok": false,
+    "code": "REALTIME_HANDSHAKE_FAILED",
+    "message": "Realtime voice is unavailable right now. Fallback voice mode is available."
+  }
+
+If OPENAI_API_KEY is missing:
+  {
+    "ok": false,
+    "code": "OPENAI_KEY_MISSING",
+    "message": "Voice setup is missing a server key."
+  }
+
+Never return raw OpenAI errors to the frontend.
+
+TASK D — ADD FALLBACK VOICE MODE
+If realtime voice handshake fails, the app should automatically fall back to standard voice mode:
+
+Fallback mode:
+1. User speaks.
+2. App records a short compressed audio clip.
+3. App sends audio to backend with multipart/form-data.
+4. Backend transcribes/processes the voice request.
+5. ARX responds through normal AI chat.
+6. If Speak is on, play TTS response.
+
+This fallback should allow voice chat even if realtime session fails.
+
+Important:
+- Realtime failure should not break normal voice.
+- Realtime failure should not break text chat.
+- Realtime failure should not disable quick suggestions.
+- The UI should show: “Voice: fallback ready” instead of “Realtime voice handshake failed” if fallback works.
+
+TASK E — PREVENT THINKING STATE FROM GETTING STUCK
+Fix the AI loading state so failed voice handshake does not leave the whole assistant stuck.
+
+Rules:
+- “THINKING...” should only show while an actual AI message is processing.
+- Voice setup/checking should use “Voice checking…” or similar, not global THINKING.
+- If realtime handshake fails, clear the global thinking state.
+- Re-enable text input.
+- Re-enable quick suggestion buttons.
+- Re-enable send button.
+- Do not leave spinner active after handshake failure.
+- Add timeout protection: realtime handshake should timeout after 8–10 seconds and then fall back.
+
+TASK F — QUICK SUGGESTIONS MUST ALWAYS WORK
+The quick suggestion buttons must work even if:
+- realtime voice fails
+- mic permission is denied
+- auto-listen is off
+- market data is disconnected
+
+Verify these buttons:
+- Analyze my trades
+- Check MT5 bridge
+- Explain my risk
+- Market update
+- How do I use this?
+
+Only “Market update” should mention live market data is disconnected. The other buttons should still function normally.
+
+TASK G — AUTO-LISTEN BEHAVIOR
+Auto-listen must only run when:
+- AI popup is open
+- user enabled auto-listen
+- mic permission granted
+- voice mode is realtime_ready or fallback_ready
+- AI is not currently speaking
+
+If realtime fails and fallback is ready:
+- auto-listen should use fallback voice recording with VAD/silence detection
+- record when speech starts
+- stop after silence
+- send one request
+- pause while AI is speaking
+- resume after AI finishes if auto-listen is still on
+
+If popup closes:
+- stop listening
+- stop recording
+- cancel VAD loop
+- stop audio tracks
+- clear timers
+- stop AI audio playback if needed
+
+TASK H — CLEAN ERROR MESSAGES
+Do not show technical voice setup errors in the main chat unless the user needs to know.
+
+Map errors like this:
+- REALTIME_HANDSHAKE_FAILED:
+  “Realtime voice is unavailable. Fallback voice mode is active.”
+- OPENAI_KEY_MISSING:
+  “Voice setup is missing a server key.”
+- MIC_DENIED:
+  “Microphone access is blocked. Enable it in your browser settings.”
+- NETWORK_ERROR:
+  “Connection issue. Please try again.”
+- VOICE_TOO_LARGE:
+  “Voice clip is too long. Please try a shorter message.”
+- UNKNOWN:
+  “Voice is unavailable right now. Text chat still works.”
+
+Never show:
+- raw OpenAI response
+- HTML
+- stack traces
+- node_modules paths
+- WebRTC internals
+- SSE internals
+- raw JSON dumps
+
+TASK I — MARKET DATA STATUS SEPARATION
+Market data not connected should stay separate from AI/voice status.
+
+Correct behavior:
+- If AI works but market data is disconnected:
+  AI status should be “AI ready” or normal, not “reconnecting.”
+- If voice realtime fails but fallback works:
+  voice status should be “fallback ready.”
+- If market data is disconnected:
+  show “Market data: not connected,” but do not block AI chat.
+- Only live market questions should mention market data is unavailable.
+
+TASK J — MOBILE SAFARI / REPLIT SAFETY
+Because this is running through a Replit preview URL on iPhone Safari:
+- Add safe timeouts for realtime handshake.
+- Detect unsupported realtime/WebRTC cases.
+- Fall back gracefully.
+- Do not require realtime for basic voice.
+- Do not keep retrying realtime handshake repeatedly.
+- Avoid infinite reconnect loops.
+- Avoid repeated mic permission prompts.
+- Make sure the UI does not overflow horizontally.
+
+TASK K — QA / FIX GATE
+After implementation, run QA and fix failures before stopping.
+
+QA must verify:
+1. App no longer shows “Voice: realtime ready” after a failed realtime handshake.
+2. Realtime handshake success shows “Voice: realtime ready.”
+3. Realtime handshake failure falls back to “Voice: fallback ready” if fallback is available.
+4. Text chat works even when realtime voice fails.
+5. Quick suggestion buttons work even when realtime voice fails.
+6. “THINKING...” does not get stuck after voice handshake failure.
+7. Send button does not stay stuck loading.
+8. Auto-listen only starts when popup is open and user enables it.
+9. Mic stops when popup closes.
+10. Voice fallback can record, send, and receive a response.
+11. Speak toggle still controls spoken responses.
+12. Market data disconnected does not break AI chat.
+13. No raw backend/OpenAI errors appear in UI.
+14. Mobile Safari layout remains stable.
+15. No infinite reconnect loop.
+
+Only continue if QA passes. If anything fails, fix it and rerun QA.
+
+After finishing, report:
+- files changed
+- why realtime handshake was failing
+- whether realtime is now working or fallback is being used
+- whether text chat and quick suggestions work while voice is unavailable
+- how stuck THINKING/loading state was fixed
+- any remaining setup needed, such as OPENAI_API_KEY or realtime model configuration

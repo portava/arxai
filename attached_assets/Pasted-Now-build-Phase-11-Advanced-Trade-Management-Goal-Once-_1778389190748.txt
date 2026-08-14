@@ -1,0 +1,99 @@
+Now build Phase 11: Advanced Trade Management.
+
+Goal:
+Once a trade is open, the app should not just forget it. It should monitor, manage, and protect the trade.
+
+Create folders:
+
+/server/trade-management
+/server/trade-management/rules
+/server/trade-management/monitoring
+
+Create files:
+
+1. /server/trade-management/tradeManager.ts
+
+Functions:
+- monitorOpenTrades()
+- evaluateTradeHealth()
+- suggestStopMove()
+- suggestPartialClose()
+- suggestEarlyExit()
+- suggestTrailStop()
+- detectInvalidation()
+
+2. /server/trade-management/rules/breakEvenRules.ts
+
+Move stop to break-even only when:
+- price reaches 1R
+- market structure still supports trade
+- spread is normal
+- no major news risk
+- trade is not too new
+
+3. /server/trade-management/rules/trailingStopRules.ts
+
+Trail stop based on:
+- ATR
+- swing lows for buys
+- swing highs for sells
+- EMA 20 for trending trades
+
+Do not trail too tightly.
+
+4. /server/trade-management/rules/partialCloseRules.ts
+
+Suggest partial close when:
+- price reaches 1.5R or 2R
+- market shows rejection near major level
+- volatility spikes against position
+- news risk approaches
+
+5. /server/trade-management/rules/earlyExitRules.ts
+
+Suggest exit when:
+- trade thesis invalidated
+- opposite break of structure
+- strong reversal candle
+- abnormal volatility
+- news risk becomes extreme
+- max daily risk nearly hit
+
+6. /server/trade-management/monitoring/tradeHealthScore.ts
+
+Return health score 0-100.
+
+Factors:
+- distance from stop
+- distance from take profit
+- structure support
+- volatility state
+- session quality
+- spread state
+- time in trade
+- opposite signal risk
+
+7. Frontend Live Trades page upgrade
+
+For each open trade show:
+- ticket
+- symbol
+- direction
+- lot
+- entry
+- current price
+- stop loss
+- take profit
+- floating P/L
+- R multiple
+- trade health score
+- AI management suggestion
+- buttons:
+  - move to break even
+  - trail stop
+  - partial close
+  - close trade
+  - close all
+
+All buttons should work in mock mode first.
+Live mode remains locked until confirmed.

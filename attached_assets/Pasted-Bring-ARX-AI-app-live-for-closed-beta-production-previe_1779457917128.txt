@@ -1,0 +1,167 @@
+Bring ARX AI app live for closed beta / production preview.
+
+SCOPE:
+Prepare the ARX AI app for live user access in production/closed beta mode.
+
+Important:
+Do NOT bypass trading safety.
+Do NOT place trades.
+Do NOT disable kill switches.
+Do NOT remove admin approvals.
+Do NOT expose admin tools to regular users.
+Do NOT expose master MT5 account data to regular users.
+
+Goal:
+Make the app live and usable for invited/approved users while keeping broker execution controlled by existing gates.
+
+PHASE 1 — Pre-live verification
+Run:
+- typecheck
+- build
+- CI guards
+- backend health check
+- route smoke tests
+- auth smoke test
+- admin/regular mode smoke test
+- mobile smoke test
+
+Verify:
+1. App builds.
+2. Backend starts.
+3. /api/healthz returns 200.
+4. Login works.
+5. Invite code works or fails cleanly.
+6. Request Access works or fails cleanly.
+7. Forgot Password works or fails cleanly.
+8. Regular users cannot access admin routes/APIs.
+9. Andraie Regular Mode hides admin controls.
+10. Admin Mode restores admin controls.
+11. Scanner opens.
+12. AI/Ruby opens.
+13. Trade page opens.
+14. Open Trades page opens.
+15. Risk page opens.
+16. ScannerTradeModal opens from BUY/SELL but does not place trades.
+17. No raw errors, stack traces, function names, route names, secrets, or broker credentials appear.
+
+PHASE 2 — Production/closed-beta mode
+Set app-facing environment/state to production or closed beta mode using existing configuration only.
+
+Required:
+- App should be accessible by approved/invited users.
+- Account creation should remain invite-only if that is the current app rule.
+- Admin and user login should remain the same login system.
+- Do not create a separate admin login page.
+- Do not allow public self-registration unless explicitly approved.
+- Show clean closed-beta messaging where needed.
+
+User-facing status should be clean:
+- Trading Off
+- Broker Execution Disabled
+- Trading Access Locked
+- Simulator Available
+- Scanner Available
+- Ruby Available
+
+Do not show normal UI wording:
+- “live money”
+- “real money”
+- “LIVE MODE — REAL MONEY”
+
+Exception:
+“Real money” may appear only inside explicit live-trading consent/confirmation gates if legally required.
+
+PHASE 3 — Broker execution safety
+Keep broker execution controlled by the existing safety system.
+
+Verify:
+- ARX_LIVE_BROKER_EXECUTION_ENABLED remains unset/disabled unless explicitly configured by the operator.
+- Kill switch remains intact.
+- Admin approval remains required.
+- User-level live approval remains required.
+- Existing Phase B / live-dispatch gates remain default-deny.
+- Regular users cannot activate broker execution.
+- Admin mode is required for admin-only controls.
+- No live trades are placed during this launch pass.
+
+If broker execution is disabled, show:
+“Broker Execution Disabled”
+
+Do not show broken warning text or confusing debug labels.
+
+PHASE 4 — Deployment readiness
+Prepare deployment using the current Replit deployment flow.
+
+Check:
+- production env vars present
+- no secrets printed in logs
+- no missing required env vars except intentionally disabled live broker execution
+- database connection works
+- auth/session secrets configured
+- frontend API base URL correct
+- CORS/proxy config correct
+- static assets load
+- mobile Safari works
+- service health endpoint works
+
+Do not hardcode secrets.
+Do not print secrets.
+
+PHASE 5 — Admin/operator readiness
+Admin should be able to see:
+- beta readiness
+- system health
+- MT5 bridge status
+- scanner feed status
+- Ruby status
+- audit/reconciliation status
+- invite/user status
+- blocked trade attempts
+- broker execution status
+
+Regular users should not see admin health internals.
+
+PHASE 6 — Final live smoke test
+After deployment/production preview is live, run smoke checks:
+
+Public/unauthenticated:
+1. App URL loads.
+2. Login page loads.
+3. No dashboard access without login.
+
+Regular invited user:
+1. Login works.
+2. Dashboard loads.
+3. Scanner loads.
+4. AI/Ruby loads.
+5. Risk loads.
+6. Open Trades loads.
+7. Trade ticket opens.
+8. No admin controls visible.
+9. No master metrics visible.
+
+Andraie/admin:
+1. Login works.
+2. Regular Mode works.
+3. Admin Mode works.
+4. Admin-only pages accessible only in Admin Mode.
+
+Safety:
+1. BUY/SELL modal opens only.
+2. No order is placed by opening modal.
+3. Confirm remains blocked unless all existing safety gates approve.
+4. Broker-disabled state is respected.
+5. No live trades placed.
+
+PHASE 7 — Final output
+Return:
+1. Deployment/live access status.
+2. Live app URL if available.
+3. Files changed.
+4. Environment/config issues found.
+5. Issues fixed.
+6. Remaining issues.
+7. Closed beta readiness result.
+8. Broker execution status.
+9. Confirmation no live trades were placed.
+10. Confirmation kill switches/admin approvals/execution permissions were not changed.

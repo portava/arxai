@@ -1,0 +1,578 @@
+LIVE READINESS EMERGENCY FIX — ARX approved users cannot use shared live bridge, scanner, symbols, Deriv/feed status, news, or candles.
+
+Current reported failures:
+- Live shared bridge is not working for approved users.
+- Scanner is not working.
+- Approved symbols are not listed for approved users.
+- App says Deriv is not connected.
+- Some sections say waiting on news feed.
+- Candlestick chart is not loading.
+- App should be live-ready for trade for all approved users.
+
+Mission:
+Fix the ARX live-readiness spine so every approved user can open the app and see:
+1. Live shared bridge status
+2. Approved symbols
+3. Working scanner
+4. Working candles
+5. Correct Deriv/feed status
+6. News feed fallback that does not block trading surfaces
+7. Live-ready trade capability, subject only to existing approved-user/live-trading permissions
+
+Do NOT redesign the UI.
+Do NOT remove safety/risk checks.
+Do NOT add fake data.
+Do NOT hide errors with cosmetic labels.
+Do NOT change unrelated routes.
+Do NOT break owner/admin live access.
+Do NOT block approved users because a non-critical feed like news is unavailable.
+
+This is a wiring/truth/permission/data repair.
+
+Important ARX rule:
+Approved users should be live-ready when:
+- their account is approved,
+- live trading is enabled for them,
+- the shared live bridge is fresh/connected,
+- approved symbols exist for them or their role/group,
+- the symbol is tradeable,
+- execution permissions pass.
+
+News feed, marketing website, school, journal, or non-critical informational feeds must not prevent approved users from seeing scanner, symbols, candles, or trade buttons.
+
+============================================================
+PHASE 1 — TRACE THE LIVE READINESS CHAIN
+============================================================
+
+Perform a deep trace from login to trade-ready state.
+
+Find and report the exact source of truth for:
+
+1. User approval:
+- approved user flag
+- role
+- live trading enabled flag
+- shared bridge permission
+- account mode
+- investor/trader/admin status
+
+2. Shared live bridge:
+- bridge table/model
+- bridge heartbeat endpoint
+- master/shared bridge ownership
+- bridge mode demo/live
+- live execution enabled
+- read-only mode
+- last heartbeat freshness
+- EA version if available
+- account balance/equity source
+- open positions source
+
+3. Approved symbols:
+- where approved symbols are stored
+- per-user symbols
+- role/group symbols
+- default symbols
+- admin configured symbols
+- Deriv synthetic symbols
+- forex/metals/index symbols
+- scanner symbol universe
+
+4. Scanner:
+- scanner route/API
+- scanner frontend hook
+- scanner backend service
+- data feed used by scanner
+- symbol filter used by scanner
+- whether scanner blocks when Deriv/news/candles are missing
+
+5. Candles:
+- chart candle API
+- scanner candle API
+- bridge candle ingestion
+- Deriv candle ingestion
+- fallback feed router
+- timeframe support
+- why candlesticks are not loading
+
+6. Deriv status:
+- what “Deriv not connected” actually checks
+- whether it incorrectly blocks all users/symbols
+- whether it is being shown for non-Deriv symbols
+- whether it is being confused with MT5 shared bridge status
+
+7. News feed:
+- which components wait on news
+- whether news failure blocks scanner/chart/trade readiness
+- fallback behavior when news key/API is unavailable
+- whether UI is stuck in waiting state
+
+Return findings before/inside final report, but also fix the issues in this pass.
+
+============================================================
+PHASE 2 — FIX APPROVED USER LIVE SHARED BRIDGE ACCESS
+============================================================
+
+Approved users must be able to use the live shared bridge when they are approved.
+
+Locate the shared bridge visibility/permission logic.
+
+Fix any bug where:
+- only owner/admin can see shared bridge,
+- approved users are excluded,
+- approved users are stuck in demo/paper,
+- shared bridge requires wrong user id,
+- bridge owner id is treated as current user id,
+- bridge mode is incorrectly filtered,
+- live bridge is hidden from approved users,
+- live status endpoint returns not connected for approved users even when master bridge is fresh,
+- frontend reads the wrong bridge field,
+- stale permission cache prevents live-readiness.
+
+Expected behavior:
+- Owner/admin can see master bridge.
+- Approved trader users can see/use assigned shared live bridge according to approval rules.
+- Investor users remain view-only if that is their role.
+- Non-approved users cannot use shared bridge.
+- Bridge status should clearly say connected/fresh/stale/disconnected based on actual heartbeat.
+- “Shared live bridge connected” must be separate from “Deriv connected.”
+
+Implement or repair a single live-readiness resolver, for example:
+
+buildUserLiveReadiness(user) should return:
+{
+  approved: boolean,
+  role: "admin" | "trader" | "investor" | "student",
+  liveTradingEnabled: boolean,
+  sharedBridgeAllowed: boolean,
+  bridgeConnected: boolean,
+  bridgeFresh: boolean,
+  bridgeMode: "live" | "demo" | null,
+  bridgeId: string | null,
+  approvedSymbols: string[],
+  canViewScanner: boolean,
+  canViewCandles: boolean,
+  canQueueLiveTrade: boolean,
+  canExecuteLiveTrade: boolean,
+  blockingReasons: string[],
+  warnings: string[]
+}
+
+Use this resolver consistently on:
+- dashboard
+- scanner
+- chart
+- trade ticket
+- Ruby trade context
+- open trades
+- account/live status surfaces
+
+Do not let every page invent its own readiness rules.
+
+============================================================
+PHASE 3 — FIX APPROVED SYMBOLS NOT LISTING
+============================================================
+
+Approved users must see their approved symbols.
+
+Trace current symbol source.
+
+Fix the symbol loader so it uses this priority:
+
+1. user-specific approved symbols
+2. role/group approved symbols
+3. admin/default approved live symbols
+4. safe configured fallback symbols if no user-specific list exists
+
+Do not return an empty list for approved users unless admin explicitly configured zero symbols.
+
+If user is approved and no symbol config is found, return a safe default configured list and log warning:
+
+Suggested default symbol universe if no config exists:
+- EURUSD
+- GBPUSD
+- USDJPY
+- XAUUSD
+- US30
+- NAS100
+- V10
+- V25
+- V50
+- V75
+- V100
+- Boom 1000
+- Crash 1000
+- Step Index
+- Jump 10
+- Jump 25
+- Jump 50
+- Jump 75
+- Jump 100
+
+Adapt exact symbols to existing app conventions.
+
+Important:
+Do not hardcode fake symbols into execution if broker does not support them.
+Use aliases only for display/search.
+Execution must map to broker-supported symbol names.
+
+Add symbol normalization/alias handling if missing:
+- Volatility 75 Index / V75 / V75 Index
+- Volatility 100 Index / V100 / V100 Index
+- Boom 1000 / Boom 1000 Index
+- Crash 1000 / Crash 1000 Index
+- Gold / XAUUSD
+- US30 / Wall Street 30 / DJ30
+- NAS100 / Nasdaq 100
+
+Approved symbols API should return:
+{
+  symbols: [
+    {
+      symbol: "EURUSD",
+      displayName: "EURUSD",
+      market: "forex",
+      source: "mt5_bridge" | "deriv" | "composite",
+      tradeable: true,
+      scannerEnabled: true,
+      candlesEnabled: true
+    }
+  ],
+  source: "user" | "role" | "default",
+  warnings: []
+}
+
+============================================================
+PHASE 4 — FIX DERIV NOT CONNECTED MISLABELING
+============================================================
+
+The app currently says Deriv is not connected.
+
+Fix this so Deriv status is not used as a global trading/feed blocker.
+
+Rules:
+- Deriv status should only apply to Deriv synthetic symbols and Deriv-specific feeds.
+- MT5 shared bridge status should control live trade readiness for MT5-routed accounts.
+- Forex/metals/indices should not show “Deriv not connected” unless they actually depend on Deriv.
+- If Deriv is unavailable, Deriv synthetic symbols can show “Deriv feed unavailable” or “waiting for Deriv feed,” but the whole scanner/app should not die.
+- If the live shared MT5 bridge is connected, approved users should still be live-ready for supported MT5 symbols.
+
+Create separate statuses:
+{
+  mt5BridgeStatus: connected | stale | disconnected
+  derivFeedStatus: connected | stale | disconnected | not_configured
+  newsFeedStatus: connected | degraded | not_configured
+  candleFeedStatus: connected | degraded | empty
+}
+
+Do not collapse these into one “connected” boolean.
+
+============================================================
+PHASE 5 — FIX SCANNER NOT WORKING
+============================================================
+
+Scanner must load for approved users.
+
+Fix scanner so it:
+- loads approved symbols,
+- does not require news feed before rendering,
+- does not require Deriv for non-Deriv symbols,
+- does not crash if some symbols have no candles,
+- shows partial results with honest per-symbol feed status,
+- refreshes when shared bridge/feed status changes,
+- supports live-ready approved users.
+
+Scanner must return a useful response even if some feeds are degraded:
+
+{
+  ok: true,
+  symbolsScanned: number,
+  results: [],
+  warnings: [
+    "News feed unavailable; scanner running without news overlay.",
+    "Deriv feed unavailable for synthetic symbols.",
+    "No candles yet for V75 M5."
+  ],
+  feedStatus: {
+    mt5Bridge: "connected",
+    deriv: "not_configured",
+    news: "degraded",
+    candles: "partial"
+  }
+}
+
+Do not let one failed symbol break the whole scanner batch.
+
+Add try/catch isolation per symbol.
+
+Add clear logs:
+- scanner_start
+- scanner_symbols_loaded
+- scanner_symbol_skipped
+- scanner_candles_loaded
+- scanner_symbol_failed
+- scanner_complete
+
+============================================================
+PHASE 6 — FIX CANDLESTICK LOADING
+============================================================
+
+Candlesticks must load on chart and scanner.
+
+Trace candle route/API and fix the router.
+
+Required behavior:
+Candle request should attempt sources in order based on symbol:
+
+For MT5/live bridge symbols:
+1. broker/bridge candles if fresh and available
+2. durable stored candles from DB
+3. configured external feed fallback if allowed
+4. honest empty response with reason
+
+For Deriv synthetic symbols:
+1. Deriv candle feed if configured/connected
+2. stored synthetic candles if available
+3. honest empty response with reason
+
+For forex/metals/indices:
+1. MT5 bridge candles if available
+2. stored candles
+3. configured external fallback
+4. honest empty response
+
+Do not show infinite spinner.
+Do not block chart forever.
+Do not mark candles “live” unless data timestamp is fresh.
+
+Candle API should return:
+{
+  ok: true,
+  symbol: "EURUSD",
+  timeframe: "M5",
+  candles: [],
+  source: "mt5_bridge" | "stored" | "deriv" | "external" | "empty",
+  freshness: "live" | "delayed" | "stale" | "empty",
+  reason: null | "No candles received from bridge yet"
+}
+
+Frontend chart behavior:
+- If candles exist, render candlesticks.
+- If candles are empty, show clear empty state with reason and retry button.
+- Do not stay in spinner forever.
+- Scanner chart and main chart should share the same candle router contract.
+
+Also check timeframe mapping:
+- M1
+- M5
+- M15
+- M30
+- H1
+- H4
+- D1
+
+Fix any mismatch like “5m” vs “M5”, “1h” vs “H1”.
+
+============================================================
+PHASE 7 — FIX NEWS FEED WAITING BLOCKS
+============================================================
+
+News feed should be optional/degraded.
+
+Find every component that says:
+- waiting on news feed
+- news feed loading
+- waiting for news
+- no news feed
+
+Fix behavior:
+- News unavailable should show a small degraded badge.
+- News unavailable must not block scanner.
+- News unavailable must not block candles.
+- News unavailable must not block trade ticket.
+- News unavailable must not block approved symbols.
+- News unavailable must not block live bridge readiness.
+
+Use:
+newsFeedStatus = "degraded" | "not_configured"
+
+Display:
+“News unavailable — scanner running without news overlay.”
+
+Not:
+“Waiting on news feed” forever.
+
+============================================================
+PHASE 8 — LIVE READY FOR APPROVED USERS
+============================================================
+
+Create/fix a single approved-user live readiness check.
+
+Approved trader should be live-ready if:
+- user.approved === true or equivalent,
+- user.liveTradingEnabled === true or equivalent,
+- shared bridge allowed === true,
+- MT5 bridge heartbeat is fresh,
+- live execution enabled,
+- read only mode false,
+- approved symbols list is not empty,
+- account is not frozen/disabled/killed,
+- user is not investor view-only.
+
+Owner/admin:
+- preserve current owner/admin permissions.
+- do not add new owner/admin restrictions.
+
+Investor:
+- investor can view allocation/performance but not execute trades unless explicitly allowed by role/config.
+
+Non-approved:
+- cannot access live trade execution.
+
+Update UI copy:
+If approved and live-ready:
+“Live ready”
+“Shared live bridge connected”
+“Approved symbols loaded”
+
+If approved but blocked:
+Show exact blocking reasons:
+- “Shared bridge stale”
+- “Live trading disabled for this user”
+- “No approved symbols assigned”
+- “Account frozen”
+- “Bridge read-only mode”
+
+Do not show generic “Deriv not connected” for everything.
+
+============================================================
+PHASE 9 — ADMIN/DIAGNOSTIC PAGE
+============================================================
+
+Add or update an admin diagnostic panel for live readiness.
+
+Route if appropriate:
+/admin/live-readiness
+
+Show:
+- user approval status
+- liveTradingEnabled
+- role
+- assigned bridge id
+- bridge heartbeat age
+- bridge mode
+- live execution enabled
+- read-only mode
+- approved symbols count
+- scanner status
+- candle feed status
+- Deriv feed status
+- news feed status
+- final readiness verdict
+- blocking reasons
+
+Add a backend endpoint if useful:
+GET /api/admin/live-readiness/:userId
+
+Also add self endpoint:
+GET /api/me/live-readiness
+
+Use the same resolver for both.
+
+============================================================
+PHASE 10 — TESTS / VERIFICATION
+============================================================
+
+Add backend tests or verification scripts for:
+
+1. Approved user sees shared bridge:
+- approved trader user
+- shared bridge fresh
+- live execution enabled
+- returns bridgeConnected true
+
+2. Approved user gets symbols:
+- user-specific symbols
+- role symbols
+- default fallback symbols
+
+3. Deriv disconnected does not block forex scanner:
+- deriv disconnected
+- EURUSD still scan-eligible if MT5/external candles available
+
+4. News unavailable does not block scanner:
+- news feed not configured
+- scanner still returns ok true with warning
+
+5. Empty candles do not spin forever:
+- returns empty candle response with reason
+- frontend shows empty state
+
+6. Used/stale bridge blocks live-ready but not entire app:
+- scanner can still render degraded if appropriate
+- trade execution remains blocked with exact reason
+
+7. Investor user remains view-only:
+- can view
+- cannot execute
+
+8. Non-approved user blocked:
+- no live-ready
+- no trade execution
+
+============================================================
+PHASE 11 — LOGGING
+============================================================
+
+Add structured logs for:
+- live_readiness_resolved
+- approved_symbols_loaded
+- shared_bridge_resolved
+- scanner_feed_status
+- candle_request_resolved
+- deriv_status_resolved
+- news_status_resolved
+
+Logs must not expose secrets, account passwords, API keys, or raw broker credentials.
+
+============================================================
+PHASE 12 — FINAL ACCEPTANCE
+============================================================
+
+Acceptance criteria:
+- Approved users can see the shared live bridge connected when heartbeat is fresh.
+- Approved users can see approved symbols.
+- Scanner loads for approved users.
+- Scanner does not fail globally because Deriv is disconnected.
+- Scanner does not fail globally because news feed is unavailable.
+- Candlestick charts load when candles exist.
+- Candle empty state appears when no candles exist.
+- No infinite “waiting on news feed.”
+- No incorrect global “Deriv not connected” blocker.
+- Live-ready approved users are clearly marked live ready.
+- Trade ticket uses the same readiness resolver.
+- Existing live execution safety gates still run.
+- Owner/admin live access remains intact.
+- Investor view-only access remains intact.
+- Build passes.
+- TypeScript passes.
+- No console errors.
+
+FINAL REPORT REQUIRED:
+Return:
+1. Root causes found
+2. Files changed
+3. APIs changed/added
+4. Database/query changes
+5. How shared bridge access was fixed
+6. How approved symbols were fixed
+7. How scanner was fixed
+8. How Deriv status was separated
+9. How news feed fallback was fixed
+10. How candle loading was fixed
+11. How live readiness is now resolved
+12. Tests/verification run
+13. Remaining TODOs if any
+
+Final goal:
+ARX must be live-ready for all approved users, with shared bridge, approved symbols, scanner, candles, and trade readiness all using one truthful readiness system instead of scattered broken gates.

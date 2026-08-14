@@ -1,0 +1,99 @@
+Now perform runtime acceptance testing against the actual deployed ARX app, not only unit tests.
+
+The previous work verified T001–T004 in code, but I need the live app behavior confirmed and corrected.
+
+Important flow correction:
+Do not make the live unlock page circular. The server live execution flag cannot be required before the operator is allowed to arm the server live execution flag.
+
+Use this state model:
+
+1. LOCKED
+Show this when any required pre-arm safety check fails:
+- admin/operator authenticated
+- real LIVE EA heartbeat, not MOCK
+- fresh heartbeat
+- EA v1.27+
+- MT5 terminal connected
+- MT5 algo trading allowed
+- ReadOnlyMode=false
+- EnableLiveExecution=true
+- account number confirmation matches detected account exactly
+- broker confirmation matches detected broker exactly
+- server confirmation matches detected server exactly
+- risk acknowledgement checked
+- typed phrase ENABLE LIVE TRADING matches
+- max lot valid
+- daily loss limit valid
+- kill switch not active
+
+2. READY TO ARM
+Show this when all pre-arm checks pass but serverLiveExecutionEnabled is still false.
+This is not a failure. This is the correct default safe state.
+The top badge should say:
+“EA READY / SERVER DISPATCH OFF”
+or
+“READY TO ARM”
+
+3. LIVE BROKER EXECUTION ENABLED
+Show this only after the approved admin/operator clicks the arm action and serverLiveExecutionEnabled=true.
+
+4. KILL SWITCH ACTIVE — LIVE ORDERS BLOCKED
+Show this whenever the emergency kill switch is active, even if the server flag was previously armed.
+
+Tasks:
+
+1. Test the deployed app route /admin/live-shared in mobile Safari-sized viewport.
+
+2. Call the real readiness endpoint used by the UI and confirm it returns:
+- detectedAccountNumber: 62470041
+- detectedBrokerName: Deriv (SVG) LLC
+- detectedServerName: DerivSVG-Server
+- bridge mode LIVE
+- accountType live
+- EA version 1.27
+- fresh heartbeat true
+- ReadOnlyMode false
+- EnableLiveExecution true
+- terminalConnected true
+- algoTradingAllowed true
+
+3. Fix the UI if it still shows “Locked — 2 checks failing” when the only missing item is the server arm flag.
+Expected behavior:
+- If account/broker/server confirmation is missing or wrong, show LOCKED with exact mismatch reasons.
+- If account/broker/server confirmation is correct and all other pre-arm checks pass, show READY TO ARM.
+- Do not show the server live flag being OFF as a failed pre-arm safety check.
+- Treat serverLiveExecutionEnabled=false as the safe waiting-to-arm state.
+
+4. Keep the actual execute endpoint stricter:
+The execute endpoint must still refuse live broker dispatch unless serverLiveExecutionEnabled=true and every other safety gate passes.
+
+5. Verify #12 specifically:
+- Account confirm must match 62470041 exactly after trimming whitespace.
+- Broker confirm must match Deriv (SVG) LLC exactly after trimming whitespace.
+- Server confirm must match DerivSVG-Server exactly after trimming whitespace.
+- Add or confirm copy-exact buttons beside all three detected values.
+- If #12 fails, display which field failed and the expected value.
+
+6. Verify #9 specifically:
+- Default server live execution flag should be OFF.
+- OFF should show READY TO ARM only when all other pre-arm checks pass.
+- After admin/operator arms, #9 becomes true and the top badge becomes LIVE BROKER EXECUTION ENABLED.
+- Emergency kill switch must override the armed state and block all new live orders.
+
+7. Fix mobile layout:
+- No horizontal cutoff on Live EA Heartbeat Debug.
+- Values stack under labels on iPhone.
+- Bottom nav must not cover buttons, checklist rows, or kill switch controls.
+- Ruby floating button must not cover critical live controls.
+
+8. Run tests:
+- pnpm run typecheck
+- pnpm run ci:guards
+- pnpm --filter @workspace/scripts run test:live-phaseB
+- Add or update a test proving READY TO ARM is shown when all pre-arm checks pass but serverLiveExecutionEnabled=false.
+- Add or update a test proving live execute still fails until serverLiveExecutionEnabled=true.
+
+Do not arm live execution automatically.
+Do not bypass the safety gate.
+Do not enable AI auto-trading by default.
+The goal is to make the deployed UI correctly separate “ready to arm” from “already armed.”

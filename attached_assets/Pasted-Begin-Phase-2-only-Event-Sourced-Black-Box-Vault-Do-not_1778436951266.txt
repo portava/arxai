@@ -1,0 +1,75 @@
+Begin Phase 2 only: Event-Sourced Black Box Vault.
+
+Do not build Agent V2, Replay Lab, Portfolio Manager, Evolution, or live auto-execution yet.
+
+Goal:
+Create the system-of-record for every important decision, risk event, mode change, execution event, and AI action.
+
+Build the vault in SHADOW_MODE first so it does not break the current app.
+
+Add:
+
+/src/domain/black-box-vault/
+  eventSchema.types.ts
+  eventStore.engine.ts
+  eventId.engine.ts
+  eventChain.engine.ts
+  eventReplay.engine.ts
+  snapshotBuilder.engine.ts
+  auditTrail.engine.ts
+  vaultQuery.engine.ts
+  dataIntegrity.engine.ts
+  retentionPolicy.engine.ts
+  vaultShadowAdapter.engine.ts
+  dataQualityGuard.engine.ts
+  sensitiveDataFilter.engine.ts
+  trainingEligibility.engine.ts
+  eventCompression.engine.ts
+  poisonDataDetector.engine.ts
+
+Rules:
+- Vault starts in SHADOW_MODE only.
+- Existing app behavior must not depend on the vault yet.
+- Every important event is copied into the vault.
+- Events are immutable.
+- Corrections are recorded as new correction events.
+- Every event must include:
+  - eventId
+  - timestamp
+  - eventType
+  - source
+  - severity
+  - systemMode
+  - globalState
+  - payload
+  - previousEventId
+  - checksum
+  - schemaVersion
+  - trainingEligible
+- Do not store API keys, passwords, broker secrets, tokens, or private credentials.
+- Flag incomplete, duplicated, oversized, suspicious, malformed, or corrupted records.
+- Events with bad timestamps, missing fields, corruption, or suspicious payloads cannot train future AI.
+- Add query support by date, symbol, source, severity, mode, strategy, tradeId, and eventType.
+- Add retentionPolicy for hot, warm, and archived data.
+- Add eventReplay and snapshotBuilder for future replay.
+- Keep all Phase 1 tests passing.
+
+Safety rules:
+- Vault cannot place trades.
+- Vault cannot approve trades.
+- Vault cannot override Risk Governor.
+- Vault cannot override Control Tower.
+- If vault fails, app must continue safely.
+- If vault storage is unavailable, trigger DEGRADED_MODE and log the failure when storage returns.
+
+Core rule:
+If it is not in the vault, it did not happen — but only after the vault is validated and promoted from shadow mode.
+
+After Phase 2, stop and report:
+1. Files created
+2. Event schemas added
+3. Shadow mode status
+4. Query functions added
+5. Data integrity checks added
+6. Tests passed/failed
+7. Whether Phase 3 is safe to begin

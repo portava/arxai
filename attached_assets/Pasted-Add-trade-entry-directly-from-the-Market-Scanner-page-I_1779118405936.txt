@@ -1,0 +1,134 @@
+Add trade entry directly from the Market Scanner page.
+
+Important:
+- Check what already exists first, then adjust.
+- Do not break the working MT5 demo bridge.
+- Live broker execution must remain disabled unless separately enabled through the protected live flow.
+- All AI explanations must come from Ruby.
+
+Build this:
+
+1. On each Market Scanner result card, add clear trade action buttons:
+   - Buy
+   - Sell
+   - More / Trade Setup
+
+2. When the user taps Buy or Sell, open a trade ticket modal without leaving the scanner page.
+
+Trade ticket modal must include:
+- symbol
+- side: buy/sell
+- order type:
+  - market order
+  - buy limit
+  - sell limit
+  - buy stop
+  - sell stop
+  - buy stop limit
+  - sell stop limit
+- volume / lot size
+- stop loss
+- take profit
+- optional notes
+- demo/live mode indicator
+- estimated risk
+- estimated reward
+- risk/reward ratio
+- margin impact if available
+- confirmation button
+
+3. Add a small Ruby explanation window inside the scanner card or trade modal.
+
+Title:
+“Ruby’s Setup Reason”
+
+The explanation should briefly say why the scanner thinks the market may be a buy or sell based on available tools, including:
+- trend direction
+- support/resistance
+- market structure
+- momentum
+- volatility
+- recent candles
+- higher timeframe context
+- trading history of the market
+- market news/current events if available
+- confidence level
+- invalidation point
+- suggested stop loss area
+- suggested take profit area
+
+Keep this explanation small, clear, and user-friendly. Do not make it a huge AI paragraph.
+
+Example format:
+- Bias: Buy
+- Why: Price is holding above support with bullish momentum on the current scan.
+- Risk: Setup weakens if price breaks below ___.
+- Possible TP area: ___
+- Confidence: Medium
+
+4. Ruby must not present scanner ideas as guaranteed trades.
+Use language like:
+- “This looks like a possible buy setup.”
+- “This setup may favor sellers.”
+- “Wait for confirmation if momentum is weak.”
+Do not use guaranteed/profit-certain language.
+
+5. The scanner card should visually show:
+- symbol
+- direction bias: Buy / Sell / Neutral
+- confidence score
+- timeframe
+- current price
+- spread if available
+- volatility warning if high
+- signal age
+- Ruby explanation preview
+- Buy / Sell buttons
+
+6. If the user submits the trade from the scanner:
+- create the correct ARX trade command
+- show command id immediately
+- show status lifecycle:
+  QUEUED → SENT_TO_MT5_DEMO → FILLED_DEMO / REJECTED / FAILED / BLOCKED
+- show fill ticket, fill price, executed volume, and time when filled
+- show exact rejection reason if rejected
+- refresh open positions after completion
+
+7. Prevent accidental duplicate trades:
+- disable submit button while pending
+- use idempotency key
+- prevent double tap
+- require confirmation before sending
+
+8. Add safety controls:
+- default scanner trade mode should be demo unless live mode is explicitly enabled through protected live settings
+- if lot size is above safe default, require extra confirmation
+- show “Demo trading enabled. Live broker execution disabled.” when live is off
+- if market is closed or symbol is unavailable, disable trade buttons and show why
+
+9. Connect scanner trade results to the MT5 Bridge reporting:
+- Recent Demo Commands should show trades placed from scanner
+- Open Demo Positions should show scanner-created trades
+- Latest Demo Trade Result should show scanner trade result
+- store source = MARKET_SCANNER on each command
+
+10. Add scanner trade history:
+On the scanner page, add a compact “Recent Scanner Trades” section showing:
+- time
+- symbol
+- side
+- volume
+- status
+- broker ticket
+- source signal confidence
+- Ruby reason summary
+
+Acceptance proof:
+- User can place a demo trade directly from a Market Scanner result.
+- Trade modal opens from scanner without leaving page.
+- Ruby explanation appears beside the trade setup.
+- Submitted scanner trade appears in Recent Demo Commands.
+- Filled scanner trade appears in Open Demo Positions.
+- Rejected scanner trade shows exact reason.
+- Duplicate taps do not create duplicate orders.
+- Live trading remains disabled unless protected live mode is enabled.

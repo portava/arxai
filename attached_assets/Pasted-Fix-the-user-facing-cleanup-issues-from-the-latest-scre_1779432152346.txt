@@ -1,0 +1,253 @@
+Fix the user-facing cleanup issues from the latest screenshots. Inspect the current codebase first, reuse existing components, and only change the areas listed below. Do not rebuild working systems from scratch.
+
+Main goal:
+Make the normal user experience cleaner and safer by removing developer/backend/status clutter, improving the Scanner tab structure, improving Ruby’s market responses, and making access requests invite-only/admin-reviewed.
+
+Important safety rules:
+- Do not place any live trades.
+- Do not introduce server-side broker credentials.
+- Do not weaken live/shared-master safeguards.
+- Do not weaken placeLiveOrderGuarded.
+- Do not weaken Phase B/default-deny behavior.
+- Do not remove admin approval, typed confirmation phrase, precondition checks, EA live execution checks, symbol allowlist checks, or per-user isolation.
+- Normal users must never see raw backend/tool/guard/evaluator/function names, stack traces, raw route names, or developer-only identifiers.
+- Admin/operator developer details may remain only inside admin/operator-only surfaces.
+
+Fix 1 — Scanner tab structure
+Update the Market Scanner tabs.
+
+Current issue:
+- Scanner has Focus / Results / Symbols / Advanced.
+- “Advanced” is unclear and should represent broad-market scanning.
+- “Results” should not be its own main tab.
+
+Required structure:
+- Focus
+- Broad Scan
+- Symbols
+
+Details:
+- Rename “Advanced” to “Broad Scan”.
+- Move “Broad Scan” next to “Focus”.
+- Remove “Results” as a standalone tab.
+- Put scan results/opportunities under “Broad Scan”.
+- Broad Scan should include existing scan universe controls, scan/run/stop controls, market opportunity/results list, recent scanner trades, and filters/sort if already present.
+- Focus should stay for the currently selected market/symbol.
+- Symbols should stay for symbol search/category selection.
+- Keep all existing features; only reorganize the UI.
+
+Fix 2 — Ruby normal-user response sanitizer
+Ruby is still exposing backend/developer details to users. Add or improve a normal-user-safe Ruby response layer before chat text renders.
+
+Hide/remove from normal user Ruby UI and messages:
+- “debug · tools”
+- tool/function names like getAssistantLiveAwarenessStatus
+- backend provider labels like “Market: twelve_data”
+- raw command phrases like QUEUE MICRO LIVE TEST, EXECUTE LIVE SHARED, ROLL BACK LIVE SHARED TRADING
+- route/backend wording like /validate
+- “16-gate pipeline”
+- raw guard/evaluator/check names
+- stack traces
+- raw error codes unless paired with plain-language explanation
+
+Replace with plain-language wording:
+- “Paper-only · Live execution locked” → “Paper mode active · Live trading locked”
+- “Market: twelve_data” → “Market data connected” or hide it from the main chat view
+- Explain live readiness like: “Live trading is locked until your account is approved, the trading connection is verified, and all safety checks pass.”
+
+Normal Ruby chat should feel like a clean assistant conversation, not a developer/debug panel.
+
+Fix 3 — Ruby chat open state cleanup
+When the Ruby/AI chat is open, hide always-visible backend/status chips from the normal chat view.
+
+Hide from normal Ruby chat:
+- Paper-only / live execution status chip
+- Market data provider chip
+- Voice realtime/backend readiness chip
+- debug/tool strips
+- developer execution labels
+
+Ruby chat header should show only:
+- Ruby name/icon
+- simple state: Online / Ruby is thinking… / Ruby is speaking
+- close/menu controls
+
+Voice controls can stay, but move detailed voice/status info into a small Settings or Status collapsible area instead of always showing it inside the chat header.
+
+Fix 4 — Request Access flow
+The Request Access button on the login page should open an in-app request form/page, not just show an email message.
+
+Build or wire an existing access request form with:
+- name
+- email
+- short message to admin
+- trading experience/background
+- requested access type if supported: paper/demo/live/shared-master
+- optional reason for access
+- submit button: “Send Request”
+- success state: “Request sent. Admin will review your account.”
+- graceful error state if backend is unavailable
+
+Store/send the request using the app’s existing admin approval/access-request system if available. If no backend exists, create the smallest compatible pending request storage/API used by admin review surfaces.
+
+Do not grant access automatically. This is only a request submission flow.
+
+Fix 5 — Invite-only login
+ARX AI is invite-only right now.
+
+Remove or hide:
+- “Create an account”
+- any self-signup link/button from the login page
+- any self-signup route that lets users create accounts without an invite/admin approval
+
+Allowed entry options:
+- Sign In
+- Use Invite Code
+- Request Access
+
+If a self-signup route exists, redirect normal users to Request Access or Invite Code instead. Do not delete admin-created user logic if the app needs it.
+
+Fix 6 — Hide confusing execution strips from normal users
+The top execution strip still shows conflicting developer-style badges to normal users.
+
+Hide/remove from normal user UI:
+- Trading Off strip when it is a developer diagnostic
+- Broker Execution Enabled
+- Broker Execution Disabled
+- Tester Access
+- simulator/test/lab chips
+- FX/symbol debug chips like “FX: EURUSD”
+- repeated broker execution badges
+- “Ruby is read-only on this page”
+- any broker/execution diagnostic strip that conflicts with the clean user status
+
+Replace with one simple user-facing status where needed:
+- “Paper mode active · Live trading locked”
+or
+- “Trading access: Paper only”
+
+Make sure normal users do not see contradictory statuses like:
+- Trading Off
+- Broker Execution Enabled
+- Broker Execution Disabled
+- Trading Permission Clear
+
+Admin/operator users can still see technical execution details inside admin-only developer drawers.
+
+Fix 7 — Ruby market-select prompt
+When a user selects a market, Ruby’s prompt is too generic.
+
+Replace text like:
+“Ruby has GBPJPY loaded. Live snapshot from the scanner is warming up… pick a side…”
+
+With a better market-read flow:
+- “Ruby is analyzing GBP/JPY…”
+- Then show a clean market insight card.
+
+Market insight card should include, when data is available:
+- current bias: bullish / bearish / neutral / waiting
+- why Ruby sees it that way
+- trend/structure
+- volatility/spread risk
+- key support/resistance or invalidation area
+- possible setup type
+- suggested watch conditions
+- reasonable stop-loss / take-profit idea if available
+- clear note if data is still loading
+
+Remove “pick a side” wording. Use safer wording:
+“GBP/JPY is loaded. Ruby is checking whether this market has a clean setup. I’ll show the bias, risk, and entry conditions before you decide.”
+
+Do not make Ruby sound like it is forcing a trade.
+
+Fix 8 — Ruby Command Center cleanup
+On the Ruby Command Center page, remove the old cross-page tab row:
+- Scanner
+- Alerts
+- Calendar
+- Advanced
+
+Do not remove those features globally. Only remove that row from Ruby Command Center.
+
+Ruby Command Center should stay focused on Ruby:
+- Chat
+- Market Read
+- Commands
+- Memory
+
+Keep the existing 4 Ruby-native tabs if present:
+- Chat
+- Market Read
+- Commands
+- Memory
+
+No Ruby Command Center tab should open another unrelated page. If advanced Ruby settings are needed, place them inside a small collapsible settings card, not a cross-page tab.
+
+Also remove normal-user broker/read-only badges from the Ruby Command Center header area.
+
+Fix 9 — Global top market selector
+The top dropdown appears on every page but its purpose is unclear.
+
+Inspect its actual function and trace whether it changes:
+- selected market globally
+- scanner focus
+- Ruby market read
+- trade ticket symbol
+- chart/market panel
+
+Then:
+- If it works, label it clearly as “Active Market” or “Market Focus” and make sure changing it updates the correct active market everywhere.
+- If it partially works, connect it properly to scanner focus, Ruby market read, and trade ticket symbol without duplicating state.
+- If it does not control anything meaningful, hide it from normal pages.
+- Make sure it does not conflict with the Scanner symbol search/focus flow.
+
+Fix 10 — Normal-user UI leak sweep
+Search normal-user pages/components for internal leaks and remove/humanize them.
+
+Check at minimum:
+- Ruby chat
+- Ruby Command Center
+- dashboard/cockpit
+- scanner
+- selected market panel
+- scanner trade modal
+- login/request access/invite pages
+- mobile header/top bar
+- mobile bottom nav
+- side menu
+
+Normal users should not see:
+- function names
+- backend route names
+- guard names
+- evaluator names
+- raw error codes without explanation
+- stack traces
+- developer-only identifiers
+- broker execution diagnostics
+- test/simulator/lab chips unless they are intentionally user-facing and plainly worded
+
+QA and verification:
+- Run typecheck/build/lint if available.
+- Run existing guard/Phase B tests if available.
+- Run existing smoke/e2e tests if available.
+- Verify no live trades were placed.
+- Verify live/shared-master execution remains default-deny and protected.
+- Verify demo/paper/simulator flow still works.
+- Verify login still works.
+- Verify invite code flow still works or fails gracefully.
+- Verify Request Access opens the new form/page and submits or fails gracefully.
+- Verify Create Account is gone/disabled for normal users.
+- Verify Scanner tabs are now Focus / Broad Scan / Symbols.
+- Verify Broad Scan contains scan results/opportunities.
+- Verify Ruby chat no longer exposes debug/tools/provider/backend details.
+- Verify Ruby Command Center has no Scanner/Alerts/Calendar/Advanced row.
+- Verify top market selector is either clearly functional or hidden.
+- Verify mobile layout remains clean with no bottom nav gap.
+
+After completing:
+- Checkpoint.
+- Summarize what changed.
+- Summarize what passed.
+- List anything that remains.
+- Confirm live trading safety was not weakened.

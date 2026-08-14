@@ -1,0 +1,60 @@
+Wire the Market Scanner chart to the new truth contract from /api/data/candles.
+
+The backend now returns { candles, truth } from GET /api/data/candles (previously a bare Candle[]). The truth object comes from resolveMarketDataTruth() in artifacts/api-server/src/lib/data/marketDataTruth.ts. Do not change the backend. Do not change execution, MT5 bridge, scanner wiring, symbol switching, or permissions. This is a display-truth fix only.
+
+truth shape: { status, displayMode, freshness, isLive, isStale, isAnalysisOnly, isFallback, source, provider, quote, quoteTimestamp, lastCandleTimestamp, lastCandleClose, ageMs, divergenceFromQuote, divergenceThreshold, reason } where status/displayMode ∈ LIVE | STALE | ANALYSIS_ONLY | UNAVAILABLE | FALLBACK_COMPOSITE. reason is already user-safe.
+
+Step 1 — consume truth. In artifacts/trading-dashboard/src/components/scanner/ScannerChartPanel.tsx, the candle fetch (~line 787) already reads data.candles. Also capture data.truth into state. Keep the existing fallback for a bare array (treat missing truth as UNAVAILABLE when candles are empty, else ANALYSIS_ONLY — never assume LIVE).
+
+Step 2 — combine with header truth. Import and use combineHeaderAndCandleTruth(truth.status, snap.ok) from marketDataTruth.ts (snap.ok is the header's selected-market flag already used by ScannerHeaderSummary). The safer state always wins (UNAVAILABLE > ANALYSIS_ONLY > STALE > FALLBACK_COMPOSITE > LIVE). The chart must never show a more-live state than the header.
+
+Step 3 — gate rendering on the combined status:
+
+
+
+
+
+LIVE → render candles normally; live price marker allowed.
+
+
+
+FALLBACK_COMPOSITE → render candles, badge "Delayed market data", no live price marker.
+
+
+
+STALE → render candles only with a clear "Stale · last-known" badge + last-updated time (lastCandleTimestamp); remove the live price marker/label.
+
+
+
+ANALYSIS_ONLY → honest panel: "Live feed unavailable · Analysis only"; if candles shown, label historical/context; no live price marker.
+
+
+
+UNAVAILABLE → existing empty state ("No live candles… we don't fabricate").
+
+
+
+Use truth.reason for the badge text (it's already user-safe).
+
+Step 4 — rules:
+
+
+
+
+
+The chart must never visually contradict the header (the photographed bug: header "Feed unavailable · 1.0846" while chart showed 1.1522).
+
+
+
+No live price marker derived from stale/composite candles.
+
+
+
+In LIVE account mode, use only feed language (live / stale / analysis-only / last-known) — no "paper/demo/simulated/mock" anywhere in the active scanner/chart UI.
+
+
+
+Do not expose provider/source/internal field names to users; badges use reason only.
+
+Step 5 — verify in the running app: select EURUSD (composite/feed-unavailable) and confirm header and chart agree and no live-looking 1.15 candles render; select a live synthetic (V75) and confirm LIVE still renders normally; confirm symbol switching, Ruby panel, and trade buttons still work; run pnpm run typecheck and ci:guards.
+

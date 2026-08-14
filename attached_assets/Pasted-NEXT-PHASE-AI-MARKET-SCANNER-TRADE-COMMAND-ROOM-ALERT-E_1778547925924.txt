@@ -1,0 +1,440 @@
+NEXT PHASE: AI MARKET SCANNER + TRADE COMMAND ROOM + ALERT ENGINE
+
+Goal:
+Build a real trading command experience where the app constantly scans symbols, ranks opportunities, explains what the AI sees, and lets the tester send setups into demo, AI assist, backtesting, replay, or live-intent workflow.
+
+MT5 is still deferred.
+Do not fake MT5 connection.
+Do not claim real broker execution.
+Do not place real live orders.
+Everything should work in simulator/tester mode until MT5 is connected later.
+
+==================================================
+1. CREATE MARKET SCANNER PAGE
+==================================================
+
+Create:
+
+/market-scanner
+
+The scanner should watch selected symbols and timeframes.
+
+Default symbols:
+
+- EURUSD
+- GBPUSD
+- USDJPY
+- XAUUSD
+- BTCUSDT
+- ETHUSDT
+- AAPL
+- TSLA
+
+Default timeframes:
+
+- M1
+- M5
+- M15
+- H1
+- H4
+
+The scanner should rank opportunities using:
+
+- trend direction
+- volatility
+- spread condition
+- support/resistance proximity
+- momentum
+- candle confirmation
+- risk/reward
+- entry sniper score
+- AI confidence score
+- risk governor status
+- strategy match score
+
+Each scanner card should show:
+
+- symbol
+- timeframe
+- bias: bullish / bearish / neutral / choppy
+- recommended action: BUY / SELL / WAIT / REJECT
+- setup type
+- confidence score
+- risk score
+- entry sniper score
+- risk/reward ratio
+- reason to trade
+- reason to avoid
+- rules passed
+- rules failed
+- status badge
+
+Status badges:
+
+- HOT_SETUP
+- WATCHLIST
+- WAIT_FOR_CONFIRMATION
+- REJECTED_BY_RISK
+- CHOPPY_MARKET
+- LOW_CONFIDENCE
+- SPREAD_TOO_HIGH
+- PENDING_MT5_CONNECTION
+
+==================================================
+2. CREATE TRADING COMMAND ROOM
+==================================================
+
+Create:
+
+/trade-command-room
+
+This should be the main professional trading workspace.
+
+Layout:
+
+Left side:
+- live chart
+- symbol selector
+- timeframe selector
+
+Center:
+- AI market scanner
+- selected trade setup
+- AI explanation panel
+- trade grade
+- entry sniper score
+
+Right side:
+- manual/demo trade ticket
+- AI assist trade card
+- risk governor panel
+- live intent status
+
+Bottom:
+- decision stream
+- audit events
+- journal notes
+- open simulator positions
+- live intent queue preview
+
+This page should feel like the main place to trade/test from.
+
+==================================================
+3. BUILD AI OPPORTUNITY SCORING ENGINE
+==================================================
+
+Create scoring model:
+
+Opportunity Score = 0 to 100
+
+Factors:
+
+- trend alignment: 0-15
+- support/resistance quality: 0-15
+- entry timing: 0-15
+- risk/reward quality: 0-15
+- volatility condition: 0-10
+- spread condition: 0-10
+- strategy match: 0-10
+- AI confidence calibration: 0-10
+
+Labels:
+
+- 90-100: ELITE
+- 80-89: STRONG
+- 70-79: ACCEPTABLE
+- 60-69: WEAK
+- below 60: REJECT
+
+Add this score to:
+
+- scanner cards
+- AI trade cards
+- trade grader
+- live intent queue
+- journal
+- performance scorecard
+
+==================================================
+4. CREATE ALERT ENGINE
+==================================================
+
+Create an alert system for important trading events.
+
+Create page:
+
+/alerts-center
+
+Alert types:
+
+- Hot setup found
+- Setup rejected by risk
+- Spread too high
+- Volatility spike
+- Confidence dropped
+- Entry zone reached
+- Stop-loss zone near
+- Take-profit zone near
+- Choppy market detected
+- Overtrade warning
+- Daily loss limit warning
+- Kill switch activated
+- MT5 connection required
+- Live intent captured
+- AI auto tester paused
+
+Each alert should include:
+
+- alertId
+- severity: info / warning / critical
+- symbol
+- timeframe
+- message
+- reason
+- recommended action
+- createdAt
+- acknowledgedAt
+- source: SCANNER / AI / RISK / SYSTEM
+
+Alerts should appear as:
+
+- toast popup
+- alert center item
+- dashboard badge
+- global header count
+
+User can:
+
+- acknowledge
+- dismiss
+- snooze
+- view related trade setup
+
+==================================================
+5. CREATE WATCHLIST SYSTEM
+==================================================
+
+Create:
+
+/watchlist
+
+Allow user to add symbols and setups to watch.
+
+Watchlist item fields:
+
+- symbol
+- timeframe
+- desired direction
+- setup type
+- target entry zone
+- invalidation level
+- alert condition
+- strategy used
+- notes
+
+Watchlist should update with:
+
+- current simulated quote
+- scanner score
+- AI recommendation
+- risk status
+- alert status
+
+Add buttons:
+
+- Analyze Now
+- Send to Trade Ticket
+- Backtest Setup
+- Replay Setup
+- Create Live Intent
+
+If MT5 is not connected, Create Live Intent should still work as tester intent only.
+
+==================================================
+6. CONNECT SCANNER TO TRADE WORKFLOWS
+==================================================
+
+Every scanner opportunity should have action buttons:
+
+- View Details
+- Send to Demo Manual
+- Generate AI Trade Card
+- Send to Backtest
+- Send to Market Replay
+- Send to Trade Grader
+- Add to Watchlist
+- Create Live Intent
+
+If user chooses Create Live Intent and MT5 is deferred:
+
+- save as PENDING_MT5_CONNECTION
+- log it
+- send to live intent queue
+- do not place broker order
+
+==================================================
+7. CREATE AI SESSION PLAN
+==================================================
+
+Create page:
+
+/session-plan
+
+Before trading/testing, AI should generate a session plan.
+
+Session plan should include:
+
+- best symbols to watch
+- symbols to avoid
+- preferred strategy today
+- max trades
+- max risk
+- market conditions
+- rules for the session
+- warning zones
+- focus areas
+- recommended first test
+
+Example:
+
+“Today’s simulator session favors trend continuation on XAUUSD and EURUSD. Avoid BTCUSDT due to high volatility. Max 3 trades. Reject any setup below 75 confidence.”
+
+==================================================
+8. ADD DECISION STREAM
+==================================================
+
+Create a live decision stream component.
+
+Show:
+
+- AI scan event
+- trade idea generated
+- risk governor result
+- alert created
+- trade rejected
+- trade approved for simulation
+- live intent captured
+- learning loop update
+- journal update
+- audit log created
+
+Add this component to:
+
+- dashboard
+- trade-command-room
+- market-scanner
+- live-ai-assist
+- live-ai-auto-test
+- testing-control-center
+
+==================================================
+9. API ENDPOINTS
+==================================================
+
+Create or update:
+
+GET /api/market-scanner/status
+POST /api/market-scanner/start
+POST /api/market-scanner/stop
+POST /api/market-scanner/scan
+GET /api/market-scanner/opportunities
+
+POST /api/ai/opportunity-score
+POST /api/ai/session-plan
+POST /api/ai/setup-analysis
+
+GET /api/watchlist
+POST /api/watchlist
+PATCH /api/watchlist/:id
+DELETE /api/watchlist/:id
+
+GET /api/alerts
+POST /api/alerts/acknowledge
+POST /api/alerts/dismiss
+POST /api/alerts/snooze
+
+GET /api/decision-stream
+
+==================================================
+10. DASHBOARD UPGRADES
+==================================================
+
+Add dashboard cards:
+
+- Top Opportunity Now
+- Scanner Status
+- Hot Setups
+- Alerts
+- Watchlist
+- Session Plan
+- Best Symbol Today
+- Risk Warnings
+- Live Intent Count
+- AI Confidence Trend
+
+==================================================
+11. TESTING CONTROL CENTER UPDATES
+==================================================
+
+Add tests for:
+
+- market scanner
+- opportunity scoring
+- alerts engine
+- watchlist
+- session plan
+- decision stream
+- scanner to trade ticket
+- scanner to live intent queue
+- scanner to backtest
+- scanner to trade grader
+
+==================================================
+12. FINAL TEST
+==================================================
+
+Run:
+
+- route smoke test
+- market scanner test
+- opportunity scoring test
+- trade command room test
+- alert engine test
+- watchlist test
+- session plan test
+- decision stream test
+- scanner-to-trade-ticket test
+- scanner-to-live-intent test
+- scanner-to-backtest test
+- scanner-to-trade-grader test
+- dashboard update test
+- audit log integration test
+- environment separation test
+
+Generate:
+
+AI MARKET SCANNER + COMMAND ROOM REPORT
+
+Include:
+
+- Market Scanner active yes/no
+- Trade Command Room active yes/no
+- Opportunity Scoring active yes/no
+- Alert Engine active yes/no
+- Watchlist active yes/no
+- Session Plan active yes/no
+- Decision Stream active yes/no
+- Scanner connects to trade workflows yes/no
+- Dashboard updated yes/no
+- Testing Control Center updated yes/no
+- MT5 still deferred yes/no
+- Real broker execution still not faked yes/no
+
+Hard rules:
+- Do not fake MT5 connection.
+- Do not claim real broker execution happened.
+- Do not place real live orders.
+- Do not hide any tester workflows.
+- Do not remove risk governor.
+- Do not remove kill switch UI.
+- Do not mix simulator, tester intent, and future real broker records.

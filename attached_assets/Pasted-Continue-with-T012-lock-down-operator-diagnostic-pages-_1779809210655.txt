@@ -1,0 +1,168 @@
+Continue with T012: lock down operator diagnostic pages and remove raw internal leakage from authenticated user surfaces.
+
+Current completed state:
+- T003 complete: unified live/account-mode resolver.
+- T004 complete: /my-account allocation shell.
+- T005 complete: alerts/notifications.
+- T006 complete: mode-scope filters.
+- T007 complete: crash hardening.
+- T008 complete: admin/operator unrestricted limits.
+- T009 complete: scanner real-feed routing.
+- T010 complete: final live UI polish.
+- T011 complete: real-account browser verification.
+- typecheck PASS.
+- ci:guards 23/23 PASS.
+- test:live-phaseB 20/20 PASS.
+- test:demo-arming 18/18 PASS.
+- test:demo-verify 13/13 PASS.
+- test:scanner-real-feed 14/14 PASS.
+- arx_live_commands count 0.
+- no live trades placed.
+- no operator phrases typed.
+- no safety gates weakened.
+
+Remaining issue from T011:
+- /mt5-setup and /testing-control-center expose raw booleans and internal constants.
+- They are operator/diagnostic pages, but they are reachable by any authenticated user today.
+- They need explicit shouldShowAdminDiagnostics-style gating.
+- Normal users must not see raw diagnostics, booleans, constants, tokens, route names, env names, gate names, or backend internals.
+
+Do not place trades.
+Do not insert arx_live_commands.
+Do not type operator phrases.
+Do not broaden the narrow env parser.
+Do not weaken safety gates.
+Do not fake data.
+Do not expose admin diagnostics to normal users.
+
+Create checkpoint first:
+checkpoint: t012-operator-diagnostics-gating
+
+Task 1 — Audit diagnostic/operator routes:
+Find every route/component that exposes raw diagnostics or internal state.
+
+Must include:
+- /mt5-setup
+- /testing-control-center
+- any MT5 setup page
+- broker readonly/operator diagnostics
+- live test readiness
+- controlled live test button/card
+- diagnostic panels
+- raw boolean displays
+- raw env/gate labels
+- internal constants
+- endpoint names
+- token/secret status labels
+- backend JSON/debug dumps
+
+Task 2 — Add strict access gating:
+These diagnostic/operator pages must require admin/operator diagnostic permission.
+
+Use the existing account-mode resolver/gating pattern:
+- shouldShowAdminDiagnostics
+- isAdmin
+- not previewing-as-user
+- role-based route guard
+
+Normal authenticated users should see a clean page:
+- “Admin diagnostics required”
+- or redirect to a safe user page
+- no raw internal state
+
+Admin preview-as-user must behave like user mode and hide diagnostics.
+
+Task 3 — Clean user-facing replacements:
+If a normal user needs related setup info, provide clean user-safe cards only:
+- “Shared master account active”
+- “Your account is connected”
+- “Contact admin to manage bridge settings”
+- “No action needed”
+- “Bridge setup is managed by the operator”
+
+Do not show:
+- raw booleans
+- READ_ONLY
+- BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED
+- endpoint mounted
+- MT5_BRIDGE_TOKEN
+- env var names
+- token/header names
+- raw JSON
+- route names
+- table names
+- gate constants
+- typed phrase strings
+
+Task 4 — Admin diagnostics still work:
+Admin/operator mode should still be able to see:
+- MT5 setup status
+- bridge status
+- heartbeat
+- masked account
+- masked token status
+- endpoint health
+- diagnostics
+- test harness/operator-only tools
+
+But admin diagnostics must:
+- mask secrets
+- never show raw token values
+- clearly label dangerous controls
+- remain unavailable while previewing as user
+
+Task 5 — Route protection:
+Make sure the routes themselves are protected, not just the menu links.
+
+Verify:
+- direct URL to /mt5-setup as normal user is blocked/sanitized
+- direct URL to /testing-control-center as normal user is blocked/sanitized
+- direct URL in admin preview-as-user is blocked/sanitized
+- admin direct URL works
+
+Task 6 — Remove typed-phrase visibility if still present:
+If typed-phrase strings appear on these diagnostic pages, keep them admin-only and never show them to normal users.
+If a live order workflow still exposes typed phrases visually, replace with button-based confirmation copy while preserving server safety.
+
+Task 7 — Regression tests:
+Add tests proving:
+1. Normal user cannot access /mt5-setup diagnostics.
+2. Normal user cannot access /testing-control-center diagnostics.
+3. Admin can access both.
+4. Admin preview-as-user cannot access diagnostic internals.
+5. No raw boolean/internal constants appear in normal user DOM.
+6. No token/env/gate names appear in normal user DOM.
+7. Secrets remain masked.
+8. arx_live_commands remains unchanged.
+
+Task 8 — QA:
+Run:
+- pnpm run typecheck
+- pnpm run build if available
+- pnpm run ci:guards
+- test:account-mode
+- test:mode-scope
+- test:alert-notification-contract
+- test:crash-hardening
+- test:admin-unrestricted-risk
+- test:scanner-real-feed
+- test:live-phaseB
+- test:demo-arming
+- test:demo-verify
+- allocation runtime QA
+- new operator-diagnostics-gating tests
+- arx_live_commands count before/after
+
+Final report only:
+- diagnostic routes found
+- files/routes changed
+- normal-user access result
+- admin access result
+- preview-as-user result
+- raw boolean/internal leak result
+- tests added
+- QA results
+- arx_live_commands count
+- confirmation no live trades placed
+- confirmation no operator phrases typed
+- confirmation no safety gates weakened

@@ -1,0 +1,94 @@
+Fix the Live Test Cycle confirmation flow.
+
+Do not create any new modes.
+Do not place a trade automatically.
+Do not bypass the 16-gate evaluator, liveTrading chokepoint, kill switch, allocation checks, bridge heartbeat, or audit logging.
+
+CURRENT ISSUE:
+The Live Test Cycle still says:
+“Start Live Test Cycle button will arm after you type the phrase and tick the ack.”
+
+That violates the product rule. ARX should not require typed confirmation phrases anywhere.
+
+GOAL:
+Remove typed phrase confirmation from the Live Test Cycle completely.
+
+Replace it with:
+- Preview button
+- Start Live Test Cycle button
+- Confirm / Cancel modal
+- Required risk acknowledgment checkbox
+- No typed phrase
+
+1. REMOVE TYPED PHRASE
+Remove any typed phrase requirement from:
+- Live Test Cycle UI
+- backend start endpoint
+- schema validation
+- tests
+- button arming logic
+
+The owner should not have to type anything like:
+- ENABLE LIVE TRADING
+- START LIVE TEST
+- CONFIRM LIVE TEST
+- any phrase
+
+2. USE CONFIRM MODAL ONLY
+Start flow should be:
+
+Step 1:
+Owner clicks “Preview Live Test Cycle.”
+
+Step 2:
+If gates pass, owner clicks “Start Live Test Cycle.”
+
+Step 3:
+Modal opens:
+“This will open one real 0.01 EURUSD live test trade through the Live Shared bridge and automatically close it after verification.”
+
+Checkbox:
+“I understand this is a real live test trade.”
+
+Buttons:
+- Confirm Start
+- Cancel
+
+3. KEEP GATES STRICT
+Do not weaken the blockers.
+
+Before Start is enabled, require:
+- EA EnableLiveExecution=true
+- AlgoTrading/AutoTrading ON
+- broker connected
+- heartbeat fresh
+- master bridge pinned
+- effective broker execution enabled
+- kill switch released
+- owner approved
+- 16-gate evaluator PASS
+- liveTrading chokepoint PASS
+
+4. REAL TEST RULE
+Only after owner clicks Confirm Start:
+- Insert one live command
+- EURUSD
+- 0.01 lot
+- Live Shared path
+- Wait for broker/EA open result
+- Auto-close the same trade
+- Record latency
+- Audit every step
+
+5. ACCEPTANCE TEST
+Verify:
+- No typed phrase remains.
+- Preview does not insert arx_live_commands.
+- Start requires Confirm/Cancel modal and checkbox only.
+- arx_live_commands stays unchanged until owner confirms Start.
+- No new modes were created.
+- Demo, Live, and Live Shared remain the only modes.
+- If EA/AutoTrading/broker connection are not ready, Start remains blocked with friendly reasons.
+- No live trade is placed automatically during QA.
+
+Run typecheck/build/tests and fix errors before stopping.

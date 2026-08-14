@@ -1,0 +1,95 @@
+Continue to the next phase: Bridge-Connected Paper Mode Test #1.
+
+Do NOT unlock live trading.
+Do NOT enable auto-close execution.
+Do NOT enable shared MT5 routing.
+Do NOT send MT5 execution, modification, cancel, or close commands.
+Do NOT weaken safety envelope, per-user isolation, command queue, risk, attribution, activityStatus, paper-only, MT5 bridge, ALERT_ONLY, notification, market-data, journal, prop-firm, first-run readiness, or audit gates.
+Do NOT fake live trades, live P&L, broker balance, market data, candles, news, current events, TP targets, or bridge status.
+
+Before testing:
+1. Read the latest 10-minute MT5 bridge stability watch result.
+2. Confirm final answer says STABLE READ-ONLY BRIDGE READY FOR PAPER TEST.
+3. Confirm bridgeConnected=true, eaConnected=true, heartbeatFresh=true, rejectedHeartbeatCount flat, and no WebRequest errors.
+4. If bridge is no longer fresh, stop and report NOT READY.
+
+Goal:
+Run the first safe paper-mode test while the real MT5 VPS bridge is connected read-only.
+
+Verify:
+
+A. Bridge-connected readiness
+- First-run readiness shows MT5 bridge connected/read-only.
+- Bridge status shows CONNECTED READ-ONLY.
+- Broker snapshot is read-only if available.
+- No broker balance is shown as user balance unless clearly labeled Broker Read-Only.
+- No secrets or tokens are displayed.
+
+B. Paper order flow
+- Create a paper/draft order only.
+- Validate order type, symbol, size, entry, SL, and TP.
+- Respect risk and prop-firm guardrails.
+- Do not route to MT5.
+- Do not create a live command.
+- Do not send any MT5 execution request.
+
+C. Trade card + journal + alerts
+- Paper trade/order appears in user’s trade card/history.
+- Journal entry is created or updated.
+- Alert/notification is created if expected.
+- Audit trail records the paper lifecycle.
+- Performance remains honest and only updates if data is sufficient.
+
+D. AI assistant
+Ask AI:
+- “How’s the system looking?”
+- “Is my MT5 connected?”
+- “Why can’t this be live?”
+- “What happened with my paper trade?”
+
+Confirm AI:
+- Uses the connected read-only MT5 bridge status.
+- Says live execution remains locked.
+- Does not claim it can place/close/modify live trades.
+- Does not invent P&L, candles, TP targets, news, or broker balance.
+
+E. Safety regression
+Confirm:
+- Live trading = BLOCKED
+- Auto-close = ALERT_ONLY
+- Shared MT5 routing = BLOCKED
+- MT5 commands = force-BLOCKED
+- Command execution = DISABLED
+- ReadOnlyMode = true
+- AllowOrderExecution = false
+- AllowModification = false
+- AllowClose = false
+
+Run:
+1. Typecheck
+2. Full CI guard suite
+3. Stop-limit/order-type QA
+4. Bridge-connected readiness test
+5. Paper order creation test
+6. Paper trade lifecycle test
+7. Journal/performance integration test
+8. Alert/notification test
+9. AI bridge-connected honesty test
+10. MT5 no-execution regression
+11. Secret leakage test
+12. Per-user isolation regression
+13. Safety-envelope regression
+14. Broker-placement locked regression
+
+End with a report showing:
+- Current bridge status
+- Paper order test result
+- Journal/performance result
+- Alert result
+- AI result
+- Tests run/pass/fail
+- Whether any MT5 command was attempted
+- Confirmation live trading remains BLOCKED
+- Confirmation auto-close remains ALERT_ONLY
+- Confirmation MT5 commands remain force-BLOCKED
+- Final answer: PAPER MODE TEST PASSED or NOT READY, with reasons.

@@ -1,0 +1,113 @@
+Continue after Build Y — AI Mentor Mode.
+
+Now begin Build Z — Institutional Analytics & Command Center.
+
+Goal:
+Create a professional analytics hub that gives traders deep insight into performance, risk, execution quality, strategy efficiency, and behavioral patterns using institutional-style dashboards.
+
+Tasks:
+
+1. Audit existing systems:
+- Trader Scoring
+- Weekly Reviews
+- Edge Discovery
+- Market Intelligence
+- Portfolio Risk Engine
+- Strategy Engine
+- AI Mentor
+- Trade Journal
+- Live Positions
+- Backtesting Engine
+
+2. Add database models:
+
+analytics_snapshots:
+- id
+- user_id
+- total_trades
+- net_profit_loss
+- win_rate
+- average_rr
+- expectancy
+- profit_factor
+- max_drawdown
+- discipline_score_avg
+- execution_score_avg
+- emotional_score_avg
+- consistency_score_avg
+- strongest_strategy
+- weakest_strategy
+- strongest_market_condition
+- weakest_market_condition
+- created_at
+
+analytics_heatmaps:
+- id
+- user_id
+- heatmap_type
+- dataset
+- created_at
+
+3. Analytics modules:
+- Performance Analytics
+- Risk Analytics
+- Strategy Analytics
+- Session Analytics
+- Market Condition Analytics
+- Emotional Behavior Analytics
+- Entry/Exit Quality Analytics
+- Drawdown Analytics
+- Replay Practice Analytics
+
+4. Create institutional-style views:
+- Equity curve
+- Drawdown curve
+- Strategy expectancy table
+- Session heatmap
+- Market condition heatmap
+- Entry timing distribution
+- Emotional behavior trend
+- Consistency trend
+- Risk exposure trend
+
+5. API routes:
+- GET analytics snapshot
+- POST generate analytics snapshot
+- GET analytics heatmaps
+- GET strategy analytics
+- GET session analytics
+- GET emotional analytics
+- GET drawdown analytics
+
+6. Frontend components:
+- Analytics Command Center Page
+- Equity Curve Chart
+- Drawdown Chart
+- Strategy Analytics Table
+- Session Heatmap
+- Emotional Trend Graph
+- Risk Exposure Graph
+- Consistency Trend Card
+
+7. Connect to:
+- AI Mentor
+- Weekly Review
+- Dashboard
+- Playbook
+- Strategy Engine
+- Edge Discovery
+
+Important:
+- Use real connected data where available.
+- If chart libraries are missing, create placeholders with documented upgrade path.
+- No guaranteed-profit claims.
+- Focus on process analytics, not hype.
+
+Final output required:
+1. Files changed
+2. Tables/models added
+3. API routes added
+4. Frontend components added
+5. How analytics connect to mentor, strategy, and edge systems
+6. Errors or limitations
+7. Recommended next build

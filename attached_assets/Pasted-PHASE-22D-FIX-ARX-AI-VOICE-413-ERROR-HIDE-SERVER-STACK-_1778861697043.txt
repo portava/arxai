@@ -1,0 +1,151 @@
+PHASE 22D — FIX ARX AI VOICE 413 ERROR + HIDE SERVER STACK TRACES + KEEP AI CHAT LIVE
+
+You are working on the existing ARX AI trading app. Do NOT rebuild the app. Do NOT redesign the full UI. Only inspect and patch the AI voice/live chat system and related backend routes.
+
+CURRENT ISSUE FROM MOBILE SCREENSHOT:
+The ARX AI chat shows:
+“Voice request failed (413 Request Entity Too Large)”
+Then it displays a full Express/raw-body/body-parser stack trace in the user-facing AI panel.
+
+This means the frontend voice/audio request is too large for the backend request body parser OR the frontend is sending inefficient base64/JSON audio blobs instead of a safer upload/stream format.
+
+GOAL:
+Fix voice requests so mobile voice chat does not fail from oversized payloads, prevent giant audio blobs from crashing the chat, and never show raw server stack traces to users.
+
+STRICT RULES:
+1. Do not remove the existing AI assistant.
+2. Do not rebuild the whole popup.
+3. Keep paper-only/live execution locked exactly as it is unless already changed elsewhere.
+4. Keep existing visual design unless a small error-state adjustment is needed.
+5. Do not expose backend error stacks, file paths, node_modules paths, HTML error pages, OpenAI errors, or raw Express errors to the frontend.
+6. Add QA checks after implementation.
+
+TASK A — INSPECT CURRENT VOICE SYSTEM FIRST
+Find the current files handling:
+- ARX AI chat popup/component
+- voice/microphone recording
+- speech-to-text request
+- text-to-speech request
+- realtime/audio OpenAI setup
+- Express body parser setup
+- API route that receives voice audio
+- API route that returns voice response/audio
+
+Before editing, report:
+- which frontend component sends the voice request
+- which backend route receives it
+- whether audio is being sent as base64 JSON, raw blob, multipart FormData, or websocket/realtime stream
+- current request size/body parser limits
+- where the raw stack trace is leaking into UI
+
+TASK B — FIX OVERSIZED VOICE PAYLOADS PROPERLY
+Implement a safe voice upload/request strategy.
+
+Preferred fix:
+- Send microphone audio as multipart/form-data using a Blob/File instead of base64 inside JSON.
+- Use webm/opus or another compressed browser-supported audio format.
+- Add a client-side max recording duration, recommended 10–15 seconds for mobile.
+- Add a client-side file size guard before sending audio.
+- If the audio is too large, show a clean message:
+  “Voice clip is too long. Please try a shorter message.”
+- Do not send oversized audio to backend.
+
+Backend fix:
+- Add a dedicated upload limit for voice audio.
+- Do not rely on unlimited express.json body limits.
+- If multipart is used, use a safe middleware such as multer with memoryStorage or temp storage.
+- Set voice upload max size around 10MB to 20MB unless the existing OpenAI/audio route needs a smaller limit.
+- Return clean JSON on 413:
+  {
+    "ok": false,
+    "error": "VOICE_TOO_LARGE",
+    "message": "Voice clip is too long. Please try a shorter message."
+  }
+
+Do NOT just set the whole app body limit to something huge like 100mb globally. Keep the rest of the API protected.
+
+TASK C — PATCH EXPRESS/BACKEND ERROR HANDLING
+Add or fix global API error handling so raw HTML/stack traces never reach the frontend.
+
+Requirements:
+- For JSON APIs, always return JSON errors.
+- Catch PayloadTooLargeError / entity.too.large.
+- Catch OpenAI/audio request failures.
+- Catch unknown server errors.
+- In production/user-facing responses, return clean messages only.
+- Log detailed errors server-side only.
+- Never return node_modules paths, stack traces, HTML error documents, or raw Express error pages to the client.
+
+TASK D — PATCH FRONTEND ERROR DISPLAY
+Find the ARX AI chat error rendering.
+
+Replace raw error rendering with a safe mapper:
+- VOICE_TOO_LARGE → “Voice clip is too long. Please try a shorter message.”
+- NETWORK_ERROR → “Connection issue. Please try again.”
+- AI_OFFLINE → “ARX AI is reconnecting. Try again in a moment.”
+- MARKET_DATA_OFFLINE → “Market data is not connected yet.”
+- UNKNOWN → “Something went wrong. Please try again.”
+
+The chat panel should never display:
+- <!DOCTYPE html>
+- <pre>
+- raw stack traces
+- raw JSON dumps
+- internal server paths
+- node_modules
+- body-parser/raw-body/router/cors stack details
+
+TASK E — MOBILE LIVE CHAT STABILITY
+Because this is being used on iPhone Safari:
+- Make sure the mic button disables while uploading/processing.
+- Show a small “Processing voice…” state.
+- Prevent double-taps from sending duplicate audio.
+- Stop recording cleanly before upload.
+- Release MediaRecorder/audio stream tracks after recording.
+- Make sure cancel/close outside the AI popup stops any active recording.
+- Keep “Speak: on” and “Voice: gpt-audio / Realtime ready” badges accurate based on actual system state, not forced UI text.
+
+TASK F — RECONNECTING + MARKET DATA NOT CONNECTED CLEANUP
+Also inspect why the AI header says “RECONNECTING” and “Market data: not connected.”
+
+Do not fake the connection. Instead:
+- Confirm whether market data endpoint/MT5 bridge heartbeat endpoint is being called.
+- If disconnected, show a clean non-blocking state.
+- The AI chat should still answer general app/trading questions even if market data is disconnected.
+- Only market/live-price questions should mention that live market data is unavailable.
+- Do not let disconnected market data break voice chat.
+
+TASK G — FIRST-TIME USER CLEAN STATE
+Make sure the app does not show fake/sample user data on fresh load.
+For first-time or unauthenticated/demo state:
+- Show empty states.
+- Show “Run your first AI analysis.”
+- Do not show fake trades, fake balances, fake win/loss history, or fake connected market status.
+- Demo data should only appear if explicitly in demo mode and visibly labeled demo.
+
+TASK H — QA / FIX GATE
+After changes, run a full QA check before stopping.
+
+QA must verify:
+1. Text AI chat still works.
+2. Voice recording under limit works.
+3. Oversized/long voice recording shows clean error.
+4. No raw stack trace appears in UI.
+5. Backend returns JSON for 413 errors.
+6. AI popup closes when tapping outside.
+7. Mic stops when popup closes.
+8. Speak toggle still works.
+9. Voice response does not duplicate.
+10. Market-data disconnected state does not break AI chat.
+11. Mobile Safari layout does not overflow horizontally.
+12. Bottom navigation stays fixed and does not get blocked by AI popup.
+13. Fresh user state has no fake data unless demo mode is clearly active.
+
+Only continue to the next phase if all QA passes. If anything fails, fix it first, then rerun QA.
+
+After finishing, give me:
+- files changed
+- root cause of the 413 issue
+- how it was fixed
+- confirmation that raw backend errors no longer show in the user-facing AI chat
+- remaining risks or recommended next improvements

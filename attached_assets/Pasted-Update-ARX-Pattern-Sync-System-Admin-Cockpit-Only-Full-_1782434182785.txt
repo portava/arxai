@@ -1,0 +1,510 @@
+Update ARX Pattern Sync System: Admin Cockpit Only + Full Trader/Investor Account Visibility
+
+Scope change:
+Pattern Sync must be built as an ADMIN COCKPIT feature only unless explicitly enabled later. Do not expose Pattern Sync to normal traders or investors by default.
+
+The Admin Cockpit should become a true control-room/cockpit view: informative, dense, real-time, and operational. It should let the admin see the full live condition of the platform, each trader account, each investor account, bridge status, trade activity, Pattern Sync intelligence, risk state, balances, allocations, open positions, and warning signals from one place.
+
+Feature name:
+Admin Cockpit
+
+Primary sections:
+1. Cockpit Overview
+2. Trader Accounts
+3. Investor Accounts
+4. Live Bridge / MT5 Status
+5. Pattern Sync Command Center
+6. Open Trades / Exposure
+7. Risk & Alerts
+8. Capital / Pool / Allocation
+9. Approval & Activation Controls
+10. Audit Log / Timeline
+
+Admin Cockpit requirements:
+
+1. Cockpit Overview
+
+Create a top-level cockpit dashboard for admin only.
+
+Show high-level platform state:
+- total traders
+- active traders
+- approved traders
+- full-activation traders
+- suspended/revoked traders
+- total investors
+- active investors
+- total investor capital
+- total pool NAV
+- open P/L
+- closed P/L today
+- open positions count
+- total exposure
+- broker/bridge status
+- EA heartbeat status
+- feed freshness status
+- kill switch status
+- live trading mode status
+- Pattern Sync market leader
+- highest-risk symbol
+- most exposed symbol
+- current system health
+
+Use cockpit-style cards:
+- LIVE STATUS
+- BRIDGE
+- TRADERS
+- INVESTORS
+- CAPITAL
+- EXPOSURE
+- RISK
+- PATTERN SYNC
+- ALERTS
+
+2. Trader Accounts section
+
+Admin must be able to view every trader individually.
+
+Each trader row should show:
+- trader name/email/user ID
+- role
+- verification status
+- live approval status
+- full activation status
+- bridge attached status
+- account mode shown to trader
+- last heartbeat / last active
+- open trades count
+- total open P/L
+- daily P/L
+- weekly P/L
+- total closed P/L
+- win/loss count
+- current exposure
+- max drawdown
+- assigned risk profile
+- one-click enabled/disabled
+- last trade time
+- warnings/flags
+- revoke/suspend status
+
+Trader detail drawer/page:
+- account summary
+- live approval history
+- activation history
+- open positions
+- closed trades
+- deposits/withdrawals if applicable
+- allocation share if connected to pool
+- risk metrics
+- Pattern Sync alignment for that trader’s active symbols
+- broker commands history
+- rejected command history
+- audit timeline
+- admin notes
+
+Admin controls per trader:
+- approve trader
+- revoke approval
+- toggle full activation
+- attach/detach from bridge
+- suspend trading
+- restore trading
+- force refresh account
+- view trades
+- view command audit
+- emergency close trader positions
+- add admin note
+
+3. Investor Accounts section
+
+Admin must be able to view every investor individually.
+
+Each investor row should show:
+- investor name/email/user ID
+- verification status
+- deposit status
+- total deposited
+- current NAV balance
+- units owned
+- unit cost basis
+- unrealized gain/loss
+- finalized payable balance
+- indicative balance
+- lockup status
+- lockup end date
+- withdrawal eligibility
+- pending withdrawals
+- last investor report sent
+- investor risk tier
+- account warnings
+
+Investor detail drawer/page:
+- deposit history
+- withdrawal history
+- NAV unit ledger
+- profit/loss allocation history
+- weekly report history
+- lockup status
+- penalties if applicable
+- pending requests
+- admin notes
+- KYC/verification status if used
+- investor-facing balance preview
+
+Admin controls per investor:
+- view account
+- approve/reject deposit record if manual
+- process withdrawal status
+- freeze investor account
+- unfreeze investor account
+- adjust/admin-note ledger item with audit trail
+- send/update investor report
+- view investor portal as read-only preview
+
+4. Live Bridge / MT5 Status
+
+Admin Cockpit should show a real-time bridge panel.
+
+Show:
+- MT5 connected/disconnected
+- EA heartbeat age
+- broker account number masked unless admin unlocks
+- broker balance
+- broker equity
+- broker margin
+- free margin
+- open positions from broker
+- pending commands
+- failed commands
+- last command sent
+- last broker response
+- rejected command reasons
+- stale data warnings
+- feed freshness by symbol
+- auto-refresh status, every 5 seconds if enabled
+
+Include a “Force Sync” button:
+- refresh broker positions
+- refresh account balance
+- refresh trader states
+- refresh investor NAV
+- refresh Pattern Sync snapshots
+
+5. Pattern Sync Command Center
+
+Pattern Sync belongs inside Admin Cockpit only.
+
+Admin should see:
+- market leader symbol
+- follower symbols
+- lagging symbols
+- same-pattern scores
+- H4 bias
+- M15 timing
+- fakeout risk
+- clean setup score
+- choppy setup score
+- continuation score
+- pullback score
+- symbols with late-entry risk
+- symbols with countertrend open trades
+- symbols near key support/resistance
+
+Default comparison symbols:
+- V25(1s)
+- V50
+- V50(1s)
+- V75
+- V75(1s)
+
+Pattern Sync table columns:
+- symbol
+- timeframe
+- pattern type
+- leader/follower/lagging status
+- match score
+- trend bias
+- H4/M15 alignment
+- clean setup score
+- fakeout risk
+- key support
+- key resistance
+- admin summary
+
+Example cockpit summary:
+“V75 is the current market leader. V25(1s) is following the same bullish recovery pattern but has pulled back deeper. V50 is similar but still choppy and not confirmed. V50(1s) has a countertrend sell risk after a strong bullish rally.”
+
+Pattern Sync should help admin understand the market, trader exposure, and risk. It should not auto-execute trades or bypass safety.
+
+6. Open Trades / Exposure section
+
+Admin Cockpit must show all open trades across all traders/accounts.
+
+Columns:
+- trader
+- symbol
+- direction
+- lot size
+- entry
+- current price
+- open P/L
+- time open
+- trade source
+- one-click/chat/scanner/chart/admin
+- Pattern Sync alignment
+- risk level
+- invalidation level
+- first target zone
+- broker ticket
+- command status
+
+Filters:
+- by trader
+- by symbol
+- by direction
+- by profit/loss
+- by risk level
+- by Pattern Sync alignment
+- by age
+- by bridge status
+
+Admin bulk actions:
+- emergency close all
+- close by trader
+- close by symbol
+- close losers
+- close winners
+- disable new trades for selected trader
+- export CSV
+
+Every action must create an audit log.
+
+7. Risk & Alerts section
+
+Create cockpit alerts.
+
+Alert examples:
+- bridge heartbeat stale
+- feed stale
+- trader has high drawdown
+- investor NAV stale
+- open trade is countertrend against H4 Pattern Sync
+- symbol has high fakeout risk
+- trader full activation enabled but bridge not healthy
+- account approved but not attached to bridge
+- pending broker command stuck
+- rejected MT5 command
+- kill switch engaged
+- margin danger
+- exposure too concentrated
+- investor withdrawal due
+- trader has not traded today
+- AI self-trade goal not met
+- one-click active for high-risk account
+
+Alert levels:
+- info
+- warning
+- critical
+
+8. Capital / Pool / Allocation section
+
+Admin must see:
+- total pool NAV
+- broker equity
+- broker balance
+- open P/L
+- closed P/L
+- investor capital
+- trader allocation
+- ARX allocation
+- unassigned capital
+- pending deposits
+- pending withdrawals
+- finalized payable amounts
+- indicative balances
+- last NAV calculation time
+- NAV freshness status
+
+Show separate:
+- finalized amounts
+- indicative estimates
+- pending/unsettled amounts
+
+Do not mix finalized payable with live floating P/L.
+
+9. Approval & Activation Controls
+
+Admin Cockpit should make approval clean.
+
+Trader approval flow:
+- approve trader
+- choose display-only approval or full activation
+- attach to shared bridge
+- set one-click permission
+- set risk profile if applicable
+- confirm audit reason
+- show final status
+
+Admin must be able to clearly see:
+- approved but not active
+- approved and full active
+- revoked
+- suspended
+- bridge attached
+- bridge missing
+- live capable
+- blocked by system health
+
+10. Audit Log / Timeline
+
+Every admin action must be auditable.
+
+Log:
+- who performed action
+- action type
+- target user
+- before state
+- after state
+- reason
+- timestamp
+- IP/session if available
+- related trade/command/investor ledger item
+
+Admin Cockpit should show a timeline:
+- approvals
+- revocations
+- bridge events
+- failed commands
+- emergency closes
+- investor ledger actions
+- Pattern Sync snapshots
+- account freezes
+- risk alerts
+
+Backend requirements:
+
+Create admin-only routes:
+
+GET /api/admin/cockpit/overview
+GET /api/admin/cockpit/traders
+GET /api/admin/cockpit/traders/:userId
+GET /api/admin/cockpit/investors
+GET /api/admin/cockpit/investors/:userId
+GET /api/admin/cockpit/bridge
+GET /api/admin/cockpit/open-trades
+GET /api/admin/cockpit/risk-alerts
+GET /api/admin/cockpit/capital
+GET /api/admin/cockpit/audit-log
+GET /api/admin/cockpit/pattern-sync
+
+POST /api/admin/cockpit/refresh
+POST /api/admin/cockpit/traders/:userId/approve
+POST /api/admin/cockpit/traders/:userId/full-activation
+POST /api/admin/cockpit/traders/:userId/suspend
+POST /api/admin/cockpit/traders/:userId/restore
+POST /api/admin/cockpit/traders/:userId/emergency-close
+POST /api/admin/cockpit/investors/:userId/freeze
+POST /api/admin/cockpit/investors/:userId/unfreeze
+POST /api/admin/cockpit/manual-note
+
+Security:
+- all routes admin/owner only
+- no trader/investor access
+- no public access
+- reject if session is missing
+- every write action requires audit logging
+- emergency actions require explicit reason
+- sensitive broker account values should be masked unless admin has owner role
+
+Database additions:
+
+admin_cockpit_audit_log
+- id
+- created_at
+- admin_user_id
+- target_user_id
+- target_type
+- action_type
+- before_state jsonb
+- after_state jsonb
+- reason
+- metadata jsonb
+
+admin_cockpit_alerts
+- id
+- created_at
+- alert_level
+- alert_type
+- title
+- message
+- symbol
+- target_user_id
+- related_trade_id
+- related_command_id
+- status
+- resolved_at
+- resolved_by
+- metadata jsonb
+
+admin_cockpit_notes
+- id
+- created_at
+- admin_user_id
+- target_user_id
+- target_type
+- note
+- is_pinned
+
+Frontend requirements:
+
+Create Admin Cockpit page.
+
+Suggested layout:
+- top status strip
+- left cockpit navigation
+- main overview grid
+- right alerts rail
+- bottom audit timeline
+
+Cockpit navigation:
+- Overview
+- Traders
+- Investors
+- Bridge
+- Pattern Sync
+- Trades
+- Risk
+- Capital
+- Audit
+
+Design style:
+Make it feel like a real cockpit:
+- dense but readable
+- color-coded statuses
+- live badges
+- warning lights
+- clear panels
+- compact tables
+- quick action buttons
+- drill-down drawers
+- real-time refresh
+- no clutter on trader-facing screens
+
+Acceptance criteria:
+- Admin can see all trader accounts individually.
+- Admin can see all investor accounts individually.
+- Admin can open any trader detail page/drawer.
+- Admin can open any investor detail page/drawer.
+- Admin can see bridge status and broker freshness.
+- Admin can see all open trades across the platform.
+- Admin can see Pattern Sync only in Admin Cockpit.
+- Pattern Sync is not shown to regular traders/investors.
+- Admin can identify leader/follower/lagging symbols.
+- Admin can see risk alerts.
+- Admin can see pool/capital/NAV state.
+- Admin actions are audit logged.
+- Emergency actions require a reason.
+- UI feels like an operational cockpit, not a basic dashboard.
+- All backend and frontend tests pass.

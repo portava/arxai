@@ -1,0 +1,303 @@
+SCANNER LIVE DATA + MOBILE LAYOUT FIX — historical-only mode is still misleading and the chart overflows on mobile
+
+The latest scanner screenshots show GBPUSD on the Scanner page. The app now labels the chart as stale/historical, but several truth and UI problems remain.
+
+Observed current behavior:
+- Top status badge says: “LIVE · Shared MT5”
+- Scanner says:
+  - DATA: Historical only
+  - Data is incomplete — historical context only, not valid for a live entry.
+  - RUBY: Limited read
+  - Live feed unavailable · Analysis only
+- Chart shows candles for 1m, 5m, 15m, 1h, 4h, 1D but all are last-known/historical.
+- Last-known price shown around 1.33814 / 1.33815.
+- No live price marker.
+- Some badges say:
+  - Stale · last-known
+  - Delayed market data
+  - Provider free tier has no older-than...
+- The chart/card horizontally overflows on mobile. The user can slide the page sideways and the right side of the chart/badges gets cut off.
+- “Plan Buy” and “Plan Sell” still appear strongly active even though the chart is not valid for live entry.
+
+This must be fixed as a truth-layer + UI-layer issue.
+
+PART 1 — Separate execution status from market-data status
+
+Do not let the top badge “LIVE · Shared MT5” imply the scanner has live market data.
+
+Create separate status concepts everywhere:
+1. Execution status:
+   - Shared MT5 connected
+   - Live trading permission
+   - Bridge heartbeat
+   - Trade command path available
+
+2. Market-data status:
+   - Quote feed fresh/stale/unavailable
+   - Candle feed fresh/stale/unavailable
+   - Historical depth available/limited
+   - Provider/source
+   - Last updated time
+   - Whether scanner/Ruby can use it for live-entry decisions
+
+The scanner header should show something like:
+- Execution: LIVE · Shared MT5
+- Market data: STALE / HISTORICAL ONLY / LIVE
+
+Acceptance:
+If execution is live but candles are stale, do NOT show one combined badge that makes everything look live.
+The user must instantly understand:
+“Trading bridge is live, but this chart data is not live.”
+
+PART 2 — Build a canonical market data truth object
+
+Create or repair one server-side function for scanner/chart market truth, for example:
+
+buildMarketDataTruth(symbol, timeframe, userId)
+
+Return a canonical object like:
+
+{
+  symbol: "GBPUSD",
+  timeframe: "1m",
+  provider: "polygon" | "twelvedata" | "mt5" | "deriv" | "finnhub" | "unknown",
+  quote: {
+    price: number | null,
+    bid: number | null,
+    ask: number | null,
+    timestamp: string | null,
+    ageSeconds: number | null,
+    status: "fresh" | "delayed" | "stale" | "unavailable"
+  },
+  candles: {
+    count: number,
+    newestCandleTime: string | null,
+    oldestCandleTime: string | null,
+    ageSeconds: number | null,
+    status: "fresh" | "delayed" | "stale" | "historical_only" | "unavailable",
+    depthStatus: "ok" | "limited" | "insufficient",
+    source: string
+  },
+  liveUsable: boolean,
+  rubyCanGiveLiveEntry: boolean,
+  scannerCanRankLiveSetup: boolean,
+  chartMode: "live" | "delayed" | "stale_last_known" | "historical_only" | "unavailable",
+  warnings: []
+}
+
+Rules:
+- liveUsable can only be true when quote is fresh AND candles are fresh enough for that timeframe.
+- If candles are stale, chartMode = stale_last_known or historical_only.
+- If quote exists but no fresh candle stream exists, do not show live price marker.
+- If chartMode is historical_only, Ruby must not give live-entry advice.
+- If data is not liveUsable, scanner confidence must be blocked from presenting as live-tradable.
+
+PART 3 — Fix GBPUSD feed specifically
+
+GBPUSD should not be permanently stuck as historical-only if a usable forex feed is configured.
+
+Deep-check the current feed routing for GBPUSD:
+- Which provider is selected?
+- Which endpoint returns quote?
+- Which endpoint returns candles?
+- Which provider key is present/missing?
+- Is the selected provider free tier blocking real-time forex?
+- Is MT5 able to provide live GBPUSD quote/candles through the bridge?
+- Is the app incorrectly treating provider delayed data as unavailable?
+- Is the scanner calling the wrong symbol format, such as GBPUSD vs GBP/USD vs C:GBPUSD?
+- Is timeframe mapping wrong, such as 1m/5m/15m not supported by the selected provider?
+- Is the candle endpoint caching old candles and never refreshing?
+
+Add debug output in dev/admin:
+- selectedProvider
+- requestedSymbol
+- providerSymbol
+- requestedTimeframe
+- providerTimeframe
+- quoteStatus
+- candleStatus
+- lastQuoteAt
+- lastCandleAt
+- candleCount
+- oldestCandleAt
+- newestCandleAt
+- reason not live usable
+
+Acceptance:
+For GBPUSD, the app must show the exact reason live feed is unavailable.
+Not generic “historical only.”
+Examples:
+- “Polygon free tier delayed”
+- “TwelveData key missing”
+- “Provider symbol mapping failed”
+- “MT5 bridge does not stream candles”
+- “Quote fresh but candles stale”
+- “No candle returned for 1m”
+
+PART 4 — Fix stale/historical chart rendering
+
+Current chart shows candles but the user may still think they are tradable.
+
+When chartMode is stale_last_known or historical_only:
+- Keep candles visible only as historical context.
+- Add a clear overlay/watermark inside the chart:
+  “Historical only — not live”
+- Hide or dim the live price line.
+- Hide live price marker.
+- Timestamp must say exactly when the newest candle was last updated.
+- Do not show the current red/green price line as if it is live.
+- Any support/resistance/structure overlays must be labeled “historical.”
+- Ruby explanations must say “I cannot validate this as a live entry because the feed is stale.”
+
+PART 5 — Fix Plan Buy / Plan Sell behavior
+
+In historical-only or stale mode:
+- Do not show normal “Plan Buy” / “Plan Sell” as if this is live-valid.
+- Either disable them or change the labels to:
+  - “Plan Buy — stale data”
+  - “Plan Sell — stale data”
+- On tap, open a planning modal that clearly says:
+  “This is a historical planning tool. Live feed is unavailable, so this is not a live entry recommendation.”
+- Do not allow Ruby to convert this stale chart plan into a live trade recommendation.
+- Manual trading can remain available elsewhere, but it must be clearly separated from scanner/Ruby signal validity.
+
+Owner/admin live trading should still be possible, but scanner must not claim stale data is live-valid.
+
+PART 6 — Fix Ruby/scanner decision gating
+
+Ruby must check marketDataTruth before every scanner explanation and every trade idea.
+
+If liveUsable = false:
+Ruby can say:
+- “Historical read only.”
+- “I can explain structure.”
+- “I cannot validate a live entry.”
+- “Refresh feed or switch provider before live execution.”
+
+Ruby must not say:
+- “Enter now”
+- “Buy now”
+- “Sell now”
+- “This is a live setup”
+- “Confidence 82% live entry”
+unless quote + candles are fresh.
+
+Scanner ranking must separate:
+- historical setups
+- delayed setups
+- live-tradable setups
+
+Acceptance:
+No stale GBPUSD chart can produce a live-entry recommendation.
+
+PART 7 — Fix mobile horizontal overflow
+
+The scanner page is overflowing horizontally on iPhone.
+
+Screenshots show the chart card and badges extend off the right side. The page can slide sideways. This is unacceptable.
+
+Fix CSS/layout:
+- body, html, app root: max-width: 100%; overflow-x: hidden only as backup
+- scanner page container: width: 100%; max-width: 100vw
+- chart card: width: 100%; max-width: calc(100vw - safe padding)
+- chart canvas/container: width: 100%; min-width: 0
+- badges row: flex-wrap: wrap; min-width: 0
+- long badges must wrap, truncate, or move to second row
+- timeframe buttons must wrap or use horizontal scroll inside their own contained row, not force the whole page wider
+- chart must resize with ResizeObserver on mobile orientation/viewport changes
+- no fixed pixel width that exceeds viewport
+- floating Ruby orb must not increase layout width
+- bottom nav must remain fixed and not create horizontal overflow
+
+Search for and fix:
+- width: 800px / 900px / 1000px
+- min-width on chart cards
+- absolute-positioned badges extending beyond container
+- chart canvas not being resized after render
+- overflow-visible parent containers
+- transform/translate causing right overflow
+
+Acceptance:
+On iPhone width:
+- No horizontal page scroll.
+- Chart card fully contained.
+- Badges visible or wrapped.
+- Plan buttons fit.
+- Overlay chips fit.
+- Bottom nav does not cover important controls.
+- Screenshot at 390px and 430px wide must pass.
+
+PART 8 — Historical depth truth
+
+The screenshot mentions provider/free-tier limitation.
+
+Do not hide this in a small clipped badge. Add a readable data health panel:
+- Provider
+- Real-time status
+- Delay amount if known
+- Candle depth available
+- Oldest candle available
+- Newest candle available
+- Missing timeframe list
+- Upgrade/provider action needed
+
+For free-tier limits, say exactly:
+“Provider limit: [reason].”
+Do not just show a clipped badge.
+
+PART 9 — Tests required
+
+Add tests for:
+
+1. Execution live, market data stale:
+- top execution status can say live
+- scanner market status says stale/historical
+- Ruby live entry disabled
+- scanner live setup disabled
+
+2. Fresh quote but stale candles:
+- no live entry
+- no live price marker if candle chart cannot align safely
+- warning shown
+
+3. Stale candles:
+- chartMode = stale_last_known
+- plan buttons labeled stale or disabled
+- Ruby gives historical read only
+
+4. Provider symbol mapping:
+- GBPUSD maps correctly for every configured provider
+- errors are explicit if provider rejects symbol
+
+5. Mobile layout:
+- scanner page has no horizontal overflow at 390px width
+- chart card width <= viewport
+- badges wrap/truncate
+- no element extends beyond viewport except intentional contained horizontal scrollers
+
+6. Timeframe switching:
+- changing 1m/5m/15m/1h/4h/1D refreshes marketDataTruth
+- stale/live state updates per timeframe
+- chart does not reuse wrong timeframe status
+
+PART 10 — Do not pass until these exact screenshots are clean
+
+After the fix, verify:
+- GBPUSD scanner does not show misleading combined LIVE state.
+- It clearly separates execution live from market-data stale.
+- Ruby says historical read only when feed is stale.
+- Plan Buy / Plan Sell are not presented as live-valid on stale data.
+- The chart has no horizontal overflow on iPhone.
+- The stale/provider badges are readable and not clipped.
+- If GBPUSD live forex feed is available through any configured provider or MT5, it uses it.
+- If not available, the exact missing provider/key/symbol/timeframe reason is shown.
+
+Return a report with:
+1. Root cause of GBPUSD historical-only state.
+2. Provider actually used.
+3. Why live quote/candles were unavailable.
+4. Files changed.
+5. Components changed.
+6. Tests added.
+7. Before/after screenshots at mobile width.
+8. Confirmation that scanner cannot produce live entry recommendations from stale candles.

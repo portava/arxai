@@ -1,0 +1,178 @@
+CONTINUE WITHOUT MT5 SETUP — USE MT5-DEFERRED SIMULATOR MODE
+
+Goal:
+Continue building and testing the full trading app without requiring the user to finish MT5 desktop/VPS setup right now.
+
+Important:
+The user is not setting up the MT5 EA bridge yet.
+Do not block app development.
+Do not fake a real MT5 connection.
+Do not mark brokerConnected=true unless a real heartbeat is received.
+Do not place real orders.
+Keep real broker execution locked.
+
+Use MockBrokerProvider / InternalSimulatorProvider for now.
+
+1. Keep MT5 status honest
+
+If the MT5 bridge is not connected, show:
+
+- Broker provider: MT5 pending
+- Bridge connected: false
+- Account readable: false
+- Equity readable: false
+- Live execution: locked
+- Reason: MT5 EA bridge not installed/running yet
+
+Do not show this as a failure that blocks the entire app.
+
+2. Enable full app testing without MT5
+
+Allow the user to test:
+
+- full navigation
+- onboarding
+- new-system popups
+- dashboard
+- paper trading
+- demo simulator trading
+- manual trade ticket
+- AI trade card generation
+- AI demo assist
+- AI demo auto
+- risk governor
+- kill switch
+- trade journal
+- P/L calendar
+- learning loop
+- audit vault
+- testing control center
+
+3. Add MT5 Deferred Mode
+
+Create a clear system state:
+
+MT5_DEFERRED_SIMULATOR_MODE
+
+Meaning:
+- App is usable
+- Paper/demo simulator works
+- AI can practice in simulated mode
+- Real MT5 account is not connected yet
+- Live-money execution is locked
+- User can finish MT5 setup later
+
+4. Update trading modes
+
+Allow these modes now:
+
+- OFF
+- READ_ONLY
+- PAPER_ONLY
+- DEMO_MANUAL_SIM
+- DEMO_AI_ASSIST_SIM
+- DEMO_AI_AUTO_SIM
+
+Keep these visible but locked:
+
+- LIVE_MANUAL
+- LIVE_AI_ASSIST
+- LIVE_AI_AUTO_TEST
+
+Locked reason:
+“MT5 bridge setup required before real broker execution.”
+
+5. Demo simulator rules
+
+For simulated demo trades:
+
+- no real broker execution
+- no MT5 command mutation
+- no live table mutation
+- simulate fills
+- simulate P/L
+- enforce stop loss
+- enforce take profit / exit logic
+- enforce lot limits
+- enforce risk governor checks
+- log every decision
+- update journal
+- update calendar
+- update learning loop
+
+6. Testing Control Center
+
+Update /testing-control-center with two sections:
+
+A. Available Now
+- route health
+- onboarding test
+- paper test
+- demo manual simulator test
+- demo AI simulator test
+- risk governor test
+- kill switch test
+- audit log test
+- journal/calendar test
+- learning loop test
+
+B. Requires MT5 Later
+- broker heartbeat
+- account read
+- equity read
+- real demo broker order
+- live manual order
+- live AI assist
+- live AI auto-test
+
+7. Prevent confusion
+
+Every place where live trading appears, show:
+
+“Live broker execution requires MT5 desktop/VPS bridge setup. You can continue testing the app in paper/demo simulator mode.”
+
+8. Run simulator test ladder now
+
+Run this sequence:
+
+1. Full route smoke test
+2. Onboarding test
+3. Demo manual simulator test
+4. Demo AI assist simulator test
+5. Demo AI auto simulator test
+6. Risk governor rejection test
+7. Kill switch test
+8. Journal/calendar update test
+9. Learning loop update test
+10. Audit log test
+
+9. Generate report
+
+Generate:
+
+MT5-DEFERRED APP TESTING REPORT
+
+Include:
+
+- full app open: yes/no
+- MT5 bridge connected: no
+- MT5 setup deferred: yes
+- paper testing ready: yes/no
+- demo manual simulator ready: yes/no
+- demo AI simulator ready: yes/no
+- risk governor pass/fail
+- kill switch pass/fail
+- journal pass/fail
+- calendar pass/fail
+- learning loop pass/fail
+- audit logs pass/fail
+- live broker execution locked: yes
+- exact remaining MT5 setup needed later
+
+Hard rules:
+- Do not fake MT5 connection.
+- Do not place real orders.
+- Do not unlock live money.
+- Do not weaken guards.
+- Do not remove kill switch.
+- Do not bypass placeLiveOrderGuarded().

@@ -1,0 +1,138 @@
+The real iPhone Safari test still failed. Do not move forward.
+
+Important: Replit’s internal verification said the fix passed, but the deployed Safari app still shows the old behavior. So this is likely one of these issues:
+1. The deployed/live frontend bundle is not using the updated code.
+2. The ARX AI popup is using a different chat/voice route than the one tested.
+3. The system prompt change was applied to the wrong route.
+4. A persisted localStorage/browser preference is forcing autoListen=false.
+5. TTS is still speaking the tool-planning message before final tool results.
+6. The UI is showing a stale assistant message before the final market summary.
+
+Observed on real iPhone Safari:
+- Status pill: SPEAKING
+- Mic pill: Mic off
+- Auto-listen pill: Auto-listen: off
+- Speak: on
+- URL bar shows mic is active
+- Assistant says: “Let’s get a full market picture. I’ll check the latest scanner opportunities...”
+- This is still a preamble/planning response.
+- It does not start directly with the final market answer.
+
+Fix the real live path, not just the isolated test path.
+
+Required investigation:
+1. Trace the exact route/component used by the floating ARX AI popup in the deployed app.
+2. Confirm whether the popup uses the same assistant route that was tested.
+3. Grep the entire codebase for preamble phrases:
+   - "I'll check"
+   - "Let’s get a full market picture"
+   - "Give me a moment"
+   - "I'll pull together"
+   - "Then we'll summarize"
+4. Remove or block these from the live broad-market response path.
+5. Inspect localStorage/sessionStorage keys related to:
+   - autoListen
+   - micEnabled
+   - voiceEnabled
+   - speakEnabled
+   - arx assistant settings
+6. If autoListen is undefined, default it to true when the popup opens.
+7. If autoListen is false only because the user explicitly toggled it off, respect that.
+8. But TTS/speaking must never set autoListen=false.
+9. During TTS, input capture may pause, but autoListen must remain enabled.
+10. After TTS ends or watchdog fires, resume listening automatically.
+
+Critical behavior change:
+Do not render or speak tool-planning text to the user.
+
+For broad market prompts, the app should do this:
+- Detect market intent.
+- Show a non-chat loading state like “Analyzing market…” if needed.
+- Run scanner/news/quote/candle tools.
+- Only create/speak the assistant chat bubble after the final summary is ready.
+- The final message must start directly with the market answer.
+- Never speak “I’ll check,” “Let me pull,” “Give me a moment,” or “Then we’ll summarize.”
+
+Voice/TTS requirements:
+- Speak mode should only speak final assistant answers.
+- Do not TTS planning/tool/status messages.
+- When TTS starts: status = Speaking, listening paused.
+- autoListen remains true.
+- When TTS ends or watchdog timeout fires: status = Listening, mic capture resumes.
+- If popup closes: mic capture stops immediately.
+- Reopening popup resumes listening automatically if autoListen is true and permission is granted.
+
+UI requirements:
+- Auto-listen pill must not show off after opening unless the user manually turned it off.
+- If localStorage has old autoListen=false from prior broken builds, add a one-time migration/reset:
+  - If the value was created by system pause or is missing/legacy, reset to true.
+  - Only preserve false if it came from an explicit user toggle.
+- Add a clear debug log:
+  - popupMounted
+  - autoListenPreferenceLoaded
+  - autoListenResolved
+  - micPermissionStatus
+  - listeningStarted
+  - ttsStarted
+  - ttsEnded
+  - ttsWatchdogFired
+  - listeningResumed
+  - marketIntentDetected
+  - planningMessageSuppressed
+  - toolsStarted
+  - toolsCompleted
+  - finalSummaryRendered
+  - finalSummarySpoken
+
+Market response requirements:
+For “What are today’s market conditions?” the final response must include:
+- Scanner source
+- News source
+- Quote/snapshot source if available
+- TwelveData candle context if available
+- Freshness label: Fresh / Delayed / Stale / Unavailable
+- Market bias
+- Strongest candidates
+- Weakest candidates
+- Safe paper-trade interpretation
+- Live execution lock status
+
+Testing requirements:
+Add or update tests for the exact live popup path:
+1. Floating ARX popup broad market prompt does not render a planning/preamble bubble.
+2. Floating ARX popup does not TTS planning/preamble text.
+3. Floating ARX popup waits for tool results before final assistant message.
+4. Final market answer includes scanner/news/freshness/source labels.
+5. TTS ending returns state to Listening.
+6. TTS watchdog returns state to Listening if iOS Safari onend fails.
+7. TTS never sets autoListen=false.
+8. Popup reopen resumes listening if permission is granted.
+9. Legacy autoListen=false caused by old system pause is migrated/reset.
+10. User-manual autoListen=false is still respected.
+11. No fake market data introduced.
+12. Scanner/provider logic untouched.
+13. TwelveData remains primary candle source.
+14. Finnhub remains quotes/news source.
+15. Live-trading rails untouched.
+
+Also force a fresh frontend build/restart and make sure Safari is not loading a stale bundle:
+- bump frontend build/version stamp visible in console or app debug
+- clear service worker/cache if one exists
+- restart frontend workflow
+
+Run:
+- pnpm --filter @workspace/trading-dashboard run typecheck --clean
+- pnpm run ci:guards
+- all relevant ARX popup, voice, TTS, SSE, and market-router tests
+
+QA report must include:
+1. Exact file/component used by the floating ARX AI popup.
+2. Whether the prior fix was applied to the wrong route or stale bundle.
+3. Whether localStorage had autoListen=false.
+4. What caused the planning message to appear.
+5. Confirmation planning messages are suppressed from chat bubbles and TTS.
+6. Confirmation only final market summaries are spoken.
+7. Confirmation autoListen remains on through Speaking.
+8. Confirmation TTS returns to Listening.
+9. Fresh frontend restart/build confirmation.
+10. Remaining manual Safari test steps.

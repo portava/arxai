@@ -1,0 +1,110 @@
+PHASE 22N — VERIFY CURRENT ARX AI + SCANNER BEHAVIOR, THEN PREPARE LIVE DATA CONNECTION
+
+Do NOT rebuild the AI, scanner, memory, voice, or user isolation systems.
+
+The agent report says the current checkpoint is complete and that:
+- scanner returns liveDataConnected:false
+- MT5 isConnected:false
+- market provider is nullProvider until API keys are set
+- trades/risk are scoped per user
+- disconnected tools do not break chat
+- memory does not override current market state
+
+Now verify this in the actual running app.
+
+STEP 1 — RUN REAL APP QA FIRST
+
+Test these exact user flows in the live app/browser:
+
+1. Open ARX AI.
+2. Ask:
+   “Check scanner and tell me what market is good to trade right now.”
+
+Expected:
+ARX should NOT fake a market.
+ARX should say live market data is not connected and it cannot honestly choose the best market right now.
+
+3. Then send:
+   “?”
+
+Expected:
+ARX should continue the scanner conversation, not explain the current page.
+
+4. Ask:
+   “I asked you a question earlier.”
+
+Expected:
+ARX should reference the unresolved scanner request, not say it cannot remember visible context.
+
+5. Click quick suggestion:
+   “Check MT5 bridge”
+
+Expected:
+ARX should check MT5 status and say it is waiting/not connected.
+
+6. Click quick suggestion:
+   “Analyze my trades”
+
+Expected:
+If no trades exist, ARX should say there are no trades yet and suggest running the first paper analysis.
+
+7. Use voice:
+   Speak: “Check scanner.”
+   Then speak: “What did you find?”
+
+Expected:
+Voice should use the same memory/context as text.
+
+8. Confirm Speak mode:
+   If Speak is on, ARX should speak the response out loud.
+   If TTS fails, text chat must still work and show a clean error only.
+
+STEP 2 — IF QA FAILS, FIX ONLY THE FAILING PART
+
+Do not rebuild anything.
+
+Only patch:
+- follow-up memory if “?” routes wrong
+- voice speakback if AI does not speak
+- auto-listen if mic does not listen automatically while popup is open
+- loading state if it gets stuck
+- tool routing if scanner/MT5/trades do not call their tools
+- UI message mapping if raw errors appear
+
+STEP 3 — VERIFY MARKET DATA SOURCE SETUP
+
+Inspect environment variables and existing provider logic.
+
+Check whether any of these are present:
+- FINNHUB_API_KEY
+- ALPHA_VANTAGE_API_KEY
+- POLYGON_API_KEY
+- NEWSAPI_API_KEY
+
+Report:
+- which provider integrations already exist in code
+- which provider is easiest to activate
+- which provider is best for scanner candles/OHLC
+- whether MT5 bridge can supply the scanner directly
+- whether the scanner should prioritize MT5 data over third-party APIs
+- what env vars are missing
+
+STEP 4 — DO NOT FAKE DATA
+
+Until a provider key or MT5 market data is connected:
+- scanner must return no live candidates
+- ARX must say market data is not connected
+- old scanner memory must be historical only
+- demo data must be clearly labeled demo
+
+STEP 5 — FINAL REPORT
+
+Report:
+- QA results for all 8 tests
+- what passed
+- what failed
+- files changed, if any
+- current market data provider status
+- which key/source should be connected next
+- whether MT5 can be used as scanner’s primary live data source
+- exact next step needed to make scanner return real candidates

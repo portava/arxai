@@ -1,0 +1,96 @@
+Continue after Build N — News & Economic Calendar Risk Filter.
+
+Now begin Build O — Portfolio & Exposure Risk Engine.
+
+Goal:
+Create a system that monitors total account exposure, correlated trades, open risk, and portfolio-level danger before allowing more trades.
+
+Tasks:
+
+1. Audit existing systems:
+- live positions
+- risk lock system
+- execution safety layer
+- broker health
+- trader scoring
+- dashboard risk cards
+- AI coach
+
+2. Add database models:
+
+portfolio_risk_snapshots:
+- id
+- user_id
+- account_balance
+- account_equity
+- open_positions_count
+- total_open_lot_size
+- total_unrealized_profit_loss
+- total_risk_amount
+- total_risk_percent
+- correlated_exposure_score
+- portfolio_risk_level
+- created_at
+
+correlation_risk_reports:
+- id
+- user_id
+- symbol_group
+- positions_in_group
+- total_exposure
+- direction_bias
+- correlation_warning
+- risk_level
+- ai_summary
+- created_at
+
+3. Risk levels:
+- LOW
+- MODERATE
+- HIGH
+- CRITICAL
+
+4. Add rules:
+- Warn if total account risk exceeds user limit
+- Warn if too many positions are open
+- Warn if multiple trades are exposed to the same currency/index/asset group
+- Warn if unrealized drawdown is near daily loss limit
+- Block new trades if portfolio risk is CRITICAL
+- Block new trades if total open risk exceeds max allowed risk
+- Flag correlated trades moving in the same direction
+
+5. API routes:
+- GET portfolio risk snapshot
+- POST generate portfolio risk snapshot
+- GET correlation risk report
+- POST generate correlation risk report
+- GET portfolio exposure history
+
+6. Frontend components:
+- Portfolio Risk Card
+- Exposure Breakdown Panel
+- Correlation Warning Banner
+- Account Risk Meter
+- Open Risk Summary
+
+7. Connect to:
+- Live Execution Safety Layer
+- Risk Lock System
+- Live Position Management
+- AI Coach
+- Dashboard
+
+Important:
+- Do not silently close trades.
+- Do not make guaranteed-profit claims.
+- Only block new trades when portfolio risk rules are violated.
+- Always explain why a trade is blocked or warned.
+
+Final output required:
+1. Files changed
+2. Tables/models added
+3. API routes added
+4. Frontend components added
+5. How portfolio risk connects to live execution safety
+6. Errors or limitations
+7. Recommended next build

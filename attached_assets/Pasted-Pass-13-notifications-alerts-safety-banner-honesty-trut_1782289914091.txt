@@ -1,0 +1,303 @@
+Pass 13 — notifications / alerts / safety-banner honesty truth. Read-only. No edits, no tasks, no migrations, no workflow changes.
+
+Goal:
+Prove whether ARX notifications, alerts, banners, toasts, modals, status chips, command messages, admin warnings, and Eleanor responses tell the truth about live trading, pending commands, broker confirmation, failures, rejected/stale states, simulator/demo mode, bridge health, emergency stop, and risk blocks.
+
+Important context from prior passes:
+- /api/me/trades/close can queue a broker CLOSE directly and write audit status:"EXECUTED" before broker confirmation.
+- ConfirmCloseModal treats queued close as success and dismisses immediately.
+- /mt5/command-result is the live EA callback route and does not reconcile trade_command_audit_log.
+- /mt5/command-result lacks monotonicity guard.
+- QuickTradeModal defaults SIMULATED and /me/trades/open cannot actually go live due stale MT5_BRIDGE_TOKEN gate.
+- executeInstant is the real safe live path for Eleanor/instant trade.
+- pending/conditional orders are draft-only / EA_UPGRADE_REQUIRED.
+- Win/Loss / analytics snapshot uses paper_orders.
+- Money paths are clean; reporting/audit/UI wording are the remaining honesty risks.
+- Do not call the assistant Ruby in report text except when quoting legacy code/file names. Report user-facing Ruby as Eleanor naming drift.
+
+Required proof areas:
+
+1. Notification and alert inventory
+Freshly locate every notification, toast, banner, alert, status chip, modal copy, warning, command result message, admin warning, and Eleanor response related to:
+- trade submitted
+- trade executed
+- order placed
+- close submitted
+- close executed
+- pending broker confirmation
+- rejected / failed / stale command
+- bridge offline
+- bridge stale
+- EA read-only
+- emergency stop
+- kill switch
+- live disabled
+- demo/simulator/paper mode
+- live-ready / trade-ready
+- investor blocked
+- non-approved trader blocked
+- risk block
+- conditional order armed
+- scanner signal execution
+- analytics / win-loss performance
+- account balance / withdrawable / allocation status
+
+For each relevant hit:
+- file + line
+- frontend/backend/notification service/log
+- user-facing or admin-facing
+- exact state it claims
+- source of truth it uses
+- classification
+
+2. Broker confirmation wording truth
+Audit every place the UI or backend says:
+- executed
+- filled
+- completed
+- closed
+- opened
+- success
+- submitted
+- queued
+- pending
+- sent
+- waiting for broker
+- broker confirmed
+- simulated fill
+
+Prove:
+- whether the message fires before or after broker/EA confirmation
+- whether queued commands are labeled as queued/pending, not executed
+- whether simulated fills are labeled simulated
+- whether close commands are called closed before confirmation
+- whether rejected or failed commands later correct user-facing status
+- whether stale/no-EA-response states are shown honestly
+
+3. Live vs simulator wording truth
+Audit all user-facing copy that mentions:
+- live
+- demo
+- simulated
+- paper
+- practice
+- real account
+- shared MT5
+- live bridge
+- trade-ready
+- live-enabled
+- training mode
+
+Prove:
+- whether approved live traders see LIVE as default or simulator as default
+- whether simulator-only surfaces are clearly labeled practice
+- whether PaperOrderTicket labels itself honestly
+- whether QuickTradeModal default SIMULATED is visible/honest
+- whether analytics/Win-Loss paper_orders source is labeled paper/practice
+- whether any screen says live while backend posts SIMULATED or cannot go live
+
+4. Bridge / EA / heartbeat status truth
+Trace every status indicator for:
+- MT5 connected/disconnected
+- bridge connected/disconnected
+- heartbeat age
+- stale bridge
+- EA online/offline
+- EA ReadOnlyMode
+- broker token missing
+- command queue stale
+- master bridge status
+- approved trader live state
+
+For each:
+- exact endpoint/source
+- freshness threshold
+- last-updated display
+- whether stale is distinguished from offline
+- whether user/admin can see why live trading is blocked
+- whether stale data can look fresh
+
+5. Emergency stop / kill-switch banner truth
+Find every emergency stop / kill-switch / live-disabled warning.
+
+Prove:
+- whether banners appear on every live-capable surface
+- whether close paths show correct messaging
+- whether Eleanor still suggests trades when live execution is disabled, and whether it says advisory only
+- whether admin sees global stop state
+- whether user sees per-user disabled/suspended state
+- whether button disabled reasons are specific and honest
+
+6. Risk-block and permission-block messaging truth
+Audit messages for:
+- investor blocked
+- non-approved trader blocked
+- user not live-activated
+- role/product access blocked
+- symbol not allowed
+- lot cap exceeded
+- missing stop loss
+- insufficient margin/balance
+- max exposure exceeded
+- bridge token missing
+- stale heartbeat
+- one-click not armed
+- AI_ASSISTED not enabled
+- vague Eleanor command
+
+Prove:
+- whether block reason is specific
+- whether the UI says “no order was sent”
+- whether backend reason propagates to frontend
+- whether Eleanor replies with the exact block reason
+- whether generic success hides a backend rejection
+
+7. Eleanor response honesty
+Trace Eleanor responses for:
+- advisory recommendation
+- trade prepared
+- trade submitted
+- live command accepted
+- broker confirmation pending
+- broker confirmed
+- broker rejected
+- blocked command
+- vague/incomplete command
+- conditional plan armed
+- simulator/test response
+
+Prove:
+- whether Eleanor ever says executed before broker confirmation
+- whether Eleanor distinguishes suggestion from user command
+- whether Eleanor exposes pending/rejected/stale states
+- whether Eleanor can honestly explain why live trading is blocked
+- whether legacy Ruby copy is user-facing naming drift
+
+8. Trade lifecycle UI truth
+Audit:
+- QuickTradeModal
+- ConfirmCloseModal
+- MyOpenTradesPanel
+- trade detail
+- manual ticket
+- LiveSharedTradeTicket
+- scanner-to-ticket
+- pending order drafts
+- command history if present
+- admin command queue/status pages
+
+For each:
+- endpoint used
+- optimistic UI behavior
+- refresh cadence
+- whether pending/rejected/stale states are displayed
+- whether queued close temporarily disappears
+- whether rejected close reappears honestly
+- whether success toasts are broker-confirmed or only request-accepted
+- whether manual refresh pulls broker truth or app cache
+
+9. Financial/reporting banner truth
+Audit user/admin copy for:
+- realized P&L
+- unrealized P&L
+- account analytics
+- Win/Loss Report
+- trade history
+- investor balance
+- withdrawable
+- payable
+- allocations
+- waterfall/manual run
+- indicative estimate
+- finalized NAV
+- stale balance
+
+Prove:
+- whether paper/sim analytics are labeled practice
+- whether indicative vs finalized is clearly separated
+- whether stale balance/floating P&L is labeled
+- whether withdrawable excludes unsettled P&L and says so
+- whether admin manual runs are labeled manual
+- whether user can confuse simulator performance with live performance
+
+10. Notification service / persistence truth
+Find backend notification/event systems.
+
+Prove:
+- what events create notifications
+- whether notifications are persisted
+- whether trade status notifications are updated or append-only
+- whether duplicate/late EA callbacks can create contradictory notifications
+- whether failed/rejected/stale command notifications exist
+- whether admin alerts fire for bridge stale/offline/emergency stop
+- whether users get notified when pending commands fail or time out
+
+11. CI/test coverage
+Find tests/checks/scripts that would catch:
+- UI saying executed before broker confirmation
+- close queued toast saying closed/executed
+- simulated fill displayed as live execution
+- analytics paper_orders shown as live performance
+- stale bridge displayed as connected/fresh
+- emergency stop banner missing from live surface
+- backend rejection hidden behind frontend success
+- Eleanor saying executed before broker confirmation
+- vague Eleanor command submitting trade
+- conditional draft displayed as executable
+- rejected close not reappearing
+- command timeout lacking user notification
+- user-facing Ruby naming drift
+- missing “no order was sent” on block messages
+
+Classify coverage:
+- strong
+- weak
+- not covered
+- located but assertion not proven
+
+12. Classification standard
+Use same class system:
+- Class 1: clean/proven safe
+- Class 2: active risk
+- Class 3: defense-in-depth or integrity/honesty gap
+- Class 4: dormant/config-gated risk
+- Class 5: unresolved/deferred
+
+Required output format:
+
+PASS 13 — Notifications / Alerts / Safety-Banner Honesty Truth — REPORT
+
+Sections:
+1. Executive verdict
+2. Notification/alert inventory
+3. Broker-confirmation wording truth
+4. Live-vs-simulator wording truth
+5. Bridge / EA / heartbeat status truth
+6. Emergency stop / kill-switch banner truth
+7. Risk/permission-block messaging truth
+8. Eleanor response honesty
+9. Trade lifecycle UI truth
+10. Financial/reporting banner truth
+11. Notification persistence truth
+12. CI/test coverage
+13. New findings added to held fix-ledger
+14. Net risk ranking
+15. Next remaining audit pass recommendation
+
+Important:
+- Read-only only.
+- Do not edit files.
+- Do not create tasks.
+- Do not run migrations.
+- Do not change workflows.
+- Do not rely on rg/grep matched text if token mangling appears. Use filename/line discovery only, then read files directly.
+- Give exact file:line proof for every claim.
+- If a claim cannot be proven, mark it Class 5 instead of assuming.
+- Do not call the assistant Ruby in the report except when quoting legacy code/file names. Report user-facing Ruby as Eleanor naming drift.
+
+After Pass 13:
+Continue remaining audit sequence unless a Class 2 issue requires pausing for acceptance.
+
+Recommended remaining passes:
+Pass 14 — market-data / feed-status / economic-calendar honesty truth.
+Pass 15 — final consolidation and fix-task plan.

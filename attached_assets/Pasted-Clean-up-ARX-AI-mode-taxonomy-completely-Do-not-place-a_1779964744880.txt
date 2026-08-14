@@ -1,0 +1,199 @@
+Clean up ARX AI mode taxonomy completely.
+
+Do not place any trade.
+Do not insert arx_live_commands.
+Do not weaken the 16-gate evaluator, liveTrading chokepoint, env-AND-operator resolver, allocation checks, kill switch, or audit logging.
+
+GOAL:
+ARX should have only three active user-facing trading modes:
+
+1. DEMO
+2. LIVE
+3. LIVE SHARED
+
+Remove these as user-facing modes/partitions:
+- Watch Only
+- View Only
+- Paper
+- Paper Trading
+- Paper Only
+- Analysis Only as a mode
+- Scanner Off as a mode
+- Request Access as a mode
+
+Those can exist only as plain status messages, disabled reasons, or button states where needed — never as trading modes.
+
+1. AUDIT ALL MODE LABELS
+Search the codebase for:
+- Watch Only
+- View Only
+- WATCH_ONLY
+- VIEW_ONLY
+- watch_only
+- view_only
+- Paper
+- PAPER
+- paper
+- Analysis Only
+- Scanner Off
+- Request Live Bridge Access as a mode
+- mode labels
+- tradingMode options
+- accountMode options
+- executionMode options
+
+Classify every reference as:
+A) active user-facing trading mode
+B) disabled reason/status copy
+C) internal legacy compatibility
+D) market data/tradability label
+E) admin-only technical fallback
+F) dead code
+
+2. FINAL MODE SET
+Every user-facing mode selector, pill, badge, trade ticket, scanner, Ruby explanation, admin permission screen, and account status must resolve to only:
+
+- Demo
+- Live
+- Live Shared
+
+No other trading mode labels.
+
+3. REMOVE WATCH/VIEW ONLY FROM PRODUCT LANGUAGE
+Do not use:
+- Watch Only
+- View Only
+- Watch Mode
+- View Mode
+
+If the user cannot trade, show a direct reason instead:
+- “Trading access is not enabled.”
+- “Live access is pending approval.”
+- “Live bridge access is required.”
+- “Account is frozen.”
+- “Scanner trading is disabled.”
+- “This market cannot be traded through the current MT5 bridge.”
+
+But do not turn any of those into modes.
+
+4. REMOVE PAPER FROM PRODUCT LANGUAGE
+Paper is not part of ARX anymore.
+
+Do not show:
+- Paper
+- Paper Trading
+- Paper Only
+- PAPER ONLY
+- paper-trading
+
+If old internal values exist, normalize them to Demo silently:
+- paper → demo
+- PAPER → DEMO
+- PAPER_ONLY → DEMO_ONLY internally if needed, but do not show that to users
+
+5. DO NOT CREATE NEW PARTITIONS
+Do not replace Watch Only with View Only.
+Do not replace Paper Only with Demo Only as a fourth category.
+Do not create extra mode buckets.
+
+Allowed user-facing mode labels only:
+- Demo
+- Live
+- Live Shared
+
+Everything else is just a blocker/status/reason, not a mode.
+
+6. MARKET DATA LABELS
+For symbols/markets, keep labels simple and separate from trading mode.
+
+Allowed market/source labels:
+- Data via Deriv
+- Tradable via MT5
+- Not tradable through current bridge
+
+Do not show “Analysis Only” as a mode.
+If a market cannot be traded, show:
+“This market is not tradable through the current MT5 bridge.”
+
+7. ADMIN UI
+Admin Manage Access should not show extra modes.
+
+Admin controls should be:
+- Demo Access: ON/OFF
+- Live Access: ON/OFF
+- Live Shared Access: ON/OFF
+- Account Frozen: ON/OFF
+- Trading Frozen: ON/OFF
+- Scanner Trading Enabled: ON/OFF
+- Ruby/AI Trading Enabled: ON/OFF
+
+But the user-facing mode should still only be:
+- Demo
+- Live
+- Live Shared
+
+8. RUBY WORDING
+Ruby should explain:
+
+“ARX supports Demo, Live, and Live Shared trading.”
+
+Ruby should not mention:
+- Paper
+- Watch Only
+- View Only
+- Paper Trading
+- Analysis Only mode
+
+If something is blocked, Ruby should say the reason:
+- “Live access is not approved yet.”
+- “Your live shared bridge allocation is not active.”
+- “The bridge is not ready.”
+- “This symbol is not tradable through the current MT5 bridge.”
+
+9. ROUTE CLEANUP
+If routes exist like:
+- /paper-trading
+- /watch-only
+- /view-only
+
+Remove them from navigation and redirect safely to:
+- /trade?mode=demo
+or the current main trade page.
+
+Do not expose these routes as product pages.
+
+10. SAFETY
+Do not remove actual safety checks.
+
+Keep backend controls for:
+- frozen account
+- disabled trading
+- missing approval
+- missing allocation
+- bridge not ready
+- unsupported symbol
+- kill switch
+- broker execution off
+- risk gate failures
+
+But these should appear as blocker reasons, not modes.
+
+11. ACCEPTANCE TEST
+Before stopping, verify:
+- Only Demo, Live, and Live Shared appear as trading modes.
+- Watch Only does not appear anywhere user-facing.
+- View Only does not appear anywhere user-facing.
+- Paper/Paper Trading/Paper Only does not appear anywhere user-facing.
+- Analysis Only does not appear as a trading mode.
+- Scanner Off does not appear as a trading mode.
+- Admin cannot assign Watch/View/Paper as a mode.
+- Ruby only names Demo, Live, and Live Shared as modes.
+- Trade ticket only shows Demo, Live, and Live Shared mode pills.
+- Scanner only shows Demo, Live, and Live Shared as execution choices.
+- Blocked users receive direct reasons instead of extra mode labels.
+- Data-only markets are blocked with a direct reason, not a mode.
+- arx_live_commands count does not increase.
+- No live trade is placed.
+- Login, Ruby, scanner, trade modal, bridge status, allocations, admin queue, and bottom nav still work.
+
+Run typecheck/build/tests and fix anything that fails before stopping.

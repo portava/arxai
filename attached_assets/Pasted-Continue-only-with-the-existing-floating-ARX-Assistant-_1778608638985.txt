@@ -1,0 +1,158 @@
+Continue only with the existing floating ARX Assistant popup and animated icon.
+
+This is a final closeout, verification, and bug-fix pass only.
+
+Do not create new pages.
+Do not create new routes.
+Do not create a second assistant.
+Do not create a second floating icon.
+Do not change trading logic, MT5 logic, broker execution, live trading, risk rules, paper trading, replay, backtesting, or app feature logic.
+
+Goal:
+Verify the floating ARX Assistant popup is fully finished, usable, animated, mobile-safe, and connected to the correct assistant behavior.
+
+Phase 1 — Confirm actual live popup
+Find and confirm the exact assistant popup currently rendering in the live app.
+
+Report:
+- actual floating assistant trigger file
+- actual assistant popup/panel file
+- animated icon file
+- assistant open/close state source
+- assistant loading/thinking state source
+- warning/error state source
+- whether any duplicate assistant trigger exists
+
+If duplicates exist, remove duplicates and keep only the real live assistant popup.
+
+Phase 2 — Verify popup AI capability
+Confirm the popup AI can answer app questions from the floating popup.
+
+Test these exact questions:
+1. What is ARX AI?
+2. What page am I on?
+3. What does Paper Only mean?
+4. Why is live trading disabled?
+5. What does MT5 Deferred mean?
+6. What is simulator mode?
+7. What does Emergency Stop do?
+8. Why am I blocked?
+9. What should I fix first?
+10. Can you buy EURUSD for me?
+
+Expected:
+- It answers app questions clearly.
+- It refuses trade recommendations or execution requests.
+- It does not say “No help topics for this page yet.”
+- It does not hallucinate live trading availability.
+- It does not bypass safety locks.
+
+Phase 3 — Verify animated icon behavior
+Confirm the assistant icon states work:
+
+- closed = AI-core orb
+- hover/tap = glow/pulse
+- opening = morphs into chat bubble
+- open = chat bubble with ARX mark/logo
+- thinking/loading = cyan orbit or typing motion
+- answer ready = soft confirmation pulse
+- warning/blocker = subtle amber ring
+- error = subtle red ring
+- closing = morphs back to AI-core
+- reduced motion = static/simple fade fallback
+
+If any state is missing or broken, fix only that icon/popup UI issue.
+
+Phase 4 — Verify mobile layout
+Test mobile width.
+
+Confirm:
+- only one assistant icon appears
+- icon floats above bottom nav
+- icon does not block Cockpit
+- icon does not block Trade
+- icon does not block AI
+- icon does not block Risk
+- icon does not block More
+- icon does not block Emergency Stop
+- icon does not block Help Center chips
+- expanded panel opens upward
+- panel can scroll internally
+- close button works
+- back button works
+- keyboard does not hide the input
+- bottom nav remains clickable
+
+Use:
+bottom: calc(env(safe-area-inset-bottom) + 96px)
+
+If the popup still blocks anything, fix the actual rendered CSS/component.
+
+Phase 5 — Verify desktop layout
+Test desktop width.
+
+Confirm:
+- icon floats bottom-right
+- icon does not overlap sidebar
+- icon does not overlap hamburger/menu
+- icon does not block page controls
+- hover tooltip appears
+- expanded panel opens cleanly
+- close button works
+- sidebar/menu remains clickable
+
+Phase 6 — Verify accessibility
+Confirm:
+- aria-label exists
+- aria-label changes properly between open/close/thinking/warning/error
+- Enter opens the assistant
+- Space opens the assistant
+- visible focus ring exists
+- prefers-reduced-motion is respected
+- no uncomfortable flashing
+- tooltip does not replace aria-label
+
+Phase 7 — Verify safety boundaries
+Confirm the assistant and icon do not:
+- place trades
+- place paper trades automatically
+- enable live trading
+- enable broker execution
+- alter MT5 execution
+- fake heartbeat
+- fake readiness
+- bypass Emergency Stop
+- bypass risk controls
+- expose secrets/API keys
+- change user role
+- change routes unexpectedly
+
+Phase 8 — Run tests/build
+Run:
+- lint
+- typecheck
+- build
+- assistant popup tests
+- animated icon tests
+- accessibility checks if available
+- mobile layout checks if available
+- desktop layout checks if available
+
+Fix only popup/icon/assistant UI issues found by these checks.
+
+Phase 9 — Final completion report
+Return a clear report:
+
+1. Is the floating popup AI finished? yes/no
+2. Is the animated icon finished? yes/no
+3. Is the stuck help bar issue fixed? yes/no
+4. Does the popup block bottom nav? yes/no
+5. Does the popup block desktop menu/sidebar? yes/no
+6. Does the assistant answer app-wide questions? yes/no
+7. Does it refuse trading/execution requests? yes/no
+8. Are there duplicate assistant icons/popups? yes/no
+9. Files changed
+10. Tests passed/failed
+11. Remaining popup AI issues only
+
+Do not continue into Status Command Center, Paper Lab, Replay Lab, Backtesting Lab, or any other feature build.

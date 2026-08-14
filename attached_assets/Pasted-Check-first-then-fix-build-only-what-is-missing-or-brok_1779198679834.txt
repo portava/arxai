@@ -1,0 +1,168 @@
+Check first, then fix/build only what is missing or broken.
+
+Do not blindly rebuild.
+Do not replace working systems.
+Do not touch live execution.
+Do not auto-place live trades.
+Do not enable public master live trading.
+Do not bypass master live user approval toggles.
+Do not expose secrets.
+Do not break the app to satisfy a test.
+arx_live_commands must remain unchanged before/after.
+
+Current known state:
+- Staging dry run reported OVERALL PASS.
+- 23/24 suites passed.
+- 1 allowed fail was pre-existing.
+- arx_live_commands stayed 0 → 0.
+- Per-user account shell is already built and 14/14 PASS.
+- Several items are PARTIAL or outstanding:
+  1. Reconciliation Center still needs completion/verification.
+  2. userReadinessState engine + 4 AI readiness tools are needed for onboarding.
+  3. Ruby getLaunchReadiness tool is still needed.
+  4. test:scanner-selected-market has a typecheck/runtime hang regression.
+  5. test:ruby-voice-trading-guardrails has a typecheck regression.
+  6. Phase B mode-separation Gap A still lacks disclosure check.
+  7. Some script typecheck regressions are pre-existing rootDir/import issues.
+  8. Mobile-critical flows still need stronger automated or guided verification.
+
+Task:
+Perform an audit-first targeted repair.
+
+PHASE 0 — CHECKPOINT + SAFETY SNAPSHOT
+
+1. Create checkpoint.
+2. Snapshot:
+   - arx_live_commands count
+   - live/master bridge mode
+   - current connected bridge id
+   - env live master switch status
+   - kill switch/emergency stop status
+   - current failing/partial test list
+3. Confirm no live dispatch endpoints are called during this task.
+
+PHASE 1 — INVENTORY
+
+Inspect the codebase and classify each item as:
+- already built and passing
+- built but failing
+- partially built
+- missing
+- unsafe to touch right now
+
+Do this for:
+- Reconciliation Center
+- userReadinessState engine
+- 4 AI readiness tools
+- Ruby getLaunchReadiness tool
+- scanner-selected-market test/runtime
+- ruby-voice-trading-guardrails test/runtime
+- Phase B disclosure check
+- script typecheck/rootDir issue
+- mobile-critical flows
+- onboarding flow
+- selected-market panel
+- Ruby voice auto-listen
+- master bridge live user approval gates
+- current connected bridge master routing
+
+Report what already exists before editing.
+
+PHASE 2 — FIX EXISTING BROKEN/PARTIAL ITEMS FIRST
+
+If a system already exists, fix it in place. Do not create duplicates.
+
+A. Reconciliation Center
+If already present, finish missing pieces:
+- admin-only page/API protection
+- aggregator endpoint
+- detection categories
+- dismiss/link/manual resolve actions
+- reason-required enforcement
+- admin audit logging
+- admin Ruby explanation
+- user-safe Ruby explanation
+- no secrets leakage
+
+If not present, build the minimal version behind admin-only routes.
+
+B. scanner-selected-market
+Fix the typecheck regression and runtime hang.
+Do not remove selected-market features.
+Do not spam AI calls.
+Keep cached/deterministic Ruby explanation.
+
+C. ruby-voice-trading-guardrails
+Fix typecheck regression.
+Keep voice persona guarded.
+Ruby voice must not place trades without explicit user action and all server gates.
+
+D. Phase B disclosure check
+Add missing disclosure check to the 16-gate live readiness evaluator.
+Live trading must require risk disclosure before dispatch.
+
+E. userReadinessState + 4 AI readiness tools
+Check if any pieces already exist.
+If missing, build the minimal engine:
+- onboarding progress
+- live readiness
+- bridge readiness
+- account/profile readiness
+- risk settings readiness
+
+Add Ruby tools:
+- getUserReadinessState
+- getBridgeReadiness
+- getTradingReadiness
+- getLaunchReadiness
+
+F. Script typecheck/rootDir issue
+Fix only if safe and isolated.
+If fixing rootDir/imports risks breaking the app, document it as a tracked tech-debt item and keep canonical package typechecks green.
+
+PHASE 3 — BUILD ONLY NEW SAFE PIECES
+
+Only build missing pieces if they do not break working flows.
+
+Rules:
+- Feature flag new admin/diagnostic surfaces if needed.
+- Prefer additive routes/components.
+- Do not mutate live execution logic unless adding safety checks.
+- Do not alter EA code.
+- Do not alter working bridge dispatch unless required by a failing gate.
+- Do not change current connected bridge selection unless test proves it is wrong.
+
+PHASE 4 — FULL QA
+
+Run:
+- ci guards
+- api-server typecheck
+- trading-dashboard typecheck
+- master bridge demo tests
+- master bridge live tests
+- master live access tests
+- one-click/concurrency tests
+- selected market scanner tests
+- Ruby voice guardrails tests
+- onboarding/readiness tests
+- reconciliation center tests
+- position side-card tests
+- full staging dry run orchestrator
+
+Required final proof:
+- pass/fail matrix
+- list of what was already there
+- list of what was fixed
+- list of what was newly built
+- list of anything intentionally not touched and why
+- arx_live_commands before/after count
+- confirmation no live trade fired
+- confirmation no secrets leaked
+- confirmation app still starts and main routes load
+
+If all critical gates pass, output:
+ARX_AUDIT_FIX_BUILD_READY
+
+If anything remains, output:
+ARX_AUDIT_FIX_BUILD_NOT_READY
+with exact blockers, but do not leave the app broken.

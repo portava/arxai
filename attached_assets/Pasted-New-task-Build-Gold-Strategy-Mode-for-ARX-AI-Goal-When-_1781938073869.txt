@@ -1,0 +1,586 @@
+New task: Build Gold Strategy Mode for ARX AI.
+
+Goal:
+When a user selects Gold / XAUUSD / gold futures / metals-gold symbols, ARX should activate a gold-specific strategy layer instead of treating gold like a normal forex pair.
+
+Gold Mode should feed:
+- Eleanor / custom AI assistant chart read
+- Scanner Truth
+- Strategy Engine
+- Pattern Truth
+- Trendline Truth
+- Pivot Truth
+- Entry Truth
+- OrderFlow Truth
+- Timing Truth
+- Backtesting
+- Forward Testing
+- Auto Bot evaluation
+- Risk dashboard
+- Chart overlays
+
+Core product rule:
+Gold is its own asset profile.
+
+Do not treat Gold exactly like EURUSD, GBPUSD, US30, or Deriv synthetics.
+
+Gold Mode should answer:
+1. Is gold trending, ranging, sweeping liquidity, reversing, or exhausting?
+2. Is the move driven by macro/news, dollar/yields, safe-haven flow, or technical structure?
+3. Is this a clean entry or a wick trap?
+4. Is price too extended to chase?
+5. Is the current session good for gold?
+6. Is spread/ATR too wide for the proposed stop?
+7. Is the setup valid for scalp, intraday, or swing?
+
+SECTION 1 — Gold asset profile
+
+Create:
+GoldAssetProfile
+
+Fields:
+- assetClass: gold
+- symbols:
+  - XAUUSD
+  - GOLD
+  - GC futures if supported
+  - micro gold futures if supported later
+- quoteCurrency: USD
+- volatilityProfile: high
+- wickProfile: high
+- newsSensitivity: high
+- dollarSensitivity: high
+- yieldSensitivity: high
+- safeHavenSensitivity: high
+- centralBankSensitivity: medium/high
+- liquidityProfile: deep but fast-moving
+- defaultOrderFlowMode:
+  - true_order_flow if futures/depth provider exists
+  - proxy_order_flow for CFD/spot broker feeds
+- minimumCandleCount:
+  - scalp: 300+
+  - intraday: 500+
+  - swing: 1000+
+- defaultRiskWarning:
+  Gold can move fast, wick hard, and invalidate tight stops quickly.
+
+Gold Mode must use wider ATR-aware logic than normal forex.
+
+SECTION 2 — Gold macro drivers
+
+Gold Strategy Mode should track these driver groups:
+
+A. U.S. dollar pressure
+- DXY / dollar index if available
+- USD strength/weakness
+- major USD pair confirmation
+- dollar breakout/breakdown
+
+Rule:
+Strong dollar usually pressures USD-priced gold.
+Weak dollar usually supports USD-priced gold.
+But do not make this a trade signal by itself.
+
+B. U.S. yields / Fed expectations
+- Treasury yields if available
+- real yields if available
+- FedWatch / rate expectation if available
+- FOMC events
+- CPI / PCE / NFP / GDP / retail sales / unemployment
+
+Gold is sensitive to interest-rate expectations because it does not pay yield. CME’s gold page specifically lists FOMC, CPI, NFP, GDP, central-bank announcements, and the U.S. dollar index as key reports/references for gold.  [oai_citation:2‡CME Group](https://www.cmegroup.com/markets/metals/precious/gold.html) CME FedWatch can be used as a source for implied probabilities of Fed rate moves.  [oai_citation:3‡CME Group](https://www.cmegroup.com/markets/interest-rates/cme-fedwatch-tool.html)
+
+C. Safe-haven / geopolitical risk
+- geopolitical headlines
+- financial stress
+- crisis risk
+- risk-off flows
+- fiscal stress
+
+World Gold Council notes that interest rates and geopolitical tensions play a significant role in gold pricing, while fiscal concerns and market volatility can also support gold.  [oai_citation:4‡World Gold Council](https://www.gold.org/goldhub/gold-focus/2025/06/you-asked-we-answered-are-fiscal-concerns-driving-gold)
+
+D. Physical/institutional demand context
+- central-bank reserves/purchases if available
+- ETF flows if available
+- futures positioning/open interest if available
+- demand/supply updates
+
+World Gold Council provides datasets for gold ETF flows, central-bank reserves, futures positioning, historical demand/supply, gold prices, volatility, correlations, and trading volumes.  [oai_citation:5‡World Gold Council](https://www.gold.org/goldhub/data)
+
+Macro verdict:
+GoldMacroVerdict:
+- dollarPressure: bullish_for_gold / bearish_for_gold / neutral / unknown
+- yieldPressure: bullish_for_gold / bearish_for_gold / neutral / unknown
+- fedRisk: high / medium / low / unknown
+- newsRisk: high / medium / low / unknown
+- safeHavenFlow: supportive / negative / neutral / unknown
+- macroBias: bullish / bearish / neutral / mixed / unavailable
+- confidence
+- warnings[]
+
+Rules:
+- Macro supports or caps the thesis.
+- Macro cannot create entry alone.
+- Missing macro data must be labeled unavailable.
+- High-impact news near entry should block or downgrade scalps.
+
+SECTION 3 — Gold session model
+
+Gold Mode should classify timing by session:
+
+Sessions:
+- Asia
+- London
+- New York
+- London/New York overlap
+- post-news expansion
+- late-session fade/chop
+
+Gold session behavior rules:
+Asia:
+- often range-building or liquidity-setting
+- mark Asian high/low
+- do not overtrade midpoint chop
+- prepare for London sweep/break behavior
+
+London:
+- often first expansion/sweep period
+- watch Asian range high/low
+- identify sweep-and-reclaim
+- avoid first fakeout without confirmation
+
+New York:
+- major USD data/news impact
+- strongest move often around U.S. data or NY open
+- watch continuation vs reversal after London move
+- require news-spread checks
+
+Overlap:
+- high volatility
+- best opportunity but also highest wick risk
+- require tighter confirmation quality
+
+TimingTruth for gold:
+- session
+- asianRangeHigh
+- asianRangeLow
+- londonSweepDetected
+- nyOpenRange
+- newsWindowActive
+- timingStatus:
+  - good
+  - early
+  - late
+  - wait_for_close
+  - wait_for_retest
+  - news_blocked
+  - spread_blocked
+  - wick_risk_high
+  - exhausted
+- warnings[]
+
+SECTION 4 — Gold technical tactics
+
+Gold Mode should prioritize these tactics:
+
+1. Liquidity sweep + reclaim
+Best for:
+- reversals
+- scalps
+- trap detection
+
+Bullish version:
+- price sweeps below prior low/support/Asian low
+- fails to continue lower
+- reclaims level
+- confirms with close/retest
+- target toward midpoint, pivot, prior high, or liquidity
+
+Bearish version:
+- price sweeps above prior high/resistance/Asian high
+- fails to continue higher
+- rejects/reclaims lower
+- confirms with close/retest
+- target toward midpoint, pivot, prior low, or liquidity
+
+2. Breakout + retest
+Gold breakouts often fake out, so Gold Mode should prefer:
+- close beyond level
+- retest hold/rejection
+- momentum confirmation
+- spread acceptable
+- not into immediate opposing level
+
+3. Trend pullback
+For trending gold:
+- identify HTF direction
+- wait for pullback to structure/pivot/trendline
+- confirm rejection/continuation
+- use ATR-based stop beyond invalidation
+- avoid chasing extension
+
+4. Wick rejection at key level
+Gold wick behavior is important.
+Valid only if:
+- wick occurs at strong level
+- body closes back inside/rejects
+- next candle confirms
+- target room exists
+
+5. News impulse continuation/fade
+Only after news window behavior is classified:
+- first spike often unreliable
+- wait for spread normalization
+- wait for candle close/retest
+- classify as continuation, reversal, or no-trade
+
+6. Range edge bounce
+Valid only at range edge:
+- no midpoint entries
+- require rejection candle
+- target midpoint/other side
+- avoid if range is compressing before news
+
+7. Exhaustion fade
+Gold can overextend fast.
+Fade only if:
+- ATR extension extreme
+- reversal structure appears
+- wick rejection appears
+- support/resistance/pivot agrees
+- confirmation appears
+Otherwise mark “too late, do not chase.”
+
+SECTION 5 — Gold candlestick emphasis
+
+Gold Mode should weight these candles strongly when they appear at major levels:
+
+Bearish:
+- shooting star
+- bearish engulfing
+- bearish pin bar
+- evening star
+- tweezer top
+- long upper wick rejection
+- bearish outside bar
+
+Bullish:
+- hammer
+- bullish engulfing
+- bullish pin bar
+- morning star
+- tweezer bottom
+- long lower wick rejection
+- bullish outside bar
+
+Shooting Star Gold Rule:
+A shooting star on gold is meaningful only when:
+- it appears after a bullish push
+- it forms at resistance, prior high, R1/R2/R3, upper trendline, or liquidity sweep
+- upper wick is large relative to body
+- body closes near low
+- next candle confirms below the candle low or structure breaks
+- price is not mid-range
+
+Gold Mode should not short a shooting star blindly.
+
+Example:
+Decision: WAIT / Conditional SELL
+Why: Gold printed a shooting star at resistance, but confirmation is required.
+Confirmation: Sell thesis strengthens only if price closes below the shooting star low or retests and rejects.
+Invalidation: Cancel if gold closes above the wick high.
+Risk Note: Gold wicks heavily; do not enter from candle shape alone.
+
+SECTION 6 — Gold-specific risk model
+
+Gold needs a different risk layer.
+
+GoldRiskVerdict:
+- atrState: normal / elevated / extreme
+- wickRisk: low / medium / high
+- spreadRisk: normal / wide / unstable
+- newsRisk: low / medium / high
+- stopDistanceStatus: too_tight / acceptable / too_wide
+- positionSizeAdjustment
+- maxScalpRiskSuggestion
+- riskWarning
+
+Rules:
+- Tight stops should be downgraded during high ATR.
+- Spread widening blocks scalp entries.
+- High-impact USD news blocks or downgrades unless strategy explicitly allows post-news mode.
+- If price is too far from entry trigger, mark too_late.
+- If stop must be unrealistically wide, mark poor quality.
+- If target room is smaller than required risk/reward, block setup.
+
+Gold stop logic:
+- stop beyond wick high/low for rejection setups
+- stop beyond sweep extreme for liquidity sweeps
+- stop beyond retest failure level for breakout/retest
+- stop beyond structure, not arbitrary pips
+- use ATR buffer
+
+SECTION 7 — Gold strategy types
+
+Create these default Gold Strategy templates:
+
+1. Gold Liquidity Sweep Reversal
+Use when:
+- price sweeps prior high/low
+- rejects/reclaims level
+- confirmation candle forms
+- target room exists
+- spread/news acceptable
+
+2. Gold Breakout Retest Continuation
+Use when:
+- price breaks key level
+- closes beyond it
+- retests successfully
+- momentum supports continuation
+- not too extended
+
+3. Gold Trend Pullback Continuation
+Use when:
+- HTF trend is clear
+- LTF pulls back into structure
+- rejection candle confirms
+- risk/reward acceptable
+
+4. Gold Range Edge Bounce
+Use when:
+- market is ranging
+- price reaches range high/low
+- wick rejection appears
+- target room to midpoint/opposite side
+
+5. Gold News Volatility Guard
+Use when:
+- major USD news is near or active
+- block normal strategies
+- wait for spread/candle stabilization
+- optionally classify post-news continuation/fade after confirmation
+
+6. Gold Exhaustion / Too-Late Filter
+Use when:
+- price already moved too far
+- ATR extension high
+- target already reached
+- momentum fading
+- wick reversal appears
+- no chase allowed
+
+SECTION 8 — Gold Scanner behavior
+
+When selected symbol is XAUUSD/GOLD:
+Scanner should show gold-specific badges:
+- Gold Mode
+- Macro Bias
+- Dollar Pressure
+- Yield/Fed Risk
+- News Window
+- Wick Risk
+- ATR State
+- Liquidity Sweep
+- Asian Range
+- London Sweep
+- NY Timing
+- Target Room
+- Entry Status
+
+Example scanner row:
+XAUUSD M15
+Mode: Gold
+Direction: Conditional SELL
+Macro: Dollar strength bearish for gold
+Location: Asian high swept + R1 rejection
+Pattern: Shooting star unconfirmed
+Entry: Wait for close below wick candle low
+Timing: London/NY overlap, high volatility
+Risk: Wick risk high, ATR elevated
+Status: Watchlist, not ready
+
+SECTION 9 — Gold chart overlays
+
+When Gold Mode is active, chart should show:
+- prior day high/low
+- prior week high/low
+- Asian range high/low
+- London sweep markers
+- NY open range if available
+- daily pivot/R/S levels
+- liquidity sweep markers
+- major trendlines
+- wick rejection markers
+- ATR extension band
+- news markers
+- entry zone
+- invalidation level
+- target zones
+- “too late to chase” marker
+
+SECTION 10 — Eleanor Gold reasoning
+
+Eleanor must speak differently for gold.
+
+Gold reasoning block:
+Decision:
+Why:
+Gold Context:
+- Macro:
+- Session:
+- Location:
+- Pattern:
+- Wick/Liquidity:
+- Trendline:
+- Pivot/SR:
+- Entry:
+- Timing:
+- Risk:
+Confirmation:
+Invalidation:
+Trader Test:
+Risk Note:
+
+Example:
+Decision: WAIT
+Why: Gold swept the Asian high and rejected near resistance, but the shooting star is not confirmed yet.
+Gold Context:
+- Macro: Dollar pressure is mixed, so no macro confirmation.
+- Session: London/NY overlap, volatility elevated.
+- Location: Price is near R1 and prior high liquidity.
+- Pattern: Shooting star unconfirmed.
+- Wick/Liquidity: Upper wick shows rejection, but gold often fakes first moves.
+- Entry: Sell only below the shooting star low or after failed retest.
+- Risk: ATR is elevated, so tight stops are unsafe.
+Confirmation: Bearish thesis confirms below [level].
+Invalidation: Cancel if price closes above [wick high].
+Trader Test: Mark the sweep high, the candle low, and wait for close confirmation.
+Risk Note: Do not short gold from wick shape alone.
+
+SECTION 11 — Backtesting and forward testing for Gold Mode
+
+Testing Lab should support gold-specific tests:
+
+Backtest:
+- liquidity sweep reversal
+- breakout/retest
+- trend pullback
+- shooting star at resistance
+- hammer at support
+- Asian range sweep
+- London sweep
+- NY news window guard
+- ATR exhaustion filter
+
+Forward test:
+- track active gold signals
+- compare confirmed vs unconfirmed candle entries
+- measure wick fakeout rate
+- measure breakout fakeout rate
+- measure sweep reclaim success
+- measure session performance
+- measure news-window risk
+- measure ATR stop performance
+
+Gold Reliability Stats:
+- patternName
+- goldSession
+- timeframe
+- setupType
+- sampleSize
+- winRate
+- averageR
+- maxDrawdown
+- falseBreakRate
+- wickFailureRate
+- sweepSuccessRate
+- breakoutRetestSuccessRate
+- newsWindowFailureRate
+- tooLateAvoidedLosses
+
+SECTION 12 — Auto Bot Gold rules
+
+Auto Bot should be stricter on Gold.
+
+Gold Auto Bot cannot trade unless:
+- Gold Mode is active
+- feed is live/fresh
+- DirectionTruth passes
+- GoldMacroVerdict does not hard-conflict
+- EntryTruth confirms
+- TimingTruth passes
+- GoldRiskVerdict passes
+- spread is acceptable
+- ATR state is not extreme unless strategy allows it
+- news window is not blocked
+- Scanner Truth allows
+- Trade Health allows
+- live execution gates allow
+
+Gold Auto Bot must not trade:
+- wick-only breakout
+- unconfirmed shooting star/hammer
+- midpoint range chop
+- stale feed
+- wide spread
+- too-late chase
+- pre-news impulse unless explicitly approved strategy mode
+- when stop is too tight for ATR
+
+SECTION 13 — Tests
+
+Add tests:
+1. XAUUSD activates Gold Mode.
+2. Non-gold symbols do not activate Gold Mode.
+3. Gold Mode uses ATR-aware stop checks.
+4. Shooting star at resistance is conditional, not automatic sell.
+5. Shooting star mid-range scores weak.
+6. Hammer at support is conditional, not automatic buy.
+7. Asian range high/low is detected.
+8. London sweep is detected after Asian range break/reclaim.
+9. NY news window blocks normal gold scalp.
+10. Wide spread blocks gold scalp.
+11. ATR extreme marks tight stop unsafe.
+12. Liquidity sweep + reclaim creates conditional setup.
+13. Breakout without retest remains lower confidence.
+14. Breakout retest hold increases confidence.
+15. Gold macro conflict caps confidence.
+16. Missing macro data is labeled unavailable, not neutral.
+17. Gold chart shows gold-specific overlays.
+18. Gold scanner row shows Gold Mode badges.
+19. Eleanor Gold reasoning uses Gold Context section.
+20. Backtest can isolate Gold Mode strategy performance.
+21. Forward test tracks gold-specific fakeout/wick stats.
+22. Auto Bot cannot trade gold from Gold Mode alone.
+23. Gold Mode cannot bypass live gates.
+24. Gold Mode cannot override stale feed state.
+25. Gold Mode cannot create READY_NOW from macro alone.
+
+Validation:
+- gold asset profile tests
+- gold macro verdict tests
+- gold timing/session tests
+- gold risk tests
+- shooting star gold tests
+- liquidity sweep tests
+- scanner truth cap tests
+- Eleanor reasoning tests
+- testing lab integration tests
+- auto-bot safety tests
+- typecheck:ci
+- ci-guards
+- targeted-tests
+- safety-integration alone
+- architect code review
+
+Hard boundary:
+Do not touch live execution gates.
+Do not touch MT5 bridge execution.
+Do not touch broker dispatch.
+Do not touch kill switches.
+Do not touch owner/admin permissions.
+Do not bypass risk rules.
+
+Gold Mode improves analysis, strategy quality, testing, and explanations.
+Gold Mode must never grant trade permission by itself.

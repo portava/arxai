@@ -1,0 +1,376 @@
+Update the ARX AI Flame Scalp system with a dedicated Run-On Candle Momentum upgrade.
+
+The goal is to improve scalp detection for one of the strongest scalp conditions: aggressive same-direction candle movement with minimal pullbacks. These are “run-on candles” — candles that keep driving in the same direction, showing clean momentum, continuation pressure, and little hesitation.
+
+Do not rebuild the app. Do not rewrite the entire algorithm. Do not change live broker execution settings. Do not place trades. This is a surgical upgrade to the existing Flame Scalp engine, Scanner scoring, Ruby explanation, Risk review, and Governance challenge logic.
+
+MAIN CONCEPT
+
+Some of the best scalps happen when candles run aggressively in one direction without too many pullbacks.
+
+The system must recognize when price is moving like this:
+
+- several candles pushing in the same direction
+- strong candle bodies
+- small opposite wicks
+- limited pullbacks
+- clean continuation
+- little chop
+- little hesitation
+- not too stretched yet
+- enough room before major structure/support/resistance
+- spread/slippage still acceptable
+- momentum still alive
+
+This should be identified as a special scalp opportunity called:
+
+Run-On Candle Momentum
+
+PHASE 1 — AUDIT EXISTING FLAME/RUN_ON LOGIC FIRST
+
+Before adding anything, inspect the existing Flame Scalp engine.
+
+Check existing logic for:
+
+- RUN_ON stage
+- ACTIVE stage
+- EXHAUSTED stage
+- FAILED stage
+- REVERSAL_RISK stage
+- candle body expansion
+- candle continuation
+- wick rejection
+- chase-risk
+- late-fraction logic
+- add-on tiering
+- usedAddOns cap
+- dead-stage add-on prevention
+- entry timing
+- no-entry states
+- scanner ranking effect
+- Ruby explanation effect
+- risk/governance effect
+
+Do not duplicate existing logic. If RUN_ON already exists, upgrade it surgically instead of creating a competing system.
+
+PHASE 2 — DEFINE RUN-ON CANDLE MOMENTUM
+
+Create or refine a clear Run-On Candle Momentum detector.
+
+A run-on candle setup should evaluate:
+
+1. Directional persistence
+- consecutive bullish candles for buy pressure
+- consecutive bearish candles for sell pressure
+- direction stays consistent across the recent window
+- minimal candle color flipping
+- minimal alternating chop
+
+2. Candle body strength
+- strong bodies relative to recent average candle size
+- bodies expanding or staying consistently strong
+- close near high for bullish run
+- close near low for bearish run
+- limited doji/indecision candles
+
+3. Pullback control
+- pullbacks are shallow
+- pullbacks do not break momentum structure
+- pullbacks do not erase too much of the prior candle move
+- no deep retracement against the run
+- no repeated hesitation candles
+
+4. Wick quality
+- small opposing wicks
+- no large rejection wick against the trade direction
+- no repeated wick rejection near the entry side
+- no exhaustion wick that warns the run is ending
+
+5. Momentum cleanliness
+- clean candle progression
+- low chop
+- no fake breakout signal
+- no sudden reversal candle
+- no heavy overlap between candles
+- price is actually traveling, not just vibrating in place
+
+6. Room to scalp
+- enough distance before nearby support/resistance, liquidity zone, session high/low, or danger zone
+- spread/slippage does not eat the scalp
+- stop loss has a logical invalidation point
+- take profit has a realistic target before the run stalls
+
+PHASE 3 — RUN-ON STAGE CLASSIFICATION
+
+Upgrade the flame stage/rating so run-on candles are clearly classified.
+
+Use or map to existing stages if they already exist:
+
+- NONE: no real scalp momentum
+- DEVELOPING: early movement but not clean enough yet
+- ACTIVE: momentum is present and tradable with caution
+- RUN_ON: clean same-direction aggressive candle run
+- RUNAWAY: extremely strong run but may require caution due to chase risk
+- EXHAUSTED: momentum stretched too far or fading
+- FAILED: setup broke down
+- REVERSAL_RISK: strong warning of possible reversal
+- BLIND: not enough candle data to judge honestly
+
+If existing enum names are different, do not force a full rename. Preserve current compatibility and add display mapping where needed.
+
+PHASE 4 — RUN-ON QUALITY SCORE
+
+Add or improve a run-on quality score.
+
+The score should consider:
+
+- number of same-direction candles
+- body-size consistency
+- body-size expansion
+- opposite wick size
+- pullback depth
+- candle overlap
+- close position inside candle range
+- momentum acceleration
+- distance already traveled
+- distance remaining before danger zone
+- spread/slippage condition
+- candle freshness
+- data quality/freshness
+
+The score must not blindly reward long moves. A move that is too stretched should start shifting from RUN_ON/RUNAWAY into EXHAUSTED or REVERSAL_RISK.
+
+PHASE 5 — ENTRY TIMING LOGIC
+
+Run-on candles need timing intelligence.
+
+Classify entry timing as:
+
+- early run: possible best entry if confirmation is enough
+- active run: tradable if risk/reward still makes sense
+- late run: caution, reduced confidence
+- chase risk: avoid or small caution only
+- exhausted: no new entry
+- reversal warning: no entry or exit warning
+- pullback re-entry: possible re-entry if shallow pullback holds
+- continuation re-entry: possible add-on if run resumes cleanly
+
+The system should clearly know the difference between:
+- catching the run
+- joining the run
+- chasing the run
+- stacking into exhaustion
+
+PHASE 6 — MULTI-TRADE RUN-ON ADD-ON RULES
+
+Upgrade multi-trade scalp logic specifically for run-on candles.
+
+Allow add-ons only when:
+
+- stage is RUN_ON or strong ACTIVE
+- direction remains consistent
+- pullbacks remain shallow
+- opposite wicks remain controlled
+- spread/slippage remains acceptable
+- the move is not exhausted
+- risk/exposure allows it
+- previous add-ons remain within cap
+- new candle confirms continuation
+
+Do not allow add-ons when:
+
+- EXHAUSTED
+- FAILED
+- REVERSAL_RISK
+- BLIND
+- late/chase-risk state
+- candle flips against direction
+- strong rejection wick appears
+- pullback becomes too deep
+- spread/slippage becomes too large
+- risk/reward no longer makes sense
+
+Keep existing usedAddOns cap. Do not bypass risk controls.
+
+PHASE 7 — RISK / STOP LOSS / TAKE PROFIT FOR RUN-ON SCALPS
+
+Run-on scalps should not use generic long-trade logic.
+
+For run-on scalps, review:
+
+- stop loss should sit beyond logical momentum invalidation
+- stop loss should account for broker spread/bleed
+- stop loss should not sit unrealistically right at entry
+- take profit should target a realistic continuation zone
+- take profit should account for nearest danger zone
+- reward-to-risk must still make sense
+- risk should shrink as chase/exhaustion risk increases
+- if the move is too late, scanner/Ruby should recommend avoid or caution
+
+Ruby should explain:
+- why the run is strong
+- whether it is early, active, late, or exhausted
+- where the danger is
+- what would invalidate the scalp
+- whether add-ons are allowed or not
+- why stop loss/take profit make sense
+
+PHASE 8 — SCANNER RANKING IMPACT
+
+Wire Run-On Candle Momentum into Scanner ranking.
+
+If run-on quality is strong:
+- scanner score can increase
+- flame/scalp confidence can increase
+- Ruby can call it a clean run-on scalp
+- trade recommendation can become stronger if risk allows
+
+If run-on quality is weak/late/exhausted:
+- scanner score should decrease
+- risk warning should increase
+- Ruby should warn against chasing
+- governance can downgrade the signal
+
+Scanner should never rank a late/exhausted run-on move as a high-quality scalp just because candles were moving fast.
+
+PHASE 9 — GOVERNANCE CHALLENGES
+
+Update governance so agents can challenge run-on scalps.
+
+Risk AI should challenge if:
+- move is too late
+- stop loss is unrealistic
+- reward-to-risk is weak
+- spread/slippage is too high
+- account exposure is too high
+
+Market Structure Agent should challenge if:
+- run is heading into strong support/resistance
+- move is too stretched
+- structure does not support continuation
+
+Flame Scalp Agent should challenge if:
+- pullbacks are too deep
+- opposite wicks are too large
+- candle overlap is too heavy
+- momentum is choppy
+- run is exhausted
+
+Traffic Controller should avoid calling unnecessary agents on every candle, but allow deeper review for high-score run-on opportunities.
+
+PHASE 10 — RUBY EXPLANATION UPDATE
+
+Ruby must explain run-on candles in plain English.
+
+Examples of acceptable wording:
+
+- “This is a clean run-on candle move. Candles are pushing in the same direction with shallow pullbacks, so momentum is still active.”
+- “This move is strong, but it is getting late. Chasing now carries higher reversal risk.”
+- “The scalp is no longer clean. The latest candles show rejection and deeper pullbacks.”
+- “Add-ons are not supported here because the run is showing exhaustion.”
+- “This is a technical-only read because news feed data is unavailable.”
+
+Ruby must not expose backend terms, enum names, function names, route names, schema names, or developer wording to normal users.
+
+PHASE 11 — ADMIN TRACE
+
+Add admin trace visibility for run-on detection.
+
+Admin/OWNER should be able to see:
+
+- run-on quality score
+- direction
+- candle count used
+- pullback depth
+- body strength
+- opposing wick score
+- overlap/chop score
+- stage classification
+- entry timing classification
+- add-ons allowed or blocked
+- reason add-ons are allowed/blocked
+- risk downgrade reason if any
+- scanner score impact
+- governance challenge impact
+- data freshness/source
+
+Normal users should only see plain-English explanations, not raw internals.
+
+PHASE 12 — DATA QUALITY AND TRUTH CONTRACT
+
+Run-on candle detection must follow the UI/data truth contract.
+
+Rules:
+- If candles are too few, return BLIND / insufficient candle data.
+- If candles are stale, downgrade confidence.
+- If candles are composite/third-party, do not pretend they are MT5 broker-native.
+- If MT5 candle push is not active, do not claim MT5 candles are used.
+- If spread/slippage is unavailable, reduce confidence.
+- If news feed is unavailable, say technicals-only where appropriate.
+- No fake data.
+- No dummy candle assumptions.
+
+PHASE 13 — TESTING
+
+Add or update tests for:
+
+- clean bullish run-on candles
+- clean bearish run-on candles
+- shallow pullback continuation
+- deep pullback invalidation
+- large opposing wick rejection
+- candle overlap/chop downgrade
+- early run classification
+- active run classification
+- late/chase-risk classification
+- exhausted run classification
+- reversal warning classification
+- BLIND when candles are too few
+- stale candle downgrade
+- add-on allowed for clean run-on
+- add-on blocked for exhausted/failed/reversal/blind
+- scanner score boost for high-quality run-on
+- scanner downgrade for late/exhausted run-on
+- Ruby explanation wording
+- governance challenge behavior
+- admin trace fields
+
+Run:
+- typecheck
+- flame scalp tests
+- scanner tests
+- risk tests
+- governance tests
+- Ruby explanation tests
+- UI truth tests
+- CI guards
+- architect review if available
+
+PHASE 14 — FINAL REPORT
+
+Report:
+
+1. Existing RUN_ON logic found.
+2. What was upgraded.
+3. How run-on candles are detected.
+4. How add-on rules changed or were confirmed.
+5. How scanner ranking is affected.
+6. How Ruby explains run-on scalps.
+7. How risk/governance can challenge bad run-on setups.
+8. What tests passed.
+9. Any remaining limitations due to candle feed quality.
+10. Confirmation that live broker execution settings were untouched.
+
+COMPLETION STANDARD
+
+Do not mark complete until:
+
+- run-on candle momentum is explicitly detected
+- clean same-direction aggressive candles are rewarded
+- late/exhausted/choppy movement is not rewarded
+- add-ons are allowed only when the run is still healthy
+- scanner, Ruby, risk, governance, and admin trace all understand run-on candles
+- stale/missing data lowers confidence
+- no fake candle assumptions are introduced
+- all validation passes
+- live broker execution settings remain untouched

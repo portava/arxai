@@ -1,0 +1,143 @@
+Organize the ARX AI user side menu and AI main page navigation.
+
+SCOPE LOCK:
+Only work on:
+1. User side menu / drawer / More menu organization.
+2. AI page top tabs.
+3. Navigation labels, ordering, grouping, active states, and responsive menu layout.
+
+Do not change:
+- MT5 bridge logic
+- trade execution logic
+- live/demo permissions
+- admin approval toggles
+- Ruby brain/intelligence
+- scanner calculations
+- login/auth
+- open-trade P/L calculations
+- backend trading safety systems
+
+GOAL:
+Make the app easier for regular users to navigate by showing the most important tools first, grouping the rest clearly, and making every AI-related side-menu option available as top tabs inside the main AI page.
+
+PART 1 — Organize the user side menu
+
+First inspect the current side menu, bottom menu, More menu, route config, role permissions, and existing page names.
+
+Reorder the regular user side menu so the most important tools appear first.
+
+Recommended order:
+
+Primary Tools:
+1. Cockpit / Dashboard
+2. Trade
+3. Open Trades / Positions
+4. AI / Ruby
+5. Market Scanner
+6. Risk Command Center
+7. Alerts / Watchlist
+8. Calendar / News
+
+Account & Control:
+9. Account / Wallet / Slot Funds
+10. Trade History
+11. Settings
+12. Help / Support
+
+Admin-only tools:
+- Keep admin tools hidden from regular users.
+- Admin tools can appear in an Admin section only for approved admin users.
+- Do not expose admin controls in regular user navigation.
+
+Menu behavior:
+- Use clean section headers.
+- Use short labels.
+- Remove duplicate links that point to the same place unless they are intentionally different.
+- Keep icons consistent.
+- Show important tools first.
+- Collapse less-used tools under organized sections instead of making the side menu long and overwhelming.
+- Current page should have a clear active state.
+- Disabled/locked tools should show a clean lock state, not raw debug text.
+- On mobile, the side menu should be easy to scroll and not hide behind the bottom nav.
+- The bottom nav should stay simple and focused on the most important tools only.
+
+Important:
+Do not delete features. Only reorganize navigation and labels.
+
+PART 2 — AI main page top tabs
+
+On the AI / Ruby main page, add top tabs that mirror all AI-related menu items from the side panel.
+
+Any AI-related option currently in the side menu should also be available as a tab at the top of the AI main page so users can reach AI tools quickly without opening the side menu.
+
+Examples of AI page top tabs, depending on what already exists:
+- Ruby
+- Market Read
+- Symbols
+- Results
+- Scanner
+- Alerts
+- Calendar / News
+- Advanced
+- Voice
+- Memory / Chats, if already available
+
+Do not invent fake tabs for pages that do not exist.
+Inspect existing AI routes/features and only tab real existing AI tools.
+
+AI tab behavior:
+- Tabs should sit near the top of the AI page.
+- On mobile, tabs should be horizontally scrollable/swipeable.
+- Active tab should be clearly highlighted.
+- Tapping a tab should switch to that AI section or route without losing the selected market/symbol when possible.
+- Keep the current market focus synced across AI tabs.
+- Do not stack the AI tabs vertically.
+- Do not create a huge page.
+- Keep search, symbols, Ruby explanation, scanner results, and advanced tools organized inside their matching tab.
+
+PART 3 — Clean naming
+
+Use user-friendly labels only.
+
+Avoid labels like:
+- internal route names
+- function names
+- raw component names
+- database names
+- debug labels
+- API names
+
+Good labels:
+- Ruby
+- Market Read
+- Symbols
+- Scanner
+- Alerts
+- Calendar
+- Risk
+- Trade
+- Open Trades
+- History
+- Settings
+
+PART 4 — Permissions
+
+Respect existing permissions:
+- Regular users only see tools they are allowed to access.
+- Locked tools can show a lock state if useful.
+- Admin-only tools never show to regular users.
+- Do not rely only on frontend hiding. Keep existing backend/route guards unchanged.
+
+PART 5 — Acceptance checklist
+
+Do not finish until:
+1. User side menu is organized with important tools first.
+2. Side menu is grouped into clean sections.
+3. Regular users do not see admin-only tools.
+4. Duplicate/confusing menu items are removed or consolidated.
+5. AI-related side-menu tools also appear as top tabs on the AI main page.
+6. AI tabs are horizontally scrollable on mobile.
+7. AI tabs do not stack vertically.
+8. Active menu item and active AI tab are clear.
+9. Selected symbol/market focus remains synced across AI tabs where possible.
+10. No unrelated trading, MT5, auth, Ruby brain, scanner, or backend execution systems were changed.

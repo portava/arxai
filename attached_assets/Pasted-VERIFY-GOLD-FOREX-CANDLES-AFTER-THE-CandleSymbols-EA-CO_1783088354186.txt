@@ -1,0 +1,46 @@
+VERIFY GOLD/FOREX CANDLES AFTER THE CandleSymbols EA CONFIG CHANGE (read-only)
+Read this entire command before doing anything. This is a READ-ONLY VERIFICATION task. Do NOT edit code, do NOT change EA config (that's done on the MT5 terminal by the operator), do NOT run migrations. The operator has just set the MT5 EA's CandleSymbols input to: EURUSD,XAUUSD,XAGUSD,GBPUSD,USDJPY,BTCUSD and re-initialized the EA (clicked OK on the Inputs dialog). A prior read-only diagnosis confirmed the root cause was CONFIG-ONLY: only EURUSD was arriving in broker_candles (fresh, zero rejects, backend healthy), gold never arrived under any name. Your job: re-run the same windowed query to CONFIRM the newly-added symbols are now arriving — and if any are NOT, determine whether it's a symbol-name mismatch (not the pipeline).
+WHAT TO CHECK (read-only queries)
+1. Distinct symbols now arriving (the decisive query)
+Query broker_candles for DISTINCT symbols received in the last 10 minutes, 1 hour, and 6 hours, with per-symbol: row count, newest bar timestamp (UTC), and freshness (seconds/minutes ago).
+
+Report the full distinct-symbol list per window.
+Specifically flag which of the operator's added symbols (XAUUSD, XAGUSD, GBPUSD, USDJPY, BTCUSD) are NOW present vs still absent.
+
+2. Freshness of the new symbols
+For each newly-arriving symbol, confirm the newest bar is RECENT (within the last few minutes) and actively updating — i.e. streaming, not a one-off insert. Report newest-bar age per symbol.
+3. Ingestion health for the new symbols
+
+Check the ingestion trace/logs (last 30-60 min) for CANDLE/TICK messages for the new symbols: accepted vs rejected, any reject_reason / parse error / validation failure / DB insert failure.
+Confirm the new symbols are being accepted cleanly (like EURUSD), or report NEW rejects/errors that appeared after the config change.
+
+4. Suffix-variant check (the symbol-name failure mode)
+If an expected symbol is NOT arriving, check whether it's arriving under a SUFFIXED name (XAUUSD.r, .m, .pro, GOLD, etc.) — query XAU%, %GOLD%, XAG%, GBP%, USDJPY%, BTC% patterns. If it appears under a variant, that IS the symbol — report the exact broker name so the operator can align CandleSymbols.
+CLASSIFY THE RESULT
+
+SUCCESS: all added symbols arriving fresh with clean ingestion → done; gold/forex now have MT5 history and escape the Polygon fallback cap. Note the operator should see the gold chart accumulating history and the badge going LIVE once the sufficiency floor fills.
+PARTIAL / NAME MISMATCH: some arrive, others silent (and not under any suffix) → the silent ones' strings don't match the broker's — report WHICH, and instruct the operator to re-check those exact names in Market Watch. Pipeline proven working by the ones that arrived.
+SUFFIX FOUND: a symbol arrives under a variant name → report the actual broker string.
+STILL NONE: no new symbols at all → the EA config likely didn't take (operator should confirm the Experts/Journal tab logged a re-init after OK, and F7 → Inputs shows the saved list) — report the evidence, do not assume.
+
+NON-NEGOTIABLE
+
+READ-ONLY. No code change, no EA config change, no migration. Only DB queries + log reads.
+Report what the DATA shows per symbol — do not assume the change worked or didn't.
+If runtime data/logs are unavailable, say so clearly.
+
+FINAL REPORT
+
+The distinct-symbol query results (10min/1h/6h) with per-symbol row count + newest-bar freshness.
+Which added symbols are arriving vs silent; ingestion health (accepts vs rejects); suffix findings if any.
+The classification (SUCCESS / PARTIAL-NAME-MISMATCH / SUFFIX-FOUND / STILL-NONE) with the exact next action for the operator if anything is silent.
+
+COMPLETION STANDARD
+
+The broker_candles distinct-symbol query re-run and reported per window, showing whether XAUUSD, XAGUSD, GBPUSD, USDJPY, BTCUSD are now arriving fresh.
+Ingestion health confirmed for the new symbols (clean accept vs rejects).
+Clear classification given; if any symbol is silent, the operator is told exactly which and whether it's a name-string issue vs config-didn't-take.
+NO code / config / migration change — read-only verification only.
+
+
+Paste that. Since you just clicked OK a few minutes ago, the 10-minute window is the one that matters — if the EA re-initialized correctly, all five new symbols should already be in it. Bring me the result: SUCCESS closes the entire feed saga; anything else, the classification tells you the exact next move (fix one name string, or re-check the EA re-init) — and either of those is a 30-second correction, because the pipeline itself is proven.Fable 5 is the most capable model and draws down usage much faster than Opus 4.8

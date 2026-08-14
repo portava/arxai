@@ -1,0 +1,639 @@
+Run the final Build LL verification lock-test.
+
+Do not start Build MM.
+Do not add new features unless a Build LL test fails and must be fixed.
+Do not enable live trading.
+Do not modify MT5 live execution.
+Do not modify canPlaceTrades.
+Do not recommend live trading.
+Do not expose API secrets.
+Do not change Build AA, BB, CC, DD, EE, FF, GG, HH, II, JJ, or KK logic except to fix Build LL notification integration issues.
+
+Build LL goal:
+Create a centralized Notification Center + Safety Alerts system that receives events from AA-KK, stores notifications, deduplicates spam, ranks urgency, supports unread/acknowledge/dismiss/snooze, generates digests, and displays critical safety alerts without enabling live trading.
+
+Verify Build LL only.
+
+1. Typecheck/build health
+
+Run all relevant commands:
+- typecheck
+- build
+- API server validation
+- frontend build validation
+- database/schema validation if available
+
+Show exact commands run and whether each passed.
+
+2. Notification service proof
+
+Confirm the Notification Service exists.
+
+Show exact files/functions for:
+- notificationService
+- notificationRulesEngine
+- notificationPreferences
+- notificationDigestService
+- notificationRoutes
+- notificationLogs
+- notificationDeduplication
+- frontend notification bell
+- frontend Notification Center page
+- frontend Critical Safety Banner
+- frontend Digest panel
+
+Confirm notifications return this structure:
+
+{
+  notification_id,
+  type,
+  severity,
+  status,
+  title,
+  message,
+  source_build,
+  source_event_id,
+  symbol,
+  related_trade_id,
+  related_decision_id,
+  related_debrief_id,
+  related_learning_event_id,
+  related_replay_run_id,
+  action_required,
+  recommended_action,
+  action_url,
+  metadata,
+  dedupe_key,
+  expires_at,
+  created_at,
+  updated_at
+}
+
+3. Database verification
+
+Confirm these tables exist:
+
+notifications
+notification_preferences
+notification_logs
+notification_digests
+
+Confirm notifications includes:
+id,
+notification_id,
+type,
+severity,
+status,
+title,
+message,
+source_build,
+source_event_id,
+symbol,
+related_trade_id,
+related_decision_id,
+related_debrief_id,
+related_learning_event_id,
+related_replay_run_id,
+action_required,
+recommended_action,
+action_url,
+metadata,
+dedupe_key,
+repeat_count,
+expires_at,
+snoozed_until,
+read_at,
+acknowledged_at,
+dismissed_at,
+created_at,
+updated_at.
+
+Confirm notification_preferences includes:
+id,
+in_app_enabled,
+safety_alerts_enabled,
+trade_alerts_enabled,
+learning_alerts_enabled,
+coach_alerts_enabled,
+replay_alerts_enabled,
+data_alerts_enabled,
+broker_alerts_enabled,
+critical_alerts_always_on,
+digest_enabled,
+digest_frequency,
+quiet_hours_enabled,
+quiet_hours_start,
+quiet_hours_end,
+created_at,
+updated_at.
+
+Confirm notification_logs includes:
+id,
+notification_id,
+event_type,
+severity,
+message,
+details,
+created_at.
+
+Confirm notification_digests includes:
+id,
+digest_id,
+range_start,
+range_end,
+total_notifications,
+critical_count,
+warning_count,
+trade_count,
+learning_count,
+safety_count,
+summary,
+created_at.
+
+4. Endpoint verification
+
+Run and show raw output for:
+
+GET /api/notifications
+
+GET /api/notifications/unread
+
+GET /api/notifications/counts
+
+GET /api/notifications/:id
+
+POST /api/notifications/:id/read
+
+POST /api/notifications/:id/acknowledge
+
+POST /api/notifications/:id/dismiss
+
+POST /api/notifications/:id/snooze
+
+POST /api/notifications/mark-all-read
+
+GET /api/notifications/preferences
+
+POST /api/notifications/preferences
+
+POST /api/notifications/demo
+
+POST /api/notifications/test-event
+
+GET /api/notifications/digest
+
+POST /api/notifications/digest/generate
+
+GET /api/notifications/logs?limit=50
+
+5. Preferences proof
+
+Show default notification preferences.
+
+Confirm:
+- in_app_enabled is true
+- critical_alerts_always_on is true
+- safety alerts cannot fully hide CRITICAL alerts
+- quiet hours do not suppress CRITICAL safety alerts
+- preferences can be updated safely
+- preferences do not expose secrets
+- preferences do not enable live trading
+
+Show raw JSON output.
+
+6. Demo notification proof
+
+Run POST /api/notifications/demo.
+
+Confirm demo creates:
+- INFO notification
+- WARNING notification
+- HIGH notification
+- CRITICAL notification
+- safety notification
+- trade notification
+- learning notification
+- data/broker notification
+
+Show raw JSON output.
+
+7. Unread/counts proof
+
+Confirm:
+- unread count works
+- critical count works
+- counts by severity work
+- counts by type work
+- dismissed notifications are not counted as unread
+- snoozed notifications behave correctly
+- CRITICAL unread alerts remain visible until acknowledged
+
+Show raw JSON output.
+
+8. Read / acknowledge / dismiss / snooze proof
+
+Run each action endpoint.
+
+Confirm:
+- read sets read_at and status READ
+- acknowledge sets acknowledged_at and status ACKNOWLEDGED
+- dismiss sets dismissed_at and status DISMISSED
+- snooze sets snoozed_until and status SNOOZED
+- CRITICAL alerts can require acknowledgement before disappearing from banner
+- invalid notification id returns safe error
+
+Show raw JSON output.
+
+9. Deduplication proof
+
+Send the same event multiple times with the same dedupe_key.
+
+Confirm:
+- duplicate notification is not created
+- existing notification updates
+- repeat_count increments
+- metadata records repeated event count
+- CRITICAL events are not silently hidden
+- autopilot-style repeated warnings are rate-limited
+
+Show raw JSON output.
+
+10. Critical alert bypass proof
+
+Simulate:
+- notification snoozed
+- quiet hours enabled
+- duplicate event suppressed
+
+Then send a CRITICAL safety event.
+
+Confirm:
+- CRITICAL alert is shown anyway
+- critical_alerts_always_on is enforced
+- Critical Safety Banner should display it
+- alert requires acknowledgement
+- no live trading action appears
+
+Show raw JSON output.
+
+11. AA integration proof
+
+Trigger or simulate AA notification events:
+
+- trade decision blocked
+- high-risk HOLD
+- missing data HOLD
+- important decision created
+
+Confirm notification includes:
+- source_build: AA
+- related_decision_id when available
+- clear message
+- recommended action
+- no trade execution action
+
+Show raw JSON output.
+
+12. BB integration proof
+
+Trigger or simulate BB events:
+
+- auto-debrief created
+- debrief failed
+- duplicate debrief skipped
+
+Confirm notification includes:
+- source_build: BB
+- related_debrief_id when available
+- related_trade_id when available
+- recommended review action
+
+Show raw JSON output.
+
+13. CC integration proof
+
+Trigger or simulate CC events:
+
+- learning event processed
+- learning skipped due to idempotency
+- repeated mistake pattern rising
+
+Confirm:
+- learning processed creates INFO
+- repeated mistake pattern creates WARNING
+- related_learning_event_id is included when available
+- recommended action points to coaching/playbook/review
+
+Show raw JSON output.
+
+14. DD integration proof
+
+Trigger or simulate DD events:
+
+- market data degraded
+- stale quote
+- wide spread
+- missing candles
+- fallback mode warning
+
+Confirm:
+- WARNING or HIGH severity is correct
+- symbol is included
+- recommended action suggests waiting/reviewing data
+- no execution action is present
+
+Show raw JSON output.
+
+15. EE integration proof
+
+Trigger or simulate EE events:
+
+- paper trade opened
+- paper trade rejected
+- duplicate decision prevented
+- TP hit
+- SL hit
+- manual close
+
+Confirm:
+- TP hit creates INFO trade notification
+- SL hit creates WARNING trade notification
+- related_trade_id and related_decision_id are included when available
+- no live trade action appears
+
+Show raw JSON output.
+
+16. FF integration proof
+
+Trigger or simulate FF events:
+
+- autopilot started
+- autopilot stopped
+- autopilot paused by governor
+- cooldown applied
+- daily paper loss limit hit
+- same-symbol conflict
+
+Confirm:
+- paused by governor is HIGH
+- daily paper loss hit is HIGH or CRITICAL
+- cooldown includes cooldown details
+- recommended action suggests pause/review
+- no live trading recommendation appears
+
+Show raw JSON output.
+
+17. GG integration proof
+
+Trigger or simulate GG events:
+
+- command center generated major warning
+- performance rebuild completed
+- performance rebuild failed
+
+Confirm:
+- completed rebuild creates INFO
+- failed rebuild creates WARNING/HIGH
+- action_url points to command center/performance page if available
+
+Show raw JSON output.
+
+18. HH integration proof
+
+Trigger or simulate HH events:
+
+- governor status changed
+- LOCKED
+- WATCH_ONLY
+- PAPER_PAUSED
+- live trading attempted
+- canPlaceTrades true detected
+
+Confirm:
+- LOCKED creates CRITICAL
+- live trading attempted creates CRITICAL
+- canPlaceTrades true creates CRITICAL
+- live trading remains disabled
+- recommended action is review/lockdown, not execute
+
+Show raw JSON output.
+
+19. II integration proof
+
+Trigger or simulate II events:
+
+- coach report ready
+- weekly plan ready
+- playbook updated
+- repeated mistake coaching generated
+
+Confirm:
+- coach/weekly/playbook notifications are INFO or WARNING as appropriate
+- action_url points to coach/playbook when available
+- no live trading recommendation appears
+
+Show raw JSON output.
+
+20. JJ integration proof
+
+Trigger or simulate JJ events:
+
+- replay report ready
+- strategy lab experiment completed
+- replay failed
+
+Confirm:
+- replay report ready creates INFO
+- failed replay creates WARNING/HIGH
+- notification labels replay results as simulation/replay only
+
+Show raw JSON output.
+
+21. KK integration proof
+
+Trigger or simulate KK events:
+
+- data import completed
+- import rejected
+- imported replay scenario created
+- broker read-only snapshot created
+- unsafe broker mode rejected
+- secret exposure attempt detected
+
+Confirm:
+- import rejected creates HIGH
+- unsafe broker mode rejected creates CRITICAL
+- secret exposure attempt creates HIGH or CRITICAL
+- secrets are redacted
+- broker mode remains READ_ONLY
+- live trading remains DISABLED
+
+Show raw JSON output.
+
+22. Digest proof
+
+Run digest generation.
+
+Confirm digest includes:
+- total notifications
+- critical count
+- warning count
+- trade count
+- learning count
+- safety count
+- top alerts
+- recommended review actions
+- no live trading recommendation
+- date range
+
+Show raw JSON output.
+
+23. Frontend route/component proof
+
+Confirm frontend has:
+- notification bell
+- unread count badge
+- critical count badge
+- notification drawer
+- Notification Center page
+- filters by type/severity/status
+- search if implemented
+- read/acknowledge/dismiss/snooze actions
+- Critical Safety Banner
+- Digest panel
+
+Confirm UI:
+- is mobile friendly
+- shows CRITICAL safety banner persistently
+- shows live trading disabled where relevant
+- has no live execution buttons
+- does not expose secrets
+
+24. Secret redaction proof
+
+Search notification outputs, metadata, logs, and frontend-visible responses.
+
+Confirm:
+- BROKER_API_KEY is never printed
+- BROKER_API_SECRET is never printed
+- raw credentials are never returned
+- account IDs are masked when appropriate
+- metadata does not contain secrets
+- logs only show redacted/masked values
+
+Show proof.
+
+25. Logs proof
+
+Show notification_logs proving:
+- event received
+- rule matched
+- preference checked
+- dedupe checked
+- notification created/updated/skipped
+- severity assigned
+- action generated
+- errors/warnings
+
+Show sample notification_logs records.
+
+26. Live-trade isolation proof
+
+Search Build LL files and confirm they do NOT call:
+
+executeTrade,
+execute-trade,
+mt5 order placement,
+MT5 order placement,
+livePosition modification,
+live order,
+setCanPlaceTrades,
+live broker execution,
+broker.placeOrder,
+orderSend,
+positionClose,
+modifyOrder,
+real order placement,
+or anything that can place, close, or modify real trades.
+
+Confirm Build LL does NOT modify:
+- safetyCore.canPlaceTrades
+- live broker permissions
+- MT5 live execution
+- Build AA safety rules
+- Build EE paper-only execution rules
+- Build FF paper-only autopilot rules
+- Build HH liveTradingAllowed rules
+- Build KK broker read-only rules
+
+Confirm Build LL:
+- creates alerts only
+- never executes trades
+- never enables live trading
+- never recommends live trading
+- never exposes secrets
+
+27. Existing behavior compatibility
+
+Confirm these still work:
+- Build AA trade decision orchestrator
+- Build BB auto-debrief
+- Build CC learning engine
+- Build DD market data layer
+- Build EE paper execution engine
+- Build FF paper autopilot loop
+- Build GG trading calendar and command center
+- Build HH risk governor
+- Build II trader coach and playbook
+- Build JJ replay simulator and strategy lab
+- Build KK data import and broker read-only connector
+- manual debrief
+- manual paper close
+- analytics
+- decision logs
+- learning logs
+- market data logs
+- paper execution logs
+- autopilot logs
+- performance endpoints
+- risk governor endpoints
+- coach endpoints
+- replay endpoints
+- data import endpoints
+- broker read-only endpoints
+- existing frontend routes
+
+Required final response format:
+
+1. Verification passed or failed
+2. Commands/tests run
+3. Files changed
+4. New files created
+5. Database proof
+6. Notification Service proof
+7. Preferences proof
+8. Raw demo output
+9. Raw notifications output
+10. Raw unread/counts output
+11. Raw read/acknowledge/dismiss/snooze output
+12. Deduplication proof
+13. Critical alert bypass proof
+14. AA integration proof
+15. BB integration proof
+16. CC integration proof
+17. DD integration proof
+18. EE integration proof
+19. FF integration proof
+20. GG integration proof
+21. HH integration proof
+22. II integration proof
+23. JJ integration proof
+24. KK integration proof
+25. Digest proof
+26. Frontend proof
+27. Secret redaction proof
+28. Logs proof
+29. Live-trade isolation proof
+30. Any fixes made during verification
+31. Final Build LL score out of 10
+32. Whether it is safe to proceed to Build MM

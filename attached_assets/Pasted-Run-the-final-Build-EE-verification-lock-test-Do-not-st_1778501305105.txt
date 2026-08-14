@@ -1,0 +1,376 @@
+Run the final Build EE verification lock-test.
+
+Do not start Build FF.
+Do not add new features unless a Build EE test fails and must be fixed.
+Do not enable live trading.
+Do not modify MT5 live execution.
+Do not change Build AA, BB, CC, or DD logic except to fix EE integration issues.
+
+Build EE goal:
+Approved Build AA decisions can create simulated paper trades only, using Build DD market data. Invalid decisions must be rejected. Closed paper trades must trigger Build BB auto-debrief, and BB must still hand learning payloads to Build CC.
+
+Verify Build EE only.
+
+1. Typecheck/build health
+
+Run all relevant commands:
+- typecheck
+- build
+- API server validation
+- database/schema validation if available
+
+Show exact commands run and whether each passed.
+
+2. Paper Execution Service verification
+
+Confirm the Paper Execution Service exists.
+
+Show exact files/functions for:
+- paperExecutionService
+- paperTradeMonitor
+- paperPositionSizing
+- paperExecutionRoutes
+- paperExecutionLogs
+- paper trade close handler
+- Build BB trigger after paper close
+
+Confirm the service returns this structure:
+
+{
+  execution_id,
+  decision_id,
+  trade_id,
+  symbol,
+  action,
+  status,
+  entry_price,
+  stop_loss,
+  take_profit,
+  position_size,
+  risk_amount,
+  confidence,
+  risk_score,
+  execution_mode: "PAPER",
+  fill_type,
+  slippage_applied,
+  spread_applied,
+  rejection_reason,
+  warnings,
+  created_at
+}
+
+3. Database verification
+
+Confirm paper_trades exists or existing paper trade storage was safely extended.
+
+Confirm paper_trades includes:
+
+id,
+execution_id,
+decision_id,
+symbol,
+action,
+status,
+entry_price,
+current_price,
+exit_price,
+stop_loss,
+take_profit,
+position_size,
+risk_amount,
+pnl,
+pnl_percent,
+confidence,
+risk_score,
+entry_reason,
+invalidation_reason,
+market_data_snapshot,
+decision_snapshot,
+execution_snapshot,
+opened_at,
+closed_at,
+close_reason,
+created_at,
+updated_at.
+
+Confirm paper_execution_logs exists and includes:
+
+id,
+execution_id,
+decision_id,
+trade_id,
+symbol,
+action,
+status,
+message,
+details,
+created_at.
+
+4. AA decision eligibility proof
+
+Run a valid Build AA decision through EE.
+
+Confirm paper execution only happens if:
+
+- decision.shouldTrade === true
+- action is BUY or SELL
+- action is not HOLD
+- decision_id exists
+- tradeWindow.status is GOOD
+- confidence passes threshold
+- riskScore passes threshold
+- marketDataSummary exists
+- market data quality is acceptable
+- spread is acceptable
+- volatility is not blocked
+- stopLoss exists
+- takeProfit exists
+- positionSize exists and is greater than zero
+- no critical warnings exist
+- no duplicate paper trade exists for same decision_id
+- no conflicting open same-symbol trade exists unless settings allow it
+
+Show raw JSON output.
+
+5. Rejection scenario proof
+
+Run and show raw outputs for these rejected decisions:
+
+A. HOLD decision  
+B. Low confidence decision  
+C. High risk decision  
+D. Bad market data decision  
+E. Wide spread decision  
+F. Missing stop loss  
+G. Missing take profit  
+H. Missing position size  
+I. Missing decision_id  
+J. Existing same-symbol conflict  
+
+Each rejection must return:
+
+{
+  status: "PAPER_REJECTED",
+  rejection_reason,
+  warnings
+}
+
+6. Idempotency proof
+
+Execute the same valid decision_id twice.
+
+Confirm:
+- only one paper trade is created
+- second call returns existing trade
+- no duplicate analytics
+- no duplicate paper_execution_logs except an idempotency log if appropriate
+- no duplicate BB/CC triggers
+
+Show raw JSON output.
+
+7. Simulated fill proof
+
+Show BUY fill logic:
+- uses ask or mid + spread/slippage logic
+
+Show SELL fill logic:
+- uses bid or mid - spread/slippage logic
+
+Confirm output includes:
+- requested entry
+- simulated filled entry
+- spread applied
+- slippage applied
+- timestamp
+- market data snapshot
+
+8. Position sizing proof
+
+Run position sizing calculation and show:
+
+{
+  account_equity,
+  risk_percent,
+  risk_amount,
+  stop_distance,
+  calculated_position_size,
+  capped_position_size,
+  reason
+}
+
+Confirm safe fallback defaults exist if risk settings are missing:
+- default simulated equity: 10000
+- max risk per paper trade: 1%
+- max open paper trades: 3
+- max same-symbol paper trades: 1
+- position size capped
+
+9. Endpoint verification
+
+Run and show raw output for:
+
+POST /api/paper-execution/demo
+
+POST /api/paper-execution/from-decision
+
+GET /api/paper-execution/open
+
+GET /api/paper-execution/trades?limit=20
+
+GET /api/paper-execution/trade/:id
+
+POST /api/paper-execution/monitor
+
+POST /api/paper-execution/close/:id
+
+POST /api/trade-decision/evaluate
+
+Confirm /api/trade-decision/evaluate does NOT auto-execute unless explicitly requested through paper execution flow.
+
+10. Paper monitor proof
+
+Create or use an open paper trade.
+
+Run monitor.
+
+Confirm monitor:
+- fetches DD market data
+- updates current price
+- calculates unrealized P&L
+- updates max favorable excursion
+- updates max adverse excursion
+- does not run an uncontrolled infinite loop
+- does not place live trades
+
+Show raw output.
+
+11. TP close proof
+
+Create a scenario where take profit is hit.
+
+Confirm:
+- paper trade closes as PAPER_CLOSED_WIN
+- pnl and pnl_percent are calculated
+- close_reason mentions TP hit
+- closed_at is set
+- Build BB auto-debrief is triggered
+- Build CC learning payload is prepared/processed after BB
+
+Show raw output.
+
+12. SL close proof
+
+Create a scenario where stop loss is hit.
+
+Confirm:
+- paper trade closes as PAPER_CLOSED_LOSS
+- pnl and pnl_percent are calculated
+- close_reason mentions SL hit
+- closed_at is set
+- Build BB auto-debrief is triggered
+- Build CC learning payload is prepared/processed after BB
+
+Show raw output.
+
+13. Manual close proof
+
+Run manual paper close.
+
+Confirm:
+- status becomes PAPER_CLOSED_MANUAL
+- pnl is calculated
+- BB auto-debrief still triggers
+- CC handoff still works
+
+Show raw output.
+
+14. BB and CC integration proof
+
+After a paper trade closes, confirm:
+
+Build BB:
+- detects paper close
+- creates auto-debrief
+- links to decision_id
+- does not duplicate debrief
+
+Build CC:
+- receives learning payload
+- processes it once
+- updates learning_events
+- updates strategy_edges
+- updates mistake_patterns if applicable
+
+Show sample auto-debrief JSON and sample learning payload JSON.
+
+15. DD market data integration proof
+
+Show exactly where EE reads Build DD market data.
+
+Confirm:
+- paper fills use DD quote data
+- monitor uses DD quote/candle data
+- bad DD data rejects execution or blocks monitor close safely
+- fallback data is labeled clearly
+
+16. Live-trade isolation proof
+
+Search Build EE files and confirm they do NOT call:
+
+executeTrade,
+execute-trade,
+mt5,
+MT5,
+livePosition,
+live order,
+setCanPlaceTrades,
+live broker execution,
+broker.placeOrder,
+real order placement,
+or anything that can place real trades.
+
+Confirm Build EE does NOT modify:
+- safetyCore.canPlaceTrades
+- live broker permissions
+- MT5 live execution
+- Build AA safety override rules
+
+17. Existing behavior compatibility
+
+Confirm these still work:
+- Build AA trade decision orchestrator
+- Build BB auto-debrief
+- Build CC learning engine
+- Build DD market data layer
+- manual debrief
+- paper trading
+- analytics
+- decision logs
+- learning logs
+- market data logs
+- existing frontend routes
+
+Required final response format:
+
+1. Verification passed or failed
+2. Commands/tests run
+3. Files changed
+4. New files created
+5. Database proof
+6. Paper Execution Service proof
+7. Raw valid paper execution output
+8. Raw rejection outputs
+9. Raw duplicate decision_id idempotency output
+10. Raw simulated fill output
+11. Raw position sizing output
+12. Raw paper monitor output
+13. Raw TP close output
+14. Raw SL close output
+15. Raw manual close output
+16. BB auto-debrief proof
+17. CC learning payload proof
+18. DD market data integration proof
+19. Live-trade isolation proof
+20. Any fixes made during verification
+21. Final Build EE score out of 10
+22. Whether it is safe to proceed to Build FF

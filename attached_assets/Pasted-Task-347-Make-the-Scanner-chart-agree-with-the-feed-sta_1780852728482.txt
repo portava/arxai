@@ -1,0 +1,26 @@
+Task #347 — Make the Scanner chart agree with the feed-status header. Display-only; no backend, execution, MT5, scanner-wiring, or permission changes.
+Context: The scanner header (ScannerHeaderSummary.tsx) shows feed status from /api/market-scanner/selected-market (snap.ok), but the chart (ScannerChartPanel.tsx, ~line 787) fetches /api/data/candles — which returns a bare Candle[] with no truth metadata — and renders whatever it gets. Result: header says "Feed unavailable · 1.0846" while the chart shows stale composite candles at 1.1522 as if live. The fix: re-point the chart at the already-shipped /api/chart/candles, whose feedStatus contract carries real truth.
+Step 0 — remove dead code. Delete the unused artifacts/api-server/src/lib/data/marketDataTruth.ts and revert the related additions to artifacts/api-server/src/lib/data/dataManager.ts (getMarketDataWithTruth) and artifacts/api-server/src/routes/data.ts (keep /data/candles returning the bare array as before) plus the test:market-data-truth script. These were a parallel truth surface; Option 2 uses the shipped feedStatus instead, so they should not linger as dead code. Confirm nothing else imports them before deleting.
+Step 1 — switch the chart's candle source. In ScannerChartPanel.tsx, change the candle fetch from /api/data/candles to /api/chart/candles. Map the scanner's timeframe ids (1m/5m/15m/1h/4h/1D) to the chart endpoint's enum (M1/M5/M15/H1/H4/D1). The response shape is { candles, source, quality, aiUsable, warning, latencyMs, candleCount, feedStatus } where feedStatus: { isLive, stale, quality, aiUsable, warning, source, latencyMs, ... } and quality ∈ unavailable | invalid | partial | stale | delayed | clean. Keep reading data.candles for the series.
+Step 2 — derive displayMode from feedStatus:
+
+LIVE ← feedStatus.isLive === true && feedStatus.quality === "clean" (i.e. aiUsable)
+STALE ← feedStatus.stale === true or quality ∈ {stale, delayed}
+ANALYSIS_ONLY ← quality ∈ {partial, invalid} (candles exist but not trustworthy-live)
+UNAVAILABLE ← quality === "unavailable" or zero candles
+FALLBACK_COMPOSITE ← source is a composite/third-party provider AND not aiUsable
+
+Step 3 — header-veto safety combine. Compute the final state as the safest of (displayMode, header). If snap.ok === false, cap the chart at ANALYSIS_ONLY regardless of feedStatus — the chart must never show a more-live state than the header. Safety order: UNAVAILABLE > ANALYSIS_ONLY > STALE > FALLBACK_COMPOSITE > LIVE.
+Step 4 — gate rendering:
+
+LIVE → render candles normally; live price marker allowed.
+FALLBACK_COMPOSITE → render candles; badge "Delayed market data"; no live price marker.
+STALE → render candles with a clear "Stale · last-known" badge + last-updated time; remove the live price marker.
+ANALYSIS_ONLY → honest panel: "Live feed unavailable · Analysis only"; if candles shown, label as historical context; no live price marker.
+UNAVAILABLE → existing empty state ("No live candles… we don't fabricate").
+Badge copy uses feedStatus.warning/message only — never source/provider/internal field names, no stack traces, no paper/demo/mock/simulated wording in LIVE account mode.
+
+Step 5 — verify in the running app: EURUSD (composite/feed-unavailable) → header and chart agree, no live-looking 1.15 candles, no live marker; V75/Deriv → still renders LIVE; symbol switching, Ruby panel, and trade buttons still work; account snapshot / open trades / P/L / MT5 bridge status unaffected. Run pnpm run typecheck and pnpm run ci:guards.
+Do not pass if: header says unavailable but chart still looks live; stale/composite candles render without a stale/analysis-only badge; a live price marker appears on stale/delayed data; LIVE mode shows paper/demo wording; or any scanner/Ruby/MT5 wiring breaks.
+
+The thing to actually eyeball when it reports back is Step 5 on EURUSD — that's the direct proof your screenshots are fixed.Opus 4.8 High

@@ -1,0 +1,97 @@
+We are moving to the next phase now that the MT5 bridge is confirmed healthy.
+
+Build and validate the ARX AI paper-trading intelligence layer using the existing live MT5 bridge data.
+
+CRITICAL SAFETY RULES:
+- Do not modify the MT5 EA.
+- Do not modify MT5_BRIDGE_TOKEN.
+- Do not modify bridge authentication.
+- Do not enable live order execution.
+- Do not add broker execution.
+- Keep executionMode = "READ_ONLY".
+- Keep placementLayer = "BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED".
+- The system may analyze, score, simulate, and paper-track ideas only.
+- It must never place, modify, or close real trades.
+
+Goal:
+Use the synced MT5 account, heartbeat, positions, and market/paper data to power the ARX AI decision dashboard.
+
+Build or verify these layers:
+
+1. MT5 Data Intake Layer
+- Confirm the app can read the latest MT5 connection status.
+- Confirm it can read latest account snapshot.
+- Confirm it can read latest positions snapshot.
+- Confirm stale MT5 data is detected if heartbeatAgeSeconds exceeds the freshness threshold.
+- If MT5 becomes stale, AI analysis should show "MT5 DATA STALE" and stop generating fresh paper decisions until data is fresh again.
+
+2. ARX AI Market Analysis Layer
+- Create or verify a paper-only analysis service that can:
+  - receive symbol input
+  - read current/simulated market data if available
+  - read user account balance/equity from MT5 snapshot
+  - read open positions from MT5 snapshot
+  - calculate risk score
+  - calculate confidence score
+  - calculate suggested position sizing for paper mode only
+  - explain why a setup is risky or acceptable
+- No real orders.
+
+3. Paper Trade Simulation Layer
+- Create a paperTradeIdeas table/service if not already present.
+- Each paper trade idea should store:
+  - symbol
+  - direction
+  - entry idea
+  - stop loss idea
+  - take profit idea
+  - risk percentage
+  - confidence score
+  - AI reasoning
+  - status: WATCHLIST, PAPER_OPEN, PAPER_CLOSED, REJECTED
+  - createdAt
+  - updatedAt
+- This layer must be separate from real broker commands.
+
+4. Safety Guard Layer
+- Add a central safety check that blocks any attempted broker execution.
+- Any command that looks like real execution must return:
+  status: "BLOCKED_READ_ONLY_MODE"
+  reason: "Live broker execution is disabled. ARX AI is currently paper-only."
+- Log the blocked attempt without sending anything to MT5.
+
+5. Dashboard UI Connection
+- Update the ARX AI dashboard so it clearly shows:
+  - MT5 Bridge: Connected / Stale / Disconnected
+  - Mode: READ_ONLY
+  - Live Execution: Disabled
+  - Paper Trading: Enabled
+  - Account Balance / Equity from MT5 snapshot
+  - Open MT5 Positions, if any
+  - Latest AI Paper Trade Ideas
+  - Risk Score
+  - Confidence Score
+  - Reasoning Summary
+- Do not show anything that makes it look like real trades are being placed.
+
+6. End-to-End Test
+Run a full test:
+- MT5 connected
+- account snapshot visible
+- positions snapshot valid
+- AI paper analysis works
+- paper trade idea can be created
+- dashboard shows paper idea
+- real execution attempt is blocked
+- no broker placement route exists
+- bridge remains healthy after test
+
+Return a report with:
+- Files changed
+- Tables/services added or verified
+- Dashboard sections updated
+- Safety checks confirmed
+- Test results
+- Any remaining issues
+
+Do not continue to live trading. This phase is paper intelligence only.

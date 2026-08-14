@@ -1,0 +1,485 @@
+Continue ARX AI by building the Trading Tool Intelligence and Tool Orchestrator.
+
+Do not rebuild blindly. Inspect the current:
+- AI assistant context builder
+- Market Context Engine
+- Risk Governor
+- Broker Symbol Specs Engine
+- Live Trade Intelligence
+- Smart Exit Plan Engine
+- Trade Decision Orchestrator
+- Strategy Playbook
+- Backtesting/Replay Engine
+- Scanner
+- Open Trades
+- Trade Action Center
+- Journal/Performance Coach
+- Alert system
+- MT5 bridge and candle/tick data availability
+
+Goal:
+Make ARX AI understand and use trading tools intelligently to help users analyze trades, manage risk, plan entries, plan exits, and improve performance.
+
+Important:
+Do not guarantee profit.
+Do not claim certainty.
+Do not invent market data.
+Do not auto-place trades.
+Do not auto-close trades.
+Do not bypass Risk Governor.
+Do not expose secrets.
+Live/demo trade actions still require user confirmation.
+
+PART 1 — Trading Tool Registry
+
+Create a central Trading Tool Registry.
+
+Each tool should define:
+- tool name
+- category
+- what it is used for
+- required data
+- supported timeframes
+- output format
+- limitations
+- when the AI should use it
+- when the AI should avoid it
+- confidence/data quality requirements
+
+Tool categories:
+
+1. Trend tools
+- SMA
+- EMA
+- moving average crossover
+- trend direction
+- trend strength
+- higher high / higher low structure
+- lower high / lower low structure
+- multi-timeframe trend alignment
+
+2. Momentum tools
+- RSI
+- MACD
+- stochastic
+- momentum shift
+- divergence detection
+- overbought/oversold warnings
+
+3. Volatility tools
+- ATR
+- Bollinger Bands
+- volatility expansion
+- volatility compression
+- spread risk
+- average candle range
+
+4. Support/resistance tools
+- swing highs
+- swing lows
+- support zones
+- resistance zones
+- pivot points
+- supply/demand zones if data supports it
+- breakout levels
+- retest levels
+
+5. Price action tools
+- candlestick patterns
+- engulfing candles
+- pin bars/wicks
+- inside bars
+- breakout candles
+- rejection candles
+- failed breakout
+- liquidity sweep
+- continuation structure
+- reversal structure
+- consolidation/range detection
+
+6. Fibonacci tools
+- retracement levels
+- extension levels
+- pullback zones
+- continuation targets
+- invalidation zones
+
+7. Volume/liquidity tools
+- tick volume if available
+- volume spike
+- liquidity sweep
+- high/low sweep
+- session high/low
+- previous day high/low
+- previous week high/low if available
+
+8. Risk tools
+- position sizing
+- risk/reward
+- stop loss validation
+- take profit validation
+- max loss
+- daily loss remaining
+- max exposure
+- margin estimate
+- broker symbol rules
+- spread filter
+
+9. Trade management tools
+- MFE
+- MAE
+- profit giveback
+- break-even stop review
+- trailing stop review
+- partial close review
+- close urgency
+- trade efficiency score
+- time-in-trade analysis
+
+10. Event/session tools
+- economic calendar risk
+- news risk
+- Asian session
+- London session
+- New York session
+- overlap session
+- low-liquidity window
+- market close risk
+- high-impact news window
+
+11. Performance tools
+- win rate
+- expectancy
+- profit factor
+- average win/loss
+- strategy performance
+- symbol performance
+- session performance
+- entry quality
+- exit quality
+- mistake detection
+- discipline score
+
+PART 2 — Tool Selection Engine
+
+Build a Tool Selection Engine that decides which tools to use based on the user’s question.
+
+Examples:
+
+If user asks:
+“Where is my trade going?”
+Use:
+- market context
+- trend tools
+- support/resistance
+- momentum
+- volatility
+- open trade P&L
+- exit plan
+
+If user asks:
+“Is this a pullback or reversal?”
+Use:
+- market structure
+- trend alignment
+- Fibonacci retracement if candle data exists
+- support/resistance
+- momentum divergence
+- invalidation level
+- fakeout/reversal score
+
+If user asks:
+“When should I close?”
+Use:
+- MFE/MAE
+- profit giveback
+- close urgency
+- support/resistance
+- exit plan
+- event risk
+- trade efficiency
+- user trading style
+
+If user asks:
+“Should I enter?”
+Use:
+- setup quality
+- strategy playbook
+- trend alignment
+- risk/reward
+- spread
+- broker rules
+- news/session risk
+- Risk Governor
+
+If user asks:
+“Why did I lose?”
+Use:
+- journal
+- entry quality
+- exit quality
+- alerts ignored
+- risk logs
+- strategy performance
+- market context at entry/exit
+
+PART 3 — Indicator Calculation Engine
+
+Add indicator calculation support using real candle data only.
+
+Supported indicators:
+- SMA
+- EMA
+- RSI
+- MACD
+- Bollinger Bands
+- ATR
+- Stochastic if feasible
+- Pivot levels if feasible
+- Fibonacci levels from real swing high/low
+
+Rules:
+- If candle data is missing, return unavailable.
+- If timeframe data is stale, mark stale.
+- Do not invent indicator values.
+- Do not calculate indicators from fake/sample candles.
+- Store data quality with every result.
+
+PART 4 — Tool Output Explanation
+
+Every tool result should include:
+- result
+- plain-English meaning
+- confidence score
+- data quality
+- timeframe used
+- why it matters
+- what would invalidate it
+
+Example:
+“RSI on M15 is elevated, which means momentum is stretched. This does not mean price must reverse, but it increases pullback risk if price also rejects resistance.”
+
+PART 5 — Confluence Engine
+
+Build a confluence engine that combines tools.
+
+Confluence should detect:
+- trend + momentum agreement
+- support/resistance + candle rejection
+- Fibonacci + structure alignment
+- breakout + volume/tick confirmation if available
+- overextension + profit giveback
+- event risk + volatility expansion
+- high spread + low liquidity
+- strategy setup match + risk pass
+
+Output:
+- bullish confluence score
+- bearish confluence score
+- exit confluence score
+- risk confluence score
+- setup confluence score
+- data quality
+
+Labels:
+- Strong bullish confluence
+- Weak bullish confluence
+- Strong bearish confluence
+- Weak bearish confluence
+- Mixed signals
+- No clear edge
+- Data insufficient
+
+PART 6 — AI Tool-Aware Responses
+
+Update AI so it can say exactly what tools it used.
+
+AI response format:
+1. Direct answer
+2. Tools used
+3. What each tool showed
+4. Conflicting signals
+5. Key level to watch
+6. Risk warning
+7. Suggested review action
+8. Data quality
+
+Example:
+“Based on M15 trend structure, ATR, support/resistance, and your open P&L, this looks more like a pullback than a full reversal right now. The key level is 1.08420. If price breaks below that level, reversal risk increases.”
+
+AI must not:
+- pretend it used tools it did not use
+- invent indicator values
+- hide missing data
+- guarantee direction
+- place or close trades without confirmation
+
+PART 7 — Tool Education Mode
+
+Add a tool education layer so users can ask:
+
+- What is RSI?
+- Why are you using ATR?
+- What does Fibonacci mean here?
+- Why does support matter?
+- What is a liquidity sweep?
+- What is a fakeout?
+- What is MFE/MAE?
+- Why did the AI say profit is fading?
+- Why is spread risk important?
+
+AI should explain tools simply and relate them to the user’s trade.
+
+PART 8 — User Tool Preferences
+
+Allow users to set preferred tools.
+
+Preferences:
+- preferred indicators
+- preferred timeframes
+- preferred trading style
+- use price action only
+- use indicators + price action
+- avoid certain tools
+- preferred confirmation style:
+  - conservative
+  - balanced
+  - aggressive
+
+AI should respect user preferences unless data is missing or risk requires warning.
+
+PART 9 — UI Updates
+
+Add a “Tools Used” panel on:
+- Trade Detail page
+- Market Context section
+- Setup Quality section
+- Trade Decision panel
+- AI answer cards
+- Scanner cards
+
+Show:
+- tools used
+- timeframe
+- signal
+- confidence
+- data quality
+- explanation
+
+Add “Ask why” buttons next to tool outputs.
+
+PART 10 — Backtesting Integration
+
+Allow users to test tool-based rules inside Strategy Lab.
+
+Examples:
+- EMA trend + RSI pullback
+- Bollinger squeeze breakout
+- ATR stop placement
+- support/resistance retest
+- Fibonacci retracement continuation
+- liquidity sweep reversal
+
+Backtest must use real historical data only.
+No fake results.
+
+PART 11 — API / Database
+
+Add endpoints:
+
+- GET /api/trading-tools
+- GET /api/trading-tools/:tool
+- POST /api/tools/analyze-symbol
+- POST /api/tools/analyze-trade
+- POST /api/tools/select-for-question
+- POST /api/tools/confluence
+- GET /api/tools/preferences
+- PATCH /api/tools/preferences
+
+Add tables if missing:
+
+trading_tool_registry:
+- id
+- tool_key
+- name
+- category
+- description
+- required_data
+- limitations
+- active
+- created_at
+- updated_at
+
+trading_tool_results:
+- id
+- user_id
+- trade_id nullable
+- symbol
+- timeframe
+- tool_key
+- result
+- signal_label
+- confidence_score
+- data_quality
+- explanation
+- created_at
+
+tool_confluence_snapshots:
+- id
+- user_id
+- trade_id nullable
+- symbol
+- bullish_score
+- bearish_score
+- exit_score
+- risk_score
+- setup_score
+- label
+- tools_used
+- conflicting_signals
+- data_quality
+- created_at
+
+user_tool_preferences:
+- user_id
+- preferred_tools
+- avoided_tools
+- preferred_timeframes
+- analysis_style
+- confirmation_style
+- updated_at
+
+PART 12 — Tests
+
+Add tests for:
+1. AI selects the correct tools for a trade question.
+2. Missing candle data returns unavailable.
+3. Indicator values are not invented.
+4. RSI/EMA/ATR calculations use real candles only.
+5. Confluence engine detects mixed signals.
+6. User can only see their own trade tool results.
+7. Shared-master users only see attributed trade tool results.
+8. AI explains which tools it used.
+9. AI does not claim certainty.
+10. Tool preferences affect AI analysis.
+11. Setup scoring can use tool confluence.
+12. Backtesting can use tool-based rules.
+13. Risk Governor remains final authority.
+14. Live/demo actions still require confirmation.
+15. No secrets are exposed.
+16. Mobile Tools Used panel works on iPhone Safari.
+
+Final report:
+Return:
+- PASS or FAIL
+- Trading Tool Registry status
+- Tool Selection Engine status
+- Indicator Calculation Engine status
+- Confluence Engine status
+- AI tool-aware response status
+- Tool Education Mode status
+- User Tool Preferences status
+- UI status
+- Backtesting integration status
+- tests passed
+- remaining blockers

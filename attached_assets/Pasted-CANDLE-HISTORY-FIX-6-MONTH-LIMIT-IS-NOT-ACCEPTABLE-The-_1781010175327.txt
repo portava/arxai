@@ -1,0 +1,148 @@
+CANDLE HISTORY FIX — 6 MONTH LIMIT IS NOT ACCEPTABLE
+
+The scanner/chart candle history currently only goes back ~6 months. That is still wrong.
+
+Goal:
+Users must be able to scroll back as far as the available source data allows — ideally years, not months — and the app must honestly show when history is limited by the provider, symbol, broker, or storage.
+
+Fix this end-to-end.
+
+REQUIREMENTS
+
+1. Find the exact 6-month cap
+Search the entire codebase for any candle/history/date limits:
+- 6 months
+- 180 days
+- 183 days
+- fromDate / toDate limits
+- lookbackDays
+- maxBars
+- limit=5000 / 10000
+- defaultRange
+- startTime calculations
+- API provider restrictions
+- database pruning
+- frontend chart range limits
+
+Do not assume it is only frontend. Check:
+- chart component
+- scanner chart panel
+- candle API route
+- market data service
+- provider adapters
+- database candle storage
+- MT5/bridge history ingestion
+- pagination/infinite-scroll logic
+
+2. Remove artificial history caps
+If the 6-month limit is our own app limit, remove it.
+
+Replace it with:
+- user-scroll based lazy loading
+- provider-aware pagination
+- backend cursor or time-window pagination
+- safe max batch size per request
+- no hard 6-month cutoff
+
+3. Add deep historical loading
+When user scrolls left on the chart:
+- detect visible logical range near the oldest candle
+- request older candles automatically
+- prepend older candles without wiping current chart state
+- preserve zoom, scroll position, drawings, trade markers, and selected symbol/timeframe
+
+4. Support proper history by timeframe
+Minimum expected history targets:
+
+- M1: at least 1 year where available
+- M5: at least 2 years where available
+- M15: at least 3 years where available
+- M30: at least 3 years where available
+- H1: at least 5 years where available
+- H4: at least 5–10 years where available
+- D1: maximum available history
+
+If provider has less data, show the real reason:
+“Only X months available from current source”
+not a fake silent cutoff.
+
+5. Use source priority correctly
+For ARX AI charts, candle history should use the best available source in this order:
+
+A. MT5/broker historical candles for broker-traded symbols
+B. cached/stored internal candles from prior streaming
+C. premium external market data feed if configured
+D. fallback provider only if clearly labeled
+
+For Deriv synthetic/volatility markets, do not rely on stock/forex providers that cannot truly serve those symbols.
+
+6. Backend candle API must return metadata
+Every candle response must include:
+
+- symbol
+- timeframe
+- requestedFrom
+- requestedTo
+- returnedFrom
+- returnedTo
+- candleCount
+- source
+- sourcePriorityUsed
+- hasMoreOlder
+- oldestAvailableTime
+- newestAvailableTime
+- freshnessStatus
+- limitationReason if history is capped
+
+7. Frontend must show honest history status
+On the chart, add a small non-intrusive history badge:
+- “Live”
+- “Historical”
+- “Limited history”
+- “Provider capped”
+- “Loading older candles…”
+
+Do not show fake full history if the app only has partial candles.
+
+8. Cache candle history
+When older candles are fetched, store/cache them so the app does not keep refetching the same windows.
+
+Deduplicate candles by:
+- symbol
+- timeframe
+- open time
+
+Never create duplicate candles.
+
+9. QA tests required
+Test these exact scenarios:
+
+- V75 M1 scroll back beyond 6 months
+- V75 M15 scroll back beyond 6 months
+- V75 H1 scroll back beyond 1 year
+- EURUSD M15 scroll back beyond 1 year
+- XAUUSD H1 scroll back beyond 3 years
+- US30 H4 scroll back beyond 3 years
+
+For each test, report:
+- oldest candle displayed
+- newest candle displayed
+- total candles loaded
+- source used
+- whether more older candles are available
+- whether user can keep scrolling left
+- whether chart stays stable after prepend
+- whether trade markers and drawings remain attached correctly
+
+10. Do not pass until fixed
+Do not mark this complete if:
+- history still stops at 6 months because of our code
+- chart clears when older candles load
+- scrolling left does nothing
+- metadata is missing
+- source limitation is hidden
+- candles are duplicated
+- chart lies about live/history status
+
+Expected result:
+The chart must behave like a real trading chart. Users should be able to scroll left and load much deeper candle history instead of hitting a 6-month wall.

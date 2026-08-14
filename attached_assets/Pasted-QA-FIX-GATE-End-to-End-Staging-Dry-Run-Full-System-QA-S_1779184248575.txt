@@ -1,0 +1,57 @@
+QA/FIX GATE — End-to-End Staging Dry Run + Full System QA Script
+
+Inspect the staging dry-run script and full system QA work from the previous pass.
+
+Do not rebuild unrelated systems. Reuse current code and only repair missing or broken pieces.
+
+Verify:
+
+1. One full staging dry-run script exists and is runnable.
+2. Script verifies staging/test-safe environment before running.
+3. Script snapshots arx_live_commands before and after.
+4. Script fails if live command count changes unexpectedly.
+5. Script does not fire real live trades.
+6. Script does not create real live bridge commands.
+7. Brand-new user onboarding is tested.
+8. Demo trading full flow is tested.
+9. Personal MT5 setup/status flow is tested.
+10. Shared master request/approval/allocation flow is tested.
+11. Admin/operator workflow is tested.
+12. Scanner direct symbol and Ruby market explanation are tested.
+13. Trade ticket, SL/TP, pending orders, and confirmation flow are tested.
+14. Chart position window and trade detail window are tested.
+15. Ruby app knowledge and user-specific context are tested.
+16. Ruby voice auto-listen and voice command guardrails are tested.
+17. Live safety blocks are tested for every major gate.
+18. Queue/concurrency/double-submit tests are covered.
+19. User privacy isolation is tested.
+20. Kill switches are tested.
+21. Close-only emergency mode is tested.
+22. Reconciliation and NEEDS_REVIEW workflow are tested.
+23. Audit log center and evidence export are tested.
+24. Broker/regulatory mode separation and disclosures are tested.
+25. Production readiness/environment lockdown is tested.
+26. Normal users cannot access admin-only data.
+27. Admin routes and APIs are protected.
+28. Secret leak probes pass.
+29. Exports mask secrets.
+30. Public health/errors do not expose internals.
+31. Ruby does not expose secrets, other users, admin-only data, or false live-trade claims.
+32. Mobile-critical flows have manual test steps listed.
+33. Final report clearly shows PASS/FAIL, blockers, tests run, and remaining risks.
+34. No bridge tokens, API keys, account credentials, session secrets, token hashes, raw audio, private prompts, or sensitive bridge payloads are exposed.
+35. No live trade is fired during QA.
+36. arx_live_commands count remains unchanged.
+
+Return:
+- PASS/FAIL table
+- script name
+- files inspected
+- tests run
+- screenshots/routes to manually verify
+- issues found
+- fixes applied
+- remaining blockers
+- remaining risks
+- confirmation that no live trade was fired
+- confirmation that arx_live_commands count stayed unchanged

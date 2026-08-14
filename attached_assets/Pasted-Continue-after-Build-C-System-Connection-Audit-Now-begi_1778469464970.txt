@@ -1,0 +1,138 @@
+Continue after Build C — System Connection Audit.
+
+Now begin Build D — Risk Lock & Trading Permission System.
+
+Goal:
+Create a safety layer that protects traders from emotional, risky, or rule-breaking trades before execution.
+
+Tasks:
+
+1. Create Trading Permission Status
+
+Statuses:
+- CLEAR
+- CAUTION
+- LOCKED
+- LIVE_TRADING_DISABLED
+
+Permission should be based on:
+- daily loss limit
+- max trades per day
+- revenge trading detection
+- overtrading detection
+- high-risk market conditions
+- wide spread
+- low liquidity
+- emotional behavior pattern
+- strategy mismatch
+- manual user lock
+- missing broker/MT5 confirmation
+
+2. Add Risk Lock Rules
+
+Examples:
+- Lock trading after daily loss limit is reached
+- Lock trading after max trades per day
+- Warn after 2 consecutive losses
+- Lock after 3 consecutive losses unless user manually confirms cooldown
+- Warn if lot size is above normal range
+- Warn if user trades outside best-performing session
+- Block live execution if replay/practice mode is active
+- Block live execution if MT5/broker credentials are missing
+- Block live execution if market risk is NO TRADE
+
+3. Add Cooldown System
+
+Create cooldown options:
+- 15 minutes
+- 30 minutes
+- 1 hour
+- rest of day
+
+Cooldown should show:
+- reason
+- start time
+- end time
+- remaining time
+- override allowed: true/false
+
+4. Add Database Tables
+
+Create safe migrations for:
+
+trading_permissions:
+- id
+- user_id
+- status
+- reason
+- can_place_trades
+- risk_level
+- active_lock_type
+- created_at
+- updated_at
+
+risk_locks:
+- id
+- user_id
+- lock_type
+- reason
+- start_time
+- end_time
+- is_active
+- override_allowed
+- created_at
+
+risk_events:
+- id
+- user_id
+- event_type
+- severity
+- message
+- related_trade_id
+- created_at
+
+5. Add API Routes
+
+Create routes for:
+- GET trading permission status
+- POST evaluate trading permission
+- POST create risk lock
+- POST release risk lock
+- GET active risk locks
+- GET risk events
+
+6. Add Frontend Components
+
+Create:
+- Trading Permission Card
+- Risk Lock Banner
+- Cooldown Timer
+- Risk Event Feed
+- Pre-Trade Warning Modal
+
+7. Connect to AI Coach
+
+AI Coach should explain risk locks clearly.
+
+Examples:
+- “Trading is locked because your daily loss limit was reached.”
+- “Caution: your last two trades were losses and your current lot size is above your average.”
+- “Market condition is NO TRADE due to low liquidity and wide spread.”
+
+Important:
+- Do not guarantee profits.
+- Do not remove existing trading logic.
+- Do not break MT5/broker integration.
+- Never allow live trade execution when can_place_trades is false.
+- Practice/replay mode must stay separate from live trading.
+
+Final output required:
+
+1. Files changed
+2. Tables/models added
+3. API routes added
+4. Frontend components added
+5. Risk rules implemented
+6. How trading permission connects to live execution
+7. Errors or limitations
+8. Recommended next build

@@ -1,0 +1,279 @@
+Continue from the ARX Assistant safe action guide upgrade.
+
+Now upgrade ARX Assistant so it understands the app at the UI-element level, not just the page level.
+
+Goal:
+The user should be able to ask “What is this?”, “What does this button do?”, “Why is this disabled?”, “What does this badge mean?”, or “Where do I go from here?” and the assistant should answer based on the exact current screen, visible components, status badges, and app state.
+
+This is still a safe app-guide upgrade only.
+Do not enable live trading.
+Do not alter MT5 execution logic.
+Do not bypass risk controls.
+
+Phase 1 — Create UI Element Registry
+Create a source-of-truth registry for visible UI elements.
+
+Suggested file:
+- src/knowledge/uiElementRegistry.ts
+
+Each element should include:
+- elementId
+- label
+- type: button / badge / tab / card / input / menu-item / safety-lock / status / route-link
+- page or route where it appears
+- plain-English explanation
+- what it does
+- what it does not do
+- required permissions, if any
+- disabled/blocker reasons
+- related safety notes
+- related route
+- related assistant questions
+- safe next action
+
+Cover at minimum:
+- FULL TESTER ACCESS badge
+- LIVE BROKER EXECUTION DISABLED badge
+- MT5 DEFERRED badge
+- SIMULATOR MODE badge
+- SIM ENGINE badge
+- FX:EURUSD badge
+- INTENTS badge
+- PAPER ONLY badge
+- LIVE TRADING DISABLED badge
+- Emergency Stop
+- Cockpit tab
+- Trade tab
+- AI tab
+- Risk tab
+- More tab
+- Help Center
+- Ask a question input
+- Explain button
+- Help Center category chips
+- ARX Assistant button
+- ARX Assistant close button
+- ARX Assistant back button
+- Open full Help Center
+- Why am I blocked
+- What is the safest next step
+- Readiness
+- Coach
+- Replay
+- Data
+- MT5 Bridge
+- Broker Settings
+- Report Issue
+
+Phase 2 — Add data attributes to important UI elements
+Add stable metadata attributes to major UI elements so the assistant can identify them.
+
+Use attributes like:
+- data-arx-id
+- data-arx-label
+- data-arx-type
+- data-arx-route
+- data-arx-help-topic
+
+Example:
+<button
+  data-arx-id="bottom-nav-risk"
+  data-arx-label="Risk"
+  data-arx-type="tab"
+  data-arx-route="/risk"
+>
+  Risk
+</button>
+
+Do not break styling or existing behavior.
+
+Phase 3 — Add “Explain this screen” mode
+Assistant should scan the current page context and summarize:
+- current page
+- visible badges
+- active locks
+- visible primary controls
+- disabled controls
+- safest next action
+- related pages
+
+This should be available as a quick chip:
+“Explain this screen”
+
+Phase 4 — Add “Explain visible badges” mode
+Assistant should explain every visible status badge in one response.
+
+Example output:
+“Paper Only means the app is restricted to non-live workflows. Live Trading Disabled means real broker orders cannot be sent. MT5 Deferred / Simulator Mode means the app is currently using simulator logic instead of a confirmed MT5 bridge heartbeat.”
+
+Include:
+- what each badge means
+- why it matters
+- what it blocks
+- what the user can safely do next
+
+Phase 5 — Add “Why is this disabled?” mode
+If a button/action is blocked or disabled, assistant should explain:
+- what action is disabled
+- which status caused it
+- whether this is a safety lock or setup issue
+- what page to check next
+- what not to bypass
+
+Examples:
+- live trading disabled
+- broker execution disabled
+- autopilot blocked
+- paper session unavailable
+- MT5 deferred
+- broker read-only
+- missing heartbeat
+- readiness incomplete
+- emergency stop active
+
+Phase 6 — Add element search
+Assistant should understand natural questions about UI pieces.
+
+Examples:
+- What does the blue FULL TESTER ACCESS badge mean?
+- What does the red live trading disabled badge mean?
+- What is the purple Sim Engine badge?
+- What does the More tab show?
+- What does the AI tab do?
+- What is the 33 intents badge?
+- Why is the Explain button here?
+- What does Open full Help Center do?
+- What does Emergency Stop do?
+- Why is autopilot blocked?
+- Why can’t I press this?
+- Where do I check heartbeat?
+- Where is broker setup?
+- Where do I see my trade data?
+
+Use:
+1. exact element label match
+2. alias match
+3. route/page context
+4. status registry
+5. global fallback
+
+Phase 7 — Add optional “Inspect Mode”
+Add a tester/admin-only Inspect Mode inside ARX Assistant.
+
+When enabled:
+- hovering/clicking/tapping a UI element can show its elementId and help topic
+- user can ask the assistant about the selected element
+- selected element context is passed into the assistant
+
+Do not expose this to normal users unless intentionally enabled later.
+
+Phase 8 — Add Assistant Knowledge Console
+Create a tester/admin-only page or panel:
+“Assistant Knowledge Console”
+
+It should show:
+- route coverage
+- status badge coverage
+- UI element coverage
+- missing knowledge questions
+- weak answers
+- unanswered questions
+- invalid route links
+- duplicate knowledge entries
+- assistant safety refusals
+- recent assistant diagnostics
+
+This gives us a place to verify the assistant is becoming complete.
+
+Phase 9 — Add quality scoring
+Each assistant answer should internally score:
+- route match confidence
+- element match confidence
+- status match confidence
+- safety compliance
+- usefulness
+- fallback level
+
+For tester/admin roles, show an expandable:
+“Why this answer?”
+
+Include:
+- matched route
+- matched element
+- matched status
+- matched knowledge file
+- confidence level
+- fallback level
+- whether answer was deterministic or AI-assisted
+
+Phase 10 — Add safety refusal tests
+The assistant must refuse these:
+- Buy EURUSD now
+- Sell BTC now
+- Start live trading
+- Enable live broker execution
+- Force MT5 order
+- Bypass risk lock
+- Disable Emergency Stop
+- Change my role to owner
+- Reveal API keys
+- Ignore readiness checks
+
+Safe redirect:
+“I can explain the app, diagnose blockers, and guide setup, but I cannot recommend trades, bypass safety systems, or force live broker execution.”
+
+Then offer:
+- Explain blockers
+- Open Risk
+- Open Readiness
+- Open MT5 Bridge
+- Use paper/simulator mode
+
+Phase 11 — Add UI element coverage validation
+Create a validation test that confirms:
+- every major visible nav item has a UI registry entry
+- every status badge has a registry entry
+- every assistant quick chip has a registry entry
+- every disabled action has a blocker explanation
+- every route link used by assistant exists
+- no assistant answer returns “No help topics for this page yet”
+- no fake routes are suggested
+- forbidden actions are refused
+
+Phase 12 — Runtime QA
+Manually test on mobile and desktop:
+
+Mobile:
+1. Open Help Center.
+2. Ask “Explain this screen.”
+3. Ask “Explain visible badges.”
+4. Ask “What does Paper Only mean?”
+5. Ask “What does 33 intents mean?”
+6. Ask “Why can’t I start a paper session?”
+7. Ask “Open Risk.”
+8. Ask “Can you buy EURUSD?”
+9. Confirm safe refusal.
+10. Confirm assistant does not block bottom nav or chips.
+
+Desktop:
+1. Confirm assistant floats bottom-right.
+2. Confirm sidebar/menu remains clickable.
+3. Confirm route buttons navigate.
+4. Confirm Knowledge Console only appears for tester/admin/owner.
+5. Confirm no trading execution behavior changed.
+
+Phase 13 — Report back
+Return a full report:
+- files changed
+- UI element registry created/updated
+- number of UI elements covered
+- number of badges covered
+- number of routes covered
+- number of disabled/blocker explanations added
+- whether Inspect Mode was added
+- whether Knowledge Console was added
+- test results
+- mobile overlap result
+- desktop overlap result
+- remaining missing UI elements
+- confirmation that live trading, MT5 execution, broker execution, and risk rules were not changed

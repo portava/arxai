@@ -1,0 +1,155 @@
+Since the investor statement-change note task was already started, finish it properly and keep it scoped.
+
+Goal:
+Investors must see a clear, honest note when an investor statement was changed, replaced, corrected, removed, or superseded.
+
+This should protect trust and avoid silent changes to financial records.
+
+Do not rebuild the Investor Portal.
+Do not change live trading.
+Do not touch trade execution.
+Do not add Paper Trading, simulator, mock, fake, or sandbox wording.
+Do not expose backend table names, raw JSON, route names, stack traces, or developer wording to investors.
+
+Scope:
+This task is only for investor statement transparency and audit visibility.
+
+Required behavior:
+
+1. Statement status labels
+Every investor statement should have a clear status:
+
+- Active
+- Corrected
+- Replaced
+- Removed
+- Superseded
+- Draft
+- Pending Review
+
+Investor-facing wording should be simple.
+
+Examples:
+“This statement was corrected on June 4, 2026.”
+“This statement was replaced by a newer version.”
+“This statement was removed by admin. Reason: correction needed.”
+“This statement is no longer active. View the current statement.”
+
+2. Change/removal note
+When an admin changes, removes, replaces, or supersedes an investor statement, the system must require a reason/note.
+
+Required fields:
+- statement id
+- investor id
+- action type
+- previous status
+- new status
+- admin id
+- reason/note
+- timestamp
+- replacement statement id if applicable
+
+Do not allow silent statement removal.
+
+3. Investor UI
+On the Investor Portal Statement/Documents/Activity area, show a visible but clean note if a statement was changed or removed.
+
+Examples:
+
+For corrected statement:
+“Statement corrected: This statement was updated to fix an error. Updated on ___.”
+
+For replaced statement:
+“Statement replaced: A newer statement is available. View current statement.”
+
+For removed statement:
+“Statement removed: This statement was removed by admin. Reason: ___.”
+
+For superseded statement:
+“Superseded: This statement is no longer the current version.”
+
+4. Admin UI
+Admin must see statement history and be able to explain changes.
+
+Admin statement actions:
+- correct statement
+- replace statement
+- remove statement
+- restore statement if appropriate
+- view statement history
+- add required reason
+
+Admin must not be able to permanently delete a statement record without audit trail. Prefer soft delete/status change.
+
+5. Audit trail
+Every statement change must create an audit log entry.
+
+Audit entry should include:
+- admin actor
+- investor affected
+- statement affected
+- action
+- before value
+- after value
+- reason
+- timestamp
+
+6. Investor Activity
+Add statement changes to the investor’s Activity feed.
+
+Examples:
+- “June 4 — Statement corrected”
+- “June 4 — April statement replaced”
+- “June 4 — Statement removed: correction needed”
+
+7. Security
+Investors can only see their own statement notes.
+Investors cannot edit statement notes.
+Investors cannot view another investor’s statement history.
+Traders cannot access investor statement data.
+Only admin can change statement status or add correction/removal notes.
+
+8. Empty states
+If there are no statements:
+“No statements are available yet.”
+
+If a removed statement should not be downloadable:
+Show the removal note but disable download/open action.
+
+If a replaced statement has a newer version:
+Show a “View current statement” action.
+
+9. QA
+Run tests before passing work.
+
+Required tests:
+- admin can mark statement corrected with required note
+- admin can mark statement replaced with replacement link
+- admin can mark statement removed with required reason
+- investor sees clear note for corrected statement
+- investor sees clear note for removed statement
+- investor sees clear note for replaced statement
+- investor cannot edit notes
+- investor cannot see another investor’s statement notes
+- trader cannot access investor statements
+- audit log is created for each statement change
+- mobile Investor Portal layout remains clean
+- no live trading flow is touched
+
+10. Final proof required
+Report:
+- files changed
+- statement statuses added
+- admin change/removal flow proof
+- investor-facing note proof
+- audit log proof
+- permission test proof
+- mobile UI proof
+- confirmation no trading execution path was changed
+- confirmation no account role split was broken
+
+After finishing this, return to the core Investor Portal + account/role split checklist and confirm whether:
+1. Andraie.co@gmail.com is trader/user only,
+2. separate admin login exists,
+3. no user can access two profile experiences,
+4. investors are view-only for execution.

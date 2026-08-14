@@ -1,0 +1,92 @@
+Export the MT5 bridge EA package for my VPS setup.
+
+Do NOT unlock live trading.
+Do NOT enable auto-close execution.
+Do NOT enable shared MT5 routing.
+Do NOT send MT5 execution, modification, cancel, or close commands.
+Do NOT expose MT5_BRIDGE_TOKEN or any secret.
+Do NOT print secret values.
+
+Goal:
+Give me the exact MT5 bridge Expert Advisor file I need to place into:
+
+MQL5/Experts/
+
+Steps:
+1. Search the repo for the existing MT5 bridge EA:
+   - ReplitMT5BridgeEA.mq5
+   - MT5BridgeEA.mq5
+   - bridge EA
+   - WebRequest
+   - heartbeat
+   - MT5_BRIDGE_TOKEN
+
+2. If the EA already exists:
+   - Verify it matches the current backend bridge endpoints.
+   - Verify it supports read-only heartbeat.
+   - Verify default settings are safe:
+     ReadOnlyMode=true
+     AllowOrderExecution=false
+     AllowModification=false
+     AllowClose=false
+   - Verify it never calls live order functions unless explicitly unlocked in future live-readiness work.
+
+3. If the EA does not exist:
+   - Create a new read-only MT5 Expert Advisor file:
+     ReplitMT5BridgeEA.mq5
+   - It must send heartbeat/read-only status to the current backend bridge endpoint.
+   - It must support input fields for:
+     BridgeBaseUrl
+     BridgeToken
+     HeartbeatSeconds
+     ReadOnlyMode
+     AllowOrderExecution
+     AllowModification
+     AllowClose
+   - Defaults must be:
+     ReadOnlyMode=true
+     AllowOrderExecution=false
+     AllowModification=false
+     AllowClose=false
+   - It must not place, modify, cancel, or close trades.
+
+4. Create an export folder:
+   mt5-bridge-export/
+
+Include:
+- ReplitMT5BridgeEA.mq5
+- README_MT5_BRIDGE_SETUP.md
+- SAFE_DEFAULTS.md
+
+5. README must include:
+- Copy EA to MQL5/Experts
+- Compile in MetaEditor
+- Add Replit base URL to MT5 WebRequest allowed URLs
+- Attach EA to chart
+- Turn Algo Trading ON only so EA can run
+- Keep ReadOnlyMode=true
+- Keep AllowOrderExecution=false
+- Check Experts/Journal logs
+- Check ARX bridge diagnostics for heartbeat
+
+6. Add a clear note:
+- Do not paste MT5_BRIDGE_TOKEN into screenshots.
+- Token must be copied from Replit Secrets into the EA input manually.
+- Replit should never print the token value.
+
+7. Run checks:
+- Typecheck
+- CI guards
+- Secret leakage grep
+- MT5 bridge safety regression
+- Confirm live trading remains BLOCKED
+- Confirm MT5 commands remain force-BLOCKED
+- Confirm auto-close remains ALERT_ONLY
+
+End with:
+- Exact file path to ReplitMT5BridgeEA.mq5
+- Exact export folder path
+- Whether the EA was found or newly created
+- Backend heartbeat endpoint it targets
+- Safe default settings confirmed
+- Final answer: READY TO COPY EA TO MT5 or NOT READY, with reasons.

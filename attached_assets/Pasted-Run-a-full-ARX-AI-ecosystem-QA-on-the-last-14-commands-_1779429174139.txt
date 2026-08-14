@@ -1,0 +1,391 @@
+Run a full ARX AI ecosystem QA on the last 14 commands, including a missing-components audit and full backend-intended-behavior check.
+
+IMPORTANT:
+Do not blindly rebuild the app.
+Do not redesign unrelated pages.
+Do not refactor working systems just because they can be cleaner.
+Do not add large new features without first proving they are required for an already-built feature to work.
+Audit first. Report what is missing. Then fix only what is broken, incomplete, required by an existing built feature, duplicated, unsafe, or clearly causing the app to fail.
+
+PRIMARY GOALS:
+1. QA the last 14 commands.
+2. Identify missing components that were requested but never addressed.
+3. Identify missing components required by features that already exist.
+4. Verify backend systems work how they were intended.
+5. Repair broken or incomplete frontend/backend connections.
+6. Clean up useless, dormant, duplicate, or unrelated code only when safely proven unused.
+7. Produce a final system grade out of 100 based on actual behavior.
+
+DO NOT:
+- Enable live trading.
+- Place real/live trades.
+- Disable safety locks.
+- Change kill switches.
+- Change admin approval rules.
+- Expose admin tools to regular users.
+- Expose master MT5 account balance to regular users.
+- Expose raw backend errors, stack traces, function names, API routes, database names, secrets, broker credentials, or debug text to users.
+- Delete files unless proven unused and unrelated.
+- Change backend execution logic unless fixing a read/display/permission issue requires a small safe patch.
+
+SYSTEMS TO AUDIT:
+1. Login page
+2. Auth/session redirects
+3. Invite code flow
+4. Request access flow
+5. Forgot password flow
+6. User roles and permissions
+7. Admin-only access
+8. Bottom navigation
+9. Side menu / More menu organization
+10. AI / Ruby page tabs
+11. Market Scanner primary navigation
+12. Market Scanner route and UI
+13. Market symbol search
+14. Horizontal symbol category chips
+15. Ruby market explanation panel
+16. Trade buttons and trade ticket
+17. Risk Command Center
+18. Open trades / positions window
+19. Live trade P/L display
+20. User slot / shared master allocation model
+21. MT5 account metrics
+22. MT5 bridge status display
+23. Backend API routes
+24. Backend services
+25. Database schema/migrations/models
+26. Frontend/backend API contract matching
+27. Polling/WebSocket/SSE live update behavior
+28. Error states, loading states, disconnected states, stale states
+29. Security and permission enforcement
+30. Useless files, duplicate components, dead routes, stale mock data, abandoned UI
+
+LAST 14 FEATURE AREAS TO VERIFY:
+1. Premium ARX AI login page.
+2. Login page scoped only to auth/access.
+3. Open trades showing live money P/L.
+4. MT5 balance/equity/margin/free margin/margin level/open P/L display.
+5. Shared/master slotted funds model.
+6. Admin master metrics and per-user slot metrics.
+7. Remove “LIVE MODE — REAL MONEY,” “live money,” and “real money” wording.
+8. BUY/SELL buttons say only BUY and SELL.
+9. BUY green, SELL red.
+10. Market categories horizontal, not vertical.
+11. Side menu organized with important tools first.
+12. AI side-menu tools available as AI top tabs.
+13. Market Scanner promoted as a primary tool.
+14. Full cleanup/QA without breaking backend systems.
+
+PHASE 1 — BASELINE INSPECTION:
+Before changing code:
+1. Run git status or equivalent file-change inspection.
+2. Identify files changed recently.
+3. Inspect route structure.
+4. Inspect navigation config.
+5. Inspect auth guards.
+6. Inspect role guards.
+7. Inspect layout wrappers.
+8. Inspect backend route registration.
+9. Inspect database schema/models/migrations.
+10. Inspect MT5 bridge/account read endpoints.
+11. Inspect scanner data provider/backend.
+12. Inspect Ruby/chat backend endpoints.
+13. Inspect trade ticket/backend execution guards.
+14. Inspect open trades/account metrics backend.
+15. Inspect admin/user permission enforcement.
+16. Identify duplicate pages/components/routes.
+17. Identify stale mock data that appears as real data.
+18. Identify disconnected frontend components with no backend.
+19. Identify backend endpoints that exist but are not used.
+20. Identify frontend UI that calls missing or wrong endpoints.
+
+PHASE 2 — CREATE MISSING COMPONENTS REPORT:
+Create a clear report in the final output and, if project docs exist, create/update a report file such as:
+docs/qa/missing-components-audit.md
+
+The report must list:
+
+A. Missing components requested but never addressed
+Examples:
+- Feature requested in previous commands but no route/component/service exists.
+- UI requested but not connected.
+- Backend endpoint requested but missing.
+- Admin view requested but not built.
+- Mobile behavior requested but not implemented.
+
+B. Missing components needed by an already-built feature
+Examples:
+- UI exists but backend endpoint missing.
+- Backend exists but frontend not wired.
+- Database model missing for a displayed feature.
+- API contract mismatch.
+- Route exists but auth guard blocks incorrectly.
+- Feature has mock data instead of real service.
+- Live polling UI exists but no real read endpoint.
+- Slot metrics UI exists but no allocation table/service.
+- Invite-code UI exists but no validation flow.
+- Forgot-password UI exists but no reset request handler.
+
+C. Broken/incomplete backend pieces
+Examples:
+- API route not registered.
+- Controller exists but service missing.
+- Service exists but schema missing.
+- Schema exists but migration missing.
+- Endpoint returns wrong shape.
+- Endpoint leaks admin/master data to regular users.
+- Endpoint returns fake placeholders as real data.
+- Frontend expects fields backend does not return.
+- Error handler exposes raw errors.
+- Permission checks missing server-side.
+
+D. Deferred features that should NOT be built now
+Examples:
+- Big features that require new architecture.
+- Live trading changes.
+- Full broker execution changes.
+- New AI model/training systems.
+- Complex payment/funding systems not required for current build.
+
+Classify each item:
+- Critical blocker
+- High priority
+- Medium priority
+- Low priority
+- Deferred / do not build now
+
+For each item include:
+- Feature/component name
+- What is missing
+- Why it matters
+- Frontend file or area affected
+- Backend file/service/route affected if any
+- Recommended fix
+- Whether it was fixed in this pass or left as report-only
+
+PHASE 3 — BACKEND INTENDED-BEHAVIOR CHECK:
+Verify every backend system works as intended for the current app.
+
+Backend auth:
+- Login endpoint works.
+- Session/token handling works.
+- Authenticated redirect works.
+- Regular user role works.
+- Admin role works.
+- Logout works if available.
+- Forgot password request works or returns clean unavailable state.
+- Invite code validation works or returns clean unavailable state.
+- Request access submission works or stores/submits safely.
+- Backend does not leak raw errors.
+
+Backend permissions:
+- Regular users cannot call admin-only endpoints.
+- Regular users cannot see master MT5 account balance.
+- Regular users cannot see other users’ trades.
+- Admin users can access admin-only summaries if configured.
+- Route guards exist server-side, not just frontend hiding.
+
+Backend MT5 / account data:
+- MT5 bridge status endpoint works.
+- Account info read endpoint works if bridge connected.
+- Open positions endpoint works if bridge connected.
+- Disconnected/stale state returns clean structured response.
+- No MT5 secrets or credentials are exposed.
+- No endpoint places trades during QA.
+- Read-only account endpoints cannot accidentally execute orders.
+
+Backend shared/master slot allocation:
+- If slot allocation model exists, verify:
+  - user allocation table/model exists
+  - trade ownership mapping exists
+  - user slot balance calculation works
+  - user open P/L calculation works
+  - user equity calculation works
+  - user used margin calculation works
+  - user free margin calculation works
+  - user margin level % calculation works
+  - admin can see aggregate/master summary
+  - regular users only see their own slot
+- If slot allocation model does not exist, list it as a critical missing component if UI depends on it.
+
+Backend scanner:
+- Scanner route/service works.
+- Scanner data is not stale fake data unless clearly labeled demo/cache.
+- Scanner can provide symbols/results to frontend.
+- Search any symbol backend support works or frontend safely handles local symbol list.
+- Deriv feed unavailable state is clean and not a broken error.
+
+Backend Ruby/AI:
+- Ruby market read endpoint works or cleanly falls back to cached analysis.
+- Ruby does not expose internal prompts, function names, stack traces, or raw route names.
+- Ruby selected-symbol context sync works where backend is involved.
+- Existing Ruby memory/chat system is not broken.
+
+Backend trading safety:
+- BUY/SELL buttons open ticket only.
+- Trade ticket still passes existing server safety gates.
+- Backend execution remains disabled/locked unless user is approved.
+- Admin approval logic unchanged.
+- Kill switches unchanged.
+- Live/demo permissions unchanged.
+- No live orders placed.
+
+Backend risk:
+- Risk Command Center data endpoint works or clean empty state.
+- Risk values display correctly.
+- No broken audit/rules/limits tab endpoints.
+- Risk lock states remain enforced.
+
+PHASE 4 — RUN SAFE CHECKS:
+Run all available safe checks:
+- dependency install check if needed
+- typecheck
+- lint
+- unit tests if available
+- build
+- backend start/smoke test
+- frontend route smoke test
+- API route smoke test
+- auth guard inspection
+- role permission inspection
+- mobile layout inspection where possible
+
+Do not run anything that places live trades.
+
+PHASE 5 — FIX ONLY REQUIRED ITEMS:
+Fix only:
+1. Broken items.
+2. Missing pieces required for already-built features to function.
+3. Frontend/backend contract mismatches.
+4. Permission leaks.
+5. Raw error/debug exposure.
+6. Duplicate/conflicting active routes.
+7. UI labels requested in prior commands.
+8. Dead/dormant code proven unused.
+
+Do not build:
+- Large new architecture unless required for existing UI to stop being fake/broken.
+- New trading execution features.
+- New broker permissions.
+- New unrelated pages.
+- New AI systems outside current Ruby integration.
+
+PHASE 6 — VERIFY LOGIN / ACCESS:
+Verify and fix only if broken:
+- Unauthenticated users land on login.
+- Authenticated users redirect correctly.
+- Admin/user redirects work.
+- Invite code opens and works or shows clean unavailable message.
+- Request access opens and works or stores/submits safely.
+- Forgot password opens and works or shows clean unavailable message.
+- Bottom nav hidden only on login.
+- No duplicate active login pages.
+
+PHASE 7 — VERIFY NAV / SCANNER / AI:
+Verify and fix only if broken:
+- Side menu important tools first.
+- Market Scanner primary and visible.
+- Mobile bottom nav includes Scanner.
+- AI page top tabs include real AI tools only.
+- AI tabs horizontally scroll on mobile.
+- Search any market works.
+- Market categories are horizontal chips.
+- Active category shows compact symbols.
+- Symbols update selected market, chart, Ruby read, and trade ticket.
+- No vertical accordion clutter remains where replaced.
+
+PHASE 8 — VERIFY BUY/SELL + STATUS LABELS:
+Verify and fix only if broken:
+- No user-facing “LIVE MODE — REAL MONEY.”
+- No “live money.”
+- No “real money.”
+- Broker status labels are neutral and compact.
+- BUY buttons say only BUY and are green.
+- SELL buttons say only SELL and are red.
+- Trade ticket/modal can still be titled “Trade Ticket.”
+- Status chips do not overlap on mobile.
+
+PHASE 9 — VERIFY OPEN TRADES + ACCOUNT METRICS:
+Verify and fix only if broken:
+- Open trades show live current money P/L per position.
+- Data comes from MT5 bridge when available.
+- Clean empty/disconnected/stale state exists.
+- Regular users see only their assigned trades/slot.
+- Admin can see master/per-user summaries.
+- Master MT5 balance hidden from regular users.
+- Unassigned MT5 positions admin-only.
+- Slot math formulas are correct.
+- No fake placeholder money shown as real.
+
+PHASE 10 — CLEANUP:
+Cleanup only proven issues:
+- unused imports
+- duplicate active login/scanner/AI components
+- old vertical symbol accordion if fully replaced and unused
+- dead routes
+- stale mock data shown as real
+- debug console logs
+- temporary backup files
+- unrelated dormant files
+
+If uncertain, do not delete. Put it in the missing-components/cleanup report.
+
+PHASE 11 — END-TO-END BACKEND + FRONTEND SMOKE TEST:
+Test without placing live trades:
+1. App opens unauthenticated.
+2. Login page appears.
+3. Forgot password flow opens.
+4. Invite code flow opens.
+5. Request access flow opens.
+6. User login redirect works.
+7. Admin route protected from regular users.
+8. Side menu opens.
+9. Bottom nav works.
+10. Scanner opens from bottom nav.
+11. AI page tabs work.
+12. Search EURUSD.
+13. Select symbol from horizontal chips.
+14. Ruby market read updates.
+15. BUY opens trade ticket.
+16. SELL opens trade ticket.
+17. Risk page opens.
+18. Open trades page opens.
+19. Account metrics load from backend or show clean disconnected state.
+20. Backend returns clean errors only.
+21. No secrets exposed.
+22. No live orders placed.
+
+PHASE 12 — FINAL GRADE:
+Grade the actual app after QA/fixes out of 100.
+
+Categories:
+- UI / UX clarity: 10
+- Mobile trading usability: 10
+- Navigation/discoverability: 10
+- Market scanner usefulness: 10
+- AI/Ruby workflow usefulness: 10
+- Risk controls/permission safety: 10
+- Backend completeness/intended behavior: 10
+- MT5 bridge/account data readiness: 10
+- Security/admin separation: 10
+- Stability/performance/code cleanliness: 10
+
+FINAL OUTPUT REQUIRED:
+Return:
+1. Files changed.
+2. Bugs found.
+3. Bugs fixed.
+4. Missing components requested but never addressed.
+5. Missing components required by existing built features.
+6. Backend systems checked.
+7. Backend issues found.
+8. Backend issues fixed.
+9. Cleanup performed.
+10. Cleanup candidates not deleted.
+11. Things intentionally not changed.
+12. Remaining issues.
+13. End-to-end frontend result.
+14. End-to-end backend result.
+15. Final grade out of 100.
+16. Confirmation no live trades were placed.
+17. Confirmation execution permissions/kill switches/admin approvals were not changed.

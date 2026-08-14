@@ -1,0 +1,347 @@
+PHASE 22I — AUDIT FIRST, THEN FIX ARX AI AUTO-LISTEN, VOICE SPEAKBACK, AND USER MEMORY
+
+Do NOT rebuild the full app. Do NOT redesign the AI popup. Do NOT duplicate systems.
+
+FIRST inspect what already exists, then patch only what is missing or broken.
+
+CURRENT ISSUES FROM USER SCREENSHOT/TEST:
+1. AI does not speak back even though “Speak: on” is enabled.
+2. AI popup shows “Mic off” and auto-listen is not truly automatic.
+3. User expects AI to automatically listen once the AI popup is open.
+4. After user stops speaking, AI should automatically stop listening, send the voice request, respond, then listen again.
+5. If auto-listen is off in the UI, that is confusing because user wants popup-open voice mode to auto-listen by default.
+6. AI does not remember the earlier scanner conversation properly.
+7. User wants ARX AI to remember each user’s conversations across sessions, while keeping users isolated from each other.
+
+MAIN GOAL:
+Make ARX AI work like a popup-scoped live voice assistant:
+- AI only listens while the ARX AI popup is open.
+- When popup opens, AI automatically starts listening if mic permission is granted.
+- When user starts speaking, record.
+- When user stops speaking, stop recording automatically.
+- Send transcript/audio to AI.
+- AI responds in text and speaks the answer out loud when Speak is on.
+- After AI finishes speaking, resume listening automatically.
+- Keep conversation memory per user/session.
+- Do not listen in the background when popup is closed.
+
+STRICT RULES:
+1. Do not create background listening.
+2. Do not keep the microphone active after the AI popup closes.
+3. Do not expose one user’s conversation to another user.
+4. Do not fake voice readiness.
+5. Do not fake scanner or market data.
+6. Do not let voice failure break text chat.
+7. Do not let market data disconnected break general AI chat.
+8. Do not show raw backend errors.
+9. Do not remove working realtime/fallback voice systems.
+10. Do not duplicate chat memory systems if one already exists.
+
+STEP 1 — AUDIT CURRENT AI VOICE + MEMORY SYSTEM FIRST
+
+Inspect and report the current state of:
+
+A. AI popup voice frontend
+- AI popup open/close state
+- mic permission state
+- mic button behavior
+- auto-listen toggle behavior
+- MediaRecorder logic
+- Web Audio / VAD / speech detection logic
+- realtime voice connection logic
+- fallback voice recording logic
+- TTS/speakback playback logic
+- Speak toggle logic
+- cleanup when popup closes
+
+B. AI backend voice routes
+- realtime session/handshake endpoint
+- fallback voice upload/transcription endpoint
+- TTS/audio response endpoint
+- text chat endpoint
+- streaming endpoint
+- OpenAI model configuration
+- whether backend returns audio, text, or both
+- whether audio output is actually played by frontend
+
+C. Conversation memory
+- whether chat history is sent with each request
+- whether userId/sessionId is included
+- whether messages are persisted in database
+- whether anonymous users get temporary session memory
+- whether logged-in users get persistent conversation memory
+- whether voice and text share the same memory
+- whether quick suggestions share the same memory
+- whether pendingAction/unresolved tool requests are tracked
+
+D. Current bug causes
+Report:
+- why AI does not speak even when Speak is on
+- why popup says Mic off
+- why auto-listen is not automatically active
+- whether VAD is implemented or missing
+- whether AI is recording only on button press
+- whether AI resumes listening after speaking
+- why previous conversation context was lost
+
+Before patching, output:
+- files inspected
+- what is already working
+- what is missing
+- what is broken
+- what should not be touched
+- exact minimal patch plan
+
+STEP 2 — MAKE AUTO-LISTEN DEFAULT WHEN AI POPUP OPENS
+
+Required behavior:
+
+When ARX AI popup opens:
+1. If microphone permission is already granted:
+   - automatically start listening.
+   - show “Listening…” or “Mic on.”
+   - auto-listen should be active by default.
+
+2. If microphone permission is unknown:
+   - show a clean one-time prompt/button:
+     “Enable microphone to talk to ARX.”
+   - after user grants permission, start listening automatically.
+
+3. If microphone permission is denied:
+   - show:
+     “Microphone access is blocked. Enable it in browser settings to use voice.”
+   - text chat must still work.
+
+4. If popup closes:
+   - stop listening immediately.
+   - stop recording immediately.
+   - release all microphone tracks.
+   - cancel VAD loop.
+   - clear timers.
+   - do not listen in background.
+
+IMPORTANT UI CHANGE:
+Since the user wants the AI to auto-listen whenever open, do not make “Auto-listen: off” the default visible state.
+
+Use cleaner states:
+- “Listening…” when waiting for voice
+- “Hearing you…” when speech is detected
+- “Processing…” when sending to AI
+- “Speaking…” when AI is talking
+- “Mic off” only when user manually disables mic
+- “Mic permission needed” when permission is not granted
+
+If you keep the auto-listen pill, default it to ON after permission is granted. The mic button should act as a manual mute/off switch, not the primary way to start the assistant.
+
+STEP 3 — IMPLEMENT TRUE VOICE ACTIVITY DETECTION
+
+Use Web Audio API / AnalyserNode or existing VAD if already present.
+
+The voice loop should work like this:
+1. Popup opens.
+2. Start listening.
+3. Calibrate room noise for 500–800ms.
+4. Detect speech above dynamic noise threshold.
+5. Begin recording when speech is detected for 250–400ms.
+6. Continue recording while user is speaking.
+7. Stop recording after 900–1300ms of silence.
+8. Ignore clips under 400ms.
+9. Hard stop clips at 15 seconds.
+10. Send one request per spoken command.
+11. Do not send duplicate requests.
+12. Do not cut off the first word if possible.
+
+Use compressed audio format where supported:
+- audio/webm;codecs=opus preferred
+- fallback safely for Safari/iPhone if needed
+
+STEP 4 — AI SPEAKBACK MUST WORK
+
+When Speak is on:
+- AI must speak its response out loud.
+- Text response should still appear in chat.
+- Voice playback should not block the UI forever.
+- Show “Speaking…” while audio plays.
+- When audio ends, return to listening automatically.
+
+Implement or fix TTS flow:
+
+Option A if backend already supports TTS:
+- call existing TTS endpoint with final assistant text.
+- receive audio blob.
+- play it in frontend.
+- handle audio ended event.
+- resume listening.
+
+Option B if realtime already returns audio:
+- play realtime audio response correctly.
+- attach audio stream/output to browser playback.
+- resume listening after playback ends.
+
+Option C fallback:
+- use browser SpeechSynthesis only as a temporary fallback if backend TTS fails.
+- label this as fallback in code.
+- do not let TTS failure break text chat.
+
+Required TTS safety:
+- If Speak is off, do not play audio.
+- If Speak is on but TTS fails, still show text response.
+- Do not show raw errors.
+- Do not leave status stuck on “Speaking…”
+
+STEP 5 — PREVENT AI FROM RECORDING ITSELF
+
+When AI is speaking:
+- pause microphone listening/VAD.
+- do not record AI audio.
+- resume listening only after AI audio ends.
+- if user taps mic while AI is speaking, stop AI audio and listen to user.
+
+This prevents feedback loops.
+
+STEP 6 — MAKE VOICE AND TEXT USE THE SAME AI BRAIN
+
+Voice transcript must go through the exact same route/context as typed messages.
+
+Do not create separate isolated voice prompts.
+
+Every AI request should include:
+- userId if logged in
+- anonymousSessionId if not logged in
+- conversationId
+- recent chat history
+- last user message
+- last assistant response
+- pendingAction/unresolved tool request
+- current page/app context
+- market/MT5 status
+- scanner status if available
+
+Typed chat, voice chat, and quick suggestions must all share the same memory and routing.
+
+STEP 7 — ADD PERSISTENT USER CONVERSATION MEMORY
+
+User wants AI to remember all user conversations.
+
+Implement memory safely and per-user:
+
+A. Logged-in users
+Store conversation history in database by:
+- userId
+- conversationId
+- role: user/assistant/tool/system-safe-summary
+- message content
+- timestamp
+- channel: text/voice/quick_suggestion/tool
+- metadata: page, tool used, market status, pending action status
+
+B. Anonymous users
+Use anonymousSessionId for temporary memory.
+Persist locally or server-side session memory.
+When user logs in, optionally merge anonymous session into their account if safe.
+
+C. Long-term memory summary
+To avoid sending huge histories every request:
+- keep recent 10–20 turns in prompt
+- maintain a compact rolling summary per user
+- track unresolved requests/pendingAction separately
+- store important preferences and app setup facts separately
+
+D. User isolation and privacy
+- Never mix conversations between users.
+- Never expose another user’s history.
+- Add ability to delete/clear conversation history later.
+- Do not store raw audio unless explicitly needed. Prefer storing transcript + metadata.
+- Use secure database access rules.
+
+STEP 8 — FIX FOLLOW-UP MEMORY
+
+Patch follow-up resolver so short messages like:
+- “?”
+- “and?”
+- “so?”
+- “what happened?”
+- “did you check?”
+- “what did you find?”
+- “I asked you a question earlier”
+
+refer to the latest unresolved request.
+
+For the scanner case:
+If user asked:
+“Check scanner and tell me what market is good to trade right now.”
+
+Then later says:
+“?”
+
+ARX should answer the scanner follow-up, not explain the current page.
+
+If market data is disconnected, say:
+“Market data is not connected yet, so I can’t honestly tell you the best market right now. Connect MT5 or a live data feed, then I can scan live conditions. For now, I can help you choose what to watch based on your trading style.”
+
+Do not fake live market candidates.
+
+STEP 9 — STATUS/BADGE CLEANUP
+
+Voice badge must reflect real state:
+- “Voice: realtime ready” only if realtime handshake truly succeeds.
+- “Voice: fallback ready” if realtime fails but fallback recording/TTS works.
+- “Voice unavailable” if no voice mode works.
+- “Listening…” when active.
+- “Speaking…” when AI audio is playing.
+
+The app should not show:
+- Mic off while it is supposed to be listening
+- Auto-listen off as default
+- Realtime ready if realtime failed
+- Speaking if no audio is playing
+- Thinking forever after the answer finishes
+
+STEP 10 — QA / FIX GATE
+
+After patching, run QA and fix failures before stopping.
+
+QA must verify:
+
+1. Open AI popup with mic permission granted.
+2. AI starts listening automatically without tapping mic.
+3. User speaks a command.
+4. AI detects speech.
+5. AI stops recording after user stops talking.
+6. AI sends exactly one request.
+7. AI responds in text.
+8. If Speak is on, AI speaks out loud.
+9. While AI is speaking, mic does not record AI voice.
+10. After AI finishes speaking, AI automatically listens again.
+11. Closing popup stops mic and releases tracks.
+12. Reopening popup starts listening again if permission is granted.
+13. Turning mic off manually stops listening.
+14. Text chat works even if voice/TTS fails.
+15. Quick suggestions work and share memory.
+16. Voice transcript follow-ups share memory.
+17. “?” after scanner request follows up on scanner request.
+18. “I asked you a question earlier” uses current chat history/pendingAction.
+19. Market data disconnected does not fake trade recommendations.
+20. No raw backend/OpenAI errors show in UI.
+21. Mobile Safari layout remains stable.
+22. No infinite listening/processing loop.
+23. No duplicate voice requests.
+24. Conversations are stored per user/session and not mixed.
+
+Only continue if QA passes. If anything fails, fix it and rerun QA.
+
+FINAL REPORT REQUIRED:
+After completion, report:
+- files inspected
+- files changed
+- what was already done
+- what was broken
+- why AI was not speaking
+- why auto-listen was not starting automatically
+- how VAD/silence detection now works
+- how AI speakback now works
+- how listening resumes after AI response
+- how mic cleanup works when popup closes
+- how per-user conversation memory is stored
+- confirmation that text, voice, and quick suggestions share the same context
+- any remaining setup needed, such as OPENAI_API_KEY, realtime model config, database migration, or browser limitation

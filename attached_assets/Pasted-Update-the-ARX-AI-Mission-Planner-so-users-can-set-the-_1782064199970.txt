@@ -1,0 +1,233 @@
+Update the ARX AI Mission Planner so users can set the target timeframe in minutes, hours, or days.
+
+Goal:
+Users should be able to tell the trading bot how fast they want to reach a target amount, such as:
+- 5 minutes
+- 10 minutes
+- 20 minutes
+- 30 minutes
+- 1 hour
+- 2 hours
+- 5 hours
+- 10 hours
+- 1 day
+- 3 days
+- 1 week
+- Custom timeframe
+
+Current issue:
+The planner currently uses "Timeframe (days)" only. That is too limited. The user needs to be able to define short-term trading missions and scalping missions using minutes or hours.
+
+Required UI changes:
+
+1. Replace the existing "Timeframe (days)" input with a two-part timeframe selector:
+
+Field A:
+- Timeframe amount
+- Numeric input
+- Examples: 5, 20, 30, 1, 5, 10
+
+Field B:
+- Timeframe unit
+- Dropdown:
+  - Minutes
+  - Hours
+  - Days
+  - Weeks
+
+Example display:
+Timeframe: [30] [Minutes]
+Timeframe: [5] [Hours]
+Timeframe: [1] [Day]
+
+2. Add quick-pick chips above or below the input:
+- 5 min
+- 10 min
+- 20 min
+- 30 min
+- 1 hr
+- 2 hr
+- 5 hr
+- 10 hr
+- 1 day
+- 3 days
+- 1 week
+
+When a user taps a chip, it should populate the amount and unit fields.
+
+3. Store timeframe internally in minutes.
+
+Add/normalize these values:
+- timeframeAmount
+- timeframeUnit
+- timeframeMinutes
+- timeframeLabel
+
+Examples:
+- 5 minutes = timeframeAmount 5, timeframeUnit "minutes", timeframeMinutes 5, timeframeLabel "5 minutes"
+- 20 minutes = timeframeMinutes 20
+- 30 minutes = timeframeMinutes 30
+- 1 hour = timeframeMinutes 60
+- 5 hours = timeframeMinutes 300
+- 10 hours = timeframeMinutes 600
+- 1 day = timeframeMinutes 1440
+- 1 week = timeframeMinutes 10080
+
+4. Update feasibility math.
+
+The planner should calculate required return based on the exact timeframe.
+
+Example:
+Starting amount: $50
+Target amount: $100
+Required total return: 100%
+
+If timeframe is 1 day:
+Required pace = 100% per day
+
+If timeframe is 10 hours:
+Required pace should be normalized and displayed as:
+- 100% total required return
+- 10% per hour average pace
+- 240% per day equivalent pace
+
+If timeframe is 30 minutes:
+Required pace should show:
+- 100% total required return
+- 200% per hour equivalent pace
+- 4,800% per day equivalent pace
+
+5. Add timeframe-specific mission labels.
+
+If timeframe unit is minutes:
+- classify as "Scalp mission"
+- if target is very aggressive, classify as "Extreme scalp mission"
+- if impossible/unreasonable, classify as "Unrealistic scalp mission"
+
+If timeframe unit is hours:
+- classify as "Intraday mission"
+- if aggressive, classify as "High-risk intraday mission"
+- if unreasonable, classify as "Unrealistic intraday mission"
+
+If timeframe unit is days/weeks:
+- classify as "Swing mission" or "Multi-day mission"
+
+6. Add better warnings for short timeframes.
+
+For minute-based missions, show:
+"Minute-based missions are extremely sensitive to spread, slippage, candle confirmation, execution speed, and minimum lot sizing."
+
+For 5–30 minute targets, show:
+"Very short missions require confirmed live feed, fast execution, and realistic target sizing. The bot may reject targets that require unsafe or unrealistic returns."
+
+For small accounts under $100, keep this warning:
+"Small balances have less room for drawdown and may be more affected by spread, fees, and minimum lot sizing."
+
+7. Live safety rules must remain strict.
+
+Do not allow the new timeframe options to bypass any live trading gate.
+
+The bot must still require:
+- confirmed broker feed
+- valid symbol feed
+- risk engine approval
+- user/bot permissions
+- bridge status healthy
+- market open / tradable condition
+- allowed symbol
+- lot sizing valid
+- max drawdown rules
+- kill switch off
+- no stale candle data
+- no simulator-only feed for live missions
+
+8. Add bot instruction support.
+
+The mission parser should understand natural language like:
+- "Turn $50 into $100 in 30 minutes"
+- "Make $200 in 5 hours"
+- "Grow this to $500 by tomorrow"
+- "Make this amount in 10 hours"
+- "Scalp this account to $100 in 20 minutes"
+
+The parser should extract:
+- startingAmount
+- targetAmount
+- timeframeAmount
+- timeframeUnit
+- timeframeMinutes
+- riskProfile if mentioned
+
+9. Update saved mission records.
+
+Mission records should include:
+- startingAmount
+- targetAmount
+- timeframeAmount
+- timeframeUnit
+- timeframeMinutes
+- timeframeLabel
+- riskProfile
+- feasibilityScore
+- riskScore
+- missionType
+- feedStatus
+- status: draft / active / rejected / completed / failed
+
+10. Rejection rules.
+
+Reject or draft-only missions when:
+- timeframeMinutes is too short for the selected symbol/timeframe
+- required return is outside supported limits
+- feed is not confirmed
+- sample size is 0 and bot would need live execution
+- risk engine marks the mission unsafe
+- mission requires unrealistic daily/hourly return
+
+Do not delete the mission. Save it as an unrealistic draft with explanation.
+
+11. UI copy updates.
+
+Replace:
+"Timeframe (days)"
+
+With:
+"Timeframe"
+
+Add helper text:
+"Choose how fast you want the bot to attempt the target. Shorter timeframes increase risk and may be rejected by the safety engine."
+
+On result cards, show:
+- Required total return
+- Required pace per hour if under 24 hours
+- Required daily equivalent pace
+- Mission type
+- Feed status
+- Start eligibility
+
+12. Tests.
+
+Add tests for:
+- 5 minutes converts to 5 timeframeMinutes
+- 20 minutes converts to 20 timeframeMinutes
+- 30 minutes converts to 30 timeframeMinutes
+- 1 hour converts to 60 timeframeMinutes
+- 5 hours converts to 300 timeframeMinutes
+- 10 hours converts to 600 timeframeMinutes
+- 1 day converts to 1440 timeframeMinutes
+- quick-pick chips populate the correct fields
+- natural language parser extracts "30 minutes"
+- natural language parser extracts "5 hours"
+- $50 to $100 in 30 minutes is classified unrealistic/extreme
+- feed not confirmed blocks live start
+- unrealistic missions save as draft only
+- no live execution gate is bypassed
+
+Acceptance criteria:
+- Users can choose minutes, hours, days, or weeks.
+- Quick chips work.
+- Mission planner stores timeframe in minutes internally.
+- Risk and feasibility calculations update based on exact timeframe.
+- Short scalping missions are clearly labeled and warned.
+- Unrealistic missions can be saved as drafts but cannot start.
+- Live trading safety gates remain fully enforced.

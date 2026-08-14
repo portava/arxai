@@ -1,0 +1,182 @@
+Continue only with the existing floating ARX Assistant popup icon.
+
+Do not create a new assistant.
+Do not create a new popup.
+Do not create new pages.
+Do not touch trading logic, MT5 logic, broker execution, risk controls, live trading, route structure, or assistant answer intelligence.
+
+Goal:
+Finalize the animated ARX Assistant icon so it is production-ready, visually premium, mobile-safe, accessible, and fully verified in the live UI.
+
+Phase 1 — Audit what currently exists
+First inspect the current implementation from the last icon pass.
+
+Report:
+- actual floating assistant trigger component
+- animated icon component file
+- open/close state source
+- assistant loading/thinking state source
+- warning/blocker state source
+- error state source
+- CSS/SVG animation file
+- whether any duplicate icon or duplicate assistant trigger exists
+
+If duplicates exist, remove the duplicate and keep only the real floating assistant trigger.
+
+Phase 2 — Polish the final animation
+Make the animation feel premium but lightweight.
+
+Refine:
+- idle AI-core glow
+- open chat-bubble state
+- morph transition from AI orb to chat bubble
+- closing transition from chat bubble back to AI orb
+- thinking/loading particle orbit
+- answer-ready pulse
+- warning/blocker amber ring
+- error red ring
+- hover glow on desktop
+- tap feedback on mobile
+
+Keep it smooth:
+- no layout shift
+- no page reflow
+- no large assets
+- no GIF/video
+- no heavy new animation dependency
+
+Use SVG/CSS unless an existing animation library is already installed.
+
+Phase 3 — Add design tokens
+Create clean styling variables for the icon.
+
+Suggested tokens:
+- assistant icon size mobile
+- assistant icon size desktop
+- cyan glow color
+- dark glass background
+- amber warning ring
+- red error ring
+- shadow/glow intensity
+- z-index
+- mobile bottom offset
+- desktop bottom/right offset
+
+This makes future changes easier.
+
+Phase 4 — Confirm positioning
+The icon must stay in the correct place.
+
+Mobile:
+- floating above bottom nav
+- does not block More
+- does not block Cockpit / Trade / AI / Risk tabs
+- does not block Emergency Stop
+- does not cover Help Center chips
+- panel opens upward
+- keyboard does not trap input behind bottom nav
+
+Use:
+bottom: calc(env(safe-area-inset-bottom) + 96px)
+
+Desktop:
+- bottom-right floating
+- does not overlap sidebar
+- does not overlap menu
+- tooltip appears on hover
+- panel opens cleanly
+
+Phase 5 — Accessibility final pass
+Add/verify:
+- aria-label changes based on state
+- Enter and Space open/close assistant
+- visible keyboard focus ring
+- tooltip does not replace aria-label
+- reduced-motion support
+- static fallback icon when reduced motion is enabled
+- no flashing animation that could be uncomfortable
+
+Reduced motion behavior:
+- no morph trails
+- no orbiting particles
+- simple fade/scale only
+
+Phase 6 — Assistant state connection verification
+Confirm icon reacts correctly to:
+
+- assistant closed = AI-core orb
+- assistant opening = morph to bubble
+- assistant open = chat bubble with ARX mark/logo
+- assistant closing = morph back to AI-core
+- assistant thinking = cyan orbit/typing motion
+- answer ready = soft confirmation pulse
+- blocker detected = subtle amber ring
+- assistant/system error = subtle red ring
+- assistant unavailable = muted disabled state
+
+Do not use the icon to imply live trading is ready.
+
+Phase 7 — Add fallback protection
+If the animated SVG/component fails:
+- show the existing static ARX Assistant icon
+- assistant still opens/closes
+- app does not crash
+- no blank floating button
+
+Phase 8 — Tests
+Add/update tests for:
+- animated icon renders
+- assistant opens from the icon
+- assistant closes from the icon
+- no duplicate floating trigger exists
+- state classes apply correctly
+- reduced-motion fallback works
+- warning/error states render safely
+- icon does not call trading functions
+- icon does not call MT5 functions
+- icon does not call broker execution functions
+- icon does not change routes
+- mobile offset class/style exists
+- desktop positioning exists
+
+Phase 9 — Runtime QA
+Manually verify in the live app.
+
+Mobile:
+1. Load app.
+2. Confirm only one assistant icon appears.
+3. Confirm icon floats above bottom nav.
+4. Tap icon.
+5. Confirm morph animation plays.
+6. Ask a question.
+7. Confirm thinking state plays.
+8. Confirm answer-ready pulse plays.
+9. Close assistant.
+10. Confirm morph-back animation plays.
+11. Confirm More tab and bottom nav remain clickable.
+
+Desktop:
+1. Load app.
+2. Confirm icon floats bottom-right.
+3. Hover icon.
+4. Confirm tooltip appears.
+5. Open assistant.
+6. Ask a question.
+7. Confirm thinking/ready states.
+8. Confirm sidebar/menu remain clickable.
+
+Phase 10 — Final report
+Return:
+- files changed
+- actual live assistant trigger file
+- animated icon file
+- animation method used
+- icon states completed
+- accessibility updates
+- reduced-motion behavior
+- duplicate check result
+- mobile QA result
+- desktop QA result
+- test results
+- confirmation that only popup assistant icon/UI was changed
+- confirmation that trading, MT5, broker execution, live trading, routes, and risk logic were untouched

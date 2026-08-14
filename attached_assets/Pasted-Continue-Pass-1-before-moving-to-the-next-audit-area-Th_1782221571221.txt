@@ -1,0 +1,70 @@
+Continue Pass 1 before moving to the next audit area.
+
+This report is strong, but Pass 1 is not complete until the known-unknowns are closed.
+
+Do this next, still read-only, no code changes:
+
+1. Directly trace all 4 divergent trade entry paths end-to-end:
+   - executeInstantTrade() / /api/trades/instant/execute
+   - LiveTradeTicket.tsx standard path
+   - LiveSharedTradeTicket.tsx
+   - ScannerTradeModal.tsx
+   - Eleanor/Ruby assistant instant trade command path
+
+2. For each path, prove whether it converges into the same backend live dispatch chokepoint:
+   - dispatchLiveCommand
+   - recordLiveCommandResult
+   - executionReconciler
+   - arx_live_commands
+   - arx_live_positions
+
+3. Verify frontend success truth for every path:
+   - Does the UI toast “success” on dispatch accepted / sent to bridge?
+   - Or does it wait for LIVE_FILLED / MT5 ticket confirmation?
+   - Does any surface show “sent,” “placed,” “executed,” “open,” or “success” before MT5 returns a real ticket/order/deal/position?
+   - Include exact component/file/line references.
+
+4. Specifically inspect Scanner:
+   - Confirm whether ScannerTradeModal.tsx is truly routing live scanner BUY/SELL to /api/me/demo-commands.
+   - Confirm whether this is active user-facing UI or dead/dormant code.
+   - Confirm what the user sees after clicking BUY/SELL from Scanner.
+   - Confirm whether Scanner can create demo/paper command rows in the active live product flow.
+
+5. Specifically inspect owner/admin blockers:
+   - ARX Focus Market Lock
+   - Data Sufficiency gate
+   - Live Execution Activation Gate
+   - Typed confirmation
+   - Any path-specific owner/admin blocker
+
+   For each one, classify:
+   - permanent technical/security truth
+   - Governance-controlled restriction
+   - hardcoded legacy blocker
+   - warning-only candidate
+   - must preserve for normal users but not owner/admin
+   - must be moved into Governance
+
+6. Specifically inspect V75:
+   - Confirm exact source of V75 shorthand.
+   - Confirm exact expected broker symbol from arx_symbol_specs.
+   - Confirm where symbol enumeration is stored.
+   - Confirm what gets sent to the EA when registry is missing/stale.
+   - Confirm where SYMBOL_NOT_FOUND / SYMBOL_AMBIGUOUS gets flattened into EA_REJECTED_NO_DETAIL.
+   - Confirm the minimal fix concept without editing code.
+
+7. Produce a Pass 1A addendum report with:
+   - final answer on whether UI success is truthful
+   - final answer on whether every BUY/SELL path reaches the live MT5 path
+   - exact list of paths to consolidate
+   - exact list of owner/admin restrictions to remove or move into Governance
+   - exact list of execution-truth files that must not be weakened
+   - exact first fix task list, but do not edit code yet
+
+Do not move to balance/allocation, Eleanor app knowledge, UI cleanup, or speed until this Pass 1A addendum is complete.
+
+The key question remains:
+
+“Can every visible BUY/SELL path place a real live MT5 trade for owner/admin without app-added restrictions, and does ARX only show success/open positions after MT5 confirmation?”
+
+Close the unknowns and answer that with proof.

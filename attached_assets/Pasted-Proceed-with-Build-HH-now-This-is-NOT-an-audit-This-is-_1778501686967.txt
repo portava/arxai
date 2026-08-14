@@ -1,0 +1,404 @@
+Proceed with Build HH now.
+
+This is NOT an audit.
+This is NOT a planning report.
+Implement the code changes.
+
+Build HH = Risk Governor + Trader Readiness System.
+
+Goal:
+Create a central Risk Governor that evaluates trader readiness, system readiness, paper trading safety, AI performance quality, autopilot safety, risk exposure, and learning maturity.
+
+The Risk Governor should answer:
+- Is the system safe to continue paper trading?
+- Should autopilot keep running or pause?
+- Is the trader overtrading?
+- Is the AI learning enough before scaling?
+- Are losses clustering?
+- Are mistakes repeating?
+- Is market data reliable?
+- Is the paper strategy mature enough?
+- Should the system go into WATCH_ONLY, PAPER_ALLOWED, PAPER_PAUSED, or LOCKED mode?
+
+Important:
+Build HH must NOT place live trades.
+Build HH must NOT enable live trading.
+Build HH must NOT call MT5 live execution.
+Build HH must NOT enable canPlaceTrades.
+Build HH must NOT recommend live trading.
+Build HH must only govern paper/simulation safety and readiness.
+
+Current system:
+- Build AA = trade decision orchestrator
+- Build BB = auto-debrief
+- Build CC = learning feedback engine
+- Build DD = read-only market data
+- Build EE = paper execution engine
+- Build FF = paper autopilot loop
+- Build GG = calendar + AI performance command center
+- Build HH = risk governor + readiness system
+
+Core requirement:
+Create one central risk/readiness evaluation service that all future builds can check before allowing paper execution, autopilot cycles, or any future live-trading consideration.
+
+Build HH tasks:
+
+1. Inspect existing risk and safety systems
+
+Find existing files/tables/routes for:
+- risk settings
+- safetyCore
+- canPlaceTrades
+- daily loss limits
+- paper execution eligibility
+- autopilot settings
+- decision logs
+- paper trades
+- learning events
+- mistake patterns
+- performance snapshots
+- market data health
+- BB/CC/GG analytics
+
+Do not duplicate existing safety logic.
+Create one central Risk Governor that reads from these systems and returns a clear status.
+
+2. Create Risk Governor Service
+
+Create a service that returns:
+
+{
+  governor_id,
+  evaluated_at,
+  mode: "PAPER_ONLY",
+  liveTradingStatus: "DISABLED",
+  overallStatus: "PAPER_ALLOWED" | "PAPER_CAUTION" | "PAPER_PAUSED" | "WATCH_ONLY" | "LOCKED",
+  paperTradingAllowed: boolean,
+  autopilotAllowed: boolean,
+  manualPaperAllowed: boolean,
+  liveTradingAllowed: false,
+  readinessScore: number,
+  readinessGrade: "A" | "B" | "C" | "D" | "F",
+  readinessLevel: "NOT_READY" | "EARLY_TESTING" | "DEVELOPING_EDGE" | "PAPER_STABLE" | "ADVANCED_PAPER_READY",
+  hardBlocks: [],
+  softWarnings: [],
+  riskFlags: [],
+  cooldowns: [],
+  metrics: {
+    dailyPnl,
+    dailyLossLimit,
+    weeklyPnl,
+    maxDrawdown,
+    openPaperTrades,
+    maxOpenPaperTrades,
+    sameSymbolExposure,
+    winRate30d,
+    sampleSize,
+    decisionToWinRate,
+    avgRiskScore,
+    avgConfidence,
+    learningConfidence,
+    marketDataQuality,
+    autopilotErrorRate,
+    repeatedMistakeCount
+  },
+  nextBestActions: [],
+  allowedActions: {
+    canRunAADecision: boolean,
+    canOpenPaperTrade: boolean,
+    canRunPaperAutopilot: boolean,
+    canManualClosePaperTrade: boolean,
+    canRebuildPerformance: boolean,
+    canProcessLearning: boolean,
+    canPlaceLiveTrade: false
+  },
+  explanation,
+  generatedAt
+}
+
+3. Readiness scoring model
+
+Create a readiness score from 0–100.
+
+Suggested scoring categories:
+
+A. Risk discipline, 25 points
+- respects max daily paper loss
+- no revenge-trade cooldown violations
+- no overtrading
+- no excessive same-symbol exposure
+- no repeated high-risk trades
+
+B. Strategy edge maturity, 25 points
+- enough paper trade sample size
+- positive or stable strategy edge
+- consistent symbol performance
+- no destructive drawdown pattern
+- learning confidence improving
+
+C. AI decision quality, 20 points
+- AA decisions are not reckless
+- confidence calibration is improving
+- risk scores are controlled
+- decision-to-trade rate is reasonable
+- decision-to-win rate is trackable
+
+D. System reliability, 15 points
+- DD market data quality is good
+- no stale-data pattern
+- no frequent provider failures
+- FF autopilot cycles are stable
+- EE paper execution is idempotent
+
+E. Learning/debrief quality, 15 points
+- BB debriefs are created
+- CC learning payloads process once
+- mistake patterns are tracked
+- repeated mistakes are decreasing
+- lessons are actionable
+
+Map score to grade:
+- A = 90–100
+- B = 80–89
+- C = 70–79
+- D = 60–69
+- F = below 60
+
+4. Hard block rules
+
+Risk Governor must return WATCH_ONLY or LOCKED if any hard block is active.
+
+Hard blocks should include:
+- live trading attempted or enabled
+- canPlaceTrades is true
+- MARKET_DATA_MODE is not read_only
+- daily paper loss limit exceeded
+- max open paper trades exceeded
+- repeated same-symbol conflict
+- extreme market data degradation
+- autopilot error spike
+- duplicate execution bug detected
+- missing safety configuration
+- Build AA unavailable
+- Build EE unavailable
+- paper execution trying to call live broker functions
+
+5. Paper pause rules
+
+Risk Governor should return PAPER_PAUSED if:
+- daily loss limit is close to being hit
+- multiple losses happen back-to-back
+- revenge cooldown is active
+- repeated mistake pattern is rising
+- market data is degraded
+- autopilot errors are elevated
+- risk scores are trending too high
+- learning confidence is too low for expansion
+
+6. Paper caution rules
+
+Risk Governor should return PAPER_CAUTION if:
+- system is mostly safe but sample size is small
+- win rate is unstable
+- strategy edge is not mature
+- learning confidence is LOW
+- market data is fallback-only
+- mistakes are present but not critical
+
+7. Paper allowed rules
+
+Risk Governor may return PAPER_ALLOWED only if:
+- no hard blocks exist
+- daily paper loss limit is not hit
+- open paper trades are within limits
+- market data is usable
+- autopilot errors are low
+- risk scores are controlled
+- BB/CC/GG systems are functioning
+- learning confidence is at least acceptable
+
+8. Lock live trading permanently for Build HH
+
+Hard rule:
+Build HH must always return:
+
+liveTradingStatus: "DISABLED"
+liveTradingAllowed: false
+allowedActions.canPlaceLiveTrade: false
+
+If any file/config tries to enable live trading, Risk Governor must flag it as a CRITICAL hard block.
+
+Do not build live trading.
+Do not unlock live trading.
+Do not recommend live trading.
+
+9. Integrate Risk Governor into FF and EE
+
+Add read-only checks:
+
+Before FF starts or runs a cycle:
+- call Risk Governor
+- if autopilotAllowed is false, skip cycle and log reason
+
+Before EE opens a new paper trade:
+- call Risk Governor
+- if paperTradingAllowed is false, reject paper execution with governor reason
+
+Do not break manual paper close.
+Manual close should remain allowed so users can safely exit paper trades.
+
+10. Integrate Risk Governor into GG
+
+AI Command Center should show:
+- current governor status
+- readiness score
+- readiness grade
+- paper trading allowed/paused
+- autopilot allowed/paused
+- live trading disabled badge
+- hard blocks
+- soft warnings
+- next best actions
+
+GG should remain read-only.
+
+11. Add database tables if needed
+
+Additive only.
+
+Create:
+
+risk_governor_evaluations:
+- id
+- governor_id
+- overall_status
+- mode
+- live_trading_status
+- readiness_score
+- readiness_grade
+- readiness_level
+- paper_trading_allowed
+- autopilot_allowed
+- manual_paper_allowed
+- live_trading_allowed
+- hard_blocks jsonb
+- soft_warnings jsonb
+- risk_flags jsonb
+- cooldowns jsonb
+- metrics jsonb
+- next_best_actions jsonb
+- allowed_actions jsonb
+- explanation
+- created_at
+
+risk_governor_events:
+- id
+- governor_id
+- event_type
+- severity
+- message
+- details jsonb
+- created_at
+
+12. Add endpoints or scripts
+
+Create endpoints or equivalent scripts:
+
+GET /api/risk-governor/status
+POST /api/risk-governor/evaluate
+GET /api/risk-governor/evaluations?limit=20
+GET /api/risk-governor/events?limit=50
+POST /api/risk-governor/demo
+POST /api/risk-governor/simulate
+
+13. Required test scenarios
+
+A. Healthy paper system returns PAPER_ALLOWED or PAPER_CAUTION.
+B. Small sample size returns PAPER_CAUTION, not fake confidence.
+C. Daily paper loss exceeded returns PAPER_PAUSED or LOCKED.
+D. Revenge cooldown returns PAPER_PAUSED.
+E. Max open paper trades exceeded returns PAPER_PAUSED or LOCKED.
+F. Market data degraded returns PAPER_CAUTION or PAPER_PAUSED.
+G. Live trading flag detected returns LOCKED.
+H. canPlaceTrades true returns LOCKED.
+I. Autopilot error spike pauses FF.
+J. EE paper execution is rejected when governor blocks paper trading.
+K. Manual paper close remains allowed.
+L. GG command center displays governor status.
+M. Empty database returns safe NOT_READY / WATCH_ONLY state.
+N. No live trades are placed.
+
+14. Logs
+
+Every governor evaluation should log:
+- evaluation started
+- data sources read
+- missing data sources
+- metrics calculated
+- hard blocks found
+- soft warnings found
+- readiness score calculated
+- allowed actions returned
+- evaluation stored
+- evaluation completed
+
+15. Preserve existing behavior
+
+Do not break:
+- Build AA decision orchestrator
+- Build BB auto-debrief
+- Build CC learning engine
+- Build DD market data layer
+- Build EE paper execution engine
+- Build FF paper autopilot loop
+- Build GG trading calendar and command center
+- manual debrief
+- manual paper close
+- analytics
+- decision logs
+- learning logs
+- market data logs
+- paper execution logs
+- autopilot logs
+- existing frontend routes
+
+Acceptance criteria:
+- Risk Governor service exists.
+- It returns a clear readiness and safety status.
+- It blocks unsafe paper execution.
+- It pauses unsafe autopilot cycles.
+- It permanently reports live trading as DISABLED.
+- It flags any live trading attempt as a CRITICAL hard block.
+- GG displays governor status.
+- Empty states are safe.
+- App typechecks/builds.
+- Raw outputs prove all major scenarios work.
+
+After implementation, show:
+
+1. Files changed
+2. New files created
+3. Database changes
+4. Where HH reads AA/BB/CC/DD/EE/FF/GG data
+5. Where HH integrates with EE
+6. Where HH integrates with FF
+7. Where HH integrates with GG
+8. Raw output from /api/risk-governor/status
+9. Raw output from /api/risk-governor/evaluate
+10. Raw output from /api/risk-governor/demo
+11. Raw output for healthy paper scenario
+12. Raw output for daily loss exceeded scenario
+13. Raw output for revenge cooldown scenario
+14. Raw output for max open trades scenario
+15. Raw output for degraded market data scenario
+16. Raw output for live trading flag detected scenario
+17. Raw output proving EE rejects paper execution when governor blocks
+18. Raw output proving FF pauses when governor blocks
+19. Raw output proving manual paper close still works
+20. Sample risk_governor_evaluations record
+21. Sample risk_governor_events record
+22. GG command center sample showing governor status
+23. Live-trade isolation proof
+24. Any errors or warnings
+25. Whether Build HH is fully complete or partially complete
+26. Final Build HH score out of 10

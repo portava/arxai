@@ -1,0 +1,64 @@
+QA/FIX GATE — Final Launch Candidate Report + Go/No-Go Decision
+
+Inspect the final launch candidate report and Go/No-Go decision work from the previous pass.
+
+Do not rebuild unrelated systems.
+Only repair missing launch-critical documentation, evidence, or QA script issues.
+Do not add new features.
+Do not fire live trades.
+Do not create real live bridge commands.
+
+Verify:
+
+1. LAUNCH_CANDIDATE_GO_NO_GO.md exists.
+2. Final decision is clearly marked GO, CONDITIONAL GO, or NO-GO.
+3. Decision follows strict safety/privacy/secret/live-readiness criteria.
+4. Critical blockers are listed.
+5. High blockers are listed.
+6. Medium/low issues are listed.
+7. Remaining risks are listed.
+8. Final launch checklist exists.
+9. Known issues list exists.
+10. Operator runbook exists.
+11. Rollback/emergency steps are documented.
+12. Final QA script exists and is runnable.
+13. Final QA script snapshots arx_live_commands before and after.
+14. Final QA script fails if arx_live_commands changes unexpectedly.
+15. No-live-command evidence is included.
+16. Production live defaults OFF evidence is included.
+17. Feature flags fail-closed evidence is included.
+18. Secret masking evidence is included.
+19. Admin protection evidence is included.
+20. User privacy isolation evidence is included.
+21. Ruby boundary evidence is included.
+22. Ruby Voice guardrail evidence is included.
+23. Kill switch evidence is included.
+24. Close-only evidence is included.
+25. Reconciliation/NEEDS_REVIEW evidence is included.
+26. Audit/export masking evidence is included.
+27. Broker/regulatory mode separation and disclosure evidence is included.
+28. Mobile/iPhone Safari evidence is included.
+29. Normal users cannot access admin-only data.
+30. User A cannot see User B data.
+31. Ruby cannot reveal other users, admin-only data, secrets, or false live-trade claims.
+32. Voice cannot bypass trade confirmation or live safety gates.
+33. Shared master live remains blocked unless all compliance/admin/allocation/risk/mapping/bridge/disclosure/safety gates pass.
+34. No bridge tokens, API keys, account credentials, session secrets, token hashes, raw audio, private prompts, or sensitive bridge payloads are exposed in reports, exports, UI, logs, routes, or responses.
+35. No live trade is fired during QA.
+36. arx_live_commands count remains unchanged.
+
+Return:
+- PASS/FAIL table
+- final decision
+- files inspected
+- tests run
+- issues found
+- fixes applied
+- remaining blockers
+- remaining risks
+- launch checklist path
+- known issues path
+- operator runbook path
+- final QA script name
+- confirmation that no live trade was fired
+- confirmation that arx_live_commands count stayed unchanged

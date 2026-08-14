@@ -1,0 +1,193 @@
+Update ARX AI scalping so every scalp trade action is one-click by default.
+
+Goal:
+Scalping is speed-first. Users should not have to open a full trade ticket every time they act on a scalp. When Ruby or the scanner identifies a valid scalp opportunity, the user should be able to enter immediately with one click using their saved scalp settings.
+
+Scope:
+
+* Apply to scalp trades only.
+* Do not change normal swing/day/manual trade flow unless needed to keep shared components consistent.
+* Do not remove normal trade tickets for non-scalp trades.
+* Do not redesign unrelated pages.
+
+Build one-click scalp execution:
+
+1. Add saved Scalp Trade Settings
+    Each eligible user should have a saved scalp profile with:
+
+* default lot/stake size
+* default stop-loss logic
+* default take-profit logic
+* max spread/slippage tolerance
+* max scalp duration
+* max simultaneous scalp positions
+* allow multi-trade scalp: true/false
+* max entries per flame/run
+* preferred symbols
+* allowed scalp timeframes
+* buy/sell permission
+* one-click scalp enabled: true/false
+
+For owner/admin andraie.co@gmail.com:
+
+* one-click scalp should be enabled by default.
+* live scalp execution should use the real live path when live execution is armed.
+* do not force demo/paper/preview/block mode for owner live testing.
+
+2. Scanner scalp buttons
+    On scanner results where the setup type is SCALP or FLAME_SCALP:
+
+* Replace slow trade-ticket-first flow with a direct one-click button:
+    “Scalp Buy”
+    “Scalp Sell”
+    or “Enter Scalp”
+* Button should immediately create/send the scalp order using the user’s saved scalp settings.
+* Show the chosen settings in a compact preview near the button:
+    lot/stake, stop loss, take profit, max duration, risk/reward.
+* Do not require the user to manually re-enter the same values every time.
+
+3. Ruby scalp actions
+    When Ruby recommends a scalp:
+
+* Ruby should show a direct one-click action:
+    “Enter Scalp Buy”
+    “Enter Scalp Sell”
+* Ruby should explain the setup in one short sentence:
+    “Momentum is running upward with a clean flame; Ruby has a scalp buy ready using your saved scalp settings.”
+* Then show the one-click action.
+* Do not bury the action under long explanations.
+
+4. Selected market panel
+    When the user selects a market and Ruby detects a scalp:
+
+* Show a clear scalp card:
+    symbol
+    direction
+    scalp confidence
+    candle flame strength
+    entry trigger
+    stop-loss logic
+    take-profit logic
+    max scalp duration
+    one-click button
+* Keep it compact.
+
+5. Multi-trade scalp / flame run
+    If the scalp engine detects a running flame:
+
+* Allow multiple one-click entries only if the user’s saved scalp settings allow it.
+* Show:
+    “Flame Run Active”
+    “Entry 1 of X”
+    “Add Scalp Position”
+* Respect the user’s max entries per flame/run.
+* Do not spam multiple entries automatically unless auto-scalp is a separate enabled feature.
+* For now, one-click means the user clicks each entry intentionally.
+
+6. Execution behavior
+    When one-click scalp is pressed:
+
+* Immediately send the order request using the saved scalp settings.
+* Do not open a full trade ticket first.
+* Show instant UI state:
+    “Sending scalp…”
+    “Queued”
+    “Sent to live bridge”
+    “Filled”
+    “Rejected”
+    “Failed”
+    “Pending”
+    “Timed out”
+* Do not fake success.
+* Do not mark as filled unless broker/EA confirms fill.
+* If bridge/EA rejects, show the real rejection in plain English.
+
+7. Speed requirements
+    One-click scalp must be optimized for speed:
+
+* button press to backend request: target under 150ms
+* backend request to command creation: target under 300ms
+* command creation to UI queued/sent state: target under 500ms
+* avoid extra modal steps for scalps
+* avoid full page reloads
+* avoid heavy rerenders
+* optimistic UI may show “sending/queued,” but not “filled” unless confirmed.
+
+8. UI wording
+    Use user-facing labels only:
+
+* “One-Click Scalp”
+* “Scalp Buy”
+* “Scalp Sell”
+* “Flame Run Active”
+* “Sniper Scalp Entry”
+* “Using saved scalp settings”
+* “Sent”
+* “Filled”
+* “Rejected”
+* “Pending”
+
+Do not show:
+
+* backend route names
+* function names
+* raw JSON
+* debug labels
+* internal permission flags
+* stack traces
+
+9. Owner live behavior
+    For andraie.co@gmail.com / owner user id=4:
+
+* one-click scalp must be available.
+* live one-click scalp must not be blocked by demo, paper, preview, first-test, or onboarding gates.
+* when live execution is armed, one-click scalp should use the live execution path.
+* do not force LIVE_BLOCKED for intentional owner live testing.
+* do not turn live execution off.
+* do not neutralize valid owner live scalp test rows unless stale/duplicate/invalid.
+
+10. Other users
+    Do not accidentally unlock every user.
+    For non-owner users:
+
+* use existing permissions.
+* if a user is not live-approved, show the correct limited state.
+* if one-click scalp is disabled for that user, show “Enable one-click scalp in settings” or the appropriate user-facing message.
+
+11. Audit/history
+    Every one-click scalp attempt must be logged:
+
+* user
+* symbol
+* direction
+* source: Ruby / Scanner / Selected Market / Manual Scalp
+* scalp settings used
+* timestamp
+* status
+* broker/EA result
+* rejection/failure reason if any
+* linked close result if closed
+
+12. Close scalp speed
+    Open scalp cards should have a one-click close button:
+
+* “Close Scalp”
+* “Close All Scalp Positions”
+* “Close Flame Entries”
+    Closing should also use the fast live path and show the real broker/EA result.
+
+Acceptance criteria:
+
+* Scalp trades are one-click by default.
+* Scanner scalp results have direct one-click scalp buttons.
+* Ruby scalp recommendations have direct one-click scalp buttons.
+* Selected market scalp cards have direct one-click scalp buttons.
+* Saved scalp settings are used automatically.
+* No full trade ticket is required for scalp trades.
+* Owner live one-click scalp is not blocked when live is armed.
+* Multi-entry flame scalp supports intentional one-click add-position behavior.
+* UI shows real queued/filled/rejected/failed/pending status.
+* No fake success.
+* No internal/debug wording visible.
+* Other users are not globally unlocked.
+* No console errors.

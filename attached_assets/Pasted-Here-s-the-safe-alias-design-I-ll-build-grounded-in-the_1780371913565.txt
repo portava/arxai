@@ -1,0 +1,26 @@
+Here's the safe alias design I'll build, grounded in these 15 real names:
+Behavior:
+
+V75 → both Volatility 75 Index and Volatility 75 (1s) Index exist → returns SYMBOL_AMBIGUOUS with both candidates. User picks. Never a silent guess.
+V150 → only Volatility 150 (1s) Index exists → resolves directly (unambiguous).
+V75(1s) or V751s → maps specifically to Volatility 75 (1s) Index → resolves directly.
+V75 Index or the full name → exact match (already works).
+V999 (no such base) → SYMBOL_NOT_FOUND.
+Exact base-number matching so V10 never collides with V100.
+
+How: an alias resolver that parses a shorthand like V<num> (optionally with (1s)/1s), finds all enumerated symbols whose base number matches exactly, and:
+
+1 match → resolve
+2+ matches → SYMBOL_AMBIGUOUS with candidates (reuses the existing machinery)
+0 → fall through to the normal resolver (which returns SYMBOL_NOT_FOUND)
+
+It feeds the same candidate/ambiguous path that already exists, so the "never guess on a live path" guarantee stays intact — V75 becomes convenient (you get the two real options) without becoming dangerous (it won't pick for you).
+One thing I want explicit confirmation on before I write it, because it's the whole safety crux:
+For V75 specifically — you're agreeing it should return both candidates and make the user/UI choose, NOT auto-pick the standard Volatility 75 Index? That's my strong recommendation, and the data backs it (two real instruments, genuinely ambiguous). If instead you wanted V75 → always the standard one, I'd push back hard — that's a silent guess on a live-money path between two different-risk instruments, and it reintroduces exactly the bug class we spent four EA fixes eliminating. So I'll build the candidates version unless you tell me otherwise, and even then I'd want to talk through the risk first.
+Confirm "candidates, never silent pick for ambiguous shorthands" and I'll write:
+
+The alias resolver in symbolDirectory.ts (exact base-number parse, feeds the existing ambiguous/candidate machinery)
+A test proving: V75 → ambiguous with both candidates, V150 → resolves (only one exists), V75 1s → resolves to the (1s) variant, V999 → not found, and V10 ≠ V100
+Verify it against your real 15-symbol list
+
+Then you run the backend chain (build + typecheck + the test) to confirm green. Want me to proceed on that basis?

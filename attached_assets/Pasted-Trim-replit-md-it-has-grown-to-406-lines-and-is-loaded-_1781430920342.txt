@@ -1,0 +1,25 @@
+Trim replit.md — it has grown to 406 lines and is loaded as always-on context. Goal: a lean, current pointer file. Lossless — archive, don't delete.
+
+CONSTRAINTS:
+- replit.md MUST keep existing (several source files reference it by name: perfRecorder.ts, discrepancyRules.ts, qaScannerBridgeRouting.ts, two .agents/memory files). Do not rename or remove it.
+- Append everything you remove verbatim into docs/history/replit-history.md (which already exists), under a dated "Archived from replit.md — <date>" heading. Nothing is lost; it moves.
+- This is a docs-only change. Do not touch code, tests, schema, or config. ci:guards must stay 43/43.
+
+KEEP in replit.md (these are load-bearing / frequently needed):
+- Run & Operate, Stack, Where things live, QA commands
+- Non-negotiable invariants (full)
+- Current safety gates (Phase B, 16 total) (full)
+- Active ARX AI trading rules, Scanner priority, Ruby behavior rules — but trim each to the currently-true bullets only
+- Known issues (current only)
+- A short "Architecture & Safety Documentation" index that POINTS to docs/ and docs/history/ rather than restating them
+
+ARCHIVE to docs/history/replit-history.md (move out of replit.md):
+- Superseded/!historical architecture-decision narrative and any "active summary" prose that duplicates docs/
+- Phase B live-execution narrative beyond the gate list itself
+- EA install detail beyond the current version line + a pointer
+- Environment live-testing posture prose
+- Anything describing completed work or past phases rather than current operating truth
+
+For each section: if it states something still true and frequently needed, keep it (trimmed); if it's narrative, history, or duplicated in docs/, move it. When in doubt, keep safety/invariant content and move prose.
+
+Report: new replit.md line count (target roughly half), a section-by-section kept/trimmed/archived table, confirmation that every removed block now lives in docs/history/replit-history.md, that no code/schema/config changed, and ci:guards still 43/43. Do not mark complete until that's true.

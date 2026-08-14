@@ -1,0 +1,353 @@
+NEXT PHASE: UPDATE APP BRANDING TO ARX AI
+
+Goal:
+Update the entire trading app brand identity to:
+
+ARX AI
+Analyze. Risk. eXecute.
+The AI trading fortress built for disciplined decisions.
+
+This is now the official working brand for the app.
+
+Important:
+Do not add new trading features in this phase.
+Do not change trading logic.
+Do not fake MT5 connection.
+Do not place real broker orders.
+Do not remove full tester access.
+This phase is branding, copy, UI identity, and app metadata only.
+
+==================================================
+1. UPDATE GLOBAL APP NAME
+==================================================
+
+Replace old/generic app names across the app with:
+
+ARX AI
+
+Use this as the full brand name everywhere:
+
+ARX AI
+
+Use this as the short name where space is limited:
+
+ARX
+
+Update:
+
+- browser title
+- app header
+- sidebar logo text
+- mobile bottom nav branding
+- dashboard hero
+- onboarding welcome screen
+- release status
+- login/session screens
+- footer
+- settings
+- system health
+- diagnostics export
+- reports
+- PDF/export/report titles if any
+
+==================================================
+2. UPDATE TAGLINE AND BRAND MEANING
+==================================================
+
+Official brand lockup:
+
+ARX AI
+Analyze. Risk. eXecute.
+The AI trading fortress built for disciplined decisions.
+
+Meaning:
+
+A = Analyze
+The AI scans charts, sessions, news risk, market structure, strategy fit, price action, trade quality, and confidence.
+
+R = Risk
+The Risk Governor protects the account through stop-loss enforcement, drawdown limits, max loss rules, overtrading detection, exposure control, and kill switch protection.
+
+X = eXecute
+The system helps turn qualified decisions into manual trades, AI-assisted trades, simulator trades, live tester intents, and future MT5 execution.
+
+Add this explanation to:
+
+- onboarding
+- About page or Settings > About
+- dashboard brand card
+- help/tooltips
+- release notes
+- tester playbook intro
+
+==================================================
+3. UPDATE DASHBOARD COPY
+==================================================
+
+Update dashboard hero to:
+
+Title:
+ARX AI
+
+Subtitle:
+Analyze. Risk. eXecute.
+
+Description:
+The AI trading fortress built for disciplined decisions.
+
+Supporting copy:
+ARX AI helps traders analyze the market, control risk, test strategies, review decisions, and prepare for disciplined execution through simulator, AI-assisted, shadow, and future MT5-connected workflows.
+
+Status line:
+Owner Tester Access Active · MT5 Deferred · Simulator Ready
+
+Do not say real broker execution is active unless MT5 is actually connected.
+
+==================================================
+4. UPDATE ONBOARDING COPY
+==================================================
+
+First onboarding screen:
+
+Welcome to ARX AI
+
+Analyze. Risk. eXecute.
+
+ARX AI is your AI trading command center built to help you scan the market, protect your account, test strategies, and execute with discipline.
+
+Add the three pillars:
+
+Analyze:
+Market scanner, live chart, strategy lab, AI trade ideas, session timing, news risk, and opportunity scoring.
+
+Risk:
+Risk Governor, max loss limits, stop-loss rules, drawdown protection, exposure control, and kill switch.
+
+eXecute:
+Manual simulator trades, AI-assisted trades, live tester intents, trade journal, learning loop, and future MT5 execution.
+
+Live warning copy:
+ARX AI can support live workflows later through MT5, but real broker execution requires the MT5 bridge connection and guarded order routing.
+
+==================================================
+5. UPDATE APP SHELL BRANDING
+==================================================
+
+Top header should show:
+
+ARX AI
+
+Small subtext or hover tooltip:
+
+Analyze. Risk. eXecute.
+
+Global banner should say:
+
+OWNER TESTER ACCESS ACTIVE — ARX AI is open for testing. Real broker execution requires MT5 bridge connection.
+
+When MT5 is deferred:
+
+MT5 DEFERRED — Simulator, AI testing, shadow mode, and live tester workflows are active.
+
+When live chart is active:
+
+Live market chart active. Broker execution requires MT5 bridge connection.
+
+==================================================
+6. UPDATE REPORT TITLES
+==================================================
+
+All reports should be renamed with ARX AI branding.
+
+Examples:
+
+ARX AI Daily Test Session Report
+ARX AI Beta QA Report
+ARX AI Owner Pilot Report
+ARX AI Risk Governor Report
+ARX AI Autopilot Report
+ARX AI Shadow Mode Report
+ARX AI System Health Report
+ARX AI MT5 Bridge Setup Report
+
+Report header should include:
+
+ARX AI
+Analyze. Risk. eXecute.
+The AI trading fortress built for disciplined decisions.
+
+==================================================
+7. UPDATE RELEASE NOTES
+==================================================
+
+Add brand section:
+
+Brand Identity:
+The platform is now branded as ARX AI.
+
+ARX means:
+Analyze. Risk. eXecute.
+
+ARX AI is designed as a trading fortress where every decision passes through analysis, risk control, and disciplined execution logic before becoming a trade workflow.
+
+Current release:
+v0.9.0-beta
+Owner Tester Access Active
+MT5 Deferred
+Simulator Ready
+Real broker execution locked until MT5 bridge connection
+
+==================================================
+8. UPDATE DESIGN DIRECTION PLACEHOLDERS
+==================================================
+
+Use this brand personality:
+
+- premium
+- disciplined
+- protective
+- intelligent
+- command-center feel
+- fortress/security theme
+- clean trading dashboard
+- AI intelligence without hype
+- risk-first execution
+
+Suggested visual direction:
+
+- dark command-center background
+- fortress/shield-inspired logo placeholder
+- sharp ARX wordmark
+- strong but clean typography
+- status badges that feel professional
+- no cartoon feel
+- no gambling/casino feel
+- no fake profit language
+
+Add placeholder logo text:
+
+ARX AI
+
+Optional icon placeholder:
+A minimal fortress/shield mark with an “X” cut through the center.
+
+==================================================
+9. UPDATE SETTINGS / ABOUT PAGE
+==================================================
+
+Create or update:
+
+Settings > About ARX AI
+
+Content:
+
+ARX AI is an AI-powered trading command center built around three principles:
+
+Analyze:
+Understand the market before making a decision.
+
+Risk:
+Protect the account before any trade is accepted.
+
+eXecute:
+Act only when the setup, risk, and rules align.
+
+Tagline:
+The AI trading fortress built for disciplined decisions.
+
+Current mode:
+Owner Tester Access
+
+Broker status:
+MT5 Deferred
+
+Execution status:
+Real broker execution locked until MT5 bridge connection.
+
+==================================================
+10. UPDATE TERMINOLOGY
+==================================================
+
+Use these official product terms:
+
+- ARX Dashboard
+- ARX Trade Command Room
+- ARX Risk Governor
+- ARX AI Scanner
+- ARX Autopilot
+- ARX Shadow Mode
+- ARX Strategy Lab
+- ARX Live Intent Queue
+- ARX Journal
+- ARX System Health
+- ARX MT5 Bridge Setup
+
+Do not overdo the ARX prefix on every single button, but use it in major system names, headings, reports, and onboarding.
+
+==================================================
+11. UPDATE METADATA
+==================================================
+
+Update app metadata where applicable:
+
+App name:
+ARX AI
+
+Short name:
+ARX
+
+Description:
+The AI trading fortress built for disciplined decisions.
+
+Keywords:
+AI trading, trading simulator, risk governor, trading journal, market scanner, strategy testing, MT5 bridge, disciplined trading
+
+Theme:
+premium trading command center
+
+==================================================
+12. FINAL VERIFICATION
+==================================================
+
+Run a search across the codebase for old/generic names and update where appropriate.
+
+Verify:
+
+- dashboard shows ARX AI
+- onboarding shows ARX AI
+- app header shows ARX AI
+- reports show ARX AI
+- release notes show ARX AI
+- settings/about shows ARX AI
+- global banners still correctly show MT5 deferred
+- real broker execution is still locked
+- full tester access still works
+- no trading logic was changed
+- no MT5 connection was faked
+
+Generate:
+
+ARX AI BRANDING UPDATE REPORT
+
+Include:
+
+- global app name updated yes/no
+- tagline updated yes/no
+- onboarding updated yes/no
+- dashboard updated yes/no
+- reports updated yes/no
+- settings/about updated yes/no
+- release notes updated yes/no
+- metadata updated yes/no
+- old names remaining yes/no
+- full tester access preserved yes/no
+- MT5 still deferred yes/no
+- real broker execution still locked yes/no
+
+Hard rules:
+- Do not change trading logic.
+- Do not fake MT5 connection.
+- Do not place real broker orders.
+- Do not remove full tester access.
+- Do not remove risk governor.
+- Do not remove kill switch UI.

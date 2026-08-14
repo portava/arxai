@@ -1,0 +1,642 @@
+# COMMAND — ENFORCE RUBY CHAT SUFFICIENCY + FIX REMAINING SCANNER TRUTH DRIFTS
+
+Read this entire command before changing anything.
+
+There is one root cause behind the current symptoms: some surfaces still emit confident market reads or setup details while other surfaces correctly say the chart/feed is unconfirmed or insufficient.
+
+The most dangerous case is Ruby chat giving a full decimal trade setup — entry, stop loss, TP1, TP2, TP3, R:R — while the Ruby Chart Read panel says chart intelligence is unavailable or feed is not confirmed.
+
+Fix this as one consistency task.
+
+This is not a cosmetic copy change. The verdict must be enforced in code.
+
+## Current visible problems from the running app
+
+### 1. Header vs Ruby Chart Read contradiction
+
+Selected symbol/timeframe: EURUSD 1D.
+
+Header says:
+
+- Data: Live / Live confirmed candles
+- Ruby: Limited read / Chart intelligence unavailable
+- Trading: Enabled
+- Action: Wait for confirmation
+
+Ruby Chart Read says:
+
+- MT5 broker
+- Unconfirmed
+- No AI
+- Feed not confirmed
+- Chart intelligence unavailable
+- Chart data is syncing
+
+These surfaces are still not reading one final selected-symbol + selected-timeframe verdict.
+
+Header must not imply clean broker-confirmed chart usability if Ruby Chart Read says chart data is unconfirmed/no-AI.
+
+### 2. Ruby chat can still overstate confidence
+
+Ruby chat responded:
+
+- “I can read the market”
+- “V75 is the clearest candidate”
+- “bullish on M15 and H1”
+- gave entry, SL, TP1, TP2, TP3, and R:R
+- said “scanner is using live connected data right now”
+
+This is unsafe if the selected chart/feed sufficiency verdict is unconfirmed, partial, stale, insufficient, or blocked.
+
+A caveat in the prompt is not enough. The code must prevent setup numbers from being assembled when the shared sufficiency verdict does not allow them.
+
+### 3. Broad Scan cards still contradict themselves
+
+Cards show:
+
+- Badge: Ready now
+- Section: Ready now
+- Copy: “Wait for confirmation.”
+- Then another line: “Live data is confirmed and the setup is ready — you can act now.”
+
+A card cannot say “Ready now” and “Wait for confirmation” together.
+
+### 4. Opportunity Map count is wrong
+
+Opportunity Map says:
+
+- “16 of 16 scanned”
+
+But Scan Universe shows:
+
+- “Core Markets · 23”
+
+If 23 symbols are in the visible universe and 16 returned results, the map must say:
+
+- “16 of 23 scanned”
+
+The 7 skipped symbols must be listed with explicit reasons, or the summary must clearly explain why they were excluded.
+
+### 5. Empty state still renders with results
+
+The page shows populated Opportunity Map results and also says:
+
+- “No scan run yet for Core Markets — click Scan or Start Auto Scan…”
+
+That empty state must never render when result rows exist.
+
+### 6. Header selected-symbol mismatch
+
+Selected chart is EURUSD 1D, but Broad Scan multi-symbol rows include EURUSD and other symbols.
+
+Header Data / Ruby / Trading / Action must be scoped to the selected symbol and selected timeframe only.
+
+Broad Scan row readiness must not lift into the selected-symbol header unless symbol and timeframe both match and the selected chart/feed verdict is confirmed.
+
+If Ruby Chart Read is unconfirmed/no-AI for EURUSD 1D, the header Ruby and Action cells cannot display anything stronger than that selected-symbol verdict.
+
+### 7. Scores still look like defaults
+
+Many unrelated symbols show the same:
+
+- Edge 78
+- Entry 75
+- Exec 80
+
+This still looks like default scoring, not true per-symbol computation.
+
+Audit the score derivation again and prove these are real per-symbol values, or identify/remove placeholder fallback values.
+
+### 8. Trade Health headline is still confusing
+
+The page says:
+
+- “Trade Health”
+- “2 open”
+
+But selected symbol EURUSD has no open positions.
+
+The lower split is better, but the headline still implies EURUSD has 2 open trades.
+
+It should say something like:
+
+- “0 on EURUSD · 2 account-wide”
+
+or
+
+- “No EURUSD positions · 2 account-wide”
+
+## Part A — Investigate the Ruby chat setup leak before editing
+
+Do this read-only first and report the exact call chain before changing trade-level assistant code.
+
+Trace the exact path that produced the Ruby chat setup:
+
+- chat request
+- assistant tool
+- market snapshot/read tool
+- setup preview builder
+- final chat response assembly
+
+Likely files/functions to inspect:
+
+- assistant/setupPreview.ts
+- buildSetupPreview
+- assistant/tools.ts
+- getMarketSnapshot
+- liveScanner.ts
+- rubyDraftRead.ts
+- coachTools.ts
+- any Ruby/chat market-read tool
+- any setup preview / trade plan / scanner read formatter
+
+Map exactly:
+
+1. Which tool is called when Ruby is asked to “read the market” or “give a setup.”
+2. Whether that path calls buildSetupPreview or any function that computes entry/SL/TP.
+3. Whether that path evaluates the shared sufficiency verdict:
+   - evaluateMarketDataSufficiency
+   - resolveSymbolFeedVerdict
+   - mayShowTradeIdea
+   - canShowTradeSetup
+   - feedConfirmed
+   - scannerTruth/actionability resolver
+4. Whether the verdict is actually enforced, or only passed as advisory text.
+5. Whether the path can still compute setup numbers when verdict is insufficient, partial, stale, unverified, or blocked.
+
+Report the exact missing gate before editing.
+
+## Part B — Enforce sufficiency at the Ruby/chat tool boundary
+
+The setup-building path must compute the same shared selected-symbol + selected-timeframe sufficiency verdict that the chart/Ruby panel uses.
+
+When the verdict does not permit a directional setup:
+
+- Do not compute entry.
+- Do not compute stop loss.
+- Do not compute take-profit levels.
+- Do not compute risk/reward.
+- Do not return hidden levels in alternate fields.
+- Do not return partial decimal setup levels.
+- Return a withheld state instead.
+
+Returned withheld state must include:
+
+- withheld: true, or equivalent
+- symbol
+- timeframe
+- shared insufficiency reason
+- the same human-readable reason the chart/Ruby read shows
+- safe message: “I can’t give a trade setup until chart/feed sufficiency is confirmed.”
+
+The model must not be trusted to withhold levels from a prompt instruction. The code must not provide the levels.
+
+### Required behavior
+
+If chart/Ruby sufficiency is insufficient, stale, partial, unconfirmed, blocked, syncing, or no-AI:
+
+Ruby may say:
+
+- “I can’t give entry/SL/TP yet because chart data is not confirmed.”
+- “The scanner leans bullish/bearish, but setup levels are withheld until feed confirmation.”
+- “Decision support only; wait for confirmed candles.”
+
+Ruby must not say:
+
+- “Entry is…”
+- “Stop loss is…”
+- “TP1/TP2/TP3 are…”
+- “Risk/reward is…”
+- any decimal setup plan
+
+### buildSetupPreview fail-closed requirement
+
+buildSetupPreview is documented as turning a verified chart read into a setup preview.
+
+That is not enough.
+
+Either:
+
+1. Add fail-closed protection inside buildSetupPreview so it refuses or returns withheld when the input is unverified/insufficient.
+
+Preferred.
+
+or:
+
+2. Prove every call site checks the shared sufficiency verdict before calling buildSetupPreview.
+
+If choosing option 2, add tests proving no unverified call site can invoke it.
+
+## Part C — Add direct adversarial Ruby/chat enforcement test
+
+Add a direct adversarial test for the Ruby/chat setup path.
+
+Simulate or mock a symbol/timeframe where the shared chart sufficiency verdict is:
+
+- insufficient
+- partial
+- stale
+- unverified
+- blocked
+- syncing
+- or no-AI
+
+Ask the exact same assistant/tool path for a full setup using language like:
+
+“Give me entry, stop loss, TP1, TP2, TP3, and risk/reward.”
+
+Assert the returned payload contains:
+
+- no entry
+- no stopLoss
+- no stop loss
+- no takeProfit
+- no TP1
+- no TP2
+- no TP3
+- no riskReward
+- no R:R
+- no decimal setup levels hidden in alternate fields
+
+Assert the returned payload does contain:
+
+- withheld: true, or equivalent
+- the shared insufficiency reason
+- the same selected symbol/timeframe
+- the same human-readable reason the chart/Ruby panel shows
+- a safe message saying the setup cannot be produced until chart/feed sufficiency is confirmed
+
+This test must run at the tool/assembly level, not only at the prompt/string-response level.
+
+The point is to prove the model cannot leak levels because the code never provides them.
+
+## Part D — Fix Broad Scan card contradiction
+
+The Broad Scan and scalp/opportunity cards must use one shared verdict for:
+
+- badge
+- section label
+- primary instruction copy
+- data-actionability attribute
+- any action/help copy
+
+Use the existing shared mapping only:
+
+- SCANNER_ACTIONABILITY_UI
+- scannerActionability
+- scannerTruth consolidated verdict
+- or the existing shared actionability resolver
+
+Do not create another mapping.
+
+Required:
+
+- If verdict is READY_NOW, the card must not contain “Wait for confirmation.”
+- If verdict is WAIT_FOR_CONFIRMATION, the card must not display “Ready now.”
+- If verdict is BLOCKED_NO_DATA or equivalent, no trade-ready copy can appear.
+- If verdict is NO_CLEAN_SETUP, no “act now” copy can appear.
+
+Add render tests that fail if any READY_NOW card includes wait/confirm language as the primary instruction.
+
+Also test that WAIT_FOR_CONFIRMATION cards do not render “Ready now.”
+
+## Part E — Fix false empty state
+
+The empty state must be mutually exclusive with rendered results.
+
+Required:
+
+- If opportunity rows exist, “No scan run yet” must not render anywhere on the Market Scanner page.
+- If server status indicates a prior scan exists, the page must not render “No scan run yet.”
+- If the poll degraded but cached results exist, render degraded/cached state, not never-scanned.
+
+Add regression test:
+
+- mock opportunity results present
+- render scanner page
+- assert result rows are visible
+- assert “No scan run yet” is absent
+
+## Part F — Fix scan universe count and skipped symbols
+
+The opportunity map must reconcile against the full selected visible scan universe.
+
+If Scan Universe says Core Markets · 23 and only 16 result rows return, the map should show:
+
+- “16 of 23 scanned”
+
+not:
+
+- “16 of 16 scanned”
+
+Required:
+
+- derive total universe count from the same user-facing universe shown in Scan Universe
+- include skippedSymbols or equivalent in the opportunity map response
+- show skipped count and explicit skipped reasons
+- do not silently shrink the denominator to returned rows only
+
+Add test:
+
+- universe = 23
+- result rows = 16
+- skipped = 7
+- rendered summary says “16 of 23 scanned”
+- skipped list/reason text is present
+
+## Part G — Reconcile Header Data/Ruby/Action with selected-symbol chart truth
+
+Header Data / Ruby / Trading / Action must be selected-symbol + selected-timeframe scoped.
+
+Rules:
+
+- Header may not use Broad Scan row actionability unless symbol and timeframe match selected chart.
+- Header may not show stronger Ruby/action readiness than Ruby Chart Read.
+- Header action must be monotonic:
+  - downstream surfaces may reduce confidence
+  - no surface may raise confidence above feed/Ruby/chart sufficiency
+- If Ruby Chart Read says unconfirmed/no-AI/feed not confirmed/chart data syncing, header Ruby must say limited/no read.
+- Header Data may say live feed exists, but must also communicate insufficient chart-read state:
+  - “Live · insufficient history”
+  - “Live · warming up”
+  - “Live · not AI-usable”
+  - or equivalent
+
+The header cannot say “Live confirmed candles” beside “chart intelligence unavailable” without explanation.
+
+Add test:
+
+- selected symbol/timeframe has live feed but insufficient chart/Ruby sufficiency
+- header Data does not render “Live confirmed candles” alone
+- header Ruby renders limited/no read
+- header Action is capped at wait/blocked, not ready
+
+## Part H — Fix overlays verified badge if dishonest
+
+The screenshot shows:
+
+- “Overlays: verified”
+
+while nearby chart/Ruby state says:
+
+- cannot verify chart data
+- feed not confirmed
+- chart data syncing
+
+Audit this badge.
+
+If “Overlays: verified” means only the overlay UI toggles are verified, rename it to avoid implying feed/chart verification.
+
+If it implies chart/feed verification, gate it on the same sufficiency verdict.
+
+Report exactly what it means and fix if misleading.
+
+## Part I — Re-check score truth
+
+Audit the actual displayed scoring path again.
+
+The running app shows many unrelated symbols with identical:
+
+- Entry 75
+- Exec 80
+- Edge 78 on many rows
+
+Trace:
+
+- Edge score source
+- Entry score source
+- Exec score source
+- fallback/default values
+- masked projection path
+- non-admin path
+- simulator/fallback path
+- any placeholder constant
+
+For at least five distinct symbols from the screenshot, report whether the score values came from true per-symbol inputs or fallback constants.
+
+If they are real:
+
+- show the per-symbol input evidence
+- explain why values cluster
+
+If they are defaults/placeholders:
+
+- remove or withhold them
+- show “Score unavailable” or “Waiting for inputs”
+- do not render fake-looking cloned scores as real scores
+
+Add regression test:
+
+- multiple symbols with insufficient score inputs must not all render the same fallback score triple as if real
+- fallback/default scores must be withheld or labeled unavailable
+- real per-symbol scores may render only when backed by actual per-symbol inputs
+
+## Part J — Fix Trade Health headline
+
+The split below Trade Health is improved, but the headline still says:
+
+- “2 open”
+
+while selected EURUSD has zero positions.
+
+Required:
+
+When selected symbol has zero positions but account has exposure elsewhere, headline should say something like:
+
+- “0 on EURUSD · 2 account-wide”
+
+or:
+
+- “No EURUSD positions · 2 account-wide”
+
+Do not headline account-wide open positions in a way that looks symbol-specific.
+
+Add render test:
+
+- selected symbol EURUSD has 0 matching positions
+- account has 2 positions on V75
+- headline clearly distinguishes selected-symbol count from account-wide count
+
+## Safety bounds
+
+Non-negotiable:
+
+- This is withhold-only.
+- Do not grant any trade.
+- Do not place, size, queue, dispatch, close, or modify trades.
+- Do not touch live execution gates.
+- Do not weaken the 18-gate/live dispatch path.
+- Do not alter synthetic floor protection.
+- Do not weaken SL/TP policy.
+- Do not let display/sufficiency verdicts enter execution modules.
+- Keep the import-boundary guard intact.
+- Assistant/chat/tool layer may consume sufficiency verdict only for display/withholding.
+- Execution path must remain independent and protected.
+
+Position/account questions should still work:
+
+- open positions
+- exposure
+- floating P/L
+- account health
+- trade history
+
+Only directional trade setups with entry/SL/TP/R:R are withheld when chart/feed sufficiency is not confirmed.
+
+## Required tests
+
+Add or extend tests for all of the following:
+
+1. Ruby/chat setup enforcement:
+   - insufficient/unconfirmed verdict
+   - user asks for full setup
+   - tool returns no entry/SL/TP/TP1/TP2/TP3/R:R
+   - tool returns withheld state + shared reason
+
+2. Adversarial Ruby/chat setup request:
+   - direct request for decimal levels
+   - prove levels are not present anywhere in returned payload
+
+3. Chart/chat agreement:
+   - same symbol/timeframe
+   - chart verdict and chat setup verdict use same shared sufficiency reason
+
+4. Broad Scan card contradiction:
+   - READY_NOW card cannot render “Wait for confirmation”
+   - WAIT_FOR_CONFIRMATION card cannot render “Ready now”
+
+5. Empty state:
+   - results present
+   - “No scan run yet” absent
+
+6. Scan universe reconciliation:
+   - visible universe 23
+   - rows 16
+   - skipped 7
+   - render says “16 of 23 scanned”
+   - skipped reasons visible
+
+7. Header selected-symbol cap:
+   - live feed but insufficient chart/Ruby sufficiency
+   - header does not overstate readiness
+   - header action cannot exceed Ruby/chart verdict
+
+8. Overlay verified badge:
+   - either renamed or gated honestly
+
+9. Score truth:
+   - fallback/default score triples cannot render as real scores across multiple symbols
+   - real scores require per-symbol inputs
+
+10. Trade Health headline:
+   - selected symbol zero
+   - account-wide positions exist
+   - headline clearly separates both
+
+## Required validation
+
+Run and paste outputs:
+
+- dashboard typecheck
+- api-server typecheck if backend changed
+- targeted scanner tests
+- Ruby/chat tool tests
+- scanner-truth regression suite
+- ci guards
+- import-boundary guard
+- safety integration if available
+- synthetic floor tests
+- SL policy tests
+- dispatch/live-path safety tests
+
+If a full suite is too heavy, run in smaller batches and paste all batch outputs.
+
+## Authenticated QA on running app
+
+Mint a temporary session and verify visually.
+
+Required screenshots or pasted QA evidence:
+
+1. Ask Ruby chat for a setup on a symbol/timeframe whose chart/Ruby verdict is unconfirmed or insufficient.
+   - Ruby must withhold entry/SL/TP/R:R.
+   - Ruby must give the same reason as the chart/Ruby panel.
+
+2. Ask Ruby for a normal market read on a genuinely sufficient symbol.
+   - Ruby can read the market.
+   - Ruby only gives setup levels if the sufficiency verdict allows it.
+
+3. Broad Scan card:
+   - no “Ready now” + “Wait for confirmation” contradiction.
+
+4. Opportunity Map:
+   - no false “No scan run yet” under results.
+
+5. Scan count:
+   - denominator matches visible universe count.
+
+6. Header:
+   - Data/Ruby/Action agree with selected symbol/timeframe chart truth.
+
+7. Trade Health:
+   - headline separates selected-symbol positions from account-wide exposure.
+
+## Final report must include
+
+Report all of this before marking complete:
+
+1. Ruby/chat call-chain mapping:
+   - exact tool path
+   - exact missing gate
+   - exact files/lines changed
+
+2. Enforcement summary:
+   - where sufficiency is now enforced
+   - proof it is code-level, not prompt-only
+   - proof setup levels are not produced when verdict withholds
+
+3. Display drift fixes:
+   - Broad Scan card contradiction
+   - false empty state
+   - scan count/skipped symbols
+   - header/Ruby selected-symbol cap
+   - overlay badge finding/fix
+   - Trade Health headline
+
+4. Score audit:
+   - whether Edge/Entry/Exec are real or fallback
+   - evidence for at least five symbols
+   - any fixes made
+
+5. Safety proof:
+   - no execution gate changed
+   - no live path weakened
+   - import-boundary guard still passes
+
+6. Test outputs:
+   - all new tests
+   - targeted scanner tests
+   - typechecks
+   - guards
+   - safety/live-path tests
+
+7. QA proof:
+   - chat withholding screenshot/evidence
+   - fixed scanner screenshots/evidence
+
+## Completion standard
+
+Do not mark complete unless all are true:
+
+- Ruby chat cannot emit a directional trade setup with entry/SL/TP/R:R when shared sufficiency is insufficient, partial, stale, unverified, syncing, no-AI, or blocked.
+- Ruby chat and Ruby Chart Read use the same selected-symbol/timeframe reason.
+- Enforcement happens in code at the tool/assembly boundary.
+- No model prompt is relied on as the only control.
+- No execution gate/live path/import-boundary protection is weakened.
+- No card renders “Ready now” and “Wait for confirmation” together.
+- No page with results renders “No scan run yet.”
+- Opportunity Map denominator reconciles with visible Scan Universe.
+- Header cannot show stronger readiness than selected-symbol chart/Ruby truth.
+- Overlay verified badge is honest or renamed.
+- Scores are proven real or withheld when fallback/default.
+- Trade Health headline separates selected-symbol exposure from account-wide exposure.
+- All required tests and validations pass with pasted outputs.

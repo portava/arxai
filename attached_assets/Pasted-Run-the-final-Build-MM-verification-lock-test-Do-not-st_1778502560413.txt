@@ -1,0 +1,714 @@
+Run the final Build MM verification lock-test.
+
+Do not start Build NN.
+Do not add new features unless a Build MM test fails and must be fixed.
+Do not enable live trading.
+Do not modify MT5 live execution.
+Do not modify canPlaceTrades.
+Do not expose API secrets.
+Do not recommend live trading.
+Do not change Build AA, BB, CC, DD, EE, FF, GG, HH, II, JJ, KK, or LL logic except to fix Build MM health/audit/admin integration issues.
+
+Build MM goal:
+Create a central System Health, Audit, and Admin Control Center that checks every subsystem from AA through LL, records audit logs, exposes safe admin actions, rejects forbidden live-trading actions, verifies secrets are protected, and confirms the entire app remains PAPER_ONLY / READ_ONLY with live trading disabled.
+
+Verify Build MM only.
+
+1. Typecheck/build health
+
+Run all relevant commands:
+- typecheck
+- build
+- API server validation
+- frontend build validation
+- database/schema validation if available
+
+Show exact commands run and whether each passed.
+
+2. System Health service proof
+
+Confirm the System Health service exists.
+
+Show exact files/functions for:
+- systemHealthService
+- subsystemHealthChecks
+- databaseHealthCheck
+- endpointHealthCheck
+- safetyHealthCheck
+- secretSafetyCheck
+- systemHealthRoutes
+- systemConfigRegistry
+- frontend System Health page
+
+Confirm the service returns this structure:
+
+{
+  health_check_id,
+  generated_at,
+  overallStatus,
+  liveTradingStatus: "DISABLED",
+  mode: "PAPER_ONLY",
+  subsystemStatus,
+  databaseStatus,
+  endpointStatus,
+  safetyStatus,
+  secretSafetyStatus,
+  performanceStatus,
+  recommendedAdminActions,
+  warnings,
+  errors
+}
+
+3. Audit Log service proof
+
+Confirm the Audit Log service exists.
+
+Show exact files/functions for:
+- auditLogService
+- auditRoutes
+- auditExportService
+- auditEventRecorder
+- frontend Audit Log page
+
+Confirm audit events return this structure:
+
+{
+  audit_id,
+  event_type,
+  severity,
+  source_build,
+  source_service,
+  actor,
+  action,
+  target_type,
+  target_id,
+  before_snapshot,
+  after_snapshot,
+  metadata,
+  ip_address,
+  user_agent,
+  created_at
+}
+
+4. Admin Control service proof
+
+Confirm the Admin Control service exists.
+
+Show exact files/functions for:
+- adminControlService
+- adminActionValidator
+- forbiddenActionGuard
+- safeAdminActions
+- adminControlRoutes
+- frontend Admin Control Center
+
+Confirm safe admin actions exist for:
+- run full health check
+- run subsystem health check
+- stop paper autopilot
+- pause paper autopilot
+- set system to WATCH_ONLY
+- acknowledge critical notification
+- rebuild performance snapshots
+- regenerate Trader Coach report
+- generate notification digest
+- run replay demo
+- run data import demo
+- export audit report
+- export system health report
+- update safe notification preferences
+- update paper-only autopilot settings within safe limits
+
+Confirm forbidden actions are rejected:
+- enable live trading
+- set canPlaceTrades true
+- call broker.placeOrder
+- call MT5 live execution
+- close real positions
+- modify real orders
+- expose secrets
+- disable critical safety alerts
+- change BROKER_MODE away from read_only
+- change MARKET_DATA_MODE away from read_only
+- turn paper_only false
+
+5. Database verification
+
+Confirm these tables exist:
+
+system_health_checks
+system_audit_logs
+admin_action_logs
+system_config_registry
+
+Confirm system_health_checks includes:
+id,
+health_check_id,
+overall_status,
+live_trading_status,
+mode,
+subsystem_status,
+database_status,
+endpoint_status,
+safety_status,
+secret_safety_status,
+performance_status,
+recommended_admin_actions,
+warnings,
+errors,
+created_at.
+
+Confirm system_audit_logs includes:
+id,
+audit_id,
+event_type,
+severity,
+source_build,
+source_service,
+actor,
+action,
+target_type,
+target_id,
+before_snapshot,
+after_snapshot,
+metadata,
+ip_address,
+user_agent,
+created_at.
+
+Confirm admin_action_logs includes:
+id,
+admin_action_id,
+action,
+status,
+severity,
+requested_by,
+reason,
+result,
+audit_id,
+created_at.
+
+Confirm system_config_registry includes:
+id,
+app_mode,
+live_trading_enabled,
+broker_mode,
+market_data_mode,
+paper_autopilot_enabled,
+notification_critical_always_on,
+replay_only_mode,
+data_import_enabled,
+secret_redaction_enabled,
+current_safety_lock,
+last_health_check_at,
+created_at,
+updated_at.
+
+6. Endpoint verification
+
+Run and show raw output for:
+
+GET /api/system-health/status
+
+POST /api/system-health/check
+
+GET /api/system-health/checks?limit=20
+
+GET /api/system-health/subsystems
+
+GET /api/system-health/subsystems/AA
+
+GET /api/system-health/subsystems/MM
+
+GET /api/system-health/config
+
+POST /api/system-health/demo
+
+GET /api/audit/logs?limit=50
+
+GET /api/audit/logs/:id
+
+POST /api/audit/export
+
+POST /api/audit/demo
+
+POST /api/admin-control/action
+
+GET /api/admin-control/actions?limit=50
+
+POST /api/admin-control/emergency-watch-only
+
+POST /api/admin-control/stop-autopilot
+
+POST /api/admin-control/rebuild-performance
+
+POST /api/admin-control/generate-coach-report
+
+POST /api/admin-control/generate-notification-digest
+
+POST /api/admin-control/export-health-report
+
+POST /api/admin-control/demo
+
+7. AA through LL subsystem health proof
+
+Run the full health check.
+
+Confirm subsystemStatus includes:
+
+AA:
+- decision endpoint reachable
+- latest decision log safe
+- decision_id support verified
+- safety output present
+
+BB:
+- auto-debrief service/table reachable
+- duplicate protection visible
+- debrief flow safe
+
+CC:
+- learning events accessible
+- strategy_edges accessible
+- mistake_patterns accessible
+- idempotency visible
+
+DD:
+- market data health works
+- fallback mode works
+- read-only mode enforced
+
+EE:
+- paper execution service exists
+- paper-only execution enforced
+- no live execution calls
+
+FF:
+- autopilot settings readable
+- mode is PAPER_ONLY
+- start/stop/status endpoints work
+- live_trading_allowed false
+
+GG:
+- performance endpoints work
+- command center works
+- calendar safe empty state works
+
+HH:
+- risk governor endpoint works
+- liveTradingStatus DISABLED
+- canPlaceLiveTrade false
+
+II:
+- coach endpoints work
+- playbook readable
+- no live trading recommendation
+
+JJ:
+- replay endpoints work
+- mode REPLAY_ONLY
+- replay trades separate from paper trades
+
+KK:
+- data import endpoints work
+- broker read-only endpoint works
+- broker mode READ_ONLY
+- secrets redacted
+
+LL:
+- notifications endpoints work
+- critical alerts work
+- digest works
+
+Show raw JSON output.
+
+8. Database health proof
+
+Confirm databaseStatus includes:
+- connected
+- missingTables
+- migrationWarnings
+- rowCounts
+- lastWriteCheck
+
+Simulate or check missing table behavior.
+
+Confirm:
+- missing tables are reported clearly
+- system does not crash
+- overallStatus becomes DEGRADED if needed
+- recommendedAdminActions explain what to fix
+
+Show raw JSON output.
+
+9. Endpoint health proof
+
+Confirm endpointStatus includes:
+- totalChecked
+- passed
+- failed
+- degraded
+- results
+
+Confirm:
+- passing endpoints are listed
+- failed endpoints are reported without crashing
+- degraded endpoints are marked clearly
+- response times or status codes are captured if available
+
+Show raw JSON output.
+
+10. Safety status proof
+
+Confirm safetyStatus includes:
+- canPlaceTrades
+- liveTradingAllowed
+- brokerMode
+- marketDataMode
+- paperOnly
+- hardBlocks
+- warnings
+
+Confirm it reports:
+- liveTradingStatus: DISABLED
+- mode: PAPER_ONLY
+- brokerMode: READ_ONLY
+- marketDataMode: read_only
+- paperOnly: true
+- liveTradingAllowed: false
+- canPlaceLiveTrade: false
+
+Show raw JSON output.
+
+11. Secret safety proof
+
+Confirm secretSafetyStatus includes:
+- secretsDetectedInFrontend
+- secretsDetectedInLogs
+- redactionWorking
+- warnings
+
+Confirm:
+- BROKER_API_KEY is not exposed
+- BROKER_API_SECRET is not exposed
+- MARKET_DATA_API_KEY is not exposed
+- no raw credentials appear in frontend-visible output
+- logs are redacted/masked
+- account IDs are masked where needed
+
+Show proof.
+
+12. System config registry proof
+
+Run config endpoint.
+
+Confirm registry returns:
+
+{
+  appMode: "PAPER_ONLY",
+  liveTradingEnabled: false,
+  brokerMode: "READ_ONLY",
+  marketDataMode: "read_only",
+  paperAutopilotEnabled,
+  notificationCriticalAlwaysOn,
+  replayOnlyMode,
+  dataImportEnabled,
+  secretRedactionEnabled,
+  lastHealthCheckAt,
+  currentSafetyLock
+}
+
+Confirm the registry does not allow live trading to be enabled.
+
+Show raw JSON output.
+
+13. Safe admin action proof
+
+Run these safe admin actions and show raw output:
+
+- stop paper autopilot
+- emergency watch-only
+- rebuild performance
+- generate coach report
+- generate notification digest
+- export health report
+- export audit report
+
+Confirm:
+- action is allowed only if safe
+- admin_action_logs record is created
+- system_audit_logs record is created
+- notification is created if needed
+- no live trading occurs
+- output includes audit_id
+
+14. Forbidden admin action proof
+
+Attempt these forbidden actions through POST /api/admin-control/action:
+
+- enable live trading
+- set canPlaceTrades true
+- set broker mode to live
+- set market data mode away from read_only
+- disable critical safety alerts
+- turn paper_only false
+- call broker.placeOrder or simulated forbidden live order action
+
+Confirm each returns:
+
+{
+  status: "REJECTED",
+  severity: "CRITICAL",
+  reason,
+  liveTradingStatus: "DISABLED",
+  audit_id
+}
+
+Confirm:
+- forbidden attempt is logged as CRITICAL
+- notification is created if appropriate
+- no config is changed unsafely
+- no trade is placed
+
+Show raw JSON output.
+
+15. Emergency WATCH_ONLY proof
+
+Run emergency-watch-only.
+
+Confirm:
+- currentSafetyLock becomes WATCH_ONLY
+- paper autopilot is stopped or blocked
+- manual paper close remains safe if applicable
+- liveTradingStatus remains DISABLED
+- audit log is created
+- notification is created
+
+Show raw JSON output.
+
+16. Stop autopilot proof
+
+Run stop-autopilot.
+
+Confirm:
+- FF autopilot is stopped or already stopped safely
+- no uncontrolled loop continues
+- action is audited
+- notification is created
+- no paper or live trade is opened
+
+Show raw JSON output.
+
+17. Rebuild performance proof
+
+Run rebuild-performance.
+
+Confirm:
+- GG performance rebuild runs safely
+- snapshots update idempotently
+- action is audited
+- no trades are created
+- output includes created/updated counts
+
+Show raw JSON output.
+
+18. Generate coach report proof
+
+Run generate-coach-report.
+
+Confirm:
+- II coach report is generated safely
+- report remains paper/simulation focused
+- no live trading recommendation appears
+- action is audited
+
+Show raw JSON output.
+
+19. Generate notification digest proof
+
+Run generate-notification-digest.
+
+Confirm:
+- LL digest is generated
+- critical/warning/trade/learning counts are included
+- no live trading recommendation appears
+- action is audited
+
+Show raw JSON output.
+
+20. Audit log proof
+
+Confirm audit logs record:
+- health checks run
+- admin actions taken
+- autopilot stopped
+- emergency watch-only
+- forbidden live trading attempt
+- performance rebuild
+- coach report generation
+- notification digest generation
+- export actions
+- secret redaction warnings if any
+
+Show sample system_audit_logs records.
+
+21. Export proof
+
+Run:
+- export health report
+- export audit report
+
+Confirm:
+- export returns a safe file, JSON object, or downloadable report reference
+- secrets are redacted
+- live trading remains disabled
+- export action is audited
+
+Show raw output.
+
+22. Frontend route proof
+
+Confirm frontend pages/routes are accessible for:
+- System Health page
+- Admin Control Center
+- Audit Log page
+- Safety Lock banner
+
+Confirm UI:
+- shows overall health
+- shows subsystem cards AA through LL
+- shows database health
+- shows endpoint health
+- shows safety status
+- shows secret redaction status
+- shows warnings/errors
+- shows only safe admin controls
+- shows no live trading enable button
+- shows no live execution buttons
+- shows safety lock banner when WATCH_ONLY or LOCKED
+
+23. Logs proof
+
+Show logs proving every health check records:
+- health check started
+- subsystem checks started/completed
+- database check completed
+- endpoint check completed
+- safety check completed
+- secret redaction check completed
+- warnings/errors
+- health check stored
+- health check completed
+
+Show logs proving every admin action records:
+- action requested
+- permission/safety validation
+- action allowed or rejected
+- result
+- audit record created
+- notification created if needed
+
+24. Live-trade isolation proof
+
+Search Build MM files and confirm they do NOT call:
+
+executeTrade,
+execute-trade,
+mt5 order placement,
+MT5 order placement,
+livePosition modification,
+live order,
+setCanPlaceTrades,
+live broker execution,
+broker.placeOrder,
+orderSend,
+positionClose,
+modifyOrder,
+real order placement,
+or anything that can place, close, or modify real trades.
+
+Confirm Build MM does NOT modify:
+- safetyCore.canPlaceTrades
+- live broker permissions
+- MT5 live execution
+- Build AA safety rules
+- Build EE paper-only execution rules
+- Build FF paper-only autopilot rules
+- Build HH liveTradingAllowed rules
+- Build KK broker read-only rules
+- Build LL critical alert rules
+
+Confirm Build MM:
+- creates health/audit/admin records only
+- never executes trades
+- never enables live trading
+- never recommends live trading
+- never exposes secrets
+- always reports liveTradingStatus: DISABLED
+
+25. Existing behavior compatibility
+
+Confirm these still work:
+- Build AA trade decision orchestrator
+- Build BB auto-debrief
+- Build CC learning engine
+- Build DD market data layer
+- Build EE paper execution engine
+- Build FF paper autopilot loop
+- Build GG trading calendar and command center
+- Build HH risk governor
+- Build II trader coach and playbook
+- Build JJ replay simulator and strategy lab
+- Build KK data import and broker read-only connector
+- Build LL notification center
+- manual debrief
+- manual paper close
+- analytics
+- decision logs
+- learning logs
+- market data logs
+- paper execution logs
+- autopilot logs
+- performance endpoints
+- risk governor endpoints
+- coach endpoints
+- replay endpoints
+- data import endpoints
+- broker read-only endpoints
+- notification endpoints
+- existing frontend routes
+
+Required final response format:
+
+1. Verification passed or failed
+2. Commands/tests run
+3. Files changed
+4. New files created
+5. Database proof
+6. System Health service proof
+7. Audit Log service proof
+8. Admin Control service proof
+9. Raw system-health status output
+10. Raw full health check output
+11. Raw subsystem output
+12. Raw config registry output
+13. AA through LL subsystem proof
+14. Database health proof
+15. Endpoint health proof
+16. Safety status proof
+17. Secret safety proof
+18. Safe admin action proof
+19. Forbidden admin action rejection proof
+20. Emergency WATCH_ONLY proof
+21. Stop autopilot proof
+22. Rebuild performance proof
+23. Generate coach report proof
+24. Generate notification digest proof
+25. Audit log proof
+26. Export health/audit report proof
+27. Frontend proof
+28. Logs proof
+29. Live-trade isolation proof
+30. Any fixes made during verification
+31. Final Build MM score out of 10
+32. Whether it is safe to proceed to Build NN

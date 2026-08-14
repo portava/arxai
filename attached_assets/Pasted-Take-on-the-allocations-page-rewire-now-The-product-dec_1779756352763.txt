@@ -1,0 +1,224 @@
+Take on the allocations page rewire now.
+
+The product decision is made: ARX AI needs live shared-bridge allocations. Do not treat this as optional or speculative.
+
+Current issue:
+pages/admin/allocations.tsx is broken because it calls 7 routes under /api/admin/allocations/... that no longer exist, and the old backing table user_bridge_allocations is gone.
+
+This must be repaired because ARX requires:
+- admin manual allocation of shared bridge funds per user
+- admin ability to add funds to a user allocation
+- admin ability to remove funds from a user allocation
+- admin ability to freeze/unfreeze a user’s live allocation
+- admin ability to set user trading capacity
+- user-level available balance/allocation display
+- per-user risk caps
+- AI sleeve allocation per user
+- full audit logs for every allocation change
+- shared/master bridge isolation so each user feels like they are trading from their own account
+- no normal user access to master account controls
+
+Important:
+Do NOT rebuild the whole app.
+Do NOT bypass live safety gates.
+Do NOT create duplicate allocation systems.
+Do NOT fake balances or allocations.
+Do NOT expose full master MT5 account balance to normal users unless intentionally admin-only.
+Do NOT insert live trade commands.
+Do NOT type or submit operator phrases.
+Do NOT weaken the 16-gate validation pipeline.
+Do NOT touch live dispatch safety unless required for read-only allocation validation.
+
+Rollback safety:
+1. Create checkpoint/commit before changes:
+   checkpoint: pre-allocations-page-rewire
+2. Inspect current pages/admin/allocations.tsx.
+3. Inspect the prior deleted files:
+   - adminAllocations.ts
+   - meAllocation.ts
+4. Inspect current live/shared bridge routes:
+   - /admin/live/master-summary
+   - /admin/live/user-slots
+   - any allocation/user risk cap/approval routes
+5. Decide whether to:
+   - rewire the page to existing /admin/live/{master-summary,user-slots} shape, or
+   - restore bridge-allocation schema/routes if the current active system lacks required allocation functionality.
+6. Prefer wiring into the current active live/shared bridge system. Restore old schema/routes only if current active system cannot support required allocation behavior cleanly.
+7. After each meaningful fix, create another checkpoint.
+
+Required backend capabilities:
+Create or repair admin-only allocation endpoints that support:
+1. List all approved/eligible users and current allocation state.
+2. Show master bridge financial snapshot:
+   - master balance
+   - equity
+   - free margin
+   - currency
+   - last sync time
+   - heartbeat freshness
+3. Show each user allocation:
+   - allocated amount
+   - available amount
+   - used margin/risk
+   - open P/L
+   - daily P/L
+   - frozen/unfrozen status
+   - live approval status
+   - allowedSymbols
+   - maxLot
+   - maxOpenPositions
+   - dailyLossLimitUsd
+   - requireStopLoss
+   - AI sleeve enabled/disabled
+   - AI sleeve allocation amount/cap
+4. Add allocation to a user.
+5. Remove allocation from a user.
+6. Transfer/rebalance allocation if safe.
+7. Freeze/unfreeze user allocation.
+8. Set or update AI sleeve allocation for a user.
+9. Set or update risk caps.
+10. Preserve full audit logs for every change:
+   - admin user ID
+   - target user ID
+   - action
+   - previous value
+   - new value
+   - reason/comment if provided
+   - timestamp
+   - request ID/session ID if available
+
+Required validation:
+1. Admin cannot allocate more than available master capacity.
+2. Admin cannot remove more than user’s available unused allocation if trades/risk are open.
+3. Frozen users cannot open new live trades.
+4. Frozen users’ existing positions should follow existing platform rules; do not auto-close unless a separate explicit safety command exists.
+5. AI sleeve allocation cannot exceed user allocation.
+6. User maxLot must respect master bridge MaxLiveLot and live safety rules.
+7. Allocation changes must not bypass user approval, kill switches, risk caps, or live validation.
+8. Live dispatch must still revalidate at execution time.
+9. If account snapshot is stale, block allocation changes that require fresh master balance and show a clean admin message.
+
+Required frontend/admin UI:
+Repair pages/admin/allocations.tsx so every button, tab, search bar, filter, toggle, and action works.
+
+The admin allocations page should include:
+1. Master bridge allocation summary.
+2. Search users.
+3. Filter by:
+   - approved
+   - pending
+   - frozen
+   - active
+   - AI sleeve enabled
+   - over risk / needs attention
+4. User allocation table/cards.
+5. Add funds action.
+6. Remove funds action.
+7. Freeze/unfreeze toggle.
+8. Risk caps editor.
+9. AI sleeve allocation editor.
+10. Allocation audit history.
+11. Clean loading, success, empty, stale, and error states.
+12. Mobile-friendly layout.
+
+Normal user UI:
+If meAllocation/me allocation endpoint is needed, restore/repair it so normal users can see only:
+- their assigned allocation
+- available capacity
+- used risk/margin
+- open P/L
+- approval status
+- frozen/locked reason if applicable
+- live trading capacity/risk caps
+- AI sleeve status if enabled for them
+
+Normal users must NOT see:
+- master bridge full balance unless intentionally allowed
+- other users’ allocations
+- admin controls
+- backend constants
+- raw route names
+- internal debug values
+- database table names
+
+Backend/source of truth:
+Use one allocation source of truth.
+Do not let the UI read from stale local/mock state.
+Do not let paper/demo balance affect live shared allocation.
+Do not let live shared allocation affect paper mode.
+Do not create duplicate allocation tables if a current allocation/risk-cap structure already exists and can be extended safely.
+If a new table is required, create it with migration and connect it cleanly to the existing live/shared bridge system.
+
+Suggested schema if no current safe equivalent exists:
+- user_bridge_allocations or current naming equivalent:
+  - id
+  - userId
+  - bridgeAccountId or masterBridgeId
+  - allocatedAmount
+  - reservedAmount
+  - usedMarginEstimate
+  - realizedPnl
+  - unrealizedPnl
+  - availableAmount
+  - currency
+  - frozen
+  - aiSleeveEnabled
+  - aiSleeveAmount
+  - aiSleeveMaxRisk
+  - createdAt
+  - updatedAt
+- allocation_audit_logs:
+  - id
+  - adminUserId
+  - targetUserId
+  - action
+  - beforeJson
+  - afterJson
+  - reason
+  - createdAt
+
+But only add schema if the active system lacks this capability.
+
+Acceptance tests:
+1. Admin allocations page loads without 404/500 errors.
+2. No page calls deleted /api/admin/allocations routes unless those routes are restored properly.
+3. Admin can view master bridge summary.
+4. Admin can view all user allocations.
+5. Admin can add allocation to a user.
+6. Admin can remove allocation safely.
+7. Admin can freeze and unfreeze a user.
+8. Admin can set/update user risk caps.
+9. Admin can set/update AI sleeve allocation.
+10. Audit log records each allocation action.
+11. Normal user can see their own allocation/capacity only.
+12. Normal user cannot see other users or master admin controls.
+13. Paper/demo balances do not affect live allocation.
+14. Live validation still blocks if user is frozen, over cap, not approved, or missing risk caps.
+15. No live trade command is inserted during tests.
+16. No operator phrases are typed automatically.
+17. No safety gates are bypassed.
+18. Typecheck/build/tests pass.
+19. Mobile admin allocations page is usable.
+20. No secrets, backend constants, raw SQL/table names, or debug route labels appear to normal users.
+
+After fixing:
+Run focused QA on:
+- admin allocations page
+- user allocation view
+- allocation audit logs
+- risk caps
+- freeze/unfreeze behavior
+- AI sleeve allocation
+- live shared mode readiness
+- MT5 account snapshot dependency
+- paper/demo/live separation
+- permissions
+- mobile UI
+
+Final response should include:
+- whether old adminAllocations.ts/meAllocation.ts logic was restored, extracted, or replaced
+- what backend routes now power the allocations page
+- what schema/source of truth is used
+- what tests passed
+- checkpoints/commits created
+- anything still requiring operator action

@@ -1,0 +1,530 @@
+Build the Investor Portal and split the current account roles so no user has access to more than one profile type at the same time.
+
+Important context:
+The current account Andraie.co@gmail.com should be returned to a normal trader/user account that requires login and only sees the trader/user interface. This is needed so I can test the normal user/trader experience cleanly.
+
+Create a separate admin login/account for me to access admin controls. Admin controls must not remain attached to the Andraie.co@gmail.com trader account.
+
+Main rule:
+No user account should have access to two different profile experiences at the same time.
+
+A user is one of:
+- Admin
+- Trader/User
+- Investor
+
+A user should never be both admin and trader in the active UI.
+A user should never be both investor and trader.
+A user should never be both investor and admin.
+No mixed dashboard.
+No “switch profile” button for regular users.
+No hidden admin access inside a trader account.
+
+====================================================
+PART 1 — ACCOUNT / ROLE SPLIT
+====================================================
+
+Inspect current auth, role, permissions, admin gating, and login routing first.
+
+Required changes:
+
+1. Andraie.co@gmail.com
+- Set this account back to a normal trader/user role.
+- It must require login.
+- It must land on the normal trader/user dashboard after login.
+- It must not show admin dashboard.
+- It must not show investor portal.
+- It must not show admin controls, kill switch controls, user approvals, invite admin controls, bridge admin controls, global role management, or investor management.
+- It can keep whatever trader/user live permissions are intentionally assigned for testing, but those permissions must be trader-scoped, not admin-scoped.
+
+2. New separate admin login
+- Create or support a separate admin account for me.
+- This separate admin account should be the only account that sees admin controls.
+- If you need an email placeholder, create the admin setup so I can configure the admin email through environment/config/admin seed safely.
+- Do not hardcode secrets.
+- Do not expose passwords in code.
+- If seeding is needed, create a safe admin seed path that requires env variables.
+
+3. Role exclusivity
+- Enforce one active role per account.
+- Backend must reject mixed-role access.
+- Frontend must route based on the single assigned role.
+- Do not rely only on hiding buttons in the UI.
+- Backend endpoints must enforce permissions.
+
+Role routing:
+- admin → Admin Dashboard
+- trader/user → Trading Dashboard
+- investor → Investor Portal
+
+Restricted access behavior:
+- If trader tries to access admin route, redirect to Trading Dashboard and show clean message.
+- If investor tries to access trading route, redirect to Investor Portal.
+- If admin accesses admin route, allow.
+- If admin needs to inspect trader/investor data, that happens inside Admin Dashboard only, not by becoming that user profile in the same session.
+
+====================================================
+PART 2 — INVESTOR PORTAL BUILD
+====================================================
+
+Build an Investor View-Only Portal.
+
+Goal:
+Investors can log in and view funds, allocation, performance, exposure, activity, and documents. Investors can choose/request how they want funds allocated, but they cannot place trades or access admin/trader execution tools.
+
+Investor permissions:
+CAN:
+- view their own funds
+- view their own allocation
+- view their own performance
+- view their own exposure
+- view their own activity/statements
+- view documents/disclosures
+- submit allocation preference request
+
+CANNOT:
+- place trades
+- close trades
+- access scanner trade buttons
+- use Confirm Live Trade
+- access Ruby execution tools
+- access admin controls
+- access bridge/EA controls
+- access kill switches
+- approve users
+- see other investors’ funds
+- see trader-only private controls
+- bypass live trading safeguards
+
+Investor portal tabs:
+- Overview
+- Allocation
+- Performance
+- Exposure
+- Activity
+- Documents
+
+====================================================
+PART 3 — INVESTOR OVERVIEW
+====================================================
+
+Investor Overview should show:
+
+- Current Value
+- Total Deposited / Total Invested
+- Total Withdrawn
+- Available / Unallocated Funds
+- Allocated Funds
+- Realized P/L
+- Unrealized P/L
+- Monthly Performance
+- All-Time Performance
+- Current Risk Profile
+- Last Updated timestamp
+
+Handle empty/no-data state cleanly:
+“Your investor account is active, but no funds have been recorded yet.”
+
+Do not expose backend table names, raw JSON, stack traces, internal route names, or developer wording.
+
+====================================================
+PART 4 — INVESTOR ALLOCATION
+====================================================
+
+Investor can choose target allocation preference:
+
+- Conservative
+- Balanced
+- Aggressive
+- Custom
+
+Important wording:
+Do not promise guaranteed monthly returns.
+Do not say “Aggressive gives X% monthly.”
+Do not say “guaranteed profit.”
+Do not say “risk-free.”
+
+Use:
+- target risk profile
+- target allocation
+- expected range if configured
+- historical performance if actually available
+- not guaranteed
+- possible loss of capital
+
+Strategy descriptions:
+
+Conservative:
+Lower-risk target profile, smaller exposure, prioritizes capital protection, lower target return range, lower drawdown tolerance.
+
+Balanced:
+Moderate-risk target profile, balanced exposure, moderate target return range, moderate drawdown tolerance.
+
+Aggressive:
+Higher-risk target profile, higher volatility, larger possible drawdowns, higher target return range, not guaranteed.
+
+Custom:
+Investor chooses percentage split.
+
+Custom allocation fields:
+- Conservative %
+- Balanced %
+- Aggressive %
+- Cash Reserve %
+
+Validation:
+- total must equal 100%
+- no negative percentages
+- no blank invalid values
+- cap aggressive allocation based on admin policy if configured
+- show risk warning when aggressive allocation is selected or high
+
+Add required disclosure acknowledgment before submitting:
+“Trading involves risk, including possible loss of capital. Strategy profiles represent target risk preferences and do not guarantee returns. Past performance does not guarantee future results.”
+
+====================================================
+PART 5 — ALLOCATION CHANGE FLOW
+====================================================
+
+Default allocation change mode:
+Approval Required.
+
+Flow:
+1. Investor selects allocation preference.
+2. App validates percentages.
+3. App shows risk summary and disclosure.
+4. Investor confirms.
+5. Request status becomes Pending Approval.
+6. Admin sees request in Admin Dashboard.
+7. Admin approves or rejects.
+8. Investor sees status update.
+9. Approved allocation becomes active.
+
+Statuses:
+- Draft
+- Pending Approval
+- Approved
+- Rejected
+- Active
+- Superseded
+
+Admin rejection must allow a note/reason.
+
+Do not automatically change live trade sizing unless a real allocator already exists and is intentionally wired.
+If allocator does not exist, store the investor preference as approved allocation intent only.
+
+Investor-facing wording:
+“Your allocation request has been submitted for review.”
+“Your current allocation remains active until the new request is approved.”
+“Your active allocation is Conservative 40%, Balanced 40%, Aggressive 20%, Cash 0%.”
+
+====================================================
+PART 6 — PERFORMANCE / EXPOSURE / ACTIVITY
+====================================================
+
+Performance page:
+Show:
+- weekly/monthly/all-time return
+- realized P/L
+- unrealized P/L
+- drawdown if available
+- performance chart if chart system exists
+- deposits/withdrawals markers if available
+
+Exposure page:
+Show investor’s exposure without trading controls:
+- strategy name
+- market group
+- symbol if admin allows
+- direction if admin allows
+- allocated amount
+- floating P/L
+- risk level
+- status
+- last updated
+
+No trade buttons.
+No close buttons.
+No Confirm Live Trade.
+
+Activity page:
+Show:
+- deposits
+- withdrawals
+- allocation changes
+- P/L updates
+- fees if applicable
+- admin approvals
+- statement entries
+
+Documents page:
+Show:
+- risk disclosure
+- investor agreement placeholder
+- allocation policy
+- fee disclosure if applicable
+- monthly statements if available
+
+====================================================
+PART 7 — ADMIN INVESTOR MANAGEMENT
+====================================================
+
+Admin Dashboard should include Investor Management.
+
+Admin can:
+- create investor invite
+- create/link investor profile
+- assign investor role
+- view investor profile
+- set or record investor deposited amount
+- record withdrawals
+- record ledger adjustments with reason
+- approve/reject allocation requests
+- configure strategy profiles
+- configure max aggressive allocation
+- pause investor allocation
+- view investor activity
+- export/view statements if available
+- upload/add documents/disclosures if existing upload system supports it
+
+Every admin investor action must create audit history:
+- admin user id
+- target investor id
+- action
+- before value
+- after value
+- note/reason
+- timestamp
+
+Admin must not silently alter historical investor ledger records without audit trail.
+
+====================================================
+PART 8 — DATA MODEL
+====================================================
+
+Inspect existing database first. Reuse existing user/auth/profile/ledger/audit tables if available.
+
+Add or extend only what is missing.
+
+Needed concepts:
+
+InvestorProfile:
+- userId
+- investorDisplayName
+- status
+- linkedPoolId or accountId if applicable
+- totalDeposited
+- totalWithdrawn
+- currentValue
+- availableFunds
+- allocatedFunds
+- realizedPL
+- unrealizedPL
+- activeRiskProfile
+- activeAllocationJson
+- createdAt
+- updatedAt
+
+InvestorAllocationPreference:
+- investorId
+- conservativePercent
+- balancedPercent
+- aggressivePercent
+- cashReservePercent
+- customJson
+- status
+- submittedAt
+- approvedAt
+- approvedBy
+- rejectedAt
+- rejectionReason
+- supersededAt
+
+InvestorLedgerEntry:
+- investorId
+- type: deposit, withdrawal, allocation_change, profit_loss, fee, adjustment
+- amount
+- description
+- relatedTradeId or relatedPositionId if applicable
+- createdBy
+- createdAt
+
+InvestorStrategyProfile:
+- name
+- description
+- riskLevel
+- targetRangeText
+- maxDrawdownText
+- maxAllocationPercent
+- isActive
+- disclosureText
+
+InvestorStatement:
+- investorId
+- periodStart
+- periodEnd
+- startingValue
+- endingValue
+- realizedPL
+- unrealizedPL
+- fees
+- deposits
+- withdrawals
+- generatedAt
+
+AuditLog:
+- actorUserId
+- targetUserId
+- action
+- entityType
+- entityId
+- beforeJson
+- afterJson
+- note
+- createdAt
+
+Role/User updates:
+- one active role per user
+- no mixed role arrays unless legacy exists and is migrated to one active role
+- backend permission helper must check one active role
+
+====================================================
+PART 9 — SECURITY / PERMISSIONS
+====================================================
+
+Backend must enforce all role permissions.
+
+Tests required:
+- trader cannot access admin endpoints
+- trader cannot access investor-only endpoints
+- investor cannot access trading execution endpoints
+- investor cannot access admin endpoints
+- investor cannot fetch another investor’s data
+- admin can access admin investor management
+- Andraie.co@gmail.com cannot access admin dashboard after role split
+- separate admin account can access admin dashboard
+
+Frontend hiding is not enough.
+
+If a restricted endpoint is called, return clean forbidden response without stack traces.
+
+====================================================
+PART 10 — LOGIN / ROUTING UX
+====================================================
+
+After login:
+- admin goes to Admin Dashboard
+- trader/user goes to Trading Dashboard
+- investor goes to Investor Portal
+
+No user should be shown multiple dashboards.
+
+No profile switcher for normal users.
+No “admin mode” inside trader account.
+No investor tab inside trader dashboard.
+No trading tab inside investor portal.
+
+If an admin needs to inspect an investor, use Admin Dashboard → Investor Management.
+
+If an admin needs to inspect trader/user settings, use Admin Dashboard → User Management.
+
+====================================================
+PART 11 — PROTECT EXISTING LIVE TRADING SYSTEM
+====================================================
+
+Do not break or change:
+- scanner
+- Ruby chat
+- manual voice recording
+- Ruby Scalp Signals
+- trade modal
+- live bridge status
+- retcode display
+- open positions visibility
+- Path 1 server bridge work
+- admin kill switches
+- user live permission checks
+
+Investor Portal must not modify live execution path.
+
+No new live trade should be placed for this investor portal build.
+
+No simulator/mock/fake/Paper Trading terminology or fallback.
+
+====================================================
+PART 12 — QA / TESTING
+====================================================
+
+Run full QA before completion.
+
+Required tests:
+
+Role split:
+- Andraie.co@gmail.com logs in as trader/user only.
+- Andraie.co@gmail.com cannot access admin routes.
+- Andraie.co@gmail.com cannot access investor portal unless explicitly assigned investor role, which it should not be.
+- Separate admin login can access admin controls.
+- No account has two active profile experiences.
+
+Investor:
+- investor login lands on Investor Portal.
+- investor dashboard loads.
+- investor sees own funds only.
+- investor sees allocation.
+- investor submits Conservative allocation request.
+- investor submits Balanced allocation request.
+- investor submits Aggressive allocation request with warning.
+- investor submits Custom allocation with percentages totaling 100.
+- invalid custom allocation is blocked.
+- investor cannot place trade.
+- investor cannot close trade.
+- investor cannot open scanner trade buttons.
+- investor cannot access admin tools.
+
+Admin:
+- admin can create/view investor profile.
+- admin can approve allocation request.
+- admin can reject allocation request with note.
+- admin can create ledger deposit/withdrawal/adjustment with audit trail.
+- admin can configure strategy profile if implemented.
+
+Regression:
+- trader/user dashboard still works.
+- scanner still works.
+- Ruby still works.
+- trade modal still works for authorized trader.
+- live bridge status still works.
+- admin dashboard still works for separate admin account.
+- mobile layout works for investor portal.
+- no internal backend wording appears to normal users.
+
+====================================================
+PART 13 — FINAL DELIVERY PROOF
+====================================================
+
+Do not report complete until the system works.
+
+Final proof required:
+1. Files changed
+2. How roles are now separated
+3. Confirmation Andraie.co@gmail.com is trader/user only
+4. How separate admin login is configured/created
+5. Investor Portal pages built
+6. Investor permissions enforced
+7. Admin investor management built
+8. Allocation request flow proof
+9. Admin approval/rejection proof
+10. Ledger/audit proof
+11. Backend security test proof
+12. Mobile UI proof
+13. Confirmation no user can access two profile experiences at once
+14. Confirmation investor cannot trade
+15. Confirmation current live trading system was not changed or broken
+16. Any limitations still remaining
+
+Final rule:
+Do not pass incomplete work.
+Do not leave mixed-role access.
+Do not leave Andraie.co@gmail.com with admin controls.
+Do not fake investor funds or performance as real.
+Use clean placeholder/empty states if real investor ledger data has not been entered yet.

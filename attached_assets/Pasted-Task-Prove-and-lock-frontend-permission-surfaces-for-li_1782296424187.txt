@@ -1,0 +1,57 @@
+Task: Prove and lock frontend permission surfaces for live trading, investor boundaries, and admin controls
+
+Run a read/write implementation pass focused on the React/frontend permission surfaces that were left Class 5 in the role/permission audit. The backend is already authoritative, but the UI must not expose misleading or unauthorized controls.
+
+Scope:
+- Audit and fix all frontend navigation and action surfaces for role-based visibility.
+- Verify sidebar, mobile bottom nav, floating action panel, command palette, dashboard cards, trade buttons, live-trading pages, admin links, investor views, and emergency controls.
+- Ensure INVESTOR users never see trader execution controls, live order buttons, admin/live-control controls, emergency-close controls, or trader-only setup flows.
+- Ensure TRADER/USER roles do not see admin/owner controls.
+- Ensure revoked live-approved traders see honest live-status messaging:
+  - cannot open/increase/modify live risk
+  - may close their own existing live positions if backend allows reduce-risk close
+- Ensure kill-switch UI messaging is honest:
+  - normal trading blocked
+  - admin emergency-close available only to ADMIN/OWNER where backend permits it
+- Ensure PAPER/DEMO/LIVE labels are truthful and do not show stale “trade-ready” or “live enabled” states after revocation.
+
+Required files/surfaces to inspect:
+- App layout / auth route containment
+- Sidebar navigation
+- MobileBottomNav
+- FloatingActionPanel
+- CommandPalette
+- live-trading page
+- trade ticket/manual ticket pages
+- market scanner trade actions
+- open trades / positions close controls
+- admin hub live-control areas
+- investor dashboard/allocation views
+- any shared role/capability hooks
+
+Implementation requirements:
+1. Centralize frontend capability checks if they are currently duplicated.
+2. Prefer backend-derived capability fields over role guesses wherever available.
+3. Add or update tests for:
+   - INVESTOR cannot see execution controls
+   - INVESTOR cannot see admin/live-control links
+   - TRADER cannot see admin controls
+   - revoked live trader sees blocked OPEN/MODIFY messaging but can still see eligible close controls for own open positions
+   - kill-switch state hides/disables normal trading actions with honest messaging
+   - admin/owner sees emergency-close only in the correct admin surface
+4. Do not make frontend checks the source of truth. Backend remains authoritative.
+5. Do not change backend live execution policy in this task unless a frontend contract requires a small response-shape addition.
+
+Validation:
+- Run targeted frontend/component tests.
+- Run typecheck.
+- Run CI guards if available.
+- If unrelated feed/provider tests fail, separate them clearly.
+
+Final report must include:
+- every frontend surface inspected
+- files changed
+- tests added/updated
+- commands run
+- exact pass/fail results
+- any remaining Class 5 areas, if any

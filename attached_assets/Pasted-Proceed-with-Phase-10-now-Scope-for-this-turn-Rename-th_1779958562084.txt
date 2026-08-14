@@ -1,0 +1,89 @@
+Proceed with Phase 10 now.
+
+Scope for this turn:
+Rename the backend safety-lock vocabulary away from Paper terminology while preserving the exact same live-execution safety behavior.
+
+Do not change Live behavior.
+Do not change Demo behavior.
+Do not place a live trade.
+Do not delete database rows.
+Do not alter trade history.
+Do not remove safety gates.
+Do not weaken the live-execution chokepoint.
+
+Current state to preserve:
+
+* Phase 3 is closable.
+* typecheck PASS
+* ci:guards 24/24
+* test:live-phaseB 20/20
+* test:demo-verify 13/13
+* arx_live_commands stayed 25 → 25, delta 0
+
+Phase 10 target:
+Anything currently named like:
+
+* PAPER_ONLY
+* safetyMode: “paper_only”
+* paperOnlyHardLock
+* mt5_command_safety_mode = “paper_only”
+* BridgeMode “PAPER_ONLY”
+* live_trading_state.mode = PAPER_ONLY
+
+should be renamed to accurate safety language, such as:
+
+* LIVE_EXECUTION_LOCKED
+* LIVE_COMMANDS_BLOCKED
+* BROKER_PLACEMENT_DISABLED
+* liveExecutionHardLock
+* liveCommandSafetyLock
+* brokerExecutionReadinessLock
+
+The meaning must stay:
+“Live execution is locked until all required live-trade safety gates pass.”
+
+The meaning must not be:
+“User is in Paper Mode.”
+
+Use a compatibility shim if needed:
+
+1. Introduce the new safety names.
+2. Move active code to the new names.
+3. Keep deprecated Paper-named aliases only if tests or generated code still require them temporarily.
+4. Mark deprecated aliases clearly.
+5. Confirm the deprecated aliases are not user-facing and not part of product Paper Trading.
+6. Remove deprecated aliases only when safe.
+
+Required tests after Phase 10:
+
+* typecheck
+* ci:guards
+* test:live-phaseB
+* test:demo-verify
+* test:live-pass-path if available
+* test:account-mode if affected
+* test:master-bridge if affected
+* any guard tests touched by the rename
+
+Also verify:
+
+* arx_live_commands delta stays 0.
+* No live order was placed.
+* Live readiness still works.
+* Demo still works.
+* Safety gates still block live execution when requirements fail.
+* No user-facing Paper Trading text returns.
+* No Paper Mode product path is reintroduced.
+
+If renaming any safety term breaks the app, do not abandon it and do not weaken safety. Use a safer compatibility approach, retest, and explain what was preserved.
+
+Final output for this turn:
+
+* files changed
+* old safety names replaced
+* new safety names introduced
+* any temporary deprecated aliases left and why
+* confirmation behavior stayed the same
+* full test results
+* arx_live_commands before/after count
+* confirmation no live trade was placed

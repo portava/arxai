@@ -1,0 +1,87 @@
+Phase 26 — Wire getMyPerformanceSummary into AI Chat + Performance UI
+
+Before changing anything, inspect the current AI tool registry, AI chat routing, Performance Scorecard page, API server routes, auth middleware, and existing performance/trade/journal data models. Do not assume file names. Find the actual implemented getMyPerformanceSummary route/tool from Phase 25 and wire it correctly.
+
+Goal:
+Make the new getMyPerformanceSummary AI tool usable from the app’s AI assistant when the user asks personal trading-performance questions such as:
+
+1. What is my biggest trading mistake?
+2. What is my best strategy?
+3. What is my worst strategy?
+4. What was my largest loss?
+5. Am I overtrading?
+6. What are my recent trading lessons?
+7. What is my win rate?
+8. Summarize my trading performance.
+
+Requirements:
+- Route these questions to getMyPerformanceSummary when the user asks about their own performance, mistakes, win rate, losses, overtrading, best/worst strategy, lessons, or trading habits.
+- Keep all results strictly user-scoped.
+- Do not fabricate trades, P&L, win rate, strategies, lessons, candles, news, TP, SL, market data, or bridge status.
+- If no closed trades or journal data exists, return the honest empty state from the tool.
+- If winRate, profitFactor, overtradingHint, or lessons are null, the AI must explain that there is not enough user data yet instead of guessing.
+- Open trades and unrealized P&L must not be included in closed-trade performance stats.
+- If the user asks about live/open trades, route them to the existing live trade tools such as getMyLiveOpenTrades and getTradeIntelligence instead.
+- Keep live trading blocked.
+- Keep auto-close alert-only.
+- Keep shared MT5 routing blocked.
+- Keep MT5 command execution disabled.
+- Keep paper_only, liveLocked:true, readOnlyMode:true safety envelope preserved.
+
+AI response behavior:
+- Add a clean “Performance Summary” response format for the AI chat.
+- Include sections only when data exists:
+  - Summary
+  - Win Rate
+  - Profit Factor
+  - Biggest Mistake
+  - Best Strategy
+  - Worst Strategy
+  - Largest Loss
+  - Overtrading Check
+  - Recent Lessons
+  - Data Honesty Notes
+- If data is missing, show a helpful but honest explanation:
+  “I don’t have enough closed trades or journal entries yet to answer that honestly.”
+- Do not let the AI answer these questions from generic trading knowledge when the user asks about “my” performance.
+
+UI requirements:
+- In the AI chat, add suggested prompt chips/cards for:
+  - “What is my biggest trading mistake?”
+  - “What is my best strategy?”
+  - “Am I overtrading?”
+  - “What was my largest loss?”
+  - “Summarize my performance.”
+- Keep the UI clean and not overcrowded.
+- Do not modify unrelated pages.
+- Do not break the existing Performance Scorecard page.
+- If the Performance Scorecard can safely consume the new additive fields without redesigning the page, add them in a small expandable “AI Performance Insights” section.
+- If adding that section risks breaking the page, leave the page unchanged and only wire the AI chat.
+
+Testing:
+- Add or update tests for:
+  - AI correctly routes “What is my biggest trading mistake?” to getMyPerformanceSummary.
+  - AI correctly routes “Am I overtrading?” to getMyPerformanceSummary.
+  - AI does not fabricate when the tool returns isEmpty:true.
+  - AI does not compute win rate from open trades.
+  - AI routes live/open trade questions away from performance summary and toward live trade intelligence tools.
+  - Unauthorized callers still receive 401 AUTH_REQUIRED.
+  - User A cannot access User B performance data.
+  - No live MT5 execution routes become enabled.
+  - No console.* statements introduced.
+
+After implementation, run:
+- pnpm run typecheck
+- pnpm run ci:guards
+- existing API route tests
+- existing AI tool routing tests
+- any new performance summary routing tests
+- health check after restart
+
+Return:
+1. Files changed.
+2. What was already present.
+3. What was added.
+4. Exact tests run and results.
+5. Confirmation that safety stayed blocked/read-only.
+6. Any gaps left for the next phase.

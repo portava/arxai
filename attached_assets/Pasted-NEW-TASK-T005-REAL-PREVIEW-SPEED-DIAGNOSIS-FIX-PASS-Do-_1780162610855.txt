@@ -1,0 +1,251 @@
+NEW TASK T005 — REAL PREVIEW SPEED DIAGNOSIS + FIX PASS
+
+Do not repeat T001–T004.
+Do not re-run the route-containment task as the main objective.
+Do not mark this complete by saying T001–T004 are already merged.
+Those tasks are complete.
+
+This is a new task: T005 real preview speed diagnosis and fix.
+
+Current confirmed completed work:
+
+1. Default-deny route access is complete.
+2. Paper Trading is blocked from normal-user routes.
+3. Scanner advanced links are gated.
+4. Normal users cannot direct-URL into admin/dev/dormant/paper pages.
+5. Backend authority and live MT5 path are untouched.
+6. ci:guards pass 26/26.
+7. Architect review passed.
+
+Now solve the remaining user-facing problem:
+The app still feels slow on the actual Replit preview. The user observed pages taking around 7 seconds to load. Scanner and trade actions must feel instant.
+
+This is not a rebuild.
+Do not create a new product.
+Do not disturb the live MT5 path.
+Do not reset live broker execution config.
+Do not place a live trade.
+Do not weaken backend permissions, trade gates, kill switch, allocation checks, account freeze, user ownership, or MT5 confirmation rules.
+
+Primary goal:
+Measure and improve real perceived app speed on the actual preview, especially Scanner and trading actions.
+
+Hard requirement:
+Do not rely only on typecheck, ci:guards, or architect review. Those prove safety, not speed.
+
+You must open/test the actual app preview and record real timing.
+
+Measure these pages:
+
+1. Cockpit
+2. Scanner
+3. Trade, if still present
+4. Ruby / AI
+5. More / Settings
+6. Admin page as owner/admin, if available
+
+For each page, record:
+
+1. route/page name
+2. tap/click time
+3. first visual feedback time
+4. page shell visible time
+5. first usable content time
+6. first data render time
+7. total perceived load time
+8. console errors
+9. failed network requests
+10. slowest network call
+11. duplicate network calls
+12. heavy frontend imports involved
+13. whether the page looked blank/frozen
+
+Target:
+
+1. bottom-nav tap feedback under 100ms
+2. page shell visible under 1 second
+3. Scanner shell visible under 1 second
+4. Scanner search usable under 1 second
+5. chart skeleton visible under 1 second
+6. market selection feedback under 300ms
+7. trade button feedback under 100ms
+8. Ruby thinking dots under 100ms
+
+PART 1 — Real preview speed test
+
+Open the actual Replit preview URL and test in:
+
+1. mobile viewport
+2. desktop viewport
+
+Do not mark complete without real preview timing.
+
+If a page takes over 1 second to show usable shell:
+
+1. identify the blocker
+2. fix it
+3. retest
+4. report before/after timing
+
+If final data takes longer because of MT5, bridge, market data, Ruby, notifications, or scanner results:
+
+1. render page shell first
+2. show skeleton/pending state immediately
+3. load the slow dependency after first paint
+4. do not let the page appear frozen
+
+PART 2 — Scanner speed diagnosis
+
+Scanner is the highest priority.
+
+Test:
+
+1. tap Scanner bottom nav
+2. timing to nav feedback
+3. timing to Scanner shell
+4. timing to chart skeleton
+5. timing to search input usable
+6. timing to selected symbol visible
+7. timing to quote/bid/ask/spread
+8. timing to scanner results
+9. timing to Ruby explanation
+10. timing to trade controls usable
+
+Scanner must load progressively:
+
+1. shell first
+2. chart skeleton second
+3. quote/candles independently
+4. user trade overlays independently
+5. Broad Scan / Focus Scan independently
+6. Ruby explanation independently
+7. news/history/backtest only after main UI is usable
+
+If Scanner waits for any of these before showing shell, fix it:
+
+1. notifications
+2. bridge health
+3. market data
+4. candles
+5. Ruby
+6. Broad Scan
+7. Focus Scan
+8. news/history
+9. backtest
+10. admin-only data
+11. hidden tabs
+
+PART 3 — Trade action speed diagnosis
+
+Do not place a live trade.
+
+Measure the UI flow only, or use DEMO only if safe.
+
+Test:
+
+1. Buy button feedback
+2. Sell button feedback
+3. trade drawer/modal open time
+4. lot input responsiveness
+5. Confirm button pending state
+6. time from Confirm to backend request start
+7. whether UI shows “Confirming with broker…” immediately
+8. whether Ruby blocks any part of the trade flow
+
+Rules:
+
+1. trade button feedback must be under 100ms
+2. pending state must appear under 100ms after Confirm
+3. do not say “Trade placed” until MT5 confirms
+4. do not fake execution
+5. do not bypass backend validation
+6. do not bypass permissions
+7. do not bypass user ownership
+
+PART 4 — Find and fix likely 7-second causes
+
+Inspect and fix:
+
+1. heavy global imports
+2. chart/TradingView library loaded globally
+3. Ruby voice/speech modules loaded globally
+4. admin-only panels loaded for normal users
+5. hidden tabs loaded before selected
+6. notification badge blocking route render
+7. repeated auth/session calls
+8. repeated permission calls
+9. repeated bridge-health calls
+10. repeated scanner requests
+11. market list loading before search is usable
+12. news/history/backtest blocking first paint
+13. full app rerender on every route change
+14. full refetch on every route change
+15. excessive console/debug logging
+16. large docs/markdown imported into frontend bundle
+17. unbounded lists rendered all at once
+18. missing memoization on heavy components
+
+Use safe fixes:
+
+1. lazy-load heavy components
+2. defer noncritical requests
+3. batch duplicate calls
+4. cache safe static metadata
+5. debounce search
+6. cancel stale requests
+7. memoize heavy components
+8. virtualize long lists
+9. show skeletons immediately
+10. move notifications after page paint
+11. reduce bridge-health polling
+12. do not load hidden tabs until selected
+
+PART 5 — Keep route containment intact
+
+Do not undo T001–T004.
+
+Verify after speed fixes:
+
+1. normal users still cannot reach admin/dev/dormant/paper routes
+2. Paper Trading is still absent from normal-user surfaces
+3. Admin/owner access still works
+4. DEMO/LIVE still work
+5. live MT5 path remains untouched
+6. backend authority remains untouched
+7. guards still pass 26/26
+
+PART 6 — Final report required
+
+Do not mark complete without a timing report.
+
+Final report must include:
+
+1. real mobile preview timing table
+2. real desktop preview timing table
+3. Cockpit before/after timing
+4. Scanner before/after timing
+5. Ruby before/after timing
+6. More/Settings before/after timing
+7. Trade page before/after timing, if still present
+8. bottom-nav feedback timing
+9. Scanner shell timing
+10. chart skeleton timing
+11. search usability timing
+12. trade button feedback timing
+13. slowest network call found
+14. duplicate requests removed
+15. heavy imports lazy-loaded
+16. components memoized/deferred
+17. notification delay fix, if applicable
+18. any page still over 1 second and exact reason
+19. confirmation no live MT5 path was changed
+20. confirmation T001–T004 route containment still passes
+21. typecheck result
+22. ci:guards result
+23. console/network error result
+24. remaining risks
+25. exact next fix if anything remains slow
+
+Completion standard:
+This task is not complete because T001–T004 are merged.
+This task is complete only when real preview speed has been measured, bottlenecks fixed where safe, and a before/after timing report is delivered.

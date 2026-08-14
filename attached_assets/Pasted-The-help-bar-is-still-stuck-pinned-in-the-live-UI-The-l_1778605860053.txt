@@ -1,0 +1,59 @@
+The help bar is still stuck/pinned in the live UI. The last pass did not solve the actual runtime issue.
+
+Do a runtime UI fix, not just a code review.
+
+Problem:
+The help/help/report/agent bar is still stuck to the bottom or blocking navigation/menu access. It should feel like a floating widget/card, not a pinned bottom bar.
+
+Fix requirements:
+1. Find the actual rendered help bar component being shown in the app.
+   - Search for help, feedback, report, assistant, issue, support, widget, floating, bottom-0, fixed, sticky, z-*, ReportIssueButton, HelpBar, HelpWidget, FeedbackWidget.
+   - Do not assume the old component is the one still rendering. Trace the live UI.
+
+2. Remove any layout that makes the help bar full-width or pinned:
+   - Remove fixed bottom-0 left-0 right-0
+   - Remove sticky bottom-0
+   - Remove w-full bottom bars
+   - Remove any parent wrapper that forces it to sit at the bottom
+
+3. Replace it with a real floating widget:
+   - Desktop: fixed bottom-right floating card/button
+   - Mobile: floating above the bottom nav, not inside or underneath it
+   - Use bottom spacing like: bottom: calc(env(safe-area-inset-bottom) + 88px)
+   - Do not overlap hamburger/menu, sidebar, bottom nav, or emergency stop
+
+4. The collapsed state should be a small floating circular/pill button.
+5. The expanded state should open upward as a small floating card/panel.
+6. The background wrapper must not block clicks:
+   - Parent overlay should use pointer-events-none
+   - Actual button/card should use pointer-events-auto
+
+7. Add responsive rules:
+   - On mobile, position it above bottom navigation.
+   - On desktop/tablet, position it bottom-right with clean spacing.
+   - It should never cover nav links or menu buttons.
+
+8. Add a visual “float perspective”:
+   - rounded corners
+   - shadow
+   - slight border/glass effect
+   - not flush against any screen edge
+   - not full width
+
+9. Verify in the live running app, not just by reading code:
+   - Open the app in desktop width
+   - Open the app in mobile width
+   - Confirm the help widget floats and does not block the menu
+   - Confirm all nav/menu items remain clickable
+   - Confirm Emergency Stop remains pinned at bottom in red, separate from the help widget
+
+10. If there are duplicate help/report widgets, remove the duplicate and keep only one floating widget.
+
+11. Report back with:
+   - The exact component/file that was actually rendering the stuck help bar
+   - What CSS/classes were causing it to stick
+   - Files changed
+   - Before/after behavior
+   - Confirmation from runtime testing, not just code review
+
+Do not change routes, trading logic, MT5 bridge logic, or menu grouping unless required to fix this help bar issue.

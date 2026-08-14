@@ -1,0 +1,213 @@
+Looks clean. Paste this next:
+
+Continue to the next phase: End-to-End Paper Trading Flow + First-Run User Readiness.
+Do NOT unlock live trading.
+Do NOT enable auto-close execution.
+Do NOT enable shared MT5 routing.
+Do NOT send MT5 execution, modification, cancel, or close commands.
+Do NOT weaken safety envelope, per-user isolation, command queue, risk, attribution, activityStatus, paper-only, MT5 bridge, ALERT_ONLY, notification, market-data, journal, prop-firm, or audit gates.
+Do NOT fake live trades, live P&L, win rate, performance stats, market data, candles, news, current events, TP targets, broker balance, or bridge status.
+Do NOT redesign unrelated pages.
+Before coding:
+1. Read the latest QA report appended to docs/FULL_TRADING_INTELLIGENCE_ENGINE_QA_REPORT.md.
+2. Confirm final state from Phase 27-B cleanup is READY / clean.
+3. Confirm 31/31 QA assertions, 11/11 CI guards, full typecheck, and API restart are green.
+4. If anything is not green, stop and fix only confirmed P0/P1 issues first.
+Goal:
+Make the app usable for a first-time user in paper mode by connecting the full safe paper-trading loop end-to-end:
+Market data status → order ticket → paper order/trade → SL/TP → trade card → alerts → journal → performance → AI explanation.
+A. First-Run Readiness Checklist
+Create or upgrade a first-run checklist showing:
+- Account/session verified
+- Paper mode enabled
+- Live trading locked
+- MT5 bridge status
+- Market data status
+- Scanner status
+- Prop Firm Mode status
+- Notifications status
+- Journal status
+- Ready to place paper trade
+Rules:
+- All statuses must come from backend state.
+- Do not show fake readiness.
+- If market data is stale/unavailable, clearly show what still works and what is blocked.
+B. Paper Trade Creation Flow
+Verify users can place a paper trade safely from the order ticket:
+- Buy Market
+- Sell Market
+- Buy Limit
+- Sell Limit
+- Buy Stop
+- Sell Stop
+- Buy Stop Limit
+- Sell Stop Limit
+For paper trades:
+- Require valid symbol, direction, order type, size, and prices.
+- Validate SL/TP rules.
+- Respect prop firm/risk guardrails.
+- If market price is unavailable, allow draft only or show clear block reason.
+- Do not route to MT5.
+- Do not create live command.
+- Audit every paper order/trade creation.
+C. Paper Trade Lifecycle
+Connect paper trades through:
+- Created / Draft
+- Pending
+- Open
+- SL/TP edited
+- Manual paper close requested
+- Closed paper trade
+- Cancelled pending order
+- Blocked order
+Rules:
+- No duplicate actions.
+- Every action scoped to authenticated userId.
+- Every action audit logged.
+- Manual close requires confirmation.
+- Live close remains blocked.
+D. Trade Card + Detail View
+Ensure trade cards and detail pages show:
+- Symbol
+- Direction
+- Order type
+- Entry
+- Current price if fresh
+- SL
+- TP targets
+- Paper/Draft/Blocked/Closed status
+- P&L if calculable
+- P&L unavailable reason if not calculable
+- Prop firm rule status
+- Latest alert
+- Journal link
+- AI analysis button
+- Manual close/edit controls where safe
+No fake P&L or fake live status.
+E. Journal + Performance Integration
+When a paper trade is created/updated/closed:
+- Journal entry is created/updated idempotently.
+- Trade history updates.
+- Performance summary updates only from real user-owned paper trades.
+- Empty state remains honest if no trades exist.
+- If closed trade exists, performance can calculate from that trade.
+- If data is insufficient, show unavailable reason.
+F. Alerts + Notifications Integration
+Generate in-app alerts for:
+- Paper trade created
+- Paper trade closed
+- SL edited
+- TP edited
+- Trade near SL if fresh price exists
+- Trade near TP if fresh price exists
+- Risk/prop rule warning
+- Command execution disabled if live path attempted
+- Market data stale/unavailable
+Every alert must say clearly when no live trade was executed.
+G. AI End-to-End Awareness
+AI should answer:
+- What happened with my paper trade?
+- Why was this order blocked?
+- How is my paper account doing?
+- What does my journal say?
+- What risk rule did I hit?
+- Is market data fresh enough?
+- Why can’t this be live?
+- What should I review before the next paper trade?
+AI must:
+- Use only logged-in user data.
+- Explain missing/stale data.
+- Never invent trades, P&L, candles, news, TP/SL, or performance.
+- Never execute or queue trades.
+- Always state live execution remains locked when relevant.
+H. UI First-Time Empty States
+Improve empty states only where needed:
+- No paper trades yet
+- No journal entries yet
+- No performance history yet
+- Market data stale/unavailable
+- Prop Firm Mode off
+- Push not configured
+- MT5 bridge locked/offline
+Each empty state should explain the next safe action.
+I. Audit Trail
+Audit:
+- first-run checklist viewed
+- paper order draft created
+- paper trade opened
+- paper trade updated
+- SL/TP edited
+- paper trade closed
+- pending order cancelled
+- journal entry created/updated
+- performance viewed
+- AI paper-trade analysis requested
+- blocked action attempted
+- duplicate action suppressed
+Each audit entry must include:
+- userId
+- tradeId/orderId if relevant
+- journalId if relevant
+- action
+- previous value if relevant
+- new value if relevant
+- safety gate status
+- reason if blocked/unavailable
+- timestamp
+J. Preserve Safety
+Confirm:
+- Live trading = BLOCKED
+- Auto-close = ALERT_ONLY
+- Shared MT5 routing = BLOCKED
+- MT5 commands = force-BLOCKED
+- Command execution = DISABLED
+- Broker placement layer remains locked
+- Backend per-user isolation intact
+- Safety envelope allows read-only AI Q&A only
+- UNKNOWN activity hard-blocks auto-close
+- No fake live trades, live P&L, market data, candles, news, current events, TP targets, broker balance, or bridge status
+After implementation, run:
+1. Typecheck
+2. Full guard suite
+3. Stop-limit/order-type QA
+4. Frontend build/runtime load check
+5. Browser smoke test
+6. First-run readiness tests
+7. Paper order creation tests
+8. Pending paper order tests
+9. Paper SL/TP edit tests
+10. Paper manual close confirmation tests
+11. Duplicate action suppression tests
+12. Journal integration tests
+13. Performance integration tests
+14. Alert/notification integration tests
+15. AI paper-trade honesty tests
+16. Prop firm/risk integration regression
+17. Market data stale/unavailable regression
+18. Per-user isolation regression
+19. Safety-envelope regression
+20. Broker-placement locked regression
+21. End-to-end paper trade flow smoke test
+If anything fails:
+- Fix only confirmed P0/P1 issues.
+- Do not redesign unrelated UI.
+- Do not touch unrelated pages.
+- Rerun all checks.
+End with a report showing:
+- Files inspected
+- Files changed
+- First-run readiness result
+- Paper trade flow result
+- Trade lifecycle result
+- Trade card/detail result
+- Journal/performance integration result
+- Alert/notification result
+- AI paper-trade result
+- Tests run/pass/fail
+- Current paper trading status
+- Remaining gated/deferred items
+- Confirmation live trading remains BLOCKED
+- Confirmation auto-close remains ALERT_ONLY
+- Confirmation shared MT5 routing remains BLOCKED
+- Confirmation MT5 commands remain force-BLOCKED
+- Final answer: READY FOR NEXT PHASE or NOT READY, with reasons.

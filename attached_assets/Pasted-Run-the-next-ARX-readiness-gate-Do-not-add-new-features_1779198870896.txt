@@ -1,0 +1,155 @@
+Run the next ARX readiness gate.
+
+Do not add new features yet.
+Do not place live trades.
+Do not enable public master live trading.
+Do not bypass master live user approval toggles.
+Do not expose secrets.
+arx_live_commands must remain unchanged before/after.
+
+Step 1 — Confirm previous audit/fix build status
+
+Check whether the last audit-first repair build reached:
+
+ARX_AUDIT_FIX_BUILD_READY
+
+If not ready:
+- list exact blockers
+- fix only the failing areas
+- do not rebuild unrelated systems
+- do not break working app flows
+- rerun the related QA until ready
+
+Required checks:
+1. App starts cleanly.
+2. Reconciliation Center is admin-only and functional.
+3. scanner-selected-market no longer hangs.
+4. Ruby voice trading guardrails typecheck passes.
+5. userReadinessState exists.
+6. Ruby getLaunchReadiness exists.
+7. Phase B disclosure check is included.
+8. Master bridge user approval toggles still block unapproved users.
+9. Current connected bridge remains selected as platform master bridge.
+10. One-click/concurrency safety still passes.
+11. Demo master bridge still works.
+12. Per-user bridge fallback still works.
+13. No secrets leak.
+14. No live trade auto-fires.
+15. arx_live_commands count remains unchanged.
+
+Step 2 — If and only if Step 1 is green, prepare Final Operator Control Center
+
+Build a clean admin/operator control center that summarizes the entire ARX system in one place.
+
+Name:
+ARX Operator Command Center
+
+Admin-only route:
+/admin/operator-command-center
+
+Show:
+
+A. System Status
+- app online/offline
+- API status
+- database status
+- queue status
+- cache mode
+- active users
+- current app mode
+- latest QA status
+
+B. Bridge Status
+- current connected bridge
+- bridge id
+- account number
+- broker/server
+- account type
+- EA version
+- heartbeat age
+- ReadOnlyMode
+- EnableDemoExecution
+- EnableLiveExecution
+- terminal connected
+- algo trading allowed
+
+C. Trading Mode
+- PER_USER_BRIDGE / MASTER_BRIDGE_DEMO / MASTER_BRIDGE_LIVE_LOCKED / MASTER_BRIDGE_LIVE_ENABLED
+- current selected mode
+- platform master bridge id
+- shared live trading enabled status
+- master live user approval required status
+
+D. Safety Controls
+- kill switch
+- emergency stop
+- live master switch status
+- one-click policy
+- stop loss required
+- max lot rules
+- daily loss rules
+- exposure rules
+- current queue depth
+
+E. User Approval Center
+- users approved for master live
+- users disabled/suspended/risk locked
+- users pending review
+- toggle status per user
+- risk settings per user
+- audit logs for approval changes
+
+F. Live Test Readiness
+- current connected live bridge readiness
+- admin/operator readiness
+- disclosure status
+- risk settings
+- preflight button only
+- no actual live test auto-fire
+
+G. Reconciliation Summary
+- open reconciliation issues
+- critical issues
+- stale heartbeat issues
+- orphan positions
+- missing attribution rows
+- blocked/rejected commands needing review
+
+H. Ruby Admin Summary
+Add a Ruby admin panel:
+“Ruby, summarize launch readiness.”
+
+Ruby should summarize:
+- what is ready
+- what is blocked
+- what needs admin action
+- what should not be touched
+- whether live trading is safe to manually test
+
+Ruby must not expose secrets.
+
+Step 3 — QA
+
+Run QA for the Operator Command Center:
+
+1. Admin-only page exists.
+2. Non-admin users cannot access it.
+3. Non-admin users cannot call its APIs.
+4. Current connected bridge displays correctly.
+5. Master bridge mode displays correctly.
+6. User approval toggles display correctly.
+7. Safety controls display correctly.
+8. Reconciliation summary displays correctly.
+9. Ruby admin summary works without secrets.
+10. No live trade auto-fires.
+11. arx_live_commands remains unchanged.
+12. Existing full safety matrix still passes.
+
+Output:
+
+If all pass:
+ARX_OPERATOR_COMMAND_CENTER_READY
+
+If anything fails:
+ARX_OPERATOR_COMMAND_CENTER_NOT_READY
+with exact blockers.

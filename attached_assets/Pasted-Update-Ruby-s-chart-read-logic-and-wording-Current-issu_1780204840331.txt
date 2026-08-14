@@ -1,0 +1,59 @@
+Update Ruby’s chart-read logic and wording.
+
+Current issue:
+Ruby’s chart read is directionally cautious, which is acceptable, but the explanation is too generic and not useful enough for live trading decisions. It also still says “Test in demo first,” which is wrong on active LIVE-only surfaces.
+
+Required changes:
+
+1. Ruby should not only say “No clear directional edge.”
+2. Ruby must explain the actual market structure in plain English.
+3. Ruby must identify whether the higher timeframe bias is:
+    * bullish
+    * bearish
+    * mixed
+    * range-bound
+    * unclear
+4. Ruby must identify the reason for the read using visible structure:
+    * trend direction
+    * recent impulse
+    * pullback/rejection
+    * consolidation
+    * support area
+    * resistance area
+    * momentum strength
+    * whether price is near the middle of a range
+5. Ruby must give conditional trade logic instead of vague advice.
+
+For example, for the current V75 4H/1D style chart:
+“Higher timeframe structure still leans bearish after the larger decline, but price is currently consolidating after a bounce. There is no clean entry while price is between support and resistance. A buy becomes stronger only if price reclaims resistance with momentum. A sell becomes stronger only if price rejects resistance or breaks support.”
+
+Ruby should include:
+
+1. Bias: Bullish / Bearish / Mixed / No clear edge
+2. Confidence: Low / Medium / High
+3. Why: short plain-English reason
+4. Key support zone
+5. Key resistance zone
+6. Buy condition
+7. Sell condition
+8. Invalidation / what would make the idea wrong
+9. Risk note
+
+Live-mode wording fix:
+Remove “Test in demo first” from all active LIVE-mode scanner, chart, Ruby, trade modal, and order-entry surfaces.
+
+Replace it with:
+“Decision support only — confirm live readiness and risk before trading.”
+
+Do not remove DEMO mode from the app if it still exists as a separate product mode. Only remove demo-first wording from active LIVE execution surfaces.
+
+Testing:
+
+1. Open V75 4H chart read.
+2. Confirm Ruby gives structure-based reasoning, not only a generic warning.
+3. Open V75 1D chart read.
+4. Confirm Ruby identifies higher-timeframe bias and key support/resistance areas.
+5. Confirm Ruby gives clear conditional buy/sell triggers.
+6. Confirm Ruby does not force a trade when confidence is low.
+7. Confirm active LIVE surfaces do not say “Test in demo first.”
+8. Confirm live-mode educational wording says: “Decision support only — confirm live readiness and risk before trading.”

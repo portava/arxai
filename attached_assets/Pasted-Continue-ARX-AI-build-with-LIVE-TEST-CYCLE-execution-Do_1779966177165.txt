@@ -1,0 +1,288 @@
+Continue ARX AI build with LIVE TEST CYCLE execution.
+
+Do not create any new trading modes.
+Do not reintroduce Paper, View Only, Watch Only, Analysis Only, or Scanner Off as modes.
+
+The only user-facing trading modes are:
+- Demo
+- Live
+- Live Shared
+
+GOAL:
+Owner has $9 dedicated to live testing. Build and use a controlled Live Test Cycle that can open a tiny real test trade, verify the bridge/EA/broker flow, then automatically close the same test trade so the user does less manual work and testing moves faster.
+
+This is not a new mode. It is a test action/tool inside the existing Live / Live Shared flow.
+
+IMPORTANT:
+- Do not place trades automatically on page load.
+- Do not run endless trading.
+- Do not open multiple live test trades at once.
+- Do not bypass the 16-gate evaluator.
+- Do not bypass the liveTrading chokepoint.
+- Do not bypass allocation checks, kill switch, bridge heartbeat, broker execution, or audit logging.
+- Do not create new partitions/modes.
+
+1. LIVE TEST CYCLE PANEL
+Add/repair an OWNER-only panel:
+
+Location:
+Admin → Live Shared Account → Final Live Test
+or existing live test area.
+
+Panel name:
+Live Test Cycle
+
+Purpose:
+Open one tiny real live test trade, verify the EA/broker path, then close it automatically.
+
+Show:
+- Current account balance
+- Active bridge
+- EA heartbeat
+- Master bridge pinned status
+- Broker execution status
+- Kill switch status
+- Live readiness PASS/BLOCKED
+- arx_live_commands current count
+- Open ARX test trades count
+- Last test cycle result
+
+2. TEST CYCLE RULES
+When OWNER starts a Live Test Cycle:
+
+Step A — Preflight:
+- Confirm OWNER is signed in.
+- Confirm mode is Live or Live Shared.
+- Confirm bridge heartbeat is fresh.
+- Confirm master bridge is pinned.
+- Confirm broker execution env AND operator switch are true.
+- Confirm kill switch is released.
+- Confirm EA reports:
+  - EnableLiveExecution=true
+  - ReadOnlyMode=false
+  - allowOrderExecution=true
+  - marketOrdersSupported=true
+- Confirm the 16-gate evaluator passes.
+- Confirm no existing ARX live test trade is still open.
+- Confirm symbol is MT5-tradable.
+- Confirm current balance is enough for broker minimum margin.
+
+Step B — Open:
+- Use one tiny test trade.
+- Default symbol: EURUSD unless OWNER selects another MT5-tradable symbol.
+- Default lot: smallest broker-supported lot, normally 0.01.
+- Default side: BUY unless OWNER selects SELL.
+- Use market order only for first test cycle.
+- Add SL and TP if the app can calculate them.
+- If SL/TP are omitted because OWNER unrestricted profile allows it, show clear warning but allow only after owner confirmation.
+- Insert exactly one live command only after OWNER confirms the test cycle.
+
+Step C — Verify:
+Track:
+- command inserted
+- EA pulled command
+- broker accepted/rejected
+- MT5 ticket/order id
+- fill price if available
+- current P/L
+- error/rejection reason if failed
+
+Step D — Auto-close:
+After the trade is confirmed open, automatically queue a close command for that same ticket.
+
+Close timing:
+- Close immediately after broker confirms open
+OR
+- Close after 5–15 seconds if needed to verify open position snapshot
+
+Do not leave the test trade open unless close fails.
+
+Step E — Confirm close:
+Track:
+- close command inserted
+- EA pulled close command
+- broker closed/rejected
+- close ticket/result
+- realized P/L
+- full cycle time
+
+3. AUTO-CLOSE PROTECTION
+If close fails:
+- Do not open another test trade.
+- Show critical alert:
+  “Test trade opened but auto-close failed. Manual close required in MT5.”
+- Show MT5 ticket id and symbol.
+- Keep the cycle locked until trade is confirmed closed or admin marks it resolved.
+- Audit the failure.
+
+If EA heartbeat becomes stale after opening:
+- Stop new commands.
+- Show critical alert.
+- Tell operator to close manually in MT5 if auto-close cannot be confirmed.
+
+4. NO NEW MODES
+Do not add:
+- Test Mode
+- Watch Mode
+- View Mode
+- Paper Mode
+- Auto Mode
+- Any new user-facing mode
+
+This is a button/action:
+- “Run Live Test Cycle”
+- “Preview Test Cycle”
+- “Start Test Cycle”
+- “Close Test Trade”
+
+The app modes remain:
+- Demo
+- Live
+- Live Shared
+
+5. OWNER CONFIRMATION FLOW
+The owner should only need to confirm once to start the test cycle.
+
+Button:
+“Preview Live Test Cycle”
+
+Then:
+“Start Live Test Cycle”
+
+Confirmation modal:
+“This will open one real live test trade and then automatically close it after verification.”
+
+Confirm button:
+“Start Test”
+
+Cancel button:
+“Cancel”
+
+No typed phrases.
+
+6. LATENCY RECORDER
+Record timing for:
+- owner clicked start
+- server preflight started
+- preflight passed
+- open command inserted
+- EA pulled open command
+- broker filled/rejected open
+- position appeared in snapshot
+- close command inserted
+- EA pulled close command
+- broker closed/rejected close
+- position disappeared
+- cycle completed
+
+Show:
+- total open latency
+- total close latency
+- full cycle duration
+- EA pull delay
+- broker response delay
+- failed step if any
+
+7. BACKEND COMMAND TYPES
+If close command support already exists, use it.
+
+If missing, add safely:
+- OPEN_TEST_TRADE
+- CLOSE_TEST_TRADE
+or use existing open/close command schema.
+
+Every command must include:
+- cycleId
+- userId
+- bridgeId
+- symbol
+- lot
+- side
+- source = live_test_cycle
+- reason = owner_live_bridge_test
+- linked open/close ticket id when available
+
+8. TEST CYCLE DATABASE / LOG
+Create or repair:
+
+live_test_cycles:
+- id
+- ownerUserId
+- bridgeId
+- symbol
+- side
+- lot
+- status:
+  - previewed
+  - preflight_failed
+  - open_queued
+  - open_pulled
+  - open_filled
+  - open_rejected
+  - close_queued
+  - close_pulled
+  - close_filled
+  - close_rejected
+  - completed
+  - failed_manual_close_required
+- openCommandId
+- closeCommandId
+- mt5OpenTicket
+- mt5CloseTicket
+- openPrice
+- closePrice
+- realizedPnl
+- failedStep
+- failureReason
+- startedAt
+- completedAt
+- latencyJson
+
+9. AUDIT LOG
+Audit:
+- test cycle preview
+- test cycle started
+- open command inserted
+- EA pulled command
+- broker open result
+- close command inserted
+- broker close result
+- cycle completed
+- cycle failed
+- manual resolution if needed
+
+10. UI SAFETY STATES
+The panel should show:
+
+If not ready:
+- “Live test blocked because: ____”
+
+If ready:
+- “Ready for one live test cycle.”
+
+If trade is open:
+- “Test trade open — auto-close pending.”
+
+If close fails:
+- “Manual close required.”
+
+If completed:
+- “Live test cycle completed.”
+
+11. ACCEPTANCE TEST
+Before stopping, verify with dry-run/simulation first if possible:
+- No live trade opens on page load.
+- Preview does not insert arx_live_commands.
+- Start requires OWNER confirmation.
+- Start calls the same 16-gate/liveTrading chokepoint.
+- Exactly one open command is inserted after confirmation.
+- Close command is queued after open fill confirmation.
+- No second test can start while one is open/pending.
+- If open rejects, no close command is queued.
+- If close rejects, UI shows manual close required.
+- arx_live_commands only changes when owner confirms actual live test.
+- No new trading modes are created.
+- Demo, Live, and Live Shared remain the only user-facing modes.
+- Login, Ruby, scanner, trade modal, bridge status, allocations, admin queue, and bottom nav still work.
+
+Run typecheck/build/tests and fix errors before stopping.

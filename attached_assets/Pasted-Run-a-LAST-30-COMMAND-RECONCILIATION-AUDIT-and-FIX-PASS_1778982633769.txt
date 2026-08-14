@@ -1,0 +1,278 @@
+Run a LAST-30 COMMAND RECONCILIATION AUDIT and FIX PASS for this ARX AI trading app.
+
+Your job is to review the last 30 user/agent implementation commands in this Replit session, compare them against the actual codebase, identify anything ignored, partially completed, broken, fake-wired, stubbed, disconnected, or unfinished, then fix each item safely before moving on.
+
+IMPORTANT:
+Do not rebuild the whole app.
+Do not add random new features.
+Do not change working UI unless the issue is directly tied to an ignored/incomplete command.
+Do not remove existing protections.
+Do not skip QA.
+Do not simply report problems. Fix them one by one.
+
+HARD SAFETY INVARIANTS:
+- Keep PAPER_ONLY hard-lock intact.
+- Keep all CI trading guards intact.
+- Do not enable live trading by default.
+- Do not allow admin approval alone to unlock live trading.
+- Live trading must require disclosure + verified live routing/account + explicit user confirmation + admin approval + Risk Governor pass + existing safety guards.
+- Do not expose secrets, API keys, env values, broker credentials, MT5 credentials, admin tokens, session tokens, or master account credentials.
+- All readiness, onboarding, compliance, MT5, trading, and AI actions must be scoped to the authenticated user.
+- No global/default user logic in production routes.
+- No user should be able to affect another user’s readiness, trades, MT5 state, or compliance state.
+
+PHASE 1 — Build the Last-30 Command Audit List
+Review the last 30 commands/instructions in this Agent conversation.
+
+Create a tracking file:
+
+docs/arx-last-30-command-audit.md
+
+For each command, record:
+
+1. Command number
+2. Original requested outcome
+3. Related files/routes/components
+4. Current implementation status:
+   - DONE
+   - PARTIAL
+   - IGNORED
+   - BROKEN
+   - STUBBED
+   - FAKE WIRED
+   - DUPLICATE
+   - UNSAFE
+   - NEEDS USER DECISION
+5. Evidence from codebase
+6. What is missing
+7. Fix plan
+8. QA test needed
+9. Final result after repair
+
+Do not rely only on memory. Inspect the actual codebase.
+
+PHASE 2 — Detect Ignored or Unfinished Work
+Search the codebase for all recent ARX AI work areas, including but not limited to:
+
+- readiness
+- onboarding
+- compliance
+- user agreements
+- disclosures
+- admin approval
+- Risk Governor
+- paper-only guard
+- MT5 bridge
+- MT5 heartbeat
+- shared master MT5
+- user-owned MT5
+- virtual trading account
+- demo trading readiness
+- live trading gate
+- AI trading tools
+- AI readiness tools
+- AI chat/voice assistant
+- scanner
+- live trade analysis
+- one-click open/close with confirmation
+- trade P/L display
+- dashboard readiness cards
+- admin readiness dashboard
+- mobile/iPhone Safari layout
+- bottom nav/menu grouping
+- route handlers using _req or missing authenticated user
+- frontend pages that show fake/static data instead of backend-backed state
+- tests and CI guards
+
+Use ripgrep/search to find TODO, FIXME, placeholder, mock, fake, stub, hardcoded, temporary, demo-only, and disconnected code.
+
+PHASE 3 — Prioritize Critical Repairs
+Fix in this order:
+
+1. Safety/security issues
+2. Per-user auth isolation issues
+3. Readiness/onboarding blockers
+4. Compliance/disclosure blockers
+5. MT5 routing/heartbeat/shared-master/user-owned gaps
+6. AI tool gaps
+7. Dashboard/admin UI gaps
+8. Mobile/iPhone Safari layout issues
+9. Tests/CI gaps
+10. Cleanup of duplicates/fake-wiring
+
+Do not move to the next priority level until the current level is fixed or clearly documented as requiring user decision.
+
+PHASE 4 — Finish Readiness/Onboarding If Incomplete
+Verify and complete the per-user readiness/onboarding system.
+
+Must include:
+- 14-status readiness model
+- USER_OWNED_MT5 mode
+- SHARED_MASTER_MT5 mode
+- per-user authenticated readiness state
+- paper/demo/live readiness separation
+- disclosure acceptance
+- account mode selection
+- readiness blockers
+- onboarding progress
+- admin live approval/revocation
+- no live unlock by one action
+- AI readiness tools
+- dashboard Trading Setup Readiness card
+- onboarding checklist UI
+- admin readiness dashboard
+- tests
+
+Required AI tools:
+- getMyTradingReadiness
+- explainReadinessBlockers
+- listMyOnboardingSteps
+- getOnboardingProgress
+
+Required endpoints:
+- GET /api/readiness/me
+- GET /api/readiness/me/blockers
+- GET /api/onboarding/me/progress
+- POST /api/onboarding/me/accept-disclosure
+- POST /api/onboarding/me/account-mode
+- GET /api/admin/readiness/users
+- POST /api/admin/readiness/users/:userId/approve-live
+- POST /api/admin/readiness/users/:userId/revoke-live
+
+PHASE 5 — Finish Compliance Control Center If Incomplete
+Verify and complete compliance only after readiness/onboarding is real.
+
+Must include:
+- user agreement tables/schema if missing
+- user agreement acceptance records
+- compliance status checks
+- compliance engine
+- user compliance endpoints
+- admin compliance endpoints
+- final live gate integration
+- audit logging where appropriate
+- no secrets exposed
+- no global state
+- no live unlock by single action
+
+If the audit previously referenced missing files like:
+- lib/compliance/complianceEngine.ts
+- /api/compliance/*
+- /api/admin/compliance/*
+- user_agreements
+- user_agreement_acceptances
+- compliance_status_checks
+
+Then inspect and complete them properly if still missing.
+
+PHASE 6 — Fix Fake-Wired Frontend/Backend Connections
+Inspect the frontend pages/cards/components connected to the last 30 commands.
+
+For every UI item that claims to show backend-powered state, verify it actually calls the correct backend endpoint and renders real data.
+
+Fix:
+- fake/static readiness cards
+- fake compliance state
+- fake MT5 status
+- fake heartbeat displays
+- fake admin approval display
+- dead buttons
+- buttons routing to unrelated pages
+- old backend wiring connected to new UI
+- missing loading/error/empty states
+- mobile overflow
+- content hidden behind bottom nav
+
+Any dashboard card or admin page must show real backend-backed status, not placeholder data.
+
+PHASE 7 — Fix AI Behavior Gaps
+Audit the AI assistant/tool registry.
+
+The AI must be able to answer:
+- Am I ready to trade?
+- Why am I blocked?
+- What onboarding steps are left?
+- Am I using user-owned MT5 or shared master MT5?
+- Is my MT5 bridge connected?
+- Can I demo trade?
+- Can I live trade?
+- Why can’t I live trade?
+- What is my current risk/compliance status?
+
+The AI must not expose secrets or raw internal tokens.
+
+If tools are missing, wire them.
+If tools exist but are not registered, register them.
+If tools return fake data, connect them to the real readiness/compliance engines.
+If tools are unsafe, sanitize the response.
+
+PHASE 8 — Add or Repair Tests
+Add missing tests for everything ignored or unfinished.
+
+At minimum, verify:
+- last-30 command audit file exists
+- 14 readiness statuses exist
+- USER_OWNED_MT5 path works
+- SHARED_MASTER_MT5 path works
+- per-user isolation works
+- unauthenticated readiness requests are blocked
+- disclosure acceptance is recorded per user
+- admin approval alone does not unlock live trading
+- live trading remains blocked without all gates
+- no secrets appear in API or AI responses
+- compliance engine exists
+- compliance endpoints exist if requested
+- dashboard Trading Setup Readiness card exists
+- admin readiness dashboard exists
+- AI readiness tools are registered
+- mobile layout does not hide key readiness/compliance actions
+- existing PAPER_ONLY / CI guards still pass
+
+Create or update:
+- scripts/src/phase-onboarding-test.ts
+- scripts/src/phase-compliance-test.ts if compliance work exists
+- any existing route/component tests that need updates
+
+Add package scripts only if missing and appropriate.
+
+PHASE 9 — QA Gate After Every Repair Group
+After each major group of fixes, run the available checks.
+
+Run what exists in this repo:
+- typecheck
+- lint if available
+- unit tests if available
+- route/API tests if available
+- onboarding test
+- compliance test if added
+- CI guard tests
+- build
+- mobile/iPhone Safari viewport check if available
+
+If a command does not exist, document that it does not exist and either add the missing test script if appropriate or explain why not.
+
+Do not claim a pass unless the command actually ran successfully.
+
+PHASE 10 — Final Report
+When finished, provide a final report with:
+
+1. Last 30 commands reviewed
+2. What was ignored
+3. What was incomplete
+4. What was fake-wired/stubbed
+5. What was fixed
+6. Files changed
+7. Endpoints added/updated
+8. AI tools added/updated
+9. UI pages/cards fixed
+10. Tests added/updated
+11. Commands run
+12. What passed
+13. What failed
+14. Remaining blockers
+15. Confirmation PAPER_ONLY guard still passes
+16. Confirmation no secrets are exposed
+17. Confirmation live trading cannot be enabled by any single action
+18. Confirmation per-user scoping is enforced
+
+Do not stop at audit-only. Audit, fix, test, and report.

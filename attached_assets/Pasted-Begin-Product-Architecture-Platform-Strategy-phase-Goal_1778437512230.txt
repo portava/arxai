@@ -1,0 +1,129 @@
+Begin Product Architecture + Platform Strategy phase.
+
+Goal:
+Transform the AI Trading Operating System into a scalable product ecosystem with clear products, APIs, user tiers, enterprise pathways, and platform boundaries.
+
+Define:
+
+1. Core Company Positioning
+Primary identity:
+“AI Trading Governance & Intelligence Infrastructure”
+
+Not:
+- signal bot
+- prediction app
+- copy trading platform
+- hype AI trader
+
+2. Product Structure
+
+Define core products:
+
+A. Trader Platform
+- retail/pro interface
+- decision intelligence
+- replay
+- Trader DNA
+- validation surfaces
+
+B. Trader DNA API
+- behavioral intelligence infrastructure
+- risk profiling
+- permission throttling
+- recovery systems
+
+C. Validation Command Center
+- strategy validation infrastructure
+- adversarial testing
+- continuous validation
+- quarantine systems
+
+D. Execution Intelligence API
+- transaction cost analysis
+- slippage intelligence
+- broker scoring
+- execution risk analysis
+
+E. Black Box Vault
+- replay infrastructure
+- audit infrastructure
+- explainability storage
+- immutable event history
+
+3. User Tiers
+
+Define:
+- Free
+- Pro
+- Team / Prop Firm
+- Enterprise / API
+
+For each tier include:
+- available systems
+- restrictions
+- automation limits
+- replay limits
+- validation access
+- Trader DNA access
+- API access
+
+4. Enterprise Architecture
+
+Design support for:
+- teams
+- prop firms
+- broker integrations
+- institutional dashboards
+- compliance/audit workflows
+- multi-user governance
+- permission systems
+
+5. API-First Architecture
+
+Define:
+- core APIs
+- modular service boundaries
+- event-driven communication
+- authentication model
+- rate limiting
+- sandbox vs production APIs
+
+6. Trust Architecture
+
+Define visible trust surfaces:
+- explainability
+- replayability
+- auditability
+- governance
+- immutable records
+- safety systems
+- validation status
+
+7. Onboarding Strategy
+
+Design:
+- beginner onboarding
+- professional onboarding
+- paper-first onboarding
+- staged automation onboarding
+- trust-building flows
+
+8. Monetization Structure
+
+Define:
+- subscription structure
+- API pricing concepts
+- enterprise pricing concepts
+- infrastructure licensing concepts
+- future marketplace possibilities
+
+Deliver:
+- product architecture map
+- platform hierarchy
+- API map
+- user-tier matrix
+- enterprise feature map
+- trust strategy
+- onboarding flow strategy
+- monetization structure
+- long-term platform vision

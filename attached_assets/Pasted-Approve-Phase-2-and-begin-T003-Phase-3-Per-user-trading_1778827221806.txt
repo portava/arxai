@@ -1,0 +1,216 @@
+Approve Phase 2 and begin T003 / Phase 3: Per-user trading sessions and per-user MT5 connections for the ARX AI trading app.
+
+IMPORTANT SCOPE:
+- Do NOT touch the MT5 EA .mq5 files in this phase unless I explicitly ask.
+- Do NOT place trades.
+- Do NOT enable live execution.
+- Do NOT remove READ_ONLY / PAPER_ONLY safety.
+- Do NOT weaken MT5 bridge token security.
+- Do NOT reset or wipe the database.
+- Do NOT change unrelated UI.
+- Do NOT move to any next phase until Phase 3 QA passes.
+
+Current status:
+- Phase 1 per-user identity foundation: PASS.
+- Phase 2 per-user data scoping: PASS.
+- Now build Phase 3: each logged-in user needs their own trading sessions and MT5 connection records.
+
+Main goal:
+A logged-in user should be able to create/manage their own trading session and their own MT5 connection. No user should ever see another user’s MT5 account, heartbeat, trades, positions, dashboard data, or session history.
+
+Phase 3A — Per-user trading sessions:
+Create or finalize per-user trading session support.
+
+Requirements:
+1. Add/verify a trading_sessions table or equivalent with:
+   - id
+   - userId
+   - title/name
+   - mode: paper/demo/live_locked
+   - status: active/paused/closed
+   - startedAt
+   - endedAt
+   - linkedMt5ConnectionId nullable
+   - startingBalance
+   - endingBalance
+   - pnl
+   - winCount
+   - lossCount
+   - notes
+   - createdAt
+   - updatedAt
+
+2. Add backend CRUD routes:
+   - GET /api/me/trading-sessions
+   - POST /api/me/trading-sessions
+   - GET /api/me/trading-sessions/:id
+   - PATCH /api/me/trading-sessions/:id
+   - POST /api/me/trading-sessions/:id/close
+
+3. Every query must be scoped:
+   userId = req.authUser.id
+
+4. Never accept userId from the frontend for ownership.
+
+5. Add empty first-time states:
+   - “No trading sessions yet”
+   - “Start a paper session”
+   - “Connect MT5 when you’re ready”
+
+Phase 3B — Per-user MT5 connection records:
+Build a real per-user MT5 connection system.
+
+Create or finalize an mt5_connections table with:
+- id
+- userId
+- connectionName
+- broker
+- server
+- account
+- accountCurrency
+- balance
+- equity
+- margin
+- freeMargin
+- leverage
+- lastHeartbeatAt
+- heartbeatAgeSeconds
+- status: waiting/connected/stale/disconnected/revoked
+- bridgeTokenHash
+- tokenLast4
+- tokenCreatedAt
+- tokenRevokedAt nullable
+- readOnlyMode
+- allowOrderExecution
+- liveLocked
+- createdAt
+- updatedAt
+
+Security:
+1. Generate a unique bridge token per user connection.
+2. Show the raw token only once when created.
+3. Store only a secure hash of the token in the database.
+4. Never log the raw token.
+5. Never return the raw token again after creation.
+6. Allow regenerate/revoke token.
+7. Existing global MT5_BRIDGE_TOKEN may remain only as system/demo fallback, but it must not be shown as a personal user connection.
+
+Add backend routes:
+- GET /api/me/mt5-connections
+- POST /api/me/mt5-connections
+- GET /api/me/mt5-connections/:id
+- PATCH /api/me/mt5-connections/:id
+- POST /api/me/mt5-connections/:id/regenerate-token
+- POST /api/me/mt5-connections/:id/revoke
+- DELETE /api/me/mt5-connections/:id if safe, or soft-delete/revoke instead
+
+Phase 3C — Map EA heartbeat token to user:
+Update bridge heartbeat handling so when the EA posts:
+
+Header:
+X-MT5-Bridge-Token: <token>
+
+The backend should:
+1. Hash the incoming token.
+2. Find matching mt5_connections.bridgeTokenHash.
+3. Update only that user’s connection record.
+4. Save heartbeat/account data to that user’s connection.
+5. Mark the connection connected if heartbeat is fresh.
+6. If token is invalid, reject safely.
+7. If token matches old global/system token, treat it as system/demo bridge only, not personal user data.
+
+Keep endpoint:
+POST /api/mt5/heartbeat
+
+Also keep these working:
+- GET /api/mt5/heartbeat/status
+- GET /api/mt5/bridge-diagnostics
+- GET /api/mt5/status
+
+But add user-safe personal endpoints:
+- GET /api/me/mt5-status
+- GET /api/me/mt5-connections/:id/status
+
+The personal dashboard should use /api/me/mt5-status or the scoped /api/me/mt5-connections endpoints, not global bridge status.
+
+Phase 3D — Frontend UI:
+Only update the parts needed for user-owned trading sessions and MT5 connection setup.
+
+Add/adjust a clean MT5 connection panel:
+- “No MT5 connection yet”
+- “Create MT5 connection”
+- “Connection name”
+- “Generate bridge token”
+- “Copy token”
+- “Token shown once”
+- “Paste this token into MT5 EA BridgeToken input”
+- “ServerBaseUrl”
+- “Last heartbeat”
+- “Broker”
+- “Account”
+- “Balance/equity”
+- “Status: waiting/connected/stale/disconnected”
+
+Do not expose the token after the one-time display.
+
+Add/adjust trading sessions UI:
+- show only current user’s sessions
+- empty state for first-time user
+- create session
+- close session
+- link session to an MT5 connection if available
+
+Phase 3E — Safety rules:
+Keep these locked:
+- liveLocked = true
+- ReadOnlyMode = true by default
+- AllowOrderExecution = false by default
+- order-mutating routes still require safety middleware
+- no trade execution unless all future safety gates are explicitly approved
+
+Phase 3F — Tests:
+Add E2E/backend isolation tests:
+
+Test User A vs User B:
+1. User A creates MT5 connection.
+2. User A gets one-time bridge token.
+3. Simulate heartbeat with User A token.
+4. User A sees connected MT5 status.
+5. User B cannot see User A connection.
+6. User B /api/me/mt5-status shows waiting/no connection.
+7. User B cannot read/update/revoke User A connection.
+8. User A creates trading session.
+9. User B cannot see User A session.
+10. Invalid MT5 token is rejected.
+11. Revoked token no longer accepts heartbeat.
+12. Raw token is never returned after creation.
+
+Phase 3G — QA/fix gate:
+After implementation, run QA and fix issues before stopping.
+
+QA must confirm:
+- App starts.
+- Login/register/logout/me still work.
+- Phase 2 user scoping still passes.
+- User A/User B isolation passes.
+- Personal MT5 connection records work.
+- Personal heartbeat mapping works.
+- No raw token is logged or returned after creation.
+- Global MT5 bridge status is not presented as a user’s personal connection.
+- No MT5 EA .mq5 files changed.
+- No live trades placed.
+- Safety contract still passes.
+- Existing unrelated paperIntelligence.ts:123 typecheck issue is reported separately if still present.
+
+Final report format:
+1. Files changed
+2. Tables added/changed
+3. Routes added/changed
+4. How per-user bridge token works
+5. How heartbeat maps to user
+6. Trading session result
+7. User A/User B isolation result
+8. Safety verification
+9. Remaining errors
+10. Phase 3 PASS or FAIL
+11. Stop and wait for my approval before any Phase 4 work

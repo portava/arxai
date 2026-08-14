@@ -1,0 +1,322 @@
+We are changing ARX AI from paper-only into full admin-controlled DEMO/LIVE trading.
+
+Do this the way requested:
+
+1. Remove paper-only mode from the normal user-facing app.
+2. Admin must have a master trading control that can switch ALL user accounts between:
+   - TRADING_OFF
+   - DEMO_TRADING
+   - LIVE_TRADING
+3. When admin switches to DEMO_TRADING, approved connected users can place broker demo trades through their connected MT5 demo accounts.
+4. When admin switches to LIVE_TRADING, approved connected users can place broker live trades through their connected MT5 live accounts.
+5. Do not keep showing paper-only language in the dashboard, assistant, scanner, journal, or trade ticket UI.
+6. Replace paper-only wording with the current platform trading mode:
+   - Trading Off
+   - Demo Trading Active
+   - Live Trading Active
+
+Before coding:
+Inspect the current safetyCore.ts, MT5 bridge, EA command polling, assistant safety envelope, dashboard state, trade command model, database schema, admin routes, and user auth/session isolation.
+
+Core build requirements:
+
+A. Global admin trading switch
+
+Create an Admin Trading Control page with a master platform switch:
+
+- Trading Off
+- Demo Trading
+- Live Trading
+
+Admin must be able to:
+1. Turn trading off for all users.
+2. Enable demo trading for all users with connected demo accounts.
+3. Enable live trading for all users with connected live accounts.
+4. See the current platform trading mode.
+5. See how many users are connected to demo accounts.
+6. See how many users are connected to live accounts.
+7. See which users are blocked because their account type does not match the current platform mode.
+8. Trigger emergency stop.
+9. View trade command audit logs.
+10. View admin mode-change logs.
+
+B. Remove paper-only mode from normal app
+
+Remove or replace user-facing paper-only language from:
+- dashboard
+- assistant responses
+- MT5 status card
+- scanner/trade ticket flow
+- trade journal
+- calendar/performance pages
+- settings
+- onboarding/empty states
+
+Replace with:
+- tradingMode: "off" | "demo" | "live"
+- platformTradingMode: "off" | "demo" | "live"
+- accountType: "demo" | "live" | "unknown"
+- executionAllowed: true/false
+- emergencyStop: true/false
+
+Do not show:
+- paper_only
+- liveLocked
+- readOnlyMode
+- allowOrderExecution false
+unless it is in legacy/internal migration notes.
+
+C. Database changes
+
+Add or update:
+
+global_trading_settings:
+- id
+- platform_mode: "off" | "demo" | "live"
+- emergency_stop: boolean
+- updated_by_admin_id
+- updated_at
+
+user_trading_permissions:
+- user_id
+- trading_enabled
+- suspended
+- suspension_reason
+- allowed_demo
+- allowed_live
+- live_disclosure_accepted_at
+- updated_by_admin_id
+- updated_at
+
+user_risk_limits:
+- user_id
+- max_lot_size
+- max_trades_per_day
+- max_daily_loss
+- allowed_symbols
+- require_live_confirmation
+- updated_at
+
+trade_command_audit_log:
+- id
+- user_id
+- connection_id
+- platform_mode
+- account_type
+- symbol
+- side
+- lot_size
+- order_type
+- stop_loss
+- take_profit
+- status
+- rejection_reason
+- requested_by
+- confirmed_by_user
+- created_at
+
+admin_action_audit_log:
+- id
+- admin_user_id
+- action_type
+- old_value
+- new_value
+- affected_scope
+- created_at
+
+D. Backend trade guard
+
+Every trade request must pass this exact guard chain:
+
+1. User is authenticated.
+2. User owns the MT5 connection.
+3. Global platform mode is not off.
+4. Emergency stop is false.
+5. User trading is enabled.
+6. User is not suspended.
+7. User account type matches platform mode:
+   - DEMO_TRADING only executes on demo MT5 accounts.
+   - LIVE_TRADING only executes on live MT5 accounts.
+8. MT5 bridge token is valid.
+9. Risk limits pass.
+10. Duplicate command check passes.
+11. Command expiration check passes.
+12. Live disclosure accepted if platform mode is live.
+13. Explicit confirmation exists for live orders.
+14. Audit log is written.
+15. Command is queued only for that user and that MT5 connection.
+
+E. MT5 bridge command execution
+
+Update the MT5 bridge command system so the backend can queue trade commands and the EA can poll and execute them.
+
+Command types:
+- MARKET_BUY
+- MARKET_SELL
+- LIMIT_BUY
+- LIMIT_SELL
+- STOP_BUY
+- STOP_SELL
+- CLOSE_POSITION
+- MODIFY_SL_TP
+- CANCEL_ORDER
+
+Each command must include:
+- command_id
+- user_id
+- connection_id
+- platform_mode
+- account_type
+- symbol
+- side
+- lot_size
+- order_type
+- price if needed
+- stop_loss
+- take_profit
+- expires_at
+- confirmation_required
+- confirmed_by_user
+- risk_status
+- command_signature or validation token
+
+F. EA execution support
+
+The EA must execute broker demo/live trades only when the backend command is valid.
+
+Add execution support to the EA using MT5 trade functions only after backend guards are complete.
+
+EA must refuse execution if:
+1. Platform mode is off.
+2. Emergency stop is active.
+3. Account type does not match command mode.
+4. Token is invalid.
+5. Command is expired.
+6. Command id is duplicate.
+7. Risk check failed.
+8. Live command is missing confirmation.
+9. User/connection mismatch.
+10. Backend command status is not approved.
+
+For demo account:
+- Execute only DEMO_TRADING commands.
+
+For live account:
+- Execute only LIVE_TRADING commands.
+- Require explicit confirmation already recorded by backend.
+
+G. Admin master switch behavior
+
+When admin switches to Trading Off:
+- Block all new trade commands.
+- Allow MT5 heartbeat/account sync/position sync to continue.
+- Do not close trades automatically unless a separate close command is created.
+
+When admin switches to Demo Trading:
+- Only demo MT5 accounts can receive commands.
+- Live accounts must show “Live account connected, but platform is in demo mode.”
+- No live execution.
+
+When admin switches to Live Trading:
+- Only live MT5 accounts can receive commands.
+- Demo accounts must show “Demo account connected, but platform is in live mode.”
+- Live warning banner must display.
+
+H. User UI
+
+Dashboard must clearly show:
+
+For Trading Off:
+“Trading is currently off by admin.”
+
+For Demo:
+“DEMO TRADING ACTIVE — orders are routed to your connected broker demo account.”
+
+For Live:
+“LIVE TRADING ACTIVE — real money risk. Orders are routed to your connected live broker account.”
+
+Trade ticket button labels:
+- Demo mode: “Place Demo Trade”
+- Live mode: “Review Live Trade”
+- Off mode: disabled button “Trading Off”
+
+I. AI assistant behavior
+
+Update AI so it uses the new trading mode.
+
+AI must be able to answer:
+- Is trading on?
+- Are we in demo or live mode?
+- Is my MT5 account demo or live?
+- Can I place a trade?
+- Why is my trade blocked?
+- What is the current platform trading mode?
+
+AI can prepare trade tickets.
+
+AI cannot silently place live trades.
+
+Live trade flow:
+1. User asks for a trade.
+2. AI prepares a live trade ticket.
+3. AI explains risk.
+4. User must explicitly confirm.
+5. Backend validates again.
+6. Command is queued.
+
+J. Security
+
+Never expose:
+- MT5_BRIDGE_TOKEN
+- per-user bridge tokens
+- SESSION_SECRET
+- apiKeyHash
+- OpenAI key
+- Finnhub key
+- any secret
+
+K. Tests
+
+Add and run tests for:
+
+1. Admin can switch platform to off.
+2. Admin can switch platform to demo.
+3. Admin can switch platform to live.
+4. Trading off blocks all new orders.
+5. Demo mode blocks live account execution.
+6. Live mode blocks demo account execution.
+7. Demo mode can queue demo trades for demo accounts.
+8. Live mode can queue live trades for live accounts.
+9. Emergency stop blocks new orders.
+10. Suspended user cannot trade.
+11. Wrong token rejected.
+12. Expired command rejected.
+13. Duplicate command rejected.
+14. Oversized trade rejected.
+15. User cannot access another user’s trade commands.
+16. AI cannot bypass trade guards.
+17. Live trade requires explicit confirmation.
+18. Admin mode changes are audit logged.
+19. Trade attempts are audit logged.
+20. Existing MT5 sync still works.
+21. Dashboard shows correct trading mode.
+22. No paper-only wording remains in normal user-facing UI.
+
+Final report required:
+
+Return:
+1. PASS or FAIL.
+2. Current platform mode.
+3. Whether paper-only was removed from user-facing UI.
+4. Whether admin master switch works.
+5. Whether demo trading is ready.
+6. Whether live trading is ready.
+7. Whether EA execution support was added.
+8. Whether MT5 demo account execution passed.
+9. Whether MT5 live account execution passed or still needs manual test.
+10. What files changed.
+11. What database changes were made.
+12. What tests passed.
+13. What still needs manual verification.
+14. Exact steps for me to turn all users to demo.
+15. Exact steps for me to turn all users to live.

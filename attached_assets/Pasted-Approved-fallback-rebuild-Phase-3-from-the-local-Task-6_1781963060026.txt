@@ -1,0 +1,61 @@
+Approved fallback: rebuild Phase 3 from the local Task #662 spec, then pause before Phase 4.
+
+You have now confirmed:
+
+- The real Task #662 implementation is not recoverable from local git.
+- No reachable ref contains mission_agents, mission_proposals, proposal endpoints, services, hooks, or UI.
+- The only available Phase 3 source is the local spec:
+  - .local/tasks/task-662.md
+  - .local/tasks/profit-mission-phase-3-multi-agent-proposals.md
+- You do not have a tool to trigger the platform re-merge.
+
+So I approve a controlled fallback rebuild of Phase 3, using the local Task #662 spec as the source of truth.
+
+Rules for this fallback:
+
+1. Rebuild Phase 3 only.
+2. Do not build Phase 4 yet.
+3. Do not invent extra features beyond the Task #662 spec.
+4. Preserve all existing app wiring, routes, auth, services, database conventions, UI patterns, and permission rules.
+5. Avoid duplicate foundations. Before writing anything, inspect current schema/routes/services/hooks/UI so the rebuilt Phase 3 lands in the correct existing structure.
+6. If the spec is ambiguous, choose the smallest implementation that satisfies the approved Phase 3 requirements.
+7. Mark the rebuilt work clearly as “Phase 3 fallback reconstruction from Task #662 spec” in the report, not as the original platform merge.
+
+Required build scope:
+
+- Add the mission_agents data model/table/schema.
+- Add the mission_proposals data model/table/schema.
+- Add server routes/endpoints for:
+  - listing mission agents,
+  - listing proposals,
+  - reading a proposal,
+  - creating a proposal,
+  - updating proposal status or review state if required by the spec.
+- Add required services/API clients/hooks.
+- Add the required Phase 3 UI/admin/operator surface described in the spec.
+- Wire everything to existing auth and permission rules.
+- Make sure the implementation is ready for Phase 4 to extend, but do not start Phase 4.
+
+Verification required after rebuild:
+
+1. Run migrations / database push as appropriate for this project.
+2. Run typecheck.
+3. Run lint if available.
+4. Run relevant tests if available.
+5. Verify the routes respond.
+6. Verify the UI compiles and the surface loads.
+7. Confirm there are no duplicate mission_agents / mission_proposals definitions.
+8. Confirm Phase 4 can now safely extend this foundation.
+
+Final report format:
+
+- Files created/changed.
+- Migrations/schema changes.
+- Routes/endpoints added.
+- Services/hooks/API clients added.
+- UI surfaces added.
+- Verification commands run and results.
+- Any unresolved gaps or assumptions.
+- Explicit statement: “Phase 3 fallback reconstruction is ready / not ready for Phase 4.”
+
+Keep Task #663 / Phase 4 blocked until this rebuilt Phase 3 is verified.

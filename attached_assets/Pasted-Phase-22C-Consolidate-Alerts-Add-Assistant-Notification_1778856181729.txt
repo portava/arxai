@@ -1,0 +1,147 @@
+Phase 22C — Consolidate Alerts + Add Assistant Notification Awareness
+
+Before making changes, inspect the current codebase and confirm the exact files/routes already created in Phase 22A and 21B. Do not rebuild the notification system from scratch. This phase must build into the existing modern per-user notification system.
+
+Goal:
+Make `/api/me/notifications*` the single canonical notification surface, safely deprecate/bridge the legacy alert system, and give the AI assistant a dedicated tool so it can answer notification/alert questions directly and truthfully.
+
+Current known status from prior audit:
+- Modern `/api/me/notifications*` is per-user scoped and `requireUser` gated.
+- In-app notifications are working for user-specific results.
+- Legacy `/api/alerts*` and `/api/alert-preferences` were protected with `requireUser`, but still exist.
+- Duplicate alert systems remain:
+  - legacy: `routes/alerts.ts` + `lib/alerts/alertManager.ts`
+  - modern: `routes/notifications.ts`, `routes/meNotifications.ts`, `lib/notifications/service.ts`
+- Push notifications are not implemented yet and must not be claimed as active.
+- Assistant has no dedicated `getRecentNotifications` tool.
+- Market data provider status is honest but currently disconnected.
+
+Tasks:
+
+1. Full pre-check
+- Locate every alert, notification, warning, scanner, risk, bridge, and assistant notification-related file.
+- Produce a short file map before edits.
+- Confirm which frontend components consume notifications.
+- Confirm whether any frontend component still consumes legacy `/api/alerts*`.
+- Confirm whether `alerts-center.tsx` is scanner-specific or general notifications.
+- Do not delete anything until dependencies are understood.
+
+2. Make modern notifications canonical
+- Ensure all general notification UI reads from `/api/me/notifications`.
+- Ensure notification preferences use the modern per-user preference model.
+- If any frontend screen still calls legacy `/api/alerts*` for user notifications, migrate it to `/api/me/notifications`.
+- Keep scanner-specific endpoints separate only if they are truly scanner/risk workflow endpoints.
+- Add comments clearly labeling legacy alert routes as deprecated compatibility routes.
+
+3. Safe legacy bridge/deprecation
+- Legacy `/api/alerts*` and `/api/alert-preferences` must remain `requireUser` gated.
+- If legacy endpoints remain, they must either:
+  A) forward to the modern per-user notification service, or
+  B) return a safe deprecated response that directs internal callers to `/api/me/notifications`.
+- They must not return global/shared alert-table data.
+- They must not leak alerts between users.
+- They must not create duplicate notification records.
+
+4. Add dedicated assistant tool: `getRecentNotifications`
+Create/register a real assistant tool named exactly:
+
+`getRecentNotifications`
+
+It should:
+- Require authenticated user context.
+- Pull only the current user’s notifications.
+- Return recent notifications, unread count, empty-state status, and safety envelope fields.
+- Support filters if the assistant framework allows it:
+  - unreadOnly
+  - limit
+  - category/type
+  - severity
+- Never fabricate notifications.
+- If none exist, return a clean empty response:
+  `{ notifications: [], unread: 0, isEmpty: true }`
+- Include honest flags:
+  - `pushConfigured`
+  - `marketDataProviderConnected`
+  - `readOnlyMode`
+  - `allowOrderExecution`
+  - `safetyMode`
+
+5. Update assistant routing rules
+Update the assistant prompt/tool routing so questions like:
+- “Do I have alerts?”
+- “Any risk warnings?”
+- “Any bridge warnings?”
+- “Did anything happen today?”
+- “What notifications do I have?”
+- “Any market provider alerts?”
+route to `getRecentNotifications` first.
+
+The assistant must answer from live tool data only. If no notifications exist, it should say there are no current notifications instead of guessing.
+
+6. Notification categories
+Normalize notification types/categories so the system can classify:
+- risk
+- bridge
+- market_data
+- trade_journal
+- prop_firm
+- scanner
+- system
+- account
+- assistant
+
+Do not overbuild UI. Just make sure backend and frontend can represent these categories cleanly.
+
+7. UI check
+- Notification Center should show real per-user notifications only.
+- Fresh user should show empty state.
+- Returning user should show only their notifications.
+- Notification count/badge should use unread count from `/api/me/notifications`.
+- No fake push notification claims.
+- No placeholder alert copy.
+- If push is not configured, UI should say “Push notifications not configured yet” only in settings/status areas, not as an active feature.
+
+8. Tests required
+Add or update tests for:
+- anonymous user cannot access legacy alerts
+- user A cannot read user B notifications
+- fresh user gets empty notifications
+- returning user gets only their own notifications
+- legacy alert routes do not expose global/shared payloads
+- `/api/me/notifications` remains canonical
+- `getRecentNotifications` returns correct empty state
+- `getRecentNotifications` returns correct unread/recent notifications for the authenticated user
+- assistant alert questions use the dedicated tool
+- no UI text claims push notifications are active
+
+9. QA gate
+After implementation, run:
+- typecheck
+- lint if available
+- unit tests
+- route/API tests
+- frontend smoke test
+- forbidden string scan for fake/sample/placeholder alert claims
+- grep/search for any frontend usage of legacy `/api/alerts*`
+
+10. Final report required
+Return a Phase 22C report with:
+- files changed
+- duplicate systems found
+- what was merged, bridged, deprecated, or left alone
+- final canonical notification path
+- assistant tool status
+- push notification truth status
+- fresh-user result
+- returning-user isolation result
+- legacy route security result
+- UI honesty result
+- remaining recommended Phase 22D work
+
+Important constraints:
+- Do not redesign the app.
+- Do not build push notifications in this phase.
+- Do not fake market data.
+- Do not expose API keys.
+- Do not create duplicate notification tables/services unless absolutely necessary.
+- Do not move to the next phase unless all QA checks pass.

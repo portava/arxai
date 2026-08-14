@@ -1,0 +1,240 @@
+Continue the seeded E2E DOM/browser sweep properly by remapping the real routes first, then splitting the sweep into smaller runTest batches.
+
+Previous result:
+- Harness exists: scripts/src/qaSeededLiveUiSweep.ts
+- package scripts exist: qa:seed-dom and qa:seed-dom:cleanup
+- No runtime code changed last turn
+- No live trades placed
+- arx_live_commands count stayed 0
+- Safety gates unchanged
+- The attempted 19-page sweep was too large for one runTest call
+- Some user-supplied route paths were stale and need remapping against App.tsx/sidebar routing before testing
+
+Do not place trades.
+Do not insert arx_live_commands.
+Do not type operator phrases.
+Do not broaden the narrow env parser.
+Do not weaken safety gates.
+Do not fake data.
+Do not expose admin diagnostics to normal users.
+Do not skip the sweep because one runTest batch is too large.
+
+Create checkpoint first:
+checkpoint: route-remap-and-segmented-e2e-live-ui-sweep
+
+Task 1 — Build the real route map:
+Inspect:
+- App.tsx
+- router definitions
+- sidebar/menu config
+- page imports
+- role guards
+- admin/user route wrappers
+- redirects/aliases
+
+Produce a corrected route map for every screenshot-related surface:
+- Account / profile / my account
+- Settings
+- Notifications / alerts
+- Help / system status
+- Market Scanner
+- Trade / Trade Command Room
+- Live Shared Account
+- Live AI Assist
+- Live Intent Queue
+- Open Trades / My Trades / Positions
+- Live Chart
+- Trading Calendar
+- Broker Reconciliation
+- Live Trading Control
+- Admin Allocations
+- Action Center
+- Audit Vault
+- Safety Logs
+
+For each item, record:
+- user-facing menu label
+- actual route path
+- page component file
+- allowed roles
+- whether it is user, admin, or both
+- whether it should appear in LIVE_SHARED mode
+- which mode-scoped data it reads
+
+Do not test stale paths. Test the real registered route.
+
+Task 2 — Split the E2E sweep into small batches:
+Create 4–5 smaller runTest calls instead of one huge sweep.
+
+Batch A — Normal user account/status pages:
+- my account/profile actual route
+- settings actual route
+- notifications/alerts actual route
+- help/system status actual route
+- action center actual route
+
+Batch B — Normal user trading pages:
+- trade/command room actual route
+- live shared actual route
+- live AI assist actual route
+- live chart actual route
+- open trades/my trades/positions actual route
+
+Batch C — Normal user data/history pages:
+- market scanner actual route
+- trading calendar actual route
+- live intent queue actual route
+- trade history actual route if registered
+- watchlist/scanner trades actual route if relevant
+
+Batch D — Admin pages:
+- admin allocations actual route
+- broker reconciliation actual route
+- live trading control actual route
+- audit vault actual route
+- safety logs actual route
+
+Batch E — Admin preview-as-user:
+- repeat the highest-risk user pages while admin is previewing user mode:
+  - my account
+  - trade
+  - live shared
+  - live AI assist
+  - notifications/help
+
+If one batch is still too large, split it again. Do not stop at “too many steps.”
+
+Task 3 — Assertions for every tested page:
+For each page in each batch:
+1. Page loads without a red Vite/runtime overlay.
+2. No uncaught console errors.
+3. Page agrees with the unified LIVE_SHARED resolver.
+4. Normal user does not see admin diagnostics.
+5. Normal user does not see raw backend booleans, table names, route names, provider errors, gate constants, or debug fields.
+6. Live page does not show stale demo/paper/test data.
+7. Live page does not show demo/paper/simulator/mock/live-disabled wording except inside Settings mode-switch options.
+8. Empty states are clean and mode-aware.
+9. Buttons/toggles/tabs/search/filter sections do not crash.
+10. Data is filtered by userId, accountMode, accountShellId/sharedMasterAccountId, and connectionId where relevant.
+
+Task 4 — Specific screenshot bugs to verify/fix:
+Verify and fix these exact issues if still present:
+
+1. /my-account or actual account route:
+- should show SHARED_MASTER_MT5 when attached
+- should show assigned allocation, AI sleeve allocation, balance/equity/capacity
+- should not show $0 if allocation exists
+- should not show “Use my own MT5 bridge” as active for shared-master user
+
+2. Settings:
+- should not show stale “MT5 Bridge Not Configured” in LIVE_SHARED mode
+- personal MT5 setup should be optional mode/bridge preference only
+
+3. Notifications/alerts:
+- should not say LIVE TRADING DISABLED while live is armed
+- alert rows must be dismissible and deduped
+- stale MT5 disconnected alerts from old/demo/paper connections must not appear in live mode
+
+4. Alerts crash:
+- no .replace on undefined
+- safe missing alert type/status/severity
+
+5. Broker reconciliation crash:
+- no .length on undefined arrays
+- brokerOrders/brokerPositions/mismatches default to []
+
+6. Live trading control crash:
+- invalid/missing createdAt must not crash
+- use safeDate formatter
+
+7. Trading calendar:
+- live mode shows live trades/P&L only
+- if no live trades exist, show empty/zero live state
+- no paper/demo P&L in live mode
+
+8. Live intent queue:
+- live mode shows only LIVE_SHARED intents
+- no demo/paper/test rows
+
+9. Open positions/live chart side panel:
+- show only current live positions for current user/account shell
+- no stale ghost demo/test positions
+- if none open, show none
+
+10. Market scanner:
+- synthetic/volatility scanner uses real feed/router when connected
+- no “symbol not available in simulator” when real feed exists
+- no simulator pipeline wording in live mode
+
+11. Trade/command room:
+- no “Simulator only” in live mode
+- no typed-phrase wording
+- button-based review/confirm language only
+
+12. Live shared:
+- no typed phrase language
+- button-based confirmation copy only
+
+13. Live AI Assist:
+- no raw booleans
+- no “Tester” wording in live mode
+- clean readiness labels only
+
+14. Action center:
+- user mode should not show admin/operator review wording
+- if no pending user actions, say “No pending trade actions”
+
+15. Help/system status:
+- should not say mock/no connection when resolver says live bridge active
+- no backend env text to normal users
+
+16. Audit Vault / Safety Logs:
+- either distinct pages or one clear tabbed page
+- no duplicate/confusing menu behavior
+
+17. Global banners:
+- keep one global live bar
+- remove repeated inner-page real money warning banners
+- show trade-risk details only at final trade review/confirmation
+
+Task 5 — Fix as batches uncover failures:
+For each batch:
+1. Run the batch.
+2. List PASS/FAIL per page.
+3. Fix failures immediately.
+4. Retest the page.
+5. Retest the batch.
+6. Check arx_live_commands remains 0.
+7. Create checkpoint after meaningful fixes.
+
+Do not wait until all batches finish to fix obvious crashes.
+
+Task 6 — Final QA:
+After all batches:
+Run:
+- pnpm run typecheck
+- pnpm run build if available
+- pnpm run ci:guards
+- test:account-mode
+- test:live-phaseB
+- test:demo-arming
+- test:demo-verify
+- test:live-broker-resolver
+- attached-active-case
+- allocation runtime QA
+- seeded E2E DOM/content batches
+- arx_live_commands count before/after
+
+Final report only:
+- corrected route map
+- batches run
+- pages tested
+- failures found
+- fixes made
+- checkpoints created
+- QA results
+- arx_live_commands count
+- confirmation no live trades placed
+- confirmation no operator phrases typed
+- confirmation no safety gates weakened
+- remaining issues only if they require human credentials or manual browser action

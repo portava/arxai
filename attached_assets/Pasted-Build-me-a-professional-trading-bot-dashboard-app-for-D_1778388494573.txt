@@ -1,0 +1,174 @@
+Build me a professional trading bot dashboard app for Deriv MT5 synthetic volatility indices.
+
+App name: High Roll Trading AI
+
+Primary markets:
+- Volatility 75 Index
+- Volatility 75 1s Index
+- Volatility 25 1s Index
+
+Important: Replit will run the web dashboard, strategy engine, logs, risk manager, and signal generator. MT5 execution must happen through an external bridge because MT5 normally runs on a Windows VPS. Build the app so it can connect later to:
+1. MT5 Python bridge
+2. MQL5 Expert Advisor webhook bridge
+3. Deriv WebSocket API
+
+Core pages:
+1. Dashboard
+2. Market Scanner
+3. Bot Control
+4. Strategy Settings
+5. Risk Settings
+6. Trade Logs
+7. Backtest Lab
+8. Performance Analytics
+9. Emergency Kill Switch
+
+Dashboard requirements:
+- Clean modern UI
+- Dark trading theme
+- Show account balance placeholder
+- Show active symbol
+- Show bot status: OFF, DEMO, LIVE
+- Show today’s P/L
+- Show win rate
+- Show max drawdown
+- Show open trades
+- Show risk mode: Conservative, Balanced, Aggressive
+- Big emergency stop button
+
+Bot controls:
+- Start demo mode
+- Stop bot
+- Pause bot
+- Enable live trading only after user confirms multiple warnings
+- Select symbol
+- Select strategy
+- Select risk level
+
+Risk manager:
+- max daily loss percentage
+- max trades per day
+- max open trades
+- max lot size
+- risk per trade percentage
+- stop after losing streak
+- cooldown after loss
+- minimum confidence score before trade
+- disable trading during abnormal volatility
+
+Strategy engine:
+Create a modular strategy system with these strategies:
+
+1. Trend Continuation
+Uses EMA 20, EMA 50, EMA 200, RSI, ATR.
+Buy when price is above EMA 50 and EMA 200, EMA 20 is above EMA 50, RSI is between 50 and 70, and candle closes above pullback structure.
+Sell when opposite.
+
+2. Break of Structure
+Detect swing highs and swing lows.
+Buy after bullish BOS and pullback confirmation.
+Sell after bearish BOS and pullback confirmation.
+
+3. Liquidity Sweep Reversal
+Detect when price sweeps recent high/low and closes back inside range.
+Confirm with wick rejection and RSI exhaustion.
+
+4. Volatility Expansion
+Use ATR expansion and candle body size.
+Trade continuation only when expansion happens in trend direction.
+
+5. No Trade Filter
+Block trades during:
+- sideways chop
+- low confidence
+- spread too high
+- ATR too extreme
+- after max losses
+- if price is too far from EMA
+
+Signal output:
+Each scan should output:
+- symbol
+- direction: BUY, SELL, WAIT
+- confidence score 0-100
+- entry price
+- stop loss
+- take profit
+- reason for signal
+- strategy used
+- risk warning
+
+Trade execution:
+Do not place real trades directly yet.
+Create mock execution first.
+Create a bridge-ready API endpoint:
+POST /api/execute-trade
+
+Payload:
+{
+  "symbol": "Volatility 75 Index",
+  "direction": "BUY",
+  "lot": 0.01,
+  "entry": 12345.67,
+  "sl": 12320.00,
+  "tp": 12410.00,
+  "strategy": "Trend Continuation",
+  "confidence": 82
+}
+
+Create another endpoint:
+POST /api/mt5-webhook
+
+This will be used later by an MT5 Expert Advisor or Python bridge.
+
+Backtesting:
+Create a backtest page where I can upload CSV candle data.
+Columns:
+time, open, high, low, close, volume
+
+Backtest must show:
+- total trades
+- wins
+- losses
+- win rate
+- profit factor
+- max drawdown
+- ending balance
+- equity curve placeholder
+- best strategy
+
+Data model:
+Use PostgreSQL if available, otherwise use local JSON storage.
+Tables:
+- users
+- bot_settings
+- risk_settings
+- signals
+- trades
+- backtests
+- performance_daily
+
+UI style:
+Clean, premium, not overcrowded.
+Use cards, spacing, and simple navigation.
+Make it look like a professional fintech trading dashboard.
+
+Safety:
+Add disclaimer:
+“This app is for educational and research purposes. Automated trading is risky. Use demo mode first. No strategy guarantees profit.”
+
+Tech stack:
+- React frontend
+- Node.js/Express backend
+- TypeScript if possible
+- Tailwind CSS
+- Recharts for charts
+- REST API structure
+- Modular strategy files
+- Clean folder structure
+
+Deliver:
+- Fully working Replit app
+- Mock data included
+- Demo bot loop that scans every 5 seconds
+- No real money trading until MT5 bridge is manually connected

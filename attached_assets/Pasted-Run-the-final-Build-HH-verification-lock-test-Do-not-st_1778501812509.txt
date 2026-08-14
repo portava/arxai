@@ -1,0 +1,453 @@
+Run the final Build HH verification lock-test.
+
+Do not start Build II.
+Do not add new features unless a Build HH test fails and must be fixed.
+Do not enable live trading.
+Do not modify MT5 live execution.
+Do not change Build AA, BB, CC, DD, EE, FF, or GG logic except to fix HH read-only/integration issues.
+
+Build HH goal:
+Create a central Risk Governor + Trader Readiness System that evaluates whether paper trading and paper autopilot should continue, pause, or lock into watch-only mode. HH must permanently report live trading as DISABLED and must never place live trades.
+
+Verify Build HH only.
+
+1. Typecheck/build health
+
+Run all relevant commands:
+- typecheck
+- build
+- API server validation
+- frontend build validation
+- database/schema validation if available
+
+Show exact commands run and whether each passed.
+
+2. Risk Governor service proof
+
+Confirm the Risk Governor service exists.
+
+Show exact files/functions for:
+- riskGovernorService
+- readinessScoring
+- riskGovernorRoutes
+- riskGovernorEvents
+- riskGovernorEvaluations
+- EE governor check integration
+- FF governor check integration
+- GG command center governor display
+
+Confirm the service returns this structure:
+
+{
+  governor_id,
+  evaluated_at,
+  mode: "PAPER_ONLY",
+  liveTradingStatus: "DISABLED",
+  overallStatus,
+  paperTradingAllowed,
+  autopilotAllowed,
+  manualPaperAllowed,
+  liveTradingAllowed: false,
+  readinessScore,
+  readinessGrade,
+  readinessLevel,
+  hardBlocks,
+  softWarnings,
+  riskFlags,
+  cooldowns,
+  metrics,
+  nextBestActions,
+  allowedActions,
+  explanation,
+  generatedAt
+}
+
+3. Database verification
+
+Confirm these tables exist:
+
+risk_governor_evaluations
+risk_governor_events
+
+Confirm risk_governor_evaluations includes:
+id,
+governor_id,
+overall_status,
+mode,
+live_trading_status,
+readiness_score,
+readiness_grade,
+readiness_level,
+paper_trading_allowed,
+autopilot_allowed,
+manual_paper_allowed,
+live_trading_allowed,
+hard_blocks,
+soft_warnings,
+risk_flags,
+cooldowns,
+metrics,
+next_best_actions,
+allowed_actions,
+explanation,
+created_at.
+
+Confirm risk_governor_events includes:
+id,
+governor_id,
+event_type,
+severity,
+message,
+details,
+created_at.
+
+4. Data source proof
+
+Show exactly where HH reads from:
+
+- AA decision logs
+- BB auto-debriefs
+- CC learning events
+- CC strategy edges
+- CC mistake patterns
+- DD market data health/logs
+- EE paper trades
+- EE paper execution logs
+- FF autopilot cycles
+- FF cooldowns
+- GG performance snapshots
+- risk settings / safetyCore / canPlaceTrades if present
+
+Confirm missing data sources return safe WATCH_ONLY or NOT_READY states instead of crashing.
+
+5. Endpoint verification
+
+Run and show raw output for:
+
+GET /api/risk-governor/status
+
+POST /api/risk-governor/evaluate
+
+GET /api/risk-governor/evaluations?limit=20
+
+GET /api/risk-governor/events?limit=50
+
+POST /api/risk-governor/demo
+
+POST /api/risk-governor/simulate
+
+6. Readiness scoring proof
+
+Show the scoring breakdown from 0–100 across:
+
+A. Risk discipline, 25 points  
+B. Strategy edge maturity, 25 points  
+C. AI decision quality, 20 points  
+D. System reliability, 15 points  
+E. Learning/debrief quality, 15 points  
+
+Confirm grade mapping:
+- A = 90–100
+- B = 80–89
+- C = 70–79
+- D = 60–69
+- F = below 60
+
+Show raw JSON with readinessScore, readinessGrade, readinessLevel, explanation, and nextBestActions.
+
+7. Healthy paper scenario proof
+
+Run a healthy paper system simulation.
+
+Confirm it returns PAPER_ALLOWED or PAPER_CAUTION.
+
+Show:
+- no hard blocks
+- paperTradingAllowed result
+- autopilotAllowed result
+- manualPaperAllowed result
+- liveTradingAllowed: false
+- allowedActions.canPlaceLiveTrade: false
+
+8. Small sample size proof
+
+Run a small sample size / early testing scenario.
+
+Confirm:
+- system does not fake confidence
+- readinessLevel is NOT_READY or EARLY_TESTING
+- overallStatus is PAPER_CAUTION or WATCH_ONLY
+- nextBestActions recommend more paper data, not live trading
+
+Show raw JSON output.
+
+9. Daily paper loss exceeded proof
+
+Simulate daily paper losses above max_daily_paper_loss.
+
+Confirm:
+- overallStatus becomes PAPER_PAUSED, WATCH_ONLY, or LOCKED
+- paperTradingAllowed is false
+- autopilotAllowed is false
+- manualPaperAllowed remains true if needed for safe paper exits
+- hardBlocks or riskFlags explain daily loss breach
+
+Show raw JSON output.
+
+10. Revenge cooldown proof
+
+Simulate recent back-to-back losses or cooldown after loss.
+
+Confirm:
+- revenge cooldown is detected
+- new paper execution is blocked or paused
+- cooldown_until is shown
+- nextBestActions recommend waiting/reviewing debriefs
+
+Show raw JSON output.
+
+11. Max open trades proof
+
+Simulate max open paper trades exceeded.
+
+Confirm:
+- paperTradingAllowed is false
+- autopilotAllowed is false
+- manualPaperAllowed remains true
+- hardBlocks or riskFlags explain max exposure
+
+Show raw JSON output.
+
+12. Same-symbol exposure proof
+
+Simulate repeated same-symbol conflicts.
+
+Confirm:
+- same-symbol exposure is detected
+- governor blocks or cautions new same-symbol paper trades
+- reason is included in hardBlocks, softWarnings, or riskFlags
+
+Show raw JSON output.
+
+13. Market data degraded proof
+
+Simulate degraded DD market data.
+
+Confirm:
+- marketDataQuality is degraded
+- overallStatus becomes PAPER_CAUTION, PAPER_PAUSED, or WATCH_ONLY
+- autopilotAllowed becomes false if degradation is severe
+- explanation mentions data quality
+
+Show raw JSON output.
+
+14. Autopilot error spike proof
+
+Simulate FF autopilot error spike.
+
+Confirm:
+- autopilotAllowed becomes false
+- overallStatus becomes PAPER_PAUSED or WATCH_ONLY
+- riskFlags mention autopilot instability
+- FF should skip new cycles when governor blocks
+
+Show raw JSON output.
+
+15. Live trading flag detected proof
+
+Simulate live trading flag being enabled or attempted.
+
+Confirm:
+- overallStatus becomes LOCKED
+- liveTradingStatus remains DISABLED
+- liveTradingAllowed remains false
+- allowedActions.canPlaceLiveTrade remains false
+- hardBlocks includes CRITICAL live trading attempt/enabled warning
+
+Show raw JSON output.
+
+16. canPlaceTrades true proof
+
+Simulate safetyCore.canPlaceTrades === true.
+
+Confirm:
+- governor returns LOCKED
+- CRITICAL hard block is created
+- no paper or autopilot expansion is allowed
+- live trading still remains disabled
+
+Show raw JSON output.
+
+17. EE integration proof
+
+Show exactly where EE calls Risk Governor before opening a paper trade.
+
+Run a scenario where governor blocks paper trading.
+
+Confirm:
+- EE rejects paper execution
+- status is PAPER_REJECTED
+- rejection_reason includes governor reason
+- manual paper close remains allowed
+- no live trade is placed
+
+Show raw JSON output.
+
+18. FF integration proof
+
+Show exactly where FF calls Risk Governor before run-once/start cycle.
+
+Run a scenario where governor blocks autopilot.
+
+Confirm:
+- FF skips or pauses the cycle
+- no AA-to-EE paper execution is attempted
+- cycle logs governor block reason
+- stop/status still work
+
+Show raw JSON output.
+
+19. GG integration proof
+
+Run AI Command Center endpoint.
+
+Confirm GG displays:
+- governor status
+- readiness score
+- readiness grade
+- readiness level
+- paper trading allowed/paused
+- autopilot allowed/paused
+- live trading disabled badge
+- hard blocks
+- soft warnings
+- next best actions
+
+Show raw JSON output.
+
+20. Empty database proof
+
+Test with empty or missing data.
+
+Confirm:
+- no endpoint crashes
+- governor returns safe NOT_READY, WATCH_ONLY, or PAPER_CAUTION
+- live trading remains DISABLED
+- nextBestActions ask for paper sample data and system validation
+- no live trading recommendation appears
+
+Show raw JSON output.
+
+21. Manual paper close proof
+
+Confirm manual paper close remains allowed even when governor blocks new paper trades.
+
+Run manual close test.
+
+Confirm:
+- manualPaperAllowed is true unless a critical system failure prevents safe close
+- paper trade can close safely
+- BB debrief can still trigger
+- CC learning can still process
+
+Show raw JSON output.
+
+22. Logs proof
+
+Show risk governor logs proving every evaluation records:
+- evaluation started
+- data sources read
+- missing data sources
+- metrics calculated
+- hard blocks found
+- soft warnings found
+- readiness score calculated
+- allowed actions returned
+- evaluation stored
+- evaluation completed
+
+Show sample risk_governor_events records.
+
+23. Live-trade isolation proof
+
+Search Build HH files and confirm they do NOT call:
+
+executeTrade,
+execute-trade,
+mt5,
+MT5,
+livePosition,
+live order,
+setCanPlaceTrades,
+live broker execution,
+broker.placeOrder,
+real order placement,
+or anything that can place real trades.
+
+Confirm Build HH does NOT modify:
+- live broker permissions
+- MT5 live execution
+- Build AA safety rules
+- Build EE paper-only execution rules
+- Build FF paper-only autopilot rules
+
+Confirm Build HH always returns:
+liveTradingStatus: "DISABLED"
+liveTradingAllowed: false
+allowedActions.canPlaceLiveTrade: false
+
+24. Existing behavior compatibility
+
+Confirm these still work:
+- Build AA trade decision orchestrator
+- Build BB auto-debrief
+- Build CC learning engine
+- Build DD market data layer
+- Build EE paper execution engine
+- Build FF paper autopilot loop
+- Build GG trading calendar and command center
+- manual debrief
+- manual paper close
+- analytics
+- decision logs
+- learning logs
+- market data logs
+- paper execution logs
+- autopilot logs
+- performance endpoints
+- existing frontend routes
+
+Required final response format:
+
+1. Verification passed or failed
+2. Commands/tests run
+3. Files changed
+4. New files created
+5. Database proof
+6. Risk Governor service proof
+7. Data source proof
+8. Raw status output
+9. Raw evaluate output
+10. Raw demo output
+11. Healthy paper scenario proof
+12. Small sample size proof
+13. Daily loss exceeded proof
+14. Revenge cooldown proof
+15. Max open trades proof
+16. Same-symbol exposure proof
+17. Market data degraded proof
+18. Autopilot error spike proof
+19. Live trading flag proof
+20. canPlaceTrades true proof
+21. EE integration proof
+22. FF integration proof
+23. GG integration proof
+24. Empty-state proof
+25. Manual paper close proof
+26. Sample risk_governor_evaluations record
+27. Sample risk_governor_events record
+28. Logs proof
+29. Live-trade isolation proof
+30. Any fixes made during verification
+31. Final Build HH score out of 10
+32. Whether it is safe to proceed to Build II

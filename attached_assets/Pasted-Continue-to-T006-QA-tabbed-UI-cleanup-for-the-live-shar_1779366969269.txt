@@ -1,0 +1,291 @@
+Continue to T006: QA + tabbed UI cleanup for the live shared-account trading system.
+
+Do not rebuild from scratch. Inspect the current Phase A, Phase B, and Phase C implementation first, then patch only what is broken, cluttered, duplicated, disconnected, unsafe, or visually unfinished.
+
+Current state:
+- Phase A live shared-account admin/readiness structure is complete.
+- Phase B live shared-account validate/execute endpoints are complete.
+- Phase C user-facing manual trade, scanner, and Ruby wiring is complete.
+- System is production-ready under default-deny.
+- Keep the EA-pull architecture intact.
+- Do not add MT5 login/password/server secrets to Replit.
+- Do not expose credentials anywhere.
+
+Goal:
+Clean the UI, reduce scrolling, remove repetitive wording, collapse bulky sections, improve tabs, verify user isolation, and make the full shared live-account flow easier to understand without weakening any safety gates.
+
+T006 scope:
+
+1. Full UI audit
+Inspect:
+- Dashboard
+- Trading page
+- Live shared-account page
+- Scanner
+- Ruby assistant
+- Open Positions
+- Pending Orders
+- SL / TP Manager
+- Risk / Reward
+- Trade History
+- Admin live shared panel
+- Kill Switches
+- Bridge Health
+- Audit Logs
+- Settings / Connections
+- Mobile layout
+
+Fix:
+- Long pages
+- Repeated alerts
+- Repeated warnings
+- Repeated helper text
+- Oversized text blocks
+- Cluttered cards
+- Duplicate panels
+- Poorly labeled tabs
+- Buttons hidden by floating UI
+- Mobile overflow
+- Blank states
+- Confusing blocked/live/demo statuses
+
+2. Tab cleanup
+Make sure tab groups are clean, compact, and clearly labeled.
+
+User Trading tabs should be:
+- Place Trade
+- Open Positions
+- Pending Orders
+- SL / TP Manager
+- Risk / Reward
+- Trade History
+- Ruby Review
+
+Scanner tabs should be:
+- Best Setups
+- Watchlist
+- Volatility Markets
+- Forex
+- Synthetic Indices
+- News Impact
+- Scanner History
+
+Ruby tabs/sections should be:
+- Live Chat
+- Voice Mode
+- Trade Questions
+- Market Research
+- Saved Chats
+- App Help
+- Live Shared Status
+
+Admin Live Shared tabs should be:
+- Live Account
+- Approved Users
+- Bridge Health
+- Risk Limits
+- Open Trades
+- Commands
+- Kill Switches
+- Audit Logs
+
+Settings tabs should be:
+- Profile
+- Trading Mode
+- MT5 Bridge
+- API Keys
+- Notifications
+- Security
+- Ruby Memory
+
+Tabs must:
+- Work on mobile
+- Horizontally scroll if needed
+- Keep active state clear
+- Avoid duplicate content
+- Avoid full page reloads
+- Not be blocked by Ruby/floating buttons/bottom nav
+
+3. Collapse bulky areas
+Move long text, advanced controls, and filters into:
+- Collapsible sections
+- Filter drawers
+- “View details”
+- “Why blocked?”
+- “Risk details”
+- “Bridge details”
+- “Advanced filters”
+- “Ruby explanation”
+- “Audit details”
+
+Examples:
+- Scanner filters should not take up the full page.
+- Long risk explanations should collapse.
+- Ruby explanations should show a summary first.
+- Bridge/system diagnostics should be compact unless expanded.
+- Repeated live-blocked warnings should become status chips with expandable details.
+
+4. Alert cleanup
+Audit all:
+- Banners
+- Toasts
+- Warning boxes
+- Status badges
+- Error messages
+- Ruby warnings
+- Scanner warnings
+- Live shared-account blocked messages
+
+Fix:
+- Remove duplicate alerts.
+- Merge repeated warnings.
+- Convert low-priority warnings into compact chips.
+- Keep high-priority alerts visible.
+- Keep kill switch, bridge stale, live hard-kill, margin/risk, and execution blocked alerts visible.
+- Move old alerts into history where appropriate.
+- Do not spam the same blocked reason in multiple places on the same screen.
+
+5. Live shared status clarity
+Every live-related screen should clearly show the current state:
+- Demo / Paper
+- Shared Live Account
+- Live Access Pending
+- Live Blocked
+- Kill Switch Active
+- Bridge Disconnected
+- Bridge Stale
+- Hard Kill Enabled / Disabled
+- User Not Approved
+- Ready to Validate
+- Ready to Execute
+
+Use simple user-friendly labels, but keep technical detail available under expanded sections.
+
+6. Dormant UI/backend audit
+Inspect for unused or dormant items created during the build.
+
+Flag before removing.
+
+Check:
+- Unused components
+- Dead routes
+- Duplicate routes
+- Old mock pages
+- Unused hooks
+- Duplicate API helpers
+- Old scanner trade cards
+- Old Ruby panels
+- Old bridge status panels
+- Old admin panels
+- Dev-only UI visible to users
+- Unused polling
+- Duplicate intervals
+- Unused imports
+- Console spam
+- Backend endpoints not mounted
+- Backend endpoints mounted but unused
+
+Create or update:
+docs/dormant-systems-audit.md
+
+For each item, list:
+- File/component/service
+- Active / duplicate / unused / outdated / investigate
+- Where it appears
+- Recommended action
+- Risk level before removal
+
+Allowed cleanup:
+- Remove unused imports.
+- Remove duplicate UI blocks.
+- Remove duplicate route declarations.
+- Remove dead buttons.
+- Lazy-load heavy inactive panels.
+- Stop unnecessary polling.
+- Reduce duplicate fetch calls.
+- Collapse rarely used diagnostics.
+- Hide admin/dev-only UI from regular users.
+
+Do not delete:
+- Live shared validation logic
+- Live shared execution logic
+- EA-pull command queue
+- arx_live_commands
+- shared_trade_attribution
+- user approval logic
+- kill switches
+- bridge health checks
+- audit logs
+- Ruby memory/chat history
+- scanner logic
+- demo/paper trading
+- SL/TP validation
+- risk engine
+- user isolation logic
+
+7. Performance cleanup
+Improve:
+- Unnecessary renders
+- Duplicate fetches
+- Tabs fetching all data at once
+- Scanner refresh efficiency
+- Ruby panel re-rendering
+- Admin log pagination/filtering
+- Bridge status polling
+- Large DOM text blocks
+- Mobile responsiveness
+
+Use:
+- Lazy loading for inactive tabs where safe
+- Memoization where appropriate
+- Cleanup of intervals/listeners on unmount
+- Pagination/filtering for large logs
+- Compact cards instead of full-width repeated sections
+
+8. Security/isolation QA
+Verify:
+- Regular users only see their own trades, commands, P/L, history, and pending orders.
+- Admin sees all live shared-account records.
+- Unapproved users cannot see live execution buttons.
+- Approved users only see controls allowed by their permissions.
+- No frontend path directly queues a live command.
+- Validation never executes.
+- Execution always re-validates.
+- Kill switch blocks execution.
+- Bridge stale/disconnected blocks execution.
+- ARX_LIVE_BROKER_EXECUTION_ENABLED still blocks execution when not true.
+- No MT5 secrets or credentials appear in frontend, logs, API responses, source, or docs.
+
+9. Final verification
+Run:
+- Typecheck
+- Existing tests
+- CI guards
+- Phase B truth-table tests
+- Demo/paper verification
+- Live shared UI smoke test
+- Mobile layout check
+- Secret leak scan
+- Console error scan
+- Route check
+
+Acceptance checks:
+- T006 keeps Phase A/B/C working.
+- Manual trade validate/execute flow still works.
+- Scanner validate/execute flow still works.
+- Ruby live shared status and validation flow still work.
+- Demo/paper still works.
+- Admin live shared panel still works.
+- Kill switches still work.
+- Bridge health still works.
+- User approval visibility still works.
+- User isolation still works.
+- Tabs are cleaner and reduce scrolling.
+- Filters are collapsed into menus/drawers.
+- Alerts are reduced and not repetitive.
+- Dormant systems are documented.
+- No broken routes.
+- No blank pages.
+- No mobile overflow.
+- No console errors.
+- No credentials exposed.

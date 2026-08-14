@@ -1,0 +1,535 @@
+Proceed with Build LL now.
+
+This is NOT an audit.
+This is NOT a planning report.
+Implement the code changes.
+
+Build LL = Notification Center + Safety Alerts.
+
+Goal:
+Create a centralized notification and safety-alert system that warns the trader when something important happens across the trading app.
+
+The notification system should alert for:
+- Risk Governor blocks
+- paper trading paused
+- autopilot paused/stopped
+- cooldowns active
+- daily paper loss limit warnings
+- market data degraded/stale/wide spread
+- broker read-only safety warnings
+- unsafe broker mode attempts
+- paper trade opened/closed
+- TP/SL hit
+- BB auto-debrief created
+- CC learning event processed
+- repeated mistake pattern detected
+- Trader Coach report ready
+- Replay/Strategy Lab report ready
+- data import validation issues
+- system build/integration errors
+- live trading attempted or detected, which must become a CRITICAL alert
+
+Important:
+Build LL must NOT place trades.
+Build LL must NOT enable live trading.
+Build LL must NOT call MT5 live execution.
+Build LL must NOT modify canPlaceTrades.
+Build LL must NOT recommend live trading.
+Build LL is alerts, notifications, warnings, and review actions only.
+
+Current system:
+- Build AA = trade decision orchestrator
+- Build BB = auto-debrief
+- Build CC = learning feedback engine
+- Build DD = read-only market data
+- Build EE = paper execution engine
+- Build FF = paper autopilot loop
+- Build GG = trading calendar + AI command center
+- Build HH = risk governor
+- Build II = trader coach + playbook
+- Build JJ = replay simulator + strategy lab
+- Build KK = data import + broker read-only connector
+- Build LL = notification center + safety alerts
+
+Core requirement:
+Create one central Notification Center that receives events from AA-KK, stores them, deduplicates spam, ranks urgency, and displays clear next actions to the user.
+
+Build LL tasks:
+
+1. Inspect existing alert/log systems
+
+Find existing files/routes/tables for:
+- logs
+- risk governor events
+- autopilot logs
+- paper execution logs
+- market data logs
+- trader coach logs
+- replay logs
+- broker read-only logs
+- data import logs
+- frontend dashboard
+- navigation/menu/badges
+
+Do not duplicate usable systems.
+Integrate cleanly.
+
+2. Create Notification Service
+
+Create a service that returns notifications like:
+
+{
+  notification_id,
+  type: "SAFETY" | "RISK" | "TRADE" | "LEARNING" | "SYSTEM" | "COACH" | "DATA" | "REPLAY" | "BROKER",
+  severity: "INFO" | "WARNING" | "HIGH" | "CRITICAL",
+  status: "UNREAD" | "READ" | "ACKNOWLEDGED" | "DISMISSED" | "SNOOZED",
+  title,
+  message,
+  source_build: "AA" | "BB" | "CC" | "DD" | "EE" | "FF" | "GG" | "HH" | "II" | "JJ" | "KK" | "LL",
+  source_event_id,
+  symbol,
+  related_trade_id,
+  related_decision_id,
+  related_debrief_id,
+  related_learning_event_id,
+  related_replay_run_id,
+  action_required: boolean,
+  recommended_action,
+  action_url,
+  metadata,
+  dedupe_key,
+  expires_at,
+  created_at,
+  updated_at
+}
+
+3. Add alert rules engine
+
+Create rules that convert system events into notifications.
+
+Examples:
+
+Risk Governor:
+- LOCKED = CRITICAL
+- WATCH_ONLY = HIGH
+- PAPER_PAUSED = HIGH
+- PAPER_CAUTION = WARNING
+- daily loss limit close/hit = HIGH/CRITICAL
+- live trading flag detected = CRITICAL
+
+Market data:
+- stale quote = HIGH
+- wide spread = WARNING/HIGH
+- provider degraded = WARNING
+- missing candles = WARNING
+- extreme volatility = HIGH
+
+Paper execution:
+- paper trade opened = INFO
+- paper trade rejected = WARNING
+- duplicate decision_id blocked = INFO/WARNING
+- TP hit = INFO
+- SL hit = WARNING
+- manual close = INFO
+
+Autopilot:
+- autopilot started = INFO
+- autopilot stopped = INFO
+- autopilot paused by governor = HIGH
+- cooldown active = WARNING
+- same-symbol conflict = WARNING
+- daily loss stop = HIGH
+
+Learning/coaching:
+- auto-debrief created = INFO
+- CC learning processed = INFO
+- repeated mistake pattern rising = WARNING
+- new coach report ready = INFO
+- weekly plan ready = INFO
+- playbook entry updated = INFO
+
+Replay/data/broker:
+- replay report ready = INFO
+- strategy lab experiment complete = INFO
+- bad candle import = WARNING
+- import rejected = HIGH
+- unsafe broker mode rejected = CRITICAL
+- broker read-only snapshot created = INFO
+- broker secrets redacted warning = HIGH if any secret exposure attempt is detected
+
+4. Deduplication and rate limiting
+
+Prevent notification spam.
+
+Rules:
+- Same dedupe_key within a short window should update existing notification instead of creating duplicates.
+- Critical alerts should never be silently hidden.
+- Repeated warnings should increment a count in metadata.
+- Snoozed notifications should not reappear until snooze expires unless severity becomes CRITICAL.
+- Do not create unlimited alerts from autopilot cycles.
+
+5. User notification preferences
+
+Create safe preferences:
+
+{
+  in_app_enabled: true,
+  safety_alerts_enabled: true,
+  trade_alerts_enabled: true,
+  learning_alerts_enabled: true,
+  coach_alerts_enabled: true,
+  replay_alerts_enabled: true,
+  data_alerts_enabled: true,
+  broker_alerts_enabled: true,
+  critical_alerts_always_on: true,
+  digest_enabled: true,
+  digest_frequency: "DAILY",
+  quiet_hours_enabled: false,
+  quiet_hours_start,
+  quiet_hours_end
+}
+
+Hard rule:
+CRITICAL safety alerts must always be shown in-app.
+
+6. Add notification database tables
+
+Additive only.
+
+Create:
+
+notifications:
+- id
+- notification_id
+- type
+- severity
+- status
+- title
+- message
+- source_build
+- source_event_id
+- symbol
+- related_trade_id
+- related_decision_id
+- related_debrief_id
+- related_learning_event_id
+- related_replay_run_id
+- action_required
+- recommended_action
+- action_url
+- metadata jsonb
+- dedupe_key
+- repeat_count
+- expires_at
+- snoozed_until
+- read_at
+- acknowledged_at
+- dismissed_at
+- created_at
+- updated_at
+
+notification_preferences:
+- id
+- in_app_enabled
+- safety_alerts_enabled
+- trade_alerts_enabled
+- learning_alerts_enabled
+- coach_alerts_enabled
+- replay_alerts_enabled
+- data_alerts_enabled
+- broker_alerts_enabled
+- critical_alerts_always_on
+- digest_enabled
+- digest_frequency
+- quiet_hours_enabled
+- quiet_hours_start
+- quiet_hours_end
+- created_at
+- updated_at
+
+notification_logs:
+- id
+- notification_id
+- event_type
+- severity
+- message
+- details jsonb
+- created_at
+
+notification_digests:
+- id
+- digest_id
+- range_start
+- range_end
+- total_notifications
+- critical_count
+- warning_count
+- trade_count
+- learning_count
+- safety_count
+- summary jsonb
+- created_at
+
+7. Add endpoints or scripts
+
+Create endpoints or equivalent scripts:
+
+GET /api/notifications
+GET /api/notifications/unread
+GET /api/notifications/counts
+GET /api/notifications/:id
+POST /api/notifications/:id/read
+POST /api/notifications/:id/acknowledge
+POST /api/notifications/:id/dismiss
+POST /api/notifications/:id/snooze
+POST /api/notifications/mark-all-read
+GET /api/notifications/preferences
+POST /api/notifications/preferences
+POST /api/notifications/demo
+POST /api/notifications/test-event
+GET /api/notifications/digest
+POST /api/notifications/digest/generate
+GET /api/notifications/logs?limit=50
+
+8. Integrate with existing builds
+
+Integrate LL with:
+
+AA:
+- trade decision blocked
+- high-risk HOLD
+- missing data HOLD
+- decision created if important
+
+BB:
+- auto-debrief created
+- debrief failed
+- duplicate debrief skipped
+
+CC:
+- learning event processed
+- learning skipped due to idempotency
+- repeated mistake pattern rising
+
+DD:
+- market data degraded
+- stale quote
+- wide spread
+- missing candles
+- fallback mode warning
+
+EE:
+- paper trade opened
+- paper trade rejected
+- TP hit
+- SL hit
+- manual close
+- duplicate decision prevented
+
+FF:
+- autopilot started/stopped
+- autopilot paused
+- cooldown applied
+- daily paper loss limit hit
+- same-symbol conflict
+
+GG:
+- command center generated major warning
+- performance rebuild failed/completed
+
+HH:
+- governor status changed
+- LOCKED/WATCH_ONLY/PAPER_PAUSED
+- live trading attempted
+- canPlaceTrades true detected
+
+II:
+- coach report ready
+- weekly plan ready
+- playbook updated
+- repeated mistake coaching generated
+
+JJ:
+- replay report ready
+- strategy lab experiment completed
+- replay failed
+
+KK:
+- data import completed/rejected
+- imported replay scenario created
+- broker read-only snapshot
+- unsafe broker mode rejected
+- secret exposure attempt detected
+
+9. Frontend UI
+
+Add or update:
+
+A. Notification bell
+- unread count
+- critical count badge
+- opens notification drawer
+
+B. Notification Center page
+Show:
+- all notifications
+- filters by type/severity/status
+- search
+- mark read
+- acknowledge
+- dismiss
+- snooze
+- action links
+
+C. Critical Safety Banner
+If any unread CRITICAL notification exists:
+- show persistent top banner
+- display title/message
+- show recommended action
+- do not hide unless acknowledged
+- no live trading button
+
+D. Digest panel
+Show:
+- daily summary
+- critical alerts
+- warnings
+- trades opened/closed
+- debriefs/learning events
+- coach/replay updates
+- next actions
+
+10. Safety rules
+
+Hard rules:
+- Notification system is read/write for alerts only.
+- No trade execution.
+- No live broker calls.
+- No MT5 order placement.
+- No canPlaceTrades changes.
+- No live trading recommendations.
+- No secrets exposed in notification messages or metadata.
+- CRITICAL live-trading alerts must always show.
+- Safety alerts must not be disabled.
+
+11. Required test scenarios
+
+A. Demo notifications generate safely.
+B. Unread counts work.
+C. Mark read works.
+D. Acknowledge works.
+E. Dismiss works.
+F. Snooze works.
+G. Deduplication prevents spam.
+H. Repeat count increments on duplicate event.
+I. Critical alert bypasses quiet/snooze suppression.
+J. Risk Governor LOCKED creates CRITICAL notification.
+K. Market data degraded creates WARNING/HIGH notification.
+L. Paper TP creates INFO trade notification.
+M. Paper SL creates WARNING trade notification.
+N. BB debrief created creates INFO notification.
+O. CC repeated mistake creates WARNING notification.
+P. KK unsafe broker mode creates CRITICAL notification.
+Q. Digest generation works.
+R. Frontend notification bell/page/banner are accessible.
+S. Live trading remains disabled.
+T. Existing AA-KK systems still work.
+
+12. Logs
+
+Every notification event should log:
+- event received
+- rule matched
+- preference checked
+- dedupe checked
+- notification created/updated/skipped
+- severity assigned
+- action generated
+- errors/warnings
+
+13. Preserve existing behavior
+
+Do not break:
+- Build AA decision orchestrator
+- Build BB auto-debrief
+- Build CC learning engine
+- Build DD market data layer
+- Build EE paper execution engine
+- Build FF paper autopilot loop
+- Build GG trading calendar and command center
+- Build HH risk governor
+- Build II trader coach and playbook
+- Build JJ replay simulator and strategy lab
+- Build KK data import and broker read-only connector
+- manual debrief
+- manual paper close
+- analytics
+- decision logs
+- learning logs
+- market data logs
+- paper execution logs
+- autopilot logs
+- performance endpoints
+- risk governor endpoints
+- coach endpoints
+- replay endpoints
+- data import endpoints
+- broker read-only endpoints
+- existing frontend routes
+
+Acceptance criteria:
+- Notification Center exists.
+- Notifications are stored.
+- Unread/critical counts work.
+- Safety alerts are generated from HH, DD, EE, FF, KK.
+- Trade/debrief/learning notifications are generated.
+- Deduplication and snooze work.
+- Critical alerts always show.
+- Frontend bell/page/banner exist.
+- Digest generation works.
+- No secrets are exposed.
+- No live trading is enabled or recommended.
+- App typechecks/builds.
+- Raw outputs prove all major scenarios work.
+
+After implementation, show:
+
+1. Files changed
+2. New files created
+3. Database changes
+4. Frontend routes/components added
+5. Where LL integrates with AA
+6. Where LL integrates with BB
+7. Where LL integrates with CC
+8. Where LL integrates with DD
+9. Where LL integrates with EE
+10. Where LL integrates with FF
+11. Where LL integrates with GG
+12. Where LL integrates with HH
+13. Where LL integrates with II
+14. Where LL integrates with JJ
+15. Where LL integrates with KK
+16. Raw output from /api/notifications/demo
+17. Raw output from /api/notifications
+18. Raw output from /api/notifications/unread
+19. Raw output from /api/notifications/counts
+20. Raw output from read/acknowledge/dismiss/snooze endpoints
+21. Raw output from /api/notifications/preferences
+22. Raw output from /api/notifications/test-event
+23. Raw output from /api/notifications/digest
+24. Raw output from /api/notifications/digest/generate
+25. Risk Governor CRITICAL alert proof
+26. Market data warning proof
+27. Paper TP/SL notification proof
+28. BB debrief notification proof
+29. CC mistake warning proof
+30. KK unsafe broker alert proof
+31. Deduplication proof
+32. Critical alert bypass proof
+33. Digest proof
+34. Frontend route proof
+35. Secret redaction proof
+36. Live-trade isolation proof
+37. Any errors or warnings
+38. Whether Build LL is fully complete or partially complete
+39. Final Build LL score out of 10

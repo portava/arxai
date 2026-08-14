@@ -1,0 +1,213 @@
+NEXT PHASE: FINALIZE MT5 EA BRIDGE PACKAGE + SETUP WIZARD
+
+Goal:
+Turn the MT5 bridge work into a clean downloadable package and guided setup flow so I can connect MetaTrader 5 to this Replit app.
+
+Do not place orders.
+Do not enable live execution.
+Do not weaken safety guards.
+Keep ReadOnlyMode=true by default.
+Keep AllowOrderExecution=false by default.
+
+1. Verify MT5 bridge files exist
+
+Confirm these files exist:
+
+/mt5-bridge/ReplitMT5BridgeEA.mq5
+/mt5-bridge/README_SETUP.md
+/mt5-bridge/BRIDGE_TESTING_CHECKLIST.md
+
+If any are missing, create them now.
+
+2. Create downloadable ZIP package
+
+Create:
+
+/public/downloads/replit-mt5-bridge-package.zip
+
+The ZIP should include:
+
+- ReplitMT5BridgeEA.mq5
+- README_SETUP.md
+- BRIDGE_TESTING_CHECKLIST.md
+- SECURITY_NOTES.md
+- TROUBLESHOOTING.md
+
+3. Add frontend download button
+
+On these pages:
+
+- /broker
+- /mt5-status
+- /testing-control-center
+
+Add a button:
+
+“Download MT5 Bridge Package”
+
+The button should download:
+
+/downloads/replit-mt5-bridge-package.zip
+
+4. Add MT5 setup wizard
+
+Create a setup wizard page:
+
+/mt5-setup
+
+Wizard steps:
+
+Step 1:
+Explain what the MT5 bridge does.
+
+Step 2:
+Show required Replit Secrets:
+
+- BROKER_PROVIDER=mt5
+- MT5_BRIDGE_TOKEN=<private long token>
+- MT5_ENVIRONMENT=demo
+- MT5_ACCOUNT_ID=<optional>
+- LIVE_TRADING_ALLOWED=false
+
+Step 3:
+Explain how to generate a private bridge token.
+
+Add a button:
+“Generate Example Token”
+
+Important:
+- Do not save generated token automatically.
+- Do not expose existing secret values.
+- Tell user to copy the token into Replit Secrets and into the MT5 EA input.
+- Never print secret values in server logs.
+
+Step 4:
+Explain MT5 install steps:
+
+1. Open MetaTrader 5.
+2. File → Open Data Folder.
+3. Open MQL5 → Experts.
+4. Copy ReplitMT5BridgeEA.mq5 into Experts.
+5. Open MetaEditor.
+6. Compile ReplitMT5BridgeEA.mq5.
+7. Return to MT5.
+8. Attach the EA to a chart.
+9. Enable Algo Trading.
+10. Tools → Options → Expert Advisors.
+11. Allow WebRequest for the Replit app URL.
+12. Add the Replit app base URL.
+13. Paste BridgeToken into the EA inputs.
+14. Keep ReadOnlyMode=true.
+15. Keep AllowOrderExecution=false.
+16. Start the EA.
+
+Step 5:
+Run connection check.
+
+Show live status from:
+
+GET /api/broker/secrets-status
+GET /api/broker/status
+GET /api/broker/connection-check
+GET /api/broker/account
+GET /api/positions/live
+GET /api/orders/live
+
+5. Add bridge status cards
+
+On /mt5-setup, /broker, and /mt5-status show:
+
+- Replit Secrets configured: yes/no
+- Last heartbeat received
+- Bridge connected: yes/no
+- MT5 account detected: yes/no
+- Environment: demo/live/unknown
+- Balance readable: yes/no
+- Equity readable: yes/no
+- Margin readable: yes/no
+- Positions readable: yes/no
+- Orders readable: yes/no
+- Read-only ready: yes/no
+- Live order execution: locked/unlocked
+
+6. Add troubleshooting panel
+
+Show fixes for common problems:
+
+A. No heartbeat:
+- EA not attached to chart
+- Algo Trading disabled
+- WebRequest URL not allowed
+- wrong Replit URL
+- wrong token
+- MT5 terminal closed
+
+B. Secrets missing:
+- Add BROKER_PROVIDER=mt5
+- Add MT5_BRIDGE_TOKEN
+- Add MT5_ENVIRONMENT=demo
+
+C. Account not readable:
+- MT5 not logged into broker
+- EA not running
+- broker connection offline
+- token mismatch
+
+D. WebRequest failing:
+- Replit app URL not added to MT5 WebRequest allowed list
+- wrong endpoint URL
+- HTTPS issue
+- firewall/VPS restriction
+
+7. Keep all order execution locked
+
+Until read-only verification passes, all live order endpoints must return:
+
+{
+  "accepted": false,
+  "reason": "MT5 read-only bridge verification has not passed."
+}
+
+Do not allow demo or live broker order routing yet unless the bridge is connected and account data is readable.
+
+8. Run verification
+
+After implementation, run:
+
+- file existence check
+- ZIP package creation check
+- download route check
+- /mt5-setup route check
+- /api/broker/secrets-status
+- /api/broker/status
+- /api/broker/connection-check
+- /api/live-trading/readiness
+- all 11 safety guards
+
+9. Generate final report
+
+Generate:
+
+MT5 BRIDGE SETUP WIZARD REPORT
+
+Include:
+
+- files created
+- ZIP package path
+- frontend pages updated
+- required secrets
+- current missing secrets
+- current bridge connection status
+- whether heartbeat is waiting
+- whether account data is waiting
+- whether live execution remains locked
+- whether all 11/11 safety guards still pass
+- exact next user action
+
+Hard rules:
+- No real orders.
+- No live order execution.
+- No secret values exposed.
+- No fake broker connection.
+- No bypassing risk governor.
+- No removing kill switch.

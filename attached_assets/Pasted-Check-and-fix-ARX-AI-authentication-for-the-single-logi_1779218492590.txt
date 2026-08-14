@@ -1,0 +1,51 @@
+Check and fix ARX AI authentication for the single-login role-based system.
+
+Important: Do NOT create a separate admin login page. The app should use one normal login screen for all users. Admin/operator access should come from the logged-in user’s backend role and permissions.
+
+Current issue from mobile screenshot:
+- Login page loads correctly.
+- Email used: admin@arx.local
+- Sign-in returns: “Invalid email or password.”
+- This likely means the admin/operator test account is missing, seeded incorrectly, using the wrong password hash, or login is pointing to the wrong database/auth table.
+
+First inspect the existing code before changing anything:
+1. Find the current login/auth route.
+2. Find the user table/model/schema.
+3. Find password hashing/verification logic.
+4. Find any seed scripts or default test users.
+5. Find role/permission checks for admin/operator dashboard.
+6. Confirm whether admin@arx.local exists in the active database.
+7. Confirm whether login reads from the same active database where users are created.
+8. Confirm whether seeded passwords are hashed using the same method used by login verification.
+
+Then fix only what is missing or broken:
+- Keep one login system.
+- Add or repair an idempotent dev/test seed for the admin/operator account.
+- Do not hardcode the admin password in frontend code.
+- Use environment variables for seed credentials if possible:
+  - ADMIN_SEED_EMAIL
+  - ADMIN_SEED_PASSWORD
+- If env vars are missing in development/test, create a clear console warning telling the operator what to set.
+- Ensure the seeded admin user has role: admin or operator.
+- Ensure normal users keep role: user.
+- Ensure new accounts default to Trading Off.
+- Ensure admin/operator controls only appear after backend confirms the role.
+- Protect admin/operator API routes on the backend, not only by hiding buttons in the UI.
+- Make sure regular users cannot access admin routes by manually typing the URL.
+- After successful admin login, route the admin/operator to the normal app with admin controls available, not a separate admin login.
+
+Add or update tests:
+1. Existing admin/operator can log in with valid seeded credentials.
+2. Wrong password fails.
+3. Regular user logs in but cannot access admin/operator routes.
+4. New user defaults to Trading Off.
+5. Admin/operator can access approval toggles, kill switches, and live trading controls.
+6. User cannot enable live trading for themselves.
+7. No secrets or seed passwords leak to client/frontend logs.
+
+Run the test suite after fixes and print a clear summary:
+- auth login tests
+- role-based access tests
+- admin/operator route protection tests
+- trading permission default tests
+- secret leak checks

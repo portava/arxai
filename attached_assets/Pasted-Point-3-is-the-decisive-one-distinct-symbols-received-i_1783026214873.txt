@@ -1,0 +1,23 @@
+Point 3 is the decisive one: distinct symbols received in the last 1h/6h/24h. If that query shows only your chart symbol (and Deriv synthetics) and zero gold/forex mt5_broker rows → CONFIG-ONLY, confirmed by data, and you set the input. If it shows gold rows arriving but erroring → INGESTION BUG, and we do not touch config. That query is the whole ballgame, and it's precisely what I can't see.
+The warning — and this is the one thing I'd underline in red:
+Your command asks the agent to "give a proposed CandleSymbols value, clearly marked as needing broker-symbol confirmation." Good — but let me stress why that caveat is load-bearing: the single most likely way this fix fails is a symbol-name mismatch. The EA does SymbolSelect(sym, true) (line 608/712) — if you type XAUUSD but your broker calls it XAUUSD.r or GOLD or XAUUSD.pro, the select fails silently, no candles push, and it'll look like the fix "didn't work" when actually the name was just wrong. This is the exact "approved but wrong symbol" trap from way back in the engagement. So:
+
+The agent's proposed value is a placeholder, not a paste-ready string.
+Before you set anything, read your broker's exact symbol names from the MT5 Market Watch — right-click Market Watch → "Symbols" → find gold/forex → use the exact string shown, suffix and all.
+That's why your command's point 3 asks it to check "common broker suffix variants (.m, m, .r, .pro, .raw)" — if the agent sees gold rows under XAUUSD.r in the data, that's your real symbol name, and it's gold.
+
+So the sequence, clean:
+
+Run the command → agent queries the candle table for distinct symbols (1h/6h/24h) + checks ingestion logs for errors.
+Read the classification:
+
+CONFIG-ONLY (only chart symbol arriving, backend healthy) → proceed to set the input.
+SYMBOL-NAME (need broker's exact names) → get them from Market Watch first.
+INGESTION BUG (gold posted but rejected) → stop, do not touch config, investigate the backend.
+INCONCLUSIVE (no runtime access) → then you check the EA Inputs tab + Market Watch manually.
+
+
+Only if CONFIG-ONLY or SYMBOL-NAME → set CandleSymbols with your broker's exact symbol strings, reattach the EA, watch the ingestion log for point-4 errors on the new symbols.
+
+My honest expectation: it comes back CONFIG-ONLY (the code evidence is strong, the OANDA/Polygon fallback on gold corroborates it), and the only remaining variable is getting your broker's exact symbol names right. But your instinct to verify against the actual data before changing the live EA is correct — that's the difference between "the code suggests it's config" and "the data confirms gold candles aren't arriving." Don't set the input until the query confirms it.
+Send the command, get the distinct-symbols query result, and bring it back. If it's CONFIG-ONLY, I'll give you the exact MT5 steps and we'll get your broker's real symbol names nailed down before you paste anything — because that name-match is the one place this simple fix can quietly fail.

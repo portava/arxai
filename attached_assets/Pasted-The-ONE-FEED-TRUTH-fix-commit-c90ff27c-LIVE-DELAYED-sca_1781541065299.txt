@@ -1,0 +1,15 @@
+The ONE FEED TRUTH fix (commit c90ff27c, LIVE_DELAYED / scanner-suppression / shared feed verdict) reports as MERGED but is NOT visibly running in the app: scanner still shows confident BUY on delayed feeds, the LIVE_DELAYED wording never appears on any market, on any timeframe. This looks like merged code that isn't actually deployed/built/restarted. Diagnose WHY — read-only, do NOT write feature code. Report each item with evidence.
+
+1. IS THE CODE ON MAIN: `git log --oneline -12 main` — is c90ff27c (ONE FEED TRUTH) actually present? And is the currently-deployed/running checkout on that same commit (`git rev-parse HEAD`, `git status`)? Report whether HEAD == the merged commit.
+
+2. IS THE BACKEND RUNNING THE NEW CODE: confirm the LIVE_DELAYED logic exists in the running source — grep the deployed marketScanner.ts for "LIVE_DELAYED" and liveCommandPipeline.ts / the floor for the tri-state verdict. Then check: was the api-server process restarted AFTER the merge? Check process start time vs merge time. If it's serving pre-merge code, that's the bug.
+
+3. IS THE FRONTEND BUNDLE REBUILT: the scanner card + Ruby card LIVE_DELAYED rendering is frontend. Was the trading-dashboard rebuilt after the merge? Check the built bundle / dist timestamp vs merge time. A stale bundle = browser serves old UI even though source is updated. NOTE: a recent post-merge setup reportedly FAILED ("Failed to update environment") — check whether that left the build/deploy in a half-applied state.
+
+4. RUNTIME PROOF: mint a temp session, hit /api/chart/feed-status and the scanner endpoint for V75 right now. Does the BACKEND response contain LIVE_DELAYED / the new verdict when the feed is delayed, or the old LIVE_FEED/STALE_FEED only? This tells us if the backend logic is live regardless of the UI.
+   - If the backend returns the new verdict but the UI doesn't show it → frontend bundle is stale (rebuild/redeploy frontend).
+   - If the backend returns only the old values → api-server is running stale code (restart) OR the merge didn't actually change the running checkout.
+
+5. THE FAILED POST-MERGE SETUP: find the post-merge setup that failed on a recent task and report what it left in a bad state — did it skip the build, the restart, or the migration? That failure is the prime suspect for why merged code isn't running.
+
+Report: is c90ff27c on main and is HEAD on it; is the backend serving the new verdict at runtime (yes/no with the actual response); is the frontend bundle fresh or stale; and what the failed post-merge setup left broken. Then state the ONE most likely reason the fix isn't running, and the exact action to make it run (restart api-server / rebuild+redeploy frontend / re-run post-merge setup) — but do NOT execute it yet; report first.

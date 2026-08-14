@@ -1,0 +1,442 @@
+FULL SYSTEM LIVE TESTING UNLOCK
+
+Goal:
+Open the entire trading app for complete system testing using both demo trading and live-money trading.
+
+The user wants to test:
+- Full app navigation
+- Demo/manual trading
+- Demo/AI trading
+- Live/manual trading
+- Live/AI-assisted trading
+- Live/AI-autopilot testing
+- Risk governor
+- Readiness center
+- Broker connection
+- Trade journal
+- Calendar
+- AI decision loop
+- Learning loop
+- Audit logs
+- Emergency controls
+
+Important:
+Do not keep the app artificially locked from testing.
+Do not hide live trading pages.
+Do not block access to live-money testing once safety arming is completed.
+Do not remove safety controls.
+Do not remove the kill switch.
+Do not allow unlimited uncapped live trading.
+
+Create a FULL LIVE TEST MODE where every system can be tested with real broker execution under controlled limits.
+
+1. Unlock All App Sections
+
+Make every major section visible and accessible:
+
+- Main Dashboard
+- Trading Command Center
+- AI Trading Assistant
+- Manual Trade Ticket
+- Demo Trading
+- Paper Trading
+- Live Trading
+- AI Autopilot
+- AI Manual Approval Queue
+- Broker Connection
+- MT5 Status
+- Risk Governor
+- Readiness Center
+- Notifications
+- Alerts
+- Trade Journal
+- Daily P/L Calendar
+- Winning/Losing Day Calendar
+- Strategy Lab
+- Learning Loop
+- AI Decision Logs
+- Live Orders
+- Live Positions
+- Demo Orders
+- Demo Positions
+- Audit Vault
+- Safety Logs
+- Kill Switch
+- Settings
+- Admin/System Health
+
+No blank screens.
+No hidden routes.
+No dead-end navigation.
+No page should crash because data is empty.
+
+If a page has no data, show an empty state.
+If an endpoint fails, show an error card and retry button.
+
+2. Create Trading Mode Control Center
+
+Create a central mode system with these modes:
+
+OFF
+READ_ONLY
+DEMO_MANUAL
+DEMO_AI_ASSIST
+DEMO_AI_AUTO
+LIVE_MANUAL
+LIVE_AI_ASSIST
+LIVE_AI_AUTO_TEST
+
+The user should be able to switch modes from the frontend.
+
+Each mode must clearly show:
+
+- current mode
+- broker account type
+- demo or live
+- real-money risk active: yes/no
+- AI allowed: yes/no
+- manual trading allowed: yes/no
+- auto-execution allowed: yes/no
+- max trade size
+- max open positions
+- daily loss limit
+- kill switch state
+
+3. Update Permission System
+
+Replace the old single canPlaceTrades logic with separated permissions:
+
+{
+  canViewApp: true,
+  canUseDemoManual: boolean,
+  canUseDemoAI: boolean,
+  canUseLiveManual: boolean,
+  canUseLiveAIAssist: boolean,
+  canUseLiveAIAutoTest: boolean,
+  liveTradingDisabled: boolean,
+  liveTradingArmed: boolean,
+  currentTradingMode: string,
+  emergencyStopActive: boolean,
+  blockers: [],
+  warnings: []
+}
+
+Live trading should not remain globally disabled once the user arms live test mode correctly.
+
+4. Live Trading Arming Flow
+
+Create:
+
+POST /api/live-trading/arm
+
+Required body:
+
+{
+  confirmationPhrase: "I ACCEPT REAL MONEY RISK",
+  requestedMode: "LIVE_MANUAL" | "LIVE_AI_ASSIST" | "LIVE_AI_AUTO_TEST",
+  maxLossPerTradeUsd: number,
+  maxDailyLossUsd: number,
+  maxLotSize: number,
+  maxOpenPositions: number
+}
+
+Rules:
+
+Allow live test arming if:
+
+- user is admin
+- confirmation phrase is exact
+- broker connection is healthy
+- broker account is detected
+- account equity can be read
+- 0 unacknowledged CRITICAL alerts
+- emergency kill switch is inactive
+- risk limits are set
+- audit logging is active
+- order guard is active
+- stop-loss requirement is active
+
+Do not require another paper session before allowing live testing if the user explicitly chooses live test mode.
+
+But show this warning in the UI:
+
+“Live testing uses real money. Paper testing is recommended first, but admin override has enabled controlled live testing.”
+
+5. Live Manual Trading
+
+Enable a live manual trade ticket.
+
+User can choose:
+
+- symbol
+- buy/sell
+- lot size
+- stop loss
+- take profit
+- order type
+- market/limit/stop order
+- optional trade note
+
+Before submit, show:
+
+- estimated risk
+- max loss if stop is hit
+- spread
+- account equity
+- margin impact
+- daily loss remaining
+- confirmation checkbox
+
+The submit button should place a real broker order only through:
+
+placeLiveOrderGuarded()
+
+6. Live AI Assist Mode
+
+Enable AI to scan and generate live trade ideas.
+
+AI must produce a trade card:
+
+{
+  symbol,
+  direction,
+  setup,
+  entry,
+  stopLoss,
+  takeProfit,
+  lotSize,
+  confidenceScore,
+  riskScore,
+  riskRewardRatio,
+  maxLossUsd,
+  maxLossPercent,
+  reasonForTrade,
+  invalidationReason,
+  marketCondition,
+  approvalRequired: true
+}
+
+The user must manually approve before execution.
+
+Approval expires after 60 seconds.
+
+7. Live AI Auto Test Mode
+
+Enable AI autopilot live testing, but only under controlled live-test limits.
+
+Default limits:
+
+- max lot size: 0.01
+- max open live positions: 1
+- max live AI trades per day: 3
+- max live AI trades per session: 1
+- max loss per trade: user-defined hard cap
+- max daily loss: user-defined hard cap
+- cooldown after trade: 15 minutes minimum
+- stop after 1 loss unless user manually restarts
+- stop after daily loss cap
+- stop if broker disconnects
+- stop if spread is too high
+- stop if risk governor blocks
+- stop if confidence is below threshold
+
+AI auto test mode must have:
+
+- Start AI Live Test button
+- Stop AI Live Test button
+- Pause button
+- Emergency Kill Switch button
+- visible countdown/cooldown timer
+- visible next allowed trade time
+- live decision stream
+
+8. Guarded Live Order Router
+
+Create one protected live execution function:
+
+placeLiveOrderGuarded(order)
+
+Every live order, manual or AI, must go through it.
+
+Checks required:
+
+- live trading armed
+- current mode allows live execution
+- emergency stop inactive
+- broker healthy
+- account equity readable
+- order idempotency key exists
+- duplicate order not found
+- symbol allowed
+- lot size within cap
+- max open position rule passed
+- max daily loss rule passed
+- max per-trade loss rule passed
+- stop loss exists
+- take profit or exit logic exists
+- spread acceptable
+- risk governor approves
+- audit logger active
+
+If any check fails:
+- reject order
+- log exact reason
+- show frontend error
+- do not submit to broker
+
+9. Kill Switch
+
+Create:
+
+POST /api/live-trading/kill-switch
+
+When pressed:
+
+- cancel pending orders if broker supports it
+- block new live orders
+- stop AI autopilot
+- set emergencyStopActive true
+- set liveTradingArmed false
+- return system to READ_ONLY
+- log everything
+
+Create:
+
+POST /api/live-trading/disarm
+
+This should safely stop live testing and return the app to READ_ONLY or DEMO mode.
+
+10. Broker/Demo Separation
+
+Keep demo and live completely separated.
+
+Use separate identifiers:
+
+- DEMO account
+- LIVE account
+- PAPER/internal simulator
+
+Never write demo trades into live trade tables.
+Never write paper trades into live trade tables.
+Never let AI confuse paper/demo/live execution.
+
+Every order must include:
+
+executionEnvironment: "PAPER" | "DEMO" | "LIVE"
+
+11. Frontend Global Safety Header
+
+Show on every page:
+
+- Mode
+- Demo Active: yes/no
+- Live Money Active: yes/no
+- AI Active: yes/no
+- Manual Trading Active: yes/no
+- AI Autopilot Active: yes/no
+- Broker Status
+- Daily P/L
+- Daily Loss Remaining
+- Open Positions
+- Kill Switch Status
+
+If live money is active, show a bold red banner:
+
+“LIVE MONEY MODE ACTIVE — REAL LOSSES POSSIBLE”
+
+12. Build Full Testing Dashboard
+
+Create a testing page:
+
+/testing-control-center
+
+Sections:
+
+- App route health
+- API health
+- Broker health
+- Demo trade test
+- Live manual test
+- Live AI assist test
+- Live AI auto test
+- Risk governor test
+- Kill switch test
+- Audit log test
+- Journal/calendar test
+- Learning loop test
+
+Each section should have:
+
+- Run Test button
+- PASS/FAIL result
+- error details
+- timestamp
+- log link
+
+13. Required API Endpoints
+
+Create or update:
+
+GET /api/trading/modes
+POST /api/trading/mode
+GET /api/live-trading/readiness
+POST /api/live-trading/arm
+POST /api/live-trading/disarm
+POST /api/live-trading/kill-switch
+GET /api/broker/status
+GET /api/broker/account
+GET /api/orders/live
+GET /api/positions/live
+POST /api/orders/manual-live
+POST /api/orders/demo
+POST /api/ai-trading/start
+POST /api/ai-trading/stop
+GET /api/ai-trading/status
+GET /api/ai-trading/decisions
+GET /api/risk-governor/status
+GET /api/audit/live
+GET /api/app/routes/status
+GET /api/testing/status
+
+14. Final Verification
+
+After implementation, run:
+
+- full frontend route smoke test
+- app route health check
+- broker connection test
+- demo manual trade dry run
+- demo AI trade dry run
+- live manual trade readiness check
+- live AI assist readiness check
+- live AI auto test readiness check
+- risk governor test
+- kill switch test
+- audit log test
+- permission system test
+
+Expected final state:
+
+- Entire app is open and navigable
+- Demo manual trading works
+- Demo AI trading works
+- Live manual trading can be armed and tested
+- Live AI assist can be armed and tested
+- Live AI auto test can be armed and tested
+- All live orders go through guarded execution
+- Kill switch works
+- Risk limits are enforced
+- Audit logs capture every action
+- No blank pages
+- No hidden live testing screens
+
+Hard rules:
+- Do not fake pass results.
+- Do not silently place trades.
+- Do not remove the kill switch.
+- Do not allow live trades without stop loss.
+- Do not allow unlimited live AI trading.
+- Do not ignore max loss limits.
+- Do not mix demo, paper, and live execution records.
+- Do not hide live testing from the UI.
+- Open the full system for controlled live testing now.

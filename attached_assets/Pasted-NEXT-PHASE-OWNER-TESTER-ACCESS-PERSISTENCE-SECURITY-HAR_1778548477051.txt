@@ -1,0 +1,477 @@
+NEXT PHASE: OWNER TESTER ACCESS + PERSISTENCE + SECURITY HARDENING
+
+Goal:
+Secure the app without restricting the owner/tester experience.
+
+The user wants full tester access:
+- all pages open
+- all demo systems open
+- all live tester workflows open
+- live chart active
+- AI tools active
+- MT5 deferred until later
+
+Now add:
+- owner/tester role control
+- persistent settings
+- persistent simulator/tester data
+- safer API protection
+- backup/export tools
+- session restore
+- security audit
+- full tester mode protected from public access
+
+Important:
+Do not block the owner/tester from accessing the full app.
+Do not hide tester workflows from owner/admin.
+Do not fake MT5 connection.
+Do not place real broker orders.
+Do not claim real broker execution.
+Do not remove full tester access.
+Do not remove risk governor or kill switch UI.
+
+==================================================
+1. CREATE USER ACCESS ROLES
+==================================================
+
+Create role system:
+
+- OWNER
+- ADMIN
+- TESTER
+- VIEWER
+- LOCKED
+
+Role meanings:
+
+OWNER:
+- full access to everything
+- can enable full tester access
+- can reset data
+- can manage risk settings
+- can export reports
+- can configure MT5 later
+
+ADMIN:
+- full testing access
+- cannot expose secrets
+- cannot disable audit logs
+
+TESTER:
+- can use simulator/demo/live-intent workflows
+- cannot change secrets
+- cannot bypass risk governor
+- cannot enable real broker execution
+
+VIEWER:
+- read-only access
+- can view dashboard, chart, journal, reports
+
+LOCKED:
+- no trading access
+- show access required screen
+
+Default current user should be OWNER in development/test mode.
+
+==================================================
+2. PROTECT FULL TESTER ACCESS
+==================================================
+
+Create setting:
+
+fullTesterAccessEnabled = true
+
+But only OWNER / ADMIN can activate it.
+
+Full tester access should allow:
+- all routes visible
+- all tester workflows open
+- live manual tester mode
+- live AI assist tester mode
+- live AI auto tester mode
+- live intent queue
+- simulator trading
+- AI scanner
+- autopilot simulator
+- shadow mode
+- forward testing
+
+But it should not mean:
+- real broker execution
+- MT5 fake connection
+- bypassed risk governor
+- disabled kill switch
+- hidden audit logs
+
+Show global banner:
+
+“OWNER TESTER ACCESS ACTIVE — all workflows are open for testing. Real broker execution requires MT5 bridge connection.”
+
+==================================================
+3. ADD AUTH / SESSION LAYER
+==================================================
+
+Use existing auth if already present.
+
+If no auth exists, add a simple development-safe owner session system that can later be replaced with production auth.
+
+Required behavior:
+- user session persists across refresh
+- role loads on app start
+- frontend and backend agree on role
+- unauthorized users cannot call protected mutation endpoints
+- owner cannot accidentally be locked out in development mode
+
+Create endpoints:
+
+GET /api/auth/session
+POST /api/auth/dev-owner-login
+POST /api/auth/logout
+GET /api/auth/permissions
+
+Do not expose secrets.
+Do not store private tokens in frontend localStorage.
+
+==================================================
+4. CREATE PERMISSION MATRIX
+==================================================
+
+Create:
+
+/admin/permissions
+
+Show a permission table for each role:
+
+- view routes
+- use simulator
+- create live tester intent
+- run AI autopilot simulator
+- run shadow mode
+- run backtesting
+- edit risk settings
+- clear test data
+- export reports
+- configure MT5
+- arm future broker execution
+
+Permission response should include:
+
+{
+  "role": "OWNER",
+  "fullTesterAccess": true,
+  "canViewAllRoutes": true,
+  "canUseSimulator": true,
+  "canUseLiveTesterWorkflows": true,
+  "canSubmitLiveIntent": true,
+  "canExecuteRealBrokerOrder": false,
+  "canConfigureMT5": true,
+  "mt5Connected": false,
+  "mt5Deferred": true
+}
+
+==================================================
+5. PERSIST ALL IMPORTANT DATA
+==================================================
+
+Make sure these persist after refresh/restart:
+
+- user role
+- tester mode settings
+- selected trading symbol
+- trading mode
+- risk profile
+- simulator balance
+- simulator trades
+- orders
+- positions
+- P/L history
+- journal entries
+- calendar entries
+- AI decisions
+- strategy lab strategies
+- backtesting results
+- market replay results
+- scanner opportunities
+- watchlist items
+- alerts
+- live intents
+- audit logs
+- shadow mode decisions
+- forward testing results
+- strategy promotion status
+- AI readiness score
+- onboarding progress
+- feature announcement acknowledgements
+
+Do not rely only on in-memory state for core test results.
+
+==================================================
+6. CREATE DATA MANAGEMENT PAGE
+==================================================
+
+Create:
+
+/admin/data-management
+
+Sections:
+
+- database status
+- stored records count
+- simulator records
+- live tester intents
+- AI decisions
+- audit logs
+- journal records
+- calendar records
+- strategy records
+- shadow records
+- export tools
+- reset tools
+
+Buttons:
+
+- Export Full Tester Report
+- Export Journal CSV
+- Export Trade History CSV
+- Export AI Decisions JSON
+- Export Audit Log JSON
+- Export Strategy Results JSON
+- Clear Simulator Data
+- Clear Live Tester Intents
+- Clear Shadow Results
+- Clear All Test Data
+
+Danger actions require confirmation phrase:
+
+“CONFIRM RESET TEST DATA”
+
+Do not clear MT5 or future broker records.
+
+==================================================
+7. ADD BACKUP + EXPORT SYSTEM
+==================================================
+
+Create export endpoints:
+
+GET /api/export/full-system-report
+GET /api/export/trades.csv
+GET /api/export/journal.csv
+GET /api/export/ai-decisions.json
+GET /api/export/audit.json
+GET /api/export/strategies.json
+GET /api/export/risk-events.json
+GET /api/export/shadow-results.json
+
+Exports should include environment labels:
+
+- PAPER
+- DEMO_SIMULATOR
+- LIVE_TESTER_INTENT
+- SHADOW
+- FORWARD_TEST
+- FUTURE_MT5_DEMO
+- FUTURE_MT5_LIVE
+
+Do not mix environments.
+
+==================================================
+8. ADD AUDIT HARDENING
+==================================================
+
+Audit log must record:
+
+- login
+- logout
+- role loaded
+- permission denied
+- tester mode enabled
+- tester mode disabled
+- risk profile changed
+- trade intent created
+- simulator trade submitted
+- AI decision generated
+- live intent created
+- reset requested
+- export generated
+- MT5 setup viewed
+- MT5 connection check
+- kill switch pressed
+- autopilot started/stopped
+- shadow mode started/stopped
+
+Audit event fields:
+
+- timestamp
+- userId
+- role
+- action
+- route
+- environment
+- entityId
+- result
+- reason
+- ip/session if available
+
+==================================================
+9. SECURE API MUTATIONS
+==================================================
+
+Protect mutation endpoints:
+
+- order creation
+- simulator execution
+- live intent creation
+- risk profile update
+- autopilot start
+- shadow mode start
+- data reset
+- export generation
+- MT5 config
+- kill switch
+- onboarding reset
+- feature announcement reset
+
+Every mutation must check:
+- session
+- role
+- permission
+- audit log available
+- environment separation
+
+If denied, return:
+
+{
+  "allowed": false,
+  "reason": "Permission denied for this role."
+}
+
+==================================================
+10. ADD SESSION RESTORE
+==================================================
+
+When user refreshes app:
+
+Restore:
+- role
+- full tester access
+- selected symbol
+- current mode
+- simulator status
+- latest risk profile
+- open simulator positions
+- live intent count
+- latest AI/autopilot state
+- onboarding state
+
+No page should reset into broken or empty state unless data is truly empty.
+
+==================================================
+11. ADD SECURITY STATUS PANEL
+==================================================
+
+Create:
+
+/admin/security-status
+
+Show:
+
+- auth status
+- current role
+- permission matrix loaded
+- protected endpoints count
+- audit logging active
+- secret values hidden
+- MT5 token hidden
+- broker execution locked
+- full tester access active
+- risk governor active
+- kill switch UI active
+- dangerous reset actions protected
+
+==================================================
+12. UPDATE DASHBOARD
+==================================================
+
+Add small admin/tester cards:
+
+- Current Role
+- Tester Access Status
+- Data Persistence Status
+- Audit Log Status
+- Security Status
+- Export Reports
+- MT5 Deferred Status
+
+==================================================
+13. UPDATE TESTING CONTROL CENTER
+==================================================
+
+Add tests:
+
+- session restore test
+- owner permission test
+- tester permission test
+- viewer restriction test
+- protected API test
+- data persistence test
+- export test
+- reset confirmation test
+- audit hardening test
+- security status test
+- MT5 secret hidden test
+
+==================================================
+14. FINAL TEST
+==================================================
+
+Run:
+
+- route smoke test
+- auth/session test
+- role loading test
+- permission matrix test
+- full tester access owner test
+- viewer restriction test
+- protected mutation test
+- persistence after refresh test
+- simulator data persistence test
+- live intent persistence test
+- audit hardening test
+- export endpoints test
+- reset protection test
+- security status test
+- environment separation test
+- MT5 deferred honesty test
+
+Generate:
+
+OWNER TESTER ACCESS + SECURITY HARDENING REPORT
+
+Include:
+
+- Role system active yes/no
+- Owner full tester access active yes/no
+- Permission matrix active yes/no
+- Auth/session layer active yes/no
+- Persistence active yes/no
+- Data management page active yes/no
+- Export system active yes/no
+- Audit hardening active yes/no
+- Protected API mutations active yes/no
+- Session restore active yes/no
+- Security status panel active yes/no
+- Dashboard updated yes/no
+- Testing Control Center updated yes/no
+- MT5 still deferred yes/no
+- Real broker execution still not faked yes/no
+- Owner/tester not blocked yes/no
+
+Hard rules:
+- Do not block OWNER from full tester access.
+- Do not expose secret values.
+- Do not fake MT5 connection.
+- Do not place real broker orders.
+- Do not claim broker fills.
+- Do not remove risk governor.
+- Do not remove kill switch UI.
+- Do not mix simulator, tester intent, shadow, and future broker records.

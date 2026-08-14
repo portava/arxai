@@ -1,0 +1,212 @@
+Proceed with Phase 4 + Phase 5 now.
+
+Current confirmed state:
+
+* Phase 3 user-facing cleanup passed.
+* Phase 10 safety-lock rename passed.
+* typecheck PASS
+* ci:guards 24/24
+* test:live-phaseB 20/20
+* test:demo-verify 13/13
+* test:live-pass-path PASS
+* arx_live_commands stayed 25 → 25, delta 0
+* no live order was placed
+* live-execution lock behavior stayed unchanged
+* demo path stayed unchanged
+* DB schema stayed unchanged
+* no user-facing Paper Trading product text was reintroduced
+
+Scope for this turn:
+Remove Paper Trading from auth, session, permissions, and production backend mode modeling.
+
+Do not:
+
+* place a live trade
+* delete database rows
+* migrate trade history
+* delete live audit history
+* delete real broker demo history
+* alter DB schema yet
+* weaken live-execution safety
+* break Live or Demo readiness
+* reintroduce Paper as a hidden fallback
+
+PHASE 4 — Auth/session/permissions cleanup
+
+Remove Paper Trading from all active auth/session/permission paths.
+
+Check and clean:
+
+* login flow
+* invite acceptance flow
+* onboarding flow
+* session payload
+* JWT/session claims
+* user profile/account resolver
+* account status resolver
+* admin role resolver
+* user permission resolver
+* trade permission middleware
+* route guards
+* protected routes
+* feature flags
+* environment gates
+* backend middleware
+* frontend auth context
+* role-based access helpers
+* account mode helpers
+* invite code logic
+* admin approval logic
+
+Remove/replace active production references like:
+
+* canTradePaper
+* paperApproved
+* paperEnabled
+* paperModeAccess
+* paperAuthRequired
+* requiresPaperGate
+* paperTradingAllowed
+* isPaperUser
+* paperSession
+* paperToken
+* paperBridgeEnabled
+* paperApproval
+* paperPermission
+* paperGate
+* paperInviteState
+
+Production auth/session should only understand:
+
+* DEMO access/status
+* LIVE access/status
+* admin live approval
+* live freeze/unfreeze
+* allocation/risk controls
+
+Important:
+If old Paper rows still exist in the database, do not migrate them yet in this phase. Phase 9 handles database classification and archive/migration.
+
+For now:
+
+* Do not let Paper appear in session/user context.
+* Do not let Paper act as an active permission.
+* Do not let Paper be an active auth gate.
+* Do not let Paper be an active route requirement.
+* If old PAPER values are encountered during runtime before Phase 9, normalize safely to DEMO for display/access purposes only.
+* Never normalize old PAPER to LIVE.
+* Do not downgrade or break existing Live-approved/admin users.
+* Do not break Demo users.
+
+Acceptance for Phase 4:
+
+* Auth/session never emits Paper as a production mode.
+* API/user context never returns Paper as a production state.
+* Route guards do not check Paper as an active permission.
+* Paper is not a permission.
+* Paper is not an approval path.
+* Demo still works.
+* Live approval still works.
+* No live command rows are inserted.
+
+PHASE 5 — Backend production mode model cleanup
+
+Production account/trading mode should only allow:
+
+* DEMO
+* LIVE
+
+Update application-level mode modeling:
+
+* TypeScript types
+* shared types
+* Zod schemas
+* backend validators
+* frontend validators
+* account mode constants
+* execution mode constants
+* trade mode constants
+* API request contracts
+* API response contracts
+* frontend mode maps
+* backend mode maps
+* stores/reducers/context providers
+* test factories
+
+Remove PAPER from active production unions/enums where safe.
+
+Do not alter the database enum/schema in this turn unless it is proven completely safe and does not require row migration. Prefer to defer DB enum/schema changes to Phase 9.
+
+API behavior:
+If a request sends:
+
+* accountMode=paper
+* executionMode=paper
+* tradeMode=paper
+* mode=paper
+
+Return a clean validation error:
+“Paper Trading has been removed. Use Demo or Live.”
+
+Do not:
+
+* silently map Paper requests to Live
+* allow Paper as a runtime fallback
+* leave Paper as a hidden backend mode
+* leave Paper in active API contracts
+* break generated clients without updating them safely
+
+If generated OpenAPI/codegen still contains legacy Paper values:
+
+* update the source contract if safe
+* regenerate if needed
+* retest
+* if removal causes unsafe breakage, create a compatibility shim that rejects Paper at runtime while marking the generated legacy value as deprecated until Phase 9/11
+* do not leave it as active behavior
+
+Optional Phase 10 follow-up:
+The architect suggested adopting buildLiveExecutionLockSnapshot() at three response construction sites to prevent future field drift. Do this only if it is a true behavior-preserving cleanup. If it creates risk, defer it and document why.
+
+Retesting required after Phase 4/5:
+
+* pnpm run typecheck
+* pnpm run ci:guards
+* pnpm –filter @workspace/scripts run test:live-phaseB
+* pnpm –filter @workspace/scripts run test:demo-verify
+* pnpm –filter @workspace/scripts run test:live-pass-path
+* test:account-mode if available
+* test:master-bridge if affected
+* auth/session tests
+* API validation tests
+* affected frontend route/context tests
+
+Also verify:
+
+* arx_live_commands count before/after, delta must be 0
+* no live order was placed
+* Live readiness still works
+* Demo still works
+* admin live approval still works
+* allocation/freeze/kill-switch behavior is unchanged
+* no user-facing Paper Trading text returns
+* no Paper auth/session/permission path remains active
+* API rejects Paper as a production mode
+
+If something breaks:
+Do not ignore it and do not revert the whole cleanup. Identify the exact dependency and find a safer workaround that still removes Paper from active auth/backend mode behavior without breaking the app.
+
+Final output for this turn:
+
+1. Files changed
+2. Auth/session Paper references removed
+3. Permission/gate Paper references removed
+4. Backend mode model changes
+5. API validation changes
+6. Any compatibility shim left and why
+7. Any generated type/codegen changes
+8. Tests run and results
+9. arx_live_commands before/after count
+10. Confirmation no live order was placed
+11. Confirmation Demo still works
+12. Confirmation Live readiness still works
+13. Confirmation Paper is no longer active in auth/session/backend production modes

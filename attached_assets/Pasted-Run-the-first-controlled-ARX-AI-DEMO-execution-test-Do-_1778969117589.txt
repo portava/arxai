@@ -1,0 +1,94 @@
+Run the first controlled ARX AI DEMO execution test.
+
+Do not place any live trades.
+Do not enable Live Trading.
+Do not use a live MT5 account.
+Do not expose any token or secret.
+
+Goal:
+Prove that the full Phase 3 system can route one tiny broker DEMO order from app/backend → command queue → MT5 EA → demo account execution → audit log.
+
+Before running:
+1. Confirm current platform mode.
+2. Confirm Admin Trading Control page exists.
+3. Confirm correct EA token type:
+   - per-user bridge token or global MT5_BRIDGE_TOKEN
+4. Fix any documentation mismatch without printing full tokens.
+5. Confirm user 4 / andraie.co@gmail.com has a demo MT5 connection.
+6. Confirm accountType is demo.
+7. Confirm command polling is 200.
+8. Confirm heartbeat, sync-account, sync-positions are 200.
+9. Confirm emergency stop is OFF.
+10. Confirm user 4 is demo-enabled and not suspended.
+11. Confirm risk limits allow a tiny 0.01 lot demo test.
+
+Set up demo mode:
+1. Set platform mode to Demo Trading.
+2. Keep Live Trading disabled.
+3. Make sure live orders are rejected.
+4. Make sure demo commands cannot route to live accounts.
+
+Demo test order:
+Create one tiny test demo order for user 4:
+- mode: DEMO
+- symbol: EURUSD or the safest available demo symbol from the connected MT5 account
+- side: BUY
+- lot_size: 0.01
+- order_type: MARKET
+- stop_loss: optional only if valid for broker rules
+- take_profit: optional only if valid for broker rules
+- expires_at: short TTL
+- confirmedByUser: true for this demo test only
+
+Execution verification:
+Confirm:
+1. Backend guard chain approved the demo order.
+2. Trade command was inserted into the queue.
+3. MT5 EA polled and received the command.
+4. EA accepted the command only because:
+   - AllowOrderExecution=true
+   - TradingMode="DEMO"
+   - account type is demo
+   - command is not expired
+   - command is not duplicate
+   - risk check passed
+5. EA executed the order on the demo MT5 account.
+6. No live account received any command.
+7. trade_command_audit_log recorded:
+   - requested
+   - approved
+   - queued
+   - polled
+   - executed or rejected with reason
+8. Dashboard reflects the updated demo position/order if that UI is wired.
+9. Journal/calendar update if connected; if not connected, report it as a follow-up.
+10. Logs show no secrets.
+
+Also run negative tests:
+1. Same command duplicated → rejected.
+2. Expired command → rejected.
+3. Demo command on live account → rejected.
+4. Live command while platform is Demo → rejected.
+5. Oversized lot → rejected.
+6. Emergency stop ON → rejected.
+7. Suspended user → rejected.
+8. Wrong token → rejected.
+
+Final report:
+Return:
+- PASS or FAIL
+- current platform mode
+- correct EA token type
+- demo account detected yes/no
+- EA compile status
+- command polling status
+- heartbeat status
+- sync-account status
+- sync-positions status
+- demo order status
+- MT5 ticket/order id if demo executed
+- audit log status
+- negative tests passed
+- remaining blockers
+- exact MT5 EA settings I should use
+- exact admin settings I should use

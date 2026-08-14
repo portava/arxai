@@ -1,0 +1,63 @@
+Fix Ruby voice behavior now.
+
+Current problem:
+Whenever Ruby starts speaking, she stops after a couple seconds. The auto-listen loop appears to be interrupting Ruby’s own speech output or restarting the microphone while Ruby is still talking.
+
+Required change:
+Turn OFF Ruby auto-listen for now.
+
+Ruby should no longer automatically listen continuously when the chat is open.
+Ruby should no longer restart listening after she responds.
+Ruby should no longer interrupt herself while speaking.
+Ruby should no longer use wake/listen loops, silence detection loops, or auto mic restart behavior in the active UI.
+
+For now, leave only manual voice message recording:
+
+1. User taps/holds the microphone button.
+2. App records the user’s voice.
+3. User stops recording.
+4. App sends the recorded voice message to Ruby.
+5. Ruby transcribes/understands the message.
+6. Ruby responds in text and/or speech.
+7. Ruby does NOT automatically start listening again after responding.
+
+Important behavior:
+- Ruby speech playback must complete fully unless the user manually stops it.
+- The microphone must stay inactive while Ruby is speaking.
+- Do not allow speech output and mic listening to fight each other.
+- Add a clear state lock:
+  - recording_user_voice
+  - processing_voice_message
+  - ruby_speaking
+  - idle
+- When state is ruby_speaking, block auto-listen, block mic restart, and block recorder activation unless the user manually taps stop/cancel first.
+- When Ruby finishes speaking, return to idle, not auto-listen.
+
+UI requirements:
+- Keep the mic button visible for manual recording.
+- Remove or disable any “auto listen,” “always listening,” “hands-free listening,” or continuous voice mode toggle from the active user flow for now.
+- If the toggle still exists internally, force it OFF by default and prevent it from enabling until we intentionally rebuild the feature later.
+- Show simple user-facing labels:
+  - “Tap to record”
+  - “Recording…”
+  - “Sending voice message…”
+  - “Ruby is speaking…”
+
+Do not remove Ruby voice response.
+Only remove/disable automatic listening.
+
+Test requirements:
+- Send a voice message manually.
+- Confirm Ruby receives it.
+- Confirm Ruby responds.
+- Confirm Ruby’s spoken response does not cut off after a few seconds.
+- Confirm the mic does not auto-reopen while Ruby speaks.
+- Confirm after Ruby finishes speaking, the system returns to idle.
+- Confirm normal typed chat still works.
+- Confirm no console loop or repeated mic permission prompt occurs.
+
+Deliver proof:
+- files changed
+- which auto-listen hooks/listeners were disabled
+- before/after voice state flow
+- test result showing Ruby can finish a spoken response without interruption

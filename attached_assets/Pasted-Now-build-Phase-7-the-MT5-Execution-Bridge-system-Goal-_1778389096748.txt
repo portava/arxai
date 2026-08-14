@@ -1,0 +1,172 @@
+Now build Phase 7: the MT5 Execution Bridge system.
+
+Goal:
+Create the backend structure that allows the web app to send OPEN, CLOSE, and MODIFY commands to MT5 through a secure bridge.
+
+Important:
+Do not execute live trades yet.
+Build mock execution first.
+Live mode must stay locked.
+
+Create folders:
+
+/server/mt5
+/server/mt5/bridge
+/server/mt5/security
+/server/mt5/logs
+
+Create files:
+
+1. /server/mt5/types.ts
+
+Define:
+
+TradeCommand:
+- OPEN
+- CLOSE
+- MODIFY
+- CLOSE_ALL
+- HEARTBEAT
+- SYNC_ACCOUNT
+- SYNC_POSITIONS
+
+TradeDirection:
+- BUY
+- SELL
+
+OrderType:
+- MARKET
+- LIMIT
+- STOP
+
+MT5TradePayload:
+{
+  apiKey: string;
+  command: TradeCommand;
+  symbol: string;
+  direction?: TradeDirection;
+  lot?: number;
+  entryType?: OrderType;
+  entry?: number;
+  stopLoss?: number;
+  takeProfit?: number;
+  ticket?: string;
+  magicNumber?: number;
+  comment?: string;
+  strategy?: string;
+  confidence?: number;
+}
+
+2. /server/mt5/security/bridgeAuth.ts
+
+Create API key validation.
+
+Rules:
+- every MT5 bridge request must include apiKey
+- reject missing apiKey
+- reject invalid apiKey
+- log failed attempts
+- keep API key in environment variable MT5_BRIDGE_API_KEY
+
+3. /server/mt5/bridge/commandQueue.ts
+
+Create an in-memory command queue.
+
+Functions:
+- addCommand()
+- getPendingCommands()
+- markCommandCompleted()
+- markCommandFailed()
+- clearQueue()
+- getQueueStatus()
+
+Each command should include:
+- id
+- command
+- payload
+- status: pending, sent, completed, failed
+- createdAt
+- completedAt
+- error
+
+4. /server/mt5/bridge/mt5Routes.ts
+
+Create routes:
+
+GET /api/mt5/status
+Returns:
+{
+ connected,
+ lastHeartbeat,
+ mode,
+ pendingCommands,
+ openPositions,
+ accountSnapshot
+}
+
+POST /api/mt5/execute
+Validates risk approval first.
+Adds OPEN command to queue.
+
+POST /api/mt5/close
+Adds CLOSE command to queue.
+
+POST /api/mt5/modify
+Adds MODIFY command to queue.
+
+POST /api/mt5/close-all
+Requires emergency confirmation.
+Adds CLOSE_ALL command.
+
+POST /api/mt5/heartbeat
+Called by MT5 EA every 5 seconds.
+Updates lastHeartbeat.
+
+GET /api/mt5/commands
+Called by MT5 EA to pull pending commands.
+
+POST /api/mt5/command-result
+Called by MT5 EA after executing command.
+Updates command result.
+
+POST /api/mt5/sync-account
+MT5 sends account balance, equity, margin, free margin.
+
+POST /api/mt5/sync-positions
+MT5 sends open positions.
+
+5. /server/mt5/logs/bridgeLogger.ts
+
+Log:
+- command sent
+- command completed
+- command failed
+- heartbeat received
+- connection lost
+- invalid API key
+- live mode attempt blocked
+
+6. Frontend MT5 Bridge Setup page
+
+Show:
+- Bridge status: Connected / Disconnected
+- Last heartbeat
+- API key masked
+- Webhook URL
+- Pending commands
+- Completed commands
+- Failed commands
+- Account snapshot
+- Open positions
+- Download EA placeholder button
+- Copy webhook URL button
+- Test connection button
+
+Connection logic:
+If no heartbeat in 15 seconds, status = Disconnected.
+If heartbeat received within 15 seconds, status = Connected.
+
+Live trading:
+Keep live mode locked.
+Add warning modal:
+“Live trading can cause real financial loss. Demo test first.”

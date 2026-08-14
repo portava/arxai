@@ -1,0 +1,64 @@
+Run Reconciliation Center closeout + full admin safety regression.
+
+Check what already exists first, then fix only what is missing.
+
+Do not place live trades.
+Do not enable public master live trading.
+Do not bypass master live user approval toggles.
+Do not expose secrets.
+arx_live_commands must remain unchanged.
+
+Verify Reconciliation Center:
+
+1. /admin/reconciliation-center exists.
+2. Reconciliation Center is admin-only.
+3. Non-admin users cannot access the page.
+4. Non-admin users cannot call reconciliation APIs directly.
+5. Legacy /broker-reconciliation is protected or redirects to /admin/reconciliation-center.
+6. Aggregator endpoint returns structured reconciliation issues.
+7. It detects bridge mismatches.
+8. It detects orphan broker positions.
+9. It detects missing attribution rows.
+10. It detects command/result mismatches.
+11. It detects user allocation mismatches.
+12. It detects stale heartbeat issues.
+13. It detects blocked/rejected commands needing review.
+14. It detects master bridge exposure warnings.
+15. It detects live/demo mode mismatch warnings.
+16. It detects user approval/risk-lock conflicts.
+17. Dismiss requires reason.
+18. Mark reviewed requires reason.
+19. Link attribution requires reason.
+20. Manual resolution requires reason.
+21. Every action writes admin audit log.
+22. Admin Ruby explanation works without exposing secrets/tokens.
+23. Per-user Ruby explanation works without exposing other-user/admin-only data.
+24. No secrets leak.
+25. No live trade auto-fires.
+26. arx_live_commands count before/after is unchanged.
+
+Then run full system safety matrix:
+
+- ci guards
+- one-click/concurrency tests
+- master bridge demo tests
+- master bridge live tests
+- master live user access tests
+- selected market scanner tests
+- admin approval tests
+- position side-card tests
+- reconciliation center tests
+
+Required output:
+- pass/fail table
+- arx_live_commands before/after count
+- confirmation no live order was placed
+- confirmation all admin routes are server-protected
+- confirmation no secrets exposed
+
+If all pass, output:
+ARX_RECONCILIATION_CENTER_COMPLETE
+
+If anything fails, output:
+ARX_RECONCILIATION_CENTER_NOT_READY
+with exact blockers and fix them before moving forward.

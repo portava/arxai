@@ -1,0 +1,277 @@
+BUILD PHASE — Operator Per-User Trading Mode Control: Paper / Demo / Live
+
+Use the current codebase. Do not rebuild unrelated systems.
+
+Goal:
+Give the operator/admin direct control to set each individual user’s trading mode to PAPER, DEMO, or LIVE. Each user should have a clear account state, and the app should route their trading experience based on that state.
+
+Important:
+This is operator-controlled. No user can self-switch into LIVE.
+Do not open public live trading.
+Do not create live commands during build or QA.
+Do not bypass existing safety gates.
+Do not mix Paper, Demo, and Live trade data.
+
+Definitions:
+- PAPER: Simulated trading inside ARX only. No MT5 order. No demo broker order. No live command.
+- DEMO: Demo trading route. Can use demo/sandbox execution only. No real-money live command.
+- LIVE: Real execution path, allowed only after operator/admin sets the user to LIVE and all live safety gates pass.
+
+1. Inspect existing account mode systems first
+Inspect and reuse:
+- user account shell
+- onboarding account mode
+- demo mode
+- personal MT5 mode
+- shared master mode
+- beta cohort
+- admin approval console
+- risk profiles
+- allocation system
+- disclosure acceptance
+- liveCommandPipeline
+- trade queue
+- kill switches
+- close-only mode
+- force-review mode
+- audit logs
+- Ruby context
+- user dashboard routing
+
+Do not create a duplicate account system.
+
+2. Add per-user trading mode field
+Create or strengthen a backend field for each user/account shell:
+
+tradingMode:
+- PAPER
+- DEMO
+- LIVE
+
+Also track:
+- tradingModeUpdatedAt
+- tradingModeUpdatedByAdminId
+- tradingModeChangeReason
+- previousTradingMode
+- modeLockStatus if needed
+- user-facing mode label
+
+Mode defaults:
+- new beta users default to PAPER or DEMO based on operator config
+- never default new users to LIVE
+- one-click live defaults OFF in every mode
+
+3. Admin mode control panel
+Add controls inside Admin / Beta Control Center / User Approval Console:
+
+For each user, admin can:
+- set user to PAPER
+- set user to DEMO
+- set user to LIVE
+- pause user
+- resume user
+- force user back to PAPER
+- force user back to DEMO
+- revoke LIVE
+- view mode history
+- enter reason for mode change
+
+The UI should show:
+- current mode
+- previous mode
+- mode status
+- account mode: Personal MT5 / Shared Master / Demo Shell
+- disclosure status
+- risk profile status
+- allocation status
+- bridge status
+- live readiness result
+- last mode change
+- last safety block
+- no-live-command evidence
+
+Changing to LIVE requires:
+- admin confirmation
+- typed phrase such as: CONFIRM LIVE MODE
+- operator reason
+- user selected
+- mode-specific checklist completed
+
+4. Mode change rules
+PAPER mode:
+- all trades are simulated internally
+- no MT5 command
+- no demo broker command
+- no live command
+- scanner/trade ticket/Ruby can be tested safely
+- user sees “Paper Mode”
+
+DEMO mode:
+- demo/sandbox trading only
+- demo commands cannot create live commands
+- user sees “Demo Mode”
+- demo positions stay separate from paper/live positions
+
+LIVE mode:
+- user may submit live trade requests only after all live gates pass
+- requires admin-controlled LIVE mode
+- requires disclosure acceptance
+- requires risk profile
+- requires allocation if shared master
+- requires bridge healthy
+- requires shared master mapping if shared master
+- requires global live flag enabled
+- requires kill switch not active
+- requires close-only not blocking new opens
+- requires force-review not active unless operator wants review mode
+- requires queue not paused
+- requires symbol allowed
+- requires max lot/daily loss/exposure/cooldown checks
+- requires user confirmation or approved one-click path
+
+5. Backend enforcement
+The backend must enforce mode before any trade command is created.
+
+If tradingMode is PAPER:
+- route to paper simulation only
+- block live command creation
+- block demo bridge command creation unless explicitly using paper simulator
+
+If tradingMode is DEMO:
+- route to demo execution only
+- block live command creation
+- block shared master live routing
+
+If tradingMode is LIVE:
+- route through existing liveCommandPipeline only after all safety gates pass
+- never skip safety gates because admin set the mode to LIVE
+
+Do not trust frontend mode. Use authenticated session userId and backend user account state.
+
+6. Trade ticket UI behavior
+Trade ticket should clearly show:
+
+- Mode: Paper / Demo / Live
+- Account route: Paper Simulator / Demo / Personal MT5 / Shared Master
+- Risk estimate
+- Confirmation requirement
+- Live warning only when LIVE mode
+- Clean block reason when user is not eligible
+
+User-facing labels:
+- “Paper Mode — simulated only.”
+- “Demo Mode — no real-money order.”
+- “Live Mode — real account risk. Review before confirming.”
+- “Your operator has not enabled live mode.”
+- “Live mode is enabled, but this trade is blocked by safety checks.”
+
+7. Admin bulk controls
+Add safe admin controls:
+- set selected users to PAPER
+- set selected users to DEMO
+- revoke LIVE from selected users
+- pause selected users
+
+Do not add “set all users to LIVE” without a second typed confirmation and per-user readiness validation.
+
+If bulk LIVE is attempted:
+- require each selected user to independently pass live readiness
+- show users that failed readiness
+- do not enable LIVE for failed users
+- audit every user separately
+
+8. Ruby awareness
+Ruby should explain the user’s current mode:
+
+For PAPER:
+- “You are in Paper Mode. I can help you practice without sending orders to MT5.”
+
+For DEMO:
+- “You are in Demo Mode. Trades are not real-money live orders.”
+
+For LIVE:
+- “You are in Live Mode. I will still require confirmation and safety checks before any order is sent.”
+
+Ruby must not:
+- switch user mode herself
+- tell a user they are live unless backend confirms it
+- place live orders because the user asked by voice/text
+- bypass confirmation or safety gates
+- expose other users or admin-only data
+
+9. User dashboard mode status
+Normal user dashboard should show:
+- current mode
+- what that mode means
+- whether trading is enabled
+- next required step
+- blocked reason if applicable
+
+Normal users cannot change themselves to LIVE.
+
+10. Existing trade separation
+Existing trades must remain tied to the mode they were created under.
+
+Rules:
+- Paper trades stay paper
+- Demo trades stay demo
+- Live trades stay live
+- switching mode does not convert old trades
+- P/L calendar should filter or label by mode
+- Ruby should not mix paper/demo/live performance unless user asks for combined summary
+- normal users only see their own data
+
+11. Audit logs
+Add audit logs for:
+- user mode changed to PAPER
+- user mode changed to DEMO
+- user mode changed to LIVE
+- LIVE mode confirmation accepted
+- LIVE mode confirmation cancelled
+- LIVE mode blocked by missing readiness
+- user mode reverted
+- bulk mode change attempted
+- bulk mode change partially failed
+- user attempted live action while not in LIVE mode
+- Ruby explained mode status
+
+Do not log secrets.
+
+12. Tests
+Add or update tests for:
+- new user does not default to LIVE
+- admin can set user to PAPER
+- admin can set user to DEMO
+- admin can set user to LIVE only with confirmation
+- non-admin cannot change user mode
+- user cannot self-set LIVE
+- PAPER mode cannot create demo command
+- PAPER mode cannot create live command
+- DEMO mode cannot create live command
+- LIVE mode still requires all safety gates
+- LIVE mode blocked when disclosure missing
+- LIVE mode blocked when risk profile missing
+- LIVE mode blocked when allocation missing for shared master
+- LIVE mode blocked when bridge unhealthy
+- LIVE mode blocked when global live flag off
+- LIVE mode blocked when kill switch active
+- mode switch does not convert existing trades
+- User A cannot change or see User B mode
+- Ruby explains current user mode only
+- one-click live remains OFF by default
+- no secrets exposed
+- no live command created during QA
+- arx_live_commands count stays unchanged
+
+Return:
+- what was built
+- files changed
+- tradingMode model/table changes
+- admin route/API names
+- user route/API names
+- mode enforcement behavior
+- Ruby mode behavior
+- tests added/run
+- remaining risks
+- confirmation no live trade was fired
+- confirmation arx_live_commands count stayed unchanged

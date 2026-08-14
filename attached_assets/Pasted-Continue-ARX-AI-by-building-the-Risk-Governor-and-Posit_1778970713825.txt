@@ -1,0 +1,371 @@
+Continue ARX AI by building the Risk Governor and Position Sizing Engine.
+
+Do not rebuild blindly. Inspect the current:
+- admin trading controls
+- platform mode: Trading Off / Demo / Live
+- account routing mode: USER_OWNED_MT5 / SHARED_MASTER_MT5
+- user risk limits
+- shared-master risk limits
+- Trade Action Center
+- MT5 command queue
+- MT5 execution reconciliation
+- open trades system
+- trade history
+- user-owned MT5 sync
+- shared-master attribution ledger
+- AI assistant trade tools
+- Live Trade Intelligence
+- Smart Exit Plan
+- Trade Decision Orchestrator
+
+Goal:
+Create a central Risk Governor that decides whether a user is allowed to open, close, partial close, move stop, or modify a trade before any command reaches MT5.
+
+Important:
+Do not auto-place trades.
+Do not auto-close trades.
+Do not bypass backend guards.
+Do not expose secrets.
+All live actions still require explicit user confirmation.
+
+PART 1 — Central Risk Governor Service
+
+Create a central service named something like:
+
+- riskGovernor
+- tradingRiskEngine
+- orderRiskValidator
+
+It must validate every trading action before command queue insertion.
+
+The Risk Governor should check:
+
+1. User status
+- user authenticated
+- user trading enabled
+- user not suspended
+- user has permission for demo/live
+- live disclosure accepted for live
+- explicit confirmation exists for live
+
+2. Platform status
+- platform mode is not Trading Off
+- emergency stop is false
+- demo/live mode matches requested action
+- account routing mode is valid
+
+3. Account status
+For USER_OWNED_MT5:
+- user has connected MT5 account
+- account type matches platform mode
+- account balance/equity available
+- margin data available if possible
+
+For SHARED_MASTER_MT5:
+- shared master account exists
+- shared master account type matches platform mode
+- user has virtual account/allocation
+- master account has enough capacity
+- user does not exceed allocation
+
+4. Trade risk
+- lot size within max lot size
+- daily max trades not exceeded
+- daily loss limit not exceeded
+- max open trades not exceeded
+- max symbol exposure not exceeded
+- allowed symbols only
+- allowed direction if configured
+- duplicate command rejected
+- expired command rejected
+
+5. Market risk if data exists
+- spread too high
+- volatility too high
+- market closed
+- symbol unavailable
+- high-impact news warning if available
+- stale MT5 data
+- stale market data
+
+6. Position risk
+- user already exposed to same symbol
+- correlated exposure if available
+- trade would increase drawdown risk
+- trade conflicts with current open position
+- shared master netting conflict if account is netting
+
+PART 2 — Position Sizing Engine
+
+Add a position sizing calculator.
+
+Inputs:
+- account balance
+- account equity
+- risk percent
+- stop loss distance
+- symbol pip value if available
+- account currency if available
+- max lot size
+- min lot size
+- broker lot step if available
+- user risk profile
+- current open exposure
+
+Outputs:
+- recommended lot size
+- max safe lot size
+- estimated risk amount
+- estimated margin if available
+- risk percent of account
+- warning if stop loss is missing
+- warning if symbol specs unavailable
+
+If required data is missing, show:
+“Position sizing limited because symbol/account data is unavailable.”
+
+Do not invent pip value, margin, or symbol specs.
+
+PART 3 — Risk Profiles
+
+Add user risk profile options:
+
+- Conservative
+- Balanced
+- Aggressive
+- Custom
+
+Each profile should control:
+- default risk per trade
+- max daily loss
+- max trades per day
+- max open trades
+- max lot size
+- max exposure per symbol
+- profit protection sensitivity
+- live confirmation requirement
+
+Admin can override user risk profile.
+
+PART 4 — Admin Risk Control UI
+
+Update Admin Trading Control with a Risk Governor section.
+
+Show:
+- global risk status
+- emergency stop
+- max platform daily loss if tracked
+- max shared-master exposure
+- user risk profiles
+- users near daily loss limit
+- users blocked by risk rules
+- recent risk rejections
+- shared-master risk exposure
+- symbol exposure summary
+
+Admin controls:
+- set default risk profile
+- edit user risk limits
+- suspend user trading
+- pause new orders only
+- allow closes only
+- block symbol globally
+- block live trading while allowing demo
+- pause shared-master trading
+
+PART 5 — User Risk Center
+
+Create or update a Risk Center page for users.
+
+Show:
+- current risk profile
+- account balance/equity if available
+- daily P&L
+- daily loss remaining
+- open exposure
+- open trade count
+- max trades left today
+- max lot allowed
+- allowed symbols
+- current trading mode
+- routing mode
+- risk warnings
+- blocked reasons
+
+Add calculator:
+- symbol
+- buy/sell
+- entry
+- stop loss
+- desired risk amount or risk %
+- suggested lot size
+- max allowed lot size
+- estimated loss at stop
+- “Use This Size” button for trade ticket
+
+PART 6 — Trade Ticket Risk Preview
+
+Every open trade ticket must show a risk preview before confirmation:
+
+- requested lot size
+- recommended lot size
+- estimated risk
+- estimated loss at SL
+- daily loss remaining
+- current exposure
+- risk pass/fail
+- reason if blocked
+
+For live trades:
+Show:
+“LIVE RISK CHECK — this action can affect real money.”
+
+PART 7 — Shared-Master Allocation Risk
+
+In SHARED_MASTER_MT5 mode, add allocation checks:
+
+- user virtual balance
+- user virtual equity
+- user max allocation
+- user max open exposure
+- user max daily loss
+- shared master max total exposure
+- shared master max symbol exposure
+- block user if virtual allocation exceeded
+- block new trades if master account exposure limit hit
+
+Important:
+Users must only see their own virtual allocation and P&L.
+Users must not see shared master credentials or other users’ allocations.
+
+PART 8 — Close-Only Mode
+
+Add a risk state called CLOSE_ONLY.
+
+When triggered:
+- user cannot open new trades
+- user can still close existing trades
+- user can reduce risk
+- user can move stop if it reduces risk
+- user cannot increase exposure
+
+Triggers:
+- daily loss limit reached
+- admin close-only mode
+- emergency risk state
+- platform risk violation
+- stale data state if configured
+
+PART 9 — AI Risk Awareness
+
+Update AI so users can ask:
+
+- How much risk am I taking?
+- What lot size should I use?
+- Why was my trade blocked?
+- How much daily loss do I have left?
+- Am I overexposed?
+- Should I reduce risk?
+- Can I open another trade?
+- Why am I in close-only mode?
+- What is the safest lot size?
+- What happens if this trade hits stop loss?
+
+AI must answer from real Risk Governor data only.
+AI must not invent balance, margin, pip value, or symbol specs.
+AI must not bypass risk guards.
+
+PART 10 — Backend/API
+
+Add or update endpoints:
+
+- GET /api/risk/profile
+- PATCH /api/risk/profile
+- GET /api/risk/status
+- POST /api/risk/calculate-position-size
+- POST /api/risk/validate-trade-ticket
+- GET /api/admin/risk/overview
+- PATCH /api/admin/users/:id/risk-limits
+- PATCH /api/admin/risk/global-settings
+
+Add or update tables:
+
+user_risk_profiles:
+- id
+- user_id
+- profile_type
+- risk_per_trade_percent
+- max_daily_loss
+- max_trades_per_day
+- max_open_trades
+- max_lot_size
+- max_symbol_exposure
+- allowed_symbols
+- close_only
+- created_at
+- updated_at
+
+risk_validation_logs:
+- id
+- user_id
+- action_request_id
+- trade_command_id
+- routing_mode
+- account_type
+- symbol
+- requested_lot_size
+- recommended_lot_size
+- risk_status
+- rejection_reason
+- warnings
+- created_at
+
+shared_master_risk_limits:
+- id
+- shared_master_account_id
+- max_total_exposure
+- max_symbol_exposure
+- max_daily_loss
+- max_users_same_symbol
+- close_only
+- created_at
+- updated_at
+
+PART 11 — Tests
+
+Add or update tests for:
+1. Risk Governor blocks oversized lot.
+2. Risk Governor blocks user over daily loss limit.
+3. Risk Governor blocks suspended user.
+4. Risk Governor blocks Trading Off.
+5. Risk Governor blocks emergency stop.
+6. Risk Governor allows close in close-only mode.
+7. Risk Governor blocks new open trade in close-only mode.
+8. Position sizing returns recommended lot when data exists.
+9. Position sizing shows limited result when pip value is missing.
+10. User cannot see another user’s risk profile.
+11. Shared-master user cannot see another user’s allocation.
+12. Shared-master allocation blocks overexposure.
+13. Admin can update user risk limits.
+14. Trade ticket shows risk preview.
+15. AI explains trade rejection using real risk logs.
+16. AI does not invent account balance or pip value.
+17. Live trade still requires explicit confirmation.
+18. All risk rejections are audit logged.
+19. No secrets are exposed.
+20. Mobile Risk Center works on iPhone Safari.
+
+Final report:
+Return:
+- PASS or FAIL
+- Risk Governor status
+- Position Sizing Engine status
+- Risk Profiles status
+- Admin Risk Control status
+- User Risk Center status
+- Trade Ticket Risk Preview status
+- Shared-Master Allocation Risk status
+- Close-Only Mode status
+- AI Risk Awareness status
+- tests passed
+- remaining blockers

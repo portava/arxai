@@ -1,0 +1,88 @@
+Continue the trading app build from the last completed phase.
+
+Create the exact commands and implementation steps needed to add:
+
+1. Elite Feedback Engine
+2. Premium Trader UX Dashboard
+3. Measurable Trader Improvement System
+
+Before coding, inspect the current project structure and identify:
+- framework
+- database setup
+- existing trade models
+- existing dashboard pages
+- API routes
+- auth system
+- broker/MT5 integration files
+
+Then execute in this order:
+
+PHASE 1 — Project Inspection
+List the current file structure and explain where each new feature should be added.
+
+PHASE 2 — Database Upgrade
+Add/modify tables:
+- trades
+- trade_feedback
+- trader_scores
+- coaching_notes
+
+Create migrations safely without deleting current data.
+
+PHASE 3 — Backend Logic
+Create services for:
+- trade scoring
+- feedback generation
+- emotional behavior detection
+- discipline scoring
+- growth score calculation
+- coaching note generation
+
+PHASE 4 — API Routes
+Create endpoints for:
+- saving trades
+- generating trade feedback
+- fetching trader scores
+- fetching coaching notes
+- fetching calendar performance
+- fetching recent trades
+- fetching improvement timeline
+
+PHASE 5 — Frontend UX
+Create/upgrade:
+- Trader Dashboard
+- AI Coach Panel
+- Trade Feedback Report
+- Trader Growth Score Card
+- Trade Calendar
+- Recent Trades
+- Improvement Timeline
+- Risk Status Card
+- Daily Trading Permission Card
+
+PHASE 6 — Testing
+Test:
+- trade creation
+- score generation
+- feedback generation
+- dashboard loading
+- calendar display
+- coaching note output
+- mobile responsiveness
+- no fake profit guarantees
+
+Important rules:
+- Do not rebuild the app from scratch.
+- Do not delete existing user data.
+- Do not remove existing MT5/broker integration.
+- Do not make guaranteed-profit claims.
+- Keep the UI clean, premium, fast, and professional.
+- Use placeholder/mock trade data only if live data is unavailable.
+- Every phase must be completed and tested before moving to the next.
+
+After implementation, give me:
+1. What files changed
+2. What was added
+3. What still needs work
+4. Any errors found
+5. Recommended next phase

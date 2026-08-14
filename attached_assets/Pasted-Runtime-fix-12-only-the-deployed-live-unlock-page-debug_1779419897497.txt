@@ -1,0 +1,110 @@
+Runtime fix #12 only: the deployed live unlock page debug proves the backend is receiving empty confirmation values.
+
+Current deployed state:
+- Pre-arm checklist is 13/14 passing.
+- #11 typed phrase passes.
+- #9 server dispatch is no longer counted as pre-arm failure.
+- #12 fails.
+- Admin debug under #12 shows:
+  account received: <empty>
+  broker received: <empty>
+  server received: <empty>
+  account expected: 62470041
+  broker expected: Deriv (SVG) LLC
+  server expected: DerivSVG-Server
+
+This means the frontend is not sending the account/broker/server confirmation values to the active readiness API.
+
+Fix only the active runtime path. Do not create a duplicate live unlock page.
+
+Tasks:
+
+1. Find the active component rendering the deployed live unlock page and the active readiness API it calls.
+
+2. Trace the #12 confirmation values from UI input → React state → readiness request payload → backend request parser → checklist result.
+
+3. Ensure the UI has three separate controlled inputs:
+   - accountConfirm
+   - brokerConfirm
+   - serverConfirm
+
+4. Ensure those inputs are included in every readiness request payload using exactly these backend key names:
+   - confirmedAccountNumber
+   - confirmedBrokerName
+   - confirmedServerName
+
+5. Remove or ignore stale/legacy keys:
+   - brokerServerConfirm
+   - accountNumberConfirm
+   - mt5AccountConfirm
+   - brokerConfirm if backend does not read it
+   - serverConfirm if backend does not read it
+
+6. Backend readiness parser must read exactly:
+   - confirmedAccountNumber
+   - confirmedBrokerName
+   - confirmedServerName
+
+7. Add temporary admin debug that shows both:
+   - frontend local state values before submit
+   - backend received values after submit
+
+8. Make copy-exact buttons directly set the controlled state and immediately re-run readiness:
+   - Copy Account sets accountConfirm to 62470041
+   - Copy Broker sets brokerConfirm to Deriv (SVG) LLC
+   - Copy Server sets serverConfirm to DerivSVG-Server
+
+9. Do not auto-fill these fields silently on page load.
+   The operator must still intentionally confirm/copy them.
+   But once the operator enters or copies them, the readiness API must receive them.
+
+10. Disable mobile text interference:
+   - account input: inputMode="numeric", autoCorrect="off", autoCapitalize="none", spellCheck={false}
+   - broker input: autoCorrect="off", autoCapitalize="none", spellCheck={false}
+   - server input: autoCorrect="off", autoCapitalize="none", spellCheck={false}
+
+11. Normalize comparisons:
+   - Convert received and expected values to strings.
+   - Trim leading/trailing whitespace.
+   - Compare exact value after trim.
+   - Do not lowercase broker/server.
+   - Keep spaces inside broker name exact.
+
+12. Expected result:
+   When the operator enters:
+   Account: 62470041
+   Broker: Deriv (SVG) LLC
+   Server: DerivSVG-Server
+   Then admin debug should show:
+   account received: 62470041
+   broker received: Deriv (SVG) LLC
+   server received: DerivSVG-Server
+   And #12 should pass.
+
+13. Once #12 passes:
+   - Pre-arm checklist should show 14/14 passing.
+   - Page should show READY TO ARM or EA READY / SERVER DISPATCH OFF.
+   - Page should not show Locked.
+   - Top badge should stop saying LIVE BROKER EXECUTION DISABLED and should say READY TO ARM or EA READY / SERVER DISPATCH OFF while serverLiveExecutionEnabled=false.
+
+14. Keep execute endpoint strict:
+   - Real live broker dispatch must still fail until serverLiveExecutionEnabled=true.
+   - Kill switch must still override everything.
+
+15. Run:
+   - pnpm run typecheck
+   - pnpm run ci:guards
+   - pnpm --filter @workspace/scripts run test:live-phaseB
+
+16. Add/update tests proving:
+   - Frontend sends confirmedAccountNumber, confirmedBrokerName, confirmedServerName.
+   - Backend receives non-empty values.
+   - Empty values fail #12.
+   - Exact values pass #12.
+   - 14/14 pre-arm + serverLiveExecutionEnabled=false shows READY TO ARM, not Locked.
+   - Execute still blocks live broker dispatch until serverLiveExecutionEnabled=true.
+
+Do not auto-arm live trading.
+Do not bypass the safety gate.
+Do not enable AI auto-trading.
+Do not remove the kill switch.

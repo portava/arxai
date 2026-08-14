@@ -1,0 +1,266 @@
+T021 — FIX SYMBOL RESOLUTION / EA ORDER SEND FAILURE NOW THAT MT5 MARKET WATCH SHOWS SYMBOLS
+
+Correction:
+The symbols are already visible in MT5 Market Watch.
+
+The user provided a screenshot of the MT5 terminal showing these symbols in Market Watch:
+
+1. Volatility 75 (1s) Index
+2. Volatility 25 (1s) Index
+3. Vol over Boom 400
+4. Volatility 75 Index
+5. Volatility 10 (1s) Index
+6. Volatility 100 (1s) Index
+
+So do not keep saying the symbol is not in Market Watch without proving it from the EA/bridge using the exact symbol string.
+
+Current issue:
+ARX sends the live trade request, but MT5 does not execute it. The EA appears to reject before OrderSend with EA_REJECTED_NO_DETAIL / NULL retcode / no broker message.
+
+Since the symbol is visible in Market Watch, the likely issue is now:
+
+1. ARX is sending a different symbol string than the broker expects.
+2. The EA symbol resolver is not matching the exact MT5 symbol name.
+3. The EA is trying to select a simplified/internal symbol like V75 instead of the exact broker symbol.
+4. The bridge symbol mapping is wrong or incomplete.
+5. The EA is failing locally before OrderSend but hiding the real local failure.
+6. The terminal/account has trading disabled or insufficient funds.
+7. The broker allows the symbol to display but not trade on this account.
+
+Important:
+Do not mark complete until one real live trade executes in MT5 and returns a real MT5 ticket/order/position/deal ID.
+
+Do not use Demo.
+Do not use Paper.
+Do not fake execution.
+Do not fabricate tickets.
+Do not claim “sent to bridge” is success.
+Do not claim “symbol not in Market Watch” unless the EA proves the exact string is not selectable.
+
+PART 1 — Capture exact MT5 symbol names from the terminal/EA
+
+The screenshot proves the symbols are in Market Watch, but the app needs the exact broker symbol string.
+
+Add/verify diagnostics that capture:
+
+1. ARX display symbol
+2. ARX internal symbol
+3. symbol sent to bridge
+4. symbol sent to EA
+5. exact MT5 symbol string used in SymbolSelect
+6. result of SymbolSelect(symbol, true)
+7. result of SymbolInfoInteger(symbol, SYMBOL_SELECT)
+8. result of SymbolInfoInteger(symbol, SYMBOL_VISIBLE)
+9. result of SymbolInfoInteger(symbol, SYMBOL_TRADE_MODE)
+10. result of SymbolInfoDouble(symbol, SYMBOL_VOLUME_MIN)
+11. result of SymbolInfoDouble(symbol, SYMBOL_VOLUME_MAX)
+12. result of SymbolInfoDouble(symbol, SYMBOL_VOLUME_STEP)
+13. result of SymbolInfoInteger(symbol, SYMBOL_DIGITS)
+14. result of SymbolInfoDouble(symbol, SYMBOL_POINT)
+15. result of SymbolInfoInteger(symbol, SYMBOL_FILLING_MODE)
+16. result of SymbolInfoInteger(symbol, SYMBOL_TRADE_STOPS_LEVEL)
+17. result of SymbolInfoInteger(symbol, SYMBOL_TRADE_FREEZE_LEVEL)
+18. result of GetLastError() immediately after failed symbol select / info lookup
+19. whether the symbol reaches CTrade.Sell() or fails before it
+20. exact EA local reject reason before OrderSend
+
+PART 2 — Fix symbol mapping
+
+Do not assume V75 is the MT5 broker symbol.
+
+Map ARX symbols to exact MT5 names shown by this broker.
+
+Create or repair symbol mapping for Deriv SVG MT5:
+
+Examples to resolve:
+
+1. ARX V75 → MT5 Volatility 75 Index
+2. ARX V75_1S or Volatility 75 (1s) Index → MT5 Volatility 75 (1s) Index
+3. ARX V25_1S → MT5 Volatility 25 (1s) Index
+4. ARX V10_1S → MT5 Volatility 10 (1s) Index
+5. ARX V100_1S → MT5 Volatility 100 (1s) Index
+
+Do not rely on truncated UI text from Market Watch.
+Use the exact symbol names returned by MT5 symbol enumeration / SymbolInfo.
+
+If symbol enumeration is available:
+
+1. Pull all symbols from MT5.
+2. Fuzzy-match ARX display names to exact MT5 symbol names.
+3. Store brokerSymbol separately from displaySymbol.
+4. Send brokerSymbol to EA/MT5, not displaySymbol.
+5. Show displaySymbol to the user.
+
+If symbol enumeration is not available:
+
+1. Add an admin-only symbol mapping config.
+2. Let owner/admin set ARX symbol → MT5 broker symbol.
+3. Use that mapping for execution.
+4. Show a clean error if no mapping exists.
+
+PART 3 — Check whether trading is disabled / account funded
+
+The MT5 terminal mailbox shows:
+“Trading disabled — please add funds to start trading.”
+
+This may be the true broker-side blocker.
+
+Check and report:
+
+1. Account balance
+2. Account equity
+3. Account margin free
+4. Account trade allowed
+5. Terminal trade allowed
+6. MQL trade allowed
+7. Symbol trade mode
+8. Whether the account is blocked from trading due to funding
+9. Whether the broker rejects synthetic trading because account not funded
+10. Whether the EA can call OrderSend on any symbol
+
+If trading is disabled by broker/account funding:
+
+1. Do not call it an ARX bug.
+2. Do not fake a trade.
+3. Show clean user-facing message:
+    “Broker account is not currently allowed to trade. MT5 reports trading disabled / add funds.”
+4. Admin diagnostics should show exact account trade allowed flags.
+5. Stop until operator fixes broker funding/account state.
+
+PART 4 — Improve EA local rejection reporting
+
+The current EA_REJECTED_NO_DETAIL is not good enough.
+
+If the EA fails before OrderSend, return a specific local reason:
+
+1. SYMBOL_SELECT_FAILED
+2. SYMBOL_NOT_FOUND
+3. SYMBOL_NOT_VISIBLE
+4. SYMBOL_TRADE_DISABLED
+5. TERMINAL_TRADE_DISABLED
+6. ACCOUNT_TRADE_DISABLED
+7. MQL_TRADE_DISABLED
+8. INVALID_VOLUME
+9. INVALID_FILLING_MODE
+10. INVALID_STOPS
+11. MARKET_CLOSED
+12. INSUFFICIENT_MARGIN
+13. UNKNOWN_PRE_ORDER_FAILURE
+
+Include:
+
+1. symbol requested
+2. broker symbol used
+3. last error code
+4. symbol trade mode
+5. account trade allowed
+6. terminal trade allowed
+7. mql trade allowed
+8. volume min/max/step
+9. broker comment if available
+
+Do not expose raw internals to normal users.
+Admin diagnostics may show detailed technical reason.
+
+PART 5 — Retry live execution only after exact blocker is known/fixed
+
+After fixing symbol mapping and/or account trade-allowed issue, retry one live trade.
+
+Use the exact symbol currently visible and tradable in MT5.
+
+Preferred:
+
+1. Volatility 75 Index or Volatility 75 (1s) Index if broker confirms tradable.
+2. Otherwise any currently tradable MT5 symbol.
+3. Do not use EURUSD if forex is closed.
+
+Rules:
+
+1. LIVE only.
+2. Owner/admin only.
+3. Use smallest broker-valid lot.
+4. No SL required unless Governance requires it.
+5. No TP required unless Governance requires it.
+6. Single Confirm.
+7. MT5 must confirm.
+8. Close immediately.
+9. Only one trade.
+
+Before execution record:
+
+1. ARX symbol
+2. exact MT5 brokerSymbol
+3. trade allowed flags
+4. min lot
+5. lot step
+6. account trade status
+7. balance/equity/free margin
+8. arx_live_commands count/max_id
+9. MT5 open positions
+10. ARX open positions
+
+Execution:
+
+1. Confirm ARX sends exact brokerSymbol.
+2. Confirm EA receives exact brokerSymbol.
+3. Confirm SymbolSelect succeeds.
+4. Confirm OrderSend is called.
+5. Confirm MT5 success retcode.
+6. Capture MT5 ticket/order/position/deal ID.
+7. Confirm ARX stores it.
+8. Confirm Trade page shows Entry/Now/P&L.
+9. Close through ARX.
+10. Confirm MT5 close.
+11. Confirm ARX close ledger.
+
+PART 6 — Tests
+
+Run:
+
+1. pnpm run health:workflows
+2. typecheck
+3. ci:guards
+4. symbol mapping test
+5. brokerSymbol dispatch test
+6. EA pre-OrderSend reason test
+7. account trade-allowed diagnostics test
+8. Trade page display test
+9. Scanner smoke test
+10. live-readiness test
+
+PART 7 — Final report required
+
+Final report must include:
+
+1. exact ARX symbol attempted
+2. exact MT5 broker symbol used
+3. proof the symbol is visible/selectable or exact reason it is not
+4. SymbolSelect result
+5. GetLastError() if SymbolSelect fails
+6. symbol trade mode
+7. account trade allowed status
+8. terminal trade allowed status
+9. MQL trade allowed status
+10. account balance/equity/free margin
+11. whether “Trading disabled — please add funds” is blocking execution
+12. whether OrderSend was called
+13. MT5 retcode/comment
+14. root cause
+15. files changed
+16. whether live trade executed
+17. if executed: MT5 ticket/order/position/deal ID, open price, close price, P/L
+18. ARX ledger verification
+19. Trade page verification
+20. Scanner/chart verification
+21. arx_live_commands before/after
+22. confirmation no Demo/Paper/fake execution used
+23. confirmation no safety/security/broker truth checks bypassed
+24. health:workflows result
+25. typecheck result
+26. ci:guards result
+27. remaining operator action if broker/account blocks trading
+
+Completion standard:
+This task is complete only when Replit proves the exact MT5 broker symbol mapping and either executes one real live trade with MT5 confirmation or proves the broker/account is blocking trading due to account/funding/trade-disabled status.
+
+Do not repeat “symbol not in Market Watch” unless the exact MT5 symbol string fails SymbolSelect and the failure is shown.

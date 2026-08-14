@@ -1,0 +1,118 @@
+Continue after Build F — Live Execution Safety Layer.
+
+Now begin Build G — Broker/MT5 Connection Health Monitor.
+
+Goal:
+Create a reliable broker connection monitoring system so the app always knows whether live trading is safe, connected, delayed, or unavailable.
+
+Tasks:
+
+1. Audit current broker/MT5 integration
+Find:
+- MT5 connection files
+- broker auth files
+- account sync logic
+- order execution logic
+- price feed logic
+- account balance/equity fetching
+- error handling
+- reconnect logic
+
+2. Create Broker Health Status
+
+Statuses:
+- CONNECTED
+- DEGRADED
+- DISCONNECTED
+- AUTH_ERROR
+- PRICE_FEED_DELAYED
+- EXECUTION_DISABLED
+- MAINTENANCE_MODE
+
+3. Monitor:
+
+- login/auth status
+- account balance sync
+- equity sync
+- open positions sync
+- order execution availability
+- price feed delay
+- last successful heartbeat
+- broker error messages
+- reconnect attempts
+
+4. Add database table:
+
+broker_health_logs:
+- id
+- user_id
+- broker_name
+- status
+- latency_ms
+- price_feed_delay_ms
+- last_heartbeat_at
+- error_code
+- error_message
+- reconnect_attempts
+- execution_enabled
+- created_at
+
+5. Add API routes:
+
+- GET broker health status
+- POST run broker health check
+- GET broker health logs
+- POST reconnect broker
+- POST disable live execution
+- POST enable live execution
+
+6. Add frontend components:
+
+- Broker Status Card
+- Connection Health Banner
+- Price Feed Delay Warning
+- Reconnect Button
+- Broker Health History
+
+7. Connect to safety system
+
+Live execution must be blocked if:
+
+- broker status is DISCONNECTED
+- broker status is AUTH_ERROR
+- broker status is PRICE_FEED_DELAYED
+- execution_enabled is false
+- heartbeat is stale
+- price feed delay exceeds safe threshold
+
+8. AI Coach integration
+
+AI Coach should explain broker issues clearly.
+
+Examples:
+- “Live trading is disabled because MT5 is disconnected.”
+- “Price feed is delayed. Avoid live execution until the feed stabilizes.”
+- “Broker heartbeat is stale. Reconnect before placing trades.”
+
+9. Testing
+
+Test:
+- connected broker status
+- disconnected broker status
+- stale heartbeat
+- delayed price feed
+- auth error
+- reconnect attempt
+- execution blocking
+- dashboard warning display
+
+Final output required:
+
+1. Files changed
+2. Tables/models added
+3. API routes added
+4. Frontend components added
+5. Broker health statuses implemented
+6. How broker health connects to live execution safety
+7. Errors or limitations
+8. Recommended next build

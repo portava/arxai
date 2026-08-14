@@ -1,0 +1,154 @@
+Continue after Build G — Broker/MT5 Connection Health Monitor.
+
+Now begin Build H — Live Position Management System.
+
+Goal:
+Create a system that monitors open live trades after execution and helps manage risk while the position is active.
+
+Tasks:
+
+1. Audit current position tracking
+Find:
+- open trade/position models
+- MT5 position sync logic
+- broker order status logic
+- live execution history
+- stop-loss/take-profit update functions
+- dashboard position widgets
+
+2. Add live position statuses
+
+Statuses:
+- OPEN
+- PARTIALLY_CLOSED
+- CLOSED
+- STOP_LOSS_HIT
+- TAKE_PROFIT_HIT
+- MANUALLY_CLOSED
+- BROKER_ERROR
+- SYNC_PENDING
+
+3. Add database table:
+
+live_positions:
+- id
+- user_id
+- broker_position_id
+- symbol
+- direction
+- lot_size
+- entry_price
+- current_price
+- stop_loss
+- take_profit
+- unrealized_profit_loss
+- realized_profit_loss
+- reward_to_risk
+- status
+- opened_at
+- closed_at
+- last_synced_at
+- created_at
+- updated_at
+
+position_events:
+- id
+- user_id
+- live_position_id
+- event_type
+- message
+- old_value
+- new_value
+- created_at
+
+4. Add position monitoring service
+
+Service should:
+- sync open positions from MT5/broker
+- update current price
+- update unrealized P/L
+- detect stop-loss hit
+- detect take-profit hit
+- detect manual close
+- detect broker sync errors
+- log position events
+- alert if position becomes high-risk
+
+5. Add position management rules
+
+Rules:
+- warn if price is close to stop loss
+- warn if position risk increases
+- warn if stop loss is removed
+- warn if lot size exposure is too high
+- warn if multiple correlated trades are open
+- block unsafe stop-loss removal unless user confirms
+- never auto-move stop loss without explicit user permission
+- never silently close a live trade unless user explicitly confirms
+
+6. Add API routes:
+
+- GET open positions
+- GET position by id
+- POST sync positions
+- PATCH update stop loss
+- PATCH update take profit
+- POST close position confirmation
+- POST close position
+- GET position events
+
+7. Add frontend components:
+
+- Open Positions Panel
+- Position Detail Page
+- Unrealized P/L Card
+- Stop Loss / Take Profit Editor
+- Position Risk Warning Banner
+- Close Position Confirmation Modal
+- Position Event Timeline
+
+8. Connect to AI Coach
+
+AI Coach should explain active trade risk.
+
+Examples:
+- “Your position is approaching stop loss. Do not widen risk unless your original setup is still valid.”
+- “This position is profitable, but price is slowing near resistance. Consider reviewing your exit plan.”
+- “You currently have multiple positions exposed to the same market direction.”
+
+9. Connect to Trader Scoring
+
+Position behavior should affect:
+- discipline score
+- execution score
+- emotional control score
+
+Examples:
+- Removing stop loss lowers discipline score.
+- Closing early before plan may lower execution score.
+- Following planned exit improves discipline score.
+
+10. Testing
+
+Test:
+- position sync
+- price update
+- unrealized P/L calculation
+- stop-loss update
+- take-profit update
+- close confirmation
+- broker error handling
+- dashboard display
+- AI coach position messages
+- scoring impact
+
+Final output required:
+
+1. Files changed
+2. Tables/models added
+3. API routes added
+4. Frontend components added
+5. Live position safety rules added
+6. How position management connects to AI coach and scoring
+7. Errors or limitations
+8. Recommended next build

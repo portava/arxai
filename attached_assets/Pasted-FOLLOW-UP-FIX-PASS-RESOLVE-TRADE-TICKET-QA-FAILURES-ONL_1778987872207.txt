@@ -1,0 +1,368 @@
+FOLLOW-UP FIX PASS — RESOLVE TRADE TICKET QA FAILURES ONLY
+
+Continue from the previous SL/TP + market/pending-order QA gate.
+
+Do NOT add new features right now.
+Do NOT rebuild.
+Do NOT redesign.
+Do NOT delete active ecosystem code.
+Do NOT create duplicate trade systems.
+Do NOT bypass risk, confirmation, MT5, Shared Master, or AI guard logic.
+
+First, open and read:
+
+TRADE_TICKET_QA_REPORT.md
+
+If that file does not exist, inspect the most recent QA output from the previous task and create TRADE_TICKET_QA_REPORT.md before continuing.
+
+Goal:
+Fix only the confirmed failures or incomplete wiring found during the QA gate.
+
+==================================================
+PHASE 1 — READ QA RESULTS
+==================================================
+
+Review the QA report and classify every issue:
+
+P0 — Must fix now:
+- App does not build
+- Type errors
+- Broken trade ticket
+- Broken backend trade action route
+- Missing confirmation guard
+- Risk governor bypass
+- Fake live success
+- Broken MT5 bridge command shape
+- Broken Shared Master attribution
+- User-specific trade data leaking
+- Invalid order accepted
+- Valid order incorrectly blocked
+- AI can bypass trade safety
+- SL/TP modification appears successful but does not actually work
+
+P1 — Fix now if safe:
+- UI validation mismatch
+- Missing error state
+- Pending order display issue
+- Journal/audit missing SL/TP update
+- AI lacks order type context
+- Incomplete unsupported-action message
+- Mobile layout issue that blocks use
+
+P2 — Report only for later:
+- Cosmetic spacing
+- Optional enhancements
+- Cleanup/dead code
+- Refactors
+- Extra analytics
+- Nice-to-have UI polish
+
+Do not touch P2 now unless it blocks core function.
+
+==================================================
+PHASE 2 — FIX BACKEND ROUTE FAILURES
+==================================================
+
+Fix any broken or incomplete backend trade action routes.
+
+Verify these actions are correctly routed:
+
+1. placeMarketOrder
+2. placePendingOrder
+3. modifyPositionProtection
+4. modifyPendingOrderProtection
+5. cancelPendingOrder only if supported
+
+For every route:
+- Validate payload
+- Normalize orderType
+- Require confirmedByUser for submit/modify/cancel actions
+- Run existing action guards
+- Run risk governor enforcement
+- Respect read-only mode
+- Respect live locked mode
+- Respect tradingDisabled
+- Respect Shared Master routing
+- Return honest unsupported status if MT5/bridge does not support action
+- Never return fake success
+
+Required order types:
+
+- BUY_MARKET
+- SELL_MARKET
+- BUY_LIMIT
+- SELL_LIMIT
+- BUY_STOP
+- SELL_STOP
+- BUY_STOP_LIMIT
+- SELL_STOP_LIMIT
+
+If current code uses different names, keep a safe mapping layer.
+
+==================================================
+PHASE 3 — FIX VALIDATION FAILURES
+==================================================
+
+Fix validation if QA found any wrong behavior.
+
+Required behavior:
+
+BUY_MARKET:
+- SL below entry/current ask
+- TP above entry/current ask
+
+SELL_MARKET:
+- SL above entry/current bid
+- TP below entry/current bid
+
+BUY_LIMIT:
+- Entry below current price
+- SL below entry
+- TP above entry
+
+SELL_LIMIT:
+- Entry above current price
+- SL above entry
+- TP below entry
+
+BUY_STOP:
+- Entry above current price
+- SL below entry
+- TP above entry
+
+SELL_STOP:
+- Entry below current price
+- SL above entry
+- TP below entry
+
+BUY_STOP_LIMIT:
+- Trigger above current ask
+- Limit price at or below trigger unless bridge/symbol rules require otherwise
+- SL below limit/entry
+- TP above limit/entry
+
+SELL_STOP_LIMIT:
+- Trigger below current bid
+- Limit price at or above trigger unless bridge/symbol rules require otherwise
+- SL above limit/entry
+- TP below limit/entry
+
+Also verify:
+- Numeric input only
+- Symbol precision respected
+- Minimum stop distance checked when available
+- Minimum pending distance checked when available
+- Lot size rules respected
+- SL required when risk settings require it
+- Missing market data produces preview/unavailable state, not fake validation
+
+==================================================
+PHASE 4 — FIX MT5 BRIDGE ACTION FAILURES
+==================================================
+
+Inspect the actual MT5 bridge command payload.
+
+Fix mapping if the backend sends fields that the bridge/EA does not understand.
+
+Confirm correct mapping for:
+
+Market:
+- BUY_MARKET
+- SELL_MARKET
+- stopLoss
+- takeProfit
+
+Pending:
+- BUY_LIMIT
+- SELL_LIMIT
+- BUY_STOP
+- SELL_STOP
+- BUY_STOP_LIMIT
+- SELL_STOP_LIMIT
+- entryPrice
+- stopTriggerPrice
+- stopLimitPrice
+- stopLoss
+- takeProfit
+- expiration if supported
+
+Modify open position:
+- positionId/ticket
+- symbol
+- stopLoss
+- takeProfit
+
+Modify pending order:
+- orderId/ticket
+- symbol
+- entryPrice if supported
+- stopTriggerPrice if supported
+- stopLimitPrice if supported
+- stopLoss
+- takeProfit
+- expiration if supported
+
+Cancel pending:
+- orderId/ticket only if supported
+
+If the current EA/bridge cannot support one of these actions yet:
+- Do not fake success.
+- Return clear unsupported status.
+- Include exact missing EA/bridge capability in final report.
+- Keep frontend from showing success when backend says unsupported.
+
+==================================================
+PHASE 5 — FIX FRONTEND/UI WIRING FAILURES
+==================================================
+
+Fix any broken frontend wiring from the QA report.
+
+Trade ticket must:
+- Show the right fields for selected order type
+- Validate before confirmation
+- Show confirmation before submit
+- Send normalized payload to backend
+- Show backend rejection reasons
+- Show unsupported bridge state clearly
+- Show success only after backend confirms success
+
+Open trade card must:
+- Show current SL/TP
+- Allow Edit SL/TP only for open positions
+- Refresh after update
+- Show failure if backend/bridge rejects
+
+Pending order card must:
+- Show order type
+- Show entry/trigger/limit fields
+- Show SL/TP
+- Allow edit only while pending
+- Allow cancel only if supported
+- Refresh after update/cancel
+
+Closed trade history:
+- Show historical SL/TP if available
+- Do not show live edit actions
+
+==================================================
+PHASE 6 — FIX AI CONTEXT FAILURES
+==================================================
+
+If QA found AI context gaps, update the AI app/trading context only.
+
+AI should know:
+- Current selected order type
+- Current draft SL/TP if available
+- Current open position SL/TP
+- Pending order SL/TP
+- Risk/reward estimate
+- Why an order was blocked
+- Whether bridge/action is unsupported
+- Whether data is live/demo/preview/disconnected
+
+AI must not:
+- Submit orders without confirmation
+- Claim live data when unavailable
+- Promise profit
+- Override risk governor
+- Override Shared Master safeguards
+
+==================================================
+PHASE 7 — FIX JOURNAL / AUDIT FAILURES
+==================================================
+
+If QA found missing journal/audit events, patch minimally.
+
+Journal/audit should record:
+
+- Market order submitted with SL/TP
+- Pending order submitted with SL/TP
+- Pending order modified
+- Pending order canceled if supported
+- Open position SL/TP modified
+- Trade closed
+- Rejected trade/order with reason
+- Unsupported bridge action with reason
+
+Make sure records are user-specific and do not leak between users.
+
+==================================================
+PHASE 8 — SHARED MASTER SAFETY CHECK
+==================================================
+
+After fixes, confirm:
+
+1. Shared Master routing still works.
+2. Trade attribution still works.
+3. Pending order attribution works or reports unsupported honestly.
+4. Virtual P&L does not write on every unrealized tick.
+5. SL/TP belongs to correct user/session.
+6. No user sees another user’s trade/order protection settings.
+7. Admin Shared Master namespace remains intact.
+8. Existing trading admin routes remain compatible.
+
+==================================================
+PHASE 9 — RUN TESTS AGAIN
+==================================================
+
+Run all available checks:
+
+- npm run lint if available
+- npm run typecheck if available
+- npm test if available
+- npm run build
+- backend/API tests if available
+- route health checks if available
+
+Then rerun the key manual tests that failed in the QA report.
+
+If no specific failures were listed, rerun these minimum tests:
+
+1. Buy Market valid SL/TP
+2. Buy Market invalid SL
+3. Sell Market valid SL/TP
+4. Sell Market invalid SL
+5. Buy Limit invalid entry
+6. Sell Limit invalid entry
+7. Buy Stop invalid entry
+8. Sell Stop invalid entry
+9. Buy Stop Limit invalid trigger/limit
+10. Sell Stop Limit invalid trigger/limit
+11. Edit SL/TP on open position
+12. Edit SL/TP on pending order
+13. Try editing closed trade
+14. Try action with bridge disconnected
+15. Try action without confirmation
+16. Try action blocked by risk governor
+17. Confirm no fake live success appears
+
+==================================================
+FINAL REPORT
+==================================================
+
+Update:
+
+TRADE_TICKET_QA_REPORT.md
+
+Add a “Follow-Up Fix Pass” section with:
+
+1. QA failures reviewed
+2. P0 fixes completed
+3. P1 fixes completed
+4. P2 items deferred
+5. Files changed
+6. Routes changed
+7. Bridge support status
+8. Unsupported actions still remaining
+9. Risk governor status
+10. Shared Master status
+11. AI context status
+12. Journal/audit status
+13. Tests run
+14. Build result
+15. Remaining blockers
+16. Confirmation that no rebuild/redesign was done
+17. Confirmation that no fake live data was added
+18. Confirmation that risk and confirmation guards remain enforced
+
+Stop after the follow-up fix pass and report.

@@ -1,0 +1,116 @@
+Run the next speed validation phase as T006: Production-Speed + Trade-Flow Micro-Timing Verification.
+
+The T005 result is accepted as a good frontend improvement, but it is not enough to close performance work because the report says trade-flow micro-timing was assessed structurally, not freshly measured.
+
+Do not disturb or rewrite the working LIVE MT5/API path unless a test proves something is broken. The current report says the api-server live MT5 path for userId 4 / connId 287 is healthy, untouched, all 200s, and 2–10ms. Preserve that.
+
+Goal:
+Prove the actual app experience is fast in production-like conditions, especially Scanner, Ruby, trade modal, Confirm action, open trade path, close trade path, and route changes.
+
+Tasks:
+
+1. Run a production build performance check
+- Run the app as close to production mode as possible, not only Vite dev preview.
+- Build the frontend.
+- Serve the production build.
+- Measure actual page boot and route navigation timing.
+- Compare dev preview timing vs production timing.
+- Document whether the remaining 1–3 second mobile delay is only Vite dev compilation or still exists in production.
+
+2. Add temporary performance marks/logging for real user actions
+Measure from button press to visible UI response for:
+- Login/auth load
+- Cockpit page open
+- Scanner page open
+- Scanner shell visible
+- Scanner data/results visible
+- Selecting a market
+- Ruby explanation panel opening
+- Ruby “thinking/typing” indicator appearing
+- Ruby first response text appearing
+- Trade modal opening
+- Confirm button press
+- Confirm button to backend queue/API acknowledgement
+- Open trade status update appearing in UI
+- Close trade button press
+- Close trade acknowledgement/status update
+- Settings page open
+- Notifications page open
+- Bottom nav route changes
+
+3. Required speed targets
+Use these as pass/fail goals:
+- App first usable screen: under 1.5s production target
+- Route change after bottom-nav tap: under 500ms target
+- Scanner shell visible: under 1s target
+- Scanner results/progressive data visible: under 2s target
+- Market row/card selection response: under 200ms target
+- Trade modal open after click: under 300ms target
+- Confirm click to backend acknowledgement: under 1s target when connection is healthy
+- Ruby typing/thinking indicator appears: under 100ms target
+- Ruby first useful response begins: under 2s target unless external AI/network delay is the cause
+- Open/close trade UI state update: under 1s after backend acknowledgement
+
+4. Scanner-specific inspection
+The Scanner is the most speed-critical page. Inspect it separately.
+Check for:
+- Heavy eager imports
+- Large static market lists loaded all at once
+- Unnecessary re-renders
+- Duplicate scanner fetches
+- Background polling that fires while hidden
+- Charts loading before the shell is visible
+- Ruby/voice modules loading before needed
+- Old scanner tabs or dormant panels still mounted
+- Unused scanner data pipelines
+- Dead UI sections that are hidden visually but still active in memory
+- Any “collapsed but mounted” panels similar to the Ruby issue from T005
+
+5. Fix if targets fail
+If any route or scanner action misses the target, fix the cause without breaking working features.
+Preferred fixes:
+- Route-split Cockpit/Dashboard/Scanner where still eager
+- Lazy-load heavy charts, Ruby voice, history panels, logs, admin-only sections, and large modals
+- Render shell first, then progressively load data
+- Memoize scanner rows/cards
+- Virtualize long lists
+- Debounce repeated requests
+- Cancel stale requests when switching markets
+- Prevent duplicate API calls
+- Move non-critical panels behind tabs/collapses that are truly unmounted until opened
+- Keep the bottom nav and main route shell always responsive
+- Keep user-facing UI simple and do not expose backend/internal function names
+
+6. Trade-flow test safety
+Do not automatically place a live trade during this test.
+This phase should measure readiness, modal speed, queue-path speed, and backend acknowledgement timing.
+Only submit a real live order if I manually press the approved Confirm button from the UI as owner/admin.
+Do not add extra confirmation modals.
+Do not add paper trading.
+Do not rename LIVE/DEMO concepts back to Paper.
+
+7. Verify no regressions
+After fixes, run:
+- Typecheck
+- Existing route/access guard tests
+- Scanner render test
+- Ruby chat/typing indicator test
+- Bottom navigation test
+- Mobile viewport test at 400x720
+- Desktop viewport test at 1280x720
+- Confirm LIVE MT5 path still untouched unless intentionally tested
+- Confirm no old dormant pages or dead panels were reactivated
+
+8. Final report required
+Give a clear T006 report with:
+- Production build result
+- Dev preview vs production timing difference
+- Timing table for every action listed above
+- What failed the target
+- What was fixed
+- What files changed
+- Whether the LIVE MT5 path was untouched
+- Whether scanner, Ruby, trade modal, open/close trade UI, and bottom nav passed
+- Remaining risks only if they are real and measured
+
+Do not close the task by saying “no further action needed” unless the actual scanner and trade-flow micro-timing has been freshly measured and passes the speed targets.

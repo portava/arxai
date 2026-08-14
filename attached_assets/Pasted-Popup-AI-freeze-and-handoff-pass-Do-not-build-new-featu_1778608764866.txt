@@ -1,0 +1,86 @@
+Popup AI freeze and handoff pass.
+
+Do not build new features.
+Do not change assistant intelligence.
+Do not change trading logic, MT5 logic, broker execution, live trading, risk rules, routes, Paper Lab, Replay Lab, Backtesting Lab, or Status Command Center.
+
+Goal:
+Lock the completed floating ARX Assistant popup AI work so future builds do not accidentally break it.
+
+Step 1 — Read closeout
+Open and review:
+POPUP_AI_CLOSEOUT.md
+
+Confirm whether the last acceptance gate result was:
+A. POPUP AI COMPLETE
+or
+B. POPUP AI NOT COMPLETE
+
+Step 2 — If popup AI is NOT complete
+Stop immediately and report only:
+- exact remaining popup AI defects
+- file/component causing each issue
+- what needs to be fixed next
+
+Do not continue.
+
+Step 3 — If popup AI is complete
+Create a popup AI protection note named:
+
+POPUP_AI_GUARDRAILS.md
+
+Include:
+- real floating assistant trigger file
+- assistant popup/panel file
+- animated icon file
+- assistant answer engine file
+- knowledge files used
+- runtime diagnostic files used
+- CSS/styling files used
+- mobile positioning requirements
+- desktop positioning requirements
+- accessibility requirements
+- safety boundaries
+- forbidden areas that future builds must not change casually
+
+Step 4 — Add regression checklist
+Inside POPUP_AI_GUARDRAILS.md, include this checklist:
+
+Before any future app build is accepted, confirm:
+- only one assistant icon appears
+- assistant floats above bottom nav on mobile
+- assistant does not block More tab
+- assistant does not block Emergency Stop
+- assistant does not block desktop sidebar/menu
+- assistant opens/closes correctly
+- animated icon states still work
+- assistant answers app-wide questions
+- assistant refuses trade/execution requests
+- no “No help topics for this page yet” message appears
+- no trading/MT5/broker/risk logic was changed by popup UI work
+
+Step 5 — Add lightweight regression test command or note
+If the project has tests, add or preserve a popup assistant regression test group.
+
+Test names should cover:
+- assistant trigger renders once
+- assistant opens from icon
+- assistant closes
+- mobile offset exists
+- desktop position exists
+- forbidden trade request is refused
+- no duplicate popup exists
+- animated icon renders
+- reduced motion fallback works
+
+If automated tests are not available, add this as a manual QA section in the guardrails file.
+
+Step 6 — Final report
+Return:
+- popup AI status: complete or not complete
+- POPUP_AI_CLOSEOUT.md reviewed: yes/no
+- POPUP_AI_GUARDRAILS.md created/updated: yes/no
+- files protected by guardrails
+- tests/checklist added
+- remaining popup AI issues, if any
+- confirmation that no new app features were built

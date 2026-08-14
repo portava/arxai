@@ -1,0 +1,342 @@
+Run an ARX Feed Regression Investigation focused on what changed during the Smart Chart build.
+
+The feed was working better before Smart Chart work. Now some markets show unfinished/missing/stale data, and MT5 does not appear to be feeding chart data correctly. We need to identify exactly what changed, not guess.
+
+Important context:
+- Volatility/synthetics showing does not prove all markets are working because Deriv synthetics may be fed by Deriv WebSocket.
+- Forex/metals/indices/stocks/crypto may depend on MT5 broker market data or assistant_real fallback providers.
+- MT5 bridge may currently provide heartbeat/account/positions/execution, but not necessarily quote/candle push.
+- Smart Chart added stricter truth/freshness/aiUsable/candle validation, which may be blocking data that previously displayed loosely.
+- We need to know whether the data is truly broken, or whether Smart Chart truth gates are now correctly exposing stale/incomplete feeds.
+
+Do not rebuild the whole feed system.
+Do not change live execution.
+Do not bypass Risk Governor, AACI, Security Handshake, Chart Truth, or Scanner Truth.
+Do not fake candles.
+Do not use simulator data to make a market look available.
+Do not let external fallback prices become execution truth.
+
+==================================================
+PRIMARY QUESTION
+==================================================
+
+What exactly changed during the Smart Chart build that caused markets to stop showing complete data or stop being fed from MT5?
+
+Find the root cause by comparing the current feed path against the pre-Smart-Chart behavior.
+
+Answer these directly:
+
+1. Did Smart Chart change the chart endpoint used by the UI?
+2. Did Smart Chart move users from /api/data/candles to /api/chart/candles?
+3. Did /api/chart/candles introduce feedStatus/aiUsable gates that now block candles?
+4. Did Smart Chart require H1/H4/D1 timeframes that the provider is not returning?
+5. Did Smart Chart start rejecting delayed/stale candles that the old chart used to display?
+6. Did mt5Provider ever receive real quote/candle data before, or was MT5 only providing heartbeat/account/positions?
+7. Did an MT5 quote/candle push endpoint exist before Smart Chart?
+8. Did the EA ever call CopyRates or push candles to the backend?
+9. Did symbol/timeframe keying break, such as storing MT5 candles by symbol only instead of symbol+timeframe?
+10. Did the router priority change so MT5 is skipped or fallback is overused?
+11. Did symbol normalization/mapping change and cause markets to miss provider data?
+12. Did provider filtering or the approved-market universe block symbols that used to display?
+13. Did feed freshness thresholds become too strict for 1m/5m charts?
+14. Did the Smart Chart dedup/cache layer serve stale or empty responses?
+15. Did chart truth reject candles because of OHLC validation, timestamp gaps, or missing latest bar?
+
+==================================================
+STEP 1 — TRACE THE CURRENT DATA FLOW
+==================================================
+
+For these markets, trace the full feed path:
+
+- Volatility 75 Index
+- Volatility 75 1s Index
+- EURUSD
+- GBPUSD
+- XAUUSD
+- US30
+- US100
+- BTCUSD
+
+For each market and timeframe M1/M5/M15/H1/H4/D1, report:
+
+- requested display symbol
+- normalized symbol
+- broker symbol
+- endpoint called
+- provider attempted first
+- providers attempted after fallback
+- winning provider
+- candle count returned
+- first candle time
+- last candle time
+- missing intervals
+- feedStatus
+- freshness
+- aiUsable
+- Chart Truth status
+- reason for rejection if rejected
+- whether MT5 was attempted
+- why MT5 was skipped if skipped
+- whether Deriv was attempted
+- whether TwelveData was attempted
+- whether Polygon was attempted
+- whether simulator was involved
+- whether the user UI shows it selectable
+
+Return this as a table.
+
+==================================================
+STEP 2 — COMPARE VOLATILITY VS FOREX/METALS
+==================================================
+
+Explain why Volatility works while other markets do not.
+
+Specifically verify:
+
+- Volatility is fed by Deriv WebSocket, not MT5.
+- Deriv synthetics have active candles/ticks.
+- Forex/metals/indices are not using Deriv.
+- Forex/metals/indices are falling to assistant_real or stale Polygon/TwelveData.
+- MT5 candle/quote slot is inactive unless EA pushes candles/quotes.
+
+If Volatility works because Deriv is active, state clearly:
+“Volatility working proves the Deriv provider works, not that MT5 broker candles are feeding all markets.”
+
+==================================================
+STEP 3 — AUDIT MT5 MARKET-DATA PUSH
+==================================================
+
+Inspect:
+
+- EA file currently in project
+- MT5 heartbeat endpoint
+- position sync endpoint
+- account sync endpoint
+- quote sync endpoint if any
+- candle sync endpoint if any
+- mt5Provider.ts
+- marketDataRouter.ts
+- chartDataService.ts
+- symbolDirectory.ts
+
+Answer:
+
+1. Does the current EA push candles?
+2. Does the current EA push quotes?
+3. Does it call CopyRates?
+4. Does it post to /api/mt5/sync-candles?
+5. Does it post to /api/mt5/sync-quotes?
+6. Does the backend have working endpoints to receive quotes/candles?
+7. Does mt5Provider store candles by symbol+timeframe?
+8. Does mt5Provider expose quote/candle freshness separately from heartbeat freshness?
+9. Is MT5 heartbeat being mistakenly treated as market-data availability?
+10. Is MT5 execution/account bridge working while MT5 market-data feed is not?
+
+If MT5 candle/quote push is missing, state that clearly.
+
+==================================================
+STEP 4 — FIND SMART CHART REGRESSION POINTS
+==================================================
+
+Search recent Smart Chart-related changes for:
+
+- endpoint switch
+- chart feed contract changes
+- data adapter changes
+- candle truth validation
+- timeframe requirements
+- source filtering
+- aiUsable gating
+- fallback blocking
+- stale threshold changes
+- cache/dedup changes
+- symbol normalization changes
+- disabled selectable state changes
+- approved Top 250 market filtering
+- scanner/chart shared cache changes
+
+Identify the exact files and lines responsible.
+
+Possible files to inspect:
+
+- ARXNativeChart
+- ScannerChartPanel
+- SmartChartIntelligence adapter
+- ChartDataAdapter
+- chartDataService.ts
+- marketDataRouter.ts
+- candleTruthEngine.ts
+- chartTruth modules
+- mt5Provider.ts
+- symbolNormalizer.ts
+- symbolDirectory.ts
+- approved market universe files
+- feed status components
+- chart hooks
+
+==================================================
+STEP 5 — CLASSIFY THE PROBLEM
+==================================================
+
+For each affected market, classify the root cause as one of:
+
+A. Real feed missing
+B. MT5 candle/quote push missing
+C. Provider fallback delayed/stale
+D. Smart Chart gate too strict
+E. Timeframe unavailable
+F. Symbol mapping failure
+G. Cache/dedup stale issue
+H. Approved-market filter issue
+I. UI display bug
+J. Broker market not in Market Watch
+K. Provider API limitation
+L. Other
+
+Do not mix them together. Each market should have a specific reason.
+
+==================================================
+STEP 6 — FIX ONLY THE CONFIRMED GAPS
+==================================================
+
+After root cause is found, fix only confirmed gaps.
+
+Likely safe fixes:
+
+1. If MT5 candle/quote push is missing:
+Add or complete server endpoints:
+- POST /api/mt5/sync-quotes
+- POST /api/mt5/sync-candles
+
+Then document EA requirements:
+- CopyRates push
+- SymbolInfoDouble bid/ask push
+- symbol/timeframe backfill
+- incremental candle updates
+
+Do not claim MT5 is feeding charts until EA actually pushes quotes/candles.
+
+2. If Smart Chart gates are too strict:
+Adjust gates so:
+- real delayed data can still show chart with delayed badge
+- Ruby only gives limited read
+- trade confidence remains blocked
+- chart display does not go blank unnecessarily
+
+3. If timeframes are missing:
+Allow partial timeframe display:
+- show available timeframe
+- badge missing H1/H4
+- Ruby says confidence limited
+- do not block the whole symbol if M15 exists but H1/H4 missing
+
+4. If symbol mapping is broken:
+Fix alias/symbol mapping, especially:
+- XAUUSD / GOLD
+- US30 / DJ30 / WallStreet30
+- US100 / NAS100 / USTEC
+- US500 / SPX500
+- Volatility 75 / V75
+- BTCUSD / BTC
+
+5. If cache/dedup serves stale data:
+Fix cache key by:
+- symbol
+- normalized symbol
+- timeframe
+- provider
+- account/broker if needed
+
+6. If approved Top 250 filter disabled markets too aggressively:
+Only disable markets with no real data whatsoever.
+Do not disable markets that have delayed/stale real data; make them selectable but clearly limited, unless product decision says otherwise.
+
+==================================================
+STEP 7 — USER-FACING EXPECTED BEHAVIOR
+==================================================
+
+Final behavior should be:
+
+If Volatility has Deriv data:
+- selectable
+- chart opens
+- Ruby can read if feed clean
+- tradeability still depends on broker/Deriv/bridge support
+
+If EURUSD has delayed fallback data:
+- selectable if real data exists
+- chart opens with Delayed badge
+- Ruby says limited read
+- no strong trade confidence
+
+If XAUUSD has real fallback data but no MT5 broker candles:
+- selectable
+- chart opens
+- badge says fallback/delayed if applicable
+- Ruby says broker chart feed not active if needed
+- trade button depends on broker mapping and risk gates
+
+If a market has no real data whatsoever:
+- not selectable
+- show “Data not available yet”
+- no fake chart
+- no simulator chart for regular users
+
+If MT5 heartbeat is live but quote/candle push is missing:
+- execution/account can be live
+- chart feed must not be labeled MT5 live
+- admin should see “MT5 market data push inactive”
+
+==================================================
+STEP 8 — TESTS
+==================================================
+
+Add/update tests:
+
+1. Volatility uses Deriv provider and is not proof MT5 charts work.
+2. Forex falls to assistant_real when MT5 market data inactive.
+3. MT5 heartbeat alone does not mark candles live.
+4. Missing MT5 candle push produces clear MT5_MARKET_DATA_INACTIVE reason.
+5. Real delayed fallback data still opens chart with Delayed badge.
+6. aiUsable=false blocks confident Ruby read but does not necessarily blank the chart.
+7. Missing H1/H4 limits confidence but does not hide M15 chart if M15 exists.
+8. Symbol alias mapping works for XAUUSD, US30, US100, V75.
+9. Cache key separates symbol/timeframe/provider.
+10. Approved Top 250 filter does not hide markets that have real data.
+11. No-data markets remain unselectable.
+12. Simulator data does not make market selectable/tradeable.
+13. MT5 candle endpoint, if present, stores by symbol+timeframe.
+14. Quote endpoint, if present, updates quote freshness.
+15. Open Trades and Dashboard remain broker-truth and unchanged.
+
+Run:
+- market router tests
+- chart data tests
+- Smart Chart tests
+- symbol mapping tests
+- Ruby read tests
+- typecheck
+- CI guards if feasible
+
+==================================================
+COMPLETION REPORT
+==================================================
+
+Return:
+
+- what changed during Smart Chart build
+- whether feed is actually broken or newly gated
+- why Volatility works
+- why EURUSD/XAUUSD/US30/US100 do or do not work
+- whether MT5 ever pushed candles/quotes
+- whether current EA supports candle/quote push
+- exact root cause by market/timeframe
+- files inspected
+- files changed
+- fixes made
+- tests added/updated
+- typecheck/guard results
+- remaining blockers
+
+Final rule:
+Do not assume “Volatility works” means all markets should work. Prove which provider feeds each market. Then fix the exact regression or missing MT5 market-data push without weakening truth gates or execution safety.

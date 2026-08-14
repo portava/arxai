@@ -1,0 +1,141 @@
+Check and fix the Andraie admin/regular user mode switch.
+
+SCOPE LOCK:
+Only work on:
+1. Admin/regular mode switch behavior for admin-capable accounts.
+2. Effective role handling.
+3. Admin navigation visibility.
+4. Admin route/API permission enforcement.
+5. User/admin mode session state.
+
+Do not change:
+- MT5 execution logic
+- live/demo permissions
+- kill switches
+- admin approval rules
+- scanner logic
+- Ruby intelligence
+- login page design
+- trade execution flow
+- slot allocation formulas
+- open-trade P/L calculations
+
+GOAL:
+Andraie’s account can be admin-capable, but when switched to regular user mode, Andraie should have no access to admin controls unless switching back into admin mode.
+
+Important concept:
+Do not remove Andraie’s admin role.
+Instead, enforce an “effective mode”:
+- admin role + admin mode ON = effective admin
+- admin role + admin mode OFF = effective regular user
+- regular user = regular user only, no admin switch
+
+PART 1 — Inspect current system first
+Inspect:
+- user role model
+- auth/session payload
+- admin guard logic
+- side menu / More menu admin visibility
+- admin dashboard routes
+- admin API route guards
+- account mode switch component if it already exists
+- localStorage/sessionStorage usage
+- backend middleware for role checks
+
+Do not rebuild if already present. Fix what is incomplete.
+
+PART 2 — Effective role behavior
+Add or fix a clear effective role/mode system.
+
+For Andraie/admin-capable accounts:
+- Admin mode ON:
+  - show admin dashboard access
+  - show admin menu items
+  - allow admin-only API calls
+  - allow admin-only views such as beta readiness, audit/reconciliation, user slot summaries, master metrics
+- Admin mode OFF / regular mode:
+  - hide all admin dashboard links
+  - hide admin menu sections
+  - hide admin-only controls
+  - block direct admin route access
+  - block admin-only API calls server-side
+  - show only regular user dashboard/tools
+  - show only Andraie’s own user-level trades, slot metrics, activity, ledger, scanner, Ruby, risk, etc.
+  - never show master MT5 account balance
+  - never show all-user metrics
+  - never show admin audit/reconciliation controls
+
+PART 3 — Server-side enforcement
+This must not be frontend-only.
+
+Admin APIs must require:
+- user has admin role
+AND
+- current session/adminMode is active
+
+If adminMode is OFF:
+- admin API calls must return clean 403/locked response
+- no raw errors
+- no stack traces
+- no route names
+- no internal function names
+
+Direct URL testing:
+If Andraie is in regular mode and manually visits an admin URL, redirect to regular dashboard or show clean “Admin mode required” message.
+
+PART 4 — UI behavior
+For admin-capable users only, provide a clear mode switch:
+- Admin Mode
+- Regular Mode
+
+When switched to Regular Mode:
+- the app should visually feel like a regular user account
+- no admin sidebar items
+- no admin bottom nav items
+- no admin dashboard cards
+- no admin-only buttons
+- no master account metrics
+- no user-management tables
+- no reconciliation/admin audit controls
+
+Only keep a safe way to switch back to Admin Mode, such as:
+- profile/menu mode switch
+- account mode toggle
+
+Regular users should never see this switch.
+
+PART 5 — Session persistence
+Mode should persist safely for the session.
+If using localStorage only, do not rely on it for security.
+Backend/session/API guards must still enforce effective admin mode.
+
+If the user logs out and logs back in:
+- preserve current intended behavior if already designed
+- otherwise default admin-capable accounts to Regular Mode for safer access, with ability to switch into Admin Mode
+
+PART 6 — Audit log
+Log admin mode changes:
+- admin_mode_enabled
+- admin_mode_disabled
+
+Include:
+- userId
+- timestamp
+- source
+- safe metadata
+
+Do not expose this audit log to regular users.
+
+PART 7 — Acceptance checklist
+Do not finish until:
+1. Andraie can switch between Admin Mode and Regular Mode.
+2. In Regular Mode, Andraie has no admin controls visible.
+3. In Regular Mode, Andraie cannot access admin routes directly.
+4. In Regular Mode, Andraie cannot call admin APIs.
+5. In Regular Mode, Andraie cannot see master MT5 account metrics.
+6. In Regular Mode, Andraie sees only regular user tools/data.
+7. Switching back to Admin Mode restores admin controls.
+8. Regular non-admin users never see the admin/regular mode switch.
+9. Backend enforces this, not just frontend hiding.
+10. No live trades are placed.
+11. No execution permissions, kill switches, or admin approval rules are changed.

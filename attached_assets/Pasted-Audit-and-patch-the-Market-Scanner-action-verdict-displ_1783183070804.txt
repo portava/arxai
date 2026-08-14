@@ -1,0 +1,72 @@
+Audit and patch the Market Scanner action/verdict display so the visible ACTION badge/button always reflects Eleanor’s actual directional decision and confirmation state.
+
+Problem seen on BTCUSD 15m:
+- Eleanor reasoning decision = “Conditional BUY”
+- Eleanor confirmation says buy only becomes stronger if price confirms
+- Scanner ACTION badge only shows “Wait for confirmation”
+- This is misleading because it hides the BUY direction even though the chart/read is a conditional buy setup.
+
+Rules:
+1. Do not rebuild scanner, chart, Eleanor, or execution.
+2. Do not weaken live trading gates.
+3. Do not create a new execution path.
+4. Patch only the confirmed display/state mismatch.
+
+Required behavior:
+- If Eleanor/scanner decision is Conditional BUY, visible action must include BUY direction.
+  Example labels:
+  “Conditional Buy”
+  “Buy Setup Waiting”
+  “Conditional Buy — Wait”
+- If decision is Conditional SELL, visible action must include SELL direction.
+  Example labels:
+  “Conditional Sell”
+  “Sell Setup Waiting”
+  “Conditional Sell — Wait”
+- If decision is true WAIT with no direction, then “Wait” or “Wait for confirmation” is okay.
+- If decision is BUY, show Buy.
+- If decision is SELL, show Sell.
+- If decision is AVOID / NO TRADE, show Avoid / No Trade.
+- The explanation/subtext can still say confirmation is required, but the main action badge/button cannot hide direction.
+
+Audit targets:
+- Scanner verdict normalization
+- Eleanor reasoning result mapping
+- ScannerTruth / action status publisher
+- MarketScanner header/action badge
+- ScalpSignalCard or any card that publishes action/verdict state
+- Any store/state layer holding actionLabel, verdict, decision, action, or confirmationStatus
+
+Implementation requirements:
+- Prefer deriving the visible action from canonical Eleanor/scanner decision fields, not from a generic reason string.
+- Preserve existing safety semantics:
+  Conditional BUY/SELL must not become executable BUY/SELL unless the existing system already allows it.
+  This is display truth only.
+- Add a small shared formatter if needed:
+  decision + requiresConfirmation => visibleActionLabel
+- Ensure stale or missing decision does not overwrite a newer directional decision with generic “Wait for confirmation.”
+- If multiple sources publish scanner status, priority should be:
+  1. Explicit Eleanor/scanner decision
+  2. Directional setup/action
+  3. Confirmation/wait state
+  4. Generic fallback
+
+Regression tests required:
+1. Conditional BUY + requires confirmation renders visible label containing “Buy”.
+2. Conditional SELL + requires confirmation renders visible label containing “Sell”.
+3. Pure WAIT with no direction renders Wait/Wait for confirmation.
+4. Low confidence Conditional BUY does not collapse to generic Wait.
+5. Stale generic wait publish cannot overwrite a current directional conditional action.
+6. Header/action badge and card/store use the same formatter or produce matching labels.
+
+Run:
+- affected scanner tests
+- scanner truth regression tests
+- dashboard typecheck
+- any existing MarketScanner render tests
+
+Report:
+- exact files changed
+- exact mapping table before/after
+- test results
+- confirm no execution/gate/live trading path was changed

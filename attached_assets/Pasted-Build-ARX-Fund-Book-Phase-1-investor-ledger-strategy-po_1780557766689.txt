@@ -1,0 +1,1650 @@
+Build ARX Fund Book Phase 1: investor ledger, strategy pool NAV, unit accounting, live broker mirror overlay, real-time investor P/L, drawdown, withdrawal/deposit fee logic, and discrepancy controls.
+
+This is the foundation for managing investor funds while using a shared live broker bridge.
+
+This is NOT a trading execution change.
+Do not change the live bridge execution path.
+Do not place any live trade for this build.
+Do not add Paper Trading, simulator, mock, fake, sandbox, or test-trading language.
+Do not expose backend table names, route names, raw JSON, stack traces, or developer wording to investors.
+
+Main principle:
+The broker account is shared.
+Investor accounting is separate.
+Every investor must only see their own ledger, units, allocation, P/L, drawdown, fees, withdrawals, deposits, and statements.
+
+Investor balances must start from the investor’s own approved ledger balance, not from the master broker balance.
+
+The broker mirror is only used to apply that investor’s verified proportional share of live pool P/L, drawdown, and exposure.
+
+No bleed-over.
+No cross-investor visibility.
+No guessing.
+No direct splitting of the full broker balance unless investor units prove the exact share.
+
+====================================================
+PART 1 — INSPECT CURRENT SYSTEM FIRST
+====================================================
+
+Before building, inspect the current codebase for:
+
+1. Existing investor portal work
+- investor role
+- investor login routing
+- investor dashboard
+- allocation pages
+- statements/documents
+- activity feed
+- admin investor management
+
+2. Existing auth/roles
+- admin
+- trader/user
+- investor
+- current role enforcement
+- backend permission checks
+- frontend route guards
+- Andraie.co@gmail.com role split work
+- separate admin login/config
+
+3. Existing broker bridge mirror
+- MT5/EA balance sync
+- equity sync
+- margin/free margin
+- open position sync
+- closed trade/deal sync
+- command result/retcode storage
+- position visibility source
+- freshness status
+
+4. Existing ledger/audit tables
+- investor ledger
+- audit log
+- statements
+- deposit/withdrawal records
+- fee records
+- allocation requests
+
+5. Existing strategy/risk profile logic
+- Conservative
+- Balanced
+- Aggressive
+- Custom
+- Cash Reserve
+
+Reuse what exists.
+Do not duplicate systems.
+Extend what is missing.
+
+Deliver a build summary showing:
+- what already existed
+- what was reused
+- what was missing
+- what was added
+- what files changed
+
+====================================================
+PART 2 — CORE ARCHITECTURE
+====================================================
+
+Create/upgrade the ARX Fund Book architecture:
+
+1. Broker Mirror Layer
+Mirrors real broker account state exactly as received from the bridge.
+
+2. Master Fund Book
+Tracks total internal fund accounting across all investors and pools.
+
+3. Strategy Pool Ledger
+Tracks Conservative, Balanced, Aggressive, and Cash Reserve pools.
+
+4. Unit-Based NAV Engine
+Calculates pool NAV and investor unit value.
+
+5. Investor Ledger
+Tracks each investor’s deposits, withdrawals, fees, P/L, adjustments, and current value.
+
+6. Investor Pool Holdings
+Tracks how many units each investor owns in each pool.
+
+7. Trade-to-Pool Allocation
+Maps live broker positions/trades to strategy pools.
+
+8. Real-Time P/L Allocator
+Applies pool P/L to investor values based on units.
+
+9. Drawdown Engine
+Tracks master, pool, investor, and trade drawdown.
+
+10. Discrepancy/Reconciliation Center
+Compares broker mirror, pool NAV, investor ledger, and displayed values.
+
+11. Capital Movement System
+Handles deposit requests, withdrawal requests, speed-based fees, settlement status, and admin approvals.
+
+12. Audit + Statement System
+Tracks every financial change and produces transparent investor records.
+
+====================================================
+PART 3 — SOURCE OF TRUTH RULES
+====================================================
+
+Implement and document these authority rules:
+
+Broker/bridge is source of truth for:
+- broker balance
+- broker equity
+- margin
+- free margin
+- open positions
+- closed broker trades/deals
+- tickets/orders
+- floating P/L
+- broker execution result
+- retcodes
+- account currency
+- broker freshness
+
+ARX Fund Book is source of truth for:
+- investor deposits
+- investor withdrawals
+- investor ledger entries
+- investor units
+- pool ownership
+- strategy allocations
+- fees
+- statements
+- admin adjustments
+- disclosure acknowledgments
+- capital movement requests
+- audit history
+
+Investor displayed value must be calculated from:
+- investor ledger
+- investor pool units
+- current pool NAV
+- live broker mirror P/L allocated to the pool
+- approved fees/adjustments
+
+Never calculate investor value by directly showing or splitting the master broker balance.
+
+====================================================
+PART 4 — DATA MODEL
+====================================================
+
+Inspect existing tables/models first. Reuse and extend when possible.
+
+If missing, add safe migrations for these concepts.
+
+A. BrokerAccountMirror
+
+Fields:
+- id
+- brokerName
+- brokerAccountId
+- bridgeId
+- platformType: MT5 / API / manual / future
+- accountCurrency
+- balance
+- equity
+- margin
+- freeMargin
+- floatingPL
+- realizedPL if available
+- openPositionCount
+- lastSyncedAt
+- freshnessStatus: FRESH / STALE / MISSING / DISCONNECTED / ERROR
+- rawSnapshotAdminOnly
+- createdAt
+- updatedAt
+
+B. BrokerPositionMirror
+
+Fields:
+- id
+- brokerAccountMirrorId
+- brokerTicketId
+- brokerOrderId
+- brokerDealId if available
+- symbol
+- canonicalSymbol if available
+- direction: BUY / SELL
+- lotSize
+- entryPrice
+- currentPrice
+- stopLoss
+- takeProfit
+- floatingPL
+- openTime
+- status: OPEN / CLOSED / UNKNOWN
+- lastSyncedAt
+- freshnessStatus
+- rawPositionAdminOnly
+- createdAt
+- updatedAt
+
+C. StrategyPool
+
+Fields:
+- id
+- name: Conservative / Balanced / Aggressive / Cash Reserve
+- description
+- riskLevel
+- baseCurrency
+- status: ACTIVE / PAUSED / CLOSED
+- maxPoolCapital
+- maxDrawdownPercent
+- warningDrawdownPercent
+- liquidityReservePercent
+- maxBrokerExposurePercent
+- maxSymbolExposurePercent
+- createdAt
+- updatedAt
+
+D. StrategyPoolNAV
+
+Fields:
+- id
+- strategyPoolId
+- navPerUnit
+- totalPoolValue
+- totalUnitsOutstanding
+- realizedPL
+- unrealizedPL
+- feesAccrued
+- depositsAllocated
+- withdrawalsRedeemed
+- approvedAdjustments
+- highWaterValue
+- currentDrawdownPercent
+- calculatedAt
+- sourceSnapshotId if applicable
+- status: CURRENT / HISTORICAL / CORRECTED / UNDER_REVIEW
+- createdAt
+
+E. InvestorProfile
+
+Fields:
+- id
+- userId
+- investorDisplayName
+- status: ACTIVE / PAUSED / CLOSED / UNDER_REVIEW
+- baseCurrency
+- totalDeposited
+- totalWithdrawn
+- netInvestedCapital
+- currentGrossValue
+- currentNetValue
+- availableToWithdraw
+- allocatedFunds
+- unallocatedFunds
+- pendingSettlement
+- tiedToOpenPositions
+- reservedFees
+- realizedPL
+- unrealizedPL
+- currentDrawdownPercent
+- highWaterValue
+- activeAllocationJson
+- activeRiskProfile
+- lastCalculatedAt
+- freshnessStatus
+- createdAt
+- updatedAt
+
+F. InvestorPoolHolding
+
+Fields:
+- id
+- investorId
+- strategyPoolId
+- unitsOwned
+- averageNAV
+- currentNAV
+- currentValue
+- realizedPL
+- unrealizedPL
+- currentDrawdownPercent
+- highWaterValue
+- status: ACTIVE / PENDING_REDEMPTION / CLOSED
+- createdAt
+- updatedAt
+
+G. InvestorLedgerEntry
+
+Fields:
+- id
+- investorId
+- entryType:
+  - deposit
+  - withdrawal
+  - allocation
+  - unit_issue
+  - unit_redemption
+  - realized_pl
+  - unrealized_pl_snapshot
+  - management_fee
+  - performance_fee
+  - deposit_fee
+  - withdrawal_fee
+  - liquidity_fee
+  - adjustment
+  - statement_correction
+- amount
+- grossAmount
+- feeAmount
+- netAmount
+- currency
+- description
+- relatedPoolId
+- relatedHoldingId
+- relatedCapitalMovementId
+- relatedTradeId
+- relatedStatementId
+- createdBy
+- status: PENDING / POSTED / REVERSED / CORRECTED
+- createdAt
+
+H. CapitalMovementRequest
+
+Fields:
+- id
+- investorId
+- type: DEPOSIT / WITHDRAWAL
+- requestedGrossAmount
+- calculatedFeeAmount
+- calculatedNetAmount
+- currency
+- speedTierId
+- status:
+  - DRAFT
+  - SUBMITTED
+  - PENDING_REVIEW
+  - APPROVED
+  - PROCESSING
+  - SETTLED
+  - COMPLETED
+  - REJECTED
+  - CANCELLED
+  - FAILED
+- requestedAt
+- approvedAt
+- approvedBy
+- rejectedAt
+- rejectionReason
+- settledAt
+- completedAt
+- adminNote
+- createdAt
+- updatedAt
+
+I. CapitalMovementFeeTier
+
+Fields:
+- id
+- type: DEPOSIT / WITHDRAWAL
+- name: Standard / Priority / Rush / Full Immediate Exit / Emergency
+- processingTimeText
+- feeType: FLAT / PERCENTAGE / BOTH
+- percentageFee
+- flatFee
+- minimumFee
+- maximumFee
+- requiresAdminApproval
+- requiresRiskAcknowledgment
+- isActive
+- investorFacingDescription
+- createdAt
+- updatedAt
+
+J. TradePoolAllocation
+
+Fields:
+- id
+- brokerPositionMirrorId or tradeId
+- brokerTicketId
+- strategyPoolId
+- allocationPercent
+- allocatedFloatingPL
+- allocatedRealizedPL
+- status: ACTIVE / CLOSED / UNASSIGNED / UNDER_REVIEW
+- assignedBy
+- assignedAt
+- createdAt
+- updatedAt
+
+K. DiscrepancyRecord
+
+Fields:
+- id
+- severity: LOW / MEDIUM / HIGH / CRITICAL
+- sourceType: BROKER / LEDGER / POOL / INVESTOR / STATEMENT / POSITION / NAV
+- status: OPEN / INVESTIGATING / RESOLVED / DISMISSED
+- title
+- description
+- expectedValue
+- actualValue
+- differenceAmount
+- differencePercent
+- firstDetectedAt
+- lastCheckedAt
+- resolvedAt
+- resolvedBy
+- resolutionNote
+- affectedInvestorId
+- affectedPoolId
+- affectedBrokerAccountId
+- affectedPositionId
+- createdAt
+- updatedAt
+
+L. AuditLog
+
+If not already sufficient, ensure it records:
+- actorUserId
+- targetUserId
+- entityType
+- entityId
+- action
+- beforeJson
+- afterJson
+- reason
+- ipAddress/device if available
+- createdAt
+
+====================================================
+PART 5 — UNIT-BASED NAV ACCOUNTING
+====================================================
+
+Implement unit-based NAV accounting.
+
+Core rule:
+Units are not fixed-limited supply.
+Units are variable-supply internal accounting shares.
+
+Units are only created when:
+- deposit is approved/settled
+- allocation is approved
+- NAV is confirmed
+- audit log is created
+
+Units are redeemed when:
+- withdrawal is approved
+- pool redemption is processed
+- NAV is confirmed
+- audit log is created
+
+Pool NAV formula:
+
+Pool NAV = Pool Net Value / Total Pool Units
+
+Pool Net Value =
+Starting Pool Capital
++ Realized P/L
++ Unrealized P/L
++ Deposits allocated to the pool
+- Withdrawals redeemed from the pool
+- Fees
++/- Approved Adjustments
+
+Investor Pool Value =
+Investor Pool Units × Current Pool NAV
+
+Investor Ownership % =
+Investor Pool Units / Total Pool Units
+
+Investor Gain Share =
+Pool Gain × Investor Ownership %
+
+Investor Unrealized P/L =
+Pool Open P/L × Investor Ownership %
+
+Investor Total Value =
+Cash Reserve
++ Conservative Units × Conservative NAV
++ Balanced Units × Balanced NAV
++ Aggressive Units × Aggressive NAV
+- Fees
++/- Approved Adjustments
+
+Important:
+Deposits increase pool value and total units.
+Deposits must not artificially increase NAV.
+
+Withdrawals reduce pool value and redeem units.
+Withdrawals must not artificially decrease NAV.
+
+Trading performance changes NAV.
+Fees and approved adjustments affect net investor value.
+
+====================================================
+PART 6 — STARTING NAV AND UNIT ISSUANCE
+====================================================
+
+Each strategy pool starts at:
+
+Starting NAV = $1.00 per unit
+
+Example:
+Investor deposits $10,000 into Balanced when NAV is $1.00.
+Investor receives 10,000 Balanced units.
+
+If later Balanced NAV is $1.25 and a new investor deposits $10,000:
+New investor receives 8,000 units.
+
+Formula:
+New Units Issued = Net Deposit Allocated to Pool / Current Pool NAV
+
+Withdrawal formula:
+Units Redeemed = Gross Withdrawal From Pool / Current Pool NAV
+
+Investor value:
+Investor Pool Value = Investor Units × Current Pool NAV
+
+Do not create arbitrary units.
+Do not issue units without approved ledger entry.
+Do not redeem units without approved withdrawal/capital movement entry.
+Every unit issuance/redemption must be auditable.
+
+====================================================
+PART 7 — INVESTOR MIRROR LOGIC
+====================================================
+
+Build investor mirror logic as:
+
+Investor Ledger Balance
+→ Investor Allocation
+→ Investor Pool Units
+→ Pool Ownership %
+→ Broker Live Mirror P/L
+→ Investor Real-Time Value
+
+Investor balance must begin from:
+- approved deposits
+- minus withdrawals
+- minus fees
+- plus/minus approved adjustments
+- plus/minus pool performance from owned units
+
+Investor balance must not begin from:
+- master broker balance
+- full broker equity
+- another investor’s value
+- unscoped pool total
+
+Investor dashboard must only show:
+- their current value
+- their invested capital
+- their realized P/L
+- their unrealized P/L
+- their allocation
+- their drawdown
+- their exposure share
+- their fees
+- their deposits/withdrawals
+- their statement/activity history
+- their freshness status
+
+Investor must not see:
+- other investors
+- other investor balances
+- other investor allocations
+- full master broker account balance unless admin explicitly enables a summarized percentage view
+- raw broker bridge data
+- admin notes
+- internal route/table names
+
+====================================================
+PART 8 — REAL-TIME BROKER MIRROR OVERLAY
+====================================================
+
+Use the existing live bridge/broker data.
+
+Do not replace it.
+Mirror it app-side.
+
+The broker mirror should update:
+- broker account balance
+- broker equity
+- margin
+- free margin
+- floating P/L
+- open positions
+- closed positions/deals if available
+- tickets/orders
+- last synced timestamp
+
+Then ARX Fund Book applies it to pools:
+
+Example:
+Broker position EURUSD Buy has floating P/L +$100.
+That position is assigned to Balanced Pool.
+Balanced Pool total units = 100,000.
+Investor A owns 10,000 Balanced units.
+Investor A owns 10%.
+Investor A unrealized P/L share = $100 × 10% = +$10.
+
+If a trade has no pool assignment:
+- create a HIGH or CRITICAL discrepancy
+- do not blindly allocate P/L to investors
+- show admin “Unassigned broker position”
+- investor display should not falsely claim that P/L until assignment is verified
+
+====================================================
+PART 9 — TRADE-TO-POOL ASSIGNMENT
+====================================================
+
+Every broker position/trade must be assigned to a strategy pool.
+
+At first, keep it simple:
+One trade belongs to one strategy pool.
+
+Later, allow split assignment:
+- Balanced 70%
+- Aggressive 30%
+
+For Phase 1:
+Implement one-position-to-one-pool assignment.
+
+Admin UI should allow:
+- view unassigned broker positions
+- assign a position/trade to Conservative/Balanced/Aggressive/Cash if appropriate
+- add note/reason
+- audit the assignment
+
+If trade was opened by Ruby/Scanner with a strategy context, auto-assign it to that pool if available.
+
+If no strategy context exists, status = UNASSIGNED and discrepancy created.
+
+Investor P/L should only be calculated from positions assigned to pools they own.
+
+====================================================
+PART 10 — DEPOSIT SYSTEM
+====================================================
+
+Build/upgrade deposit request flow.
+
+Deposit statuses:
+- Draft
+- Submitted
+- Pending Review
+- Approved
+- Processing
+- Settled
+- Allocated
+- Units Issued
+- Completed
+- Rejected
+- Failed
+- Cancelled
+
+Deposit fee calculation:
+
+Gross Deposit
+- Deposit Fee
+= Net Invested Amount
+
+New Units =
+Net Invested Amount Allocated to Pool / Current Pool NAV
+
+Deposit speed tiers:
+- Standard Deposit
+  - Processing: 1–3 business days
+  - Fee: admin-configurable, usually low or $0
+- Fast Deposit
+  - Processing: same day / next business day
+  - Fee: admin-configurable
+- Instant Credit / Pending Credit
+  - Optional, admin approval required
+  - Must be marked pending
+  - Funds should not become active unless policy permits
+  - If enabled, add reconciliation lock until funds clear
+
+Recommended default:
+Funds become active only after deposit is confirmed/settled.
+
+Investor must see before confirmation:
+- gross deposit
+- fee
+- net invested amount
+- selected speed
+- estimated processing time
+- allocation target
+- risk disclosure
+
+Admin can:
+- approve deposit
+- reject deposit
+- mark received
+- mark settled
+- issue units
+- add note
+- audit every action
+
+====================================================
+PART 11 — WITHDRAWAL SYSTEM
+====================================================
+
+Build/upgrade withdrawal request flow.
+
+Withdrawal statuses:
+- Draft
+- Submitted
+- Pending Review
+- Approved
+- Processing
+- Units Reserved
+- Units Redeemed
+- Paid
+- Completed
+- Rejected
+- Failed
+- Cancelled
+
+Withdrawal calculation:
+
+Gross Withdrawal Requested
+- Withdrawal Fee
+- Liquidity Fee if applicable
+- Unpaid Approved Fees
+= Net Amount Sent to Investor
+
+Units Redeemed =
+Gross Withdrawal From Pool / Current Pool NAV
+
+Withdrawal speed tiers:
+- Standard Withdrawal
+  - 5–7 business days
+  - lower fee
+- Priority Withdrawal
+  - 2–3 business days
+  - medium fee
+- Rush Withdrawal
+  - same day / next business day
+  - higher fee
+- Full Immediate Exit
+  - fastest available
+  - highest fee / liquidity adjustment
+  - admin approval required
+  - may be limited if funds tied to open positions
+- Emergency Withdrawal
+  - admin approval required
+  - special fee/rules
+
+Important:
+Do not secretly sell NAV cheaper.
+Official NAV remains honest.
+Apply transparent withdrawal/redemption/liquidity fees.
+
+Full withdrawal:
+- redeem all active units
+- calculate fees
+- generate final statement
+- mark investor as closing or closed after payment
+- require admin approval
+- lock future allocation
+- log everything
+
+Investor must see before confirmation:
+- current value
+- available to withdraw now
+- tied to open positions
+- pending settlement
+- requested gross amount
+- fee
+- net payout
+- speed tier
+- estimated processing time
+- risk/settlement acknowledgment
+
+====================================================
+PART 12 — AVAILABLE BALANCE BREAKDOWN
+====================================================
+
+Do not show only one balance.
+
+For each investor show:
+
+Current Value
+- full portfolio value including live floating P/L
+
+Available to Withdraw
+- amount that can be requested now
+
+Allocated Funds
+- money assigned to active pools
+
+Cash Reserve
+- untraded/withdrawable cash if policy allows
+
+Tied to Open Positions
+- value tied to active exposure
+
+Pending Settlement
+- funds not fully settled
+
+Reserved Fees
+- fees owed or held
+
+Pending Withdrawal
+- amount reserved for withdrawal
+
+Example:
+Current Value: $10,420
+Available Now: $6,800
+Tied to Open Positions: $3,200
+Pending Settlement: $300
+Reserved Fees: $120
+Estimated Net Withdrawal: shown based on selected speed
+
+====================================================
+PART 13 — WITHDRAWAL PRIORITY RULES
+====================================================
+
+Implement configurable withdrawal source order.
+
+Default withdrawal source priority:
+
+1. Cash Reserve
+2. Unallocated Funds
+3. Conservative Pool
+4. Balanced Pool
+5. Aggressive Pool
+
+For full withdrawal:
+redeem all pools proportionally or by admin-configured order.
+
+Admin should be able to configure:
+- withdrawal priority order
+- whether to redeem proportionally
+- whether specific pools are locked
+- whether rush withdrawals can pull from active pools
+- minimum remaining balance
+- max withdrawal per cycle
+
+====================================================
+PART 14 — UNIT LOCK DURING WITHDRAWAL
+====================================================
+
+When a withdrawal is submitted/approved, reserve the units needed.
+
+Reserved units should:
+- no longer be available for new allocation
+- be marked pending redemption
+- be included in pending withdrawal
+- not be double-counted as free capital
+
+If market NAV changes before redemption, use policy:
+- redeem at NAV at approval time
+or
+- redeem at NAV at processing cutoff
+or
+- redeem at next NAV cycle
+
+Default recommendation:
+Use NAV at processing cutoff and show estimated payout until final.
+
+Investor-facing:
+“Final payout may change slightly based on NAV at processing time and applicable fees.”
+
+====================================================
+PART 15 — NAV CUTOFF TIMES
+====================================================
+
+Add configurable NAV cutoff policy.
+
+Default:
+Daily NAV cut at 5:00 PM New York time.
+
+Rules:
+- deposits approved before cutoff receive current NAV cycle
+- deposits after cutoff receive next NAV cycle
+- withdrawals before cutoff processed at current NAV cycle if approved
+- withdrawals after cutoff processed next NAV cycle
+- investor display shows estimated until final NAV locks
+
+Admin configurable:
+- cutoff timezone
+- cutoff time
+- daily/weekly NAV cycle
+- whether weekend/holiday processing is allowed
+
+This prevents disputes about who earned what and when.
+
+====================================================
+PART 16 — REAL-TIME DRAWDOWN ENGINE
+====================================================
+
+Track drawdown at these levels:
+
+1. Master Fund Drawdown
+2. Strategy Pool Drawdown
+3. Investor Personal Drawdown
+4. Broker Account Drawdown
+5. Open Trade Drawdown
+
+Formula:
+Drawdown =
+(Current Value - High-Water Mark) / High-Water Mark
+
+Show both:
+- dollar drawdown
+- percentage drawdown
+
+Investor view:
+- current drawdown
+- worst today
+- worst this week
+- worst this month
+- all-time max drawdown
+- risk profile limit
+- remaining cushion
+
+Pool view:
+- current drawdown
+- high-water value
+- warning threshold
+- hard limit threshold
+- status
+
+Admin alerts:
+- 50% of drawdown limit reached
+- 75% of drawdown limit reached
+- drawdown limit breached
+- investor personal drawdown exceeded selected limit
+- pool entered hard review zone
+
+====================================================
+PART 17 — HIGH-WATER MARKS
+====================================================
+
+Track high-water marks for:
+- investor account
+- investor pool holding
+- strategy pool
+- master fund
+- broker account if useful
+
+High-water mark updates only when net value reaches a new high.
+
+Use high-water mark for:
+- drawdown tracking
+- performance fee calculations
+- investor reporting
+- statements
+
+Do not charge performance fees below high-water mark.
+
+====================================================
+PART 18 — FEE ENGINE
+====================================================
+
+Build a configurable fee engine.
+
+Fee types:
+- Management fee
+- Performance fee
+- Deposit fee
+- Withdrawal fee
+- Liquidity fee
+- Rush processing fee
+- Full exit fee
+- Admin adjustment fee if applicable
+
+Management fee formula:
+Management Fee =
+Gross Investor Value × Annual Management Fee Rate × Days In Period / 365
+
+Performance fee formula:
+Performance Fee =
+max(0, Gross Investor Value - Investor High-Water Mark - New Deposits During Period) × Performance Fee Rate
+
+Withdrawal fee formula:
+Withdrawal Fee =
+Gross Withdrawal × Fee Rate + Flat Fee, subject to min/max
+
+Deposit fee formula:
+Deposit Fee =
+Gross Deposit × Fee Rate + Flat Fee, subject to min/max
+
+Fee waterfall:
+1. Calculate gross pool value
+2. Apply trading P/L
+3. Apply broker/transaction costs
+4. Apply management fee if due
+5. Apply performance fee if above high-water mark
+6. Apply deposit/withdrawal fees
+7. Apply approved adjustments
+8. Calculate net investor value
+
+Investor dashboard must show:
+- gross P/L
+- fees
+- net P/L
+
+No hidden fees.
+Every fee must have a ledger entry.
+
+====================================================
+PART 19 — PROFIT HANDLING OPTIONS
+====================================================
+
+Add investor profit handling preferences:
+
+- Reinvest profits
+- Move profits to cash reserve weekly
+- Withdraw profits monthly
+- Split profits: percentage reinvest / percentage cash reserve
+
+Default:
+Reinvest profits.
+
+These preferences should require admin approval if they affect actual allocation behavior.
+
+Investor-facing:
+“Profit handling preferences control how future profits are treated after approval. They do not guarantee profits.”
+
+====================================================
+PART 20 — LOSS CONTROL OPTIONS
+====================================================
+
+Add investor protection preferences:
+
+- Pause my allocation if my value drops by X%
+- Move profits to cash reserve after target reached
+- Reduce aggressive allocation after X% drawdown
+- Notify me when drawdown reaches X%
+- Require admin review after loss threshold
+
+These are preference/guardrails first.
+Do not auto-change live trading unless allocator supports it.
+
+If allocator is not built yet:
+Store the preference and show admin.
+
+====================================================
+PART 21 — DISCREPANCY / RECONCILIATION CENTER
+====================================================
+
+Build admin discrepancy center.
+
+The system should compare:
+
+- total broker equity
+- total broker balance
+- open floating P/L
+- closed broker P/L
+- strategy pool total value
+- total investor current value
+- total investor units × NAV
+- pending deposits
+- pending withdrawals
+- fees owed
+- unassigned trades
+- stale broker sync
+- statements changed/removed
+
+Create discrepancy when:
+- broker equity does not match assigned fund value beyond tolerance
+- broker position exists but no pool assignment
+- trade closed but not reflected in realized P/L
+- deposit settled but units not issued
+- withdrawal approved but units not reserved/redeemed
+- investor ledger total differs from holdings value
+- pool NAV cannot be calculated
+- stale position sync affects investor values
+- fee applied without ledger entry
+- statement changed without audit note
+- investor portal displayed value is older than latest broker sync
+
+Tolerance defaults:
+- Low mismatch: over $1 or 0.01%
+- Critical mismatch: over $100 or 0.25%
+Make configurable.
+
+Discrepancy severity:
+- Low
+- Medium
+- High
+- Critical
+
+Discrepancy actions:
+- assign owner/admin
+- add resolution note
+- mark investigating
+- resolve
+- dismiss with reason
+- auto-lock sensitive actions if critical
+
+Critical discrepancies should trigger:
+- pause new unit issuance
+- pause withdrawals
+- pause statement generation
+- alert admin
+- show investor clean “values under verification” message if needed
+
+====================================================
+PART 22 — FRESHNESS INDICATORS
+====================================================
+
+Every investor value should show freshness.
+
+Freshness statuses:
+- Fresh
+- Delayed
+- Stale
+- Under Review
+- Missing
+
+Investor-facing:
+“Portfolio Status: Fresh”
+“Last updated: 8 seconds ago”
+
+If stale:
+“Portfolio Update Delayed. Some live position data is still syncing. Values may change when broker sync completes.”
+
+Admin-facing:
+Show exact stale source:
+- Broker mirror stale
+- Position sync stale
+- NAV stale
+- Pool assignment missing
+- Investor ledger mismatch
+
+Do not expose backend internals to investors.
+
+====================================================
+PART 23 — EMERGENCY FREEZE / CAPITAL LOCK
+====================================================
+
+Admin needs freeze controls.
+
+Can freeze:
+- all withdrawals
+- all deposits
+- one investor account
+- one strategy pool
+- one broker account
+- allocation changes
+- unit issuance
+- statement generation
+
+Freeze reasons:
+- broker sync stale
+- major discrepancy
+- market emergency
+- legal/compliance review
+- payment issue
+- security concern
+- investor dispute
+
+Investor-facing:
+“Withdrawals are temporarily paused while portfolio values are being verified.”
+
+Admin must provide reason.
+Audit log required.
+Unfreeze also requires note.
+
+====================================================
+PART 24 — POOL CAPACITY AND LIQUIDITY
+====================================================
+
+Do not accept unlimited capital into every pool.
+
+Add configurable limits:
+- max total fund capital
+- max capital per investor
+- max capital per pool
+- max aggressive allocation per investor
+- max broker exposure per pool
+- max symbol exposure per pool
+- max open risk per pool
+- liquidity reserve percent per pool
+
+Pool statuses:
+- Open
+- Near Capacity
+- Full
+- Paused
+- Closed
+
+If pool is full:
+- new allocation request goes to waitlist or cash reserve
+- investor sees clean explanation
+- admin sees capacity details
+
+Liquidity score:
+- High Liquidity
+- Moderate Liquidity
+- Low Liquidity
+- Temporarily Restricted
+
+====================================================
+PART 25 — INVESTOR PRIVACY AND PERMISSIONS
+====================================================
+
+Backend must enforce strict scoping.
+
+Investor can only access:
+- their own investor profile
+- their own ledger
+- their own holdings
+- their own allocation requests
+- their own deposits/withdrawals
+- their own statements
+- their own exposure share
+- their own freshness status
+
+Investor cannot:
+- access another investor’s data
+- access master broker balance
+- access admin discrepancy center
+- access pool totals beyond their own relevant slice unless summarized
+- access trade execution endpoints
+- close trades
+- place trades
+- access scanner trade buttons
+- access bridge/EA controls
+- access raw broker mirror records
+
+Admin can access all through Admin Fund Control Center.
+
+Add backend tests for every permission boundary.
+
+====================================================
+PART 26 — INVESTOR PORTAL UI
+====================================================
+
+Investor portal should include:
+
+Overview:
+- Current Value
+- Net Invested Capital
+- Realized P/L
+- Unrealized P/L
+- Net P/L
+- Current Drawdown
+- Available to Withdraw
+- Allocated Funds
+- Pending Settlement
+- Portfolio Status/Freshness
+- Last Updated
+
+Allocation:
+- Conservative
+- Balanced
+- Aggressive
+- Cash Reserve
+- Custom percentages
+- Current active allocation
+- Pending allocation requests
+- pool capacity status if relevant
+- risk disclosures
+
+Performance:
+- weekly return
+- monthly return
+- all-time return
+- gross P/L
+- net P/L
+- fees
+- high-water mark
+- drawdown chart if available
+
+Exposure:
+- strategy pool exposure
+- market group exposure
+- symbol exposure if allowed
+- investor’s share of floating P/L
+- no trade buttons
+
+Deposits/Withdrawals:
+- submit deposit request
+- submit withdrawal request
+- select speed tier
+- see fee preview
+- see net amount
+- see status
+- see settlement timeline
+
+Activity:
+- ledger entries
+- allocation changes
+- deposits
+- withdrawals
+- fees
+- statement corrections
+- admin approvals
+
+Documents/Statements:
+- monthly statements
+- corrected/replaced/removed notes
+- risk disclosures
+- fee disclosures
+
+Keep mobile clean:
+- cards
+- tabs
+- collapsible detail sections
+- no horizontal overflow
+- no trading controls
+- no admin controls
+
+====================================================
+PART 27 — ADMIN FUND CONTROL CENTER
+====================================================
+
+Admin dashboard should include Fund Control Center.
+
+Sections:
+1. Master Overview
+- total broker equity
+- total investor value
+- total pool value
+- discrepancy status
+- broker freshness
+- open exposure
+- pending deposits
+- pending withdrawals
+- fees accrued
+
+2. Investor Management
+- investor list
+- current value
+- status
+- deposits/withdrawals
+- allocation
+- drawdown
+- flags
+- view ledger
+- view statements
+
+3. Strategy Pools
+- pool NAV
+- total units
+- total value
+- realized/unrealized P/L
+- drawdown
+- capacity
+- liquidity
+- open positions assigned
+
+4. Broker Mirrors
+- broker account snapshots
+- balance/equity
+- open positions
+- sync freshness
+- unassigned positions
+
+5. Capital Movements
+- deposit requests
+- withdrawal requests
+- speed tier fees
+- approval queue
+- payment status
+
+6. Discrepancy Center
+- all open discrepancies
+- severity
+- affected account/pool/broker
+- suggested fix
+- resolution tools
+
+7. Fee Settings
+- deposit fee tiers
+- withdrawal fee tiers
+- management fee
+- performance fee
+- high-water mark settings
+
+8. Audit Logs
+- all financial changes
+- admin adjustments
+- statement changes
+- freeze/unfreeze actions
+
+====================================================
+PART 28 — STATEMENTS
+====================================================
+
+Monthly investor statements should include:
+
+- investor name/id
+- statement period
+- starting value
+- ending value
+- deposits
+- withdrawals
+- gross trading P/L
+- realized P/L
+- unrealized P/L
+- management fees
+- performance fees
+- deposit fees
+- withdrawal fees
+- liquidity fees
+- approved adjustments
+- high-water mark
+- drawdown
+- allocation breakdown
+- pool units owned
+- NAV per pool
+- statement status
+- correction/replacement notes
+- generated timestamp
+
+Statements must be versioned.
+Do not overwrite silently.
+
+Statuses:
+- Draft
+- Active
+- Corrected
+- Replaced
+- Removed
+- Superseded
+- Pending Review
+
+Any correction/removal requires admin reason and audit log.
+
+====================================================
+PART 29 — LEGAL / DISCLOSURE RECORDS
+====================================================
+
+Add disclosure acknowledgment records.
+
+Track:
+- investor id
+- disclosure type
+- disclosure version
+- text/version hash if possible
+- acknowledgedAt
+- ip/device if available
+- related action:
+  - aggressive allocation
+  - custom allocation
+  - rush withdrawal
+  - full exit
+  - performance fee agreement
+  - general investment risk
+  - deposit/withdrawal fee agreement
+
+Investor-facing disclosure:
+“Trading involves risk, including possible loss of capital. Strategy profiles represent target risk preferences and do not guarantee returns. Past performance does not guarantee future results.”
+
+Before aggressive/custom allocation:
+“You are selecting a higher-risk allocation. This may increase gains but can also increase losses and drawdown.”
+
+Before rush/full withdrawal:
+“You selected faster processing. Higher processing or liquidity fees may apply. Final payout may depend on settlement, open exposure, and approval.”
+
+====================================================
+PART 30 — MULTI-BROKER READY DESIGN
+====================================================
+
+Even if only one broker is active now, design for multiple brokers later.
+
+Broker registry must support:
+- multiple broker accounts
+- multiple platforms
+- broker account currency
+- sync status
+- broker-specific symbols
+- future canonical symbol mapping
+
+Do not hardcode one MT5 account as the only possible source.
+
+Every broker position/trade must include:
+- broker account id
+- bridge id
+- platform type
+- broker ticket/order id
+- symbol
+- strategy pool assignment
+
+Prepare for future:
+- currency conversion service
+- canonical symbol map
+- broker exposure limits
+- per-broker reconciliation
+
+Do not build full multi-broker execution now unless already supported.
+Just make the fund accounting model ready for it.
+
+====================================================
+PART 31 — QA / TESTING
+====================================================
+
+Run full tests before passing.
+
+Do not mark complete just because code compiles.
+Do not pass incomplete financial logic.
+
+Required backend tests:
+
+1. Unit accounting
+- deposit creates units at current NAV
+- deposit does not inflate NAV
+- withdrawal redeems units at NAV
+- withdrawal does not distort NAV
+- investor value = units × NAV
+- ownership % = investor units / total units
+
+2. P/L allocation
+- pool gain distributes pro-rata by units
+- pool loss distributes pro-rata by units
+- open floating P/L calculates investor unrealized share
+- closed P/L calculates realized share
+
+3. Fees
+- deposit fee calculates correctly
+- withdrawal speed fee calculates correctly
+- full exit fee calculates correctly
+- management fee calculates by days in period
+- performance fee applies only above high-water mark
+- no performance fee below high-water mark
+
+4. Drawdown
+- high-water mark updates on new highs
+- drawdown calculates correctly
+- pool drawdown alert triggers
+- investor drawdown alert triggers
+
+5. Discrepancy detection
+- broker equity vs pool value mismatch creates alert
+- unassigned broker position creates alert
+- stale broker sync creates warning
+- settled deposit without units creates alert
+- approved withdrawal without reserved units creates alert
+
+6. Permissions
+- investor cannot see another investor
+- investor cannot see master broker data
+- investor cannot access admin fund control
+- investor cannot trade
+- trader cannot access investor ledger
+- admin can access fund control
+
+7. Capital movements
+- deposit request flow works
+- withdrawal request flow works
+- speed tier fee preview works
+- full withdrawal creates final statement path
+- invalid withdrawal blocked if amount exceeds available balance
+- unit reservation works
+
+Required frontend tests:
+- Investor Overview loads
+- Allocation tab loads
+- Performance tab loads
+- Exposure tab loads
+- Deposits/Withdrawals tab loads
+- Activity tab loads
+- Statements tab loads
+- fee preview displays correctly
+- freshness indicator displays correctly
+- mobile layout clean
+- no trade buttons visible to investors
+- no admin controls visible to investors
+
+Required regression tests:
+- admin login still works
+- trader login still works
+- Andraie.co@gmail.com remains trader/user only if already split
+- separate admin account still accesses admin controls
+- scanner still works
+- Ruby still works
+- live bridge status still works
+- open position visibility still works
+- retcode display still works
+- no live execution path changed
+
+====================================================
+PART 32 — FINAL DELIVERY PROOF REQUIRED
+====================================================
+
+Report back with:
+
+1. Files changed
+2. Tables/models added or reused
+3. Broker mirror source used
+4. Investor ledger implementation
+5. Strategy pool implementation
+6. NAV engine implementation
+7. Unit issuance/redemption proof
+8. Deposit/withdrawal fee tier proof
+9. Investor value calculation proof
+10. Real-time broker mirror overlay proof
+11. P/L allocation proof
+12. Drawdown engine proof
+13. High-water mark proof
+14. Discrepancy center proof
+15. Freeze/capital lock proof if implemented
+16. Investor privacy permission proof
+17. Admin Fund Control Center proof
+18. Investor Portal UI proof
+19. Mobile UI proof
+20. Confirmation no live execution path was changed
+21. Confirmation no investor can see another investor’s funds
+22. Confirmation no Paper Trading/simulator/mock/fake fallback was added
+23. Known limitations or items deferred
+
+Final rule:
+Do not report complete unless the accounting logic works.
+
+If any part cannot be completed in one pass, finish the core in this order:
+1. Investor ledger
+2. Strategy pools
+3. NAV/unit accounting
+4. Broker mirror overlay
+5. Real-time investor value
+6. Deposit/withdrawal fee engine
+7. Discrepancy center
+8. Investor portal display
+9. Admin fund control center
+
+Financial accuracy is the priority.
+No bleed-over.
+No hidden math.
+No silent edits.
+No fake balances.

@@ -1,0 +1,245 @@
+Run final ARX AI full-system QA and beta release candidate check.
+
+SCOPE LOCK:
+This is a verification, cleanup, and regression-fix pass only.
+
+Do not add new features.
+Do not redesign.
+Do not refactor working systems.
+Do not enable live trading.
+Do not place trades.
+Do not change MT5 execution permissions.
+Do not change kill switches.
+Do not change admin approval rules.
+Do not change scanner scoring, Ruby brain, historical/news intelligence, auth architecture, or backend trading logic unless fixing a confirmed regression.
+
+GOAL:
+Confirm the full ARX AI ecosystem is stable after U1–U6, T005, historical data upgrades, news-risk/no-trade logic, scanner upgrades, dashboard reorg, admin/regular mode protection, and mobile polish.
+
+PHASE 1 — SYSTEM HEALTH CHECK
+Run:
+- typecheck
+- build
+- CI guards
+- route smoke tests
+- backend health check
+- frontend load check
+- mobile layout check
+- admin/regular mode permission check
+- no-live-trade safety check
+
+Verify:
+- App builds
+- Backend starts
+- /api/healthz returns 200
+- No server errors after restart
+- No browser JS errors on main routes
+- No secrets exposed
+- No raw stack traces shown to users
+
+PHASE 2 — AUTH + ACCESS QA
+Verify:
+1. Unauthenticated users land on login.
+2. Login page works.
+3. Forgot password opens/works or fails cleanly.
+4. Request Access opens/works or fails cleanly.
+5. Invite Code opens/works or fails cleanly.
+6. Authenticated regular users land on regular app.
+7. Admin users can access admin mode only when admin mode is active.
+8. Andraie Regular Mode hides all admin controls.
+9. Andraie Regular Mode blocks admin routes and admin APIs.
+10. Admin Mode restores admin controls.
+11. Regular users never see admin switch.
+
+PHASE 3 — NAVIGATION QA
+Verify:
+1. Bottom nav order is clean:
+   Cockpit / Trade / Scanner / AI / More
+2. Market Scanner is primary and easy to access.
+3. Side menu is organized with important tools first.
+4. Admin-only menu items are hidden from regular users.
+5. Active states work.
+6. No duplicate broken routes.
+7. Mobile bottom nav does not cover content.
+
+PHASE 4 — COCKPIT / DASHBOARD QA
+Verify:
+1. Dashboard simple-first layout works.
+2. Top cards show useful summary first:
+   - Today/Open P&L
+   - Open positions count
+   - account/slot status
+   - Scanner shortcut
+   - Ruby Quick Read
+   - Risk shortcut
+   - alerts/news
+   - recent activity
+3. Power cards remain preserved behind tabs/collapsibles.
+4. Regular users cannot see master account metrics.
+5. No “real money” or “live money” wording in normal dashboard UI.
+6. Mobile has no overlap or horizontal overflow.
+
+PHASE 5 — SCANNER QA
+Verify:
+1. Scanner opens from bottom nav.
+2. Search any market works.
+3. Horizontal category chips work.
+4. Categories include Favorites, Forex, Metals, Indices, Crypto, Stocks, Synthetic.
+5. Symbols are clickable.
+6. Selected symbol syncs with:
+   - scanner result
+   - chart/focus
+   - Ruby read
+   - trade ticket
+   - top selector
+7. Scanner shows technical, historical/backtest, and news-risk context where available.
+8. Scanner can return Watch / Wait / Avoid / No Trade.
+9. Scanner does not force every result into BUY/SELL.
+10. No fake data is displayed as real.
+
+PHASE 6 — RUBY / AI QA
+Verify:
+1. AI bottom-nav link opens correct AI/Ruby page.
+2. AI top tabs work and scroll horizontally on mobile.
+3. Ruby typing/thinking animation works.
+4. Ruby uses selected market context.
+5. Ruby includes historical/backtest context when available.
+6. Ruby includes news/world-event context when available.
+7. Ruby clearly says when historical/news data is unavailable.
+8. Ruby can recommend no trade when risk is too high.
+9. Ruby does not expose raw prompts, route names, function names, or backend internals.
+
+PHASE 7 — TRADE + SCANNER TRADE MODAL QA
+Verify:
+1. BUY buttons say only BUY and are green.
+2. SELL buttons say only SELL and are red.
+3. Trade page opens normally.
+4. Scanner BUY opens prefilled BUY trade ticket modal.
+5. Scanner SELL opens prefilled SELL trade ticket modal.
+6. Opening a modal does not place a trade.
+7. Trade ticket includes:
+   - symbol
+   - direction
+   - lot/position size
+   - stop loss
+   - take profit
+   - risk/reward
+   - Historical Check
+   - News Risk Check
+   - Ruby Summary
+8. Confirm still passes existing safety gates.
+9. Broker execution disabled state is respected.
+10. Kill switch state is respected.
+11. Admin approvals are respected.
+12. No live orders are placed.
+
+PHASE 8 — OPEN TRADES / ACCOUNT METRICS QA
+Verify:
+1. Open Trades page loads.
+2. Live P/L money values show when MT5/position data is available.
+3. Clean empty/disconnected/stale state appears when unavailable.
+4. Regular users see only their own trades and slot metrics.
+5. Regular users cannot see master MT5 account balance.
+6. Admin can see master/per-user summaries only in Admin Mode.
+7. Unassigned broker positions are admin-only.
+8. Balance/equity/margin/free margin/margin level calculations are correct where data exists.
+
+PHASE 9 — RISK + SAFETY QA
+Verify:
+1. Risk Command Center loads.
+2. Daily risk, open risk, drawdown, AI discipline, MT5 state display cleanly.
+3. Safety gates remain unchanged.
+4. Kill switches remain unchanged.
+5. Admin approvals remain unchanged.
+6. Live broker execution remains disabled unless explicitly configured and approved.
+7. No normal UI says:
+   - LIVE MODE — REAL MONEY
+   - live money
+   - real money
+8. “Real money” can appear only inside explicit live-consent confirmation gates, if legally required.
+
+PHASE 10 — NEWS + HISTORICAL INTELLIGENCE QA
+Verify:
+1. Historical data service uses real provider/MT5 data when available.
+2. Missing historical data shows clean unavailable state.
+3. Backtest summary includes sample size, win rate, drawdown, time-to-target, and confidence when available.
+4. News provider status works.
+5. News/social feeds use configured lawful providers only.
+6. Missing news/social data shows clean unavailable state.
+7. News risk affects scanner ranking.
+8. High/critical news risk can downgrade to Wait/Avoid/No Trade.
+9. Trade ticket shows News Risk Check before confirmation.
+10. No fake news or fake historical data is shown as real.
+
+PHASE 11 — AUDIT / LEDGER / RECONCILIATION QA
+Verify:
+1. Trade lifecycle audit logs exist.
+2. Correlation IDs/idempotency exist where trade tickets submit.
+3. Slot ledger records exist or cleanly report unavailable.
+4. Reconciliation is read-only.
+5. Admin can see audit/reconciliation only in Admin Mode.
+6. Regular users see only their own activity/history.
+7. No raw broker errors exposed.
+
+PHASE 12 — MOBILE QA
+Check iPhone/mobile view across:
+- Login
+- Dashboard
+- Trade
+- Scanner
+- AI/Ruby
+- Risk
+- Open Trades
+- Alerts/Calendar
+- More/Side menu
+- ScannerTradeModal
+
+Verify:
+- no horizontal overflow
+- no overlapping chips
+- no clipped buttons
+- bottom nav does not cover content
+- modals scroll internally
+- Ruby bubble does not block key actions
+- safe-area padding works
+
+PHASE 13 — CLEANUP
+Remove only proven-unused:
+- duplicate routes
+- unused imports
+- debug console logs
+- stale demo labels
+- dormant UI that is disconnected and unrelated
+- old duplicate components replaced by the current working version
+
+Do not delete uncertain files.
+Report uncertain cleanup candidates instead.
+
+PHASE 14 — FINAL SCORE
+Grade system out of 100 using:
+
+- UI / UX clarity: 10
+- Mobile trading usability: 10
+- Navigation/discoverability: 10
+- Scanner usefulness: 10
+- Ruby/AI workflow usefulness: 10
+- Historical/news intelligence readiness: 10
+- Risk controls/permission safety: 10
+- MT5/account data readiness: 10
+- Backend/security/admin separation: 10
+- Stability/performance/code cleanliness: 10
+
+FINAL OUTPUT REQUIRED:
+Return:
+1. Files changed.
+2. Tests/checks run.
+3. Bugs found.
+4. Bugs fixed.
+5. Cleanup performed.
+6. Cleanup candidates not deleted.
+7. Remaining issues.
+8. Beta readiness status.
+9. Public-live readiness status.
+10. Final score out of 100.
+11. Confirmation no live trades were placed.
+12. Confirmation execution permissions, kill switches, and admin approvals were not changed.

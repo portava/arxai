@@ -1,0 +1,145 @@
+Resume after the Popup AI freeze/handoff.
+
+Do not build new features yet.
+Do not duplicate any existing pages.
+Do not create new routes.
+Do not touch live trading, MT5 execution, broker execution, risk controls, or assistant popup logic.
+
+Goal:
+Create a clean baseline audit of the current ARX AI app so we know exactly what already exists, what is unfinished, what is broken, and what the next safest build step should be.
+
+Step 1 — Confirm popup AI is protected
+Review:
+- POPUP_AI_CLOSEOUT.md
+- POPUP_AI_GUARDRAILS.md
+
+Confirm:
+- popup AI status
+- assistant trigger file
+- animated icon file
+- assistant popup file
+- guardrails are documented
+- no further popup AI work is needed right now
+
+Step 2 — Map all existing routes/pages
+Audit App.tsx and navigation/menu config.
+
+Return:
+- all visible routes
+- all hidden/More routes
+- duplicate routes
+- broken routes
+- routes with missing components
+- routes not linked in navigation
+- routes linked but not implemented
+
+Step 3 — Audit existing major app areas
+Find and report what already exists for:
+
+- Cockpit
+- Trade
+- AI
+- Risk
+- More menu
+- Help Center
+- MT5 Bridge
+- Broker Settings
+- Readiness
+- Status/Diagnostics
+- Paper Trading
+- Replay
+- Backtesting
+- Coach
+- Data
+- Journal
+- Calendar
+- Emergency Stop
+- Feedback/Report Issue
+
+For each area, report:
+- existing files/components
+- current route
+- what works
+- what is incomplete
+- what appears duplicated
+- what is broken
+- whether it is safe to enhance later
+
+Step 4 — Audit safety state
+Confirm current app safety defaults:
+
+- live trading disabled
+- live broker execution disabled
+- paper/simulator mode status
+- MT5 bridge status
+- heartbeat status source
+- broker read-only status
+- emergency stop behavior
+- risk lock behavior
+
+Do not change any of these.
+
+Step 5 — Audit build health
+Run:
+- lint
+- typecheck
+- build
+- existing tests if available
+
+Report:
+- pass/fail
+- exact errors
+- files causing errors
+- whether failures are from popup AI, routing, trading logic, UI, or old app features
+
+Step 6 — Identify duplication risks
+Specifically check for duplicate versions of:
+
+- assistant popup
+- help widget
+- status dashboard
+- paper trading page
+- replay page
+- backtesting page
+- trade journal
+- calendar
+- MT5 bridge page
+- risk/readiness pages
+
+Do not delete anything yet unless it is clearly unused and safe. Report first.
+
+Step 7 — Recommend next build lane
+Based on the audit, recommend the next safest build lane from these options:
+
+A. Fix broken routes/navigation  
+B. Clean duplicate pages/components  
+C. Strengthen MT5 heartbeat/status visibility  
+D. Improve existing Paper Trading features  
+E. Improve existing Replay/Backtesting features  
+F. Improve existing Risk/Readiness features  
+G. Improve dashboard/Cockpit clarity  
+H. Fix build/test errors first  
+
+Return the recommendation with:
+- why this should be next
+- what files would be touched
+- what should not be touched
+- risk level
+- expected impact
+
+Step 8 — Final report only
+Return a clear audit report.
+
+Do not implement new feature work during this pass unless required to fix a build-breaking error, and if so, explain exactly what was fixed.
+
+Final report format:
+1. Popup AI protected: yes/no
+2. Build status: pass/fail
+3. Total routes found
+4. Broken routes
+5. Duplicate features found
+6. Major app areas already existing
+7. Major gaps
+8. Safety state confirmed
+9. Recommended next build lane
+10. Files to avoid touching

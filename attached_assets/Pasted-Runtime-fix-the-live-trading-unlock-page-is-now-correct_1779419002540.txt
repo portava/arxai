@@ -1,0 +1,114 @@
+Runtime fix: the live trading unlock page is now correctly showing 13/14 pre-arm checks passing. Only #12 is failing.
+
+Current deployed screenshot:
+- Pre-arm checklist shows 13/14 passing.
+- #9 server live execution flag is no longer part of the pre-arm failure count. Good.
+- #11 typed phrase ENABLE LIVE TRADING is passing. Good.
+- #12 Account, broker, and server confirmed is failing.
+- Error says:
+  Account mismatch: expected 62470041
+  Broker mismatch: expected Deriv (SVG) LLC
+  Server mismatch: expected DerivSVG-Server
+
+Fix #12 end-to-end in the deployed runtime.
+
+Tasks:
+
+1. Find the active deployed component powering the live unlock page.
+   - Confirm there is no legacy combined broker/server confirm field still feeding readiness.
+   - Remove any old brokerServerConfirm state, payload key, localStorage key, or API comparison still being used.
+
+2. Make the UI use three separate controlled fields:
+   - accountConfirm
+   - brokerConfirm
+   - serverConfirm
+
+3. Display the detected bridge values directly above or beside the fields:
+   - Account: 62470041
+   - Broker: Deriv (SVG) LLC
+   - Server: DerivSVG-Server
+
+4. Add working “copy exact” buttons for all three.
+   - Copy Account should populate accountConfirm with 62470041.
+   - Copy Broker should populate brokerConfirm with Deriv (SVG) LLC.
+   - Copy Server should populate serverConfirm with DerivSVG-Server.
+   - After copying/pasting, immediately re-run the readiness check or update the local validation state.
+
+5. Align frontend payload keys with backend readiness keys.
+   The frontend should send exactly:
+   - confirmedAccountNumber
+   - confirmedBrokerName
+   - confirmedServerName
+   - typedPhrase
+   - maxLot
+   - dailyLossLimit
+   - riskAcknowledged
+   - killSwitchAcknowledged
+
+   The backend should read those same exact keys. Do not read stale names like brokerServerConfirm.
+
+6. Normalize comparisons safely:
+   - Convert both sides to strings.
+   - Trim leading/trailing whitespace.
+   - Compare exact text after trim.
+   - Do not lowercase broker/server because exact broker identity matters.
+   - Account comparison should compare string “62470041” to string “62470041”.
+
+7. Add admin-only debug under #12 while testing:
+   Show:
+   - received accountConfirm value
+   - received brokerConfirm value
+   - received serverConfirm value
+   - expected account
+   - expected broker
+   - expected server
+   This debug must only appear on admin/operator live-shared page.
+
+8. Disable mobile input interference on these fields:
+   - autoCorrect="off"
+   - autoCapitalize="none"
+   - spellCheck={false}
+   - inputMode normal for broker/server
+   - inputMode numeric for account
+
+9. Expected final behavior:
+   - If accountConfirm = 62470041
+   - brokerConfirm = Deriv (SVG) LLC
+   - serverConfirm = DerivSVG-Server
+   - phrase = ENABLE LIVE TRADING
+   - risk boxes checked
+   - max lot valid
+   - daily loss limit valid
+   Then pre-arm checklist must show 14/14 passing.
+
+10. After 14/14 pre-arm checks pass:
+   - If serverLiveExecutionEnabled=false, show READY TO ARM or EA READY / SERVER DISPATCH OFF.
+   - Do not show Locked.
+   - Do not show LIVE BROKER EXECUTION ENABLED until the approved admin/operator manually arms server dispatch.
+   - Execute endpoint must still block real live broker dispatch until serverLiveExecutionEnabled=true.
+
+11. Fix top badge:
+   - Current badge still says LIVE BROKER EXECUTION DISABLED.
+   - Once 14/14 pre-arm passes and server flag is OFF, badge should say EA READY / SERVER DISPATCH OFF or READY TO ARM.
+   - Only show LIVE BROKER EXECUTION DISABLED when pre-arm checks fail or kill switch/server state blocks readiness.
+   - Only show LIVE BROKER EXECUTION ENABLED after manual arm.
+
+12. Run:
+   - pnpm run typecheck
+   - pnpm run ci:guards
+   - pnpm --filter @workspace/scripts run test:live-phaseB
+
+13. Add/update tests proving:
+   - Separate account/broker/server fields pass with exact values.
+   - Wrong account fails with Account mismatch only.
+   - Wrong broker fails with Broker mismatch only.
+   - Wrong server fails with Server mismatch only.
+   - The frontend payload names match backend expected names.
+   - 14/14 pre-arm + serverLiveExecutionEnabled=false shows READY TO ARM, not Locked.
+   - Execute still fails until serverLiveExecutionEnabled=true.
+
+Do not auto-arm live trading.
+Do not bypass the safety gate.
+Do not enable AI auto-trading by default.
+Do not remove the kill switch.
+Do not create a duplicate live unlock page.

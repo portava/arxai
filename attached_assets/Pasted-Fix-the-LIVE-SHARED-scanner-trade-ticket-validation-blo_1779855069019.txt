@@ -1,0 +1,177 @@
+Fix the LIVE_SHARED scanner trade ticket validation blocking incorrectly and leaking raw safety internals.
+
+Current screenshot issue:
+- Page: /market-scanner
+- Modal: LIVE SHARED-ACCOUNT TRADE
+- User clicked Validate trade.
+- It shows BLOCKED.
+- It exposes raw/internal fields:
+  - Stage
+  - Default-deny enabled true
+  - Master switch on true
+  - VIRTUAL_ACCOUNT_ACTIVE true
+- This is contradictory and not user-facing.
+- If master switch is on and the virtual/shared account is active, the modal should not show “default-deny enabled” as the user-facing reason.
+- If the session is admin preview-as-user, the modal should not validate/submit at all. It should show preview-only cleanly.
+- If the real account is allowed, the modal should proceed to the final Confirm Trade step in the same modal.
+
+Do not place trades.
+Do not insert arx_live_commands during QA.
+Do not type operator phrases.
+Do not weaken safety gates.
+Do not fake validation.
+Do not hide real blockers.
+Do not expose raw backend/gate fields to normal users.
+Do not create a second popup.
+
+Create checkpoint first:
+checkpoint: fix-live-shared-scanner-ticket-validation-block
+
+Task 1 — Trace why default-deny is still true:
+Trace the full validation path for the scanner LIVE_SHARED trade ticket:
+
+scanner card → live shared ticket modal → Validate trade → backend validation → account-mode resolver → live bridge/master switch → user allocation shell → risk profile → returned validation result.
+
+Find why validation returns:
+- defaultDeny=true
+while:
+- masterSwitchOn=true
+- VIRTUAL_ACCOUNT_ACTIVE=true
+- global app says Live Shared / Live Execution Armed.
+
+If this is caused by stale env parsing, stale resolver state, wrong account mode, preview-as-user mode, or the scanner using the wrong validator, fix it through the shared source of truth.
+
+Task 2 — Preview-as-user behavior:
+If the current session is admin previewing as user:
+1. Disable Validate/Confirm submit actions.
+2. Show clean message:
+   “Preview mode only — exit user preview to validate or submit trades.”
+3. Do not call live validation as if the user is placing a trade.
+4. Do not show BLOCKED with backend internals.
+5. Do not create live intent, demo command, paper command, or arx_live_commands row.
+
+Task 3 — Real LIVE_SHARED behavior:
+If this is a real LIVE_SHARED user/admin session, the scanner modal must use the real live shared validation pipeline.
+
+Required:
+1. Validate trade calls the same live shared validation used by the main live shared ticket.
+2. It uses /api/me/account-mode and the user’s SHARED_MASTER_MT5 shell.
+3. It uses user allocation/risk profile.
+4. It honors admin/operator unrestricted profile when applicable.
+5. It does not use demo, paper, simulator, or tester paths.
+6. It does not require a second modal.
+7. If validation passes, show final Confirm Trade button in the same modal.
+8. If validation fails, show one clean user-facing blocker.
+
+Task 4 — Remove raw validation internals from UI:
+Normal user/admin trade modal must never display:
+- Stage
+- defaultDeny
+- masterSwitchOn
+- VIRTUAL_ACCOUNT_ACTIVE
+- raw gate names
+- env names
+- backend constants
+- internal booleans
+- raw validation JSON
+
+Replace with clean messages:
+- “All safety checks passed.”
+- “Trade blocked by safety checks.”
+- “Preview mode only — exit user preview to submit trades.”
+- “Live bridge is not connected.”
+- “Account allocation required.”
+- “Risk settings required.”
+- “Symbol is not available for your account.”
+- “Trade size exceeds your account limit.”
+- “Stop loss required for this account.”
+
+Raw details may appear only in admin diagnostics drawer, not in normal ticket view.
+
+Task 5 — Fix one-modal flow:
+The scanner LIVE_SHARED modal must be the actual trade ticket.
+
+Flow:
+1. User clicks Buy/Sell from scanner.
+2. One LIVE_SHARED modal opens.
+3. User edits side/symbol/volume/SL/TP/notes.
+4. User clicks Validate.
+5. If valid, same modal shows Review/Confirm section.
+6. User clicks Confirm Trade.
+7. Only then the live shared flow may submit to the validated backend path.
+8. During QA, do not click final submit in a way that places a trade.
+
+Remove:
+- “Use LIVE SHARED above”
+- second popup requirement
+- duplicate trade modal
+- hidden inactive live modal behind current modal
+- stale disabled buttons behind the active modal
+
+Task 6 — Fix tradability check:
+“Checking tradability…” must resolve.
+
+Required:
+1. It resolves to tradable / not tradable / unable to verify.
+2. It uses Market Data Router + live shared symbol mapping.
+3. It does not stay stuck forever.
+4. It has timeout and clean retry.
+5. If unable to verify, show clean reason.
+
+Task 7 — UI cleanup:
+Inside this modal:
+- remove repeated “real money is at risk” paragraph if the global live bar is already present
+- keep final confirmation risk text only in the final confirm step
+- show account mode cleanly: Live Shared Master MT5
+- show preview-only badge when applicable
+- show admin unrestricted status only if relevant
+- hide backend/internal labels
+
+Task 8 — Regression tests:
+Add tests proving:
+1. Scanner LIVE_SHARED validation does not expose raw gate fields.
+2. Preview-as-user cannot validate/submit; no commands/intents are created.
+3. Real LIVE_SHARED validation uses live shared pipeline, not tester/demo/paper path.
+4. defaultDeny is not surfaced as user copy.
+5. If master switch and account shell are active, validation is not blocked by stale default-deny state.
+6. Tradability check resolves or times out cleanly.
+7. One-modal flow reaches Review/Confirm inside the same modal.
+8. arx_live_commands count remains unchanged during tests.
+
+Task 9 — QA:
+Run:
+- typecheck
+- build if available
+- ci:guards
+- test:account-mode
+- test:mode-scope
+- test:admin-unrestricted-risk
+- test:scanner-real-feed
+- test:live-phaseB
+- test:demo-arming
+- test:demo-verify
+- new scanner-live-shared-ticket tests
+- arx_live_commands count before/after
+
+Verify in actual UI:
+1. Scanner LIVE_SHARED modal does not show Stage/defaultDeny/masterSwitch/VIRTUAL_ACCOUNT_ACTIVE.
+2. Preview-as-user shows preview-only message and cannot validate/submit.
+3. Real LIVE_SHARED session can validate in one modal.
+4. If valid, final Confirm Trade appears in same modal.
+5. No second popup needed.
+6. No “Use LIVE SHARED above.”
+7. No stuck “Checking tradability…”
+8. No live trade placed during QA.
+9. arx_live_commands remains 0.
+10. No safety gates weakened.
+
+Final report only:
+- root cause of default-deny contradiction
+- files/routes changed
+- one-modal flow status
+- preview-as-user behavior
+- validation copy cleanup
+- tradability check result
+- tests added
+- QA results
+- arx_live_commands count

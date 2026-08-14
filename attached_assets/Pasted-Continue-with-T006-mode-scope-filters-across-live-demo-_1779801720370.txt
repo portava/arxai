@@ -1,0 +1,219 @@
+Continue with T006: mode-scope filters across live, demo, paper, and test data surfaces.
+
+Current completed state:
+- T003 complete: unified live/account-mode resolver exists.
+- T004 complete: /my-account allocation shell fixed.
+- T005 complete: alert dismissal, dedupe, unread count, stale MT5 alert cleanup, Notification Center live status fixed.
+- typecheck PASS
+- ci:guards 23/23 PASS
+- test:alert-notification-contract 13/13 PASS
+- test:account-mode 59/59 PASS
+- test:live-phaseB 20/20 PASS
+- test:demo-arming 18/18 PASS
+- test:demo-verify 13/13 PASS
+- arx_live_commands count unchanged
+- no safety gates weakened
+- no live trades placed
+- no operator phrases typed
+
+Now fix the mode/data separation issues.
+
+Current bugs from screenshots:
+1. Live Intent Queue showed old demo/test intents while app was live.
+2. Trading Calendar showed paper/demo P&L and paper trade language while user had no live trades.
+3. Open positions/live chart showed a stale live/test position even though the user said nothing was open.
+4. Recent scanner trades showed demo commands in live mode.
+5. Trade history, P/L, alerts, scanner trades, and account shell must stay separated by account mode.
+6. LIVE_SHARED pages must never display DEMO, PAPER, or TEST records.
+
+Do not place trades.
+Do not insert arx_live_commands.
+Do not type operator phrases.
+Do not recommend lot size.
+Do not broaden the narrow env parser.
+Do not weaken safety gates.
+Do not fake positions, trades, P/L, allocations, alerts, candles, or live readiness.
+Do not delete audit logs.
+Do not expose admin diagnostics to normal users.
+
+Create checkpoint first:
+checkpoint: t006-mode-scope-filters-live-demo-paper-test
+
+Task 1 — Define one mode-scope filter helper:
+Create or repair a shared backend helper that all user-facing data queries can use.
+
+The helper should filter by:
+- userId
+- currentAccountMode: LIVE_SHARED / DEMO / PAPER
+- accountShellId or sharedMasterAccountId where relevant
+- connectionId where relevant
+- sourceMode / accountMode / tradingMode field where present
+- test/demo/paper/live source tag where present
+- include only current user’s data unless admin diagnostics explicitly request broader data
+
+If old tables use inconsistent fields, add a safe adapter/normalizer rather than duplicating query logic.
+
+Task 2 — Live Intent Queue:
+Fix /live-intent-queue or actual registered route.
+
+In LIVE_SHARED mode:
+- show only LIVE_SHARED intents for current user/account shell/connection
+- hide DEMO/PAPER/TEST intents
+- if no live intents exist, show “No live trade intents yet”
+- do not show old tester rows
+- do not show “tester UI” language in live mode
+- do not expose raw backend statuses to normal users
+
+Admin diagnostics may still inspect historical/test intents if clearly in admin diagnostic mode.
+
+Task 3 — Trading Calendar:
+Fix /trading-calendar.
+
+In LIVE_SHARED mode:
+- show only live trades/P&L for current user/account shell
+- if no live trades exist, show 0/empty live calendar state
+- do not show paper/demo P&L
+- do not show “paper trades” wording
+- do not show demo/test results on live calendar
+- calendar counts, win rate, P&L, AI activity must be mode-scoped
+
+In DEMO mode:
+- show demo calendar only
+
+In PAPER mode:
+- show paper calendar only
+
+Task 4 — Open positions / My Trades / Live chart side panel:
+Fix open positions and live chart position panels.
+
+In LIVE_SHARED mode:
+- show only current live positions for the current user/account shell/connection
+- verify against latest broker/MT5 position sync
+- do not show stale ghost/demo/test positions
+- if broker/live sync says no positions, show no open positions
+- show last position sync time
+- if local position row is stale, hide from user view and surface only in admin reconciliation diagnostics
+
+Do not delete audit-relevant records. Hide/archive by mode scope.
+
+Task 5 — Trade History and P/L:
+Fix trade history, P/L cards, dashboard P/L, account P/L, and closed-trade stats.
+
+In LIVE_SHARED mode:
+- show only LIVE_SHARED closed/open trade data for current user/account shell
+- do not include paper/demo/test trades
+- if no live trades exist, show zero/empty live state
+- realized P/L and open P/L must be user-scoped and mode-scoped
+
+Task 6 — Scanner trades / Recent scanner trades:
+Fix scanner trade sections.
+
+In LIVE_SHARED mode:
+- do not label rows as demo commands
+- show only live shared scanner intents/confirmed actions for current user/account
+- if none exist, show “No live scanner actions yet”
+- demo scanner trades appear only in demo mode
+- paper scanner trades appear only in paper mode
+- test scanner rows never appear to normal users
+
+Task 7 — Alerts mode scope follow-up:
+Verify T005 alert filters also work under T006 helper.
+
+LIVE_SHARED mode:
+- no DEMO/PAPER/TEST alerts
+- no stale bridge disconnected alerts from old connection IDs
+- dismissed/resolved alerts stay hidden
+- current live heartbeat suppresses old disconnect spam
+
+Task 8 — Account shell mode scope:
+Verify account shell values are mode-scoped.
+
+LIVE_SHARED:
+- use SHARED_MASTER_MT5 allocation shell
+- show user allocation/balance/equity/capacity
+- do not use paper/demo balance
+
+DEMO:
+- use demo shell
+
+PAPER:
+- use paper shell
+
+Task 9 — Data tagging/backfill:
+Inspect existing rows that lack mode fields.
+
+If needed, create a safe one-time normalizer/backfill that:
+- tags obvious demo rows as DEMO
+- tags obvious paper rows as PAPER
+- tags test rows as TEST
+- tags live shared rows as LIVE_SHARED only when evidence is clear
+- does not delete records
+- does not alter audit logs
+- writes admin audit/safety log for any backfill
+- skips ambiguous rows and surfaces admin diagnostics instead of guessing
+
+Task 10 — Frontend cleanup:
+All affected pages must use useTradingMode() and the backend mode-scoped endpoints.
+
+Remove page-local mode guessing from:
+- live intent queue
+- trading calendar
+- open positions/my trades
+- live chart positions
+- trade history
+- P/L widgets
+- scanner recent trades
+- account shell widgets
+- alert widgets if still duplicated
+
+Task 11 — Regression tests:
+Add tests proving:
+1. LIVE_SHARED user does not see DEMO/PAPER/TEST live intents.
+2. LIVE_SHARED calendar does not include paper/demo trades.
+3. LIVE_SHARED open positions hide stale demo/test/ghost positions.
+4. LIVE_SHARED trade history/P&L excludes paper/demo/test trades.
+5. Scanner recent trades are mode-scoped.
+6. Alerts are mode-scoped and connectionId-scoped.
+7. Account shell uses SHARED_MASTER_MT5 for attached live user.
+8. Admin diagnostics can still access broader historical records when explicitly admin-only.
+9. Normal users never see other users’ rows.
+10. arx_live_commands remains unchanged.
+
+Task 12 — QA:
+Run:
+- typecheck
+- build if available
+- ci:guards
+- test:account-mode
+- test:live-phaseB
+- test:demo-arming
+- test:demo-verify
+- test:live-broker-resolver
+- alert-notification-contract
+- allocation runtime QA
+- new mode-scope regression tests
+- seeded LIVE_SHARED E2E for affected pages
+- arx_live_commands count before/after
+
+Verify in actual UI:
+1. Live Intent Queue no longer shows demo/test rows.
+2. Trading Calendar shows no paper/demo P&L in live mode.
+3. Open positions/live chart shows no stale ghost position if none are open.
+4. Trade History/P&L are live-only in live mode.
+5. Scanner recent trades are mode-aware.
+6. Alerts remain clean/dismissible after T005.
+7. /my-account still shows user 4 allocation shell correctly.
+8. No live trades placed.
+9. arx_live_commands remains 0.
+10. No operator phrases typed.
+11. No safety gates weakened.
+
+Final report only:
+- shared mode-scope helper created/updated
+- surfaces fixed
+- stale/demo/paper/test data sources found
+- any backfill performed or skipped
+- tests added
+- QA results
+- arx_live_commands count
+- remaining issues only if they require human credentials or manual browser action

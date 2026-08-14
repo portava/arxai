@@ -1,0 +1,2135 @@
+New task: Build ARX AI Profit Mission System — goal-based trading missions, multi-agent trade selection, profit maximization, execution quality, and anti-blowup protection.
+
+Goal:
+Allow a user to give the AI a starting amount, a target amount, and a timeframe, then let the system build and manage a structured trading mission.
+
+Example user prompts:
+- “I have $1,000. Get it to $1,300 in 7 days.”
+- “I have $500. Scalp aggressively today and try to make $75.”
+- “Use this allocation and try to grow it to $5,000 by the end of the month.”
+- “Trade gold only and try to reach this target by Friday.”
+
+The system should convert the user’s request into a controlled AI Profit Mission.
+
+Important:
+Profit is the goal, but the bot must never force trades, gamble blindly, bypass risk controls, ignore feed truth, ignore broker truth, use martingale by default, or override live execution gates.
+
+Core rule:
+Maximize expected profit through edge quality, clean execution, smart sizing, active exits, profit protection, multi-agent learning, and refusing weak trades.
+
+Do not promise guaranteed profit.
+Do not use language like:
+- guaranteed
+- perfect
+- risk-free
+- can’t lose
+- certain profit
+
+Use:
+- target
+- mission
+- probability
+- feasibility
+- expected return
+- risk
+- target pace
+- progress
+- confidence
+- possible loss
+
+SECTION 1 — Profit Mission definition
+
+Create:
+ProfitMission
+
+A Profit Mission is a controlled AI trading campaign with:
+- starting amount
+- target amount
+- timeframe
+- risk profile
+- allowed symbols
+- allowed asset classes
+- strategy style
+- execution mode
+- agent team
+- risk governor
+- mission dashboard
+- mission journal
+- progress tracking
+- profit protection
+- stop conditions
+
+Mission inputs:
+- starting_amount
+- target_amount
+- timeframe_start
+- timeframe_end
+- preferred_symbols optional
+- allowed_asset_classes optional
+- risk_profile: conservative / balanced / aggressive / extreme / custom
+- preferred_style: scalp / day_trade / swing / mixed
+- max_daily_loss
+- max_mission_loss
+- max_drawdown
+- max_trade_risk
+- max_open_trades
+- allow_multi_agent boolean
+- allow_auto_execute boolean
+- require_user_approval boolean
+- execution_mode
+- live/demo mode
+- notes
+
+Mission calculated values:
+- required_profit = target_amount - starting_amount
+- required_return_percent
+- required_daily_profit
+- required_session_profit
+- required_hourly_profit if short mission
+- target_pace
+- current_pace
+- remaining_profit_needed
+- remaining_time
+- feasibility_score
+- risk_score
+- probability_score
+- mission_status
+
+Mission statuses:
+- draft
+- pending_approval
+- running
+- paused
+- target_hit
+- protect_mode
+- stopped_by_risk
+- failed
+- expired
+- completed
+- cancelled
+
+Mission types:
+- Scalp Sprint
+- Intraday Growth
+- Swing Growth
+- Recovery Mission
+- Conservative Compounding
+- Aggressive Compounding
+- Gold-Only Mission
+- Synthetic-Only Mission
+- Forex Mission
+- Mixed-Market Mission
+- Investor Pool Mission
+- Demo Challenge Mission
+- Prop-Firm Style Mission
+
+SECTION 2 — Feasibility Engine
+
+Create:
+MissionFeasibilityEngine
+
+Before a mission starts, AI must determine whether the goal is realistic.
+
+Inputs:
+- starting amount
+- target amount
+- timeframe
+- required return
+- current market conditions
+- allowed symbols
+- strategy reliability
+- user risk profile
+- historical performance
+- forward-test performance
+- expected trade frequency
+- average R
+- drawdown risk
+- spread/slippage
+- news risk
+- account size
+- broker constraints
+
+Output:
+FeasibilityVerdict:
+- feasible: yes / maybe / no
+- feasibility_score: 0–100
+- risk_score: 0–100
+- required_return_percent
+- required_daily_return
+- required_trade_quality
+- recommended_risk_profile
+- mission_type
+- warnings[]
+- explanation
+
+Feasibility tiers:
+- Easy
+- Realistic
+- Challenging
+- Aggressive
+- Extreme
+- Unreasonable
+
+Rules:
+- If the mission requires extreme return, label it high risk.
+- If the timeframe is too short, warn.
+- If account size is too small for spread/symbol behavior, warn.
+- If no valid market edge exists, recommend waiting.
+- If feed/data is stale, block mission start.
+- If strategy has no backtest/forward-test support, label unproven.
+- Feasibility cannot override risk gates.
+
+Example:
+User asks: “Turn $500 into $2,000 in 3 days.”
+
+Eleanor should say:
+“This requires a 300% return in 3 days. Mission marked extreme risk. I can create an aggressive scalp mission, but risk of loss is high and live execution still obeys risk gates.”
+
+Do not say:
+“I will get it done.”
+
+SECTION 3 — Mission probability score
+
+Create:
+MissionProbabilityScore
+
+Fields:
+- target_hit_probability
+- drawdown_probability
+- failure_probability
+- best_case_projection
+- expected_case_projection
+- worst_case_projection
+- confidence_level
+- sample_size_warning
+- reason
+
+Rules:
+- Probability is not a guarantee.
+- Small sample sizes must be labeled.
+- Backtest-only probability must be marked historical/simulated.
+- Forward-test probability should be separate from backtest.
+- Live performance must never be implied unless proven by real live results.
+
+Eleanor example:
+“This mission is possible, but the target requires aggressive risk. Probability is low unless high-quality setups appear.”
+
+SECTION 4 — Mission strategy planner
+
+Create:
+ProfitMissionStrategyPlanner
+
+It selects the best strategy mix based on:
+- capital size
+- target
+- deadline
+- allowed symbols
+- volatility
+- spread
+- session
+- user risk profile
+- mission style
+- past agent performance
+- strategy reliability
+- current market regime
+
+Strategy plan should include:
+- primary strategy
+- backup strategy
+- allowed trade types
+- symbols to scan
+- max trades per day
+- max scalps per session
+- max loss per day
+- max mission loss
+- target per session
+- pause conditions
+- scale-up conditions
+- scale-down conditions
+- target-hit behavior
+- recovery behavior
+
+Example:
+Mission: $1,000 → $1,300 in 7 days
+Required profit: $300
+Required return: 30%
+Required pace: about $43/day
+
+Strategy:
+- Primary: Gold liquidity sweep scalps during London/NY
+- Secondary: EURUSD/GBPUSD breakout-retest only
+- Avoid: low-volume chop, pre-news entries, wide spread periods
+- Daily loss stop: $50
+- Mission stop: $150 drawdown
+- Trade risk: 1–2% unless aggressive mode approved
+- Execution: agent proposes, trade only if mission gates + live gates pass
+
+SECTION 5 — Mission modes
+
+Mission should automatically shift modes based on progress and risk.
+
+Modes:
+- Attack Mode
+- Normal Mode
+- Protect Mode
+- Recovery Mode
+- Cooldown Mode
+- Stop Mode
+
+Rules:
+If ahead of pace:
+- switch to Protect Mode
+- reduce risk
+- take fewer trades
+- protect gains
+
+If on pace:
+- stay Normal Mode
+
+If behind pace:
+- switch to Attack Mode only if valid setups exist
+- increase scanning, not reckless risk
+
+If in drawdown:
+- switch to Recovery Mode
+- reduce lot size
+- require higher quality setups
+
+If consecutive losses:
+- switch to Cooldown Mode
+- pause trading for a set period
+
+If mission loss limit hit:
+- Stop Mode
+
+Mission pressure cannot override risk protection.
+
+SECTION 6 — Capital allocation engine
+
+Create:
+MissionCapitalAllocator
+
+Divide mission capital into buckets:
+- active trading capital
+- reserve capital
+- recovery reserve
+- high-conviction trade budget
+- daily risk budget
+
+Example:
+Starting amount: $1,000
+- Active trading capital: $700
+- Reserve: $200
+- Recovery buffer: $100
+
+Rules:
+- Never deploy full capital into one idea.
+- Use reserve to survive drawdowns.
+- Increase allocation only after proven edge.
+- Reduce allocation after losses.
+- Compound only from realized closed profit, not floating P/L.
+
+SECTION 7 — Trade budget system
+
+Each mission gets a trade budget.
+
+Fields:
+- max trades per day
+- max scalps per session
+- max loss per trade
+- max loss per session
+- max loss per day
+- max same-symbol exposure
+- max correlated exposure
+- max revenge-trade lockout
+- max consecutive losses
+- cooldown_after_loss
+
+Rules:
+- If daily trade budget is used up, mission pauses until next session/day.
+- User override requires explicit confirmation if allowed.
+- Behind pace can increase scanning frequency, not reduce trade quality.
+- Overtrading lowers agent scores.
+
+SECTION 8 — Multi-agent trading team
+
+Allow multiple AI agents to search for trades.
+
+Create these agents:
+
+1. Scalper Agent
+Specializes in:
+- fast setups
+- liquidity sweeps
+- breakout/retest
+- wick rejection
+- session momentum
+- strict timing
+
+2. Trend Agent
+Specializes in:
+- trend continuation
+- pullbacks
+- structure
+- trendline holds/breaks
+- higher-timeframe alignment
+
+3. Reversal Agent
+Specializes in:
+- exhaustion
+- shooting stars/hammers
+- failed breakouts
+- liquidity traps
+- market structure shift
+- change of character
+
+4. Gold Agent
+Specializes in:
+- XAUUSD
+- gold liquidity sweeps
+- wick rejection
+- ATR expansion
+- macro/news
+- London/NY gold behavior
+
+5. Synthetic Agent
+Specializes in:
+- Deriv/synthetic volatility behavior
+- Boom/Crash spike logic
+- Step/Jump behavior
+- no traditional macro-news dependency
+
+6. Forex Agent
+Specializes in:
+- London/NY session
+- pivots
+- support/resistance flips
+- trend continuation
+- currency-pair behavior
+
+7. Risk Agent
+Specializes in:
+- vetoing bad trades
+- drawdown checks
+- spread/slippage
+- stale feed
+- lot size
+- SL/TP
+- exposure
+- correlation
+- mission loss limits
+
+Risk Agent can veto any proposal.
+
+8. Execution Judge
+Final ranking layer before trade goes to Trade Health/live gates.
+Chooses the best candidate or says no trade.
+
+Optional future agents:
+- News Agent
+- Order Flow Agent
+- Pivot Agent
+- Pattern Agent
+- Session Timing Agent
+- Range Agent
+- Exit Manager Agent
+
+SECTION 9 — Agent proposals
+
+Every agent proposal must be structured.
+
+AgentProposal:
+- agent_id
+- mission_id
+- symbol
+- timeframe
+- direction
+- setup_type
+- entry_plan
+- stop_loss
+- take_profit
+- risk_amount
+- expected_r
+- confidence
+- urgency
+- expiration_time
+- reason
+- confirmation_needed
+- invalidation_level
+- market_intelligence_snapshot
+- historical_edge
+- forward_test_edge
+- warnings[]
+
+Rules:
+- Agents are allowed to disagree.
+- No trade if all proposals are weak.
+- Disagreement lowers confidence unless one agent has strong evidence.
+- Risk Agent can veto.
+- Execution Judge cannot bypass live gates.
+- Mission urgency can increase scanning frequency, not bypass risk.
+
+SECTION 10 — Agent debate system
+
+Before a trade is selected, agents should debate.
+
+Each selected/rejected trade should include:
+- agent thesis
+- opposing argument
+- risk objection
+- final judge decision
+
+Example:
+Gold Agent:
+“Sell XAUUSD after Asian high sweep.”
+
+Risk Agent:
+“Spread is wide and CPI news is in 8 minutes.”
+
+Execution Judge:
+“Rejected. Wait until news settles.”
+
+For high-risk trades, require agent council vote:
+- approve
+- reject
+- wait
+- needs_confirmation
+
+Risk Agent veto carries special weight.
+
+SECTION 11 — Agent promotion/demotion
+
+Create:
+AgentPerformanceScore
+
+Track:
+- agent_id
+- mission_id
+- symbol
+- asset_class
+- strategy_type
+- proposals_count
+- accepted_count
+- rejected_count
+- wins
+- losses
+- breakevens
+- skipped_good_calls
+- correct_no_trade_calls
+- avoided_losses
+- false_signals
+- average_r
+- profit_factor
+- max_drawdown_caused
+- win_rate
+- loss_rate
+- average_hold_time
+- confidence_calibration
+- risk_violations
+- current_rank
+- status
+
+Agent statuses:
+- elite
+- active
+- probation
+- learning_camp
+- disabled
+
+Promotion rules:
+Promote agent when:
+- positive average R
+- strong confidence calibration
+- low false-signal rate
+- respects risk
+- performs well in current symbol/session
+- forward-test confirms edge
+- avoids bad trades correctly
+
+Demotion rules:
+Demote agent when:
+- repeated losses
+- high drawdown contribution
+- bad confidence calibration
+- suggests trades during blocked conditions
+- ignores no-trade environments
+- poor performance by symbol/timeframe
+- revenge-style proposals
+- repeated low-quality setups
+- repeated late/chase entries
+
+Learning camp:
+Agents in learning camp:
+- can still analyze
+- cannot directly recommend live execution
+- proposals are low priority
+- must improve in backtest/forward-test before promotion
+
+Disabled:
+Agent removed from active proposal rotation until reviewed.
+
+Important:
+Bad agents are demoted by evidence, not one loss.
+Good agents are promoted by consistent performance, not one win.
+
+SECTION 12 — Contextual agent ranking
+
+Do not promote/demote only globally.
+
+Track performance by:
+- symbol
+- timeframe
+- session
+- setup type
+- market condition
+- asset class
+
+Example:
+Scalp Agent may be elite on XAUUSD NY session but weak on EURUSD Asia session.
+Trend Agent may be strong on EURUSD H1 but on probation on V75 M5.
+
+Agent rank should be contextual.
+
+Dynamic agent weighting:
+Agent weight changes by:
+- recent performance
+- symbol
+- timeframe
+- session
+- market regime
+- mission mode
+- risk state
+
+Examples:
+- Gold Agent weight increases on XAUUSD during NY session.
+- Trend Agent weight decreases in chop.
+- Risk Agent weight increases after drawdown.
+
+SECTION 13 — Edge Engine
+
+Create:
+EdgeEngine
+
+It scores every opportunity before it can become a trade.
+
+EdgeScore:
+- setupQuality
+- directionQuality
+- entryQuality
+- timingQuality
+- riskRewardQuality
+- orderFlowQuality
+- patternReliability
+- trendlineReliability
+- pivotReliability
+- agentReliability
+- sessionReliability
+- symbolReliability
+- spreadPenalty
+- slippagePenalty
+- newsPenalty
+- correlationPenalty
+- finalEdgeScore: 0–100
+
+Edge tiers:
+- A+ = elite setup
+- A = strong setup
+- B = acceptable setup
+- C = weak setup
+- D = avoid
+- F = blocked
+
+Rules:
+- A+/A setups can receive normal or increased allocation if mission mode allows.
+- B setups require caution or user approval.
+- C or worse should be skipped.
+- Blocked setups cannot trade.
+- If feed is stale, edge score is capped to context-only.
+- If spread is wide, edge score is capped or blocked.
+- If timing is late, edge score is downgraded.
+
+SECTION 14 — Profit Opportunity Router
+
+Create:
+ProfitOpportunityRouter
+
+Purpose:
+Do not trade whatever appears first.
+Route capital toward the best current opportunity.
+
+Inputs:
+- all agent proposals
+- scanner opportunities
+- symbol conditions
+- mission progress
+- session timing
+- risk state
+- open exposure
+- strategy reliability
+- backtest/forward-test stats
+
+Output:
+OpportunityRanking:
+- ranked opportunities
+- best opportunity
+- rejected opportunities
+- reason for ranking
+- mission fit score
+- expected profit contribution
+- risk-adjusted score
+
+Rules:
+- Best trade is highest risk-adjusted mission fit, not just highest confidence.
+- Do not take multiple trades that express the same risk.
+- If no A/B-grade opportunity exists, wait.
+
+SECTION 15 — Opportunity queue
+
+Create an opportunity queue.
+
+Each opportunity:
+- symbol
+- direction
+- setup
+- proposing agent
+- confidence
+- expected R
+- risk amount
+- timing window
+- expiration
+- reason
+- required confirmation
+- invalidation
+- mission fit score
+
+Execution Judge ranks the queue and selects the best one.
+
+SECTION 16 — Trade draft system
+
+Before execution, every trade becomes a draft.
+
+TradeDraft:
+- entry
+- stop_loss
+- take_profit
+- lot_size
+- risk_amount
+- expected_r
+- reason
+- agent_source
+- mission_impact
+- approval_status
+
+Draft states:
+- proposed
+- waiting_confirmation
+- approved
+- rejected
+- expired
+- executed
+- cancelled
+
+This gives control and auditability.
+
+SECTION 17 — Mission impact preview
+
+Before approving a trade, show how it affects the mission.
+
+Show:
+If this trade wins:
+- mission progress change
+- target distance after win
+- new pace needed
+
+If this trade loses:
+- drawdown impact
+- remaining target becomes harder
+- new pace needed
+
+Show:
+- best case
+- expected case
+- worst case
+- mission impact if TP
+- mission impact if SL
+
+SECTION 18 — Dynamic position sizing
+
+Create:
+SmartPositionSizingEngine
+
+Position size should change based on:
+- edge score
+- risk profile
+- mission mode
+- drawdown state
+- current pace
+- volatility
+- spread
+- stop distance
+- agent reliability
+- symbol reliability
+- execution quality
+
+Sizing tiers:
+- Probe size
+- Reduced-risk size
+- Normal size
+- High-conviction size
+- No-trade
+
+PositionSizingVerdict:
+- recommendedRiskPercent
+- recommendedLotSize
+- maxAllowedLotSize
+- reason
+- riskIfSL
+- profitIfTP
+- missionImpactIfWin
+- missionImpactIfLoss
+- allowed: true/false
+
+Rules:
+- High-conviction sizing only for A/A+ setups.
+- Reduced sizing after losses.
+- Reduced sizing in high volatility.
+- Reduced sizing when behind pace but setup is not strong.
+- No sizing increase during revenge/recovery mode unless edge is proven.
+- Never risk full mission capital on one trade.
+- Never use martingale by default.
+- Never increase size only because the last trade lost.
+
+SECTION 19 — Controlled compounding
+
+Add compounding rules.
+
+Compounding modes:
+- off
+- conservative
+- balanced
+- aggressive
+
+Compounding activates only when:
+- mission is profitable
+- drawdown is low
+- agents are performing well
+- recent trades are high quality
+- user allowed compounding
+- risk governor allows it
+
+Rules:
+- Compound from realized closed profit, not floating P/L.
+- Do not compound during drawdown.
+- Do not compound after one lucky win.
+- Reduce risk after target milestones.
+- Protect profits after each milestone.
+
+SECTION 20 — Profit locks and milestones
+
+Add milestones:
+- 25%
+- 50%
+- 75%
+- 100%
+
+Example:
+$1,000 → $1,300
+- milestone 1: $1,075
+- milestone 2: $1,150
+- milestone 3: $1,225
+- target: $1,300
+
+ProfitLockRules:
+- lock at daily goal
+- lock at milestone
+- lock after target hit
+- protect after winning streak
+- pause after large win
+- reduce risk after profit spike
+
+Rules:
+- At higher milestones, allow only A/A+ setups.
+- Do not give back large profit chasing the last few dollars.
+- When target is hit, default action is stop and lock profit.
+- User can choose to continue, but risk should reduce automatically.
+
+Target hit options:
+- stop mission and lock profit
+- switch to protect mode
+- continue with reduced risk
+- start new mission
+
+Default:
+Stop mission and lock profit.
+
+SECTION 21 — Profit protection ladder
+
+Example ladder:
+- 25% target hit: keep normal risk
+- 50% target hit: reduce weak trades
+- 75% target hit: protect mode
+- 100% target hit: stop mission by default
+
+ProfitProtectionVerdict:
+- currentMilestone
+- lockedProfit
+- riskReduction
+- allowedTradeTiers
+- protectModeActive
+
+SECTION 22 — Loss containment ladder
+
+If mission starts losing, risk tightens automatically.
+
+Example:
+- down 3%: reduce risk
+- down 5%: A setups only
+- down 8%: cooldown
+- down 10%: mission stop
+
+Rules:
+- No martingale.
+- No doubling down after losses.
+- Recovery mode requires stronger evidence, not larger gambling.
+- Risk Agent gets stronger veto after drawdown.
+
+SECTION 23 — Execution Quality Engine
+
+Create:
+ExecutionQualityEngine
+
+It checks every trade before approval/execution.
+
+ExecutionQualityVerdict:
+- spreadStatus: normal / wide / unstable / blocked
+- slippageRisk: low / medium / high / blocked
+- liquidityStatus: good / thin / unknown
+- fillQualityExpected: good / acceptable / poor / blocked
+- brokerConnectionStatus
+- quoteFreshness
+- orderLatencyEstimate
+- executionWindowStatus: valid / expired / wait
+- totalCostEstimate
+- profitAfterCostEstimate
+- allowed: true / false
+- warnings[]
+
+Rules:
+- Do not trade if spread eats too much expected profit.
+- Do not scalp during unstable spread.
+- Do not execute if quote is stale.
+- Do not execute if signal expired.
+- Do not execute if latency/slippage risk is high.
+- Do not take trades where expected profit after costs is too small.
+
+SECTION 24 — Net Profit Filter
+
+Every trade must pass a net-profit check.
+
+NetProfitVerdict:
+- grossTargetProfit
+- estimatedSpreadCost
+- estimatedSlippageCost
+- estimatedCommission
+- estimatedSwap
+- netExpectedProfit
+- costToRewardRatio
+- allowed
+
+Rules:
+- If costs are too high relative to target, skip.
+- Scalps need stricter cost checks.
+- Gold/US30/high-volatility symbols need slippage checks.
+- Overnight trades need swap checks if applicable.
+
+Example:
+A scalp targeting $12 but expected spread/slippage cost is $7 should be skipped.
+
+SECTION 25 — Mission Exposure Manager
+
+Create:
+MissionExposureManager
+
+It prevents stacking too much risk.
+
+Checks:
+- total open risk
+- symbol exposure
+- asset-class exposure
+- USD exposure
+- gold exposure
+- index exposure
+- synthetic exposure
+- correlated pairs
+- same-direction duplicates
+- max open trades
+- max mission exposure
+
+Rules:
+- Do not open multiple trades that are basically the same bet.
+- Do not stack USD risk blindly.
+- Do not overexpose Gold while also trading USD pairs in the same direction.
+- Do not allow agents to independently create correlated overexposure.
+- Execution Judge must see full mission exposure before selecting a trade.
+
+SECTION 26 — Capital Efficiency Score
+
+Create:
+CapitalEfficiencyScore
+
+Fields:
+- expectedProfit
+- marginRequired
+- riskRequired
+- timeExpectedInTrade
+- expectedR
+- profitPerRiskDollar
+- profitPerMarginDollar
+- profitPerHour
+- capitalEfficiencyRating
+
+Rules:
+- Prefer trades with better return per unit of risk.
+- Prefer quicker clean scalps only if edge is high.
+- Avoid tying up capital in low-quality slow trades when mission target is short-term.
+- Swing trades are acceptable only when timeframe matches the mission.
+
+SECTION 27 — Time-to-Target Optimizer
+
+Create:
+TimeToTargetOptimizer
+
+It calculates:
+- remaining target
+- time left
+- average profit per trade needed
+- trades needed at current expectancy
+- trades needed at best-case expectancy
+- whether current pace is realistic
+- whether risk must increase
+- whether target should be revised
+
+Rules:
+- If target becomes unrealistic, Eleanor must say so.
+- Do not compensate with reckless size automatically.
+- Suggest adjusted target/timeframe if needed.
+
+SECTION 28 — Trade expiration logic
+
+Every trade idea must expire.
+
+Expiration rules:
+- scalp: expires quickly
+- breakout: expires if price moves too far
+- retest: expires if retest fails or too much time passes
+- news setup: expires after news window changes
+- reversal: expires if invalidation breaks
+
+Rules:
+- No stale proposal can execute.
+- If price moved too far from entry, mark too_late.
+- If confirmation never happens, expire setup.
+- Expired ideas stay in journal for learning.
+
+SECTION 29 — Precision Entry Engine
+
+Create:
+EntryPrecisionEngine
+
+EntryPrecisionVerdict:
+- idealEntry
+- acceptableEntryZone
+- badEntryZone
+- chaseZone
+- invalidationLevel
+- entryTiming
+- currentPriceStatus:
+  - ideal
+  - acceptable
+  - late
+  - too_late
+  - invalidated
+
+Rules:
+- If current price is outside acceptable entry zone, do not enter.
+- If current price is too close to TP, do not enter.
+- If current price is too close to SL/invalidation, do not enter.
+- If signal already moved, wait for pullback/retest.
+
+SECTION 30 — Exit Manager Pro
+
+Profit is not only entries. Upgrade exits.
+
+ExitManagerPro supports:
+- partial close
+- break-even move
+- trailing stop
+- structure-based exit
+- target adjustment
+- early exit on invalidation
+- exit on agent disagreement
+- exit on order-flow reversal
+- exit on mission target hit
+- exit before high-risk news
+- exit when spread becomes unstable
+
+Exit types:
+- fixed TP
+- scaled TP
+- trailing stop
+- structure-based exit
+- time-based exit
+- news-risk exit
+- mission-target exit
+
+Rules:
+- Protect winners faster in scalp mode.
+- Let high-quality trend trades breathe.
+- Gold trades need wick-aware trailing logic.
+- Mission target hit should trigger close/protect decision.
+- If trade thesis fails, exit even before SL if rules allow.
+
+SECTION 31 — Partial profit system
+
+Allow partial closes where broker supports it.
+
+PartialProfitPlan:
+- TP1: close 25–50%
+- TP2: close remaining or trail
+- break-even trigger
+- runner trigger
+
+Rules:
+- Scalps may use fast partials.
+- Gold may need partials because wicks reverse fast.
+- US30 may need partials during volatile sessions.
+- If partial close unavailable, simulate with full close or separate position plan only if supported.
+
+SECTION 32 — Missed profit analysis
+
+After each trade, analyze:
+- max favorable excursion
+- actual captured profit
+- profit left on table
+- whether exit was early
+- whether TP was too small
+- whether trailing stop was too tight
+- whether partials improved outcome
+
+Fields:
+- maxAvailableProfit
+- capturedProfit
+- captureRate
+- missedProfitReason
+
+Use this to train ExitManagerPro.
+
+Do not punish early exit if risk evidence justified it.
+
+SECTION 33 — Opportunity cost tracking
+
+Track:
+- capital used
+- margin used
+- trade duration
+- other opportunities missed
+- better setups skipped due to exposure
+
+Rules:
+- Execution Judge should compare current trade against opportunity queue.
+- Do not take a B trade if an A setup is forming soon and risk budget is limited.
+
+SECTION 34 — Best session focus
+
+Rank sessions by asset.
+
+Gold:
+- London/NY overlap
+- NY data windows after spread stabilizes
+- Asian range sweep into London
+- avoid pre-news gambling
+
+Forex:
+- London open
+- London/NY overlap
+- pair-specific session behavior
+- avoid dead Asia unless pair supports it
+
+US30:
+- NY open
+- post-news continuation/reversal
+- trend day vs chop day detection
+
+Synthetics:
+- continuous session model
+- volatility-specific timing
+- no macro-news dependency
+
+Rules:
+- Reduce trading in low-quality sessions.
+- If behind pace, scan more symbols/sessions, but do not force poor sessions.
+- Track profit by session and route future trades to best sessions.
+
+SECTION 35 — Market regime detection
+
+Mission must know the market environment.
+
+Regimes:
+- trending
+- ranging
+- choppy
+- news-driven
+- high volatility
+- low volatility
+- breakout environment
+- reversal environment
+- liquidity sweep environment
+- exhaustion environment
+
+Rules:
+- Trend Agent gets more weight in trending market.
+- Range Agent gets more weight in range.
+- Scalper Agent gets reduced during wide spread.
+- News Agent gets more weight during macro events.
+- Risk Agent gets stronger veto during extreme volatility.
+- Choppy market requires A+ setups or no trade.
+
+SECTION 36 — Symbol profit ranking
+
+Every day/session, rank symbols.
+
+SymbolProfitRank:
+- currentEdge
+- spreadCondition
+- volatilityQuality
+- sessionQuality
+- recentReliability
+- strategyFit
+- missionFit
+- activeRisk
+
+Example:
+1. XAUUSD — best edge, London sweep forming
+2. EURUSD — moderate edge, waiting retest
+3. US30 — blocked, news volatility too high
+4. V75 — context only, feed limited
+
+Bot should focus attention on top-ranked symbols.
+
+SECTION 37 — Profit from waiting / no-trade intelligence
+
+The system must know that not trading can protect profit.
+
+Track:
+- avoided bad trades
+- skipped low-edge setups
+- prevented drawdown
+- missed winners
+- correct waits
+- false waits
+
+Agents should be rewarded for correctly avoiding losses.
+
+Dashboard should show:
+- Loss avoided
+- Skipped weak setup
+- No edge — waiting protected mission
+- Risk Agent saved mission from poor trade
+
+SECTION 38 — Trade frequency optimizer
+
+Track:
+- trades per hour
+- trades per session
+- win rate by trade number
+- performance after losses
+- performance after wins
+- best trade frequency
+
+Rules:
+- If performance drops after 3 trades/day, cap trades.
+- If agent overtrades, demote.
+- If session gives repeated high-quality setups, allow more within risk budget.
+- Mission urgency can increase scanning, not low-quality entries.
+
+SECTION 39 — Profit factor and expectancy guard
+
+Judge agents/strategies by:
+- profit factor
+- average R
+- expectancy
+- max drawdown
+- recovery factor
+- false signal rate
+- missed opportunity rate
+
+Rules:
+- High win rate with poor risk/reward is not enough.
+- Low win rate can be acceptable if average R is strong.
+- Promotion should prioritize expectancy and risk-adjusted return.
+
+SECTION 40 — Profit efficiency score
+
+Create:
+ProfitEfficiencyScore
+
+Measures:
+- netProfit
+- maxDrawdown
+- profitEfficiency
+- smoothnessScore
+- volatilityOfReturns
+
+Rules:
+- Prefer strategies with smoother equity growth.
+- Demote strategies that make profit only through huge drawdowns.
+- Prefer stable profit paths over wild swings unless user selects extreme mode.
+
+SECTION 41 — Anti-blowup system
+
+Create:
+BlowupRiskScore
+
+Inputs:
+- current drawdown
+- consecutive losses
+- trade frequency spike
+- lot size increase pattern
+- agent disagreement
+- stale feed
+- wide spread
+- high slippage
+- news volatility
+- correlated exposure
+- revenge-trade behavior
+- mission behind pace
+- target pressure
+
+Output:
+- blowupRisk: low / medium / high / critical
+- reason[]
+- requiredAction:
+  - continue
+  - reduce_risk
+  - pause
+  - approval_required
+  - stop_mission
+
+Rules:
+- If blowupRisk=high, reduce risk and require only A/A+ setups.
+- If blowupRisk=critical, pause or stop mission.
+- Mission pressure cannot override blowup protection.
+
+SECTION 42 — Revenge trading detector
+
+Detect:
+- increasing size after loss
+- trades too quickly after loss
+- entering lower-quality setups because mission is behind
+- ignoring confirmation because time is running out
+- repeated same-direction attempts after stop-out
+
+If detected:
+- activate cooldown
+- reduce risk
+- require user confirmation to continue
+- log event to mission journal
+
+SECTION 43 — Overtrading detector
+
+Track:
+- trades per hour
+- trades per session
+- trades after losses
+- repeated failed setups
+- repeated same-symbol trades
+
+Rules:
+- Overtrading lowers agent score.
+- Overtrading activates cooldown.
+- Overtrading blocks C/B- setups.
+- Mission urgency can increase scanning, not force entries.
+
+SECTION 44 — Hard no-martingale rule
+
+Default:
+martingale_allowed=false
+
+Do not use martingale or automatic doubling after losses.
+
+If user asks for martingale:
+- require explicit risk warning
+- keep disabled by default
+- never enable silently
+
+SECTION 45 — Consecutive loss protocol
+
+Safe default:
+- 1 loss: normal review
+- 2 losses: reduce risk or require stronger confluence
+- 3 losses: cooldown
+- 4+ losses: pause mission and require review
+
+Configurable but safe defaults required.
+
+SECTION 46 — Profit giveback guard
+
+If mission gains profit and then gives it back:
+- detect giveback percentage
+- switch to protect mode
+- reduce risk
+- stop after configured giveback limit
+
+Example:
+If mission reaches +$200 and gives back $80, protect mode activates.
+
+SECTION 47 — Emotional pressure guard
+
+If mission is near deadline and behind:
+- do not automatically increase size
+- do not lower trade quality
+- do not chase
+- mark target unlikely if needed
+- ask user whether to extend timeframe, lower target, or continue in approval mode
+
+SECTION 48 — Emergency stop conditions
+
+Mission must stop or pause automatically when:
+- max mission loss hit
+- daily loss limit hit
+- kill switch active
+- broker disconnected
+- feed stale
+- quote stale
+- ghost position detected
+- account equity mismatch
+- spread abnormal
+- slippage abnormal
+- repeated execution failure
+- strategy drift severe
+- high-impact news block
+- blowup risk critical
+- user hits emergency stop
+
+SECTION 49 — Broker/feed health gate
+
+Before mission execution:
+- broker connected
+- feed fresh
+- quote aligned with candles
+- spread normal
+- no ghost positions
+- account equity reconciled
+- open trades accurate
+- order route healthy
+
+If any fail:
+- block execution
+- mission can still analyze/watch
+- dashboard shows reason clearly
+
+SECTION 50 — Mission automation levels
+
+Add clear automation levels:
+
+Level 0 — Research only
+AI plans but does not alert or trade.
+
+Level 1 — Alerts only
+AI finds setups and alerts user.
+
+Level 2 — Approval mode
+AI proposes trades, user approves.
+
+Level 3 — Demo auto
+AI executes only on demo.
+
+Level 4 — Micro-live supervised
+Tiny live trades only, strict limits.
+
+Level 5 — Limited live auto
+Only after proven performance.
+
+Level 6 — Full mission auto
+Only for approved users/settings, still under risk governor.
+
+Default:
+Level 2 approval mode.
+
+Never silently enable live auto.
+
+SECTION 51 — Final promotion gate before live auto
+
+A mission strategy cannot go live-auto until it passes:
+- backtest minimum sample
+- forward-test minimum sample
+- demo performance
+- max drawdown threshold
+- agent reliability threshold
+- risk-rule compliance
+- no major strategy drift
+- user explicit enablement
+- live gates enabled
+
+Default:
+Approval mode.
+
+Live auto is the last step, never the first.
+
+SECTION 52 — Backtesting/forward testing integration
+
+Testing Lab must evaluate mission strategies.
+
+Backtest:
+- historical mission strategy performance
+- profit factor
+- drawdown
+- expectancy
+- trade count
+- edge score performance
+- agent strategy performance
+- entry/exit rules
+- market regime performance
+
+Forward test:
+- current live/paper performance
+- real-time signal quality
+- spread/slippage behavior
+- agent accuracy
+- strategy drift
+- forward win/loss/R
+- proposal expiration accuracy
+- no-trade accuracy
+
+Rules:
+- Backtest success cannot grant live permission.
+- Forward-test success cannot bypass live gates.
+- Demo/live-auto only after promotion gates pass.
+- Small sample size must be labeled.
+
+SECTION 53 — Strategy drift detection
+
+Detect when strategy performs worse live than historically.
+
+Drift reasons:
+- market condition changed
+- spread/slippage worse live
+- pattern false positives increased
+- news volatility
+- low liquidity
+- overfit historical data
+- insufficient sample size
+
+If severe drift:
+- demote strategy
+- reduce risk
+- pause live promotion
+- require more forward testing
+
+SECTION 54 — Mission templates
+
+Create presets:
+- Safe Growth Mission
+- Scalp Sprint Mission
+- Gold Aggressive Mission
+- Synthetic Volatility Mission
+- Forex London Mission
+- Recovery Mission
+- Investor Pool Mission
+- Demo Challenge Mission
+- Prop-Firm Style Mission
+
+Each template has:
+- risk profile
+- symbols
+- max drawdown
+- trade style
+- agent team
+- execution mode
+- allowed automation level
+
+SECTION 55 — Mission dashboard / Mission Battle Room
+
+Create Mission Battle Room dashboard.
+
+Sections:
+- Mission Command
+- Real-Time Mission Pulse
+- Agent Desk
+- Opportunity Queue
+- Trade Drafts
+- Active Trades
+- Closed Trades
+- Risk Control
+- Profit Protection
+- Mission Journal
+- Strategy Stats
+- Next Best Action
+
+Show:
+- starting amount
+- target amount
+- current balance/equity
+- target progress
+- remaining profit needed
+- time remaining
+- required pace
+- current pace
+- mission status
+- current mission mode
+- agent leaderboard
+- active proposals
+- rejected proposals
+- open trades
+- closed trades
+- risk state
+- blowup risk
+- drawdown meter
+- daily budget used
+- best current setup
+- next session plan
+- Eleanor mission summary
+
+Progress copy:
+- “$1,000 → $1,300”
+- “+$86 / +$300 target”
+- “28.6% complete”
+- “5 days remaining”
+- “Needed today: $43”
+- “Current pace: ahead / on track / behind”
+
+SECTION 56 — Real-Time Mission Pulse
+
+Mission should update live:
+- current P/L
+- distance to target
+- pace status
+- agent activity
+- active opportunities
+- risk state
+- open-trade exposure
+- mission health
+
+Pulse states:
+- On track
+- Ahead of pace
+- Behind pace
+- High risk
+- Waiting for setup
+- Risk paused
+- Target hit
+- Mission failed
+- Mission protected
+
+SECTION 57 — Mission journal
+
+Every mission should log:
+- mission started
+- feasibility result
+- strategy selected
+- agent proposal
+- agent debate
+- trade accepted
+- trade rejected
+- risk veto
+- trade opened
+- trade closed
+- exit adjustment
+- mission mode changed
+- agent promoted
+- agent demoted
+- target hit
+- mission stopped
+- user override
+
+This gives accountability and learning.
+
+SECTION 58 — Daily briefing and end-of-day review
+
+Daily/Session Mission Briefing:
+Eleanor should produce:
+- target progress
+- remaining target
+- best sessions today
+- high-impact news
+- symbols to focus on
+- symbols to avoid
+- best performing agents
+- risk mode
+- plan for today
+
+Example:
+“Today we need $43 to stay on pace. Gold has high CPI risk, so I’ll avoid pre-news scalps and focus on post-news retests.”
+
+End-of-Day Review:
+- what was gained/lost
+- best trade
+- worst trade
+- best agent
+- weakest agent
+- mistakes
+- avoided bad trades
+- tomorrow’s plan
+- current probability of target hit
+
+SECTION 59 — Mission replay/report
+
+After mission ends, create report:
+- total profit/loss
+- target achieved or missed
+- best trade
+- worst trade
+- best agent
+- weakest agent
+- missed opportunities
+- avoided bad trades
+- rule violations
+- what to improve
+- recommended next mission
+
+SECTION 60 — Mission learning loop
+
+Every mission updates:
+- agent scores
+- strategy reliability
+- symbol reliability
+- session reliability
+- pattern reliability
+- entry timing reliability
+- exit reliability
+- risk-rule effectiveness
+- execution quality stats
+- missed profit stats
+- no-trade accuracy
+
+Future missions should use this memory.
+
+SECTION 61 — User controls
+
+User can:
+- pause mission
+- resume mission
+- stop mission
+- lower risk
+- switch mode
+- remove symbol
+- disable agent
+- require approval
+- cancel pending proposals
+- close mission after target hit
+- choose profit preference
+
+User profit preference controls:
+- maximize profit aggressively
+- balance profit and drawdown
+- protect capital first
+- scalp only
+- gold only
+- no overnight trades
+- no news trades
+- approval required above risk amount
+- stop at target
+- continue after target in protect mode
+
+Every override logs to mission journal.
+
+SECTION 62 — Mission risk certificate
+
+Before starting live mission, show summary:
+- starting amount
+- target amount
+- required return
+- timeframe
+- risk profile
+- max loss
+- max drawdown
+- execution mode
+- user approval required
+- live auto enabled or disabled
+
+User must confirm:
+“I understand this is not guaranteed and losses are possible.”
+
+SECTION 63 — User type guardrails
+
+Different users need different permissions.
+
+New user:
+- approval mode only
+- lower risk
+- no live auto
+
+Experienced user:
+- approval/demo
+- higher limits if configured
+
+Owner/admin:
+- can configure fewer restrictions
+- still sees warnings
+- still cannot fake feed/live data
+
+Investor/pool mission:
+- stricter risk
+- full audit
+- no hidden aggressive mode
+
+SECTION 64 — Eleanor mission behavior
+
+Eleanor should speak like a mission manager.
+
+Eleanor should explain:
+- mission progress
+- feasibility
+- why trade was selected
+- why trade was rejected
+- which agent proposed it
+- which agent vetoed it
+- what confirms the setup
+- what invalidates it
+- risk to mission
+- impact on target pace
+- why no trade is best when there is no edge
+
+Examples:
+- “We are behind pace, but there is no valid setup yet. Forcing a trade here would lower mission quality.”
+- “Gold Agent found a liquidity sweep on XAUUSD, but Risk Agent vetoed it because spread is wide.”
+- “The mission is ahead of pace. I’m reducing aggression to protect gains.”
+- “Scalper Agent has underperformed this week and is moved to probation.”
+- “Trend Agent is promoted for EURUSD London-session setups.”
+- “Target is possible but high risk. Recommended mode: aggressive approval, not full auto.”
+- “This trade would help the mission if it wins, but the cost-to-reward ratio is poor after spread. I’m rejecting it.”
+
+SECTION 65 — Database models
+
+profit_missions:
+- id
+- user_id
+- starting_amount
+- target_amount
+- required_profit
+- timeframe_start
+- timeframe_end
+- risk_profile
+- execution_mode
+- automation_level
+- status
+- current_mode
+- settings_json
+- current_value
+- progress_json
+- feasibility_json
+- probability_json
+- risk_json
+- created_at
+- updated_at
+- completed_at nullable
+
+mission_agents:
+- id
+- mission_id
+- agent_type
+- agent_name
+- status
+- rank
+- weight
+- performance_json
+- created_at
+- updated_at
+
+mission_proposals:
+- id
+- mission_id
+- agent_id
+- symbol
+- timeframe
+- direction
+- setup_type
+- entry_plan_json
+- risk_plan_json
+- edge_json
+- execution_quality_json
+- mission_impact_json
+- confidence
+- status
+- selection_reason
+- rejection_reason
+- created_at
+- expires_at
+
+mission_trade_drafts:
+- id
+- mission_id
+- proposal_id
+- symbol
+- direction
+- entry_price
+- stop_loss
+- take_profit
+- lot_size
+- risk_amount
+- expected_r
+- approval_status
+- created_at
+- expires_at
+
+mission_trades:
+- id
+- mission_id
+- proposal_id
+- trade_id nullable
+- broker_ticket nullable
+- symbol
+- direction
+- entry_price
+- stop_loss
+- take_profit
+- risk_amount
+- status
+- pnl
+- r_multiple
+- mfe
+- mae
+- captured_profit
+- missed_profit
+- opened_at
+- closed_at nullable
+
+mission_agent_scores:
+- id
+- agent_id
+- mission_id
+- symbol
+- timeframe
+- session
+- strategy_type
+- market_regime
+- metrics_json
+- rank
+- status
+- updated_at
+
+mission_events:
+- id
+- mission_id
+- type
+- message
+- metadata_json
+- created_at
+
+mission_snapshots:
+- id
+- mission_id
+- snapshot_json
+- created_at
+
+SECTION 66 — Endpoints
+
+Suggested endpoints:
+- POST /api/profit-missions
+- GET /api/profit-missions
+- GET /api/profit-missions/:id
+- PATCH /api/profit-missions/:id/pause
+- PATCH /api/profit-missions/:id/resume
+- PATCH /api/profit-missions/:id/cancel
+- PATCH /api/profit-missions/:id/settings
+- GET /api/profit-missions/:id/pulse
+- GET /api/profit-missions/:id/proposals
+- GET /api/profit-missions/:id/trade-drafts
+- POST /api/profit-missions/:id/proposals/:proposalId/approve
+- POST /api/profit-missions/:id/proposals/:proposalId/reject
+- GET /api/profit-missions/:id/agents
+- PATCH /api/profit-missions/:id/agents/:agentId/disable
+- GET /api/profit-missions/:id/events
+- GET /api/profit-missions/:id/performance
+- GET /api/profit-missions/:id/report
+
+SECTION 67 — Tests
+
+Add tests:
+
+Mission planning:
+1. Mission calculates required profit correctly.
+2. Mission calculates required daily pace correctly.
+3. Extreme target is marked high risk.
+4. Feasibility engine can reject unrealistic mission.
+5. Probability score shows sample-size warning.
+6. Mission starts in approval mode by default.
+
+Agents:
+7. Multiple agents can propose trades.
+8. Risk Agent can veto trade.
+9. Execution Judge selects best proposal.
+10. Weak proposal is skipped, not forced.
+11. Agent wins improve score.
+12. Agent losses reduce score.
+13. Correct no-trade calls improve score.
+14. Repeated poor performance moves agent to probation.
+15. Strong performance promotes agent.
+16. Learning camp agent cannot directly recommend live execution.
+17. Agent rank is contextual by symbol/session/timeframe.
+
+Profit maximization:
+18. Edge engine ranks A setup above B setup.
+19. C/D/F setup is skipped.
+20. Opportunity router does not take first weak trade.
+21. Smart sizing increases only for A/A+ setup.
+22. Smart sizing reduces after losses.
+23. Controlled compounding uses only realized profit.
+24. Profit locks activate at milestones.
+25. Target hit switches mission to completed/protect mode.
+26. Daily goal can trigger lock/protect mode.
+
+Execution quality:
+27. Wide spread blocks scalp even with strong setup.
+28. Stale quote blocks execution.
+29. High slippage risk blocks trade.
+30. Net profit filter rejects low-profit/high-cost scalp.
+31. Expired proposal cannot execute.
+32. Too-late entry is blocked.
+33. Broker/feed health failure blocks execution.
+34. Quote/candle mismatch blocks execution.
+
+Exposure:
+35. Correlated exposure blocks duplicate risk.
+36. Mission exposure manager blocks overexposure.
+37. Capital efficiency ranks better risk-adjusted setup higher.
+38. Opportunity cost is recorded.
+
+Exits:
+39. Exit manager protects profit after TP1.
+40. Mission target hit triggers close/protect decision.
+41. Missed profit analysis records capture rate.
+42. Exit on invalidation is logged.
+
+Anti-blowup:
+43. Behind-pace mission does not bypass risk.
+44. Ahead-pace mission reduces aggression.
+45. Daily loss limit pauses mission.
+46. Mission loss limit stops mission.
+47. Stale feed blocks mission trade.
+48. Wide spread blocks scalp trade.
+49. No valid stop blocks trade.
+50. Blowup risk high reduces risk.
+51. Blowup risk critical pauses/stops mission.
+52. Revenge trading detector activates cooldown.
+53. Overtrading detector activates cooldown.
+54. Martingale is disabled by default.
+55. Consecutive loss protocol triggers cooldown.
+56. Profit giveback activates protect mode.
+57. Deadline pressure does not increase size automatically.
+
+Automation/live gates:
+58. Approval mode requires user approval before execution.
+59. Demo mode does not touch live broker.
+60. Live auto cannot activate unless explicitly enabled.
+61. Mission cannot bypass live execution gates.
+62. Backtest success cannot grant live permission.
+63. Forward-test success cannot bypass live gates.
+64. Strategy drift blocks promotion.
+
+Dashboard/journal:
+65. Mission dashboard shows progress correctly.
+66. Agent leaderboard ranks correctly.
+67. Mission event log records decisions.
+68. Daily briefing generates plan.
+69. End-of-day review summarizes performance.
+70. Mission report generates after completion.
+
+Privacy/security:
+71. User cannot access another user’s mission.
+72. Admin can audit mission if admin role allows.
+73. Mission does not expose broker secrets.
+
+SECTION 68 — Validation
+
+Run:
+- api-server typecheck
+- trading-dashboard typecheck
+- db migration checks
+- ci-guards
+- targeted-tests
+- mission engine tests
+- agent scoring tests
+- risk governor tests
+- edge engine tests
+- execution quality tests
+- exposure manager tests
+- exit manager tests
+- dashboard render tests
+- safety-integration alone
+- architect code review
+
+SECTION 69 — Hard boundaries
+
+Do not promise guaranteed profit.
+Do not silently enable live auto.
+Do not use martingale by default.
+Do not force trades when no edge exists.
+Do not bypass:
+- live execution gates
+- MT5 bridge safety
+- broker dispatch checks
+- Trade Health
+- Scanner Truth
+- Risk Governor
+- kill switch
+- owner/admin permission rules
+- feed truth
+- stale-data blocks
+- spread checks
+- slippage checks
+- account reconciliation
+- emergency stop
+
+This feature is a structured profit-seeking mission system.
+It should prioritize profit opportunities while protecting the mission from reckless trading.
+
+SECTION 70 — Build sequence / scope lock
+
+Do not try to build the entire system in one pass.
+
+Build in safe phases:
+
+Phase 1:
+Mission planner + feasibility engine + dashboard shell.
+
+Phase 2:
+Multi-agent proposal system + ranking + mission journal.
+
+Phase 3:
+Risk Agent + Execution Judge + approval-mode trade drafts.
+
+Phase 4:
+Edge scoring + smart sizing + opportunity queue.
+
+Phase 5:
+Execution quality + exposure control + net profit filter.
+
+Phase 6:
+Exit Manager Pro + profit locks + loss containment.
+
+Phase 7:
+Backtesting/forward-testing integration.
+
+Phase 8:
+Demo automation only after testing gates.
+
+Phase 9:
+Supervised micro-live / limited live auto only after explicit user enablement and all promotion gates.
+
+Final product rule:
+The user gives the target.
+AI builds the mission.
+Agents scout and debate.
+Risk Agent protects the account.
+Execution Judge selects the best trade.
+Eleanor explains every decision.
+Mission dashboard tracks progress.
+Learning loop improves the next mission.
+
+Final safety rule:
+Profit is the goal.
+Survival and execution safety are the guardrails.
+
+Final profit rule:
+Maximize profit by ranking opportunities, sizing by edge, managing exits, locking gains, and refusing weak trades.

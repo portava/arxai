@@ -1,0 +1,143 @@
+Now build Phase 9: AI Learning Layer.
+
+Goal:
+The app should learn from completed trades and improve settings over time without pretending to guarantee profits.
+
+Create folder:
+
+/server/ai-learning
+
+Create files:
+
+1. tradeOutcomeAnalyzer.ts
+
+Analyze every completed trade.
+
+Input:
+{
+ symbol,
+ marketType,
+ strategy,
+ confidence,
+ entry,
+ stopLoss,
+ takeProfit,
+ exit,
+ profitLoss,
+ session,
+ marketCondition,
+ newsRisk,
+ volatilityState,
+ technicalBias,
+ macroBias,
+ holdTimeMinutes
+}
+
+Return:
+{
+ outcome,
+ mistakeTags,
+ successTags,
+ entryQuality,
+ exitQuality,
+ riskQuality,
+ lesson,
+ suggestedAdjustment
+}
+
+Mistake tags:
+- entered during chop
+- entered before news
+- stop too tight
+- stop too wide
+- poor risk reward
+- low confidence trade
+- ignored trend
+- late entry
+- early exit
+- overtrading
+- revenge trade risk
+- abnormal volatility
+
+Success tags:
+- trend aligned
+- clean break of structure
+- strong risk reward
+- good session timing
+- strong pullback entry
+- volatility confirmed
+- news avoided
+- risk respected
+
+2. strategyOptimizer.ts
+
+Track performance by:
+- symbol
+- strategy
+- session
+- market condition
+- confidence range
+- day of week
+- volatility state
+
+Return:
+{
+ bestStrategies,
+ worstStrategies,
+ recommendedEnabledStrategies,
+ recommendedDisabledStrategies,
+ confidenceAdjustment,
+ riskAdjustment,
+ warning
+}
+
+Rules:
+- Never increase risk aggressively.
+- Only suggest risk reduction automatically.
+- Do not auto-enable live trading.
+- Do not overfit based on small sample size.
+- Require at least 30 trades before giving strong recommendations.
+
+3. aiCoach.ts
+
+Create an AI-style explanation engine.
+
+For each completed trade, write:
+- What happened?
+- Was the setup valid?
+- What could have been better?
+- Should this strategy be adjusted?
+- Should this market be avoided under similar conditions?
+
+4. learningDashboard.tsx
+
+Frontend page:
+AI Learning Center
+
+Show:
+- top performing symbols
+- worst performing symbols
+- top performing strategies
+- worst performing strategies
+- common mistake tags
+- best trading sessions
+- worst trading sessions
+- AI lessons
+- recommended changes
+- sample size warning
+
+Add button:
+“Apply conservative improvements”
+
+This can only:
+- raise minimum confidence
+- lower max trades
+- lower risk per trade
+- disable poorly performing strategy
+- increase cooldown
+
+It cannot:
+- increase risk
+- enable live trading
+- remove kill switch
+- lower confidence automatically

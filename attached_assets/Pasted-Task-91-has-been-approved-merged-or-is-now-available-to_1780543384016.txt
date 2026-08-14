@@ -1,0 +1,860 @@
+Task #91 has been approved/merged or is now available to merge. Continue with a full POST-MERGE Agent Ecosystem governance wiring, enforcement, QA, and repair pass.
+
+This is not a new feature brainstorm. This is a completion and stabilization pass for the Agent Ecosystem layer now that Task #91 admin UI exists or is being merged.
+
+Your job is to merge/verify Task #91 safely, then make the governance layer actually functional across the app — not decorative, not only tested in isolation, not only database records, not only admin pages.
+
+Do not rebuild the app.
+Do not remove existing live trading.
+Do not introduce paper trading.
+Do not introduce simulation as a product feature.
+Do not break Ruby, scanner, live/MT5 flow, auth, admin, investor view, or trader dashboard.
+Do not let the Agent Ecosystem block or slow the 16-gate live dispatch path.
+Do not touch ARX_LIVE_BROKER_EXECUTION_ENABLED unless there is an existing bug directly related to it.
+Do not duplicate Task #91 UI if it already exists.
+Do not create conflicting schema, duplicate routes, or duplicate agent pages.
+Reuse the existing code and merge cleanly.
+
+============================================================
+MAIN OBJECTIVE
+
+Complete the Agent Ecosystem after Task #91 by wiring the missing governance enforcement pieces:
+
+1. Merge/verify Task #91 admin governance UI.
+2. Enforce Traffic Controller participants in real app workflows, not just compute summaries.
+3. Auto-invoke Agent Court during real multi-agent disagreements in scanner/Ruby/trade analysis flows.
+4. Add a background lifecycle runner for promotions, outcomes, Learning Camp, and report generation instead of relying only on manual admin POSTs.
+5. Persist per-action governance traces instead of only using an in-memory ring buffer.
+6. QA all Agent Ecosystem admin pages after merge.
+7. Prove the governance layer is involved in real app actions and changes behavior where appropriate.
+8. Keep live execution fast and isolated from nonessential AI.
+
+Current known state from prior verification:
+
+* Backend is mostly present.
+* 22 admin endpoints reportedly exist.
+* 14 core agents reportedly seeded.
+* Governance unit tests exist for:
+    * Agent Court / disagreement resolution
+    * Speed / step-back / reward
+    * Agent Factory
+    * Immune System
+    * Traffic Controller routing
+    * Trade Review scoring / no-trade reward
+    * Truth-locked journal
+    * Core agent seeding
+    * Learning Camp
+* Live execution safety check showed zero agentEcosystem/governance/advisory references under live execution paths, which is good.
+* Remaining gaps were flagged:
+    * Traffic Controller enforcement not consumed by callers.
+    * Agent Court not auto-called at runtime.
+    * Lifecycle runner missing.
+    * Persisted per-action trace table missing.
+    * Admin governance UI owned by Task #91 and awaiting merge.
+
+Now finish those gaps carefully.
+
+============================================================
+PHASE 1 — SAFE TASK #91 MERGE / COLLISION CHECK
+
+First, safely inspect and merge/verify Task #91.
+
+Before changing anything:
+
+1. Identify the Task #91 branch/files.
+2. Identify all admin governance UI files in Task #91.
+3. Identify all routes/components/services added by Task #91.
+4. Compare against main branch to avoid collisions.
+5. Do not rebuild existing UI if Task #91 already supplies it.
+6. Merge or apply Task #91 changes cleanly.
+7. Resolve conflicts intentionally.
+8. Do not overwrite newer backend governance code with older branch versions.
+9. Do not overwrite live trading paths.
+10. Do not overwrite auth/role separation.
+
+After merge, confirm these admin pages/components exist and load from real backend data:
+
+* Agent Ecosystem Overview
+* Agent Family Tree
+* Agent Detail
+* Agent Creation Requests
+* Household Reports
+* Learning Camp records
+* Prediction journal / trace view if present
+* Agent Court/disagreement records if present
+* Agent Immune recommendations if present
+* Agent speed/step-back metrics if present
+
+If any Task #91 UI page uses hardcoded/fake placeholder data, connect it to the real backend endpoints.
+If an endpoint is missing, add the smallest compatible endpoint.
+If a backend endpoint exists but the UI does not call it, wire it.
+If a UI button exists but does nothing, connect it or hide it until functional.
+Do not leave dead buttons.
+
+============================================================
+PHASE 2 — ADMIN AUTH / OWNER SESSION FIX
+
+The prior QA showed the QA owner account logged in as role USER, causing admin endpoints to be blocked.
+
+Fix/verify role gating carefully.
+
+Tasks:
+
+1. Identify the intended admin/owner account for QA.
+2. Confirm the database role for that account.
+3. If the QA owner/admin should be OWNER or ADMIN, correct the role using the existing role system.
+4. Do not give admin access to normal users.
+5. Do not give admin access to investors.
+6. Do not weaken auth globally.
+7. Do not bypass permissions in code just to make tests pass.
+8. Ensure admin endpoints require ADMIN/OWNER role.
+9. Ensure trader role cannot access governance admin controls.
+10. Ensure investor role is view-only and cannot access governance controls or trade execution.
+
+Test:
+
+* Unauthenticated request to agent admin endpoint should fail.
+* Normal USER request should fail for admin-only governance endpoints.
+* INVESTOR request should fail for admin-only governance endpoints.
+* ADMIN/OWNER request should succeed.
+* Ruby/scanner user-facing features should still work for normal trader users.
+
+Report exactly what account/role issue was fixed without printing secrets.
+
+============================================================
+PHASE 3 — PERSISTED GOVERNANCE TRACE TABLE
+
+Replace or supplement the in-memory ring buffer with a persisted governance trace table.
+
+Do not remove the ring buffer if it is useful for fast debug, but persistent storage must exist.
+
+Create migration/model/table if not present:
+
+governance_traces or agent_governance_traces
+
+Fields should include at minimum:
+
+* id
+* action_id
+* action_type
+* user_id nullable
+* role nullable
+* symbol nullable
+* timeframe nullable
+* trade_id nullable
+* scanner_signal_id nullable
+* ruby_message_id nullable
+* active_mode
+* agents_requested json
+* agents_allowed_to_run json
+* agents_blocked json
+* agents_that_stepped_back json
+* step_back_reasons json
+* agent_outputs json
+* final_governance_decision
+* ruby_summary_used boolean
+* risk_veto_used boolean
+* disagreement_court_used boolean
+* prediction_locked boolean
+* review_created boolean
+* no_trade_reward_created boolean
+* speed_cost_ms integer
+* total_governance_runtime_ms integer
+* live_execution_blocked_by_ai boolean default false
+* error_summary nullable
+* created_at
+
+Add indexes for:
+
+* action_type
+* user_id
+* symbol
+* trade_id
+* scanner_signal_id
+* created_at
+* active_mode
+
+Rules:
+
+* Every major governance workflow should create a trace.
+* Live execution traces must prove nonessential AI stepped back or was bypassed.
+* If a governance call fails, the trace should record the failure without crashing the app.
+* Traces should be viewable from admin UI with pagination.
+* Do not load all traces at once.
+
+Major app actions that should create traces:
+
+* Ruby market analysis
+* Ruby “is this a scalp?” / trade analysis
+* Scanner refresh
+* Focus scanner search
+* Broad scanner search
+* Scalp opportunity scan
+* Trade modal analysis
+* Trade confirmation governance check
+* Live submit / queue trace showing bypass of nonessential agents
+* Close/emergency close trace showing live priority
+* Agent creation request
+* Agent court disagreement
+* Agent review/scoring
+* Learning Camp transition
+* Promotion/demotion
+* Household report generation
+
+============================================================
+PHASE 4 — TRAFFIC CONTROLLER PARTICIPANT ENFORCEMENT
+
+The prior report said Traffic Controller routing is computed/logged, but participants are not consumed by callers.
+
+Fix this.
+
+Traffic Controller must not just summarize who should run. It must actively enforce which agents participate.
+
+Implement/verify a central function such as:
+
+getGovernanceParticipants(actionContext)
+or
+routeAgentsForAction(actionContext)
+
+It should return:
+
+* active_mode
+* allowed_agents
+* blocked_agents
+* step_back_agents
+* background_agents
+* fast_check_agents
+* reason per agent
+* max_latency_budget
+* whether live execution bypass is required
+
+Then update real callers to consume it:
+
+1. Ruby market analysis flow
+2. Ruby scalp/trade analysis flow
+3. Scanner refresh flow
+4. Focus scanner flow
+5. Broad scanner flow
+6. Scalp scanner flow
+7. Trade modal analysis flow
+8. Trade confirmation governance check
+9. Live submit/queue trace flow
+10. Close/emergency close trace flow
+11. Agent Factory flow
+12. Learning Camp flow
+13. Household Report flow
+
+Do not run all agents and then pretend some stepped back.
+Actually only call the allowed agents unless a background mode requires later processing.
+
+Required routing behavior:
+
+Live Execution Mode:
+
+* Allow Execution AI.
+* Allow only critical Risk AI if configured.
+* Ruby only for short status if necessary.
+* Block or bypass Agent Factory, Learning Camp, Promotion Board, Household Report, Deep Review, nonessential specialists.
+* live_execution_blocked_by_ai must always be false.
+* Do not allow shadow/new agents to influence live.
+
+Scalp Mode:
+
+* Allow Scalp AI, Risk AI, Entry Timing AI, Exit/TP AI.
+* Allow Market Structure AI as fast-check only.
+* Allow Scanner AI if scan-driven.
+* Block/defer Agent Factory, Learning Camp, Promotion Board, Household Reports, deep review.
+
+Scanner Mode:
+
+* Allow Scanner AI, Market Structure AI, Risk AI, and relevant specialists based on setup type.
+* Do not call every specialist for every scan.
+* Use step-back for duplicate/slow/unneeded agents.
+
+Ruby Explanation Mode:
+
+* More agents may contribute, but use summaries, not raw dumps.
+* Still respect speed and usefulness.
+
+Learning Mode:
+
+* Background only.
+* Never interfere with live execution.
+
+Agent Creation Mode:
+
+* Allow Agent Factory, parent agent, Immune System, Risk AI, and admin approval logic.
+* Never during live execution.
+
+After wiring, add tests that prove:
+
+* Allowed agents are actually the only agents called.
+* Blocked agents are not called.
+* Step-back agents are logged.
+* Runtime is measured.
+* Scanner/Ruby output still works.
+* Live execution path remains non-blocking.
+
+============================================================
+PHASE 5 — DISAGREEMENT COURT AUTO-WIRING
+
+The prior report said resolveDisagreement is tested but not auto-called at runtime.
+
+Fix this.
+
+Agent Court should be automatically invoked when real multi-agent conflicts occur.
+
+Create/verify a detector:
+
+detectAgentDisagreement(agentOutputs)
+
+Trigger Agent Court when:
+
+* One or more agents approve and one or more reject.
+* Risk AI vetoes another agent’s approval.
+* Scalp AI approves but Entry AI flags late/chase.
+* Market Structure AI conflicts with Scalp AI.
+* Exit/TP AI says target is unrealistic while another agent approves.
+* Confidence spread between agents exceeds threshold.
+* A shadow/low-authority agent attempts to influence decision.
+* Agent authority weights conflict with raw majority.
+
+Agent Court must not just average votes.
+
+It should consider:
+
+* Risk veto
+* Agent authority weight
+* Agent specialty relevance to the current setup
+* Recent performance in symbol/timeframe/setup type
+* Whether the action is scalp/intraday/swing/no-trade
+* Current mode and speed requirement
+* Confidence calibration
+* Whether the agent is Active, Shadow, Learning Camp, Restricted, Sleeping, or On-Demand
+* Whether an agent is allowed to influence live recommendations
+
+Agent Court output:
+
+* final decision: approve / caution / reject / no-trade / watchlist
+* winning rationale
+* losing rationale
+* which agents were overridden
+* whether Risk veto was used
+* whether Ruby should mention the disagreement
+* whether prediction journal should lock the disagreement
+* whether a disagreement record should be stored
+
+Wire Agent Court into:
+
+* Scanner ranking
+* Scalp opportunity scan
+* Ruby trade analysis
+* Trade modal analysis
+* No-trade recommendation flow
+
+Do not wire Agent Court into urgent live execution after the user has already submitted/closed a live action if it can slow execution.
+For live execution, only record/bypass nonessential governance.
+
+Test scenario:
+
+* Scalp AI says buy.
+* Risk AI rejects because too close to resistance.
+* Entry AI cautions late entry.
+* Market Structure AI says higher timeframe bearish.
+    Expected:
+* Agent Court auto-triggers.
+* Risk/Entry warnings dominate.
+* Final result becomes caution/watchlist/no-trade, not buy.
+* Ruby summary reflects downgrade.
+* Governance trace shows disagreement_court_used=true.
+* Disagreement is persisted.
+* Scanner ranking is affected.
+
+============================================================
+PHASE 6 — BACKGROUND LIFECYCLE RUNNER
+
+The prior report said lifecycle advancement currently requires manual admin POSTs.
+
+Add a safe background lifecycle runner.
+
+Do not run heavy learning during live execution.
+Do not require manual admin POSTs for every routine progression.
+Do not make this unreliable or constantly running without control.
+
+Create a scheduled/background job or safe server-side runner for:
+
+1. Outcome review checks
+
+* Find locked predictions eligible for review.
+* Determine if enough market/trade outcome data exists.
+* Create review records.
+* Update scores.
+
+2. Promotion/demotion checks
+
+* Evaluate rolling windows.
+* Create recommendations or apply low-risk status changes.
+* Major shutdown still requires admin approval unless emergency restriction.
+
+3. Learning Camp advancement
+
+* Move agents through Learning Camp stages when criteria are met.
+* Return agents to Shadow/Supervised mode only after proof.
+* Do not restore full authority automatically.
+
+4. No-trade reward checks
+
+* Review rejected/no-trade setups after enough time/data.
+* Reward agents that correctly blocked weak trades.
+
+5. Household report generation
+
+* Generate daily household report.
+* Include speed warnings, bloat warnings, promotions, demotions, no-trade wins, agents that stepped back, new agents, Learning Camp movements.
+
+6. Immune System health checks
+
+* Detect duplicate agents.
+* Detect slow/low-value agents.
+* Detect bloat.
+* Detect mission drift.
+* Create admin recommendations.
+
+Runner requirements:
+
+* Configurable enable/disable.
+* Safe interval.
+* Does not run during live execution critical path.
+* Has locking to avoid duplicate concurrent runs.
+* Logs every run.
+* Writes persistent records.
+* Gracefully handles errors.
+* Admin dashboard shows last run, next run, errors, and results.
+* Manual admin “run now” button can exist, but should not be the only method.
+
+Add tests:
+
+* Runner processes eligible prediction.
+* Runner does not process locked prediction twice.
+* Runner creates recommendations.
+* Runner updates agent status correctly.
+* Runner does not run Agent Factory/Learning Camp during live execution mode.
+* Runner errors do not crash app.
+
+============================================================
+PHASE 7 — ADMIN GOVERNANCE UI POST-MERGE QA
+
+Now that Task #91 UI is merged, perform full UI QA.
+
+Admin pages must show real backend data.
+
+Agent Ecosystem Overview:
+
+* Total agents
+* Active agents
+* Shadow agents
+* Learning Camp agents
+* Restricted agents
+* Shutdown recommended agents
+* Average trust score
+* Average speed score
+* Average quality score
+* Recent governance traces
+* Latest Household Report
+* Speed warnings
+* Bloat warnings
+
+Agent Family Tree:
+
+* Parent/child structure
+* Department/family grouping
+* Agent statuses
+* Agent ranks
+* Department score
+* Children count
+* Bloat warning
+* Click to detail
+
+Agent Detail:
+
+* Mission
+* Rank
+* Status
+* Mode
+* Scores
+* Authority weight
+* Live influence allowed
+* Creation rights
+* Parent agent
+* Child agents
+* Mistake profile
+* Recent predictions
+* Recent reviews
+* Recent traces
+* Learning Camp history
+* Speed cost
+* Usefulness score
+* Admin controls
+
+Agent Creation Requests:
+
+* Requesting agent
+* Proposed child agent
+* Reason
+* Expected value
+* Expected speed cost
+* Duplication check
+* Risk check
+* Immune System check
+* Approval/rejection
+* Status
+* Created child link if approved
+
+Household Reports:
+
+* Daily reports
+* Best/worst agents
+* Promotions/demotions
+* Learning Camp movements
+* New agents
+* Agents that stepped back
+* Slow agents
+* Bad trades blocked
+* No-trade wins
+* Quality trades found
+* Department performance
+* Recommendations
+* Search/filter/pagination
+
+Governance Trace UI:
+If not already built, add a minimal admin trace viewer:
+
+* action type
+* user/role
+* mode
+* allowed agents
+* stepped-back agents
+* final decision
+* speed cost
+* live_execution_blocked_by_ai
+* timestamp
+
+Admin controls must function:
+
+* Promote
+* Demote
+* Restrict
+* Send to Learning Camp
+* Restore
+* Archive
+* Shutdown recommend/approve
+* Freeze creation rights
+* Approve child activation
+* Change authority
+* Put On-Demand Only
+* Put Sleeping
+* Merge/retire/archive where implemented
+* Run lifecycle now
+* Freeze all new agent creation
+
+Fix:
+
+* Dead buttons
+* Fake data
+* Unprotected routes
+* Missing loading/error states
+* Broken pagination
+* Broken filters
+* Broken role gating
+* UI not refreshing after action
+
+============================================================
+PHASE 8 — GOVERNANCE INVOLVEMENT ACROSS REAL APP ACTIONS
+
+Prove the governance layer is involved in real app actions.
+
+For each action below, create or verify persistent governance traces:
+
+Ruby market analysis:
+
+* Traffic Controller routes agents.
+* Market Structure AI contributes.
+* Risk AI contributes if risk is discussed.
+* Ruby summarizes.
+* Trace persisted.
+
+Ruby scalp question:
+
+* Scalp Mode active.
+* Scalp AI, Risk AI, Entry AI, Exit AI active.
+* Market Structure fast-check.
+* Nonessential agents step back.
+* Trace persisted.
+
+Scanner refresh:
+
+* Scanner Mode active.
+* Scanner AI ranks.
+* Risk AI downgrades weak setups.
+* Relevant specialists contribute.
+* Agent Court auto-triggers if conflict.
+* Trace persisted.
+
+Focus scanner:
+
+* Same as scanner but targeted.
+* Trace persisted.
+
+Broad scanner:
+
+* Noise filtering active.
+* No-trade candidates stored if applicable.
+* Trace persisted.
+
+Scalp opportunity scan:
+
+* Scalp Mode active.
+* Only scalp-critical agents participate.
+* Slow/deep agents step back.
+* Trace persisted.
+
+Trade modal analysis:
+
+* Risk/Entry/Exit checks run.
+* Prediction locks if official recommendation forms.
+* Trace persisted.
+
+Trade confirmation:
+
+* Live Execution Mode active.
+* Execution AI/risk critical only.
+* Nonessential governance bypassed.
+* Trace proves live_execution_blocked_by_ai=false.
+
+Close/emergency close:
+
+* Live priority.
+* Nonessential agents bypass.
+* Trace proves no blocking.
+
+Agent creation:
+
+* Agent Factory mode.
+* Immune duplicate check.
+* Risk safety check.
+* Parent accountability.
+* Child starts Shadow Mode/0 authority.
+* Trace persisted.
+
+Learning Camp transition:
+
+* Record created.
+* Status updated.
+* Authority reduced.
+* Trace persisted.
+
+Promotion/demotion:
+
+* Score/rule driven.
+* Trace persisted.
+
+Household report:
+
+* Generated from real data.
+* Trace persisted.
+
+If any workflow does not call governance, wire it unless it is intentionally excluded for live execution safety. If intentionally excluded, record a bypass trace.
+
+============================================================
+PHASE 9 — PURPOSE TEST: GOVERNANCE MUST CHANGE BEHAVIOR
+
+Prove the governance layer changes app behavior.
+
+Test 1 — Risk downgrade:
+Create or use a setup where Scalp AI approves but Risk AI rejects.
+Expected:
+
+* Agent Court auto-triggers.
+* Final decision is caution/watchlist/no-trade.
+* Ruby explains downgrade.
+* Scanner ranking lowers the setup.
+
+Test 2 — Traffic Controller enforcement:
+Use Scalp Mode.
+Expected:
+
+* Only scalp-critical agents are called.
+* Agent Factory, Learning Camp, Promotion Board, Household Report are not called.
+* Logs/traces prove blocked/stepped-back agents were not executed.
+
+Test 3 — Live execution isolation:
+Trigger live confirmation/close path.
+Expected:
+
+* Live Execution Mode.
+* Nonessential agents bypass.
+* live_execution_blocked_by_ai=false.
+* No governance delay in live dispatch.
+
+Test 4 — No-trade reward:
+Create/identify a weak setup.
+Risk/Entry rejects it.
+After outcome window, background runner rewards no-trade/protection.
+Expected:
+
+* No-trade reward record.
+* Protection score updates.
+* Household Report counts avoided bad setup.
+
+Test 5 — Agent Factory:
+Qualified agent creates child.
+Expected:
+
+* Child starts Shadow Mode.
+* authority_weight=0.
+* live_influence_allowed=false.
+* Duplicate check runs.
+* Parent recorded.
+
+Test 6 — Step-back:
+Slow or redundant agent detected.
+Expected:
+
+* Agent steps back.
+* Speed/step-back record persists.
+* Future routing respects mode.
+* Score updates if step-back was correct.
+
+Test 7 — Learning Camp:
+Agent has repeated poor decisions.
+Expected:
+
+* Runner or admin sends to Learning Camp.
+* Correction record created.
+* Authority reduced.
+* Return path is Shadow/Supervised, not full authority.
+
+If governance does not change routing, decision, score, status, trace, or Ruby/scanner behavior, it is not complete.
+
+============================================================
+PHASE 10 — LIVE EXECUTION SAFETY RECHECK
+
+Re-run live execution safety check after all governance wiring.
+
+Search and verify:
+
+* No nonessential agent ecosystem imports/calls are inside the 16-gate live dispatch path.
+* Live execution functions do not wait on Agent Court, Learning Camp, Agent Factory, Promotion Board, Household Reports, or deep review.
+* Shadow agents cannot influence live trade submission.
+* New agents cannot influence live recommendations.
+* live_execution_blocked_by_ai is always false for live submit/close traces.
+* ARX_LIVE_BROKER_EXECUTION_ENABLED remains untouched unless intentionally verified unchanged.
+
+Required:
+If any governance logic touches live execution, it must be a non-blocking trace or critical safety check only.
+Do not let advisory AI block live execution.
+
+============================================================
+PHASE 11 — PERFORMANCE CHECK
+
+Measure and optimize:
+
+* Ruby response time before/after governance.
+* Scanner refresh time before/after governance.
+* Scalp scan time.
+* Admin governance page load time.
+* Governance trace write time.
+* Background runner duration.
+* Agent Court resolution time.
+* Traffic Controller routing time.
+* Live submit/close path time.
+
+If slow:
+
+* Use cached decision packets.
+* Reduce active agents via Traffic Controller.
+* Move work to background runner.
+* Paginate traces/logs.
+* Index trace tables.
+* Batch writes where safe.
+* Put slow agents On-Demand Only.
+* Avoid duplicate agent calls.
+* Do not load all traces/reports at once.
+
+Do not mark complete if scanner/Ruby becomes meaningfully slower without mitigation.
+Live execution must remain protected.
+
+============================================================
+PHASE 12 — TEST SUITE
+
+Add or update tests for:
+
+1. Task #91 admin pages load with admin role.
+2. Non-admin cannot access governance admin pages.
+3. Governance traces persist.
+4. Traffic Controller participants are enforced.
+5. Blocked agents are not called.
+6. Step-back agents are logged.
+7. Agent Court auto-invokes on real conflict.
+8. Agent Court changes final decision.
+9. Scanner uses governance ranking/downgrades.
+10. Ruby uses governance consensus.
+11. Live execution bypasses nonessential governance.
+12. Background runner processes eligible reviews.
+13. Background runner avoids duplicate processing.
+14. No-trade reward updates protection score.
+15. Agent Factory creates Shadow Mode child with 0 authority.
+16. Duplicate child blocked.
+17. Low-rank agent cannot create child.
+18. Learning Camp reduces authority and records correction.
+19. Admin can run lifecycle now.
+20. Household report generates from real data.
+21. Locked predictions stay immutable.
+22. Reviews append instead of editing locked predictions.
+23. Immune System detects duplicate/slow/bloat conditions.
+24. Role permissions for admin/user/investor.
+
+Run tests and fix failures.
+Do not ignore failing tests.
+
+============================================================
+PHASE 13 — FINAL QA REPORT REQUIRED
+
+When done, provide a detailed final report.
+
+Do not give a vague success message.
+
+Report must include:
+
+1. Task #91 merge status.
+2. Files merged/changed from Task #91.
+3. Conflicts found and how resolved.
+4. Admin UI pages verified.
+5. Admin role/auth issue fixed or current status.
+6. Governance trace persistence added/verified.
+7. Traffic Controller enforcement proof.
+8. Exact workflows now consuming Traffic Controller participants.
+9. Agent Court auto-wiring proof.
+10. Exact workflows now invoking Agent Court.
+11. Background lifecycle runner implementation proof.
+12. Runner schedule/trigger details.
+13. No-trade reward proof.
+14. Agent Factory child Shadow Mode/0 authority proof.
+15. Learning Camp lifecycle proof.
+16. Step-back/speed proof.
+17. Immune System detection proof.
+18. Ruby governance involvement proof.
+19. Scanner governance involvement proof.
+20. Live execution safety proof.
+21. Performance measurements before/after where measurable.
+22. Tests added/updated.
+23. Tests passed/failed.
+24. Remaining risks.
+25. Remaining partial items.
+26. Exact files changed.
+27. Confirmation ARX_LIVE_BROKER_EXECUTION_ENABLED was unchanged.
+28. Confirmation no paper trading/simulation product feature was introduced.
+29. Confirmation live execution path is not blocked by nonessential AI.
+30. Confirmation the governance layer is functional, not decorative.
+
+Do not mark complete until the governance layer is actually involved in real app workflows and all remaining partial items from the prior report are either fixed or clearly listed with a specific reason and next step.

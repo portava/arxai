@@ -1,0 +1,160 @@
+Continue from the latest checkpoint and complete the deferred cleanup items that were explicitly not finished. Do not ask for a canvas/design pass. Build the smallest safe implementation directly using the existing codebase.
+
+Scope:
+1. Fix Request Access in-app form + backend storage/API.
+2. Fix topbar execution diagnostic strips for normal users.
+3. Re-check and fix the global/top market selector from the rendered UI.
+4. Run a real normal-user UI leak sweep.
+5. Tighten AdminRouteGuard defense-in-depth.
+
+Before editing:
+- Inspect the latest checkpoint and current code.
+- Do not place live trades.
+- Use read-only probes only.
+- Do not introduce broker credentials.
+- Do not weaken live/shared-master safeguards, placeLiveOrderGuarded, Phase B/default-deny behavior, admin approval, typed confirmation phrase, precondition checks, EA live execution checks, symbol allowlist checks, or per-user isolation.
+
+FIX 1 — Request Access in-app form + backend
+The previous pass deferred this. Complete it now.
+
+Build the smallest compatible pending access request system:
+- Add a backend route/API for submitting access requests.
+- Add storage/table/schema using the existing DB/Drizzle pattern if the app uses Drizzle.
+- Add validation for:
+  - name
+  - email
+  - short message to admin
+  - trading experience/background
+  - requested access type if supported: paper/demo/live/shared-master
+  - optional reason
+- Add createdAt/status fields such as pending/reviewed/approved/denied if compatible.
+- Wire the login page “Request Access” button to open a real in-app form/page/modal.
+- Submit button text: “Send Request”.
+- Success message: “Request sent. Admin will review your account.”
+- Graceful error message if backend is unavailable.
+- Do not auto-approve the user.
+- Do not create an account automatically from this form.
+- Keep ARX AI invite-only: Sign In, Use Invite Code, Request Access only.
+- Keep “Create an account” hidden/removed for normal users unless using a valid invite code/admin-created flow.
+
+If an admin review surface exists, surface pending requests there. If not, create the smallest admin-only list/review page or admin card that shows submitted requests without granting access automatically.
+
+FIX 2 — Topbar status consolidation
+The previous pass deferred this because it touches AppLayout/topbar. Do it now carefully.
+
+Current issue:
+Normal users still see confusing/developer strips:
+- Trading Off
+- Broker Execution Enabled
+- Broker Execution Disabled
+- Tester Access
+- simulator/test/lab chips
+- FX/symbol debug chips
+- repeated broker/read-only badges
+
+Fix:
+- In normal user UI, replace the multiple rows/components with one clean user-facing status row/card.
+- Normal wording should be something like:
+  - “Paper mode active · Live trading locked”
+  - or “Trading access: Paper only”
+- Hide broker execution diagnostics from normal users.
+- Show technical details only inside admin/operator-only developer detail surfaces.
+- Remove contradictory normal-user states where one row says enabled and another says disabled.
+- Do not change the actual safety logic. This is UI consolidation only.
+
+Inspect these likely areas:
+- AppLayout.tsx around the topbar/status rows
+- LiveModeBadge
+- SafetyHeader
+- TradingModeBanner
+- any topbar/header components that render broker/testing/status chips
+
+FIX 3 — Global/top market selector
+The previous pass claimed there was no global dropdown because grep found zero hits, but the rendered UI clearly shows a top EURUSD dropdown in the header.
+
+Do not rely only on names like GlobalMarketSelector. Inspect the rendered header/topbar and component tree.
+
+Trace the visible top dropdown that currently shows symbols like EURUSD/GBPJPY:
+- Find the actual component even if it has a different name.
+- Check whether it changes selected market globally, scanner focus, Ruby market read, chart symbol, or trade ticket symbol.
+- If it works, label it clearly as “Active Market” or “Market Focus” and ensure it updates the correct active market state.
+- If it partially works, connect it properly to scanner focus, Ruby market read, and trade ticket symbol without duplicating state.
+- If it does not control anything meaningful, hide it from normal pages.
+- Make sure it does not conflict with the Scanner Symbols search/focus flow.
+- Do not leave an unexplained global symbol dropdown in the normal UI.
+
+FIX 4 — Normal-user UI leak sweep
+The previous pass relied on guards, but screenshots still showed leaks. Do a real UI/content sweep.
+
+Search rendered normal-user UI and components for:
+- debug · tools
+- getAssistantLiveAwarenessStatus
+- twelve_data
+- QUEUE MICRO LIVE TEST
+- EXECUTE LIVE SHARED
+- ROLL BACK LIVE SHARED TRADING
+- /validate
+- 16-gate pipeline
+- Broker Execution Enabled
+- Broker Execution Disabled
+- Tester Access
+- Ruby is read-only on this page
+- raw guard/evaluator/function names
+- stack traces
+- route names
+- developer-only identifiers
+
+Fix leaks in:
+- Ruby chat
+- Ruby Command Center
+- dashboard/cockpit
+- scanner
+- selected market panel
+- scanner trade modal
+- login/request access/invite pages
+- mobile header/topbar
+- mobile bottom nav
+- side menu
+
+Replace with plain language:
+- “Market data connected”
+- “Paper mode active · Live trading locked”
+- “Live trading is locked until your account is approved, the trading connection is verified, and all safety checks pass.”
+
+Ruby chat should not show debug/tool/provider/backend labels to normal users.
+
+FIX 5 — AdminRouteGuard hardening
+The report says AdminRouteGuard only blocks admins in user-view mode and real non-admins can type /admin/beta-readiness and land on the page shell while APIs return 401.
+
+Tighten this now:
+- Lock /admin/* routes on the frontend to realIsAdmin || effectiveIsAdmin, whichever is correct in the project auth model.
+- Non-admin direct URL access to /admin/* should land on a lock/unauthorized screen or redirect safely.
+- Do not rely only on server 401s.
+- Keep server-side 401 enforcement intact.
+- Do not expose admin page shells to non-admins.
+
+QA / verification:
+- Run typecheck/build/lint if available.
+- Run guard/Phase B tests if available.
+- Run existing smoke/e2e tests if available.
+- Verify no live trades were placed.
+- Verify live/shared-master execution remains default-deny and protected.
+- Verify demo/paper/simulator still works.
+- Verify login still works.
+- Verify invite code flow still works or fails gracefully.
+- Verify Request Access opens the new form and submits or fails gracefully.
+- Verify Create Account is gone/disabled for normal users.
+- Verify normal user topbar no longer shows broker execution diagnostic strips.
+- Verify normal user Ruby chat no longer exposes debug/tools/provider/backend details.
+- Verify Ruby Command Center does not show broker/read-only/debug badges to normal users.
+- Verify the top market dropdown is either clearly functional and labeled or hidden.
+- Verify non-admin direct access to /admin/* is blocked on the frontend.
+- Verify admin users can still reach admin pages.
+- Verify no internal function names, backend route names, guard names, evaluator names, stack traces, or developer-only identifiers appear in normal user UI.
+
+After completing:
+- Checkpoint.
+- Summarize what changed.
+- Summarize what passed.
+- List anything that remains.
+- Confirm live trading safety was not weakened.

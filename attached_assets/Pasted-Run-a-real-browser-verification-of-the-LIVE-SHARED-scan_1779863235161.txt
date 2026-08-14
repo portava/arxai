@@ -1,0 +1,166 @@
+Run a real-browser verification of the LIVE_SHARED scanner trade modal, then continue with chart symbol propagation.
+
+Current state from last report:
+
+* Scanner/live shared validation copy pass is green.
+* No live trades placed.
+* No arx_live_commands inserts.
+* No operator phrases typed.
+* No env/gate/operator-phrase weakening.
+* Backend live shared envelope untouched.
+* test:live-shared-reason-copy 31/31 PASS.
+* CI guards 23/23 PASS.
+* Typecheck clean.
+* Preview race fixed.
+
+Do not place trades.
+Do not insert arx_live_commands.
+Do not type operator phrases.
+Do not weaken safety gates.
+Do not fake validation.
+Do not expose backend internals to normal users.
+
+Create checkpoint first:
+checkpoint: verify-scanner-one-modal-live-ticket-real-ui
+
+Task 1 — Verify scanner one-modal trade ticket in the real UI:
+Open /market-scanner in LIVE_SHARED mode and test:
+
+* GBPUSD
+* XAUUSD
+* EURUSD
+* V25 1s or V75 if available
+
+For each:
+
+1. Click Buy/Sell.
+2. Confirm only one modal opens.
+3. Confirm the modal is the actual LIVE_SHARED trade ticket.
+4. Confirm there is no “Use LIVE SHARED above.”
+5. Confirm there is no second popup requirement.
+6. Confirm there is no DEMO badge.
+7. Confirm there is no simulator/tester wording.
+8. Confirm there are no raw fields like:
+    * Stage
+    * defaultDeny
+    * masterSwitchOn
+    * VIRTUAL_ACCOUNT_ACTIVE
+    * backend gate names
+    * route names
+    * raw booleans
+9. Confirm tradability check resolves or shows a clean timeout reason.
+10. Confirm Validate shows clean user-facing result.
+11. Confirm final Confirm Trade appears only after validation passes.
+12. Do not click final confirm in a way that places a trade.
+
+Task 2 — Verify preview-as-user behavior:
+When admin is previewing as user:
+
+1. Confirm Validate/Confirm is disabled or blocked.
+2. Message should say:
+    “Preview mode only — exit user preview to validate or submit trades.”
+3. No backend validation should create intents or commands.
+4. No tester/demo/paper command should be created.
+
+Task 3 — Verify real user/admin behavior:
+When not previewing as user:
+
+1. Validate should use LIVE_SHARED validation.
+2. It should use the user’s SHARED_MASTER_MT5 account shell.
+3. It should respect admin/operator unrestricted profile where applicable.
+4. It should not use demo/paper/tester workflow.
+5. It should not require typed phrases.
+6. It should not require a second modal.
+
+Task 4 — Then fix chart symbol propagation:
+The chart and trade controls must stay synchronized.
+
+Current bug:
+
+* Trade panel can say XAUUSD while chart still shows EURUSD.
+* Symbol dropdown selections do not always update the chart, trade card, AI card, feed, and ticket together.
+
+Fix:
+
+1. Create one selectedSymbol source of truth for:
+    * live chart
+    * chart symbol picker
+    * trade-from-chart card
+    * Buy/Sell chart buttons
+    * live shared ticket
+    * scanner selected symbol
+    * Live AI Assist selected symbol
+    * Ruby explanation
+    * Market Data Router feed
+2. When symbol changes, update all dependent components.
+3. Cancel stale in-flight quote/candle requests for the old symbol.
+4. Clear stale trade setup if it belongs to the previous symbol.
+5. Fetch quote/candles for the new symbol.
+6. Recompute chart side panel and trade ticket from the new symbol.
+7. Do not leave mixed state.
+
+Task 5 — Chart trade entry:
+For Buy/Sell from chart:
+
+1. Open the same LIVE_SHARED one-modal trade ticket.
+2. No second popup.
+3. No “Nothing fires from this card” over-explanation.
+4. Use simple copy:
+    “Opens trade ticket. Final confirmation required.”
+5. The ticket must inherit the current chart symbol.
+6. No demo/paper/tester route in LIVE_SHARED mode.
+
+Task 6 — Live AI Assist symbol dropdown:
+Fix symbol dropdown so selecting a symbol updates:
+
+* selected symbol
+* AI card
+* chart
+* quote/feed source
+* SL/TP setup
+* Confirm/Review ticket
+* Ruby explanation
+
+No stale old symbol/card should remain after selection.
+
+Task 7 — Regression tests:
+Add tests proving:
+
+1. Scanner one-modal ticket has no second modal flow.
+2. Preview-as-user cannot validate/submit.
+3. Scanner modal does not expose raw gate internals.
+4. Chart symbol change updates trade-from-chart panel.
+5. Chart Buy/Sell ticket inherits selected chart symbol.
+6. Live AI Assist dropdown updates AI card/chart/ticket.
+7. Stale old-symbol data is cleared.
+8. arx_live_commands remains 0 during tests.
+
+Task 8 — QA:
+Run:
+
+* typecheck
+* build if available
+* ci:guards
+* test:live-shared-reason-copy
+* test:account-mode
+* test:mode-scope
+* test:scanner-real-feed
+* test:admin-unrestricted-risk
+* test:live-phaseB
+* test:demo-arming
+* test:demo-verify
+* new chart-symbol-propagation tests
+* arx_live_commands count before/after
+
+Final report only:
+
+* scanner real UI verification result
+* preview-as-user result
+* one-modal ticket status
+* chart symbol propagation fixes
+* Live AI Assist dropdown fixes
+* tests added
+* QA results
+* arx_live_commands count
+* confirmation no live trades placed
+* confirmation no safety gates weakened

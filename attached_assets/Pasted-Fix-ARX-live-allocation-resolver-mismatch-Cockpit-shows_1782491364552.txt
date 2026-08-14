@@ -1,0 +1,150 @@
+Fix ARX live allocation resolver mismatch: Cockpit shows available funds, chart order route says allocation is 0.
+
+Problem:
+Cockpit shows the user has live shared-master funds:
+- Allocated: $181.58
+- Available: $181.58
+- Free margin: $181.58
+- Trading Permission: All clear
+- Live trading active on shared-master allocation
+
+But the chart trade submit blocks with:
+“Your available live allocation is 0. Contact your operator to add funds before placing a live order.”
+
+This means the Cockpit allocation resolver and the chart/live order allocation gate are using different sources, stale data, different symbols/accounts, different user IDs, or different allocation fields.
+
+Scope:
+Do not bypass the allocation gate. Do not allow live orders with true zero available allocation. Fix the source-of-truth mismatch only.
+
+Requirements:
+
+1. Trace both allocation paths for the same user
+For user andraie.co@gmail.com, trace and report the exact data used by:
+
+- Cockpit account balance card
+- Trading Permission card
+- shared/master allocation resolver
+- chart trade submit preflight
+- scanner trade submit preflight
+- Eleanor trade submit preflight
+- liveCommandPipeline allocation gate
+- instantTrade allocation gate if separate
+
+Report:
+- userId/email used by Cockpit
+- userId/email used by chart order route
+- shared/master bridge account id
+- allocation record id
+- allocated amount
+- live equity
+- available amount
+- free margin
+- margin used
+- reserved amount
+- open trade exposure
+- currency
+- timestamp/freshness
+- final value used by the blocking gate
+- why the gate resolves available allocation as 0
+
+2. Unify allocation source of truth
+Use one shared resolver for live allocation readiness.
+
+The same resolver should power:
+- Cockpit allocation card
+- Trading Permission card
+- chart order preflight
+- scanner order preflight
+- Eleanor order preflight
+- live dispatch allocation gate
+
+Do not create a second allocation system.
+
+3. Shared/master allocation support
+If the user is trading through the shared/master bridge, the order route must read the user’s shared-master allocation, not personal bridge allocation only.
+
+Approved shared-master users should resolve:
+- accountMode: live
+- bridgeMode: shared_master
+- liveExecutionActive: true
+- allocatedAmount: current allocation
+- availableLiveAllocation: allocation minus reserved/margin/open exposure
+- allocationSource: shared_master_allocation
+
+4. Fix stale zero allocation
+Check for bugs where the chart route uses:
+- old cached allocation
+- personal bridge balance instead of shared-master allocation
+- wrong email/user id
+- demo/paper allocation
+- null allocation coerced to 0
+- stale entitlement record
+- missing join to shared-master allocation table
+- wrong account id
+- stale frontend state after Full Live Activation
+- symbol-specific allocation mismatch
+- allocation snapshot not refreshed after activation
+
+5. Keep true zero blocking
+If available allocation is truly 0, keep blocking live trades.
+
+But if Cockpit says available allocation is greater than 0 and the order route is for the same user/account, the chart route must not say available allocation is 0.
+
+6. Improve blocker copy
+If allocation blocks an order, show structured allocation details:
+
+Example:
+“SELL V75_1S blocked.
+Account: Live active.
+Feed: Broker feed not confirmed.
+Allocation: $0 available from shared-master allocation.”
+
+If Cockpit allocation is stale or unavailable, show:
+“Allocation could not be confirmed. Refreshing shared-master allocation.”
+
+Do not show “available live allocation is 0” unless the backend confirmed true zero allocation from the shared allocation resolver.
+
+7. Add debug diagnostics
+Add/extend support diagnostics to show:
+- resolved user id
+- resolved email
+- bridge mode
+- allocation source
+- allocation record id
+- allocated amount
+- available amount
+- free margin
+- reserved amount
+- open exposure
+- last allocation refresh time
+- cockpit resolver result
+- order route resolver result
+- final allocation blocker reason
+
+8. Tests
+Add/update tests proving:
+- Cockpit and chart order route use the same allocation resolver
+- shared/master approved user with available allocation > 0 is not blocked as zero allocation
+- true zero allocation still blocks
+- null/missing allocation is not silently treated as confirmed zero without a distinct missing-allocation reason
+- personal bridge allocation is not used for shared-master users
+- allocation blocker copy shows the correct amount/source
+- feed blocker can still block even when allocation is valid
+- no live safety gates are weakened
+
+9. Verification
+Run:
+- allocation resolver tests
+- Cockpit balance card tests
+- Trading Permission card tests
+- chart trade preflight tests
+- scanner trade preflight tests
+- Eleanor trade preflight tests if same resolver is used
+- live dispatch allocation gate tests
+- frontend typecheck
+- backend typecheck
+- ci:guards
+- relevant integration lane if safe
+
+Acceptance:
+For the same Full Live Activated shared-master user, Cockpit and chart/scanner/Eleanor order routes agree on available live allocation. If Cockpit shows $181.58 available, the order route must not block with “available allocation is 0.” If allocation is truly 0, the trade remains blocked with accurate structured copy. Feed, bridge, risk, kill switch, and live dispatch gates remain strict.

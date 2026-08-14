@@ -1,0 +1,297 @@
+T027 — FIX ADMIN ALLOCATION BALANCE SOURCE: REAL-TIME DERIV/MT5 MASTER BALANCE SYNC
+
+Current issue:
+ARX is still not reflecting the real Deriv/MT5 master account balance in real time for admin allocation.
+
+The admin allocation system should not rely on stale ARX cached balance, old virtual balance, or manually stored values when deciding how much money the admin can allocate.
+
+Required behavior:
+Admin allocation must use the current synced Deriv/MT5 master account balance/equity/free margin as the live source of truth.
+
+If the master MT5 balance changes because:
+
+1. a trade is placed through ARX,
+2. a trade is placed directly inside MT5,
+3. a trade closes directly inside MT5,
+4. the broker balance/equity changes,
+5. floating P/L changes,
+6. margin/free margin changes,
+
+ARX must reflect that updated state quickly and the admin allocation page must use the updated numbers.
+
+Scope:
+This task is only for Deriv/MT5 balance sync and admin allocation balance accuracy.
+
+Do not change live trade execution.
+Do not change Governance restrictions.
+Do not change order placement logic.
+Do not place a trade.
+Do not use Demo.
+Do not use Paper Trading.
+Do not fake balances.
+Do not fabricate MT5 data.
+Do not weaken user privacy, ownership filtering, or master-account protections.
+
+Primary goal:
+Make ARX pull real MT5/Deriv master account balance/equity/free margin into the backend, store a fresh snapshot, show it in the admin UI, and use it for allocation calculations.
+
+PART 1 — Audit current admin allocation balance source
+
+Find every place the admin allocation system reads balance from.
+
+Audit:
+
+1. Admin allocation page
+2. Shared Master Account card
+3. Cockpit balance card
+4. master pool balance calculation
+5. user allocation available balance
+6. add/remove allocation actions
+7. freeze/unfreeze account logic
+8. owner/admin risk dashboard
+9. any allocation validation endpoint
+10. any “available master funds” calculation
+
+For each field, identify whether it currently uses:
+
+1. MT5 real balance
+2. MT5 equity
+3. MT5 free margin
+4. bridge heartbeat snapshot
+5. cached database snapshot
+6. ARX virtual allocation ledger
+7. stale hardcoded value
+8. manual admin value
+9. mock/demo fallback
+
+Report the exact file/function where the wrong/stale source is used.
+
+PART 2 — Define correct allocation source of truth
+
+For admin allocation, ARX should show separate values:
+
+1. MT5 Balance — real broker balance from Deriv/MT5
+2. MT5 Equity — real broker equity from Deriv/MT5
+3. MT5 Free Margin — real broker free margin from Deriv/MT5
+4. MT5 Open P/L — real floating P/L from Deriv/MT5
+5. ARX Allocated Total — sum of allocations assigned to users
+6. ARX Used Allocation — allocation currently reserved/used
+7. ARX Available To Allocate — calculated safely from MT5/ARX values
+8. Last MT5 Sync Time
+9. Sync Status
+
+Admin allocation must not just show “Virtual Balance” as if it is the real broker balance.
+
+Use naming clearly:
+
+* “MT5 Balance”
+* “MT5 Equity”
+* “MT5 Free Margin”
+* “Available to Allocate”
+* “Allocated to Users”
+
+PART 3 — Implement real-time MT5/Deriv account snapshot
+
+Create or repair the backend account snapshot sync.
+
+The backend must pull from the connected MT5 bridge/EA:
+
+1. balance
+2. equity
+3. margin
+4. free margin
+5. margin level if available
+6. open P/L
+7. open positions count
+8. broker/server
+9. masked account number
+10. account currency
+11. account type LIVE/REAL
+12. timestamp
+
+Requirements:
+
+1. Pull fresh data from MT5/bridge/EA.
+2. Store latest snapshot with timestamp.
+3. Mark snapshot stale if older than a configured threshold.
+4. Suggested stale threshold: 10 seconds for active admin/allocation pages.
+5. Poll every 2–5 seconds while admin allocation/cockpit/trade/scanner is visible.
+6. Pause or slow polling when tab is hidden.
+7. Manual refresh must force a fresh MT5 pull.
+8. Do not only refetch old DB values.
+9. Do not fake updated timestamps.
+
+PART 4 — Fix admin allocation calculations
+
+Admin allocation should use fresh MT5 data.
+
+Define:
+
+availableToAllocate = max(0, MT5 balance/equity/free margin basis - alreadyAllocated - reservedMargin - activeRiskBuffer)
+
+Use whichever basis is safest and already intended by the app, but make it explicit.
+
+Admin UI should show:
+
+1. “Using MT5 Balance”
+2. or “Using MT5 Free Margin”
+3. or “Using MT5 Equity”
+    depending on the chosen basis.
+
+If snapshot is stale:
+
+1. Do not allow new allocation silently.
+2. Show: “MT5 balance is stale. Refreshing…”
+3. Try refresh.
+4. If refresh fails, show: “Cannot allocate until MT5 balance syncs.”
+5. Do not allocate from stale master balance unless admin explicitly overrides through a clearly labeled manual override if such a feature exists.
+
+PART 5 — Manual MT5 changes must update ARX
+
+If a trade is placed directly in MT5:
+
+1. ARX should detect updated balance/equity/free margin on next sync.
+2. Admin allocation numbers should update.
+3. Cockpit Shared Master Account should update.
+4. Open positions count should update.
+5. If the direct MT5 trade is unattributed, admin should see it as “Manual MT5 / Unassigned” without exposing it to normal users.
+6. When the trade closes in MT5, ARX should reconcile and update balances.
+
+PART 6 — Refresh button must force live pull
+
+Fix every refresh button related to master account/admin allocation.
+
+Refresh must:
+
+1. call backend force-refresh endpoint
+2. backend calls bridge/EA for live MT5 account snapshot
+3. backend updates snapshot
+4. allocation calculations recompute
+5. frontend refetches
+6. UI updates values
+7. timestamp updates only after real MT5 data arrives
+
+Do not let refresh only:
+
+1. reload stale cache
+2. update timestamp
+3. rerender old values
+4. pull ARX virtual ledger only
+
+PART 7 — Admin UI changes
+
+On admin allocation page, show a clear master balance panel:
+
+Required fields:
+
+1. MT5 Balance
+2. MT5 Equity
+3. MT5 Free Margin
+4. Open P/L
+5. Allocated to Users
+6. Available to Allocate
+7. Last MT5 Sync
+8. Sync Status
+9. Refresh button
+
+Sync states:
+
+1. Live syncing
+2. Refreshing
+3. Stale
+4. MT5 unavailable
+5. Bridge disconnected
+
+If MT5 data is unavailable:
+Show:
+“MT5 balance unavailable. Allocation paused until sync returns.”
+
+Do not show stale values as current.
+
+PART 8 — Backend endpoints
+
+Create or repair endpoints as needed:
+
+1. getMasterAccountSnapshot
+2. refreshMasterAccountSnapshot
+3. getAdminAllocationPool
+4. recalculateAllocationPool
+5. getMT5AccountSnapshot
+6. getMT5OpenPositions
+
+Requirements:
+
+1. owner/admin only
+2. no normal user access to master account totals unless intentionally exposed
+3. no raw account number except masked
+4. no secrets/tokens/IPs
+5. no cross-user leakage
+6. no Demo/Paper fallback
+7. LIVE/REAL source only
+
+PART 9 — Reconcile stale/incorrect records
+
+Check for stale ARX allocation records or reconciled positions incorrectly affecting available allocation.
+
+Audit:
+
+1. open ARX positions with no MT5 match
+2. reconciled positions still counted as active
+3. failed commands counted as active exposure
+4. manual MT5 positions not represented
+5. old phantom P/L affecting allocation
+
+Fix:
+
+1. closed/reconciled/failed trades must not reduce available allocation as active exposure
+2. only active MT5-confirmed exposure should reserve funds
+3. manual MT5 open trades should affect master available balance through MT5 equity/free margin
+4. preserve audit logs
+
+PART 10 — Tests
+
+Run:
+
+1. pnpm run health:workflows
+2. typecheck
+3. ci:guards
+4. MT5 account snapshot sync test
+5. forced refresh endpoint test
+6. stale snapshot detection test
+7. admin allocation pool calculation test
+8. phantom/reconciled position exclusion test
+9. manual MT5 position detection test if possible without placing a new trade
+10. owner/admin access test
+11. normal user access blocked test
+12. Cockpit Shared Master Account UI smoke test
+13. Admin allocation UI smoke test
+14. hidden-tab polling pause test
+
+Do not place a live trade for this task.
+
+PART 11 — Final report required
+
+Final report must include:
+
+1. current admin allocation balance source before fix
+2. fields that were stale or wrong
+3. new MT5/Deriv source of truth
+4. sync interval
+5. stale threshold
+6. refresh button behavior
+7. allocation calculation formula
+8. whether allocation uses balance/equity/free margin
+9. manual MT5 trade/balance change detection behavior
+10. phantom/reconciled position handling
+11. owner/admin access verification
+12. normal user privacy verification
+13. files changed
+14. health:workflows result
+15. typecheck result
+16. ci:guards result
+17. confirmation no live trade placed
+18. confirmation no Demo/Paper/fake data used
+19. remaining risks
+
+Completion standard:
+This task is complete only when admin allocation uses fresh Deriv/MT5 master account data, the Shared Master Account/Admin allocation panels update in near real time, refresh performs a real MT5 pull, stale values are clearly marked, and manual MT5 balance/trade changes are reflected in ARX without fake data.

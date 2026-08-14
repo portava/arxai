@@ -1,0 +1,102 @@
+Choose Option B.
+
+Do not queue another spec. Do not start any new feature. Finish the Strategy Playbook & Setup Quality Engine until it earns a real PASS.
+
+Goal:
+Ship A + the 5 missing endpoint paths + admin controls + QA test file.
+
+Work in this exact order:
+
+1. Fix the 3 real blockers first:
+   - Add 4 playbook/setup-aware AI tools wired to the existing userPlaybooksTable and buildPlaybookPerformance logic.
+   - The AI Strategy Coach must be able to answer from real data:
+     “What setup am I best at?”
+     “Does this trade match my playbook?”
+     “Build me a playbook from my best trades.”
+     “Why was this setup good or bad?”
+   - No fake answers. If data is missing, say exactly what data is missing.
+
+2. Scanner integration:
+   - Update scanner.tsx and market-scanner.tsx so scanner cards show setup quality.
+   - Use the existing playbookEngine.evaluatePreTradeCheck logic.
+   - Scanner cards should clearly show labels like:
+     A setup
+     B setup
+     Matching strategy
+     Warning
+     Avoid
+     Blocked
+   - Scanner should not just show market info; it must show whether the market matches the user’s playbook.
+
+3. Journal integration:
+   - Add setupTag and setupQualityAtEntry fields/columns to the journal system.
+   - Make sure journalEntries, tradeJournal, and meTradeJournal can read/write these fields.
+   - Auto-tag trades when they close.
+   - Closed trades should store what setup they were, how good the setup was at entry, and whether the trade followed the user’s playbook.
+
+4. Add the missing spec-mandated endpoint paths:
+   - /api/setups/score
+   - /api/setups/performance
+   - /api/trades/:id/setup-tag
+   - /api/coach/strategy-insights
+   - /api/coach/build-playbook
+
+   If equivalent logic already exists under different paths, do not duplicate business logic. Create the required contract paths and route them to the existing services cleanly.
+
+5. Admin controls:
+   - Add admin controls inside adminTrading or the correct existing admin trading surface.
+   - Required controls:
+     playbook disable toggle
+     require setup before live toggle
+     global setup-risk-warning surface
+   - Admin should be able to see whether playbook enforcement is active or disabled.
+
+6. QA test file:
+   - Create scripts/src/phase-playbook-test.ts or the correct equivalent test file path if the project structure requires it.
+   - Test all major paths:
+     AI playbook tools
+     scanner setup badges
+     journal setupTag/setupQualityAtEntry save/read
+     auto-tag on trade close
+     all 5 required endpoints
+     admin controls
+     safety invariants
+   - The test must fail if AI tools are missing, if scanner cards do not surface setup quality, if journal fields are missing, or if required endpoints are absent.
+
+7. Preserve safety:
+   - Do not auto-open or auto-close live trades.
+   - Do not weaken live trading locks.
+   - Do not expose bridge tokens, API hashes, session secrets, or broker credentials.
+   - Live order placement must still require explicit confirmation.
+
+8. After implementation:
+   - Run typecheck, tests, and the new playbook QA test.
+   - Inspect the UI surfaces manually in code:
+     AI coach
+     scanner cards
+     journal/trade close flow
+     admin trading controls
+   - Fix any issues before reporting done.
+
+PASS criteria:
+Do not call this PASS until:
+- AI Strategy Coach has real playbook/setup-aware tools.
+- Scanner cards show setup quality.
+- Journal stores setupTag and setupQualityAtEntry.
+- Closed trades auto-tag setup quality.
+- All 5 required endpoints exist at the requested paths.
+- Admin controls exist.
+- QA test file exists and passes.
+- Existing trading safety guards remain green.
+
+Return a final report with:
+1. Files changed
+2. Endpoints added
+3. AI tools added
+4. Scanner changes
+5. Journal changes
+6. Admin controls added
+7. Tests run
+8. Any remaining blockers
+
+If something cannot be completed, stop and explain the exact blocker instead of silently marking PASS.

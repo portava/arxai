@@ -1,0 +1,40 @@
+QA/FIX GATE — Ruby Full App Knowledge + User-Specific Help Brain
+
+Inspect the Ruby full app knowledge and user-specific help brain work from the previous pass.
+
+Do not rebuild unrelated systems. Reuse current code and only repair missing or broken pieces.
+
+Verify:
+
+1. Ruby can answer what ARX AI is and what Ruby does.
+2. Ruby can explain every major app page and feature.
+3. Ruby can explain onboarding, demo, personal MT5, shared master access, admin approval, allocation, risk profiles, scanner, chart trades, trade tickets, queue status, P/L calendar, notifications, and one-click trading.
+4. Ruby uses authenticated session userId, not frontend userId.
+5. Ruby only sees the current user’s private account, trades, P/L, risk, notifications, scanner selections, watchlist, and chat memory.
+6. User A cannot ask Ruby about User B account, trades, P/L, risk, notifications, or memory.
+7. Ruby does not reveal shared master global balance or other users to normal users.
+8. Ruby does not reveal admin-only data to normal users.
+9. Admin Ruby context only works for authenticated admins.
+10. Ruby can explain why live trading is blocked based on actual safety gate state.
+11. Ruby can explain pending approval, missing allocation, paused account, bridge disconnected, unmapped master account, daily loss limit, max lot size, symbol restriction, cooldown, and queued/needs-review states.
+12. Ruby can answer trading questions using scanner context, chart history, indicators, market structure, economic calendar, impact calendar, news, current events, and real-world news when available.
+13. Ruby labels uncertainty when data is missing.
+14. Ruby does not reference fake first-load data.
+15. Ruby does not claim a live trade was placed unless system status confirms it.
+16. Ruby memory is scoped per user.
+17. Clearing Ruby memory works.
+18. Logout/login switch does not leak previous user Ruby chat context.
+19. Ruby gives clean user-facing troubleshooting answers, not raw stack traces.
+20. Ruby route/action suggestions are safe and do not bypass existing safety gates.
+21. Ruby prompt/log/UI/route responses do not expose bridge tokens, API keys, account credentials, session secrets, token hashes, or raw private logs.
+22. Mobile Ruby UI is usable and not cluttered.
+23. No live command is created during QA.
+
+Return:
+- PASS/FAIL table
+- files inspected
+- tests run
+- issues found
+- fixes applied
+- remaining risks
+- confirmation that no live trade was fired

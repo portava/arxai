@@ -1,0 +1,134 @@
+Update the assistant naming task.
+
+Final naming model:
+- Platform/app brand: ARX AI
+- Default assistant name: Eleanor
+- User-customizable assistant name: allowed
+
+Default behavior:
+If a user has not customized their AI assistant name, show:
+- Eleanor
+
+Examples:
+- Ask Eleanor
+- Eleanor Chat
+- Eleanor Chart Read
+- Eleanor Reasoning
+- Eleanor Trade Thesis
+- Eleanor Voice
+
+Customization behavior:
+Each user can rename their own AI assistant.
+
+Examples:
+- User A names assistant “Eleanor”
+- User B names assistant “Nova”
+- User C names assistant “Mia”
+- User D keeps default “Eleanor”
+
+This should affect only that user’s UI and AI experience.
+
+Settings:
+Add a setting:
+assistant_display_name
+
+Default:
+"Eleanor"
+
+Rules:
+- If assistant_display_name is empty/null, use "Eleanor"
+- Trim whitespace
+- Max length: 24 characters
+- Minimum length: 2 characters
+- Allow letters, numbers, spaces, apostrophes, hyphens
+- Block offensive/abusive names if moderation filter exists
+- Do not allow names that impersonate system/admin/support if avoidable:
+  - Admin
+  - Support
+  - Broker
+  - MT5
+  - Official
+  - System
+  - ARX Admin
+
+User-facing setting:
+Add to Settings → AI Assistant:
+Label:
+AI Assistant Name
+
+Helper text:
+Choose what your assistant is called in your app.
+
+Placeholder:
+Eleanor
+
+Save button:
+Save Assistant Name
+
+Reset button:
+Reset to Eleanor
+
+Where custom name should appear:
+- Chat header
+- Ask [Name]
+- [Name] Chat
+- [Name] Chart Read
+- [Name] Reasoning
+- [Name] Trade Thesis
+- [Name] Voice
+- Scanner explanations
+- Scalp Builder explanations
+- Chart read explanations
+- Auto-bot proposed trade review if assistant is referenced
+- Voice captions / speaking state
+- Empty states that mention the assistant
+
+Where custom name should NOT replace ARX:
+- ARX AI platform brand
+- ARX Scanner
+- ARX Risk
+- ARX Market Heat
+- ARX Trading School
+- ARX account/platform/legal/security/admin references
+- System logs where ARX means the platform
+
+Important distinction:
+ARX = platform/app/company brand.
+Eleanor/custom name = user’s AI assistant persona.
+
+Backend/data model:
+Store per-user preference:
+user_settings.assistant_display_name
+or existing settings/profile table if already present.
+
+Do not store it globally.
+Do not rename the assistant for every user when one user changes it.
+
+Frontend:
+Create a shared display helper:
+getAssistantName(userSettings) => assistant_display_name || "Eleanor"
+
+Avoid hardcoded assistant names in components.
+Use the shared helper/context everywhere user-facing assistant copy appears.
+
+Migration:
+- Existing users default to Eleanor
+- No breaking migration needed if nullable column/default setting works
+
+Tests:
+1. New user with no setting sees Eleanor.
+2. User can save custom assistant name.
+3. Custom name appears in chat header.
+4. Custom name appears in Scanner explanations.
+5. Custom name appears in Scalp Builder.
+6. Custom name appears in Chart Read.
+7. Reset restores Eleanor.
+8. One user’s custom name does not affect another user.
+9. Invalid empty/too-long names are rejected.
+10. ARX platform branding is not replaced by custom assistant name.
+11. No user-facing Ruby copy remains.
+12. Existing reasoning-block tests still pass.
+
+Hard boundary:
+This is personalization/branding only.
+Do not change AI logic, Scanner Truth, Pattern Truth, Trade Health, live execution gates, MT5 bridge, broker dispatch, kill switches, owner/admin permissions, or auto-trading permissions.

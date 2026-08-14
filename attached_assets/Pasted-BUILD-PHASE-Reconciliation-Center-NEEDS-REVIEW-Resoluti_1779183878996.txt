@@ -1,0 +1,273 @@
+BUILD PHASE — Reconciliation Center + NEEDS_REVIEW Resolution Workflow
+
+Use the current codebase. Do not rebuild unrelated systems.
+
+Goal:
+Create an admin-only reconciliation center where the operator can review uncertain trade states, stuck commands, stale reservations, duplicate callbacks, unmapped shared master executions, partial fills, failed closes, and NEEDS_REVIEW items without guessing or creating unsafe live actions.
+
+Important:
+Check what already exists first. Reuse the current liveCommandPipeline, trade queue, shared master ledger, exposure reservations, bridge callbacks, audit logs, admin dashboard, kill switches, close-only mode, Ruby context, and user ownership checks. Do not create a second trade/reconciliation system.
+
+1. Inspect existing reconciliation logic first
+Inspect:
+- trade command statuses
+- NEEDS_REVIEW handling
+- reservation lifecycle
+- bridge callbacks
+- duplicate EA callback handling
+- MT5 position snapshots
+- shared master ledger mapping
+- close command handling
+- partial fill handling
+- failed/rejected command handling
+- stale command expiration
+- admin queue controls
+- audit logs
+- tests around reconciliation
+
+Only build missing pieces.
+
+2. Admin reconciliation center
+Create an admin-only page/section called:
+
+Reconciliation Center
+
+It should show grouped review queues for:
+
+- NEEDS_REVIEW commands
+- stuck RESERVED reservations
+- sent commands with no callback
+- bridge acknowledged but not filled
+- duplicate callback ignored
+- failed commands
+- rejected commands
+- stale queued commands
+- stale close commands
+- unmapped master executions
+- uncertain shared master/netted positions
+- partial fills
+- ledger mismatches
+- position exists in MT5 but app missed callback
+- app shows open position but MT5 no longer shows it
+- P/L allocation mismatch
+- close requested but not confirmed
+- command expired before dispatch
+
+3. Review item detail view
+Each reconciliation item should show:
+
+- issue type
+- severity
+- commandId
+- reservationId if any
+- userId / user email if safe for admin
+- account mode
+- sharedMasterAccountId if applicable
+- bridgeId if applicable
+- symbol
+- direction
+- order type
+- requested lot
+- filled lot if known
+- remaining lot if known
+- entry price
+- exit price if known
+- SL/TP
+- source page: scanner, chart, Ruby voice, manual ticket, etc.
+- last known bridge status
+- last known app status
+- last callback time
+- last heartbeat time
+- createdAt / updatedAt
+- reason it needs review
+- recommended safe next step
+
+Do not show secrets, bridge tokens, API keys, account credentials, session secrets, token hashes, or raw sensitive bridge payloads.
+
+4. Safe resolution actions
+Admin may perform only safe resolution actions.
+
+Allowed actions:
+- mark as reviewed
+- mark as resolved with reason
+- mark as false alarm
+- attach existing MT5 execution/position to the correct user ledger when verified
+- release stuck reservation only when no active command/position depends on it
+- cancel queued command before dispatch
+- expire stale command
+- mark command failed
+- mark command rejected
+- move command to NEEDS_REVIEW
+- reconcile app position as closed if verified by bridge/MT5 snapshot
+- reconcile app position as open if verified by bridge/MT5 snapshot
+- update ledger with verified fill/close data
+- assign unmapped master execution to user only with admin confirmation and evidence
+- split partial fill allocation only when verified
+- leave unresolved with note
+
+Blocked actions:
+- force unsafe live dispatch
+- retry uncertain command blindly
+- close/edit a position when ownership is uncertain
+- map execution to a user without admin confirmation
+- resolve without a reason
+- expose unresolved items to normal users as if confirmed
+
+5. Evidence and verification
+For each resolution, require:
+
+- admin confirmation
+- operator reason
+- evidence source:
+  - bridge callback
+  - MT5 snapshot
+  - command record
+  - ledger record
+  - reservation record
+  - manual admin note
+- timestamp
+- admin userId
+- before state
+- after state
+
+Mask sensitive bridge evidence through the existing bridge masking chokepoint.
+
+6. Reconciliation scanner/job
+Add or strengthen a safe reconciliation scanner that detects:
+
+- RESERVED reservation older than safe threshold
+- SENT_TO_BRIDGE command with no response
+- ACKNOWLEDGED command with no fill callback
+- duplicate callback
+- command with bridge fill but missing ledger entry
+- ledger entry with no command
+- open app position missing in MT5 snapshot
+- MT5 position missing user ledger mapping
+- shared master execution not allocated to user
+- partial fill not fully allocated
+- close command pending too long
+- close callback missing
+- rejected command still holding reservation
+- failed command still holding reservation
+- queue item stuck in DISPATCHING
+- NEEDS_REVIEW item not assigned to admin
+
+The scanner should mark uncertain items NEEDS_REVIEW instead of retrying or guessing.
+
+7. Shared master reconciliation
+For SHARED_MASTER_MT5:
+
+- match master executions back to user command/ledger entries
+- verify user ownership before showing to normal user
+- if multiple users trade the same symbol, keep allocations separate
+- if MT5 netting makes user allocation uncertain, mark NEEDS_REVIEW
+- if exact P/L allocation is uncertain, exclude from normal user balance until resolved
+- admin can resolve only with confirmation and evidence
+- normal users must not see other users or global master exposure
+
+8. Personal MT5 reconciliation
+For Personal MT5:
+
+- reconcile only that user’s personal bridge/account
+- do not route personal MT5 items through shared master ledger
+- if bridge heartbeat is stale, mark uncertain items NEEDS_REVIEW
+- if position ownership cannot be verified, block normal user action and alert admin
+
+9. Demo reconciliation
+For Demo:
+
+- reconcile demo commands separately
+- demo reconciliation must never create live commands
+- demo failures must not affect live reservations
+- demo issues can be auto-resolved more easily only if fully local and safe
+
+10. User-facing NEEDS_REVIEW state
+Normal users should see clean messages only for their own items:
+
+- “This trade needs review.”
+- “Ruby is waiting for verification before showing final status.”
+- “Your close request needs review.”
+- “Your position status is being verified.”
+- “An operator review is needed before this can continue.”
+
+Normal users must not see:
+- admin notes
+- other users
+- shared master global data
+- raw bridge evidence
+- raw backend errors
+- secrets
+
+11. Ruby awareness
+Ruby should explain NEEDS_REVIEW safely.
+
+For normal users:
+- explain that the system is verifying trade state
+- explain that no unsafe action will be taken
+- explain whether the item is a trade, close request, ledger issue, or connection issue
+- give the next safe step
+- do not claim a trade is filled/closed unless confirmed
+
+For admins:
+- explain reconciliation blockers
+- summarize NEEDS_REVIEW categories
+- recommend safe resolution actions
+- explain stuck reservations or unmapped executions
+- never expose secrets
+
+12. Audit logs
+Add audit logs for:
+- reconciliation scan started/completed
+- item marked NEEDS_REVIEW
+- item assigned to admin if supported
+- item reviewed
+- item resolved
+- item left unresolved
+- stuck reservation released
+- stale command expired
+- ledger updated from verified evidence
+- unmapped execution assigned
+- partial fill allocated
+- duplicate callback ignored
+- unsafe retry blocked
+- non-admin reconciliation access attempt
+
+Do not log secrets or raw sensitive bridge payloads.
+
+13. Tests
+Add or update tests for:
+- non-admin cannot access reconciliation center
+- non-admin cannot call reconciliation APIs
+- admin can view NEEDS_REVIEW items
+- sent command with no callback becomes NEEDS_REVIEW
+- stuck reservation becomes NEEDS_REVIEW
+- rejected command releases reservation safely
+- failed command does not retry blindly
+- duplicate callback does not double-settle
+- unmapped master execution is not shown to normal users
+- unmapped master execution becomes NEEDS_REVIEW
+- admin can assign verified master execution to correct user ledger
+- admin cannot resolve without reason
+- admin cannot force unsafe dispatch
+- app/MT5 mismatch becomes NEEDS_REVIEW
+- personal MT5 reconciliation stays separate from shared master
+- demo reconciliation never creates live command
+- user only sees their own needs-review status
+- Ruby explains NEEDS_REVIEW without exposing admin data
+- secrets are masked
+- no live command created during tests
+
+Return:
+- what was built
+- files changed
+- reconciliation center route
+- reconciliation API routes
+- scanner/job behavior
+- safe resolution actions
+- blocked unsafe actions
+- Ruby behavior
+- tests added/run
+- manual test steps
+- remaining risks
+- confirmation that no live trade was fired
+- confirmation arx_live_commands count stayed unchanged

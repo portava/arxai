@@ -1,0 +1,208 @@
+Task #747: Add fast-trade / one-click live execution gate coverage and connect it to the standing-consent test layer
+
+Goal:
+Add test coverage proving the true one-click / fast-trade execution path cannot bypass required live-trading gates, and connect that coverage to the one-click standing-consent behavior already tested in the UI/admin layer.
+
+This task is test-first and test-focused. Production code should not change unless a failing test exposes a real production bug. Do not weaken any existing guard, role, phrase, ownership, entitlement, kill-switch, bridge-health, pipeline, or audit behavior to make tests pass.
+
+Context:
+The previous pass added consent/admin tests only:
+
+- OneClickToggleCard.consent.test.tsx
+- one-click-controls.revoke.test.tsx
+- 7/7 tests passing
+- test:one-click-consent script added
+- Production code changed: none
+
+Those tests prove the standing-consent UI/admin control behaves correctly. This task must now protect the actual backend execution path behind one-click / fast-trade behavior.
+
+Primary requirement:
+Find the backend route/service used by one-click / fast-trade live execution and add route-level or service-level tests proving it still routes through the official live execution pipeline and enforces all hard gates.
+
+Required inspection first:
+Inspect these areas before writing tests:
+
+- existing one-click / fast-trade route files
+- live trading route files
+- liveCommandPipeline.ts
+- mt5_commands insert call-sites
+- existing Cluster-D route tests
+- existing ci:guards tests
+- OneClickToggleCard consent tests from the previous pass
+- admin one-click revoke tests from the previous pass
+- package.json test scripts
+
+Test coverage required:
+
+1. One-click disabled / standing-consent gate
+
+Prove a user/account with one-click disabled cannot use the fast-trade endpoint.
+
+Expected:
+- Request is rejected.
+- No live command is written.
+- No mt5_commands row is created.
+- Response clearly identifies one-click disabled, missing standing consent, or equivalent code.
+- If an audit log exists for this path, blocked attempt is logged.
+
+2. Live approval gate
+
+Prove a user without live approval cannot execute fast trade.
+
+Expected:
+- Request is rejected.
+- No command row is created.
+- Response identifies live approval missing / not approved.
+- If audit logging exists, blocked attempt is logged.
+
+3. Revoked approval gate
+
+Prove a previously approved but revoked user cannot execute fast trade.
+
+Expected:
+- Request is rejected.
+- No command row is created.
+- Response identifies revoked or not live-approved status.
+- If audit logging exists, blocked attempt is logged.
+
+4. Master-live / entitlement gate
+
+Prove the fast-trade endpoint requires the same master-live or live entitlement gate as the normal live execution path.
+
+Expected:
+- Missing entitlement is rejected.
+- No command row is created.
+- Response identifies missing master-live/live access.
+- If audit logging exists, blocked attempt is logged.
+
+5. Kill-switch gate
+
+Prove kill switch blocks fast-trade OPEN orders.
+
+Expected:
+- BUY/SELL rejected while kill switch is active.
+- No command row is created.
+- Response identifies kill switch active.
+- If audit logging exists, blocked attempt is logged.
+
+Important:
+Do not add a broad admin bypass for BUY/SELL. Any narrow admin emergency-close behavior must remain limited to the existing emergency CLOSE-only path from Task #743.
+
+6. Bridge freshness gate
+
+Prove stale or missing bridge / EA heartbeat blocks fast trade.
+
+Expected:
+- Request is rejected.
+- No command row is created.
+- Response identifies stale bridge, stale heartbeat, or bridge unavailable.
+- If audit logging exists, blocked attempt is logged.
+
+7. Symbol allowlist / tradability gate
+
+Prove blocked, unsupported, or non-live-tradable symbols cannot execute through fast trade.
+
+Expected:
+- Request is rejected.
+- No command row is created.
+- Response identifies symbol blocked, unsupported, or not tradable.
+- If audit logging exists, blocked attempt is logged.
+
+8. Risk / lot validation gate
+
+Prove unsafe lot size or invalid risk inputs block execution.
+
+Examples:
+- lot size above allowed maximum
+- zero lot
+- negative lot
+- malformed stop loss / take profit if applicable
+- missing required risk data if the system requires it
+
+Expected:
+- Request is rejected.
+- No command row is created.
+- Response identifies risk / lot validation failure.
+- If audit logging exists, blocked attempt is logged.
+
+9. Duplicate / idempotency gate
+
+Prove duplicate clientRequestId does not create two live commands.
+
+Expected:
+- First request may create one command if all gates pass.
+- Second request with the same clientRequestId returns duplicate/existing result or rejects as duplicate.
+- Exactly one live command exists for that clientRequestId.
+- Audit/logging behavior is deterministic and documented in the test.
+
+10. Pipeline convergence proof
+
+Prove fast-trade does not write directly to mt5_commands outside the official live execution pipeline.
+
+Expected:
+- Test spies/mocks the official dispatch/chokepoint where practical.
+- Fast-trade request reaches that chokepoint.
+- Direct mt5_commands insert bypass is not used.
+- Audit/log shape matches normal live command behavior where applicable.
+
+11. CLOSE behavior if supported
+
+If the fast-trade endpoint supports CLOSE, add coverage for CLOSE.
+
+Expected:
+- CLOSE still requires ownership and entitlement.
+- CLOSE blocks unauthorized users.
+- CLOSE routes through the official close pipeline.
+- CLOSE respects the current kill-switch policy exactly as currently designed.
+- Do not weaken or broaden the narrow admin emergency-close behavior from Task #743.
+
+12. Consent-layer integration proof
+
+Add or update discoverable scripts so the consent/UI tests and backend fast-trade gate tests can be run together.
+
+Required:
+- Keep or reuse test:one-click-consent.
+- Add a script such as test:one-click-gates for the backend fast-trade tests.
+- Add a combined script such as test:one-click-safety that runs both:
+  - one-click consent/admin tests
+  - fast-trade backend gate tests
+
+The combined script must be discoverable from package.json.
+
+Audit expectations:
+For every blocked attempt, assert the system records the expected audit trail if the codebase already has a one-click/fast-trade audit log.
+
+If audit logging is not yet implemented for this endpoint, do not fake it in this task. Instead, explicitly document the audit gap and keep Task #748 as the follow-up for consent/audit-trail coverage.
+
+Implementation rules:
+- Prefer route-level tests with realistic DB fixtures.
+- Reuse existing test factories and helpers.
+- Keep fixtures minimal and readable.
+- Assert both HTTP response and database side effects.
+- Assert no command row on rejected cases.
+- Assert no mt5_commands row on rejected cases.
+- Do not skip tests.
+- Do not mark failing tests as todo unless a real production gap is discovered and documented.
+- Do not change production behavior unless tests prove an actual unsafe bypass or broken gate.
+- Do not weaken production checks to satisfy tests.
+
+Verification commands:
+Run:
+
+1. The new backend fast-trade gate test directly.
+2. The one-click consent/admin test script.
+3. The combined one-click safety script.
+4. The relevant live route/integration test.
+5. ci:guards.
+6. api-server typecheck.
+7. scripts typecheck if package/scripts changed.
+
+Completion report must include:
+- Files inspected.
+- Test file names added/changed.
+- package.json scripts added/changed.
+- Exact pass/fail counts.
+- Whether production code changed.
+- Whether any unsafe bypass was found.
+- Whether audit coverage already exists or remains Task #748.
+- Confirmation that no guard, role, phrase, ownership, entitlement, kill-switch, bridge-health, pipeline, or audit-honesty behavior was weakened.

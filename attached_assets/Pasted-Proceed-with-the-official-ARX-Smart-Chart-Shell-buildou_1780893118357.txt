@@ -1,0 +1,550 @@
+Proceed with the official ARX Smart Chart Shell buildout.
+
+This is the chart direction we are pursuing for ARX AI.
+
+Do not build a random standalone chart. Do not rebuild the whole app. Do not delete existing chart work. First inspect what already exists, preserve working wiring, then build the ARX Smart Chart Shell architecture on top of it.
+
+MAIN DECISION
+
+ARX will pursue a Smart Chart Shell with a pluggable chart-engine adapter.
+
+The chart should be ARX-owned at the app layer, meaning ARX owns:
+
+- the chart page structure
+- symbol selection
+- timeframe selection
+- scanner integration
+- Ruby explanation integration
+- Flame Scalp markers
+- Run-On Candle Momentum markers
+- trade buttons
+- position markers
+- pending order markers
+- SL/TP zones
+- risk zones
+- reward-to-risk visuals
+- governance warnings
+- provider freshness labels
+- bridge connection truth
+- live account truth
+- role-based controls
+- user-safe/admin-safe display rules
+
+The chart-rendering engine underneath must be swappable.
+
+Supported chart-engine path:
+
+1. Existing ARX chart code if already present.
+2. Lightweight Charts adapter as the safest beta chart renderer if needed.
+3. TradingView Advanced Charts adapter only if licensing and attribution are confirmed and compliant.
+4. Future full custom ARX chart engine behind the same adapter later.
+
+The goal is not to lock ARX permanently to TradingView, Lightweight Charts, or a custom chart. The goal is to create a chart shell that lets ARX intelligence, broker truth, trade tools, and AI tools remain independent from the renderer.
+
+PHASE 1 — AUDIT WHAT WE ALREADY HAVE
+
+Before building anything new, inspect the full current chart system.
+
+Find and document:
+
+- current chart components
+- current scanner chart
+- current smart chart page
+- chart data hooks
+- candle APIs
+- quote/tick APIs
+- symbol/timeframe controls
+- market selection logic
+- chart provider logic
+- synthetic/composite data fallback
+- MT5/Deriv bridge candle paths
+- /api/mt5/sync-candles integration
+- position marker logic if any
+- trade marker logic if any
+- Ruby chart explanation hooks if any
+- scanner-to-chart wiring
+- risk-to-chart wiring
+- flame/scalp markers if any
+- run-on candle logic if any
+- chart empty states
+- stale data states
+- provider freshness labels
+- role-gated chart controls
+- admin chart diagnostics
+- mobile chart behavior
+
+For each existing file/component/hook, decide:
+
+- keep as-is
+- reuse inside Smart Chart Shell
+- move behind adapter
+- replace because disconnected
+- remove only if clearly dead/test-only
+- flag if uncertain
+
+Do not break existing scanner, trade, Ruby, risk, or bridge wiring while doing this.
+
+PHASE 2 — CREATE ARX SMART CHART SHELL
+
+Create or upgrade the main ARX Smart Chart Shell component.
+
+The Smart Chart Shell is the parent controller around the chart renderer.
+
+It must own:
+
+- selected symbol
+- selected timeframe
+- selected market context
+- selected candle context
+- chart source/freshness state
+- bridge connection state
+- live account state
+- scanner state
+- risk state
+- Ruby explanation state
+- Flame Scalp state
+- Run-On Candle Momentum state
+- governance state
+- open positions
+- pending orders
+- SL/TP zones
+- trade actions
+- role permissions
+- loading/empty/error/stale states
+
+The Smart Chart Shell must not care which chart engine is used underneath. It should talk to the renderer through an adapter interface.
+
+PHASE 3 — CREATE CHART ENGINE ADAPTER INTERFACE
+
+Create a clean chart-engine adapter contract.
+
+The adapter should support the app’s needs without coupling ARX to one renderer.
+
+Required capabilities:
+
+- initialize chart
+- destroy chart
+- resize chart
+- set symbol
+- set timeframe
+- set historical candles
+- update active candle
+- update quote/tick
+- set visible range if supported
+- read selected candle
+- add/update/remove markers
+- add/update/remove price lines
+- add/update/remove zones
+- add/update/remove position markers
+- add/update/remove pending order markers
+- add/update/remove entry markers
+- add/update/remove exit markers
+- add/update/remove SL/TP markers
+- add/update/remove risk zones
+- add/update/remove reward-to-risk visuals
+- add/update/remove flame markers
+- add/update/remove run-on candle markers
+- add/update/remove governance warnings
+- set provider freshness state
+- set bridge status state
+- set chart disabled/stale/unavailable state
+
+Use project naming conventions. Do not force exact method names if existing patterns are better, but the contract must cover these capabilities.
+
+PHASE 4 — BETA RENDERER DECISION
+
+After auditing existing code, choose the best beta renderer path.
+
+Preferred order:
+
+1. If existing ARX chart is already functional enough, wrap it in the adapter and upgrade it.
+2. If existing chart is weak or disconnected, add/upgrade a Lightweight Charts adapter as the beta renderer.
+3. If TradingView Advanced Charts is already licensed/available in the project, create a TradingView adapter using a custom ARX datafeed.
+4. If TradingView Advanced Charts is not licensed/available, do not fake it and do not hide TradingView branding.
+
+Rules:
+- Do not illegally hide TradingView branding/attribution.
+- Do not embed TradingView as a hidden backend chart.
+- Do not pretend TradingView market data is ARX broker truth.
+- If TradingView is used, use it only through a compliant chart/datafeed adapter.
+- ARX data must come from ARX broker/provider truth, not uncontrolled chart vendor assumptions.
+
+PHASE 5 — DATA SOURCE TRUTH
+
+All chart data must come through ARX truth sources.
+
+Chart candle priority:
+
+1. Broker-native MT5/Deriv EA Bridge v2 candles when verified and contributing.
+2. Third-party composite candles only as fallback.
+3. Honest unavailable/stale state when neither is trustworthy.
+
+Chart tick/quote priority:
+
+1. Broker/bridge tick or quote when fresh.
+2. Approved provider quote fallback if broker quote is unavailable.
+3. Honest stale/unavailable state when data is not trustworthy.
+
+Rules:
+- Do not label composite candles as broker-native.
+- Do not mark MT5 candles contributing until real EA CopyRates candles arrive and pass validation.
+- Do not show stale candles as live.
+- Do not show fake candles.
+- Do not show dummy price data.
+- Every chart read should carry provider, freshness, and last-updated truth.
+- Admin can see detailed source/freshness diagnostics.
+- Normal users see simple source/freshness language only.
+
+PHASE 6 — CHART TO AI HANDSHAKE
+
+Create the chart-to-AI handshake.
+
+When a user selects a symbol, timeframe, candle, marker, position, or zone, the chart must update the app context.
+
+The chart should notify:
+
+- Ruby
+- Scanner
+- Risk
+- Flame Scalp
+- Run-On Candle Momentum
+- Governance
+- Trade ticket
+- SL/TP logic
+- Reward-to-risk logic
+
+Required behavior:
+
+- selecting a market updates Ruby context
+- selecting a candle lets Ruby explain that candle in context
+- selecting a Flame/Run-On marker lets Ruby explain the scalp condition
+- selecting a position lets Risk and Ruby explain current exposure
+- selecting SL/TP zone lets Risk explain invalidation and target logic
+- scanner updates can place markers on chart
+- governance downgrades can display warnings on chart
+- chart provider freshness affects AI confidence
+- stale chart data downgrades scanner/flame/Ruby confidence
+
+Ruby must explain everything in plain English.
+
+PHASE 7 — AI TO CHART HANDSHAKE
+
+AI systems must be able to write useful overlays onto the chart.
+
+Scanner can send:
+- buy/sell/avoid markers
+- confidence badges
+- setup labels
+- focus/broad scan markers
+- watched market highlights
+
+Flame Scalp can send:
+- flame strength markers
+- active flame marker
+- run-on marker
+- exhaustion marker
+- failed flame marker
+- reversal-risk marker
+- add-on allowed/blocked marker
+
+Run-On Candle Momentum can send:
+- run direction
+- run quality score
+- shallow pullback marker
+- late/chase-risk warning
+- clean continuation marker
+- stop-add warning
+
+Risk can send:
+- risk zone
+- danger zone
+- exposure warning
+- spread/slippage warning
+- reward-to-risk box
+- recommended SL/TP zones where appropriate
+
+Governance can send:
+- approved
+- approved with caution
+- downgraded
+- rejected
+- needs more data
+- stale-data warning
+- missing-provider warning
+
+Ruby can send:
+- explain-selected-marker prompt
+- plain-English chart read
+- selected candle explanation
+- trade reasoning summary
+
+PHASE 8 — TRADING TOOLS ON CHART
+
+The chart must support trade-aware overlays and controls.
+
+Trader/OWNER chart should support:
+
+- Buy button where role allows
+- Sell button where role allows
+- one-click scalp entry where role allows
+- selected symbol trade ticket
+- position markers
+- pending order markers
+- entry price line
+- current price line
+- SL line
+- TP line
+- break-even line if present
+- close/modify actions where role allows
+- risk/reward visual
+- spread/slippage badge
+- live P/L marker if available
+
+Investor/view-only chart:
+- no Buy/Sell
+- no one-click scalp
+- no modify/close
+- view-only chart/reporting markers only if allowed
+
+Admin/OWNER chart:
+- full controls
+- provider diagnostics
+- bridge diagnostics
+- event trace links
+- live execution truth
+- reconciliation/suspect position state where needed
+
+PHASE 9 — FLAME SCALP AND RUN-ON CANDLE CHART VISUALS
+
+Build chart visuals specifically for the scalp system.
+
+The chart should visually support:
+
+- no flame
+- developing flame
+- active flame
+- run-on candle momentum
+- runaway movement
+- exhaustion risk
+- failed flame
+- reversal risk
+- blind/insufficient data
+- clean add-on allowed
+- add-on blocked
+- stop adding
+- shallow pullback continuation
+- deep pullback warning
+- large opposing wick rejection
+- late/chase risk
+
+The chart should make scalp reading easier without cluttering the UI.
+
+Use clean, small markers/badges/zones. Do not overload the chart with too many labels.
+
+PHASE 10 — UI TRUTH CONTRACT
+
+The chart must obey the ARX UI Truth Contract.
+
+Rules:
+- If account is live, active chart UI must not show paper/demo/simulation references.
+- If bridge is connected and fresh, chart must not say disconnected.
+- If bridge is stale, chart must show stale/reconnecting.
+- If bridge is disconnected, chart must show unavailable/disconnected.
+- No connected/disconnected contradiction.
+- If candles are stale, chart must show stale data.
+- If MT5 candles are not contributing, chart must not label candles as MT5 broker-native.
+- If composite candles are used, chart must not pretend they are broker-native.
+- If trade is queued, chart must not mark it filled.
+- If trade is filled, chart needs broker confirmation.
+- If position is closed, chart needs broker confirmation or reconciled proof.
+- If position is suspect/phantom, admin should see suspect/reconciliation status.
+- Ruby chart explanations must match chart data truth.
+- No dummy balances.
+- No fake price/candle data.
+- No internal backend terms shown to normal users.
+
+PHASE 11 — PERFORMANCE REQUIREMENTS
+
+The chart must be fast.
+
+Targets:
+- symbol change should feel immediate
+- timeframe change should load quickly
+- active candle update should be near real-time when provider is fresh
+- chart should not freeze scanner or Ruby
+- markers should update without full chart reload when possible
+- resize/mobile layout should be smooth
+- crosshair/hover should not lag
+- adding AI markers should not cause major re-render
+- Traffic Controller should avoid unnecessary AI calls on every chart tick
+
+Use memoization, adapter-level updates, and event-driven state carefully. Do not flood React with every tick if throttling/batching is needed.
+
+PHASE 12 — MOBILE / RESPONSIVE CHART
+
+The chart must work on mobile and desktop.
+
+Desktop:
+- full chart shell
+- side Ruby/explanation panel if space allows
+- marker details panel
+- trade controls where allowed
+
+Mobile:
+- clean compact chart
+- bottom sheet for Ruby explanation
+- compact timeframe selector
+- compact symbol selector
+- trade controls only where role allows
+- no overlapping menu/help bars
+- chart must remain usable with bottom nav
+
+Do not let floating menus block chart controls.
+
+PHASE 13 — ROLE GATING
+
+Verify chart behavior by role.
+
+OWNER/admin:
+- full chart tools
+- trade actions
+- admin diagnostics
+- bridge/provider details
+- governance trace links
+
+Trader:
+- trader-safe chart tools
+- trade actions if permitted
+- Ruby explanations
+- risk zones
+- scanner/flame markers
+- no admin diagnostics
+- no backend/internal terms
+
+Investor/view-only:
+- view-only chart/reporting only if allowed
+- no trade buttons
+- no scanner trade actions
+- no close/modify
+- no admin diagnostics
+
+Logged-out:
+- no chart data
+- no direct route bypass
+
+Admin-preview-as-user:
+- behaves like effective user role
+- no admin leaks
+
+PHASE 14 — PRESERVE EXISTING WIRING
+
+Do not break:
+
+- Scanner
+- Focus Scan
+- Broad Scan
+- Flame Scalp
+- Run-On Candle Momentum
+- Ruby
+- Risk
+- Governance
+- Trade ticket
+- One-click scalp
+- Open positions
+- Pending orders
+- SL/TP editor
+- Admin Hub
+- Bridge status
+- UI truth helpers
+- role gates
+- live execution gates
+
+If something currently works, wrap it or preserve it. Do not replace it blindly.
+
+PHASE 15 — TESTING
+
+Add or run tests for:
+
+- Smart Chart Shell renders
+- selected chart engine loads
+- adapter contract works
+- symbol change
+- timeframe change
+- historical candle load
+- active candle update
+- quote/tick update
+- stale candle state
+- provider source/freshness display
+- MT5 non-contributing display
+- composite fallback display
+- position markers
+- pending order markers
+- entry/exit markers
+- SL/TP zones
+- risk/reward visuals
+- flame markers
+- run-on candle markers
+- add-on allowed/blocked markers
+- governance warning markers
+- scanner-to-chart updates
+- chart-to-Ruby selected context
+- Ruby explanation from selected candle/marker
+- trade ticket opens with selected symbol
+- one-click scalp controls remain role-gated
+- investor cannot trade from chart
+- admin diagnostics hidden from normal users
+- no paper/demo wording in live chart flow
+- no backend/internal terms to normal users
+- mobile layout does not block controls
+
+Run:
+- typecheck
+- chart tests
+- scanner integration tests
+- Ruby integration tests
+- risk integration tests
+- governance integration tests
+- role-gating tests
+- UI truth tests
+- CI guards
+- architect review if available
+
+PHASE 16 — FINAL REPORT
+
+Report:
+
+1. Current chart files/components found.
+2. What was reused.
+3. What was wrapped behind adapter.
+4. What chart engine was selected for beta and why.
+5. Smart Chart Shell status.
+6. Adapter interface status.
+7. ARX tool layer status.
+8. Chart-to-AI handshake status.
+9. AI-to-chart marker status.
+10. Trading tool overlay status.
+11. Flame/Run-On visual status.
+12. Provider/source truth status.
+13. Role-gating results.
+14. Mobile/desktop behavior.
+15. Tests passed.
+16. Any remaining chart limitations.
+17. Whether TradingView Advanced Charts remains a future licensed option.
+18. What comes next for deeper custom ARX chart features.
+
+COMPLETION STANDARD
+
+Do not mark complete until:
+
+- existing chart work has been audited
+- Smart Chart Shell exists or is upgraded
+- chart renderer is behind a pluggable adapter
+- ARX owns the intelligence/tool layer
+- chart uses ARX truth sources
+- scanner/Ruby/risk/governance/flame/run-on can handshake with the chart
+- trade markers and SL/TP/risk visuals are supported or clearly staged
+- live UI truth is respected
+- role gates are correct
+- mobile and desktop remain usable
+- no active trading, scanner, Ruby, bridge, or admin wiring is broken
+- validation passes

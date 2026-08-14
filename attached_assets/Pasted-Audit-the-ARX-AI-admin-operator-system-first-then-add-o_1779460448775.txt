@@ -1,0 +1,177 @@
+Audit the ARX AI admin/operator system first, then add or expose the missing admin controls for pushing settings to users and approving specific users.
+
+Do not create a separate admin login page. Keep admin access role-based through the existing login system. Regular users must never see admin/operator controls.
+
+GOAL:
+Add a clear Admin User Control Center where an admin/operator can:
+1. View all users.
+2. Search/filter users by name, email, invite code, role, status, trading mode, live approval, bridge access, and risk profile.
+3. Approve or deny a specific user.
+4. Enable/disable a specific user.
+5. Assign user role: user, admin, operator, read-only tester.
+6. Set user trading access: paper, demo, live disabled, live approved.
+7. Toggle shared/master MT5 bridge access per user.
+8. Toggle personal MT5 bridge mode per user if supported.
+9. Push settings to one user, selected users, or all users.
+10. Save reusable settings templates.
+
+ADMIN NAVIGATION:
+Add this under the existing admin/dashboard area as:
+- Admin
+  - User Approvals
+  - User Permissions
+  - Push Settings
+  - Trading Access
+  - Audit Log
+
+If an admin dashboard already exists, upgrade it. If these controls already exist in backend but are not exposed in UI, wire them into the admin UI. If partial controls exist, repair and complete them.
+
+USER APPROVAL FEATURES:
+Each user row/card should show:
+- Name/email
+- Invite code used
+- Account status: invited, pending, approved, suspended, disabled
+- Trading mode: paper/demo/live
+- Live trading approval: approved/not approved
+- Shared bridge access: on/off
+- Risk profile assigned
+- Last login
+- Last trade attempt
+- Current open trades count if available
+- Profit/loss summary if available
+- Emergency disable button
+
+Add action buttons:
+- Approve User
+- Deny User
+- Suspend User
+- Enable User
+- Disable User
+- Approve Live Trading
+- Revoke Live Trading
+- Enable Shared Bridge
+- Disable Shared Bridge
+- Assign Risk Template
+- Push Settings
+
+PUSH SETTINGS FEATURES:
+Create a Push Settings panel that allows admin to push:
+- Trading mode
+- Live/demo/paper permission
+- Max lot size
+- Max daily loss
+- Max open trades
+- Allowed symbols/markets
+- Blocked symbols/markets
+- One-click trading enabled/disabled
+- AI-assisted trading enabled/disabled
+- AI auto-close permission enabled/disabled
+- Scanner access level
+- Ruby voice/chat access settings
+- News intelligence enabled/disabled
+- Historical/backtest intelligence enabled/disabled
+- Risk/reward minimum
+- Stop loss required toggle
+- Take profit required toggle
+- Master bridge permission
+- Kill switch status
+- User-specific notes/admin memo
+
+PUSH OPTIONS:
+Admin must be able to:
+- Push to one selected user
+- Push to multiple selected users
+- Push to all approved demo users
+- Push to all approved live users
+- Push to all users
+- Preview changes before applying
+- Confirm dangerous changes before applying, especially live trading or shared bridge access
+- See success/failure result after push
+
+SAFETY REQUIREMENTS:
+- Do not automatically approve live trading for any user unless the admin explicitly clicks/sets it.
+- Live trading must require admin approval AND user-level permission.
+- Shared/master bridge access must require admin approval per user.
+- Include confirmation modals for live access, shared bridge access, bulk setting pushes, and disabling users.
+- Add an emergency revoke button per user.
+- Add a global operator kill switch if not already present.
+- All admin changes must be logged.
+
+AUDIT LOG:
+Create or connect an audit log that records:
+- Admin who made the change
+- User affected
+- Previous setting
+- New setting
+- Timestamp
+- Change type
+- Whether it was single-user or bulk push
+- Result: success/failure
+
+BACKEND:
+Check existing database/schema first. Add missing fields only if needed:
+- role
+- accountStatus
+- tradingMode
+- liveTradingApproved
+- sharedBridgeApproved
+- personalBridgeEnabled
+- riskTemplateId
+- maxLotSize
+- maxDailyLoss
+- maxOpenTrades
+- allowedSymbols
+- blockedSymbols
+- oneClickTradingEnabled
+- aiTradingEnabled
+- aiAutoCloseEnabled
+- scannerAccessLevel
+- rubyVoiceEnabled
+- newsIntelligenceEnabled
+- historicalBacktestEnabled
+- minRewardRiskRatio
+- stopLossRequired
+- takeProfitRequired
+- disabledReason
+- approvedBy
+- approvedAt
+- lastSettingsPushAt
+
+Create or repair backend routes/services for:
+- Get all users for admin
+- Get one user
+- Approve/deny user
+- Enable/disable user
+- Update user permissions
+- Push settings to user
+- Bulk push settings
+- Assign risk template
+- Read audit log
+
+UI REQUIREMENTS:
+- Keep the UI simple and clean.
+- Use labeled tabs instead of one long scrolling page.
+- Hide advanced controls inside expandable sections.
+- Regular users should not see admin controls, backend names, bridge internals, raw API names, internal route names, or technical function labels.
+- Admins should see friendly labels like “Approve Live Trading,” not backend variable names.
+- Fix any navigation issue where admin pages are hidden, unreachable, or not clearly labeled.
+
+ACCEPTANCE TEST:
+After building, verify:
+1. Admin can find a specific user.
+2. Admin can approve that user.
+3. Admin can approve demo only.
+4. Admin can approve live trading for that user.
+5. Admin can enable shared bridge access for that user.
+6. Admin can push a risk template to only that user.
+7. Admin can push settings to selected users.
+8. Admin can push settings to all demo users.
+9. Regular users cannot see any admin controls.
+10. User receives updated permissions after refresh/login.
+11. Push settings are saved in database.
+12. Audit log records every change.
+13. Live trading cannot activate without explicit admin approval.
+14. Existing login, scanner, Ruby chat, bridge status, and trading pages still work.
+15. No internal backend/function names are exposed to users.
+
+Do not remove existing features. Reuse current code where possible. Fix broken or hidden controls instead of duplicating pages.

@@ -1,0 +1,318 @@
+Approve Phase 7 if it passed, then begin Phase 8: Risk Governor, account protection rules, session limits, and safety enforcement for the ARX AI trading app.
+
+IMPORTANT SCOPE:
+- Do NOT place live trades.
+- Do NOT enable live execution.
+- Keep liveLocked = true.
+- Keep READ_ONLY / PAPER_ONLY active.
+- Keep AllowOrderExecution = false.
+- Do NOT touch MT5 EA .mq5 files.
+- Do NOT weaken MT5 bridge token security.
+- Do NOT reset or wipe the database.
+- Do NOT change unrelated UI.
+- Do NOT move to Phase 9 until Phase 8 QA passes.
+
+Current status:
+- Phase 1 identity foundation: PASS.
+- Phase 2 per-user data scoping: PASS.
+- Phase 3 per-user MT5 connections/trading sessions: PASS.
+- Phase 4 per-user MT5 command routing: PASS.
+- Phase 5 paper trade lifecycle, journal, calendar: expected PASS.
+- Phase 6 AI trade review and coaching: expected PASS.
+- Phase 7 strategy/playbook and pre-trade checklist: expected PASS.
+- Now build Phase 8: Risk Governor and account protection.
+
+Main goal:
+ARX AI should protect the trader from reckless behavior before it becomes a bad habit. The system should enforce paper-trading safety rules, block dangerous setups, detect overtrading, detect revenge trading, and prevent live execution from being activated accidentally.
+
+Phase 8A — User-owned risk profile/settings:
+Create or finalize a user-owned risk_settings table.
+
+Required fields:
+- id
+- userId
+- maxRiskPerTradePercent
+- maxRiskPerTradeAmount nullable
+- maxDailyLossPercent
+- maxDailyLossAmount nullable
+- maxWeeklyLossPercent nullable
+- maxWeeklyLossAmount nullable
+- maxOpenTrades
+- maxTradesPerDay
+- maxConsecutiveLosses
+- maxPositionSize nullable
+- minRewardRiskRatio
+- cooldownAfterLossMinutes
+- cooldownAfterMaxLossMinutes
+- blockAfterDailyLossHit boolean
+- blockAfterConsecutiveLosses boolean
+- requireStopLoss boolean
+- requireTakeProfit boolean
+- requirePlaybook boolean
+- requirePreTradeChecklist boolean
+- requireJournalReason boolean
+- allowOverrideInPaperMode boolean
+- liveLocked boolean
+- readOnlyMode boolean
+- allowOrderExecution boolean
+- createdAt
+- updatedAt
+
+Rules:
+- Every risk setting row must belong to userId.
+- Never accept userId from frontend.
+- Defaults must be conservative:
+  liveLocked = true
+  readOnlyMode = true
+  allowOrderExecution = false
+  requireStopLoss = true
+  requirePlaybook = true
+  requirePreTradeChecklist = true
+  requireJournalReason = true
+
+Phase 8B — Risk Governor event log:
+Create or finalize risk_governor_events table.
+
+Required fields:
+- id
+- userId
+- tradingSessionId nullable
+- paperTradeId nullable
+- mt5ConnectionId nullable
+- eventType:
+  risk_check
+  blocked_trade
+  warning
+  override
+  cooldown_started
+  cooldown_ended
+  daily_loss_hit
+  consecutive_losses_hit
+  overtrading_detected
+  revenge_trading_detected
+  live_execution_blocked
+- severity: info/warning/critical
+- decision: pass/warning/block
+- reason
+- details json/text
+- createdAt
+
+Rules:
+- All events are user-owned.
+- User can only see their own risk events.
+- Never log bridge tokens.
+
+Phase 8C — Risk check engine:
+Create a central risk governor service used before opening any paper trade or queuing any trading-related command.
+
+The risk engine should evaluate:
+1. Does the user have risk settings?
+2. Is liveLocked still true?
+3. Is allowOrderExecution still false?
+4. Is the app in paper/read-only mode?
+5. Is stop loss required and present?
+6. Is take profit required and present?
+7. Is risk per trade within user limits?
+8. Is reward-to-risk above minimum?
+9. Is the user under max trades per day?
+10. Is the user under max open trades?
+11. Has the user hit max daily loss?
+12. Has the user hit max weekly loss?
+13. Has the user hit max consecutive losses?
+14. Is the user in cooldown?
+15. Is this trade tied to a playbook if required?
+16. Did the pre-trade checklist pass if required?
+17. Did the user write a reason for entry if required?
+18. Does recent behavior suggest revenge trading?
+19. Does recent behavior suggest overtrading?
+20. Is anything attempting live execution?
+
+Output:
+- decision: pass / warning / block
+- riskScore 0–100
+- failedRules
+- warnings
+- requiredActions
+- overrideAllowed boolean
+- reason
+- details
+
+Hard rule:
+Any live execution intent must be blocked regardless of override.
+
+Phase 8D — Backend routes:
+Add or verify scoped routes:
+
+Risk settings:
+- GET /api/me/risk-settings
+- POST /api/me/risk-settings
+- PATCH /api/me/risk-settings
+- POST /api/me/risk-settings/reset-defaults
+
+Risk checks:
+- POST /api/me/risk/check-paper-trade
+- GET /api/me/risk/events
+- GET /api/me/risk/status
+- GET /api/me/risk/daily-status
+- GET /api/me/risk/session-status
+
+Overrides:
+- POST /api/me/risk/events/:id/override
+
+Requirements:
+- requireUser on every route.
+- Scope every query by req.authUser.id.
+- Do not accept userId from frontend.
+- Overrides are only allowed for paper mode and only if allowOverrideInPaperMode = true.
+- Overrides require a written reason.
+- Live execution cannot be overridden.
+
+Phase 8E — Integrate with paper trade lifecycle:
+Before a paper trade can be opened:
+1. Run pre-trade checklist from Phase 7 if required.
+2. Run Risk Governor.
+3. If decision = pass, allow paper trade open.
+4. If decision = warning, allow paper trade open only with warning acknowledgement.
+5. If decision = block, block paper trade unless paper override is allowed and user provides reason.
+6. Log every risk decision to risk_governor_events.
+
+When a paper trade closes:
+- update session metrics
+- update calendar
+- check daily loss
+- check consecutive losses
+- trigger cooldown if rules require it
+- log risk events if limits are hit
+
+Phase 8F — Integrate with MT5 command routing:
+Before any command is queued:
+- Run safety classification.
+- Allow only safe paper/read-only commands.
+- Block anything live or broker-mutating.
+
+Allowed:
+- PING
+- HEARTBEAT_TEST
+- ACCOUNT_SNAPSHOT_REQUEST
+- POSITIONS_SNAPSHOT_REQUEST
+- PAPER_ORDER_TEST if app-only simulation
+
+Blocked:
+- LIVE_BUY
+- LIVE_SELL
+- MODIFY_LIVE_ORDER
+- CLOSE_LIVE_POSITION
+- any command that could call OrderSend
+- any command that could mutate a real broker position
+
+Log blocked attempts as:
+eventType = live_execution_blocked
+severity = critical
+decision = block
+
+Phase 8G — Frontend UI:
+Only update risk/settings/protection areas.
+
+Add a Risk Governor panel showing:
+- Risk mode: Paper / Read-only / Live locked
+- Max risk per trade
+- Max daily loss
+- Max trades per day
+- Consecutive loss limit
+- Cooldown status
+- Today’s P/L
+- Today’s trades
+- Current risk status
+- Last blocked reason
+- Recent risk events
+
+Add settings UI:
+- Max risk per trade %
+- Max daily loss
+- Max trades per day
+- Max consecutive losses
+- Minimum reward-to-risk
+- Require stop loss
+- Require take profit
+- Require playbook
+- Require checklist
+- Require journal reason
+- Allow paper override
+
+First-time state:
+- “Risk Governor is active with safe defaults”
+- “Adjust your paper trading risk rules before starting a session”
+
+Do not show fake risk history.
+
+Phase 8H — AI coaching integration:
+Use Risk Governor events in the coaching plan.
+
+AI should be able to say:
+- “You were blocked because your risk exceeded your max limit.”
+- “You are approaching your daily loss limit.”
+- “You traded too many times after a loss.”
+- “Your best next step is to stop for the day.”
+- “Your next session goal is to take fewer, higher-quality setups.”
+
+AI cannot override safety.
+AI cannot enable live trading.
+AI cannot change allowOrderExecution.
+
+Phase 8I — Tests:
+Add/extend tests:
+
+1. User A updates risk settings.
+2. User B cannot see User A risk settings.
+3. User A risk check passes valid paper trade.
+4. Risk check blocks missing stop loss when required.
+5. Risk check blocks low reward-to-risk.
+6. Risk check blocks max trades per day.
+7. Risk check blocks daily loss limit.
+8. Risk check triggers cooldown after loss if configured.
+9. Paper override works only when allowed and reason is provided.
+10. Paper override does not work for live execution.
+11. Live order command is always blocked.
+12. Risk events are user-scoped.
+13. User B cannot see User A risk events.
+14. First-time user gets default safe risk settings.
+15. MT5 EA files remain untouched.
+16. Raw bridge token is never exposed.
+
+Phase 8J — QA/fix gate:
+After implementation, run QA and fix every issue before stopping.
+
+QA must confirm:
+- App starts.
+- Login/register/logout/me still work.
+- Phase 2 user scoping still passes.
+- Phase 3 MT5 connection isolation still passes.
+- Phase 4 command isolation still passes.
+- Phase 5 paper trade/journal/calendar still pass.
+- Phase 6 AI review/coaching still pass.
+- Phase 7 playbook/checklist still pass.
+- Risk settings work.
+- Risk check engine works.
+- Paper trade opening respects Risk Governor.
+- Live execution remains blocked.
+- User A/User B isolation passes.
+- No fake global risk data leaks.
+- No live trades executed.
+- No MT5 EA files changed.
+- Safety contract still passes.
+- Existing unrelated paperIntelligence.ts:123 typecheck issue is reported separately if still present.
+
+Final report format:
+1. Files changed
+2. Tables added/changed
+3. Routes added/changed
+4. Risk settings result
+5. Risk Governor result
+6. Paper trade enforcement result
+7. MT5 command safety result
+8. AI coaching integration result
+9. User A/User B isolation result
+10. Safety verification
+11. Remaining errors
+12. Phase 8 PASS or FAIL
+13. Stop and wait for my approval before Phase 9

@@ -1,0 +1,143 @@
+Clean reset the ARX AI app so the next load feels like a real first-time user experience with no fake information.
+
+Goal:
+On next browser load, the app should look fresh, clean, and empty unless real authenticated user data exists. No fake balances, fake trades, fake AI analysis, fake broker connection, fake positions, fake paper trades, fake demo trades, fake names, fake dashboard stats, fake confidence scores, or seeded placeholder records should appear.
+
+Important safety rules:
+- Do not delete or expose secrets.
+- Do not modify MT5_BRIDGE_TOKEN.
+- Do not modify the working MT5 EA files.
+- Do not weaken auth.
+- Do not enable live trading.
+- Keep live execution disabled.
+- Keep demo execution gated.
+- Keep executionMode safety language intact.
+- Do not show my current MT5 demo account as default app data to a new user.
+- Real MT5/demo data may only appear after the correct authenticated user connection is active.
+
+Tasks:
+
+1. Remove fake/mock/demo defaults from UI
+Audit the entire app for hardcoded or seeded display data, including:
+- fake account balances
+- fake equity
+- fake broker names
+- fake positions
+- fake trades
+- fake paper trade ideas
+- fake AI analysis
+- fake win/loss stats
+- fake confidence scores
+- fake risk scores
+- fake users
+- fake notifications
+- fake portfolio history
+- fake chart data
+- fake “connected” statuses
+- fake onboarding progress
+- fake strategy results
+
+Replace all fake displays with clean empty states.
+
+2. First-time user empty state
+When a user loads the app for the first time, show a clean first-run state:
+- Welcome to ARX AI
+- Connect your MT5 demo account
+- Create your first paper trade idea
+- Run your first AI analysis
+- View safety status
+- No trades yet
+- No broker connected yet
+- No paper ideas yet
+- No AI history yet
+
+The dashboard should not look broken or empty in a bad way. It should look intentional, clean, and professional.
+
+3. Data source rules
+Use this rule everywhere:
+- If real authenticated user data exists, show it.
+- If real data does not exist, show a first-time empty state.
+- Never fill gaps with fake data.
+- Never use mock data in production/dashboard pages.
+- Mock data can only exist inside clearly labeled dev/test files or Storybook-style preview files, not live user routes.
+
+4. MT5 bridge display logic
+The app should not globally show my test/demo MT5 account as if every user has it.
+
+Update MT5 dashboard logic:
+- If the current authenticated user has an active MT5 bridge connection, show real bridge/account/position data.
+- If no user connection exists, show:
+  “No MT5 demo account connected yet.”
+- If bridge is stale, show:
+  “MT5 connection stale.”
+- If disconnected, show:
+  “Not connected.”
+- Do not show account number, balance, broker, or position data unless it belongs to the current active authenticated user/session.
+
+5. Clear browser persistence
+Add or run a safe reset for front-end persisted state:
+- localStorage
+- sessionStorage
+- cached onboarding flags
+- cached dashboard data
+- stale Zustand/Redux/query cache data
+- old test flags
+- old selected symbols
+- old demo trade form data
+
+After reset, next load should behave like first visit.
+
+6. Clear or isolate seeded database data
+Audit seed scripts and default database bootstrap logic.
+
+If seed data exists:
+- Do not auto-seed fake trading data on app boot.
+- Do not auto-create fake trades, fake users, fake AI results, fake positions, or fake account snapshots.
+- Move seed/demo data behind an explicit dev-only command.
+- Production/default app load must be clean.
+
+If existing fake records are in the dev database:
+- Remove only fake/mock/test records.
+- Do not delete real auth users, secrets, or required system tables.
+- Do not delete safety configuration.
+- Do not delete migration history.
+
+7. Fresh visual polish
+Update first-load UI to look intentional:
+- clean hero/welcome card
+- clear setup checklist
+- empty-state cards with soft copy
+- no scary red errors unless something is actually wrong
+- no fake numbers
+- no random sample charts
+- no default “$100,000 balance” unless real MT5 data is connected
+- no fake AI recommendations
+
+Suggested first-load dashboard sections:
+- Safety Status: Live execution disabled
+- MT5 Demo Bridge: Not connected
+- Paper Trading: Ready to start
+- AI Analysis: No analysis yet
+- Trade Ideas: No ideas yet
+- Getting Started checklist
+
+8. Add a first-load QA test
+Create or update a QA test that verifies:
+- New browser session shows no fake account data.
+- New browser session shows no fake positions.
+- New browser session shows no fake trades.
+- New browser session shows no fake AI results.
+- Dashboard uses empty states.
+- MT5 data only appears when tied to a real active authenticated connection.
+- Safety status still shows correctly.
+- Live execution remains disabled.
+
+9. Return report
+After completing, return:
+- Files changed
+- Mock/fake data removed
+- Local/cache reset changes
+- Seed data changes
+- First-time UI sections updated
+- Safety checks confirmed
+- Final QA result

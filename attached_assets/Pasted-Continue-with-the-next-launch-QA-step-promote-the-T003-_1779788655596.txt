@@ -1,0 +1,166 @@
+Continue with the next launch QA step: promote the T003 PART C DOM/content check into a full E2E browser test and repair anything it catches.
+
+Current state from last report:
+- T003 is complete
+- Backend resolver, frontend hook, global UI, 16 user-spec pages, regression tests, CI guards, and full-slice QA are green
+- typecheck PASS
+- ci:guards 23/23 PASS
+- test:account-mode 32/32 PASS
+- test:live-phaseB 20/20 PASS
+- test:demo-arming 18/18 PASS
+- test:demo-verify 13/13 PASS
+- test:live-broker-resolver 4/4 PASS
+- arx_live_commands count remains 0
+- no safety gates weakened
+- no raw boolean leaks to normal users
+- no typed-phrase wording in normal-user UI
+- no duplicate mode systems
+
+Now finish the out-of-scope follow-up:
+PART C of the new test is currently skip-tolerant when no auth cookie is provided. Make it a real E2E DOM/content test for the running app.
+
+Do not place trades.
+Do not insert arx_live_commands.
+Do not type operator phrases.
+Do not broaden the narrow env parser.
+Do not weaken safety gates.
+Do not fake data.
+Do not expose admin diagnostics to normal users.
+
+Create checkpoint first:
+checkpoint: t003-part-c-full-e2e-dom-content-check
+
+Task 1 — Build real authenticated E2E coverage:
+Use the safest available test auth method already present in the app/test harness.
+
+If a test auth helper exists:
+- use it
+
+If an admin/dev owner session helper exists:
+- use it safely
+
+If no auth helper exists:
+- create a safe local-only/test-only auth fixture that cannot run in production and cannot place trades
+
+The E2E test must not depend on manually pasting cookies unless absolutely unavoidable. If an auth cookie is required, clearly document the exact env var/test fixture needed.
+
+Task 2 — Test live-mode DOM content:
+In LIVE_SHARED mode, visit the key user-facing pages and assert they no longer show demo/paper/simulator/misleading copy.
+
+Pages to test:
+- /my-account
+- /settings
+- /notifications
+- /help
+- /live-ai-assist
+- /trade
+- /live-shared
+- /trading-calendar
+- /live-intent-queue
+- /open-trades
+- /live-chart
+- /market-scanner
+- /alerts
+- /broker-reconciliation
+- /live-trading-control
+- /admin/allocations
+
+For normal user/live context, assert these do NOT appear on primary live pages unless inside Settings mode-switch options or admin-only diagnostics:
+- paper trade
+- demo trade
+- simulator only
+- mock
+- live trading disabled
+- MT5 bridge not configured
+- type ENABLE LIVE TRADING
+- QUEUE MICRO LIVE TEST
+- EXECUTE LIVE SHARED
+- canExecuteRealBrokerOrder
+- canSubmitLiveIntent
+- mt5Connected:
+- raw boolean labels
+- backend constants
+- route names
+- database table names
+
+Task 3 — Test mode agreement:
+Every tested page must agree with the global live header/account-mode resolver.
+
+Verify:
+1. Header says live mode.
+2. Page body does not contradict it.
+3. User pages use LIVE_SHARED language.
+4. Demo/paper only appears as Settings mode-switch option.
+5. Admin-only diagnostics are hidden when previewing as user.
+
+Task 4 — Test data mode separation:
+Assert live pages do not show demo/paper/test rows for:
+- Live Intent Queue
+- Trading Calendar
+- Open Positions
+- Trade History
+- P/L
+- Alerts
+- Scanner Trades
+- User Account Shell
+
+If test data exists, it must stay mode-scoped and hidden from live pages.
+
+Task 5 — Test crash pages:
+E2E visit and confirm no red runtime overlay/crash on:
+- /alerts
+- /broker-reconciliation
+- /live-trading-control
+
+Also assert safe empty/loading/error states render if backend arrays or dates are missing.
+
+Task 6 — Test /my-account allocation shell:
+For an attached shared-master user:
+- /my-account shows SHARED_MASTER_MT5 or clean shared-master wording
+- assigned allocation appears if allocated
+- AI sleeve appears if configured
+- user balance/equity come from user allocation shell
+- own MT5 bridge is not shown as the active path
+- normal user never sees master balance
+
+Task 7 — Test notification/help pages:
+- /notifications must not say live trading disabled while resolver says live armed
+- /help must not say mock/no connection while resolver says live bridge active
+- push notification setup must be independent from live trading state
+
+Task 8 — Repair anything failing:
+If a page still shows stale demo/paper/simulator copy, fix the page to consume useTradingMode().
+If a page still computes mode independently, migrate it.
+If a page crashes, add safe normalization and regression coverage.
+If a page leaks diagnostics, hide it behind admin-only diagnostics.
+
+After every fix:
+- retest that page
+- retest adjacent affected pages
+- checkpoint if the fix is meaningful
+
+Task 9 — Final QA:
+Run:
+- typecheck
+- build
+- ci:guards
+- test:account-mode
+- test:live-phaseB
+- test:demo-arming
+- test:demo-verify
+- test:live-broker-resolver
+- attached-active-case test
+- allocation runtime QA
+- new full E2E DOM/content check
+- arx_live_commands count check
+
+Final report only:
+- E2E test created/updated
+- pages tested
+- stale copy/leaks/crashes found
+- fixes made
+- QA results
+- arx_live_commands count
+- confirmation no live trades were placed
+- confirmation no safety gates were weakened
+- remaining issues only if they require human credentials/manual browser action

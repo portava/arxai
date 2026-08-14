@@ -1,0 +1,64 @@
+Proceed with operator-side live arming prerequisites only.
+
+Do NOT enable ARX_LIVE_BROKER_EXECUTION_ENABLED.
+Do NOT place a live trade.
+Do NOT create a live command.
+Do NOT auto-click the controlled live test.
+
+Before changing anything, verify:
+- ARX_LIVE_BROKER_EXECUTION_ENABLED is false/unset
+- arx_live_commands count is still 0
+- kill switch / arming changes cannot dispatch a live order while master switch is false
+
+Then complete only these operator-side prerequisites for user 4 / account 62470041:
+
+1. Release the test kill switch if it is active only because of prior verification testing.
+   - Set kill_switch_active=false
+   - Set emergency_stop_active=false
+   - Keep the visible kill switch button available in UI
+
+2. Record admin approval for user 4.
+   - approved_for_live=true
+   - approved_by/admin audit field saved
+   - approved_at timestamp saved
+
+3. Configure live user settings for user 4:
+   - allowed_symbols = ["EURUSD"]
+   - max_lot_per_market = {"EURUSD": 0.01}
+   - daily_loss_limit_usd = 25
+   - stop_loss_required = true
+   - scanner_live_enabled = false until first controlled live test passes
+
+4. Set live trading state out of LIVE_LOCKED into armed/prepared state, but still blocked by master switch.
+   - live_trading_state.armed = true
+   - live_trading_state.mode = ARMED_PENDING_MASTER_SWITCH or equivalent
+   - do not mark live as fully enabled
+
+5. Confirm Live Arming / Unlock Card still requires the operator confirmation phrase:
+   ENABLE LIVE TRADING
+
+6. Run the 16-gate evaluator again.
+
+Expected result:
+- real EA v1.27 heartbeat = PASS
+- account 62470041 = PASS
+- AccountType REAL/live = PASS
+- ReadOnlyMode=false = PASS
+- EnableLiveExecution=true = PASS
+- MaxLiveLot=0.01 = PASS
+- stop loss required = PASS
+- user/admin/settings/arming gates = PASS
+- kill switch inactive = PASS
+- Market Scanner live still locked = PASS
+- arx_live_commands count = 0
+- no live trade placed
+
+The only remaining blocker should be:
+ARX_LIVE_BROKER_EXECUTION_ENABLED=false/unset
+
+If that is true, output:
+READY_FOR_MASTER_SWITCH
+
+If any other blocker remains, output:
+NOT_READY_FOR_MASTER_SWITCH
+and list exact blockers.

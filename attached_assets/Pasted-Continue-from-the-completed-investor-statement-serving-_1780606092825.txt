@@ -1,0 +1,105 @@
+Continue from the completed investor statement serving/access work.
+
+Before changing anything:
+1. Read the latest task summary, recent commits, test output, and any remaining follow-up/task list.
+2. Confirm follow-up #183 is fully obsolete because the new investor statement serving/access test covers file download scoping.
+3. Do not reopen #183 unless you find a real uncovered gap.
+4. Identify the next highest-priority unresolved investor/admin/security follow-up related to investor statements, file access, statement publishing, statement transparency, or admin mutation safety.
+
+Your next mission:
+Perform a full investor-statement security and workflow hardening pass, but only on remaining uncovered gaps. Do not duplicate the work already completed.
+
+Scope to inspect:
+
+A. Investor statement access control
+- Verify every investor statement endpoint requires the correct role.
+- Verify investors can only access their own statements.
+- Verify plain USER accounts cannot access investor-only statement routes.
+- Verify one investor cannot access another investor’s files, metadata, statement previews, downloads, publish status, or transparency views.
+- Verify admin can access the correct admin statement routes.
+- Verify admin-only mutation routes are blocked from investor/plain USER roles.
+- Verify stale, deleted, unpublished, revoked, or replaced statement files cannot still be downloaded through old URLs.
+- Verify any generated download URL is scoped to the correct investor/statement/file and cannot be guessed or reused across users.
+
+B. Statement publishing workflow
+- Verify draft → published workflow is protected.
+- Verify publish/unpublish/revoke/replace actions require admin.
+- Verify published statements show only approved investor-facing fields.
+- Verify hidden ARX/internal calculations remain hidden from investor-facing responses.
+- Verify investor dashboard receives only the investor allocation/gain/loss/NAV-supported information it is supposed to show.
+- Verify no internal split logic, ARX capital gain logic, trader payout logic, admin notes, system calculation internals, or backend diagnostic fields leak into investor APIs or UI payloads.
+
+C. File cleanup and replacement safety
+- Verify when a statement file is replaced, the old file becomes inaccessible if intended by the business logic.
+- Verify cleanup tasks do not remove active published statement files.
+- Verify cleanup tasks remove only orphaned, expired, revoked, or unused files.
+- Verify cleanup cannot cross investor boundaries.
+- Verify cleanup logs are admin-safe and do not leak private file paths to investors.
+
+D. Mutation and isolation tests
+Add or extend tests only where gaps exist.
+The tests must cover:
+- plain USER denied from investor statement downloads
+- investor denied from another investor’s statement download
+- investor denied from admin mutation endpoints
+- admin allowed where appropriate
+- revoked/unpublished/replaced files denied
+- published/current files allowed only for the rightful investor
+- cleanup does not break valid published/current files
+- hidden/internal fields never appear in investor-facing response JSON
+
+Important:
+If a current test expects 404 but the app correctly returns 403 because the role gate blocks earlier, accept either 403 or 404 where both represent safe denial. Do not weaken authorization logic just to satisfy a brittle assertion.
+
+E. UI/API consistency check
+Inspect the investor dashboard statement UI and API mapping.
+Confirm:
+- investor sees statement list only for their account
+- investor can download only their own allowed statements
+- failed access attempts do not show confusing UI errors
+- admin sees admin controls only in admin mode
+- regular user/investor mode hides admin controls
+- statement status labels are clean and user-facing
+- no backend route names, file keys, internal IDs, storage paths, or debug objects are exposed in the UI
+
+F. Required testing
+Run the smallest relevant tests first, then broader verification:
+1. Existing cleanup tests
+2. Existing serving/access tests
+3. Existing admin mutation tests
+4. Existing publish-status tests
+5. Existing transparency tests
+6. Any new tests added in this pass
+7. Typecheck for all packages
+8. Lint/build if available and not too expensive
+
+If any test is killed due to memory/no output:
+- rerun with output captured to a file
+- use memory-safe test flags/options
+- run the specific test file directly
+- do not mark complete until the failure reason is known
+
+Pass criteria:
+- All related investor statement tests pass.
+- All new tests pass.
+- Typecheck is clean.
+- No investor can access another investor’s data or files.
+- Plain USER is denied from investor statement routes.
+- Investor cannot use admin mutation routes.
+- Admin can still perform intended statement actions.
+- No internal ARX/trader/split/backend calculation details leak to investor-facing APIs or UI.
+- No active published/current statement files are accidentally cleaned up.
+- No obsolete follow-up remains open if fully covered.
+
+When finished, report:
+1. What remaining gap was found.
+2. What files were changed.
+3. What tests were added or updated.
+4. Exact test results.
+5. Any follow-up task that became obsolete.
+6. Any remaining risk that still needs a separate task.
+
+Do not stop at “mostly working.”
+Do not skip tests.
+Do not delete functionality to make tests pass.
+If something breaks, find the correct fix, rerun, and continue until the investor-statement workflow is secure, scoped, and clean.

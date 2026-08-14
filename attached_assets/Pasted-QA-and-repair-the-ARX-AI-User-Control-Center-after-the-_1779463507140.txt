@@ -1,0 +1,122 @@
+QA and repair the ARX AI User Control Center after the last build.
+
+Focus only on the admin User Control Center, user search, real-user visibility, test-user hiding, mobile layout, and simple admin access controls.
+
+DO NOT rebuild unrelated pages.
+
+CHECK AND FIX:
+
+1. MOBILE LAYOUT
+- Test on iPhone/mobile width.
+- Tabs must not overlap.
+- Tab labels must not sit on top of titles.
+- Content must have proper spacing under tabs.
+- Bottom nav must not cover user rows or buttons.
+- If tabs still wrap badly, replace mobile tabs with a dropdown selector or horizontal scroll pill row.
+
+2. REAL USER SEARCH
+- Search must work across all real users, not only pending users.
+- Searching “andraie”, “Andraie”, “andraie.co@gmail.com”, or partial email must find the real account if it exists anywhere in users.
+- Search must include active, pending, invited, disabled, paper, demo, and live users.
+- Normalize search by lowercasing and trimming spaces.
+- If exact Andraie email does not exist in the database, show a clear admin message:
+  “No real user found with this email. Check the invite/login email used.”
+- Do not incorrectly say “No pending users” when searching all users.
+
+3. HIDE TEST / SYSTEM USERS
+- Hide fake/generated/seed/QA users from the default admin list.
+- Hide users matching:
+  - armgate-*
+  - demogate-*
+  - qa-symex-*
+  - *@arx.local
+  - *@arx.test
+  - seed/demo/bridge/test generated accounts
+- Do not delete them unless deletion is already proven safe.
+- Mark them as isTestUser=true or isSystemUser=true if needed.
+- Default admin view must show real users only.
+- Test/System Users can exist in a separate admin-only advanced view, hidden by default.
+
+4. SIMPLE ADMIN ACCESS FLOW
+Giving a user access must be the easiest possible process.
+
+For every real user, admin should see one clear:
+- Manage Access
+
+Inside Manage Access, admin should be able to control everything important from one clean panel:
+- Approve User
+- Disable User
+- Set Role
+- Set Paper/Demo/Live mode
+- Approve Live Trading
+- Revoke Live Trading
+- Enable Shared/Master Bridge
+- Disable Shared/Master Bridge
+- Assign Risk Template
+- Set max lot size
+- Set max daily loss
+- Set max open trades
+- Enable/disable scanner access
+- Enable/disable Ruby AI access
+- Add admin note
+
+Do not force admin to jump across multiple tabs just to approve one user.
+
+5. QUICK PRESETS
+Make sure simple presets exist and work:
+- Paper Only
+- Demo Tester
+- Demo + Scanner
+- Live Pending Review
+- Live Approved Conservative
+- Live Approved Standard
+- Disable Trading
+- Emergency Lockdown
+
+Admin should be able to apply a preset, preview the changes, then confirm.
+
+6. SAFETY CONFIRMATIONS
+Keep dangerous changes protected but not confusing:
+- Live trading approval requires confirmation.
+- Shared/master bridge approval requires confirmation.
+- Increasing max lot size or max daily loss requires confirmation.
+- Bulk live/shared bridge approval requires per-user confirmation.
+- Lower-risk changes should not require unnecessary extra steps.
+
+7. USER APPROVALS TAB
+- User Approvals should show pending/invited users.
+- If admin searches for an already-active user there, show:
+  “This user is already active. Manage access from the Manage Access panel.”
+- Do not hide active users from global search.
+
+8. PERMISSIONS TAB
+- Permissions should show real users only by default.
+- Each real user row/card should show:
+  - email/name
+  - account status
+  - role
+  - trading mode
+  - live trading approval
+  - shared/master bridge approval
+  - invite code if available
+  - last login if available
+  - Manage Access button
+
+9. SECURITY
+- Regular users must not see admin pages, admin nav, test users, system users, backend labels, schema names, route names, or operator-only controls.
+- Admin controls must stay role-protected server-side and UI-side.
+
+10. ACCEPTANCE TEST
+Verify before stopping:
+- Tabs do not overlap on mobile.
+- Andraie search works if that account exists.
+- Active users are searchable.
+- Pending users still appear in approvals.
+- Fake/test users are hidden from default admin lists.
+- Admin can give access from one simple Manage Access panel.
+- Dangerous actions require confirmation.
+- Audit log records admin changes.
+- Regular users cannot access admin controls.
+- Login, scanner, Ruby, trading modal, bridge status, and bottom navigation still work.
+
+Fix anything that fails before stopping.

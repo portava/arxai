@@ -1,0 +1,127 @@
+Finish the owner-account recovery and close the remaining stale QA gaps.
+
+Current security status:
+
+* SmokeTest!2026 login against owner returns 401.
+* Any other password against owner returns 401.
+* user 4 password_hash is NULL.
+* user 4 auth_user_sessions rows = 0.
+* arx_live_commands count remains 0.
+* No trades placed.
+* No env flags changed.
+* No safety gates weakened.
+* ci:guards is now 24/24 PASS with the new password-seeding guard.
+
+Do not place trades.
+Do not insert arx_live_commands.
+Do not type operator phrases.
+Do not weaken safety gates.
+Do not print passwords, password hashes, reset tokens, session tokens, secrets, or credential values.
+Do not set a known/shared/default password.
+Do not ask me to paste a password into Claude chat.
+
+Create checkpoint first:
+checkpoint: owner-login-recovery-and-final-test-cleanup
+
+Task 1 — Add safe owner password reset path:
+Create a secure owner password reset method that does not expose the password in chat, logs, browser console, or test output.
+
+Preferred:
+
+* Add a local/server-side script such as:
+    pnpm run owner:reset-password
+* The script should prompt securely for the new owner password in the shell.
+* It should hash the password.
+* It should update only user 4 / andraie.co@gmail.com.
+* It should invalidate all existing sessions.
+* It should mark passwordResetRequired=false after successful reset.
+* It must never print the password or hash.
+
+If a secure reset flow already exists, verify it and give me the exact safe steps to use it.
+
+Do not run the reset with a test/default password.
+Do not choose the new password for me.
+Do not store the password in code.
+Do not store the password in test fixtures.
+Do not log the password/hash.
+
+Task 2 — Verify owner lockout and reset behavior:
+Before reset:
+
+* SmokeTest!2026 must fail.
+* user 4 sessions must be 0.
+* password_hash must be NULL or reset-required.
+
+After I run the secure reset script/flow:
+
+* owner login works with my chosen password.
+* SmokeTest!2026 still fails.
+* sessions are only created by real login.
+* no known test password remains active.
+
+Task 3 — Fix the remaining mode-scope test failure:
+Current issue:
+
+* test:mode-scope is 28/29.
+* The remaining failure is described as a stale literal-source-match looking for positions/all in a route file path that no longer exists.
+
+Investigate:
+
+1. Open the failing assertion.
+2. Confirm whether it is a stale test path or real route bug.
+3. If stale, update the test to inspect the current real route/component path.
+4. If real, fix the route code.
+5. Re-run test:mode-scope until 29/29 PASS.
+
+Do not weaken the mode-scope rule.
+LIVE_SHARED must not show DEMO/PAPER/TEST rows.
+
+Task 4 — Fix auth-login-roles test dependency:
+Current issue:
+
+* test:auth-login-roles did not run because ARX_ADMIN_PASSWORD env is not set.
+
+Fix the test harness so it does not require a real owner password secret for normal CI:
+
+* Use isolated seeded test users.
+* Or explicitly skip with a clear “requires ARX_ADMIN_PASSWORD” message only in manual mode.
+* Do not use user 4.
+* Do not write password_hash for real users.
+* Do not require real secrets for standard CI if the test can be safely seeded.
+
+Task 5 — Add regression guard against future password seeding:
+The new guard must fail CI if any script/test/seed attempts to:
+
+* update password_hash for user 4
+* hard-code SmokeTest!2026 or any known shared password for a real account
+* seed auth sessions for real owner/admin users
+* print password hashes or reset tokens
+* update real user credentials outside the safe owner reset script
+
+Task 6 — Final QA:
+Run:
+
+* pnpm run typecheck
+* pnpm run ci:guards
+* test:account-mode
+* test:admin-unrestricted-risk
+* test:mode-scope
+* test:live-phaseB
+* test:demo-arming
+* test:demo-verify
+* test:auth-login-roles if safely runnable
+* new password-seeding guard
+* arx_live_commands count before/after
+
+Final report only:
+
+* owner account security status
+* whether safe reset script/flow exists
+* exact safe reset steps for me to run
+* whether SmokeTest!2026 is rejected
+* whether mode-scope is 29/29
+* whether auth-login-roles is runnable or clearly manual-only
+* QA results
+* arx_live_commands count
+* confirmation no trades placed
+* confirmation no safety gates weakened

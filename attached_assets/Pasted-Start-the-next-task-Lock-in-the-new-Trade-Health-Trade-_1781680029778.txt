@@ -1,0 +1,62 @@
+Start the next task: Lock in the new Trade Health / Trade Eligibility contract.
+
+Goal:
+Create one shared display contract that explains whether a setup is healthy/readable/actionable, without allowing display confidence to bypass live execution safety gates.
+
+Hard rule:
+The new verdict can ONLY downgrade or explain. It must never grant live-trade eligibility by itself. Existing live execution gates remain final.
+
+Requirements:
+1. Inventory every surface that currently shows trade confidence, readability, health, or execution readiness:
+   - Scanner
+   - Ruby chat
+   - Chart
+   - Trade ticket
+   - Manual ticket
+   - Backtest result cards
+   - Alerts
+   - Any AI setup cards
+
+2. Create one shared trade-health/readiness contract with clear fields:
+   - readLayer
+   - feedVerdict
+   - dataFreshness
+   - structureConfidence
+   - setupHealth
+   - executionBlockedReason
+   - displayLabel
+   - userFacingTrustLine
+   - mayShowTradeButton
+   - mayShowOneClickButton
+   - mayDescribeSetup
+   - mayRequestLiveExecution
+
+3. Separate display from execution:
+   - Display flags may explain what the user sees.
+   - Execution gates decide whether a live order can actually be placed.
+   - No live/safety module may import display-only mayShow* flags.
+
+4. Add CI guard:
+   - live execution modules cannot import display-only confidence/readiness helpers.
+   - trade-health helpers cannot directly approve live execution.
+   - all live orders still pass the existing execution gate stack.
+
+5. Refactor duplicated confidence/readability labels to consume the shared contract.
+
+6. Preserve owner/admin live rules already defined:
+   - owner/admin may be unrestricted by caps
+   - but still must go through the live execution path and broker dispatch truth
+   - no fake “execution-ready” label from display confidence alone
+
+7. Add tests:
+   - stale feed cannot show execution-ready
+   - historical-only feed cannot show live-confirmed
+   - Ruby and Scanner labels match
+   - Trade ticket cannot become enabled from display confidence alone
+   - live gate failure overrides every display label
+   - display-only import guard catches unsafe imports
+
+8. Verification:
+   - Scanner, Ruby, Chart, and Trade Ticket all explain the same verdict for the same symbol/timeframe
+   - no contradiction between “readable,” “tradable,” “live-confirmed,” and “execution allowed”
+   - no surface claims live-ready when feed is stale, historical-only, or unconfirmed

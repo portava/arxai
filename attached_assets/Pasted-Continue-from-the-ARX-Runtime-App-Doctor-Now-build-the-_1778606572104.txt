@@ -1,0 +1,304 @@
+Continue from the ARX Runtime App Doctor.
+
+Now build the ARX Guided Setup + Status Command Center.
+
+Goal:
+The app should clearly show the user the current ARX system status, setup progress, blockers, MT5/bridge state, readiness state, and safest next step without forcing the user to guess or ask multiple questions.
+
+This should work together with ARX Assistant, App Doctor, Knowledge System, Runtime Context, and Status/Badge registries.
+
+This is a setup, diagnostics, onboarding, and status clarity upgrade only.
+Do not enable live trading.
+Do not change broker execution logic.
+Do not change MT5 execution logic.
+Do not bypass risk controls.
+Do not fake readiness, heartbeat, or broker connection.
+
+Phase 1 — Create ARX Status Command Center
+Create a central page or upgrade an existing status/readiness/help page into:
+
+“ARX Status Command Center”
+
+It should show:
+- Overall app readiness
+- Current trading mode
+- Paper-only status
+- Simulator mode status
+- Live trading disabled status
+- Live broker execution disabled status
+- MT5 bridge status
+- Heartbeat status
+- Broker read-only status
+- Readiness status
+- Emergency Stop status
+- Active safety locks
+- Current selected symbol
+- Current route/app area
+- Recent safe errors/failures
+- Safest next step
+
+Use real app state only. Do not hardcode fake connected or ready states.
+
+Phase 2 — Add readiness score
+Create a user-facing readiness score.
+
+Example:
+ARX Readiness: 42 / 100
+
+Break it into sections:
+- App Health
+- User Permission
+- Safety Locks
+- Paper/Simulator Readiness
+- MT5 Bridge
+- Heartbeat
+- Broker Mode
+- Risk Controls
+- Assistant Knowledge
+- Runtime Diagnostics
+
+Important:
+Readiness score should not imply live trading is available.
+Even with a high readiness score, if live trading is disabled, clearly show:
+“Live trading remains unavailable.”
+
+Phase 3 — Add setup checklist UI
+Create a visual setup checklist with statuses:
+- Complete
+- Needs attention
+- Blocked
+- Unavailable
+- Not required right now
+
+Checklist items:
+1. Understand ARX AI mode
+2. Confirm Paper Only mode
+3. Confirm Simulator Mode
+4. Review Risk page
+5. Review Readiness
+6. Check MT5 Bridge page
+7. Verify heartbeat
+8. Confirm broker read-only / execution state
+9. Understand Live Trading Disabled
+10. Understand Emergency Stop
+11. Review Paper Session blockers
+12. Review Replay / Coach / Data
+13. Confirm Report Issue path
+14. Run App Doctor diagnosis
+15. Ask ARX Assistant a question
+
+Each checklist item should include:
+- status
+- explanation
+- why it matters
+- safe next step
+- related page button if route exists
+
+Phase 4 — Add blocker cards
+Show clear cards for active blockers.
+
+Each blocker card should include:
+- blocker name
+- severity
+- what it blocks
+- why it is active
+- whether it is protective or an error
+- how to check it
+- safe next step
+- related page button
+
+Blockers to support:
+- Emergency Stop active
+- Live Trading Disabled
+- Live Broker Execution Disabled
+- MT5 Deferred
+- Simulator Mode
+- Broker Read-Only
+- Missing Heartbeat
+- Bridge Disconnected
+- Readiness Incomplete
+- Paper Session Blocked
+- Autopilot Blocked
+- Permission Missing
+- Failed API Endpoint
+- UI/Layout Issue
+- Missing Knowledge
+
+Phase 5 — Add “Fix first” priority section
+At the top of the page, show:
+
+“What to fix first”
+
+Use the same priority logic from App Doctor:
+1. Emergency Stop active
+2. Live trading safety lock explanation
+3. Missing MT5 heartbeat
+4. Bridge disconnected/deferred
+5. Broker read-only
+6. Readiness incomplete
+7. Paper session blockers
+8. Failed API endpoints
+9. Broken route/navigation
+10. UI overlap/layout issue
+11. Missing assistant knowledge
+
+For each result, show:
+- first thing to check
+- why it matters
+- page to open
+- what not to do
+- safe alternative
+
+Never recommend enabling live trading as the next step.
+
+Phase 6 — Add guided setup wizard
+Create a guided step-by-step wizard:
+
+“Start Safe Setup”
+
+Wizard steps:
+1. Understand the current ARX mode
+2. Review active safety locks
+3. Check simulator/paper mode
+4. Check MT5 bridge status
+5. Check heartbeat
+6. Review broker mode
+7. Review readiness
+8. Review risk controls
+9. Confirm Emergency Stop behavior
+10. Practice only in paper/simulator mode
+11. Report unresolved issues
+
+Each step should have:
+- short explanation
+- current status
+- button to open related page
+- button to ask ARX Assistant about this step
+- completion condition based on app state or user acknowledgment
+
+Do not let the wizard enable live trading.
+
+Phase 7 — Connect ARX Assistant to the Status Command Center
+Assistant should be able to:
+- open Status Command Center
+- explain the readiness score
+- explain each checklist item
+- explain each blocker card
+- answer “what should I fix first?”
+- answer “why is this not ready?”
+- guide user through the setup wizard
+- attach current Status Command Center summary to Report Issue
+
+Add assistant quick actions:
+- Open Status Command Center
+- Explain readiness score
+- What should I fix first?
+- Start Safe Setup
+- Explain active blockers
+- Diagnose current app status
+
+Phase 8 — Add route links safely
+Only create buttons for valid existing routes.
+
+Possible route buttons:
+- Open Cockpit
+- Open Trade
+- Open AI
+- Open Risk
+- Open More
+- Open Help Center
+- Open MT5 Bridge
+- Open Readiness
+- Open Replay
+- Open Data
+- Open Broker Settings
+- Open Report Issue
+- Open Assistant Knowledge Console
+
+If a route does not exist, do not fake it. Show closest valid route.
+
+Phase 9 — Add visual status language
+Use clear visual sections:
+- Green/ready: informational only, no issue
+- Yellow/attention: setup or clarity needed
+- Red/blocked: action unavailable or safety lock active
+- Purple/simulator: simulated/non-live state
+- Blue/info: help or explanation
+
+Do not rely on color alone. Include text labels and icons.
+
+Phase 10 — Add mobile layout
+Mobile layout must be clean:
+- cards stacked vertically
+- sticky top summary if useful
+- assistant floating above bottom nav
+- no overlap with Emergency Stop
+- checklist easy to tap
+- blocker cards readable
+- setup wizard buttons large enough
+- no horizontal overflow
+
+Phase 11 — Add desktop layout
+Desktop layout should feel like a command center:
+- top readiness summary
+- left column: setup checklist
+- middle column: blockers/status cards
+- right column: safest next step / assistant / diagnostics
+- route buttons visible
+- no sidebar/menu overlap
+
+Phase 12 — Add tests
+Add tests for:
+- readiness score calculation
+- checklist generation
+- blocker card generation
+- fix-first priority logic
+- route button validity
+- safe setup wizard flow
+- assistant links to Status Command Center
+- no fake routes
+- no live trading enablement
+- no broker execution changes
+- no MT5 execution changes
+- no risk bypass
+- no secrets exposed
+- mobile layout does not block nav
+- desktop layout does not block sidebar
+
+Phase 13 — Runtime QA
+Manually verify:
+
+Mobile:
+1. Open Status Command Center.
+2. Confirm readiness score displays.
+3. Confirm active blockers display.
+4. Tap “What should I fix first?”
+5. Tap “Start Safe Setup.”
+6. Open ARX Assistant from the page.
+7. Ask “Explain my readiness score.”
+8. Confirm bottom nav remains clickable.
+9. Confirm Emergency Stop remains separate.
+
+Desktop:
+1. Open Status Command Center.
+2. Confirm full command-center layout.
+3. Click route buttons.
+4. Open Knowledge Console if admin/tester.
+5. Confirm assistant explains blockers correctly.
+6. Confirm no trading execution behavior changed.
+
+Phase 14 — Report back
+Return:
+- files changed
+- Status Command Center route/page created or updated
+- readiness score sections added
+- checklist items added
+- blocker cards added
+- setup wizard steps added
+- assistant quick actions added
+- route coverage result
+- test results
+- mobile QA result
+- desktop QA result
+- remaining gaps
+- confirmation that live trading, MT5 execution, broker execution, and risk controls were not changed

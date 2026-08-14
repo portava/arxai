@@ -1,0 +1,187 @@
+Build the ARX AI Beta Readiness + Monitoring + Safe Launch Checklist layer.
+
+SCOPE LOCK:
+Only work on:
+1. Beta readiness checks.
+2. App health monitoring.
+3. Error tracking / clean failure visibility.
+4. User-facing beta status.
+5. Admin/operator readiness dashboard.
+6. Small cleanup needed to make beta testing safer.
+
+Do not:
+- Enable live trading.
+- Place live trades.
+- Change MT5 execution permissions.
+- Change kill switches.
+- Change admin approval rules.
+- Change Ruby intelligence.
+- Change scanner calculations.
+- Change trade execution logic.
+- Redesign unrelated pages.
+
+GOAL:
+Prepare ARX AI for controlled beta testing by giving the operator a clear view of system health, missing setup, user readiness, and app errors before testers use it.
+
+PART 1 — Beta readiness checklist
+
+Create or improve an admin/operator-only Beta Readiness page or panel.
+
+Checklist sections:
+
+System:
+- Frontend build status
+- Backend health status
+- API health
+- Database connected
+- Auth working
+- User roles working
+- Admin routes protected
+
+Trading safety:
+- Broker execution status
+- MT5 bridge status
+- Demo/simulator status
+- Kill switch status
+- Admin approval gates
+- Risk rules enabled
+- Live execution disabled unless explicitly approved
+
+User features:
+- Login
+- Invite code
+- Request access
+- Forgot password
+- Cockpit/dashboard
+- Trade ticket
+- Open trades
+- Market Scanner
+- Ruby AI
+- Risk Command Center
+- Alerts/watchlist
+- Trade history/activity
+
+Data readiness:
+- Symbols loaded
+- Scanner data available
+- MT5 account data connected or cleanly unavailable
+- Open trades endpoint working
+- Slot allocation endpoint working
+- Audit logs working
+- Ledger records working
+- Reconciliation working
+
+Each item should show:
+- Ready
+- Warning
+- Blocked
+- Not configured
+
+Use clean labels. No raw function names, route names, or stack traces.
+
+PART 2 — Admin health overview
+
+Add a compact admin-only health overview showing:
+- Backend online/offline
+- MT5 bridge connected/disconnected/stale
+- Scanner feed status
+- Ruby service status
+- Auth status
+- Database status
+- Recent app errors
+- Recent blocked trade attempts
+- Recent failed API calls
+- Last reconciliation time
+- Active users / invited users if available
+
+Do not expose this to regular users.
+
+PART 3 — Clean user-facing beta status
+
+For regular users, show only simple safe states:
+- “Trading access locked”
+- “Broker execution disabled”
+- “Simulator available”
+- “Scanner available”
+- “Ruby available”
+- “MT5 data unavailable” if disconnected
+
+Do not show backend internals.
+
+PART 4 — Error handling and logging
+
+Verify or add clean backend logging for:
+- failed auth
+- failed invite code
+- failed request access
+- failed password reset request
+- failed scanner fetch
+- failed Ruby request
+- failed MT5 bridge read
+- failed open trades/account metrics read
+- failed audit/ledger/reconciliation read
+
+Rules:
+- Store enough internal detail for admin/operator debugging.
+- Never show raw stack traces to regular users.
+- Never expose secrets or broker credentials.
+- User-facing errors must be short and human-readable.
+
+PART 5 — Beta tester readiness
+
+If invite system already exists, add or verify admin can see:
+- invited users
+- pending users
+- approved users
+- rejected/disabled users
+- trading access status
+- simulator access status
+- live access status
+- last login
+- account status
+
+Do not create a separate admin login.
+Do not expose admin tools to regular users.
+
+PART 6 — Beta launch checklist UI
+
+Add a final launch checklist card:
+
+Required before beta:
+- App builds
+- Backend online
+- Auth works
+- Admin role protected
+- Invite flow works
+- Scanner visible
+- Ruby available
+- Risk rules active
+- Trade ticket opens
+- No live execution unless explicitly approved
+- No admin tools visible to users
+- No master account metrics visible to users
+- No raw errors visible
+- Mobile layout passes
+
+PART 7 — Cleanup
+
+Remove only proven-unused beta/debug artifacts:
+- old debug banners
+- duplicate readiness panels
+- dead test components
+- stale mock status cards shown as real
+- unused imports
+
+If uncertain, report instead of deleting.
+
+Acceptance checklist:
+1. Admin has a clear beta readiness view.
+2. Health statuses are visible to admin.
+3. Regular users only see simple safe status messages.
+4. Backend failures produce clean user-facing messages.
+5. No secrets, stack traces, route names, or function names are exposed.
+6. Invite/user readiness can be reviewed if invite system exists.
+7. Live execution remains disabled unless already approved by existing gates.
+8. No trade execution logic was changed.
+9. No live trades were placed.
+10. App builds.

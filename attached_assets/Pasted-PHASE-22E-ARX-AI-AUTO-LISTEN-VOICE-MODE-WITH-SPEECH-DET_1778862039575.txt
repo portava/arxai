@@ -1,0 +1,152 @@
+PHASE 22E — ARX AI AUTO-LISTEN VOICE MODE WITH SPEECH DETECTION
+
+Continue from the current ARX AI voice/chat system. Do NOT rebuild the full app. Do NOT redesign the AI popup. Patch the existing AI voice assistant so it behaves like a live voice assistant.
+
+GOAL:
+When the ARX AI chat popup is opened, the AI should automatically listen for the user’s voice. When the user starts speaking, it records. When the user stops speaking, it automatically stops recording, sends what was said, and responds. This must only happen while the AI popup is open.
+
+IMPORTANT PRIVACY RULE:
+The AI must NEVER listen in the background.
+The AI can only access the microphone when:
+1. The ARX AI popup/chat is open,
+2. The user has granted microphone permission,
+3. Auto-listen mode is enabled,
+4. The user has not manually turned the mic off.
+
+When the popup closes, recording/listening must stop immediately and all microphone tracks must be released.
+
+TASK A — INSPECT CURRENT VOICE CHAT FIRST
+Before editing, inspect the current AI chat voice files and identify:
+- AI popup component
+- mic button logic
+- MediaRecorder/audio recording logic
+- voice request API route
+- text-to-speech/playback logic
+- current “Mic off,” “Speak: on,” and “Realtime ready” badge logic
+
+Report what files are involved before patching.
+
+TASK B — ADD AUTO-LISTEN STATE SYSTEM
+Add these voice states to the AI chat:
+
+- micPermission: "unknown" | "granted" | "denied"
+- autoListenEnabled: boolean
+- aiPanelOpen: boolean
+- voiceState:
+  - "idle"
+  - "listening"
+  - "hearing_speech"
+  - "processing"
+  - "ai_speaking"
+  - "error"
+
+The user-facing badge should show clean states:
+- “Listening…” when waiting for speech
+- “Hearing you…” when voice is detected
+- “Processing…” after speech ends
+- “Speaking…” when ARX is responding with audio
+- “Mic off” when disabled
+- “Mic permission needed” if permission is not granted
+
+TASK C — AUTO START LISTENING WHEN POPUP OPENS
+When the ARX AI popup opens:
+1. If mic permission is already granted and autoListenEnabled is true, begin listening automatically.
+2. If permission is unknown, show a clean prompt/button asking the user to enable mic.
+3. Do NOT auto-request the mic repeatedly in a way that annoys the user.
+4. If permission is denied, show:
+   “Microphone access is blocked. Enable it in your browser settings to use voice chat.”
+
+On iPhone/Safari, handle browser permission limitations gracefully.
+
+TASK D — IMPLEMENT VOICE ACTIVITY DETECTION
+Use Web Audio API with AnalyserNode or an existing lightweight local VAD approach.
+
+The system should:
+- Detect when the user starts speaking.
+- Begin recording only after real speech is detected.
+- Detect silence after the user stops speaking.
+- Automatically stop recording after silence.
+- Send the audio to the existing voice endpoint.
+- Then play/respond with ARX AI.
+
+Recommended VAD behavior:
+- Calibrate room noise for 500–800ms when listening starts.
+- Use a dynamic noise floor instead of a hardcoded volume threshold only.
+- Start recording after speech is detected for about 250–400ms.
+- Stop recording after about 900–1300ms of silence.
+- Hard max recording length: 15 seconds.
+- Minimum clip length: 400ms so accidental taps/noise do not send empty requests.
+- Add a small pre-speech buffer if possible so the first word is not cut off.
+
+TASK E — PREVENT AI FROM RECORDING ITSELF
+When ARX AI is speaking:
+- Pause or suspend auto-listening while TTS/audio is playing.
+- Resume listening only after the AI audio response ends.
+- If user taps mic while AI is speaking, stop the AI audio and start listening again.
+- Prevent feedback loops where the mic records the AI’s own voice.
+
+TASK F — ONLY ACTIVE WHILE POPUP IS OPEN
+Add cleanup rules:
+- If popup closes, stop MediaRecorder.
+- Stop all MediaStream tracks.
+- Cancel VAD loop/requestAnimationFrame.
+- Stop any active audio playback if needed.
+- Reset voiceState to idle or mic off.
+- Do not keep microphone active after closing the panel.
+- Tapping outside the popup should close the popup and stop listening.
+
+TASK G — UPDATE MIC BUTTON BEHAVIOR
+The mic button should now work like this:
+- Tap once: toggle auto-listen on/off.
+- If auto-listen is on and popup is open, start listening automatically.
+- If auto-listen is off, stop all listening/recording.
+- Hold-to-talk is optional, but do not remove the current mic button.
+- Show a clear active visual state when auto-listen is on.
+
+TASK H — SAFE ERROR HANDLING
+If voice request fails:
+- Do not show raw backend errors.
+- Do not show stack traces.
+- Do not show HTML error pages.
+- Use clean messages only.
+
+Use these messages:
+- Voice too large: “Voice clip is too long. Please try a shorter message.”
+- No speech detected: “I didn’t catch that. Try speaking again.”
+- Mic blocked: “Microphone access is blocked. Enable it in your browser settings.”
+- Network issue: “Connection issue. Please try again.”
+- AI unavailable: “ARX AI is reconnecting. Try again in a moment.”
+
+TASK I — KEEP TEXT CHAT WORKING
+Text chat must still work normally.
+Auto-listening must not block typing.
+If the user types while listening, keep the mic state stable unless they turn it off or close the panel.
+
+TASK J — QA / FIX GATE
+After patching, run QA before stopping.
+
+QA must verify:
+1. Opening AI popup starts listening automatically only when mic permission is granted.
+2. AI does not listen when popup is closed.
+3. AI starts recording when user speaks.
+4. AI stops recording after user stops speaking.
+5. AI sends only one request per spoken message.
+6. AI responds after speech ends.
+7. AI does not record itself while speaking.
+8. Mic button toggles auto-listen on/off.
+9. Tapping outside popup closes it and stops mic.
+10. Long voice clips are blocked cleanly.
+11. No raw stack trace appears in the chat.
+12. Text chat still works.
+13. Mobile Safari layout remains stable.
+14. Market data disconnected state does not break voice chat.
+
+Only continue if QA passes. If anything fails, fix it first and rerun QA.
+
+After completion, report:
+- files changed
+- how auto-listen works
+- how speech/silence detection works
+- how mic cleanup works when popup closes
+- whether AI speech playback resumes listening afterward
+- any limitations on iPhone/Safari

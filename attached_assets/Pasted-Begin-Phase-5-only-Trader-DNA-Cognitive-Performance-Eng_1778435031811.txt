@@ -1,0 +1,76 @@
+Begin Phase 5 only: Trader DNA + Cognitive Performance Engine.
+
+Do not build Replay Lab, Portfolio Manager, Evolution, or live auto-execution yet.
+
+Goal:
+Protect the trader from behavioral risk, emotional trading, fatigue, revenge trading, overtrading, and decision-quality breakdowns.
+
+Build:
+
+/src/domain/trader-dna/
+  traderDNA.types.ts
+  traderProfile.engine.ts
+  personalEdgeMap.engine.ts
+  behaviorPattern.engine.ts
+  revengeTradingDetector.engine.ts
+  overtradeGuard.engine.ts
+  sessionPerformance.engine.ts
+  symbolPerformance.engine.ts
+  strategyPerformanceByTrader.engine.ts
+  personalRiskAdjustment.engine.ts
+
+/src/domain/cognitive/
+  cognitiveState.types.ts
+  cognitiveLoad.engine.ts
+  stressModel.engine.ts
+  fatigueModel.engine.ts
+  pacing.engine.ts
+  emotionalDegradation.engine.ts
+  cooldown.engine.ts
+
+Rules:
+- Trader DNA cannot place trades.
+- Cognitive Engine cannot place trades.
+- These systems can recommend WAIT, REDUCE_SIZE, COOLDOWN, RECOVERY_MODE, or HARD_BLOCK.
+- After losing streaks, increased trade frequency, revenge behavior, rule violations, or abnormal emotional risk patterns, reduce permissions automatically.
+- Trader performance must be tracked by:
+  - symbol
+  - session
+  - strategy
+  - time of day
+  - trade sequence
+  - post-loss behavior
+  - manual override behavior
+- Cognitive risk score must be consumed by Risk Governor.
+- Trader DNA state must be consumed by Control Tower.
+- UI explanations must be firm but not shame the trader.
+- All behavior/cognitive events must be logged into the Black Box Vault.
+- Keep all previous phase tests passing.
+
+Required outputs:
+- traderRiskScore
+- cognitiveRiskScore
+- personalEdgeScore
+- revengeRisk
+- fatigueRisk
+- overtradeRisk
+- recommendedPermissionLevel
+- recommendedAction
+
+Acceptance criteria:
+- System detects revenge-trading risk.
+- System detects overtrading risk.
+- System detects fatigue/cognitive load risk.
+- System can force cooldown or recovery mode through Control Tower.
+- System adjusts trade permission based on personal performance patterns.
+- System explains behavior risk clearly and respectfully.
+- No live auto-execution is enabled yet.
+
+After Phase 5, stop and report:
+1. Files created
+2. Trader DNA factors implemented
+3. Cognitive risk factors implemented
+4. Risk Governor integration completed
+5. Control Tower integration completed
+6. Tests passed/failed
+7. Whether Phase 6 is safe to begin

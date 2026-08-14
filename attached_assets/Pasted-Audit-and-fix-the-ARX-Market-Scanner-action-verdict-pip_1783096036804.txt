@@ -1,0 +1,78 @@
+Audit and fix the ARX Market Scanner action/verdict pipeline.
+
+Problem:
+On every scanned market, the ACTION card stays stuck on “Checking…” or sometimes “No confirmation” forever. The chart and live candles load correctly, so do not rebuild the chart/data feed. Fix the scanner decision/action state only.
+
+Required behavior:
+1. Every market scan must always resolve to a final visible action state within a reasonable timeout.
+2. Valid final states must include:
+   - BUY confirmation
+   - SELL confirmation
+   - WAIT / developing
+   - NO TRADE
+   - NO CONFIRMATION
+   - DATA UNAVAILABLE
+   - ERROR with honest reason
+3. The UI must never stay on “Checking…” indefinitely.
+4. If Eleanor/full-read/scanner analysis fails, show the reason and fall back to a deterministic rule-based scanner verdict instead of leaving the action card pending.
+5. If confirmation data is missing, stale, incomplete, or below confidence threshold, show “No confirmation” with the exact missing reason.
+6. Add a hard timeout to the scan promise/state machine so unresolved async checks convert to a safe final state.
+7. Make sure switching symbols/timeframes cancels or ignores stale in-flight scans so old results do not overwrite new markets.
+8. Make sure all markets in the supported scanner list resolve correctly, including synthetics like V75, V75 1s, V25 1s, Crash/Boom, forex, metals, indices, BTCUSD, ETHUSD.
+9. Do not loosen live-trade safety gates. This is only about scanner verdict visibility and action resolution.
+10. Do not rebuild scanner UI. Fix the existing pipeline.
+
+Audit these areas first:
+- Market Scanner page/component state for actionStatus/actionVerdict/checking/loading
+- scanner analysis hook/service
+- Eleanor market-read service
+- confirmation resolver
+- signal confidence resolver
+- API route used by scanner verdicts
+- any polling/query invalidation logic
+- timeout/retry/error handling
+- symbol/timeframe change effects
+
+Fix requirements:
+- Replace indefinite loading state with a finite state machine:
+  idle → checking → resolved | no_confirmation | no_trade | data_unavailable | error | timeout
+- Add clear reason text for every non-trade result.
+- Add fallback verdict generation when AI read fails but candles exist.
+- Add stale-request protection with requestId or AbortController.
+- Ensure React Query/SWR/cache keys include symbol + timeframe.
+- Ensure backend scanner response always returns a normalized payload:
+  {
+    symbol,
+    timeframe,
+    status,
+    action,
+    confidence,
+    reason,
+    missingConfirmations,
+    timestamp,
+    source
+  }
+- Frontend must render the normalized payload instead of guessing from partial fields.
+
+Testing:
+Add or update tests proving:
+1. Scanner action never remains “Checking…” after timeout.
+2. Failed Eleanor/API analysis resolves to fallback verdict.
+3. Missing confirmation resolves to “No confirmation” with reason.
+4. Symbol/timeframe switch ignores stale previous result.
+5. All supported market symbols can produce a normalized scanner result.
+6. Live trade buttons remain gated by existing safety pipeline.
+
+Validation:
+Run:
+- scanner-related unit tests
+- frontend typecheck
+- api-server typecheck
+- route/guard tests if present
+
+Report back with:
+- root cause
+- files changed
+- exact final scanner states added
+- test results
+- confirmation that “Checking…” cannot hang forever anymore

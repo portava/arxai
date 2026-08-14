@@ -1,0 +1,345 @@
+Continue ARX AI by building the Portfolio Exposure, Correlation, and Account Health Engine.
+
+Do not rebuild blindly. Inspect the current:
+- Open Trades
+- Trade History
+- Risk Governor
+- Position Sizing Engine
+- Broker Symbol Specs Engine
+- Opportunity Radar
+- AI Scanner Brain
+- Trade Decision Orchestrator
+- Trade Action Center
+- MT5 account sync
+- MT5 position sync
+- user-owned MT5 routing
+- shared-master routing
+- virtual allocation ledger
+- unified alerts
+- AI assistant context builder
+- dashboard account cards
+
+Goal:
+Make ARX AI understand total account health, total exposure, correlated trades, margin risk, drawdown risk, and whether the user should open more trades, reduce risk, or stop trading for the day.
+
+Important:
+Do not auto-close trades.
+Do not auto-open trades.
+Do not bypass Risk Governor.
+Do not invent account balance, equity, margin, P&L, or exposure.
+Do not expose shared master credentials or another user’s allocation.
+Live/demo actions still require user confirmation.
+
+PART 1 — Portfolio Exposure Engine
+
+Create a portfolio exposure service that calculates for each user:
+
+- account balance
+- account equity
+- free margin
+- margin used
+- margin level if available
+- unrealized P&L
+- realized P&L today
+- total open trades
+- total open lot size
+- total risk at stop loss if available
+- total exposure by symbol
+- total exposure by currency
+- total exposure by asset class
+- total exposure by strategy/playbook
+- total exposure by routing mode
+- total exposure by demo/live account type
+- daily drawdown
+- weekly drawdown
+- max current loss if all SLs hit
+- profit currently open
+- loss currently open
+
+If MT5/account data is missing, show unavailable instead of fake data.
+
+PART 2 — Correlation Risk Engine
+
+Detect when trades are stacking risk.
+
+Examples:
+- multiple USD-based trades
+- EURUSD buy + GBPUSD buy may both depend on USD weakness
+- XAUUSD buy may be affected by USD/news risk
+- multiple trades on same symbol
+- multiple trades in same direction
+- multiple trades opened during same session
+- multiple trades using same strategy
+- multiple trades exposed to same news event
+
+Create correlation labels:
+- Low correlation risk
+- Medium correlation risk
+- High correlation risk
+- Same-symbol stacking
+- Same-currency stacking
+- Same-direction stacking
+- News-correlated exposure
+- Strategy concentration risk
+- Data insufficient
+
+PART 3 — Account Health Score
+
+Create an Account Health Score from 0–100.
+
+Use:
+- margin health
+- daily loss remaining
+- open drawdown
+- correlated exposure
+- number of open trades
+- risk per trade
+- total risk at stop
+- event/news exposure
+- stale MT5 data
+- execution issues
+- ignored alerts
+- trading after loss limit warning
+
+Labels:
+- Healthy
+- Caution
+- Risk elevated
+- High risk
+- Close-only recommended
+- Trading should pause
+- Data insufficient
+
+PART 4 — Portfolio Risk Alerts
+
+Create alerts when:
+- margin level drops below threshold
+- free margin is low
+- daily drawdown approaches limit
+- daily loss limit hit
+- too many trades open
+- same-symbol exposure is high
+- same-currency exposure is high
+- correlated trades are stacking risk
+- account health score drops
+- user should consider close-only mode
+- MT5 sync is stale while trades are open
+
+Alert actions:
+- View Portfolio
+- Ask AI
+- Review Risk
+- Review Close
+- Pause New Trades
+
+No instant execution.
+
+PART 5 — Dashboard Portfolio Card
+
+Add a clean dashboard card:
+
+“Account Health”
+
+Show:
+- health score
+- balance/equity
+- unrealized P&L
+- daily P&L
+- open trades
+- total risk
+- margin status
+- correlation warning
+- current recommendation
+
+Examples:
+- “Healthy — risk is within limits.”
+- “Caution — 3 trades depend on USD weakness.”
+- “High Risk — daily loss is near limit. New trades may be blocked.”
+
+PART 6 — Portfolio Page
+
+Create or improve a Portfolio / Account Health page.
+
+Sections:
+1. Account Summary
+2. Open Exposure
+3. Correlation Map
+4. Risk Limits
+5. Daily P&L
+6. Margin Health
+7. Strategy Exposure
+8. Event/News Exposure
+9. AI Recommendation
+10. Recent Risk Alerts
+
+PART 7 — Risk Governor Integration
+
+Risk Governor should use portfolio exposure before approving any new trade.
+
+Before a new trade queues, check:
+- total open exposure
+- same-symbol exposure
+- same-currency exposure
+- correlated risk
+- daily drawdown
+- margin risk
+- max open trades
+- account health score
+- shared-master allocation risk
+
+If risk is too high:
+- block trade if hard rule
+- warn if soft rule
+- recommend smaller size if possible
+- recommend close-only mode if needed
+
+PART 8 — Shared-Master Support
+
+In SHARED_MASTER_MT5 mode:
+- user only sees their own virtual allocation
+- user only sees their attributed trades
+- user portfolio health is based on their virtual account
+- master account exposure is only visible to admin
+- admin can see full shared-master exposure
+- normal users never see other users’ exposure, P&L, tickets, or allocations
+
+PART 9 — Admin Portfolio Risk View
+
+Admin Trading Control should show:
+- total platform exposure
+- demo exposure
+- live exposure
+- shared-master exposure
+- users near daily loss limit
+- users with high correlation risk
+- users in close-only mode
+- users with stale MT5 sync
+- margin-risk accounts
+- emergency risk warnings
+
+Admin controls:
+- put user in close-only mode
+- suspend user trading
+- reduce max exposure
+- block symbol
+- pause new trades globally
+- pause shared-master trading
+
+PART 10 — AI Portfolio Awareness
+
+Update AI so users can ask:
+
+- How healthy is my account?
+- Am I overexposed?
+- Can I open another trade?
+- Which trades are correlated?
+- Why did the system block my trade?
+- How much risk do I have open?
+- What happens if all my stop losses hit?
+- Am I too exposed to USD?
+- Should I stop trading today?
+- Which trades should I review first?
+- What is hurting my account most?
+
+AI must answer from real portfolio/risk data only.
+AI must clearly say when margin, balance, or correlation data is unavailable.
+AI must not give guaranteed financial outcomes.
+
+PART 11 — Backend/API
+
+Add endpoints:
+
+- GET /api/portfolio/summary
+- GET /api/portfolio/exposure
+- GET /api/portfolio/correlation
+- GET /api/portfolio/health
+- POST /api/portfolio/recalculate
+- GET /api/admin/portfolio/overview
+- GET /api/admin/portfolio/shared-master
+- POST /api/admin/portfolio/users/:id/close-only
+
+Add tables if missing:
+
+portfolio_exposure_snapshots:
+- id
+- user_id
+- account_type
+- routing_mode
+- balance
+- equity
+- free_margin
+- margin_used
+- margin_level
+- unrealized_pnl
+- realized_pnl_today
+- open_trade_count
+- total_open_lots
+- total_risk_at_stop
+- exposure_by_symbol
+- exposure_by_currency
+- exposure_by_strategy
+- data_quality
+- created_at
+
+portfolio_health_scores:
+- id
+- user_id
+- health_score
+- health_label
+- margin_risk_score
+- drawdown_risk_score
+- correlation_risk_score
+- exposure_risk_score
+- event_risk_score
+- reason_summary
+- recommended_action
+- data_quality
+- created_at
+
+correlation_risk_snapshots:
+- id
+- user_id
+- correlation_label
+- correlated_symbols
+- correlated_trades
+- risk_score
+- explanation
+- data_quality
+- created_at
+
+PART 12 — Tests
+
+Add or update tests for:
+1. Portfolio summary uses real user account/trade data.
+2. Missing MT5 data is labeled unavailable.
+3. User sees only their own portfolio exposure.
+4. Shared-master user sees only their virtual allocation.
+5. Admin can see shared-master total exposure.
+6. Correlation engine detects same-symbol stacking.
+7. Correlation engine detects same-currency exposure.
+8. Account Health Score updates when risk increases.
+9. Risk Governor uses portfolio exposure before approving trades.
+10. High exposure can block new trades.
+11. Close-only mode blocks new trades but allows risk reduction.
+12. Portfolio alerts fire when thresholds are crossed.
+13. AI explains account health from real data.
+14. AI does not invent balance, margin, or P&L.
+15. Mobile portfolio page works on iPhone Safari.
+16. No secrets are exposed.
+
+Final report:
+Return:
+- PASS or FAIL
+- Portfolio Exposure Engine status
+- Correlation Risk Engine status
+- Account Health Score status
+- Portfolio Alerts status
+- Dashboard Portfolio Card status
+- Portfolio Page status
+- Risk Governor integration status
+- Shared-Master support status
+- Admin Portfolio Risk View status
+- AI Portfolio Awareness status
+- mobile status
+- tests passed
+- remaining blockers

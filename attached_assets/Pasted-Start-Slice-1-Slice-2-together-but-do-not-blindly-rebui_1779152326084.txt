@@ -1,0 +1,194 @@
+Start Slice 1 + Slice 2 together, but do not blindly rebuild.
+
+First, check what already exists in the current ARX codebase, database schema, bridge logic, MT5 setup page, market scanner, command pipeline, Ruby responses, and live/demo bridge routing. Then build only the missing pieces needed for Centralized Master MT5 Bridge Mode.
+
+Do not touch Slice 3.
+Do not enable pooled live trading.
+Do not enable master live trading.
+Do not place live trades.
+Do not change EA code unless the audit proves it is required.
+Keep live master mode compliance-locked.
+
+Goal:
+Add a usable MASTER_BRIDGE_DEMO flow where one platform/operator MT5 demo bridge can route demo trades for users without each user connecting their own MT5 account.
+
+Audit first:
+
+1. Check existing tables/models for:
+   - MT5 bridge connections
+   - demo commands
+   - live commands
+   - user settings
+   - positions
+   - command source tracking
+   - bridge_connection_id mapping
+   - user_id mapping
+   - broker ticket mapping
+   - idempotency keys
+
+2. Check existing routing functions:
+   - per-user bridge selection
+   - demo command routing
+   - scanner trade routing
+   - live gate routing
+   - MT5 setup bridge status
+   - command result writeback
+
+3. Check existing UI:
+   - MT5 Setup page
+   - Market Scanner trade modal
+   - Recent Demo Commands
+   - Open Demo Positions
+   - Live Trading page
+   - Ruby explanation panels
+   - admin/settings pages
+
+4. Reuse existing structures wherever possible.
+   Do not duplicate tables or functions if the existing ones can be extended safely.
+
+Then build missing pieces for Slice 1 + Slice 2:
+
+A. Add platform bridge mode setting:
+- PER_USER_BRIDGE
+- MASTER_BRIDGE_DEMO
+- MASTER_BRIDGE_LIVE_LOCKED
+- MASTER_BRIDGE_LIVE_ENABLED
+
+Default remains:
+PER_USER_BRIDGE
+
+B. Add admin-only bridge mode switch:
+- switching to MASTER_BRIDGE_DEMO should route demo commands through the platform master demo bridge
+- switching back to PER_USER_BRIDGE should restore the current per-user bridge behavior
+- MASTER_BRIDGE_LIVE_LOCKED can exist but must block live commands
+- MASTER_BRIDGE_LIVE_ENABLED must remain unavailable/compliance locked
+
+C. Add master bridge routing layer:
+resolveTradeExecutionBridge(userId, mode)
+
+Rules:
+- PER_USER_BRIDGE uses the user’s own bridge
+- MASTER_BRIDGE_DEMO uses the active platform master demo bridge
+- MASTER_BRIDGE_LIVE_LOCKED blocks live commands
+- MASTER_BRIDGE_LIVE_ENABLED remains blocked unless compliance approval exists
+
+D. Add or extend data tracking so master demo trades store:
+- user_id
+- virtual_account_id if needed
+- master_bridge_connection_id
+- command_id
+- source_page
+- source_signal_id
+- symbol
+- side
+- order_type
+- requested_volume
+- executed_volume
+- stop_loss
+- take_profit
+- status
+- broker_ticket
+- fill_price
+- mt5_retcode
+- broker_message
+- reject_reason
+- idempotency_key
+- created_at
+- sent_to_mt5_at
+- filled_at / rejected_at
+
+E. Add user attribution:
+Every master bridge demo trade must map back to the correct ARX user.
+
+Use:
+- command id
+- user id
+- broker ticket
+- bridge connection id
+- order comment if supported:
+  ARX|user:{userId}|cmd:{commandId}|src:{source}
+
+F. Update MT5 Setup page:
+When MASTER_BRIDGE_DEMO is active, show:
+“Platform Master Bridge Active”
+
+Users should not be told to install their own EA in this mode.
+
+Show:
+- master bridge status
+- EA version
+- account number
+- broker/server
+- heartbeat freshness
+- demo enabled
+- live locked
+
+G. Update Trade and Market Scanner:
+In MASTER_BRIDGE_DEMO mode:
+- users can place demo trades without their own MT5 bridge
+- Buy/Sell from Market Scanner routes through master demo bridge
+- source remains MARKET_SCANNER
+- Ruby explains:
+  “This trade is routed through the ARX master demo bridge and tracked under your ARX account.”
+
+H. Add/extend user-facing My Trades:
+Users should only see their own master-routed demo trades.
+They must not see other users’ trades or allocations.
+
+I. Add admin Master Bridge Dashboard:
+Show:
+- active master bridge
+- account balance/equity
+- open broker positions
+- user allocations
+- recent master commands
+- failed/rejected commands
+- orphan broker positions
+- reconciliation warnings
+
+J. Add risk controls for master demo:
+- per-user max lot
+- max open trades per user
+- max symbol exposure per user
+- max total master account exposure
+- stop loss rule if configured
+- duplicate command protection
+- cooldown after rejected/failed orders
+
+K. Keep live master bridge locked:
+MASTER_BRIDGE_LIVE_LOCKED must block all live commands with:
+MASTER_LIVE_BRIDGE_LOCKED
+
+If compliance flag is missing, block with:
+MASTER_LIVE_COMPLIANCE_LOCK
+
+L. Do not break existing behavior:
+- per-user demo bridge still works
+- per-user live gates still work
+- demo command history still works
+- scanner demo trading still works
+- Ruby still appears as Ruby
+- no secrets exposed
+
+Acceptance proof:
+1. Existing PER_USER_BRIDGE mode still works.
+2. Admin can switch to MASTER_BRIDGE_DEMO.
+3. A user with no personal MT5 bridge can place one small EURUSD 0.01 demo trade through the master bridge.
+4. The command stores the correct user_id.
+5. Broker ticket maps to the correct ARX command/user.
+6. Trade appears under that user’s My Trades.
+7. Another user cannot see that trade.
+8. Market Scanner Buy/Sell works through master demo bridge.
+9. Ruby explains master bridge routing.
+10. Duplicate tap does not create duplicate orders.
+11. Oversized trade is blocked by per-user risk.
+12. Admin dashboard shows master bridge activity.
+13. MASTER_BRIDGE_LIVE_LOCKED blocks all live commands.
+14. No live command is created.
+15. No bridge token, API key, broker password, or secret appears in UI/logs/Ruby memory.
+
+After the audit, tell me:
+- what already existed
+- what was reused
+- what was added
+- what was intentionally not changed

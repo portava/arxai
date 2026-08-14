@@ -1,0 +1,90 @@
+Update the previous instruction.
+
+We are only doing LIVE testing for this phase.
+
+Do not use simulator data.
+Do not use mock trade results.
+Do not use fake scalp results.
+Do not use sandbox wording.
+Do not use Paper Trading.
+Do not use dry-run trade proof as the final verification.
+
+The purpose of this phase is to confirm the Ruby Scalp Signals system works against the real LIVE app flow.
+
+Required change:
+All final verification for trade readiness, Watch Mode, Broad Scan scalp ranking, Build Scalp Trade, and post-trade review must be proven through the LIVE environment only.
+
+Before placing any live test trade:
+
+* confirm the live bridge is connected
+* confirm the live EA is polling correctly
+* confirm the selected account is live-enabled
+* confirm owner/admin approval is active
+* confirm kill switch is OFF
+* confirm symbol is tradeable
+* confirm lot size is the smallest approved live test size
+* confirm SL and TP are valid for the broker
+* confirm margin is sufficient
+* confirm the scalp setup has not expired
+* confirm Ruby is not using stale scanner data
+
+Use the smallest approved live test size only.
+
+For Broad Scan:
+
+* verify Broad Scan scalp ranking uses real live scanner/symbol data
+* if Broad Scan shows scanned: 0, fix the live data flow
+* do not fill Broad Scan with fake placeholder results
+* do not call simulator data “proof”
+
+For Watch Mode:
+
+* test against real live scanner movement/data
+* Watch Mode must alert only
+* Watch Mode must not auto-place a trade
+* Watch Mode can prepare the existing live trade modal when the setup becomes READY
+* expired or late setups must be blocked from live submission
+
+For Build Scalp Trade:
+
+* the generated scalp must open the existing live trade modal
+* the modal must be prefilled with the real symbol, direction, lot size, TP, SL, risk, and Ruby explanation
+* the system must revalidate everything immediately before Confirm Live Trade
+* if the setup is invalid, stale, late, expired, or unsafe, block submission and explain why
+
+For post-trade review:
+
+* use a real live trade result only
+* use actual order/position/retcode data returned from the EA/broker
+* do not fabricate a trade review
+* Ruby should explain the result in plain English using the real closed trade data available
+
+Final proof required:
+
+* Broad Scan live data flow verified
+* Focus Scan live scalp signal verified
+* Ruby Scalp Builder live output verified
+* Build Scalp Trade live modal prefill verified
+* smallest-size live trade test result shown
+* EA claim/completion shown
+* broker/MT5 retcode shown
+* SL/TP/lot validation shown
+* Watch Mode tested with live scanner data
+* post-trade review generated from real live result
+* confirmation that no simulator, mock, fake, sandbox, or Paper Trading fallback was used
+
+Do not report this complete until the LIVE path is proven end-to-end.
+If a live test fails, do not hide it. Show the exact failure point:
+
+* scanner data issue
+* symbol issue
+* lot sizing issue
+* margin issue
+* bridge readiness issue
+* EA claim issue
+* broker rejection
+* retcode issue
+* expired setup
+* UI wiring issue
+
+Fix the issue and retest through the live path.

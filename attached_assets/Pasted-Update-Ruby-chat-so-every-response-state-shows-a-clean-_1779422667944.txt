@@ -1,0 +1,195 @@
+Update Ruby chat so every response state shows a clean animated “Ruby is thinking…” or “Ruby is typing…” indicator instead of raw internal tool/function labels.
+
+Current screenshot issue:
+- When Ruby is processing “Summarize my trading performance…”, the UI shows an internal-looking green chip:
+  getMyPerformanceSummary
+- This is confusing and makes the app feel unfinished.
+- Users should always see a human-friendly Ruby status with animated three-dot typing/thinking feedback.
+
+Goal:
+Whenever Ruby is responding to anything in chat, show a clear animated status:
+- “Ruby is thinking…” before the response starts
+- “Ruby is typing…” while text is streaming/rendering
+- optional contextual statuses like “Ruby is checking your performance…” only if they are user-friendly
+- animated three dots should be visible during all pending states
+
+Do not show raw tool names, function names, route names, API method names, or internal labels to normal users.
+
+1. Inspect active Ruby chat components first
+
+Find the active deployed Ruby chat UI/component that renders:
+- chat messages
+- quick suggestions
+- tool/function calls
+- voice command responses
+- market reads
+- performance summaries
+- streaming responses
+- pending/loading states
+
+Do not create duplicate Ruby chat components.
+Fix the active runtime path.
+
+2. Replace internal tool chips with friendly Ruby status
+
+Hide raw labels like:
+- getMyPerformanceSummary
+- getMarketRead
+- executeTradeIntent
+- validateLiveTrade
+- fetchScannerData
+- any camelCase function/tool name
+
+Instead show a friendly pending bubble:
+
+Ruby is thinking [animated dots]
+
+or, when streaming:
+
+Ruby is typing [animated dots]
+
+For performance summary specifically:
+- While loading: “Ruby is reviewing your performance…”
+- But still include animated dots.
+- Do not show getMyPerformanceSummary to regular users.
+
+Admin/dev mode can optionally reveal internal tool names inside a collapsed debug drawer only.
+
+3. Add global Ruby response state
+
+Create or update a single shared Ruby response state model:
+
+- idle
+- listening
+- transcribing
+- thinking
+- usingTool
+- typing
+- speaking
+- error
+
+Map the UI labels:
+
+idle: no typing indicator
+listening: “Ruby is listening…”
+transcribing: “Ruby is understanding you…”
+thinking: “Ruby is thinking…”
+usingTool: “Ruby is checking…” or contextual friendly text
+typing: “Ruby is typing…”
+speaking: “Ruby is speaking…”
+error: show friendly error message
+
+Every Ruby request path must update this state:
+- text chat submit
+- quick suggestion click
+- voice command submit
+- market analysis
+- scanner explanation
+- trading command
+- performance summary
+- memory lookup
+- chart/market question
+- app help question
+
+4. Animated three dots
+
+Add a reusable component:
+
+RubyTypingIndicator
+
+It should show:
+- Ruby avatar or small Ruby label
+- status text
+- three animated dots
+- smooth pulse/bounce animation
+- accessible label for screen readers
+
+Example visual:
+Ruby is thinking •••
+
+The dots should animate until Ruby finishes responding.
+
+5. Streaming behavior
+
+When the user sends a message:
+- immediately add user message
+- immediately show RubyTypingIndicator with “Ruby is thinking…”
+- if Ruby begins streaming text, change to “Ruby is typing…”
+- once complete, remove the indicator and show the final Ruby message
+- if Ruby uses a tool, keep the indicator visible until the final answer appears
+
+Do not leave the user staring at a blank area.
+
+6. Tool call behavior
+
+When Ruby calls internal tools:
+- keep a normal Ruby status bubble visible
+- do not show internal function chips in the main chat
+- if the tool takes longer than 2 seconds, show friendly contextual text:
+  - “Ruby is checking your performance…”
+  - “Ruby is reading the scanner…”
+  - “Ruby is reviewing your open trades…”
+  - “Ruby is checking market data…”
+
+Never expose raw tool names to users.
+
+7. Quick suggestions
+
+When the user taps a quick suggestion:
+- treat it exactly like a normal chat message
+- show “Ruby is thinking…” immediately
+- then “Ruby is typing…” while response appears
+- hide internal function labels
+
+8. Voice mode
+
+When voice is used:
+- while listening: “Ruby is listening…”
+- after voice stops: “Ruby is understanding you…”
+- while processing: “Ruby is thinking…”
+- while responding by text: “Ruby is typing…”
+- while speaking aloud: “Ruby is speaking…”
+
+Keep the animated dots during active states.
+
+9. Clean placeholder wording
+
+Replace “Ask ARX…” with:
+- “Ask Ruby…”
+
+Because the assistant in the app should consistently appear as Ruby.
+
+10. Mobile UI
+
+On iPhone Safari:
+- typing indicator should fit inside chat width
+- no horizontal overflow
+- indicator should not cover the text input
+- bottom nav should not cover chat controls
+- Ruby floating bubble should not overlap the chat input
+- status chips should wrap cleanly
+
+11. Tests
+
+Run:
+- pnpm run typecheck
+- pnpm run ci:guards
+- pnpm --filter @workspace/scripts run test:live-phaseB
+
+Add/update tests proving:
+- text chat submit shows Ruby is thinking indicator
+- quick suggestion click shows Ruby is thinking indicator
+- streaming response switches to Ruby is typing
+- performance summary does not show getMyPerformanceSummary in normal UI
+- internal tool names are hidden from non-admin users
+- voice command shows listening/transcribing/thinking/typing/speaking states
+- Ask ARX placeholder is replaced with Ask Ruby
+- typing indicator disappears after final response
+- mobile chat has no horizontal overflow
+
+Do not remove Ruby features.
+Do not remove tool execution.
+Do not remove performance summary.
+Do not remove voice mode.
+Do not create duplicate Ruby chat components.
+Only clean the user-facing response/loading state so Ruby always feels alive and clear.

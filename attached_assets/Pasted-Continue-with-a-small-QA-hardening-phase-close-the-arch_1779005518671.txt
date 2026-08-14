@@ -1,0 +1,113 @@
+Continue with a small QA-hardening phase: close the architect-recommended non-blocking gaps from the latest Trade Journal / Performance Analytics phase.
+
+Do NOT build unrelated features.
+Do NOT redesign unrelated pages.
+Do NOT unlock live trading.
+Do NOT enable auto-close execution.
+Do NOT enable shared MT5 routing.
+Do NOT send MT5 execution, modification, cancel, or close commands.
+Do NOT weaken safety envelope, per-user isolation, command queue, risk, attribution, activityStatus, paper-only, MT5 bridge, ALERT_ONLY, notification, market-data, or audit gates.
+Do NOT fake trades, P&L, win rate, performance stats, lessons, market data, candles, news, current events, TP targets, or bridge status.
+
+Before coding:
+1. Read the latest QA report appended to docs/FULL_TRADING_INTELLIGENCE_ENGINE_QA_REPORT.md.
+2. Confirm the phase says safe to continue from.
+3. Confirm the only architect-recommended gaps are:
+   - AI routing unit tests for new performance prompts
+   - Golden prompt-routing test for isEmpty:true strict empty-state reply
+   - Keep prompt block in sync if getMyPerformanceSummary payload shape changes later
+4. If any P0/P1 issue exists, stop and fix that first.
+
+Fix only these QA gaps:
+
+A. AI Routing Unit Tests
+Add tests proving performance/journal prompts route to the correct read-only performance tool.
+
+Cover prompts like:
+- “How am I performing?”
+- “What trades did I take today?”
+- “What was my biggest mistake?”
+- “Which strategy is working best?”
+- “Which trade hurt me most?”
+- “Am I overtrading?”
+- “What should I review?”
+- “What lessons can I take from my closed trades?”
+
+Confirm:
+- These route to the performance/journal summary tool.
+- They do not route to live trade execution tools.
+- They do not route to order placement tools.
+- They do not route to MT5 command queue execution.
+- They remain read-only.
+
+B. Golden Empty-State Test
+Add a golden test for getMyPerformanceSummary returning isEmpty:true.
+
+Expected assistant behavior:
+- It must clearly say there is not enough trade history yet.
+- It must not invent trades.
+- It must not invent P&L.
+- It must not invent win rate.
+- It must not invent strategy performance.
+- It must not invent lessons.
+- It should explain the user needs paper/demo trades before analytics can be calculated.
+
+C. Prompt / Tool Contract Sync Guard
+Add a test or lightweight contract assertion so the prompt guidance remains synchronized with the getMyPerformanceSummary payload shape.
+
+Confirm the prompt/tool contract covers:
+- isEmpty
+- totalTrades
+- openTrades
+- closedTrades
+- pendingOrders
+- winRate if available
+- realizedPnL if available
+- unrealizedPnL if available
+- unavailableReason / dataQuality status
+- strategy breakdown if available
+- risk/performance limitations
+
+If the payload shape changes later, tests should fail instead of allowing the AI to hallucinate.
+
+D. Preserve Safety
+Confirm all remain true:
+- Live trading = BLOCKED
+- Auto-close = ALERT_ONLY
+- Shared MT5 routing = BLOCKED
+- MT5 commands = force-BLOCKED
+- Command execution = disabled
+- Safety envelope allows read-only AI Q&A only
+- Backend per-user isolation intact
+- UNKNOWN activity hard-blocks auto-close
+- No fake trades, P&L, performance, market data, candles, news, TP targets, or bridge status
+
+Run:
+1. Typecheck
+2. Full guard suite
+3. Stop-limit/order-type QA
+4. AI routing unit tests
+5. Golden empty-state test
+6. Prompt/tool contract sync test
+7. Per-user isolation regression
+8. Safety-envelope regression
+9. Runtime smoke test
+
+If anything fails:
+- Fix only confirmed P0/P1 issues.
+- Do not redesign unrelated UI.
+- Do not touch unrelated pages.
+- Rerun all checks.
+
+End with a report showing:
+- Files inspected
+- Files changed
+- AI routing tests added
+- Empty-state golden test result
+- Prompt/tool contract sync result
+- Tests run/pass/fail
+- Confirmation live trading remains BLOCKED
+- Confirmation auto-close remains ALERT_ONLY
+- Confirmation shared MT5 routing remains BLOCKED
+- Confirmation MT5 commands remain force-BLOCKED
+- Final answer: READY FOR NEXT PHASE or NOT READY, with reasons.

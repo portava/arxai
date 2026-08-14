@@ -1,0 +1,217 @@
+BUILD PHASE — Per-User Virtual Balance, Buying Power + Risk Limit Profiles
+
+Use the current codebase. Do not rebuild unrelated systems.
+
+Goal:
+Give every user a private account-like trading experience with their own balance view, equity, buying power, open risk, daily P/L, daily loss limit, max lot size, and risk profile — even when the backend routes approved live trades through the shared master MT5 bridge.
+
+Important:
+For shared master MT5 mode, normal users should not see the full master account balance. They should see only their own assigned capital allocation, personal risk limits, personal P/L, and personal available trading power.
+
+1. Inspect existing account/ledger/risk systems first
+- Inspect current user model, session model, account mode handling, shared master ledger, trade command queue, exposure reservations, P/L calendar, admin approval system, and risk checks.
+- Reuse existing models and routes where possible.
+- Do not create a duplicate disconnected account system.
+- Add only the missing virtual balance / allocation / risk profile pieces.
+
+2. Per-user account shell
+Create or strengthen a private account shell for each user.
+
+Each user account shell should support:
+- userId
+- account mode: Demo / Personal MT5 / Shared Master MT5
+- assigned capital allocation
+- starting balance
+- current personal balance
+- personal equity
+- realized P/L
+- unrealized P/L
+- open exposure
+- available risk
+- margin/risk used if available
+- daily P/L
+- weekly P/L
+- total P/L
+- max lot size
+- max open trades
+- max daily loss
+- max exposure per symbol
+- allowed symbols
+- account status: Active / Waiting for approval / Paused / Restricted / Needs review
+
+Do not show shared master global balance to normal users.
+
+3. Shared master personal allocation logic
+For SHARED_MASTER_MT5 mode:
+- Treat each user like they have a private account allocation.
+- Calculate the user’s account view from their own ledger entries only.
+- User balance/equity should be based on:
+  - assigned starting allocation
+  - realized P/L from their closed trades
+  - unrealized P/L from their open mapped trades
+  - fees/spread/slippage if available
+- Do not mix P/L between users.
+- If a trade cannot be confidently mapped to the user, mark it NEEDS_REVIEW and exclude it from normal user balances until admin resolves it.
+- If exact allocation is uncertain, do not guess.
+
+4. User-facing “My Account” view
+Add or improve a user-facing account section showing:
+- My Balance
+- My Equity
+- Today’s P/L
+- Open P/L
+- Closed P/L
+- Available Risk
+- Open Exposure
+- Daily Loss Remaining
+- Max Lot Size
+- Max Open Trades
+- Account Mode
+- Approval Status
+- Trading Status
+
+Use clean language. Avoid technical labels like shared_master_account_id or raw bridge status on the main user view.
+
+5. Admin allocation console
+Add admin-only controls to:
+- assign a user’s starting capital allocation
+- increase/decrease a user’s assigned allocation
+- pause or resume a user’s trading access
+- assign a risk profile
+- set max lot size
+- set max open trades
+- set max daily loss
+- set max exposure per symbol
+- set allowed symbols
+- view each user’s personal balance/equity/P/L
+- view needs-review allocation items
+
+Do not call these real deposits or withdrawals unless a legal brokerage/custody/payment system has been built. Use safer language like “capital allocation,” “test allocation,” or “assigned trading allocation.”
+
+6. Risk gate integration
+Update the trade safety gate so every trade checks the user’s private limits before queueing.
+
+Block trades if:
+- user has no assigned allocation
+- account status is paused/restricted
+- user is waiting for approval
+- trade exceeds max lot size
+- trade exceeds max open trades
+- trade exceeds max exposure per symbol
+- trade exceeds available risk
+- trade would violate daily loss limit
+- symbol is not allowed
+- shared master mapping is missing
+- bridge is unhealthy
+- live/admin approval is missing
+- confirmation/one-click rules fail
+
+Return clean user-facing reasons such as:
+- “Trading is waiting for admin approval.”
+- “This trade is above your max lot size.”
+- “This symbol is not enabled for your account.”
+- “Your daily loss limit has been reached.”
+- “Your available risk is too low for this trade.”
+
+7. Personal Ruby awareness
+Ruby should understand each user’s private account shell.
+
+Ruby can explain:
+- “Your available risk is…”
+- “Your daily loss remaining is…”
+- “This trade is blocked because it exceeds your max lot size.”
+- “Your account is waiting for admin approval.”
+- “Your open exposure is high on this symbol.”
+- “Your personal P/L today is…”
+
+Ruby must not reveal:
+- other users
+- full shared master balance
+- global master P/L
+- admin-only data
+- bridge secrets or account credentials
+
+8. P/L calendar connection
+Connect the private balance/account shell to the user’s personal P/L calendar:
+- daily P/L
+- winning days
+- losing days
+- open P/L
+- closed P/L
+- number of trades per day
+- best trade
+- worst trade
+- symbols traded
+- account mode used
+
+Only show the current user’s data.
+
+9. Reconciliation safety
+If the system detects:
+- mapped trade mismatch
+- uncertain MT5 callback
+- missing execution ID
+- duplicate callback
+- partial fill not fully allocated
+- master position that cannot be assigned to a user
+
+Then:
+- mark the item NEEDS_REVIEW
+- alert admin
+- exclude it from normal user balance calculations until resolved
+- do not allow unsafe close/edit from normal user view
+
+10. UI/UX polish
+Make the app feel personal:
+- Use “My Account,” “My Balance,” “My Risk,” “My Trades,” “My Performance”
+- Do not make users feel like they are inside a shared backend account.
+- Keep admin/master bridge details hidden from normal users unless needed as a simple status.
+- Mobile layout must be clean and easy to read.
+
+11. Audit logs
+Add audit logs for:
+- allocation created
+- allocation adjusted
+- risk profile changed
+- account paused/resumed
+- trade blocked by user risk limit
+- trade blocked by daily loss limit
+- trade blocked by missing allocation
+- balance recalculated
+- item marked NEEDS_REVIEW
+- admin resolved allocation issue
+
+Do not log secrets.
+
+12. Tests
+Add or update tests for:
+- user sees only their own account shell
+- user cannot see shared master global balance
+- user cannot see another user’s balance/P/L
+- assigned allocation creates personal balance
+- realized P/L updates personal balance
+- unrealized P/L updates personal equity
+- two users trading same symbol have separate balances and P/L
+- max lot size blocks oversized trades
+- max open trades blocks extra trades
+- max daily loss blocks new trades
+- unavailable symbol blocks trade
+- paused account blocks trade
+- missing allocation blocks trade
+- unapproved shared-master user blocks trade
+- Ruby only uses current user account data
+- admin can view per-user allocation breakdown
+- uncertain execution becomes NEEDS_REVIEW
+- no secrets exposed
+- no live command created during tests without full approval
+
+Return:
+- what was built
+- files changed
+- account shell model/table changes
+- admin route/API names
+- user route/API names
+- tests added/run
+- manual test steps
+- remaining risks
+- confirmation that no live trade was fired during this build

@@ -1,0 +1,135 @@
+NEXT PHASE: MT5 HEARTBEAT DIAGNOSTIC FIX — NO EXECUTION CHANGES
+
+Goal:
+Fix the missing heartbeat diagnostic endpoint and make it easier to confirm whether the MT5 EA is reaching ARX AI.
+
+Current result:
+- MT5_BRIDGE_TOKEN configured: true
+- connected: false
+- lastHeartbeatAt: null
+- eaConnected: false
+- tokenAccepted: n/a
+- GET /api/mt5/heartbeat/status returns 404
+- No EA request has reached /api/mt5/heartbeat
+
+Do not unlock execution.
+Do not place orders.
+Do not set mt5Connected=true without real heartbeat.
+Do not fake account data.
+Do not expose token values.
+
+1. Add heartbeat status endpoint
+
+Create:
+
+GET /api/mt5/heartbeat/status
+
+Return:
+
+{
+  "connected": false,
+  "eaConnected": false,
+  "lastHeartbeatAt": null,
+  "heartbeatAgeSeconds": null,
+  "bridgeTokenConfigured": true,
+  "tokenAccepted": "n/a",
+  "lastRejectedHeartbeatAt": null,
+  "lastRejectReason": null,
+  "expectedPostEndpoint": "/api/mt5/heartbeat",
+  "serverTime": "timestamp"
+}
+
+2. Improve heartbeat receiver logging safely
+
+For:
+
+POST /api/mt5/heartbeat
+
+Log only safe metadata:
+
+- timestamp
+- request received yes/no
+- token present yes/no
+- token accepted yes/no
+- environment
+- account id if provided
+- remote ip/session if available
+- user agent if available
+
+Do not log token value.
+
+3. Add bridge diagnostics endpoint
+
+Create:
+
+GET /api/mt5/bridge-diagnostics
+
+Return:
+
+- token configured yes/no
+- heartbeat receiver mounted yes/no
+- heartbeat status endpoint mounted yes/no
+- account snapshot endpoint mounted yes/no
+- positions snapshot endpoint mounted yes/no
+- orders snapshot endpoint mounted yes/no
+- commands poll endpoint mounted yes/no
+- last heartbeat
+- last rejected heartbeat reason
+- current mt5Connected
+- current mt5Deferred
+- brokerExecutionAvailable
+
+4. Add troubleshooting panel to /mt5-status and /mt5-setup
+
+Show:
+
+- Expected ServerBaseUrl
+- Expected heartbeat endpoint: POST /api/mt5/heartbeat
+- Token configured: yes/no
+- Last heartbeat: timestamp/null
+- Last rejected heartbeat: timestamp/null
+- Last reject reason
+- WebRequest checklist
+- Algo Trading checklist
+- EA attached checklist
+
+5. Keep app state honest
+
+Until a real fresh heartbeat arrives:
+
+- mt5Connected = false
+- mt5Deferred = true
+- brokerExecutionAvailable = false
+- executionMode = READ_ONLY / PAPER_ONLY
+- quoteSource remains SIMULATOR unless real MT5 data exists
+
+6. Run verification
+
+Run:
+
+GET /api/mt5/heartbeat/status
+GET /api/mt5/bridge-diagnostics
+GET /api/broker/status
+GET /api/broker/connection-check
+GET /api/broker/secrets-status
+
+Generate:
+
+MT5 HEARTBEAT DIAGNOSTIC REPORT
+
+Include:
+- heartbeat status endpoint fixed yes/no
+- heartbeat receiver mounted yes/no
+- token configured yes/no
+- last heartbeat
+- last rejected heartbeat
+- exact blocker
+- next user action inside MT5 desktop/VPS
+
+Hard rules:
+- No fake heartbeat.
+- No fake MT5 connection.
+- No real orders.
+- No demo orders.
+- No execution unlock.
+- No token values exposed.

@@ -1,0 +1,108 @@
+Update ARX menu visibility so approved users can see the full trader menu, excluding admin-only options.
+
+Scope:
+Approved human traders should see the full non-admin ARX menu/navigation list once they are approved for live/shared-bridge access. They should not be limited to a restricted/demo-style menu. Admin/operator controls must remain hidden and inaccessible unless the user has the correct admin/operator role.
+
+Requirements:
+
+1. Check existing implementation first
+Before rebuilding anything, inspect the current menu/nav system and role-gating logic:
+- menu config
+- sidebar/mobile menu components
+- route guards
+- role/permission helpers
+- approved-trader/live-access resolver
+- feature flags
+- tests
+- admin hub links
+- investor-only links
+- bot/AI-agent menus if separate
+
+Classify the current state:
+- already implemented but not wired
+- partially implemented
+- hidden by feature flag
+- using stale demo/paper role logic
+- missing entirely
+
+2. Approved-user menu rule
+For approved human traders, show all normal trader-facing menu items, including non-admin items such as:
+- dashboard
+- live trading
+- scanner
+- chart trading
+- backtesting/forward testing
+- positions/open trades
+- trade history
+- account/performance
+- Eleanor/assistant
+- settings/profile
+- any other standard non-admin trader tools already available in the app
+
+Do not show admin-only menu options.
+
+3. Admin-only menu rule
+Keep these hidden from approved traders unless they also have admin/operator permission:
+- Admin Hub
+- Admin Cockpit
+- user approval controls
+- registration key controls
+- master bridge controls
+- kill switch/operator controls
+- treasury/investor allocation controls
+- system audits
+- migration/admin maintenance tools
+- role-management screens
+- any owner/operator-only live-control panels
+
+4. Route-level enforcement
+Do not rely on hiding menu items only.
+Verify every admin-only route still has backend and frontend route guards.
+Approved traders must not access admin pages by typing the URL directly.
+If a route is admin-only, keep the route guard strict.
+
+5. Investor and bot separation
+Do not accidentally expose trader menus to investor-only accounts unless intended.
+Do not mix human trader menus with bot/AI-agent management menus.
+Respect existing role separation:
+- approved human trader
+- admin/operator
+- investor/view-only
+- bot/AI agent
+- unapproved/pending user
+
+6. Live approval source of truth
+Use the existing approved-trader/live-access resolver as the source of truth.
+Do not create a second approval system.
+If there is an existing unified account-mode or live-access endpoint, reuse it.
+If stale demo/paper logic is hiding menus from approved traders, replace it with the correct approved/live/shared-bridge check.
+
+7. UI behavior
+- Desktop sidebar and mobile menu must match.
+- Menu item order should stay consistent with the current design.
+- Locked/unavailable items should either be hidden or show a clear locked state based on existing app pattern.
+- Avoid raw role/gate codes in user-facing copy.
+- Keep ARX styling consistent.
+
+8. Tests
+Add or update tests proving:
+- approved human trader sees full non-admin trader menu
+- approved human trader does not see admin-only menu items
+- admin/operator still sees admin menu items
+- pending/unapproved user does not get full trader menu
+- investor/view-only user does not get trader execution menu
+- direct admin route access is denied for approved non-admin traders
+- mobile menu and desktop menu follow the same visibility rules
+
+9. Verification
+Run:
+- affected frontend tests
+- route/auth guard tests
+- typechecks
+- ci guards
+- any menu/navigation tests that already exist
+
+Report exact pass/fail counts and changed files.
+
+Acceptance:
+An approved human trader can log in and see the full normal ARX trader menu, including chart/scanner/live-trading tools, while all admin/operator-only menu options remain hidden and route-protected. No admin controls are exposed to non-admin users, and no duplicate role or approval system is created.

@@ -1,0 +1,67 @@
+Fix the three pre-existing TypeScript QA script issues only.
+
+Do NOT change the working auth/RBAC system.
+Do NOT create a separate admin login page.
+Do NOT rebuild unrelated features.
+Do NOT weaken tests with broad ts-ignore or any shortcuts.
+Inspect first, then fix only the exact typecheck issues listed below.
+
+Current verified status:
+- ARX_AUTH_RBAC_VERIFIED passed.
+- One login screen works.
+- Role-based admin access works.
+- Regular users are blocked at UI and backend.
+- Admin is seeded correctly.
+- No secrets leak.
+- arx_live_commands remained 0→0.
+
+Fix these pre-existing typecheck issues:
+
+1. scripts/src/qaRubyVoiceTradingGuardrails.ts:68,71
+Issue:
+- Uses non-existent displayName column on users insert.
+
+Fix:
+- Inspect the actual users schema.
+- Update the QA script to use only valid user fields.
+- If the test needs a display label, derive it locally from email or an allowed profile/name field.
+- Do not add a new database column unless the existing app architecture already expects it.
+- Keep the purpose of the Ruby voice trading guardrail test intact.
+
+2. scripts/src/qaScannerBridgeRouting.ts:16,21
+Issue:
+- Reaches into api-server source and violates rootDir.
+
+Fix:
+- Inspect tsconfig/rootDir boundaries.
+- Stop this QA script from importing files outside its allowed root.
+- Prefer testing through public backend routes, exported shared modules, or a proper test helper inside the allowed scripts/shared path.
+- Do not duplicate scanner business logic.
+- Do not break the real Deriv scanner/feed wiring.
+
+3. scripts/src/qaScannerSelectedMarket.ts:19
+Issue:
+- Same rootDir violation.
+
+Fix:
+- Repair the import boundary the same way.
+- Test selected-market behavior through allowed interfaces or endpoints.
+- Keep direct symbol/pair selection behavior covered.
+
+After fixing:
+- Run TypeScript typecheck.
+- Run the three affected QA scripts.
+- Run auth/RBAC tests again to confirm nothing regressed.
+- Run scanner/feed tests again to confirm Deriv scanner wiring still works.
+- Run secret leak checks.
+- Confirm arx_live_commands remains 0.
+
+Print a clear report:
+- qaRubyVoiceTradingGuardrails typecheck: PASS/FAIL
+- qaScannerBridgeRouting typecheck: PASS/FAIL
+- qaScannerSelectedMarket typecheck: PASS/FAIL
+- Auth/RBAC regression: PASS/FAIL
+- Scanner regression: PASS/FAIL
+- Secret leak check: PASS/FAIL
+- Live command safety: PASS/FAIL
+- Final status: TYPECHECK CLEAN or FIXES STILL NEEDED

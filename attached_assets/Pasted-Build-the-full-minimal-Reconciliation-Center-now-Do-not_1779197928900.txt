@@ -1,0 +1,232 @@
+Build the full minimal Reconciliation Center now.
+
+Do not audit only.
+Do not ask again.
+Do not leave the thin legacy /broker-reconciliation page as-is.
+Do not place live trades.
+Do not enable public master live trading.
+Do not bypass master live user approval toggles.
+Do not expose secrets.
+arx_live_commands must remain 0 before and after.
+
+Current result:
+RECONCILIATION_CENTER_NOT_READY
+8/20 PASS
+12/20 FAIL
+The current /broker-reconciliation page is only a thin legacy page wired to /api/broker-reconciliation/status and only shows local-vs-MT5 counts. It is not admin-only and does not provide the required detection/actions/Ruby/admin audit system.
+
+Build the full minimal delta:
+
+PART 1 — SECURITY FIRST
+
+1. Make Reconciliation Center admin-only.
+2. Protect the page server-side.
+3. Protect all reconciliation APIs server-side.
+4. Non-admin users must receive 403 or redirect.
+5. Non-admin users must not see reconciliation data.
+6. No frontend-only protection.
+
+PART 2 — UNIFIED RECONCILIATION CENTER PAGE
+
+Create or replace with a unified admin page:
+
+/admin/reconciliation-center
+
+It should show:
+- issue count by severity
+- open issues
+- reviewed issues
+- dismissed issues
+- linked/resolved issues
+- bridge mismatch issues
+- orphan broker positions
+- missing attribution rows
+- command/result mismatches
+- user allocation mismatches
+- stale heartbeat issues
+- blocked/rejected commands needing review
+- master bridge exposure warnings
+- live/demo mode mismatch warnings
+- user approval/risk-lock conflicts
+
+Each issue card/table row must include:
+- severity: critical / high / medium / low
+- issue type
+- affected user if applicable
+- bridge id
+- command id
+- broker ticket if available
+- symbol
+- status
+- reason
+- created_at
+- updated_at
+- recommended action
+
+PART 3 — AGGREGATOR ENDPOINT
+
+Create:
+
+GET /api/admin/reconciliation-center/issues
+
+It must aggregate issues from:
+- mt5_demo_commands
+- arx_live_commands
+- master bridge commands
+- shared/master attribution rows
+- demo/live positions
+- master position allocations
+- bridge heartbeats
+- current connected bridge state
+- admin/user approval state
+- blocked/rejected command tables/logs where available
+
+Return structured issue objects:
+
+{
+  id,
+  type,
+  severity,
+  userId,
+  bridgeConnectionId,
+  commandId,
+  brokerTicket,
+  symbol,
+  status,
+  reason,
+  recommendedAction,
+  createdAt,
+  updatedAt,
+  metadata
+}
+
+Detection categories required:
+1. bridge mismatches
+2. orphan broker positions
+3. missing attribution rows
+4. command/result mismatch
+5. user allocation mismatch
+6. stale heartbeat issues
+7. blocked/rejected commands needing review
+8. master bridge exposure warnings
+9. live/demo mode mismatch warnings
+10. user approval/risk-lock conflicts
+
+PART 4 — RECONCILIATION ACTIONS
+
+Add admin-only actions:
+
+POST /api/admin/reconciliation-center/issues/:id/dismiss
+POST /api/admin/reconciliation-center/issues/:id/mark-reviewed
+POST /api/admin/reconciliation-center/issues/:id/link-attribution
+POST /api/admin/reconciliation-center/issues/:id/resolve-manually
+
+Rules:
+- dismiss requires reason
+- mark reviewed requires reason
+- link attribution requires reason
+- manual resolution requires reason
+- empty reason must fail with REASON_REQUIRED
+- every action writes admin audit log
+- no action can change live execution state
+- no action can create or dispatch live trades
+
+PART 5 — AUDIT LOGGING
+
+Every reconciliation action must call writeAdminAudit.
+
+Audit fields:
+- admin_user_id
+- action
+- issue_id
+- issue_type
+- target_user_id if applicable
+- command_id if applicable
+- broker_ticket if applicable
+- bridge_connection_id if applicable
+- reason
+- metadata
+- created_at
+
+Required action codes:
+- RECONCILIATION_ISSUE_DISMISSED
+- RECONCILIATION_ISSUE_REVIEWED
+- RECONCILIATION_ATTRIBUTION_LINKED
+- RECONCILIATION_MANUAL_RESOLUTION
+- RECONCILIATION_ACTION_BLOCKED_REASON_REQUIRED
+- RECONCILIATION_RUBY_ADMIN_EXPLAINED
+- RECONCILIATION_RUBY_USER_EXPLAINED
+
+PART 6 — RUBY EXPLANATION TOOLS
+
+Add admin Ruby tool:
+- explains reconciliation issue with admin-safe diagnostics
+- may include issue type, command id, bridge id, broker ticket, status, reason, and recommended action
+- must not reveal bridge token, API keys, broker password, raw secrets, or other sensitive fields
+
+Add per-user Ruby tool:
+- explains only the user-visible issue
+- cannot expose other users’ data
+- cannot expose admin-only bridge details
+- cannot expose secrets
+- example: “Ruby: This trade is waiting for reconciliation because the broker position has not been linked to your ARX trade record yet.”
+
+PART 7 — UI ACTIONS
+
+On the Reconciliation Center page, add buttons:
+- View details
+- Mark reviewed
+- Dismiss
+- Link attribution
+- Resolve manually
+- Ask Ruby for admin explanation
+- Generate user-safe Ruby explanation
+
+Show a reason modal before dismiss/link/manual resolve/review.
+
+PART 8 — KEEP LEGACY PAGE SAFE
+
+If /broker-reconciliation remains:
+- redirect admins to /admin/reconciliation-center
+or
+- keep it as a protected legacy admin page
+- non-admin must not access it
+
+PART 9 — QA SCRIPT
+
+Create/update QA script for 20 checks:
+
+1. Reconciliation Center page exists.
+2. Page is admin-only.
+3. Non-admin users cannot access page.
+4. Non-admin users cannot call Reconciliation Center APIs directly.
+5. Aggregator endpoint returns reconciliation issues.
+6. Detects bridge mismatches.
+7. Detects orphan broker positions.
+8. Detects missing attribution rows.
+9. Detects command/result mismatch.
+10. Detects user allocation mismatch.
+11. Detects stale heartbeat issues.
+12. Detects blocked/rejected commands needing review.
+13. Dismiss requires reason.
+14. Link/manual resolution requires reason.
+15. Every action writes admin audit log.
+16. Per-user Ruby explanation does not expose other-user/admin-only details.
+17. Admin Ruby explanation does not expose secrets/tokens.
+18. No secrets leak.
+19. No live trade auto-fires.
+20. arx_live_commands remains unchanged.
+
+PART 10 — ACCEPTANCE PROOF
+
+Run QA and output:
+- pass/fail table
+- arx_live_commands count before and after
+- confirmation no live order was placed
+- confirmation non-admin access is blocked
+- confirmation secrets are not exposed
+
+Do not mark complete until:
+RECONCILIATION_CENTER_READY
+20/20 PASS
+arx_live_commands 0 → 0

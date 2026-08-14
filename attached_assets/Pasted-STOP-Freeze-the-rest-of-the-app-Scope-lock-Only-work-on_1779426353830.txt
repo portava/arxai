@@ -1,0 +1,117 @@
+STOP. Freeze the rest of the app.
+
+Scope lock:
+Only work on the ARX AI login/access page shown in the attached/reference image. Do not redesign, refactor, rename, move, or modify any unrelated dashboard pages, trading pages, scanner pages, Ruby chat, MT5 bridge logic, admin dashboard, live trading controls, role permissions, layouts, menus, routes, or global app behavior.
+
+Goal:
+Recreate this clean ARX AI login screen style as close as possible:
+- Dark premium fintech UI
+- Left side: ARX AI brand, “AI-Powered Trading. Discipline Wins.”, trading chart visual area, AI/Ruby visual, risk/AI/execution/permissions benefits, secure-by-design notice
+- Right side: large glass login card with ARX AI logo, email/password fields, remember me, forgot password, sign in, invite code, request access, Ruby note, encrypted/secure message
+- Trading/AI focused, clean, simple, not crowded
+- Do not use “Top reasons to sign up”
+- Do not add extra marketing blocks beyond what is in the scope
+
+Required frontend behavior:
+1. Login form must work with the existing auth system.
+2. Email input must validate email format.
+3. Password field must have show/hide toggle.
+4. Remember me checkbox must connect to existing session persistence if available. If not available, store the preference locally without breaking login.
+5. Forgot password must open the existing forgot-password flow. If no flow exists, create only the minimum route/modal/API connection needed for password reset request.
+6. Use Invite Code must open an invite-code panel/modal on this page only.
+7. Request Access must open a clean request-access panel/modal on this page only.
+8. All errors must be clean user-facing messages. Never show raw backend errors, stack traces, route names, database names, or debug text.
+9. Login button must show loading state and prevent duplicate submits.
+10. The page must be fully responsive for mobile and desktop.
+11. Hide the bottom menu/navigation on the login page only.
+12. If already authenticated, preserve the existing redirect logic.
+13. Admin and regular users must use the same login page. Do not create a separate admin login.
+14. After login, preserve existing role redirect behavior:
+    - admin users to existing admin dashboard if already configured
+    - regular users to existing app dashboard
+    - do not expose admin controls to regular users
+
+Backend scope:
+Only touch backend/auth if needed to make this page work:
+- login
+- forgot password
+- invite code validation
+- request access submission
+- existing session handling
+Do not change trading execution, MT5 bridge, live/demo permissions, Ruby intelligence, scanner logic, admin approvals, or user role architecture except where required to read existing auth permissions after login.
+
+Implementation steps:
+1. Inspect current auth pages, routes, protected-route logic, layout wrappers, role redirect logic, invite-code logic, forgot-password logic, request-access logic, and global navigation visibility.
+2. Reuse existing auth APIs/hooks/services. Do not replace working auth.
+3. Build the new login UI in the existing design system.
+4. If there is already a login page, replace only its UI while preserving its working auth behavior.
+5. Remove or disable duplicate active login pages if they conflict, but do not delete unrelated files.
+6. Make the page match this content:
+
+Left panel:
+- ARX AI
+- ANALYZE. RISK. eXECUTE.
+- AI-Powered Trading. Discipline Wins.
+- ARX AI combines market intelligence, risk control, and automated insights to help you trade with clarity and confidence.
+- Floating mini badges:
+  - AI Signal: Bullish
+  - Confidence: 78%
+  - Risk Level: Low
+- Feature row:
+  - Risk Controls — Always protecting your capital.
+  - AI Insights — Ruby analyzes markets 24/7 so you don’t have to.
+  - Execution Edge — Tools built to help you execute with precision.
+  - Your Permissions — Live access and features protected by you.
+- Secure by Design:
+  Bank-grade encryption • Operator approval for live access • Demo & Live permissions protected
+- Footer disclaimer:
+  Trading involves risk. ARX AI is built to support disciplined decisions, not guarantee results.
+
+Right login card:
+- ARX AI
+- ANALYZE. RISK. eXECUTE.
+- Welcome back
+- Sign in to continue to your ARX AI account.
+- Email address
+- Password
+- Remember me
+- Forgot password?
+- Sign In
+- OR
+- Use Invite Code
+- Request Access
+- Ruby note:
+  Ruby helps analyze markets, risk, and execution — but final control stays protected by your permissions.
+- Secure footer:
+  Your data is encrypted. Your permissions protect everything.
+  Secure. Private. Yours.
+
+Style requirements:
+- Dark background: near-black/navy
+- Blue accents with small purple accents
+- Minimal neon glow, not overwhelming
+- Glass card with thin glowing border
+- Clean spacing, rounded corners, soft shadows
+- High-end fintech / AI trading look
+- Candlestick chart-inspired background on left side
+- Subtle AI head/Ruby visual can be created with CSS glow/grid shapes if no image asset exists
+- No fake claims like “50K traders” unless already real in the app
+- Avoid clutter and avoid cartoon visuals
+
+Accessibility:
+- Inputs must have labels
+- Buttons must be keyboard accessible
+- Focus states must be visible
+- Modal/panel close buttons must be accessible
+- Mobile text must remain readable
+
+Do not finish until:
+- login works
+- forgot password opens/works
+- invite code opens/works
+- request access opens/works
+- authenticated redirect still works
+- unauthenticated users do not load directly into dashboard
+- bottom nav is hidden only on login page
+- no unrelated files were changed
+- no trading/backend systems were touched outside auth support

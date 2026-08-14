@@ -1,0 +1,140 @@
+Fix Economic Calendar not showing any information.
+
+Observed issue:
+The chart/news radar area says:
+- "No economic-calendar provider is connected, so no scheduled events are shown."
+- "No event calendar is connected."
+
+Problem:
+The app has the Economic Calendar UI, but no connected calendar provider/feed is returning events. This affects:
+- Economic Calendar page
+- News Risk
+- Chart news radar / impact radar
+- Scanner trade-readiness context
+- Ruby risk explanations
+
+Goal:
+Wire a real economic calendar provider into ARX and make all calendar surfaces honestly show:
+1. upcoming events
+2. event impact level
+3. affected currencies/symbols
+4. event time in user/local timezone
+5. provider/freshness status
+6. empty/error/degraded states
+
+Scope:
+1. Audit current calendar code:
+   - Economic Calendar page
+   - News Risk page
+   - chart Impact Radar
+   - Scanner/Ruby event-risk hooks
+   - backend calendar endpoints/services
+   - env vars/API keys for calendar providers
+
+2. Identify current provider status:
+   - Is there a provider configured?
+   - Is the API key missing?
+   - Is the endpoint disabled?
+   - Is the frontend using mock/empty data?
+   - Is the backend returning empty arrays because of date/timezone filtering?
+   - Are events being fetched but filtered out incorrectly?
+
+3. Add or repair provider integration.
+Preferred providers:
+   - ForexFactory calendar if already supported internally
+   - Finnhub economic calendar if key exists
+   - Trading Economics if key exists
+   - Alpha Vantage economic calendar if available
+   - fallback static/manual provider only as degraded mode
+
+4. Backend endpoint requirements:
+   - GET /api/economic-calendar/events
+   - query params:
+     - from
+     - to
+     - currencies
+     - impact
+     - symbols
+   - response includes:
+     - id
+     - title
+     - country
+     - currency
+     - impact: low / medium / high
+     - eventTimeUtc
+     - eventTimeLocal
+     - actual
+     - forecast
+     - previous
+     - source
+     - freshness
+     - affectedSymbols
+     - riskNote
+
+5. Symbol mapping:
+   - EURUSD should show EUR and USD events
+   - GBPUSD should show GBP and USD events
+   - XAUUSD should show USD/high-impact macro events
+   - US30/SPX500/DXY should show USD/high-impact macro events
+   - Crypto can show USD macro/high-risk events if enabled
+   - Deriv synthetics should show "macro calendar not directly applicable" unless using global risk mode
+
+6. UI requirements:
+   Economic Calendar page:
+   - show events grouped by day
+   - impact badges
+   - currency/country badges
+   - actual/forecast/previous
+   - local time
+   - provider status
+   - refresh button
+   - empty state only if provider is connected and truly no events exist
+
+   Chart Impact Radar:
+   - show upcoming relevant events for selected symbol
+   - show "No calendar provider connected" only when provider is actually missing
+   - show "No relevant events" only when provider is connected and query returns zero events
+   - do not confuse missing provider with no events
+
+   Scanner/Ruby:
+   - add event-risk note if high-impact event is near
+   - do not block trades automatically unless existing safety rules say so
+   - Ruby should say when calendar data is unavailable instead of pretending no news risk exists
+
+7. Honesty states:
+   Use clear statuses:
+   - Connected
+   - Delayed
+   - Stale
+   - Provider missing
+   - Provider error
+   - No relevant events
+
+   Do not show:
+   - "No events" when the provider is missing
+   - "Low news risk" when calendar data is unavailable
+   - blank panels with no explanation
+
+8. Tests:
+   - provider missing shows "No economic-calendar provider connected"
+   - provider connected with events renders event rows
+   - EURUSD maps to EUR + USD events
+   - XAUUSD maps to USD high-impact events
+   - connected provider with empty result shows "No relevant events"
+   - provider error shows degraded/error state, not empty
+   - chart impact radar receives selected-symbol events
+   - Ruby/Scanner risk copy says calendar unavailable when provider is missing
+
+9. Admin diagnostics:
+   Add/check Admin → Market Data diagnostics section:
+   - calendar provider name
+   - configured true/false
+   - last fetch time
+   - last error
+   - events returned count
+   - freshness status
+   - API key presence redacted, never exposed
+
+Hard boundary:
+Do not touch live execution gates, broker dispatch, MT5 bridge, trade ticket execution, or scanner trade permission logic.
+This is calendar data wiring, diagnostics, and honest display states only.

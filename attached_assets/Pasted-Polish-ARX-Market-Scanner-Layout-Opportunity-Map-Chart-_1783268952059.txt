@@ -1,0 +1,922 @@
+Polish ARX Market Scanner Layout, Opportunity Map, Chart Read, Truth Labels, and Action States
+
+Goal:
+Clean up the ARX Market Scanner screen layout shown in the screenshots. The scanner is functional, but the UI is crowded, vertically clipped, and visually inconsistent between the scanner header, Opportunity Map, chart area, Eleanor Chart Read, Trade Health, and action cards.
+
+This is a UI/UX formatting pass only.
+
+Do not change:
+- scanner scoring
+- edge score logic
+- market feed/data source
+- candle calculations
+- chart overlays
+- Eleanor reasoning logic
+- scanner decision logic
+- trade execution gates
+- risk gates
+- one-click behavior
+- MT5 bridge logic
+- order placement
+- live-trade behavior
+- position management
+- backend market analysis truth
+
+Only change:
+- layout
+- spacing
+- alignment
+- wrapping
+- card composition
+- visual hierarchy
+- responsive behavior
+- loading/empty/error presentation
+- stale/freshness labels
+- snapshot/truth labels
+- mismatch warnings
+- action-state wording
+
+Core rule:
+Make the scanner cleaner, faster to read, and more honest without making conditional, stale, weak, or waiting setups look more trade-ready than they really are.
+
+PHASE 1 — Audit Current Scanner Layout
+
+Inspect:
+- Market Scanner page/component
+- Opportunity Map component
+- scanner filter/header section
+- status cards
+- chart component
+- Eleanor Chart Read component
+- Trade Health component/cards
+- action status card
+- sidebar layout
+- top symbol/session bar
+- sticky/fixed headers
+- floating Eleanor button
+- mobile/tablet/desktop responsive styles
+- scroll containers causing clipping
+- fixed heights causing hidden content
+- current loading/empty/error states
+- current action/readiness labels
+- current snapshot/freshness fields if available
+
+Report briefly before changing:
+- which components are clipped
+- which containers have bad spacing
+- where content overlaps
+- which cards need restructuring
+- which modules currently show different truth/timestamps
+- what files will be changed
+
+PHASE 2 — Fix Page Vertical Clipping
+
+Current issue:
+The top of the scanner content appears clipped/cut off. The page starts too high under the app chrome/top bar.
+
+Requirements:
+- Add proper top padding below the symbol/session bar.
+- Ensure the Market Scanner title/header is never cut off.
+- Ensure the Opportunity Map card does not start behind another container.
+- Remove negative margins or fixed positioning causing clipping.
+- Main content should scroll naturally.
+- Preserve the left sidebar.
+
+Validation:
+- Page title is fully visible.
+- Scanner cards are not hidden under the top bar.
+- No content is cut off at the top.
+
+PHASE 3 — Standardize Main Content Width and Alignment
+
+Requirements:
+- Use one consistent max-width container for scanner content.
+- Recommended max width: 1120–1200px.
+- Center the main content.
+- Use consistent horizontal padding:
+  - desktop: 24px
+  - smaller widths: 16px
+- Align left/right edges across:
+  - scanner header
+  - decision strip
+  - status cards
+  - Opportunity Map
+  - chart
+  - Eleanor Chart Read
+  - Trade Health
+
+Validation:
+- All sections align to the same grid.
+- No card randomly stretches wider/narrower unless intentional.
+- No horizontal overflow.
+
+PHASE 4 — Improve Scanner Header Hierarchy
+
+Scanner header should show:
+
+Top:
+- Market Scanner title
+- short subtitle
+- selected market / timeframe / price / session / status line
+
+Status card row:
+- Data
+- Eleanor
+- Trading
+- Action
+
+Requirements:
+- Keep the four status cards equal height on desktop.
+- Cards can wrap responsively.
+- Make Action card visually distinct but not oversized.
+- Long text should wrap cleanly.
+- Use consistent card padding.
+- Do not let “Conditional Buy/Sell” crowd the card.
+- Keep status colors readable.
+
+Validation:
+- All four cards align.
+- Long text does not overflow.
+- Action status is clear at a glance.
+
+PHASE 5 — Add One-Glance Decision Strip
+
+Goal:
+A trader should understand the scanner decision in under 3 seconds.
+
+Add a compact decision strip near the top.
+
+Show:
+- Symbol
+- Timeframe
+- Bias
+- Decision
+- Readiness
+- Confidence
+- Freshness
+
+Example:
+V75 · M15 · Range-bound · WAIT · Not confirmed · Low confidence · Fresh
+
+Rules:
+- Use the same backend scanner snapshot already used by the page.
+- Do not create a separate decision.
+- If decision is conditional, show:
+  “Conditional — waiting confirmation.”
+- If decision is WAIT, do not show a strong BUY/SELL visual.
+- If data is stale, strip must show stale.
+
+Validation:
+- User can understand state without scrolling.
+- Decision strip matches scanner/Eleanor/chart snapshot.
+- WAIT/conditional states are visually honest.
+
+PHASE 6 — Scanner Truth Consistency Labels
+
+Goal:
+All scanner surfaces should visually show whether they are using the same market truth.
+
+Add small truth/freshness labels to:
+- Opportunity Map
+- chart header
+- Eleanor Chart Read
+- action card
+- Trade Health card
+
+Labels should show where available:
+- symbol
+- timeframe
+- data source
+- last updated time
+- freshness state
+- scan id or snapshot id
+
+Examples:
+- “V75 · M15 · Live · updated 11:07:46 AM”
+- “Same scan snapshot as Eleanor”
+- “Chart read from current scanner snapshot”
+
+Rules:
+- Do not create new analysis logic.
+- Do not let Opportunity Map, chart, and Eleanor display different timestamps without a warning.
+- If data is stale, show “Stale” clearly.
+- If scanner and Eleanor are reading different snapshots, show a warning instead of pretending they agree.
+
+Validation:
+- User can see whether Opportunity Map, chart, and Eleanor are aligned.
+- Stale or mismatched data is visually obvious.
+
+PHASE 7 — Sticky Scanner Context Bar
+
+Goal:
+When scrolling down to Eleanor or Trade Health, user should not lose context.
+
+Add a compact sticky context bar after the main header.
+
+Show:
+- symbol
+- timeframe
+- price
+- scanner action
+- freshness
+- quick rescan button
+
+Rules:
+- Sticky bar should be compact.
+- It should not cover content.
+- It should not replace the full header.
+- On smaller screens, collapse to symbol + action + rescan.
+- Sticky bar must use current selected scanner snapshot.
+
+Validation:
+- User always knows what symbol/timeframe they are reading.
+- Sticky bar does not overlap cards.
+
+PHASE 8 — Section Jump Navigation
+
+Goal:
+Long scanner pages need quick navigation.
+
+Add subtle section tabs or anchors:
+- Overview
+- Chart
+- Eleanor
+- Opportunities
+- Trade Health
+
+Rules:
+- Section tabs should scroll to the correct section.
+- Active section can highlight while scrolling if easy.
+- Keep subtle; do not make page heavier.
+- Do not break normal scroll.
+
+Validation:
+- User can jump from Opportunity Map to Eleanor quickly.
+- No broken scroll anchors.
+
+PHASE 9 — Compact / Comfortable Density Toggle
+
+Goal:
+Trader screens need both quick scanning and detailed reading.
+
+Add optional UI density setting:
+- Comfortable
+- Compact
+
+Comfortable:
+- more spacing
+- fuller descriptions
+- larger cards
+
+Compact:
+- tighter cards
+- shorter descriptions
+- more opportunities visible
+
+Rules:
+- Default to Comfortable unless app already has density preference.
+- Do not hide critical risk text in Compact mode.
+- Save preference if settings system exists.
+- Do not make it fake local-only if app has backend settings.
+- If settings backend does not exist, keep local preference clearly isolated as UI preference only.
+
+Validation:
+- Compact mode shows more cards.
+- Comfortable mode remains readable.
+- Critical risk/action state remains visible.
+
+PHASE 10 — Fix Opportunity Map Layout
+
+Current issue:
+Opportunity Map has useful information but the cards feel dense and repetitive. “Ready now” labels repeat too aggressively, and hierarchy is unclear.
+
+Requirements:
+- Keep Opportunity Map as a separate aligned card.
+- Header should show:
+  - icon
+  - “Opportunity Map”
+  - scanned count
+  - live data count
+  - last scan time
+  - Rescan button aligned right
+- “Best Scalp” and “Best Retest” should be top summary cards.
+- Ready Now list should use clean two-column grid on desktop.
+- Stack to one column on narrower screens.
+- Reduce repeated text.
+
+Each opportunity card should show:
+- symbol
+- BUY/SELL/WAIT/CONDITIONAL pill
+- edge score
+- timeframe
+- setup type
+- readiness badge
+- freshness
+- compact reason/status
+- optional action/view button if already available
+
+Compact text examples:
+- “Live confirmed · waiting for confirmation”
+- “Ready now · act-ready”
+- “M15 · Edge 78”
+- “Retest setup · wait for break/hold · Fresh”
+
+Rules:
+- Do not change scanner results.
+- Do not change ordering/scoring logic.
+- Do not hide important risk/status text entirely.
+- Do not make cards execute trades directly unless already designed.
+- If card does nothing, do not make it look clickable.
+- If clicking selects setup, show hover/focus and selected state.
+
+Validation:
+- Opportunity Map is easier to scan.
+- Ready Now cards are compact.
+- Two-column grid looks balanced.
+- Repeated text is reduced.
+- Rescan button stays aligned.
+
+PHASE 11 — Readiness Grouping
+
+Goal:
+Separate actionable setups from watch-only setups.
+
+Group opportunity cards by:
+- Ready now
+- Waiting confirmation
+- Developing
+- Stale / unavailable
+
+Rules:
+- Use existing readiness fields only.
+- Do not change scanner scoring.
+- Do not promote waiting setups into ready setups.
+- Each group should show count.
+- Empty groups can collapse.
+- Conditional trades should not be visually treated as confirmed trades.
+
+Validation:
+- User can instantly tell what is ready vs waiting.
+- Conditional trades are not visually treated as confirmed trades.
+
+PHASE 12 — “Why Not Ready?” Mini Panel
+
+Goal:
+When a setup is conditional or waiting, explain the blocker clearly.
+
+Show 1–3 blockers:
+- Waiting for confirmation
+- Price is mid-range
+- Confidence low
+- HTF bias unclear
+- Feed stale
+- Bridge unavailable
+- Risk gate blocked
+- Market unavailable
+
+Rules:
+- Use existing scanner/reasoning fields only.
+- Keep it short.
+- Do not duplicate the full Eleanor read.
+- Do not invent blockers.
+- If setup is ready, hide this panel or replace with “Ready criteria met.”
+
+Validation:
+- User knows why action is blocked or conditional.
+- No fake blocker is invented.
+
+PHASE 13 — Selected Opportunity State
+
+Goal:
+When user clicks an Opportunity Map card, the rest of the page should clearly show the selected setup.
+
+Show:
+- selected card highlight
+- chart updates to selected symbol/timeframe
+- Eleanor read corresponds to selected setup
+- decision strip updates
+- snapshot id/freshness updates
+- context bar updates
+
+Rules:
+- If selection only changes UI context, do not trigger trade.
+- If selected setup data is stale, show stale warning.
+- Do not silently keep old Eleanor read after selecting a new opportunity.
+- If full sync is not currently possible, show “Open chart/read” action rather than pretending selection synced.
+
+Validation:
+- Selecting V75_1S updates chart/Eleanor/context to V75_1S.
+- No stale mismatch is hidden.
+
+PHASE 14 — Inline Mini Explanation Per Opportunity
+
+Goal:
+Each opportunity card should say enough without needing full Eleanor.
+
+Compact fields:
+- setup type
+- entry idea
+- confirmation needed
+- invalidation/risk cue
+- freshness
+
+Example:
+Retest setup · wait for break/hold · invalid below support · Fresh
+
+Rules:
+- Keep one or two lines.
+- Do not paste full reasoning into each card.
+- Use existing reason fields.
+- If no reason exists, show “No explanation available” rather than inventing one.
+
+Validation:
+- Cards are useful but not crowded.
+
+PHASE 15 — Card Click / Hover States
+
+Goal:
+Opportunity cards should feel interactive only when they actually do something.
+
+Rules:
+- If clicking a card selects the symbol/setup, show hover/focus state.
+- If clicking does nothing, do not make it look clickable.
+- If card opens details, show subtle “View details” affordance.
+- Ready cards can have stronger border, but not execution styling.
+- Disabled/stale cards should look inactive.
+- Keyboard focus should be visible.
+
+Validation:
+- User understands what is clickable.
+- No fake affordances.
+
+PHASE 16 — Improve Chart Card
+
+Requirements:
+- Chart card header should show:
+  - symbol
+  - current price
+  - scanner status badge
+  - freshness/source label
+  - timeframe buttons
+  - refresh icon
+- Timeframe buttons should have consistent size.
+- Active timeframe should be obvious.
+- Chart should maintain readable height.
+- Avoid horizontal overflow.
+- Price label should not collide with chart edge.
+- Keep live chart overlays intact.
+
+Rules:
+- Do not change chart calculations.
+- Do not change candle data source.
+- Do not change overlays/trendlines/support/resistance logic.
+- Chart timeframe mismatch with scanner timeframe should show warning.
+
+Validation:
+- Chart header is clean.
+- Timeframe buttons fit.
+- Chart remains readable.
+- No clipped labels.
+
+PHASE 17 — Reformat Eleanor Chart Read Panel
+
+Current issue:
+Eleanor’s reasoning is valuable but too dense.
+
+Requirements:
+Keep Eleanor Chart Read as one card, split into:
+
+1. Summary row
+   - Bias
+   - Confidence
+   - HTF Bias
+   - Freshness/snapshot
+2. Decision
+3. Why
+4. Evidence
+5. Confirmation
+6. Invalidation
+7. Trader Test
+8. Risk Note
+9. Actions
+
+Formatting:
+- Use section labels.
+- Add spacing between sections.
+- Use bullet-style evidence rows if needed.
+- Keep important decision text bold.
+- Keep risk note visually separated.
+- Action buttons at bottom:
+  - Prepare Conditional Buy/Sell
+  - Ask Eleanor
+- Disabled buttons should clearly look disabled and explain why.
+
+Rules:
+- Do not rewrite Eleanor’s actual reasoning logic.
+- Do not change trade recommendation truth.
+- Do not make WAIT become BUY/SELL.
+- Do not weaken risk warnings.
+- Keep “decision support only” note.
+- If Eleanor and scanner are different snapshots, show mismatch warning.
+
+Validation:
+- Eleanor read is easier to scan.
+- Decision, confirmation, invalidation, and risk are clearly separated.
+- Buttons align and do not crowd.
+
+PHASE 18 — Trade Action Honesty
+
+Goal:
+Make action labels match readiness and execution gates.
+
+Use labels like:
+- Action: Conditional Buy
+- Status: Waiting for confirmation
+- Trade button: Prepare Conditional Buy
+- Reason: “Live data is confirmed, but setup still needs confirmation.”
+
+Button states:
+- Ready to prepare
+- Waiting confirmation
+- Disabled: stale data
+- Disabled: no edge
+- Disabled: bridge unavailable
+- Disabled: market unavailable
+- Disabled: risk blocked
+
+Rules:
+- Button label must not imply execution if scanner is only conditional.
+- If True One Click is armed, still show truthful readiness.
+- Do not add extra confirmation modal.
+- Do not weaken existing execution gates.
+- If setup is WAIT, action button should not look like strong BUY/SELL.
+- If scanner action is conditional, do not show it like a ready executable trade.
+
+Validation:
+- Conditional Buy is visually different from confirmed Buy.
+- WAIT state cannot be mistaken for ready execution.
+- Disabled reasons are clear.
+
+PHASE 19 — Mismatch Warning UI
+
+Goal:
+If scanner, chart, Eleanor, Opportunity Map, and action card disagree, user should know.
+
+Show warning when:
+- Opportunity Map action differs from top action card
+- Eleanor decision differs from scanner action
+- chart timeframe differs from scanner timeframe
+- stale snapshot is mixed with fresh snapshot
+- feed source differs
+- price differs beyond tolerance
+- selected opportunity does not match chart/Eleanor symbol
+
+Warning copy:
+- “Scanner views are reading different snapshots. Rescan to refresh.”
+- “Eleanor is reading WAIT while scanner action is Conditional Buy. Treat this as not confirmed.”
+- “Chart timeframe differs from scanner timeframe.”
+
+Rules:
+- Do not auto-resolve by hiding mismatch.
+- Do not force all modules to agree visually if backend truth differs.
+- Show mismatch as risk information.
+- Rescan can clear warning only if data aligns.
+
+Validation:
+- Known mismatch appears as warning.
+- Rescan clears warning only if data aligns.
+
+PHASE 20 — Stale Data and Refresh States
+
+Goal:
+The scanner should not make old data look live.
+
+Add visible states:
+- Fresh
+- Updating
+- Stale
+- Feed unavailable
+- Snapshot unavailable
+
+Rules:
+- Show last scan time.
+- Show last candle time if available.
+- Rescan button should show loading state.
+- Prevent double-click rescan spam.
+- If rescan fails, keep previous snapshot but mark it stale.
+- Failed rescan should be honest.
+
+Validation:
+- User sees when data is fresh/stale.
+- Failed rescan does not silently keep old “live” appearance.
+
+PHASE 21 — Rescan Feedback Toast
+
+Goal:
+Rescan should clearly tell the user what changed.
+
+After rescan, show toast:
+- “Scanner refreshed · 23 markets · 14 live”
+- “No cleaner setup found”
+- “Data still stale — feed unavailable”
+- “Eleanor read updated”
+- “Snapshot mismatch resolved”
+
+Rules:
+- Toast should be short.
+- Do not promise better trade.
+- Failed rescan should be honest.
+- Do not spam multiple toasts.
+
+Validation:
+- Rescan feedback is visible.
+- Failed rescan is not silent.
+
+PHASE 22 — Scanner Snapshot Details Drawer
+
+Goal:
+Power users should be able to inspect exact scan truth.
+
+Add optional read-only details drawer/modal:
+- scan id
+- symbol
+- timeframe
+- candle source
+- candle timestamp
+- indicators used
+- edge score
+- readiness status
+- Eleanor snapshot id
+- chart snapshot id
+- feed status
+- risk/execution gate status
+
+Rules:
+- Read-only.
+- No trading action inside drawer unless already designed.
+- Useful for debugging mismatch complaints.
+- Do not expose secrets/internal credentials.
+- Do not reveal broker credentials/account secrets.
+
+Validation:
+- User/admin can inspect why modules agree/disagree.
+- Snapshot details match visible UI.
+
+PHASE 23 — Trade Health Card Polish
+
+Goal:
+Trade Health should be readable and not detached from scanner truth.
+
+Show:
+- selected symbol
+- open position count on selected symbol
+- healthy / weakening / needs attention counts
+- linked position cards if available
+- last refreshed time
+- bridge/feed state
+- action needed badge if any
+
+Rules:
+- Do not fake position health.
+- Do not hide open positions.
+- If MT5/bridge data is unavailable, show honest unavailable state.
+- If no open positions, show clean empty state.
+- Missing bridge data must not be presented as healthy.
+
+Validation:
+- Trade Health clearly reflects real position state.
+- Missing bridge data is not shown as healthy.
+
+PHASE 24 — Sidebar Polish
+
+Requirements:
+- Keep ARX logo/header clean.
+- Search input should fit sidebar width.
+- Quick buttons should wrap cleanly:
+  - Market Scanner
+  - Testing Lab
+  - Economic Calendar
+  - Market Heat Map
+  - Scalp Journal
+- Active nav item should be clear.
+- Sidebar sections should have consistent spacing.
+- Risk notice should stay at bottom but not crowd nav.
+
+Rules:
+- Do not remove existing navigation.
+- Do not change routes.
+- Do not hide risk notice.
+
+Validation:
+- Sidebar looks intentional.
+- Active scanner route is obvious.
+- Quick buttons do not overflow.
+
+PHASE 25 — Floating Eleanor Button
+
+Requirements:
+- Keep floating Eleanor button.
+- Ensure it does not cover important content.
+- Add right/bottom spacing.
+- On smaller screens, position above bottom safe area.
+- Add hover/focus state.
+- Make it accessible.
+- Ensure it does not cover action buttons or chart controls.
+
+Validation:
+- Button does not cover cards/text.
+- Button is easy to tap/click.
+- Button remains visible.
+
+PHASE 26 — Scroll Position Preservation
+
+Goal:
+Users should not lose place after rescan or selecting timeframe.
+
+Rules:
+- Rescan should not jump page to top unless intentional.
+- Changing timeframe should keep user near chart/Eleanor if already there.
+- Selecting opportunity should scroll to chart only if user explicitly chooses “View chart.”
+- Avoid frustrating scroll resets.
+
+Validation:
+- Page remains stable during scanner use.
+- User does not lose context after rescan.
+
+PHASE 27 — Screenshot / Share-Safe Mode
+
+Goal:
+Users may screenshot scanner reads. Make the screen clean and avoid exposing sensitive account details.
+
+Optional mode:
+- hide account/user name
+- hide bridge/account identifiers
+- keep symbol/chart/read visible
+- watermark “Decision support only”
+
+Rules:
+- Do not hide risk warnings.
+- Do not hide live/demo status if relevant.
+- Do not change data.
+- Do not hide stale/mismatch warnings.
+
+Validation:
+- Share-safe mode hides personal/account info.
+- Trading warnings remain visible.
+
+PHASE 28 — Loading / Empty / Error States
+
+Improve states for:
+- scanner loading
+- chart loading
+- Opportunity Map loading
+- no opportunities found
+- scan failed
+- live data unavailable
+- Eleanor read unavailable
+- stale data
+- bridge unavailable
+- no open positions
+
+Rules:
+- Loading skeletons should match final card layout.
+- Empty states should be honest:
+  - “No clean opportunities right now.”
+  - “Live data unavailable.”
+  - “Waiting for confirmed setup.”
+- Do not fake opportunities.
+- Do not hide data-source warnings.
+- Keep previous snapshot visible only if labeled stale.
+
+Validation:
+- Loading state looks polished.
+- Empty/error state is clear.
+- No fake scanner data appears.
+
+PHASE 29 — Responsive Behavior
+
+Support:
+- desktop large width
+- laptop width
+- tablet width
+- narrow mobile if app supports it
+
+Rules:
+- Opportunity Map goes 2 columns desktop, 1 column narrow.
+- Status cards wrap from 4 columns to 2 columns to 1 column.
+- Chart controls scroll horizontally if needed.
+- Sidebar collapse behavior should not break scanner.
+- Eleanor panel remains readable.
+- Floating Eleanor button does not cover action buttons.
+- Bottom spacing prevents content hiding behind OS/nav chrome.
+- No horizontal page overflow.
+
+Validation:
+- No layout break at 1440px.
+- No layout break at 1024px.
+- No layout break at 768px.
+- No horizontal overflow.
+
+PHASE 30 — Accessibility and Keyboard UX
+
+Requirements:
+- Buttons have accessible labels.
+- Timeframe buttons are keyboard reachable.
+- Scan/Rescan buttons are keyboard reachable.
+- Opportunity cards are keyboard reachable if clickable.
+- BUY/SELL/WAIT badges have text, not color-only meaning.
+- Focus outline is visible.
+- Contrast remains readable in dark theme.
+- Floating Eleanor button is accessible.
+- Section jump tabs are keyboard reachable.
+
+Validation:
+- Keyboard user can navigate scanner.
+- Colorblind user can distinguish BUY/SELL/WAIT via labels.
+- Focus states are visible.
+
+PHASE 31 — Visual Consistency
+
+Apply consistent:
+- border radius
+- card padding
+- section gaps
+- badge sizes
+- text sizes
+- icon alignment
+- button heights
+- muted text color
+- active state color
+- warning/action colors
+
+Rules:
+- Keep ARX dark theme.
+- Keep BUY/SELL colors.
+- Keep live/status colors readable.
+- Do not introduce random new colors unless already in theme.
+- Use shared design tokens/classes if present.
+
+Validation:
+- Cards feel like one system.
+- Text hierarchy is clear.
+- Buttons and badges are consistent.
+
+PHASE 32 — Tests and Checks
+
+Run:
+- typecheck
+- lint if available
+- existing tests
+- scanner page smoke test
+
+Manual QA:
+- Market Scanner page loads.
+- Top content is not clipped.
+- Symbol selector still works.
+- Session indicator still works.
+- Scan/Rescan still works.
+- Opportunity Map renders real scanner results.
+- Opportunity groups display.
+- Selecting opportunity updates context or clearly routes to details.
+- Chart still renders.
+- Timeframe buttons still work.
+- Eleanor Read still loads.
+- Ask Eleanor still works.
+- Prepare Conditional Buy/Sell follows current gating.
+- Conditional/WAIT states are visually honest.
+- Stale/mismatch warnings appear when appropriate.
+- Trade Health reflects real position/bridge truth.
+- Sidebar nav still routes.
+- Floating Eleanor button still opens assistant.
+- No content is clipped.
+- No horizontal overflow.
+- Responsive layout works.
+- No backend/trading logic changed.
+
+PHASE 33 — Final Acceptance Criteria
+
+The scanner polish is complete when:
+
+- Top content is no longer clipped.
+- Header, decision strip, chart, Opportunity Map, Eleanor, and Trade Health align visually.
+- A trader can see symbol, decision, readiness, confidence, and freshness immediately.
+- All modules show freshness/source/snapshot context where available.
+- Conditional/WAIT states are impossible to mistake for confirmed trades.
+- Stale/mismatched data is clearly labeled.
+- Opportunity Map groups Ready / Waiting / Developing / Stale setups.
+- Opportunity cards clearly show readiness and blockers.
+- Selecting an opportunity updates chart/Eleanor/context consistently or clearly opens details.
+- Snapshot details are inspectable.
+- Rescan feedback is clear.
+- Rescan/loading/error states are clean.
+- Trade Health uses real bridge/position truth.
+- Floating Eleanor button does not cover important content.
+- Scroll position does not jump annoyingly.
+- UI is screenshot-clean without hiding risk truth.
+- Keyboard/accessibility basics work.
+- Responsive layout works.
+- Tests pass.
+- No scanner/trading/backend/Eleanor/feed/risk/bridge/execution logic changed.
+
+Final lock:
+Do not make conditional, stale, weak, or waiting setups look more trade-ready than they are. The UI should improve readability and trust, not inflate confidence.

@@ -1,0 +1,219 @@
+Pass 9 — role / permission / investor-boundary truth. Read-only. No edits, no tasks, no workflow changes.
+
+Goal:
+Prove whether any user class can reach LIVE-capable execution, command queueing, broker placement, close, reconnect, bridge, allocation, or admin-only trading surfaces they should not reach.
+
+Anchor this pass on the known live-capable / risky paths from Passes 6–8:
+
+A = POST /api/me/trades/open
+B = POST /api/trade/place
+C = POST /api/me/trades/close
+EA poll = /mt5/commands
+EA result callback = /mt5/command-result
+Alternate result callback = /mt5/execution-result
+Direct queue/admin paths = brokerPlacement.ts, placeOrder, liveCommandPipeline.ts, brokerHealth.ts, meMt5Commands.ts
+
+Known gaps:
+- A and C lack route-level denyInvestorExecution
+- C bypasses placeOrder/orderGuard/dispatchLiveCommand
+- global gates are mounted at routes/index.ts:180 and 187
+- B has denyInvestorExecution but A/C do not
+
+Required proof areas:
+
+1. Global auth / product-role gate truth
+Re-read the global middleware stack directly.
+
+Prove:
+- exact route mount order
+- which routers are behind requireAuthOrPublic
+- which routers are behind enforceProductRoleAccess
+- whether any public route can reach trading/bridge/command code
+- whether requireAuthOrPublic ever allows public access for API routes that should require auth
+- whether enforceProductRoleAccess is fail-closed or fail-open
+- whether role checks depend on request path, product, user row, session, account status, or cached state
+- whether route order creates any bypass before the global guards
+
+2. Role model inventory
+Find every role/account/trading-status field used for execution decisions.
+
+Include:
+- user role
+- product role
+- investor/trader/admin distinctions
+- approved trader status
+- bridge/live account status
+- live envelope / live readiness
+- demo vs simulated vs live mode
+- accountType
+- tradingEnabled flags
+- kill switch / emergency stop
+- product subscription/access flags
+
+For each field:
+- exact schema/source
+- who can change it
+- which middleware/endpoint consumes it
+- whether it is derived from DB truth or client input
+- whether frontend display status differs from backend execution status
+
+3. Investor boundary
+Trace all investor-deny logic.
+
+Prove:
+- denyInvestorExecution implementation
+- every route that uses it
+- every LIVE-capable route that does not use it
+- whether global enforceProductRoleAccess alone blocks investors from A/B/C
+- whether investors can hit A or C directly by API even if UI hides buttons
+- whether investor allocation/admin routes can trigger broker actions indirectly
+- whether investor-facing balance/withdraw/portfolio actions touch execution tables
+- whether investor role can ever be mixed with approved trader flags
+
+Classify each endpoint:
+- strongly investor-blocked
+- weakly blocked by global/product gate only
+- not blocked
+- unresolved
+
+4. Approved-trader / live-activation boundary
+Trace the full path from admin approval to live execution eligibility.
+
+Prove:
+- where admin approval is stored
+- where “full activation” / live bridge readiness is stored
+- whether approval alone enables live execution
+- whether per-user confirmation was removed, bypassed, or still required anywhere
+- whether live envelope checks apply to A/B/C
+- whether C close path applies the same approved-trader checks as open paths
+- whether stale approval/session state can keep trading enabled after revocation
+- whether disabled/suspended traders are blocked at every live-capable endpoint
+
+5. Admin boundary
+Trace admin-only trading and bridge controls.
+
+Prove:
+- admin route middleware
+- whether admin routes can insert mt5_commands directly
+- whether admin can act on behalf of users
+- whether userId in admin requests is server-selected or client-supplied
+- whether admin command routes still pass through dispatchLiveCommand/orderGuard
+- whether admin allocation/rebalance/manual exposure surfaces can trigger broker execution
+- whether admin-only reconnect/health commands are claimable by EA
+- whether admin privileges can bypass kill switch or emergency stop
+
+6. Client-supplied mode / accountType trust
+Find every endpoint that accepts mode, accountType, safetyMode, userId, mt5ConnectionId, ticket, symbol, volume, side, or commandId from the client.
+
+For each:
+- validate schema
+- prove whether LIVE can be client-selected
+- prove whether userId/connectionId are taken from session or body
+- prove whether ticket ownership is verified server-side
+- prove whether accountType is server-derived or trusted from frontend
+- prove whether a client can send mode:"LIVE" to routes that UI normally sends SIMULATED
+- prove whether safetyMode can be escalated by client body
+
+7. Ticket / position ownership boundary
+Specifically audit close and modify flows.
+
+Prove:
+- whether ticket belongs to the authenticated user
+- whether ticket belongs to the correct mt5ConnectionId
+- whether symbol/account are cross-checked
+- whether duplicate tickets across users can collide
+- whether pending close dedupe includes userId
+- whether user can close another user’s position by guessing ticket
+- whether user can suppress another user’s close through shared ticket number
+- whether UI and backend use the same position identity
+
+8. Emergency stop / kill switch / read-only boundaries
+Trace all live-capable paths against:
+- global emergency stop
+- per-user trading disabled
+- read-only mode
+- bridge token missing
+- EA ReadOnlyMode
+- liveTrading enabled flag
+- admin kill switch
+
+For A/B/C and every direct insert:
+- prove which stops are checked
+- prove which stops are skipped
+- prove whether CLOSE is allowed during emergency stop
+- prove whether CLOSE is intentionally exempt or accidentally bypassed
+- prove whether reconnect/health commands bypass stops
+
+9. Frontend permission truth
+Trace UI visibility/enablement for:
+- QuickTradeModal LIVE mode
+- ConfirmCloseModal live close
+- PaperOrderTicket
+- MyOpenTradesPanel
+- Admin live controls
+- Investor dashboard/action buttons
+- approved trader account switch / bridge status
+
+For each:
+- endpoint called
+- frontend condition to show/enable
+- backend condition to permit
+- whether frontend can show LIVE while backend denies
+- whether frontend can hide but direct API still succeeds
+- whether stale cached state can leave buttons enabled
+
+10. CI/test coverage
+Find tests/checks/scripts that would catch:
+- investor reaching A/B/C
+- non-approved trader sending mode:"LIVE"
+- client-selected accountType/mode escalation
+- direct API live call where UI sends SIMULATED
+- close ticket ownership failure
+- duplicate ticket collision across users
+- admin route acting on arbitrary user without guard
+- A/C missing denyInvestorExecution
+- global gate accidentally removed or reordered
+- emergency stop bypass by close/direct insert
+
+Classify coverage:
+- strong
+- weak
+- not covered
+- located but assertion not proven
+
+11. Classification standard
+Use same class system:
+- Class 1: clean/proven safe
+- Class 2: active risk
+- Class 3: defense-in-depth or integrity gap
+- Class 4: dormant/config-gated risk
+- Class 5: unresolved/deferred
+
+Required output format:
+
+PASS 9 — Role / Permission / Investor Boundary Truth — REPORT
+
+Sections:
+1. Executive verdict
+2. Global middleware truth
+3. Role/account/trading-status model
+4. Investor boundary matrix
+5. Approved-trader / live-activation truth
+6. Admin boundary truth
+7. Client-supplied field trust analysis
+8. Ticket / position ownership truth
+9. Emergency stop / kill-switch truth
+10. Frontend permission truth
+11. CI/test coverage
+12. New findings added to held fix-ledger
+13. Net risk ranking
+
+Important:
+- Read-only only.
+- Do not edit files.
+- Do not create tasks.
+- Do not run migrations.
+- Do not change workflows.
+- Do not rely on rg/grep matched text if token mangling appears. Use filename/line discovery only, then read files directly.
+- Give exact file:line proof for every claim.
+- If a claim cannot be proven, mark it Class 5 instead of assuming.

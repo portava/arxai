@@ -1,0 +1,569 @@
+Upgrade Ruby and the ARX AI trading assistant with a complete Trading Mode + Trade Accountability System.
+
+This is an upgrade to the existing ARX AI app. Do NOT rebuild the app. Do NOT break existing routes, hooks, MT5 bridge logic, scanner logic, Ruby chat, execution services, admin permissions, user permissions, live shared trading, risk controls, or existing UI wiring. First inspect the current architecture and identify where Ruby decisions, scanner signals, trade execution, risk layer, MT5 command queue, open trade tracking, closed trade history, and AI explanations currently live. Preserve all existing functionality and add this system on top of it.
+
+The goal:
+Ruby must never take, recommend, queue, or assist with a trade without clearly explaining the trade plan first. Ruby must state:
+1. Why the trade is being considered.
+2. What trading mode is being used.
+3. Entry logic.
+4. Direction: Buy or Sell.
+5. Expected loss if wrong.
+6. Expected profit if right.
+7. Risk/reward ratio.
+8. Stop loss plan.
+9. Take profit plan.
+10. Invalidation point.
+11. Confidence score.
+12. What could make Ruby change her mind.
+13. What market conditions must remain true for the trade to stay valid.
+
+After the trade closes, Ruby must explain:
+1. What happened.
+2. Whether the trade followed the original plan.
+3. Whether SL, TP, manual close, trailing stop, partial close, or reversal logic caused exit.
+4. Why the trade won or lost.
+5. What Ruby saw correctly.
+6. What Ruby missed.
+7. What should be adjusted next time.
+8. Whether the mode was appropriate.
+9. Whether the entry was early, late, or accurate.
+10. Whether risk was respected.
+11. Whether the trade should be used for AI learning.
+
+Add Trading Modes:
+
+A. Conservative Mode
+Purpose:
+Protect capital first. Only take high-quality setups.
+
+Behavior:
+- Requires stronger confirmation.
+- Lower lot sizing.
+- Wider rejection of weak signals.
+- Avoids trades near major news unless news is favorable and confirmed.
+- Requires cleaner trend, support/resistance, liquidity, and structure alignment.
+- Lower maximum open positions.
+- Prefers higher probability trades over fast scalps.
+- Must clearly state: “This is a Conservative setup because…”
+
+Required logic:
+- Higher confidence threshold.
+- Stronger multi-timeframe agreement.
+- Avoid overtrading.
+- Reject unclear markets.
+- Prefer risk/reward of at least 1:1.5 unless scalp rules justify otherwise.
+- Must explain why risk is acceptable.
+
+B. Balanced Mode
+Purpose:
+Default mode. Good balance between opportunity and protection.
+
+Behavior:
+- Allows normal AI-assisted trading.
+- Requires reasonable confirmation.
+- Allows trend trades, pullbacks, breakouts, and clean scalps.
+- Uses moderate lot sizing based on user caps and bridge rules.
+- Must explain: “This is a Balanced setup because…”
+
+Required logic:
+- Medium confidence threshold.
+- Uses market structure, trend, momentum, volatility, support/resistance, candle behavior, spread, slippage, and news.
+- Risk/reward target should usually be at least 1:1.2 or better unless the trade is a valid short scalp.
+
+C. Aggressive Mode
+Purpose:
+Faster entries and more opportunity, but still controlled and explainable.
+
+Behavior:
+- Allows earlier entries.
+- Allows momentum continuation.
+- Allows faster scalps.
+- Allows more frequent signals.
+- Uses tighter invalidation and quicker reassessment.
+- Must NEVER become reckless or random.
+- Must explain: “This is an Aggressive setup because…”
+
+Required logic:
+- Lower confirmation threshold than Conservative/Balanced.
+- Strong focus on live momentum, candle flame, volatility expansion, order-flow proxy, breakout continuation, and fast rejection zones.
+- Must clearly state that the trade has higher risk.
+- Must calculate estimated drawdown before entry.
+- Must state where Ruby is wrong.
+- Must still respect user/admin risk settings and bridge limits unless admin override already exists in the app.
+
+D. Scalping Mode
+Purpose:
+Fast short-term trades from one candle to several candles.
+
+Behavior:
+- Uses flame/momentum detection.
+- Looks for fast candle expansion, clean directional pressure, repeated rejection, spread acceptability, volatility burst, and quick TP zones.
+- Allows multi-trade scalp entries only when the flame continues and risk allows.
+- Must explain whether this is a single-entry scalp or multi-entry scalp.
+- Must calculate each entry’s planned loss/profit separately and combined basket risk.
+
+Required logic:
+- Entry speed matters.
+- Detect candle “run-on flame” movement.
+- TP can be smaller, but must be justified.
+- SL must be very clear.
+- Must reject scalp if spread/slippage is too high.
+- Must say whether trade is expected to last one candle, several candles, or until momentum weakens.
+- Must explain after exit whether momentum continued, faded, reversed, or trapped entry.
+
+E. News-Aware Mode
+Purpose:
+Trades that are affected by news, calendar events, speeches, market shocks, or volatility events.
+
+Behavior:
+- Ruby must show upcoming news or active news directly in the trade explanation.
+- Ruby must explain if news supports, conflicts with, or increases danger for the trade.
+- If news is near, Ruby must say whether she is waiting, entering early, entering after confirmation, or avoiding.
+- News alerts should connect to the chart and scanner if those systems already exist.
+
+Required logic:
+- Pull from existing news/calendar sources.
+- If data source is unavailable, Ruby must say: “News source unavailable, reducing confidence.”
+- Do not fabricate news.
+- Must show the trade impact clearly.
+
+F. Custom Mode
+Purpose:
+Allow admin/user-defined trading behavior.
+
+Add settings:
+- Mode name
+- Max risk per trade
+- Max open trades
+- Minimum confidence
+- Preferred RR
+- Scalping allowed true/false
+- News trading allowed true/false
+- Multi-trade allowed true/false
+- Max lot
+- Max basket exposure
+- Auto-close behavior
+- Reversal behavior
+- Conservative confirmation required true/false
+
+Mode selection UI:
+Add a clean Trading Mode selector wherever Ruby or scanner trading decisions happen:
+- Ruby chat
+- Scanner page
+- Market view/chart
+- Trade ticket if one exists
+- Admin/user settings if applicable
+
+Do not clutter the UI. Use a compact segmented selector or dropdown:
+Conservative | Balanced | Aggressive | Scalping | News-Aware | Custom
+
+The selected mode must be stored per user and used consistently across:
+- Ruby chat
+- Scanner signals
+- Smart chart decisions
+- Trade execution
+- Risk layer
+- MT5 command creation
+- Open trade monitoring
+- Closed trade review
+- Learning engine
+
+Ruby Pre-Trade Admission System:
+
+Before Ruby recommends or executes a trade, create a required “Trade Admission Card.”
+
+The card must include:
+
+Trade Plan:
+- Symbol
+- Direction
+- Mode
+- Entry type: market / limit / stop / AI-assisted / one-click
+- Current price
+- Planned entry
+- Stop loss
+- Take profit
+- Lot size
+- Estimated spread
+- Estimated slippage
+- Estimated maximum loss in dollars
+- Estimated maximum gain in dollars
+- Risk/reward ratio
+- Confidence score
+- Timeframe basis
+- Expected trade duration
+- Reason for trade
+- Invalidation condition
+- News impact
+- Market structure summary
+- Momentum summary
+- Volatility summary
+- Support/resistance summary
+- Liquidity/trap warning
+- “Ruby is wrong if…”
+
+Ruby must use plain English first, then technical detail.
+
+Example format:
+
+“Before I take this trade, here is my plan:
+I am considering a BUY on Volatility 75 in Aggressive Mode because price is breaking above the last rejection zone with strong candle expansion and momentum holding above short-term structure.
+
+Planned loss: about $12.40 if price hits my invalidation level.
+Planned profit: about $28.00 if price reaches the first target.
+Risk/reward: 1:2.25.
+I am wrong if price closes back below the breakout base or momentum fades within the next two candles.”
+
+For live execution:
+Do not add new blocks that prevent authorized live trading. This system is not meant to disable live trading. It is meant to make every live trade explainable, measurable, and accountable. Keep existing live shared bridge rules, admin approvals, per-user controls, and kill switch logic wired correctly.
+
+For admin account:
+Respect existing admin override behavior already in the app. Do not re-add unnecessary restrictions or demo-only blockers. However, Ruby must still calculate and display planned loss/profit before taking trades.
+
+Trade Execution Integration:
+
+Every trade command sent to MT5 must carry metadata:
+- rubyTradeId
+- userId
+- symbol
+- mode
+- direction
+- entryReason
+- preTradePlan
+- plannedRiskUsd
+- plannedRewardUsd
+- riskRewardRatio
+- confidence
+- stopLoss
+- takeProfit
+- invalidationPrice
+- expectedDuration
+- newsContext
+- scannerSignalId if applicable
+- chartSnapshotId if available
+- modeSettingsSnapshot
+- createdAt
+
+Make sure this metadata follows the trade through:
+- command queue
+- MT5 bridge
+- fill confirmation
+- open positions
+- live P/L tracking
+- close event
+- trade history
+- Ruby post-trade review
+- learning engine
+
+If the current database does not have these fields, add migrations safely without destroying existing data.
+
+Post-Trade Accountability System:
+
+When a trade closes, Ruby must automatically generate a “Trade Review Card.”
+
+The review must include:
+- Trade ID
+- Symbol
+- Mode used
+- Direction
+- Entry price
+- Exit price
+- Lot size
+- Planned loss
+- Planned profit
+- Actual result
+- Planned RR
+- Actual RR
+- Exit reason
+- Time in trade
+- Max drawdown during trade
+- Max unrealized profit during trade
+- Whether plan was followed
+- Whether entry was early/late/accurate
+- Whether exit was early/late/accurate
+- What Ruby got right
+- What Ruby got wrong
+- Market behavior after entry
+- Lesson learned
+- Adjustment for future trades
+- Learning grade
+
+Ruby must say clearly:
+- “This trade followed the plan.”
+- or “This trade did not follow the plan because…”
+
+If the trade lost:
+Ruby must not make excuses. She must explain the failure clearly:
+- Bad entry?
+- Late signal?
+- Weak confirmation?
+- News shock?
+- Spread/slippage?
+- Reversal trap?
+- Support/resistance failure?
+- Momentum faded?
+- Wrong mode?
+- Risk too high?
+
+If the trade won:
+Ruby must still analyze quality:
+- Was it a good win or lucky win?
+- Did TP match the original plan?
+- Was there unnecessary drawdown?
+- Was the entry clean?
+- Should Ruby repeat this setup?
+
+Add Trade Grade:
+A+ = clean entry, clean risk, clean exit, plan followed
+A = strong trade, minor improvement
+B = acceptable but could improve
+C = weak setup or poor execution
+D = should have been avoided
+F = broken plan / bad trade / failed rules
+
+Learning Engine Integration:
+
+Every closed trade should be saved as a learning event:
+- setup type
+- mode
+- result
+- market conditions
+- reason
+- mistake category
+- success category
+- improvement note
+- shouldRepeat boolean
+- shouldAvoid boolean
+- confidenceAdjustment
+- modeAdjustment
+
+Ruby should use this to improve future scanner and trade explanations.
+
+Scanner Integration:
+
+Scanner results must show mode-aware signals.
+
+For each scanner signal, show:
+- Suggested mode compatibility:
+  Conservative: Yes/No
+  Balanced: Yes/No
+  Aggressive: Yes/No
+  Scalping: Yes/No
+- Why the setup fits or does not fit each mode.
+- Planned risk and reward before user trades.
+- Ruby explanation panel must update when user changes mode.
+
+Example:
+A setup may be rejected in Conservative Mode but accepted in Aggressive Mode. Ruby must explain:
+“Conservative Mode rejects this because confirmation is not complete. Aggressive Mode allows it because momentum is expanding early, but the invalidation is tight.”
+
+Smart Chart Integration:
+
+If the ARX smart chart exists, connect the mode logic to it.
+
+The chart should be able to display:
+- Entry zone
+- Stop loss zone
+- Take profit zone
+- Invalidation line
+- Expected path
+- Risk zone
+- Reward zone
+- News markers
+- Mode label
+- Confidence label
+- After trade: actual path versus planned path
+
+Do not rebuild the chart. Upgrade the existing chart and preserve all current chart wiring.
+
+Ruby Chat Integration:
+
+Ruby must be able to answer:
+- “Why are you taking this trade?”
+- “How much are we risking?”
+- “How much can we make?”
+- “Where are you wrong?”
+- “What mode are you in?”
+- “Would Conservative Mode take this?”
+- “Would Aggressive Mode take this?”
+- “Should we scalp this?”
+- “What happened after that trade?”
+- “Why did that trade lose?”
+- “Was that a good trade?”
+- “What did you learn?”
+
+Ruby must speak in plain English first. Technical details second. Do not give vague answers.
+
+Bad answer:
+“Market is bearish due to indicators.”
+
+Good answer:
+“Market is bearish because price rejected the same resistance zone three times, the last two candles made lower highs, momentum is fading, and sellers are stepping in before price can reclaim the breakout level. I am wrong if price closes above that rejection zone with strong volume/momentum.”
+
+Risk Calculation Requirements:
+
+For every trade, calculate:
+- Lot size
+- Tick value if available
+- Pip/point distance to SL
+- Estimated dollar loss
+- Estimated dollar profit
+- Spread cost
+- Slippage estimate
+- Net expected loss
+- Net expected profit
+- Account/basket exposure
+- Open positions correlation risk
+- Margin impact
+- Free margin after entry
+- Worst-case basket drawdown
+
+For Deriv volatility indices, account for symbol-specific tick/contract behavior. Do not assume forex pip math applies to volatility indices. Use existing MT5 symbol info where available.
+
+Opposite/Correlation Awareness:
+
+Ruby must understand when volatility pairs or symbols are running opposite each other.
+
+Add logic:
+- Track symbol movement correlation.
+- Detect when trader is trading one volatility symbol and another is running opposite.
+- Alert user when opposite movement creates risk or opportunity.
+- If one symbol confirms another, Ruby should say so.
+- If one symbol contradicts another, Ruby should reduce confidence or warn.
+
+Example:
+“Volatility 75 is pushing up, but Volatility 25 is rejecting in the opposite direction. This does not automatically cancel the trade, but it weakens broad volatility confirmation. I am reducing confidence from 78 to 69.”
+
+Mode Rules Table:
+
+Create a centralized mode configuration file/service. Do not scatter mode rules randomly across files.
+
+Example structure:
+tradingModes.ts or rubyTradingModes.service.ts
+
+Each mode should define:
+- minConfidence
+- maxRiskMultiplier
+- maxOpenPositions
+- allowScalping
+- allowNewsTrading
+- allowMultiEntry
+- confirmationLevel
+- rrMinimum
+- slRequired
+- tpRequired
+- maxSlippageTolerance
+- maxSpreadTolerance
+- reviewStrictness
+- learningWeight
+
+Internal Handshake System:
+
+Make sure every layer talks to each other:
+- Ruby reasoning layer
+- Scanner layer
+- Risk layer
+- Chart layer
+- News layer
+- Execution layer
+- MT5 bridge layer
+- Position tracker
+- History tracker
+- Learning layer
+- UI layer
+
+Before execution, require a system handshake:
+1. Ruby creates plan.
+2. Risk layer validates plan.
+3. Scanner/chart context attaches if available.
+4. News context attaches if available.
+5. Execution service receives plan.
+6. MT5 command includes plan metadata.
+7. UI displays plan.
+8. Open trade tracker monitors against plan.
+9. Close event triggers review.
+10. Learning engine stores outcome.
+
+If any non-critical context is missing, do not crash. Continue with reduced confidence and show what is missing.
+
+Example:
+“Chart context unavailable, confidence reduced.”
+“News feed unavailable, confidence reduced.”
+“Symbol tick value unavailable, using MT5 fallback calculation.”
+
+UI Requirements:
+
+Add clean cards:
+1. Mode Selector Card
+2. Pre-Trade Admission Card
+3. Live Trade Plan Card
+4. Post-Trade Review Card
+5. Mode Comparison Panel
+6. Learning Notes Panel
+
+Keep the UI clean and premium. Do not expose raw backend names, JSON, stack traces, or internal function names to regular users.
+
+For admin/dev views, diagnostics can exist but must be hidden behind admin-only access.
+
+Testing Requirements:
+
+After implementation, run full QA.
+
+Test:
+- Conservative mode rejects weak setup.
+- Balanced mode accepts normal clean setup.
+- Aggressive mode accepts earlier momentum setup with warning.
+- Scalping mode identifies fast candle flame.
+- News-aware mode attaches news context.
+- Custom mode saves and applies user settings.
+- Ruby creates pre-trade plan before trade.
+- Trade command carries plan metadata.
+- MT5 command still works through existing bridge.
+- Live UI still updates open trade.
+- Closed trade triggers Ruby review.
+- Losing trade review explains failure.
+- Winning trade review explains quality.
+- Scanner updates explanation when mode changes.
+- Chart shows entry/SL/TP/invalidation when available.
+- Admin/user permissions still work.
+- Existing live shared bridge remains wired.
+- No paper trading language is reintroduced.
+- No demo-only blocker is added to live testing.
+- App performance remains fast.
+
+Performance Requirements:
+- Mode switch should update UI in under 300ms.
+- Ruby pre-trade explanation should begin rendering in under 1 second.
+- Trade plan calculation should complete quickly and not delay one-click trading unnecessarily.
+- Open trade monitoring should update live P/L, equity, balance, margin, free margin, and margin level as currently designed.
+- Do not slow scanner.
+- Cache mode configs.
+- Avoid repeated expensive AI calls when deterministic calculation can handle it.
+
+Pass/Fail Gate:
+
+Do not mark this complete until:
+1. Ruby can clearly explain planned loss and planned profit before trade.
+2. Ruby can explain why the trade is being taken.
+3. Ruby can explain where she is wrong.
+4. Ruby can attach the mode to the trade.
+5. Ruby can review the trade after close.
+6. Trade metadata survives from decision to execution to history.
+7. Scanner, chart, Ruby chat, risk layer, and MT5 execution are all wired together.
+8. Existing app functionality still works.
+9. No major console errors remain.
+10. Live shared bridge flow is not broken.
+
+Final output required:
+- List files changed.
+- List database fields/migrations added.
+- List new services/components created.
+- Show how each mode works.
+- Show one sample pre-trade admission.
+- Show one sample post-trade review.
+- Confirm MT5 bridge metadata path.
+- Confirm scanner integration.
+- Confirm chart integration.
+- Confirm risk calculation integration.
+- Confirm no existing wiring was removed.

@@ -1,0 +1,968 @@
+Add everything we just planned into the current build as a phased development roadmap and implementation system.
+
+Do not build randomly.
+Do not jump ahead.
+Each phase must be completed, tested, and audited before moving to the next phase.
+
+Project name:
+High Roll Market AI
+
+Core product vision:
+Build an AI-powered trading command center that connects to MT5, supports live trade execution, manages risk, learns from day-to-day trading behavior, finds high-probability entry windows, tracks every trade, and gives the user a professional trading calendar, journal, and AI trade manager.
+
+The app must support:
+- Forex majors
+- Forex minors
+- Forex exotics
+- US30
+- NAS100
+- SPX500
+- GER40
+- UK100
+- JP225
+- U.S. stocks
+- Crypto placeholders
+- Volatility 75 Index
+- Volatility 75 1s Index
+- Volatility 25 1s Index
+
+Important build rule:
+The app must be fast enough to avoid missing trade conditions. Use efficient scanning, cached market data, background queues, lightweight calculations, and clean state management. Avoid slow page reloads, heavy unnecessary rendering, and overcomplicated loops.
+
+Architecture:
+Replit = web app, AI brain, scanner, journal, calendar, backtesting, risk manager, and signal engine.
+MT5 = execution engine through EA bridge or Python bridge.
+Broker account stays inside MT5.
+The app sends trade commands to MT5.
+MT5 sends account, order, and position updates back to the app.
+
+Live trading:
+Live trading must be supported, but locked behind:
+- demo testing
+- MT5 bridge connected
+- API key validation
+- risk manager active
+- kill switch active
+- user confirmation
+- live mode warning
+- max daily loss
+- max weekly loss
+- max open trades
+- max lot size
+- stop after losing streak
+
+The AI should never promise profit.
+The phrase “perfect entry” should be implemented as “highest-probability entry window.”
+
+PHASE 1 — Foundation Audit
+
+First, audit the current app.
+
+Check:
+- existing pages
+- routes
+- components
+- backend endpoints
+- current database structure
+- current mock data
+- current strategy logic
+- current MT5 bridge work
+- UI consistency
+- mobile responsiveness
+- performance issues
+- incomplete placeholders
+
+Create an audit report inside the app/admin area or as a markdown file called:
+
+/docs/BUILD_AUDIT.md
+
+The audit must include:
+- what already exists
+- what is broken
+- what is missing
+- what should be refactored
+- what should not be touched
+- what must be completed before moving to Phase 2
+
+Do not move to Phase 2 until Phase 1 is clean.
+
+PHASE 2 — Global Design System and Navigation
+
+Create a premium trading terminal UI.
+
+Build:
+- global sidebar
+- topbar
+- mobile bottom navigation
+- reusable cards
+- reusable badges
+- reusable tables
+- reusable modals
+- reusable chart containers
+- reusable signal cards
+- reusable confidence meters
+- reusable risk badges
+- reusable volatility badges
+- reusable MT5 status indicator
+
+Navigation groups:
+
+MARKETS
+- Dashboard
+- Scanner
+- Forex
+- Indices
+- Stocks
+- Synthetic
+
+TRADING
+- Live Trades
+- Trade Plans
+- AI Assistant
+- Entry Sniper Lab
+- Strategy Builder
+- MT5 Bridge
+
+ANALYTICS
+- Backtesting
+- Journal
+- Performance
+- AI Learning
+- Trading Calendar
+
+RISK
+- Risk Center
+- Exposure
+- Alerts
+
+SYSTEM
+- Settings
+- API Status
+
+UI style:
+- premium dark mode
+- clean spacing
+- professional fintech look
+- no clutter
+- mobile responsive
+- fast navigation
+- clear information hierarchy
+
+Do not move to Phase 3 until navigation and design system are consistent across the app.
+
+PHASE 3 — Multi-Market Symbol System
+
+Build a complete symbol registry.
+
+Support:
+Forex majors:
+EURUSD, GBPUSD, USDJPY, USDCHF, USDCAD, AUDUSD, NZDUSD
+
+Forex minors:
+EURGBP, EURJPY, EURCHF, EURAUD, EURCAD, EURNZD,
+GBPJPY, GBPCHF, GBPAUD, GBPCAD, GBPNZD,
+AUDJPY, AUDCHF, AUDCAD, AUDNZD,
+NZDJPY, NZDCHF, NZDCAD,
+CADJPY, CADCHF,
+CHFJPY
+
+Indices:
+US30, NAS100, SPX500, GER40, UK100, JP225
+
+Stocks:
+AAPL, MSFT, NVDA, TSLA, AMZN, META, GOOGL, AMD, NFLX, JPM, BAC, XOM, WMT, COST
+
+Synthetic:
+Volatility 75 Index
+Volatility 75 1s Index
+Volatility 25 1s Index
+
+Each symbol must include:
+- display name
+- category
+- broker symbol
+- risk level
+- recommended timeframes
+- trading sessions
+- minimum confidence
+- default risk per trade
+- notes
+
+Add fast symbol search and quick switching.
+
+Do not move to Phase 4 until symbol switching works across dashboard, scanner, trade plan, journal, and MT5 bridge.
+
+PHASE 4 — Market Data Provider Layer
+
+Build a data provider system.
+
+Create provider priority:
+1. MT5 provider if connected
+2. external provider if configured
+3. mock provider fallback
+
+Create:
+- Candle type
+- Quote type
+- DataProvider interface
+- mock provider
+- MT5 provider placeholder
+- external API placeholder
+- symbol normalizer
+- market data cache
+
+The strategy engine should never care where the data comes from.
+It should only receive normalized candles and quotes.
+
+Performance:
+- cache latest candles
+- avoid duplicate fetches
+- update scanner efficiently
+- no full app reloads
+- scanning interval should be configurable
+
+Do not move to Phase 5 until mock data and symbol switching work smoothly.
+
+PHASE 5 — Technical Analysis Engine
+
+Build indicator functions:
+- EMA
+- SMA
+- RSI
+- ATR
+- MACD
+- Bollinger Bands
+- VWAP placeholder
+- swing highs
+- swing lows
+- support and resistance
+- break of structure
+- change of character
+- liquidity sweep
+- wick rejection
+- candle body strength
+- volatility expansion
+- chop detection
+
+Return a technical analysis object:
+
+{
+  trendDirection,
+  trendStrength,
+  emaAlignment,
+  rsiState,
+  atrState,
+  supportLevels,
+  resistanceLevels,
+  structure,
+  liquiditySweep,
+  candleStrength,
+  volatilityExpansion,
+  chopScore,
+  technicalBias,
+  technicalScore,
+  reasons
+}
+
+Do not move to Phase 6 until each indicator works with mock data and does not slow the app.
+
+PHASE 6 — Market Brain
+
+Create the main Market Brain.
+
+It should combine:
+- technical analysis
+- macro bias
+- session logic
+- news risk
+- volatility condition
+- strategy match
+- spread state
+- risk approval
+
+Return:
+
+{
+  symbol,
+  category,
+  direction,
+  confidence,
+  entry,
+  stopLoss,
+  takeProfit,
+  riskReward,
+  strategy,
+  marketCondition,
+  technicalBias,
+  macroBias,
+  session,
+  newsRisk,
+  volatilityState,
+  riskApproved,
+  blockedReason,
+  aiExplanation,
+  reasons,
+  timestamp
+}
+
+Rules:
+- WAIT is valid.
+- Never force trades.
+- If confidence is too low, WAIT.
+- If news risk blocks trade, WAIT.
+- If market is choppy, WAIT unless mean reversion is enabled.
+- Volatility 75 1s needs stricter confidence.
+- US30 blocks during major U.S. news.
+- Synthetic markets ignore real-world news and focus on structure, ATR, volatility, and momentum.
+
+Do not move to Phase 7 until every signal includes a clear reason and risk result.
+
+PHASE 7 — Strategy Builder
+
+Build toggleable strategies:
+
+1. Trend Continuation
+2. Break of Structure
+3. Pullback Continuation
+4. Liquidity Sweep Reversal
+5. Volatility Expansion
+6. Mean Reversion
+7. Session Breakout
+8. News Avoidance
+9. Stock Momentum
+10. Index Momentum
+
+Each strategy must have:
+- settings
+- on/off toggle
+- description
+- best market conditions
+- bad market conditions
+- minimum confidence
+- safe defaults
+
+Do not move to Phase 8 until strategy settings save and actually affect signals.
+
+PHASE 8 — Risk Command Center
+
+Build the most important safety layer.
+
+Risk modes:
+
+Conservative:
+- risk per trade: 0.25%
+- max daily loss: 1%
+- max weekly loss: 3%
+- max trades per day: 3
+- stop after losing streak: 2
+- minimum confidence: 80
+- max open trades: 1
+
+Balanced:
+- risk per trade: 0.5%
+- max daily loss: 2%
+- max weekly loss: 5%
+- max trades per day: 5
+- stop after losing streak: 3
+- minimum confidence: 75
+- max open trades: 2
+
+Aggressive:
+- risk per trade: 1%
+- max daily loss: 3%
+- max weekly loss: 7%
+- max trades per day: 8
+- stop after losing streak: 3
+- minimum confidence: 70
+- max open trades: 3
+
+Custom:
+User can edit all values.
+
+Special rules:
+- Volatility 75 1s adds +10 required confidence.
+- Volatility 75 uses smaller lot sizing.
+- US30 blocks around major U.S. news.
+- Stocks block around earnings unless overridden.
+- Forex blocks around major central bank/news events.
+
+Risk manager has final authority.
+
+Do not move to Phase 9 until blocked trades cannot bypass the risk manager.
+
+PHASE 9 — Entry Window Engine
+
+Build the engine that finds the highest-probability entry window based on trading style.
+
+Trading styles:
+1. Scalping
+2. Day trading
+3. Swing trading
+4. Synthetic volatility trading
+
+Each style changes:
+- timeframe stack
+- confirmation rules
+- stop distance
+- spread tolerance
+- volatility tolerance
+- session importance
+- risk rules
+- entry timing
+
+Entry Window Engine must detect:
+- pullback zone
+- confirmation candle
+- retest
+- liquidity sweep
+- structure break
+- invalidation level
+- spread condition
+- volatility condition
+- risk/reward quality
+- chase risk
+
+Output:
+{
+  entryStatus: "WAITING | FORMING | READY | MISSED | INVALIDATED",
+  bestEntryZone,
+  confirmationNeeded,
+  invalidationLevel,
+  chaseWarning,
+  entryQualityScore,
+  reason
+}
+
+Important:
+The AI may wait for better entry.
+The AI may cancel a trade if entry is missed.
+The AI must never chase.
+
+Do not move to Phase 10 until entry status updates correctly.
+
+PHASE 10 — Entry Sniper Lab
+
+Build practice and simulation mode.
+
+The Entry Sniper Lab should compare:
+- original signal entry
+- ideal entry zone
+- actual entry
+- late entry
+- early entry
+- drawdown before profit
+- maximum favorable move
+- maximum adverse move
+- entry quality score
+
+Modes:
+- replay mode
+- paper trade mode
+- missed entry tracker
+- early entry tracker
+- late entry tracker
+
+The AI should learn:
+- whether waiting improved the trade
+- whether confirmation helped
+- whether the entry was too early
+- whether the entry was too late
+- whether the setup should have been skipped
+
+Do not move to Phase 11 until the lab can score sample trades.
+
+PHASE 11 — Trade Plan Generator
+
+Before any trade goes to MT5, generate a trade plan.
+
+Trade plan includes:
+- symbol
+- market type
+- direction
+- strategy
+- entry type
+- entry price
+- stop loss
+- take profit
+- risk/reward
+- confidence
+- market thesis
+- invalidation
+- management plan
+- risk audit
+- final recommendation
+
+Final recommendation:
+- APPROVED
+- WAIT
+- BLOCKED
+
+Rules:
+- blocked risk = BLOCKED
+- low confidence = WAIT
+- news block = BLOCKED
+- choppy market = WAIT
+- live execution requires APPROVED
+
+Do not move to Phase 12 until every trade command requires a valid trade plan.
+
+PHASE 12 — MT5 Bridge
+
+Build secure MT5 connection system.
+
+Routes:
+GET /api/mt5/status
+POST /api/mt5/signal
+POST /api/mt5/execute
+POST /api/mt5/close
+POST /api/mt5/modify
+POST /api/mt5/close-all
+POST /api/mt5/heartbeat
+GET /api/mt5/commands
+POST /api/mt5/command-result
+POST /api/mt5/sync-account
+POST /api/mt5/sync-positions
+
+Bridge requirements:
+- API key validation
+- heartbeat
+- command queue
+- command status
+- account sync
+- open positions sync
+- error logs
+- last connection time
+- bridge status
+
+Connection status:
+- Connected if heartbeat within 15 seconds
+- Disconnected if no heartbeat after 15 seconds
+
+Do not move to Phase 13 until mock commands work.
+
+PHASE 13 — MT5 Expert Advisor File
+
+Create:
+
+/mt5-ea/HighRollMarketAI_Bridge.mq5
+
+EA must:
+- send heartbeat every 5 seconds
+- pull pending commands
+- open trades
+- close trades
+- modify trades
+- close all trades
+- sync account
+- sync positions
+- report command result
+
+Safety:
+- AllowLiveTrading input defaults false
+- only manage matching MagicNumber
+- reject missing stop loss
+- reject missing take profit
+- reject invalid lot size
+- reject unknown symbol
+- log actions
+- WebRequest URL must be allowed in MT5 settings
+
+Do not put strategy logic inside MT5.
+MT5 only executes.
+Replit remains the brain.
+
+Do not move to Phase 14 until EA file exists and instructions are shown in the app.
+
+PHASE 14 — Live Trade Management
+
+Once a trade is open, the AI monitors it.
+
+Functions:
+- monitor open trades
+- evaluate trade health
+- suggest break-even move
+- suggest trailing stop
+- suggest partial close
+- suggest early exit
+- detect invalidation
+
+Live Trades page shows:
+- ticket
+- symbol
+- direction
+- lot
+- entry
+- current price
+- stop loss
+- take profit
+- floating P/L
+- R multiple
+- trade health score
+- AI management suggestion
+- move to break-even button
+- trail stop button
+- partial close button
+- close trade button
+- close all button
+
+All buttons work in mock mode first.
+Live mode remains locked until confirmed.
+
+Do not move to Phase 15 until mock live trade management works.
+
+PHASE 15 — Trade Tracking and Journal Pro
+
+Track every trade.
+
+Fields:
+- trade id
+- symbol
+- market type
+- direction
+- strategy
+- entry
+- stop loss
+- take profit
+- exit
+- result
+- profit/loss
+- R multiple
+- confidence
+- session
+- market condition
+- news risk
+- volatility state
+- screenshot placeholder
+- notes
+- emotion before trade
+- emotion after trade
+- mistake tags
+- success tags
+- AI review
+- lesson learned
+
+Mistake tags:
+- entered too early
+- entered too late
+- ignored trend
+- ignored news
+- ignored risk
+- overleveraged
+- revenge trade
+- moved stop badly
+- closed too early
+- held too long
+- traded chop
+- low confidence setup
+
+Success tags:
+- followed plan
+- waited for confirmation
+- respected stop loss
+- took partial correctly
+- avoided bad trade
+- followed risk rules
+- entered clean pullback
+- traded with trend
+
+Do not move to Phase 16 until trades are saved and viewable.
+
+PHASE 16 — Trading Calendar
+
+Build a calendar that shows daily trading performance.
+
+Calendar day colors:
+- green = winning day
+- red = losing day
+- gray = no-trade day
+- yellow = break-even day
+
+Each day shows:
+- daily P/L
+- number of trades
+- win rate
+- best trade
+- worst trade
+- total R
+- notes
+- AI daily recap
+
+Views:
+- daily
+- weekly
+- monthly
+
+Add:
+- winning streak
+- losing streak
+- best month
+- worst month
+- average winning day
+- average losing day
+
+Do not move to Phase 17 until journal trades populate calendar automatically.
+
+PHASE 17 — AI Trading Desk Manager
+
+The AI should review day-to-day management.
+
+It learns from:
+- completed trades
+- open trade management
+- blocked trades
+- missed trades
+- signals ignored
+- stop-loss hits
+- take-profit hits
+- early exits
+- late exits
+- reversals after entry
+
+Daily review should include:
+- total trades
+- wins
+- losses
+- break-even trades
+- net P/L
+- max drawdown
+- best setup
+- worst setup
+- best session
+- worst session
+- best symbol
+- worst symbol
+- best strategy
+- worst strategy
+- common mistake pattern
+- common success pattern
+
+AI can auto-apply safe improvements:
+- raise minimum confidence
+- lower max trades
+- lower risk per trade
+- increase cooldown
+- disable poorly performing strategy after enough evidence
+
+AI cannot auto-apply:
+- increase risk
+- increase lot size
+- enable live mode
+- remove kill switch
+- lower confidence requirement
+- ignore news filter
+
+Require at least 30 trades before strong recommendations.
+
+Do not move to Phase 18 until daily reviews are generated from real logged data.
+
+PHASE 18 — Market Memory Engine
+
+Store patterns that worked and failed.
+
+Track performance by:
+- symbol
+- market type
+- strategy
+- session
+- timeframe
+- volatility state
+- trend strength
+- market condition
+- confidence range
+- day of week
+- news risk
+- entry type
+
+Market Memory should answer:
+- what works best for EURUSD?
+- what works best for US30?
+- what works best for Volatility 75 1s?
+- what strategy is failing?
+- what session should be avoided?
+- what conditions produce losses?
+
+Do not move to Phase 19 until memory summaries show useful insights.
+
+PHASE 19 — AI Copilot
+
+Create a professional AI assistant, not a hype chatbot.
+
+It should explain:
+- why setup is valid
+- why setup is weak
+- what invalidates the trade
+- what conditions improve the setup
+- whether to wait
+- whether trade should be blocked
+- whether user is overtrading
+- whether risk is too high
+
+Tone:
+- calm
+- serious
+- analytical
+- professional
+- never promises profit
+- prefers WAIT over forcing trades
+
+Add floating Copilot panel:
+- current market summary
+- strongest setups
+- biggest risks
+- latest AI insight
+- open trade warning
+- entry window status
+
+Do not move to Phase 20 until AI comments are consistent across signals, trades, and journal.
+
+PHASE 20 — Backtesting Lab Pro
+
+Build advanced backtesting.
+
+Inputs:
+- CSV upload
+- starting balance
+- risk per trade
+- spread
+- commission
+- slippage
+- timeframe
+- date range
+- session filter
+- news filter
+- strategy selection
+
+Results:
+- total trades
+- wins
+- losses
+- win rate
+- profit factor
+- net profit
+- max drawdown
+- average win
+- average loss
+- expectancy
+- losing streak
+- winning streak
+- equity curve
+- drawdown curve
+- monthly returns
+- strategy comparison
+
+Warnings:
+- backtests do not guarantee future results
+- avoid overfitting
+- low sample warning under 100 trades
+- spreads and slippage change results
+
+Do not move to Phase 21 until backtests produce usable reports.
+
+PHASE 21 — Alerts
+
+Build alerts for:
+- high confidence signal
+- entry window ready
+- entry missed
+- trade opened
+- trade closed
+- risk limit hit
+- losing streak
+- MT5 disconnected
+- news risk
+- kill switch activated
+- backtest complete
+
+Add:
+- alert bell
+- toast notifications
+- unread count
+- alerts page
+- alert settings
+
+Do not move to Phase 22 until alerts trigger from real app events.
+
+PHASE 22 — Performance Optimization
+
+The app must be fast enough not to miss trade conditions.
+
+Optimize:
+- scanner loop
+- market data cache
+- backend signal generation
+- frontend rendering
+- database writes
+- chart loading
+- symbol switching
+- MT5 command queue
+- alert system
+
+Use:
+- background workers where appropriate
+- lightweight calculations
+- memoized frontend components
+- pagination for logs
+- virtualized long tables if needed
+- debounced search
+- efficient API polling or WebSocket/SSE where appropriate
+
+Ask Replit to evaluate alternative solutions:
+- Should scanner use polling, WebSocket, or server-sent events?
+- Should trade commands use queue system, Redis, database queue, or in-memory queue?
+- Should market data be cached in memory, database, or both?
+- Should heavy backtests run in background jobs?
+- Should live updates use WebSockets?
+- Should the MT5 bridge pull commands or should backend push commands?
+- Should AI learning run immediately after each trade or in scheduled daily batch?
+- Should database be PostgreSQL, SQLite, or Replit DB for this stage?
+- What is the most reliable architecture for keeping the app fast on Replit?
+
+Create:
+/docs/PERFORMANCE_PLAN.md
+
+Include:
+- current bottlenecks
+- recommended improvements
+- alternatives considered
+- chosen approach
+- why it is best
+- what to improve later
+
+PHASE 23 — Full System Testing
+
+Test:
+- symbol switching
+- scanner
+- strategies
+- risk blocks
+- entry window
+- trade plan
+- mock execution
+- MT5 command queue
+- journal saving
+- calendar population
+- AI learning
+- alerts
+- mobile UI
+- performance under multiple symbols
+
+Create:
+/docs/TEST_REPORT.md
+
+Include:
+- passed tests
+- failed tests
+- fixed issues
+- remaining issues
+- next priorities
+
+Final rule:
+Never move to the next phase until the current phase is functional, clean, and tested.
+
+Also ask Replit to propose alternative better solutions at the end of each phase:
+- What could be done more efficiently?
+- What could be safer?
+- What could scale better?
+- What should be simplified?
+- What should be delayed?
+- What should be built differently?

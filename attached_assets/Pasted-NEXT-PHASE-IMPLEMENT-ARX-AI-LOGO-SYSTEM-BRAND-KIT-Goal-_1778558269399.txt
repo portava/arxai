@@ -1,0 +1,324 @@
+NEXT PHASE: IMPLEMENT ARX AI LOGO SYSTEM + BRAND KIT
+
+Goal:
+Implement the new ARX AI logo identity across the app.
+
+Brand:
+ARX AI
+Analyze. Risk. eXecute.
+The AI trading fortress built for disciplined decisions.
+
+Use the uploaded/reference logo direction:
+- clean futuristic ARX wordmark
+- dark command-center background
+- white/silver main letters
+- electric blue X accent
+- subtle circular/ring element
+- minimal fortress/shield cue
+- professional fintech/trading style
+- no cartoon style
+- no casino/gambling feel
+
+Important:
+Do not change trading logic.
+Do not fake MT5 connection.
+Do not place broker orders.
+Do not remove full tester access.
+This is a branding/UI asset phase only.
+
+==================================================
+1. CREATE LOGO COMPONENTS
+==================================================
+
+Create reusable components:
+
+- ARXLogo
+- ARXLogoMark
+- ARXWordmark
+- ARXBrandLockup
+- ARXIconBadge
+
+Variants:
+
+1. Full horizontal:
+ARX AI + tagline
+
+2. Compact:
+ARX AI only
+
+3. Icon only:
+shield/fortress/X mark
+
+4. Mobile:
+ARX only
+
+5. Dark mode:
+white/silver text with blue accent
+
+6. Light mode:
+dark navy text with blue accent
+
+==================================================
+2. BRAND COLORS
+==================================================
+
+Create brand tokens:
+
+Primary dark:
+#050B14
+
+Deep navy:
+#08111F
+
+ARX blue:
+#1E7BFF
+
+Electric cyan:
+#00B7FF
+
+White:
+#F8FAFC
+
+Silver:
+#C9D3DF
+
+Muted text:
+#8B98A8
+
+Danger red:
+#EF4444
+
+Success green:
+#22C55E
+
+Warning yellow:
+#FACC15
+
+Use blue only for highlights, active states, logo X, links, scanner accents, and command-center glow.
+
+==================================================
+3. TYPOGRAPHY DIRECTION
+==================================================
+
+Use clean futuristic typography.
+
+Logo text:
+- bold geometric uppercase
+- wide spacing
+- sharp angles
+
+App UI:
+- clean sans-serif
+- readable on mobile
+- professional trading terminal feel
+
+Avoid:
+- childish fonts
+- overly decorative fonts
+- crypto-meme style
+
+==================================================
+4. UPDATE APP HEADER
+==================================================
+
+Replace old logo/name with:
+
+ARX AI
+
+Header lockup:
+ARX AI
+Analyze. Risk. eXecute.
+
+Global banner remains:
+
+OWNER TESTER ACCESS ACTIVE — ARX AI is open for testing. Real broker execution requires MT5 bridge connection.
+
+If MT5 deferred:
+
+MT5 DEFERRED — Simulator, AI testing, shadow mode, and live tester workflows are active.
+
+==================================================
+5. UPDATE DASHBOARD BRAND HERO
+==================================================
+
+Dashboard hero:
+
+ARX AI
+
+Analyze. Risk. eXecute.
+
+The AI trading fortress built for disciplined decisions.
+
+Supporting text:
+Analyze the market. Control the risk. Execute with discipline through simulator, AI-assisted, shadow, and future MT5-connected workflows.
+
+Add logo mark on hero card.
+
+==================================================
+6. UPDATE SIDEBAR + MOBILE NAV
+==================================================
+
+Desktop sidebar:
+- show ARX AI logo at top
+- compact icon when collapsed
+
+Mobile:
+- show ARX icon/wordmark in top bar
+- keep bottom navigation clean
+
+No overflow.
+Logo must remain readable on small screens.
+
+==================================================
+7. CREATE BRAND KIT PAGE
+==================================================
+
+Create page:
+
+/brand-kit
+
+Sections:
+
+- Logo
+- Logo mark
+- Wordmark
+- Brand meaning
+- Colors
+- Typography
+- Tagline
+- Usage rules
+
+Brand meaning:
+
+A = Analyze
+AI market scanner, chart analysis, news risk, session timing, strategy matching, and opportunity scoring.
+
+R = Risk
+Risk Governor, stop-loss enforcement, max loss limits, drawdown protection, exposure control, and kill switch.
+
+X = eXecute
+Manual simulator trades, AI-assisted trades, live tester intents, trade journal, learning loop, and future MT5 execution.
+
+Usage rules:
+
+- Use ARX AI as the full product name.
+- Use ARX as the short name.
+- Keep eXecute with capital X when explaining the acronym.
+- Do not imply guaranteed profits.
+- Do not say broker execution is live unless MT5 is connected.
+
+==================================================
+8. CREATE APP ICON / FAVICON PLACEHOLDERS
+==================================================
+
+Create simple generated placeholders from the logo system:
+
+- favicon
+- app icon
+- mobile icon
+- splash icon
+- PWA manifest icon if applicable
+
+Use icon-only ARX mark:
+- dark navy background
+- blue X
+- white/silver ARX or shield mark
+
+==================================================
+9. UPDATE REPORT HEADERS
+==================================================
+
+All reports should use:
+
+ARX AI
+Analyze. Risk. eXecute.
+The AI trading fortress built for disciplined decisions.
+
+Apply to:
+
+- Daily Test Session Report
+- Beta QA Report
+- Owner Pilot Report
+- Risk Governor Report
+- Autopilot Report
+- Shadow Mode Report
+- System Health Report
+- MT5 Bridge Setup Report
+
+==================================================
+10. UPDATE ONBOARDING VISUALS
+==================================================
+
+First onboarding screen:
+
+Welcome to ARX AI
+
+Analyze. Risk. eXecute.
+
+Show logo mark and three pillars:
+
+Analyze
+Risk
+eXecute
+
+Keep live trading warning:
+
+Real broker execution requires MT5 bridge connection and guarded order routing.
+
+==================================================
+11. ADD LOGO FILE STRUCTURE
+==================================================
+
+Create:
+
+/public/brand/arx-logo-reference.png
+/public/brand/arx-logo-dark.svg
+/public/brand/arx-logo-light.svg
+/public/brand/arx-icon.svg
+/public/brand/arx-wordmark.svg
+
+If true SVG creation is not possible, create clean CSS/SVG component equivalents and note that vector export should be refined later by a designer.
+
+==================================================
+12. FINAL VERIFICATION
+==================================================
+
+Run:
+
+- route smoke test
+- header logo test
+- sidebar logo test
+- mobile logo test
+- dashboard hero test
+- onboarding logo test
+- report header test
+- brand-kit route test
+- favicon/app icon test
+- dark/light mode logo test
+- mobile responsiveness test
+
+Generate:
+
+ARX AI LOGO SYSTEM REPORT
+
+Include:
+
+- logo components created yes/no
+- dashboard updated yes/no
+- sidebar updated yes/no
+- mobile header updated yes/no
+- onboarding updated yes/no
+- reports updated yes/no
+- brand kit page created yes/no
+- favicon/app icons added yes/no
+- full tester access preserved yes/no
+- MT5 still deferred yes/no
+- trading logic unchanged yes/no
+
+Hard rules:
+- Do not change trading logic.
+- Do not fake MT5 connection.
+- Do not place real broker orders.
+- Do not remove risk governor.
+- Do not remove kill switch UI.
+- Do not block owner tester access.

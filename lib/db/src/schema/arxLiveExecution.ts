@@ -1,0 +1,310 @@
+// Phase A — ARX Live Trading Enablement (per-user).
+//
+// SAFETY (inviolable):
+// - These tables are ADDITIVE. They do not touch the singleton
+//   `live_trading_state`, `live_trade_approvals`, or any existing
+//   live infrastructure.
+// - The live command pipeline ALWAYS routes through
+//   `placeLiveOrderGuarded()`, which still returns
+//   `BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED`. Every row ends in
+//   `LIVE_BLOCKED` until Phase B ships EA v1.27 + the broker layer.
+// - `arx_live_arming` is per-user. There is no global "armed" state.
+// - Server-side hard ceiling: 10% weekly portfolio drawdown.
+
+import {
+  pgTable, serial, integer, text, timestamp, jsonb, boolean,
+  doublePrecision, index, uniqueIndex,
+} from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+
+export const ARX_LIVE_COMMAND_STATUSES = [
+  "LIVE_DRAFT",
+  "LIVE_CONFIRMATION_REQUIRED",
+  "LIVE_APPROVED",
+  "SENT_TO_MT5_LIVE",
+  "LIVE_FILLED",
+  "LIVE_REJECTED",
+  "LIVE_FAILED",
+  "LIVE_BLOCKED",
+  "LIVE_CANCELLED",
+  "LIVE_CLOSED",
+  // Task #28 — a SENT_TO_MT5_LIVE command whose TTL elapsed before the EA
+  // executed it (server-side sweep) OR which the EA refused as stale
+  // (STALE_COMMAND_REJECTED). Terminal. A LIVE_EXPIRED command is never
+  // re-served and never retried automatically.
+  "LIVE_EXPIRED",
+] as const;
+export type ArxLiveCommandStatus = (typeof ARX_LIVE_COMMAND_STATUSES)[number];
+
+export const ARX_LIVE_COMMAND_TYPES = [
+  "PLACE_LIVE_MARKET_ORDER",
+  "PLACE_LIVE_PENDING_ORDER",
+  "CLOSE_LIVE_POSITION",
+  "MODIFY_LIVE_SLTP",
+] as const;
+export type ArxLiveCommandType = (typeof ARX_LIVE_COMMAND_TYPES)[number];
+
+// Per-user arming. One row per user — no cross-user side effects.
+export const arxLiveArmingTable = pgTable("arx_live_arming", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+
+  isArmed: boolean("is_armed").notNull().default(false),
+  armedAt: timestamp("armed_at", { withTimezone: true }),
+  armedByUserId: integer("armed_by_user_id"),
+  armedFromIp: text("armed_from_ip"),
+
+  disarmedAt: timestamp("disarmed_at", { withTimezone: true }),
+  disarmedReason: text("disarmed_reason"),
+
+  // What the user confirmed during arming. We never store the raw confirmation
+  // phrase plain; only its SHA-256 for audit, plus a length sanity check.
+  confirmationPhraseHash: text("confirmation_phrase_hash"),
+  accountNumberConfirmed: text("account_number_confirmed"),
+  brokerServerConfirmed: text("broker_server_confirmed"),
+  maxLotConfirmed: doublePrecision("max_lot_confirmed"),
+  dailyLossLimitConfirmed: doublePrecision("daily_loss_limit_confirmed"),
+  killSwitchAcknowledged: boolean("kill_switch_acknowledged").notNull().default(false),
+
+  // Per-user kill switch — independent of singleton liveTradingStateTable.
+  killSwitchEngaged: boolean("kill_switch_engaged").notNull().default(false),
+  killSwitchEngagedAt: timestamp("kill_switch_engaged_at", { withTimezone: true }),
+  killSwitchEngagedByUserId: integer("kill_switch_engaged_by_user_id"),
+  killSwitchReason: text("kill_switch_reason"),
+
+  // Snapshot of the 15-check gate result at arm time, for audit + UI replay.
+  lastReadinessCheckAt: timestamp("last_readiness_check_at", { withTimezone: true }),
+  lastReadinessSnapshot: jsonb("last_readiness_snapshot").notNull().default({}),
+
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  userUq: uniqueIndex("arx_live_arming_user_uq").on(t.userId),
+}));
+
+// Per-user live command pipeline. Separate from `mt5_demo_commands` so a
+// demo command can never accidentally route as live and vice versa.
+export const arxLiveCommandsTable = pgTable("arx_live_commands", {
+  id: serial("id").primaryKey(),
+  commandId: text("command_id").notNull(),
+  userId: integer("user_id").notNull(),
+
+  bridgeConnectionId: integer("bridge_connection_id"),
+  accountLogin: text("account_login"),
+  brokerServer: text("broker_server"),
+  accountNumber: text("account_number"),
+
+  commandType: text("command_type").notNull(),
+  status: text("status").notNull().default("LIVE_DRAFT"),
+
+  symbol: text("symbol").notNull(),
+  side: text("side").notNull(),                          // BUY | SELL
+  orderType: text("order_type").notNull(),               // MARKET_BUY | MARKET_SELL | BUY_LIMIT | SELL_LIMIT | BUY_STOP | SELL_STOP | BUY_STOP_LIMIT | SELL_STOP_LIMIT
+  requestedVolume: doublePrecision("requested_volume").notNull(),
+  executedVolume: doublePrecision("executed_volume"),
+  stopLoss: doublePrecision("stop_loss"),
+  takeProfit: doublePrecision("take_profit"),
+
+  sourcePage: text("source_page").notNull().default("LIVE_TRADE_TICKET"),
+  // e.g. LIVE_TRADE_TICKET | MARKET_SCANNER_LIVE | OPEN_LIVE_POSITIONS_CLOSE | LIVE_POSITION_MODIFY
+  rubyExplanationSummary: text("ruby_explanation_summary"),
+
+  confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+  brokerTicket: text("broker_ticket"),
+  fillPrice: doublePrecision("fill_price"),
+  mt5Retcode: integer("mt5_retcode"),
+  brokerMessage: text("broker_message"),
+  rejectionReason: text("rejection_reason"),
+
+  // Snapshot of the safety gate at the moment of dispatch. Audit-only.
+  dispatchGateSnapshot: jsonb("dispatch_gate_snapshot").notNull().default({}),
+  payload: jsonb("payload").notNull().default({}),
+
+  // Phase B — idempotency. SHA-256 of (userId|symbol|side|lot|sl|tp|minuteBucket).
+  // A partial unique index prevents a second SENT_TO_MT5_LIVE for the same key.
+  idempotencyKey: text("idempotency_key"),
+  // Phase B — picked by EA fingerprint (account login + EA session id + timestamp).
+  pickedByEaAt: timestamp("picked_by_ea_at", { withTimezone: true }),
+
+  // ── Task #28 — command lifecycle / TTL / ownership ──────────────────────
+  // Stamped at dispatch (SENT_TO_MT5_LIVE). A command that is not executed
+  // by the EA before `expiresAt` is swept to LIVE_EXPIRED server-side and is
+  // also refused by the EA (STALE_COMMAND_REJECTED). This guarantees a live
+  // command can never fire late after a network stall.
+  ttlSeconds: integer("ttl_seconds"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  // Authoritative server clock at dispatch, so the EA can compare its own
+  // wall-clock against ARX time and reject drift-stale commands.
+  serverTimestamp: timestamp("server_timestamp", { withTimezone: true }),
+  expiredAt: timestamp("expired_at", { withTimezone: true }),
+
+  // Ownership linking — lets every live command be traced back to the
+  // allocation, test cycle, and originating flow that produced it. All
+  // nullable; purely additive audit/traceability columns.
+  allocationId: integer("allocation_id"),
+  cycleId: text("cycle_id"),
+  source: text("source"),
+
+  // Task #213 — Self-Trade AI autonomous ownership. When a live command was
+  // produced by an autonomous agent decision (NOT a human click), these tie it
+  // back to the agent + the supervisor decision that authorized it. Both
+  // nullable + additive; a human-originated command leaves them NULL and behaves
+  // exactly as before. The full ownership tag set also lives in `payload`.
+  selfTradeAgentId: integer("self_trade_agent_id"),
+  selfTradeDecisionId: integer("self_trade_decision_id"),
+
+  // ── AACI Security Phase 3 — Command Integrity & Live Execution Protection ──
+  // Tamper / replay / source protection for sensitive (live) commands. All
+  // additive + nullable; a legacy row with NULLs is treated as integrity
+  // UNVERIFIED by the dispatch verifier (default-deny → block + admin alert).
+  //
+  // - payload_hash:        SHA-256 of the canonical trade-critical parameters
+  //   (commandType, symbol, side, orderType, requestedVolume, SL, TP, and the
+  //   meaningful payload). Stamped at draft; re-derived at dispatch and compared
+  //   — any change to the approved order between confirm and dispatch is a tamper.
+  // - integrity_hash:      HMAC-SHA256 (node:crypto) over the integrity envelope
+  //   {commandId, userId, actorId, actorType, actionType, payloadHash, keyVersion}
+  //   keyed by a server secret (key-separated from SESSION_SECRET). The
+  //   signature; recomputed + compared at dispatch. NULL only in placeholder
+  //   (CREATED) mode when no server secret is available.
+  // - integrity_key_version: signing key generation (1 = signed/ACTIVE,
+  //   0 = placeholder). Future-ready for key rotation.
+  // - integrity_status:    'ACTIVE' (signed) | 'CREATED' (placeholder, payload
+  //   hash only — no signing key available in this environment).
+  // - actor_id / actor_type: the principal that authored the command
+  //   (USER | ADMIN | OWNER | SELF_TRADE_AGENT | SYSTEM) for source validation.
+  // - action_type:         the sensitive-action class (mirrors commandType class)
+  //   bound into the signature so a command cannot be repurposed.
+  payloadHash: text("payload_hash"),
+  integrityHash: text("integrity_hash"),
+  integrityKeyVersion: integer("integrity_key_version"),
+  integrityStatus: text("integrity_status"),
+  actorId: integer("actor_id"),
+  actorType: text("actor_type"),
+  actionType: text("action_type"),
+
+  // Dedup result-capture — first EA result wins. A second result POST for an
+  // already-terminal command is ignored (DUPLICATE_IGNORED) but counted +
+  // timestamped here for audit, never re-applied.
+  resultRecordedAt: timestamp("result_recorded_at", { withTimezone: true }),
+  duplicateResultCount: integer("duplicate_result_count").notNull().default(0),
+
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  sentToMt5At: timestamp("sent_to_mt5_at", { withTimezone: true }),
+  filledAt: timestamp("filled_at", { withTimezone: true }),
+  rejectedAt: timestamp("rejected_at", { withTimezone: true }),
+  closedAt: timestamp("closed_at", { withTimezone: true }),
+}, (t) => ({
+  cmdUq: uniqueIndex("arx_live_commands_command_id_uq").on(t.commandId),
+  userIdx: index("arx_live_commands_user_idx").on(t.userId),
+  statusIdx: index("arx_live_commands_status_idx").on(t.status),
+  userStatusIdx: index("arx_live_commands_user_status_idx").on(t.userId, t.status),
+  createdAtIdx: index("arx_live_commands_created_at_idx").on(t.createdAt),
+  // Per-user command history / timeline (user + recency).
+  userCreatedIdx: index("arx_live_commands_user_created_at_idx").on(t.userId, t.createdAt),
+  // Phase B — DB-layer belt against duplicate dispatch while a command is
+  // in flight to the EA or already filled. Terminal states (REJECTED/FAILED/
+  // BLOCKED/CANCELLED/CLOSED) are intentionally NOT covered so the user can
+  // retry after a failure with the same key in a new minute bucket.
+  idemUq: uniqueIndex("arx_live_commands_idem_active_uq")
+    .on(t.userId, t.idempotencyKey)
+    .where(sql`status in ('SENT_TO_MT5_LIVE','LIVE_FILLED')`),
+}));
+
+// Phase B — Live positions. SEPARATE from `live_positions` (Build TT) and
+// from any demo position table. EA v1.27+ pushes snapshots here only when
+// AccountType=LIVE. Per-user.
+export const arxLivePositionsTable = pgTable("arx_live_positions", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  bridgeConnectionId: integer("bridge_connection_id").notNull(),
+  brokerTicket: text("broker_ticket").notNull(),
+  symbol: text("symbol").notNull(),
+  side: text("side").notNull(),
+  volume: doublePrecision("volume").notNull(),
+  entryPrice: doublePrecision("entry_price").notNull(),
+  currentPrice: doublePrecision("current_price"),
+  floatingPl: doublePrecision("floating_pl"),
+  stopLoss: doublePrecision("stop_loss"),
+  takeProfit: doublePrecision("take_profit"),
+  openedAt: timestamp("opened_at", { withTimezone: true }).notNull(),
+  closedAt: timestamp("closed_at", { withTimezone: true }),
+  sourceCommandId: text("source_command_id"),
+  accountLogin: text("account_login"),
+  brokerServer: text("broker_server"),
+  lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }).notNull().defaultNow(),
+  // Reconciles with the live DB column (created at row insert). Declared here so
+  // `drizzle-kit push` does not propose a destructive drop of an existing,
+  // populated column. Additive/non-destructive.
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  // Task #31 — operator orphan-position resolution. An open arx_live_position
+  // with no matching arx_live_commands row is an ORPHAN_BROKER_POSITION in the
+  // Reconciliation Center. An admin may explicitly resolve it WITHOUT ever
+  // auto-assigning ownership:
+  //   IGNORED   — acknowledged, intentionally left at the broker (audited).
+  //   EXTERNAL  — confirmed placed outside ARX; tracked as external (audited).
+  //   IMPORTED  — manually linked to an existing command (sourceCommandId set).
+  // Any non-null reconcileState removes the row from the orphan detector. The
+  // server NEVER sets ownership/userId automatically — every transition is an
+  // explicit, audited operator action.
+  //   RECONCILED_BROKER_ABSENT — broker-side close (manual/SL/TP/stop-out)
+  //     confirmed absent across N consecutive RELIABLE complete sweeps. Set by
+  //     the Broker-Side Close Reconciliation Guardrail (never by a broker
+  //     command). closed_at is stamped alongside; reconcileReason records the
+  //     evidence. Distinct from the ARX-initiated LIVE_FILLED close path (which
+  //     stamps closed_at with reconcileState left NULL).
+  reconcileState: text("reconcile_state"), // null | IGNORED | EXTERNAL | IMPORTED | RECONCILED_BROKER_ABSENT
+  reconcileNote: text("reconcile_note"),
+  reconciledByAdminId: integer("reconciled_by_admin_id"),
+  reconciledAt: timestamp("reconciled_at", { withTimezone: true }),
+  // Broker-Side Close Reconciliation Guardrail — consecutive reliable-absence
+  // evidence. ALL additive + nullable (count defaults 0). Updated ONLY on a
+  // reliable COMPLETE EA sweep: the counter resets to 0 when the position
+  // reappears in the broker snapshot and increments when it is absent. A row is
+  // eligible to be stamped closed (reconcileState=RECONCILED_BROKER_ABSENT)
+  // ONLY after `brokerAbsentSnapshotCount` >= N AND the first-absence is old
+  // enough. Never auto-closes on a single missing snapshot; process restarts do
+  // not reset the evidence because it lives on the row, not in memory.
+  brokerAbsentSnapshotCount: integer("broker_absent_snapshot_count").notNull().default(0),
+  firstBrokerAbsentAt: timestamp("first_broker_absent_at", { withTimezone: true }),
+  lastBrokerAbsentAt: timestamp("last_broker_absent_at", { withTimezone: true }),
+  lastReliableSnapshotAt: timestamp("last_reliable_snapshot_at", { withTimezone: true }),
+  // Human/audit-readable evidence string for a broker-absence reconciliation
+  // (e.g. "absent across 3 reliable sweeps; first absent 2026-06-07T...").
+  reconcileReason: text("reconcile_reason"),
+}, (t) => ({
+  userTicketUq: uniqueIndex("arx_live_positions_user_ticket_uq").on(t.userId, t.brokerTicket),
+  userOpenIdx: index("arx_live_positions_user_open_idx").on(t.userId, t.closedAt),
+}));
+
+// Per-user trading style + hard ceilings. Server hard caps live no matter what:
+// - weeklyDrawdownCeilingPct ≤ 10
+// - Sane per-market max lot defaults; users can lower but not exceed admin override
+export const arxLiveUserSettingsTable = pgTable("arx_live_user_settings", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+
+  // Hard ceiling — server refuses values > 10. UI can pick lower.
+  weeklyDrawdownCeilingPct: doublePrecision("weekly_drawdown_ceiling_pct").notNull().default(10),
+  dailyLossLimitUsd: doublePrecision("daily_loss_limit_usd").notNull().default(0),
+
+  // {EURUSD: 0.10, XAUUSD: 0.05, ...}. Anything not listed uses
+  // ARX_LIVE_DEFAULT_MAX_LOT_PER_MARKET.
+  maxLotPerMarket: jsonb("max_lot_per_market").notNull().default({}),
+  allowedSymbols: jsonb("allowed_symbols").notNull().default([]),
+
+  requireStopLoss: boolean("require_stop_loss").notNull().default(true),
+  adminAllowNoStopLoss: boolean("admin_allow_no_stop_loss").notNull().default(false),
+
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  userUq: uniqueIndex("arx_live_user_settings_user_uq").on(t.userId),
+}));
+
+export type ArxLiveArming = typeof arxLiveArmingTable.$inferSelect;
+export type ArxLiveCommand = typeof arxLiveCommandsTable.$inferSelect;
+export type NewArxLiveCommand = typeof arxLiveCommandsTable.$inferInsert;
+export type ArxLiveUserSettings = typeof arxLiveUserSettingsTable.$inferSelect;
+export type ArxLivePosition = typeof arxLivePositionsTable.$inferSelect;
+export type NewArxLivePosition = typeof arxLivePositionsTable.$inferInsert;

@@ -1,0 +1,408 @@
+RUN FULL TRADING TEST LADDER IN EXACT ORDER
+
+Testing sequence:
+1. Demo manual test
+2. Demo AI test
+3. Live manual readiness
+4. One tiny live manual test
+5. Live AI assist
+6. Live AI auto-test
+
+Goal:
+Verify the full system step by step before allowing live AI auto-testing.
+
+Do not skip steps.
+Do not fake pass results.
+Do not continue to the next step if the current step fails.
+Do not place live trades unless live mode is armed, risk limits are active, and the user manually confirms.
+
+==================================================
+STEP 1 — DEMO MANUAL TEST
+==================================================
+
+Run a complete demo manual trade test.
+
+Requirements:
+- Mode: DEMO_MANUAL
+- executionEnvironment: DEMO
+- No real-money execution
+- User manually selects symbol
+- User manually selects buy/sell
+- Stop loss required
+- Take profit or exit logic required
+- Lot size must obey limits
+- Risk governor must approve before execution
+- Trade must be written only to demo tables
+- Journal must log trade
+- Calendar must update demo P/L
+- Audit log must record the action
+
+Test bad orders first:
+- no stop loss
+- oversized lot
+- unsupported symbol
+- missing take profit or exit logic
+
+Expected:
+- bad orders rejected
+- valid demo manual order accepted
+- no live tables touched
+
+Report:
+DEMO MANUAL TEST: PASS / FAIL
+Include exact errors if failed.
+
+==================================================
+STEP 2 — DEMO AI TEST
+==================================================
+
+Run demo AI assist first, then demo AI auto.
+
+Requirements:
+- Mode: DEMO_AI_ASSIST, then DEMO_AI_AUTO
+- executionEnvironment: DEMO
+- No real-money execution
+- AI generates trade card
+- Trade card includes:
+  - symbol
+  - direction
+  - setup
+  - entry
+  - stopLoss
+  - takeProfit or exit logic
+  - confidenceScore
+  - riskScore
+  - riskRewardRatio
+  - maxLoss
+  - reasonForTrade
+  - invalidationReason
+  - marketCondition
+- Risk governor approves or rejects
+- AI decision log stores the decision
+- Learning loop receives the result
+- Demo order is isolated from live tables
+
+For DEMO_AI_ASSIST:
+- user approval required before simulated execution
+
+For DEMO_AI_AUTO:
+- max 1 demo AI trade for this test
+- no overtrading
+- no duplicate orders
+
+Expected:
+- AI can generate valid trade cards
+- rejected ideas are logged
+- accepted demo trades stay demo-only
+- learning loop records outcomes
+
+Report:
+DEMO AI TEST: PASS / FAIL
+Include approved, rejected, and skipped decisions.
+
+==================================================
+STEP 3 — LIVE MANUAL READINESS
+==================================================
+
+Do not place a live trade yet.
+
+Run:
+
+GET /api/live-trading/readiness
+GET /api/broker/status
+GET /api/broker/account
+GET /api/risk-governor/status
+GET /api/permission/status
+GET /api/audit/live
+
+Confirm all are true:
+- live broker connected
+- live account detected
+- account equity readable
+- critical alerts = 0
+- emergency kill switch inactive
+- audit logger active
+- guarded order router active
+- risk governor active
+- stop-loss requirement active
+- max loss per trade configured
+- max daily loss configured
+- max lot size configured
+- max open positions configured
+- mode switching works
+- global safety header updates correctly
+
+Then arm LIVE_MANUAL using:
+
+POST /api/live-trading/arm
+
+Body:
+
+{
+  "confirmationPhrase": "I ACCEPT REAL MONEY RISK",
+  "requestedMode": "LIVE_MANUAL",
+  "maxLossPerTradeUsd": 5,
+  "maxDailyLossUsd": 10,
+  "maxLotSize": 0.01,
+  "maxOpenPositions": 1
+}
+
+Expected:
+- liveTradingArmed = true
+- currentTradingMode = LIVE_MANUAL
+- LIVE MONEY MODE ACTIVE banner appears
+- kill switch visible
+- AI autopilot remains off
+- audit log records arming
+
+Before live order testing, submit invalid live orders and confirm rejection:
+
+A. No stop loss  
+B. Lot size above 0.01  
+C. Missing idempotency key  
+D. Risk above $5  
+E. More than 1 open position  
+F. Unsupported symbol  
+G. Emergency stop active  
+
+Expected:
+- every invalid order rejected
+- every rejection logged
+- no live order submitted
+
+Report:
+LIVE MANUAL READINESS: PASS / FAIL
+
+==================================================
+STEP 4 — ONE TINY LIVE MANUAL TEST
+==================================================
+
+Only run this step if STEP 3 passes.
+
+This is the first real-money test.
+
+Rules:
+- Mode: LIVE_MANUAL
+- AI autopilot OFF
+- Manual trade only
+- Max lot size: 0.01
+- Max open live positions: 1
+- Max loss if wrong: $5 or less
+- Stop loss required
+- Take profit or defined exit logic required
+- User must manually press submit
+- Order must go through placeLiveOrderGuarded()
+- No duplicate orders
+- No silent execution
+
+Before submit, frontend must show:
+- symbol
+- buy/sell
+- lot size
+- stop loss
+- take profit or exit logic
+- estimated max loss
+- spread
+- account equity
+- margin impact
+- daily loss remaining
+- confirmation checkbox
+- final warning: LIVE MONEY MODE ACTIVE — REAL LOSSES POSSIBLE
+
+After submission, verify:
+- order appears in live orders if accepted
+- position appears in live positions if filled
+- journal records it
+- calendar records it
+- audit log records it
+- risk governor stays active
+- kill switch remains available
+
+Then safely stop or monitor the position according to the defined exit logic.
+
+Report:
+TINY LIVE MANUAL TEST: PASS / FAIL
+Include order status, fill status, risk used, and any broker response.
+
+==================================================
+STEP 5 — LIVE AI ASSIST
+==================================================
+
+Only run this step if STEP 4 passes.
+
+Mode:
+LIVE_AI_ASSIST
+
+Rules:
+- AI may scan and generate trade ideas
+- AI cannot silently place trades
+- User approval required
+- Approval expires after 60 seconds
+- Every approved order must go through placeLiveOrderGuarded()
+- Max lot size remains 0.01
+- Max open positions remains 1
+- Max loss per trade remains $5 or less
+- Stop loss required
+- Take profit or defined exit logic required
+
+AI trade card must show:
+- symbol
+- direction
+- setup
+- entry
+- stopLoss
+- takeProfit
+- confidenceScore
+- riskScore
+- riskRewardRatio
+- maxLossUsd
+- reasonForTrade
+- invalidationReason
+- marketCondition
+- approval timer
+
+Test:
+- generate at least 1 AI trade idea
+- reject one AI idea
+- approve only if it passes all guards
+- confirm no silent execution
+
+Expected:
+- AI ideas appear
+- user approval required
+- rejected ideas logged
+- approved trades guarded
+- no auto-live trade without approval
+
+Report:
+LIVE AI ASSIST TEST: PASS / FAIL
+
+==================================================
+STEP 6 — LIVE AI AUTO-TEST
+==================================================
+
+Only run this step if STEP 5 passes.
+
+Mode:
+LIVE_AI_AUTO_TEST
+
+This is not unrestricted autopilot. This is controlled live AI auto-testing.
+
+Default caps:
+- max 1 live AI trade per session
+- max 3 live AI trades per day
+- max lot size: 0.01
+- max open live positions: 1
+- max loss per trade: $5 or less
+- max daily loss: $10 or less
+- stop after 1 loss
+- cooldown after trade: 15 minutes minimum
+- stop if confidence below threshold
+- stop if risk governor blocks
+- stop if spread too high
+- stop if broker disconnects
+- stop if kill switch is pressed
+- stop if daily loss cap hit
+- no martingale
+- no averaging down
+- no revenge trading
+- no duplicate orders
+
+Before starting:
+- show LIVE MONEY MODE ACTIVE banner
+- show all caps
+- require confirmation phrase again:
+  "START CONTROLLED LIVE AI TEST"
+
+During test:
+- stream AI decisions live
+- show every approval/rejection reason
+- log every gate result
+- stop immediately after 1 live AI trade attempt
+- stop immediately after any risk warning
+
+After test:
+- disarm AI auto-test
+- return to LIVE_MANUAL or READ_ONLY
+- generate full report
+
+Report:
+LIVE AI AUTO-TEST: PASS / FAIL / CAUTION
+
+==================================================
+FINAL REPORT
+==================================================
+
+Generate:
+
+FULL TRADING TEST LADDER REPORT
+
+Include:
+
+1. Demo manual result:
+- pass/fail
+- order result
+- rejected bad-order tests
+- demo/live isolation result
+
+2. Demo AI result:
+- pass/fail
+- AI decisions generated
+- approved/rejected/skipped
+- learning loop update
+
+3. Live manual readiness:
+- pass/fail
+- broker status
+- account status
+- risk limits
+- kill switch
+- invalid order rejection results
+
+4. Tiny live manual test:
+- pass/fail
+- order status
+- fill status
+- risk used
+- journal/calendar/audit status
+
+5. Live AI assist:
+- pass/fail
+- trade card generated
+- manual approval required
+- silent execution blocked
+
+6. Live AI auto-test:
+- pass/fail/caution
+- caps enforced
+- cooldown enforced
+- stop rules enforced
+- final AI behavior
+
+7. Safety:
+- risk governor pass/fail
+- kill switch pass/fail
+- audit logging pass/fail
+- stop-loss requirement pass/fail
+- max-loss limits pass/fail
+- paper/demo/live isolation pass/fail
+
+8. Final system status:
+- FULL APP OPEN: yes/no
+- DEMO MANUAL READY: yes/no
+- DEMO AI READY: yes/no
+- LIVE MANUAL READY: yes/no
+- LIVE AI ASSIST READY: yes/no
+- LIVE AI AUTO-TEST READY: yes/no
+
+Hard stop rules:
+- Stop if broker connection fails.
+- Stop if account equity cannot be read.
+- Stop if risk governor fails.
+- Stop if kill switch fails.
+- Stop if stop-loss enforcement fails.
+- Stop if audit logging fails.
+- Stop if demo/live data mixes.
+- Stop if invalid live orders are not rejected.
+- Stop if AI places a live trade silently.
+- Stop if live loss limits are not enforced.

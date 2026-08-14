@@ -1,0 +1,96 @@
+Verify the allocation/attached-user fixes in the real running ARX AI UI and repair anything still showing stale zero values.
+
+Backend/tests now say:
+- attached ACTIVE/active VTA users are visible
+- attached users with $0 allocation should appear
+- Add/Set controls should appear
+- frontend refresh was fixed
+- test:attached-active-case is 16/16 PASS
+- arx_live_commands count is 0
+
+Now verify the actual browser UI, not just backend tests.
+
+Current target page:
+/admin/allocations
+
+Do not place trades.
+Do not insert live commands.
+Do not type operator phrases.
+Do not recommend lot size.
+Do not fake balances or allocations.
+Do not bypass safety gates.
+
+Create checkpoint first:
+checkpoint: verify-real-admin-allocations-ui-after-attached-fix
+
+Test the live UI:
+1. Open /admin/allocations in the running app.
+2. Hard refresh the page.
+3. Confirm the master bridge balance panel shows the live bridge balance/equity/free margin/headroom.
+4. Confirm “Total Allocated” is separate from master bridge balance.
+5. Confirm user 4 / andraie.co@gmail.com appears in User Allocations.
+6. Confirm the user appears even if current allocation is $0.
+7. Confirm the row/card shows:
+   - Attached
+   - Synced or Needs Refresh
+   - Approved
+   - Allocation value
+   - Add/Set controls
+   - Refresh shell
+8. Confirm User Allocations count is not 0 if attached users exist.
+9. Confirm the Attach search no longer traps already-attached users in a hidden state.
+10. Click Refresh and confirm it reloads:
+   - master summary
+   - allocation list
+   - eligible users
+   - shell status
+
+If the actual UI still shows:
+- User Allocations (0)
+- Total Allocated $0 only with no master balance panel
+- “No allocations yet” while user is attached
+- Attach search says user is already attached but no row appears
+- stale $0 user shell after allocation
+
+Then fix the frontend runtime wiring immediately:
+1. Check the response from GET /admin/allocations in the browser/network/runtime.
+2. If backend returns the user but frontend hides it, fix the frontend filter/map/rendering.
+3. If backend does not return the user, fix the admin allocations query again.
+4. If frontend cache is stale, fix refetch/invalidation.
+5. If the UI uses an old endpoint, rewire it to the current endpoint.
+6. If the UI needs a hard reload to show correct data, fix it so the Refresh button updates it.
+
+Then test allocation UI:
+1. Open Add/Set allocation for the attached user.
+2. Confirm the modal opens.
+3. Confirm admin can enter an allocation amount manually.
+4. Confirm save writes the allocation.
+5. Confirm audit log records the change.
+6. Confirm user shell sync runs or Refresh shell updates it.
+7. Confirm user account shell changes from zero to assigned allocation/capacity only after the real allocation is saved.
+
+Privacy/safety checks:
+1. Normal user cannot see master balance.
+2. Normal user cannot see other users.
+3. No backend constants/table names/raw routes appear to normal users.
+4. No live trade is placed.
+5. arx_live_commands remains 0.
+6. No operator phrases are typed.
+
+Run:
+- typecheck
+- ci:guards
+- test:live-phaseB
+- test:demo-arming
+- test:demo-verify
+- test:attached-active-case
+- allocation runtime QA
+
+Final report only:
+- whether real /admin/allocations shows user 4
+- whether master bridge balance appears
+- whether Add/Set controls appear
+- whether allocation save works
+- whether user shell updates from zero after allocation
+- files/routes changed
+- QA results

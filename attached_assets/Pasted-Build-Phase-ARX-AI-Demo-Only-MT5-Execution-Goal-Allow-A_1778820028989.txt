@@ -1,0 +1,114 @@
+Build Phase: ARX AI Demo-Only MT5 Execution.
+
+Goal:
+Allow ARX AI to place a tiny broker trade ONLY on an MT5 DEMO account. Live trading must remain impossible.
+
+CRITICAL SAFETY RULES:
+- Do not enable live trading.
+- Do not modify MT5_BRIDGE_TOKEN.
+- Do not weaken bridge authentication.
+- Do not remove the read-only safety system.
+- Keep liveExecutionEnabled=false.
+- Keep liveBrokerExecutionAvailable=false.
+- Keep brokerPlacementImplemented=false for live placement.
+- Demo execution must be separate from live execution.
+- Any REAL/LIVE account must be blocked automatically.
+- If AccountInfoInteger(ACCOUNT_TRADE_MODE) is not DEMO, EA must refuse execution.
+- First test max lot size must be 0.01.
+- No martingale, no auto-repeat, no revenge trading, no looped order placement.
+
+Implement a separate demo execution layer:
+
+1. Backend command queue
+Create or verify a safe MT5 command queue for DEMO_ONLY orders.
+
+Allowed command:
+- action: "DEMO_MARKET_ORDER"
+
+Required fields:
+- symbol
+- side: BUY or SELL
+- volume
+- optional stopLoss
+- optional takeProfit
+- reason
+- demoOnly: true
+
+Validation:
+- volume must be <= 0.01 for this phase
+- side must be BUY or SELL
+- demoOnly must equal true
+- executionMode must be DEMO_ONLY or READ_ONLY_WITH_DEMO_EXECUTION
+- reject any command that looks like live execution
+- reject missing/invalid symbol
+- reject volume over 0.01
+
+2. Safety response
+Any blocked execution attempt must return:
+status: "BLOCKED_DEMO_SAFETY_GUARD"
+reason: clear explanation
+
+Any live attempt must return:
+status: "BLOCKED_READ_ONLY_MODE"
+reason: "Live broker execution is disabled. ARX AI is currently demo/paper-only."
+
+3. New EA version
+Generate a new MT5 EA source file, separate from the working v1.21 read-only EA.
+
+Name it:
+ReplitMT5BridgeEA_DemoExec_v130.mq5
+
+Do not overwrite ReplitMT5BridgeEA_v121.mq5.
+
+The new EA must:
+- keep all heartbeat/account/positions sync from v1.21
+- keep token security
+- never print BridgeToken
+- poll /api/mt5/commands
+- execute ONLY action="DEMO_MARKET_ORDER"
+- execute only if:
+  - AccountInfoInteger(ACCOUNT_TRADE_MODE) == ACCOUNT_TRADE_MODE_DEMO
+  - Environment == "demo"
+  - DemoExecutionMode == true
+  - AllowDemoOrderExecution == true
+  - ReadOnlyMode == false
+  - command.demoOnly == true
+  - volume <= 0.01
+- refuse all commands on live/real accounts
+- acknowledge every command result back to /api/mt5/command-result
+
+Add EA inputs:
+- DemoExecutionMode = false by default
+- AllowDemoOrderExecution = false by default
+- MaxDemoLot = 0.01
+- RequireDemoAccount = true
+
+Important:
+The EA default must still be safe. Demo execution should only work after I manually set DemoExecutionMode=true and AllowDemoOrderExecution=true inside MT5 inputs on a DEMO account.
+
+4. Dashboard UI
+Add a clearly labeled demo execution panel:
+- MT5 Bridge: Connected/Stale/Disconnected
+- Account Type: Demo/Real/Unknown
+- Live Execution: Disabled
+- Demo Execution: Disabled/Enabled
+- Max Demo Lot: 0.01
+- Test Demo Trade button
+- Symbol input
+- BUY/SELL selector
+- Lot size input locked/capped at 0.01
+- Warning: “Demo account only. Live accounts are blocked.”
+
+5. Test route
+Create a backend test action to queue one 0.01 demo order only after validation passes.
+
+6. End-to-end report
+Return:
+- files changed
+- new EA file created
+- backend routes added
+- safety guards added
+- dashboard updates
+- exact MT5 steps to compile and attach the new EA
+- test results
+- confirmation live trading remains impossible

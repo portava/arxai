@@ -1,0 +1,363 @@
+Continue ARX AI by building the Backtesting, Replay, and Strategy Validation Engine.
+
+Do not rebuild blindly. Inspect the current:
+- Strategy Playbook system
+- Setup Quality Engine
+- Scanner
+- Market Context Engine
+- Broker Symbol Specs Engine
+- Risk Governor
+- Position Sizing Engine
+- Trade Journal Intelligence
+- Performance Coach
+- Smart Exit Plan Engine
+- Trade Decision Orchestrator
+- user-owned MT5 routing
+- shared-master routing
+- AI assistant context builder
+
+Goal:
+Allow users to test, replay, and validate trading strategies before using them in demo/live trading.
+
+Important:
+Do not present backtest results as guaranteed future performance.
+Do not fake historical data.
+Do not auto-place trades from backtests.
+Do not bypass Risk Governor.
+Do not expose secrets or broker credentials.
+Live trading still requires explicit confirmation.
+
+PART 1 — Historical Data Layer
+
+Create a historical market data layer.
+
+Use available sources in this order:
+1. MT5 historical candles if available.
+2. Existing market/scanner provider if available.
+3. Stored candle snapshots if available.
+4. If no source exists, return historical data unavailable.
+
+Support:
+- symbol
+- broker symbol mapping
+- timeframe
+- start date
+- end date
+- candle OHLC
+- tick volume if available
+- spread if available
+- session context if available
+- news/event markers if available
+
+Do not invent missing candles, spread, volume, or news.
+
+PART 2 — Backtest Engine
+
+Create a backtest engine that can test a user strategy/playbook.
+
+Inputs:
+- strategy/playbook id
+- symbol
+- timeframe
+- date range
+- starting balance
+- risk per trade
+- max trades per day
+- stop loss logic
+- take profit logic
+- exit rules
+- session filters
+- news filters if available
+- spread filter
+- risk governor settings
+
+Outputs:
+- total trades
+- wins
+- losses
+- breakeven
+- win rate
+- net P&L
+- max drawdown
+- average win
+- average loss
+- profit factor if available
+- expectancy if available
+- average hold time
+- best trade
+- worst trade
+- setup quality average
+- exit quality estimate
+- rule violations
+- data quality
+
+Label all results:
+“Backtest simulation — not guaranteed future results.”
+
+PART 3 — Strategy Replay Mode
+
+Create a Replay Mode where users can step through historical candles and see:
+
+- where strategy would identify setup
+- entry signal
+- stop loss
+- take profit
+- invalidation level
+- exit decision
+- AI explanation
+- risk preview
+- result
+
+Controls:
+- play
+- pause
+- next candle
+- previous candle
+- speed control
+- jump to trade
+- show/hide AI reasoning
+- show/hide setup score
+- show/hide exit plan
+
+PART 4 — Forward Validation Mode
+
+Add a “Forward Validation” mode.
+
+This lets users run a strategy in real time without placing trades.
+
+It should:
+- watch live/scanner data
+- detect strategy setups
+- create simulated signal records
+- track whether the signal would have won/lost
+- compare to actual user trades if they took one
+- show whether the setup is improving before allowing real usage
+
+Statuses:
+- observing
+- signal detected
+- simulated entry
+- simulated exit
+- validated
+- failed
+- data insufficient
+
+PART 5 — Strategy Scorecard
+
+Each playbook should get a scorecard:
+
+- historical score
+- forward validation score
+- live/demo performance score
+- setup quality average
+- risk quality score
+- exit quality score
+- discipline score
+- data quality score
+
+Labels:
+- Proven in user data
+- Promising
+- Needs more validation
+- High risk
+- Avoid for now
+- Data insufficient
+
+PART 6 — AI Strategy Validation Coach
+
+Update AI so users can ask:
+
+- Backtest my breakout strategy.
+- Does this strategy work on EURUSD?
+- What symbol does this setup perform best on?
+- What session is best for this strategy?
+- What timeframe works best?
+- Should I use this strategy live?
+- Why did this strategy lose?
+- What rule should I change?
+- Is this setup validated enough?
+- Compare my pullback strategy vs breakout strategy.
+
+AI must answer from real backtest, replay, forward validation, and journal data only.
+
+If data is missing, AI must say:
+“I do not have enough historical/live validation data to answer that accurately.”
+
+AI must never say:
+- guaranteed
+- certain
+- risk-free
+- always works
+
+PART 7 — UI Pages
+
+Add or update pages:
+
+1. Strategy Lab
+- list user strategies
+- run backtest
+- start forward validation
+- open replay
+- compare strategies
+
+2. Backtest Results
+- summary cards
+- equity curve if data exists
+- drawdown
+- trade list
+- best/worst trades
+- rule violations
+- data quality warning
+
+3. Replay Viewer
+- candle replay area
+- trade markers
+- AI explanation panel
+- setup quality panel
+- exit plan panel
+
+4. Strategy Scorecard
+- historical score
+- forward validation score
+- live/demo score
+- AI recommendation
+- “Use in Demo”
+- “Keep Testing”
+- “Avoid for Now”
+
+PART 8 — Risk Governor Integration
+
+Risk Governor should be aware of strategy validation.
+
+Admin/user settings:
+- warn if strategy has no validation
+- block live trades from unvalidated strategies if enabled
+- require minimum setup score for live trades if enabled
+- require minimum forward validation sample size if enabled
+- allow demo trades even if unvalidated
+- allow manual override by admin
+
+Do not block by default unless admin enables strict validation rules.
+
+PART 9 — Database/API
+
+Add endpoints:
+
+- POST /api/backtests/run
+- GET /api/backtests
+- GET /api/backtests/:id
+- POST /api/strategies/:id/forward-validation/start
+- POST /api/strategies/:id/forward-validation/stop
+- GET /api/strategies/:id/scorecard
+- GET /api/strategies/:id/replay
+- POST /api/coach/strategy-validation
+
+Add tables if missing:
+
+strategy_backtests:
+- id
+- user_id
+- strategy_id
+- symbol
+- timeframe
+- start_date
+- end_date
+- starting_balance
+- total_trades
+- win_count
+- loss_count
+- breakeven_count
+- win_rate
+- net_pnl
+- max_drawdown
+- profit_factor
+- expectancy
+- data_quality
+- status
+- created_at
+
+strategy_backtest_trades:
+- id
+- backtest_id
+- user_id
+- strategy_id
+- symbol
+- side
+- entry_time
+- exit_time
+- entry_price
+- exit_price
+- stop_loss
+- take_profit
+- result
+- pnl
+- pnl_pips
+- setup_score
+- exit_reason
+- rule_notes
+- created_at
+
+strategy_forward_validations:
+- id
+- user_id
+- strategy_id
+- symbol
+- timeframe
+- status
+- signal_count
+- simulated_win_count
+- simulated_loss_count
+- validation_score
+- started_at
+- stopped_at
+- updated_at
+
+strategy_scorecards:
+- id
+- user_id
+- strategy_id
+- historical_score
+- forward_validation_score
+- live_demo_score
+- risk_quality_score
+- exit_quality_score
+- discipline_score
+- data_quality_score
+- recommendation_label
+- explanation
+- updated_at
+
+PART 10 — Tests
+
+Add or update tests for:
+1. User can run backtest on their own strategy.
+2. User cannot access another user’s backtests.
+3. Backtest refuses to run with missing historical data.
+4. Backtest labels simulated results clearly.
+5. Backtest does not create real trade commands.
+6. Replay uses historical candles only.
+7. Forward validation creates simulated signals only.
+8. Strategy scorecard uses real backtest/journal data.
+9. AI explains validation without guaranteeing results.
+10. AI does not invent backtest results.
+11. Risk Governor can warn on unvalidated strategy.
+12. Admin strict mode can block live trade from unvalidated strategy.
+13. Demo trades remain allowed unless admin blocks them.
+14. Shared-master users only see their own strategy validation data.
+15. Mobile Strategy Lab and Backtest Results work on iPhone Safari.
+16. No secrets are exposed.
+
+Final report:
+Return:
+- PASS or FAIL
+- Historical Data Layer status
+- Backtest Engine status
+- Replay Mode status
+- Forward Validation status
+- Strategy Scorecard status
+- AI Strategy Validation Coach status
+- Risk Governor integration status
+- UI status
+- mobile status
+- tests passed
+- remaining blockers

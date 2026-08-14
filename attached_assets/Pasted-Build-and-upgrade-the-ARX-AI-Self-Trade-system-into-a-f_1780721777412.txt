@@ -1,0 +1,2145 @@
+Build and upgrade the ARX AI Self-Trade system into a fully connected funded autonomous AI trading-agent ecosystem that joins the existing ARX handshake network.
+
+This is not a simple auto-trade button. This is a full Self-Trade AI intelligence layer that must connect with Ruby, Scanner, Smart Chart, Risk Governor, Economic Calendar, News Engine, Open Trades, Wins & Losses, Account Analytics, My Alerts, Trade Command Room, MT5/shared master bridge, allocation system, and the internal handshake network.
+
+This is a system upgrade. Do not rebuild the app. Do not replace the existing trading engine. Do not replace MT5/shared master bridge logic. Do not replace Ruby. Do not replace Scanner. Do not replace Risk Governor. Do not replace the existing order ticket/execution path. Do not bypass permissions. Do not bypass risk checks. Do not create fake trades, fake P/L, fake agent performance, fake alerts, fake volatility relationships, fake news events, or fake analytics.
+
+All autonomous trade execution must use the existing live/shared MT5 execution path, allocation logic, risk governor, user/admin permissions, and result mapping.
+
+==================================================
+CORE PRODUCT RULE
+==================================================
+
+Once funds are allocated to a Self-Trade AI agent and the agent is active, that agent is allowed to autonomously scan, decide, enter, manage, exit, review, and learn from trades without user input.
+
+No user confirmation should be required after allocation and activation, unless:
+- admin settings require confirmation
+- agent autonomy level is below full autonomous
+- Risk Governor blocks the trade
+- bridge/account/feed is unavailable
+- daily/weekly loss limit is hit
+- global or agent kill switch is active
+- agent is paused
+- the trade violates assigned rules
+
+Core logic:
+
+No funds = no autonomous trading.
+Funds allocated + agent active + autonomy level allows execution + all handshakes pass = autonomous trading allowed.
+Any failed hard safety handshake = no trade.
+
+==================================================
+ABSOLUTE PRESERVATION RULE
+==================================================
+
+Before editing code, inspect the current app and identify existing wiring for:
+
+- authentication/session
+- admin vs regular user role
+- invite-only access
+- user allocations
+- shared master MT5 bridge
+- live execution route
+- MT5 command/result mapping
+- risk governor
+- account balances
+- equity
+- open P/L
+- closed trades
+- trade history
+- open positions
+- scanner signals
+- scalp builder
+- Ruby market reads
+- Ruby chat
+- Ruby memory
+- Ruby lessons
+- economic calendar/news events
+- alerts/notifications
+- account analytics
+- wins/losses
+- open trades
+- order ticket
+- trade execution services
+- bridge health
+- kill switches
+- admin dashboards
+- existing self-trade/autotrade modules if any
+
+Reuse existing wiring where it exists.
+Upgrade or extend existing modules instead of duplicating them.
+Do not create a parallel trade engine.
+Do not call MT5 directly from the UI.
+Do not bypass the backend execution service.
+Do not bypass the Risk Governor.
+Do not expose backend/internal/debug terminology to regular users.
+
+==================================================
+NEW SYSTEM NAME
+==================================================
+
+Create or upgrade this feature as:
+
+Self-Trade AI
+
+Also use these internal/user-facing concepts:
+
+- Self-Trade Control Room
+- AI Agents
+- Agent Allocation
+- Agent Competition
+- Live Decisions
+- News Mode
+- Risk Rules
+- Audit Log
+- Volatility Relationship Matrix
+- Ruby Supervisor
+- Self-Trade Supervisor
+
+==================================================
+MAIN SELF-TRADE PAGE / ROUTE
+==================================================
+
+Create or upgrade a dedicated route:
+
+/self-trade-ai
+
+or follow existing app route conventions.
+
+Add access points from:
+- sidebar/menu
+- Admin Dashboard if admin
+- Account Analytics
+- Open Trades
+- Wins & Losses
+- Ruby Command Center
+- Trade Command Room if relevant
+
+Do not replace bottom nav:
+- Cockpit
+- Trade
+- Scanner
+- AI
+- Me
+
+==================================================
+SELF-TRADE CONTROL ROOM TABS
+==================================================
+
+Create these tabs:
+
+1. Overview
+2. Agents
+3. Allocations
+4. Live Decisions
+5. Competition
+6. News Mode
+7. Volatility Matrix
+8. Risk Rules
+9. Audit Log
+10. Settings
+
+Each tab must be wired to real data where available or show clean scalable empty states. Do not fake performance, trades, P/L, allocations, alerts, rankings, or logs.
+
+==================================================
+SELF-TRADE ECOSYSTEM HANDSHAKE NETWORK
+==================================================
+
+Every self-trade decision must pass through the ecosystem handshake network.
+
+Pipeline:
+
+1. Agent scans approved markets
+2. Scanner provides candidates
+3. Smart Chart validates structure
+4. Volatility Relationship Matrix checks related markets
+5. Market Regime Detector classifies market
+6. Setup Classifier identifies setup type
+7. Multi-timeframe engine checks alignment
+8. Entry Zone Engine checks ideal/acceptable/no-entry zone
+9. Late Entry Detector rejects chase entries
+10. News/Calendar Guard checks high-impact events
+11. Spread/Slippage Engine checks execution quality
+12. Correlation Guard checks duplicate/correlated exposure
+13. Account Analytics checks account health
+14. Agent Ledger checks available allocation
+15. Quota Engine checks mandatory daily trade progress
+16. Risk Governor checks safety limits
+17. Supervisor makes final decision
+18. Trade Engine prepares existing ticket/order command
+19. MT5 shared bridge executes through existing route
+20. Open Trades monitors position
+21. Ruby explains and alerts
+22. Wins & Losses reviews outcome after close
+23. Ruby Memory saves lesson
+24. Agent score updates
+25. Audit Log records every step
+
+If a hard handshake fails, do not execute.
+
+Hard block examples:
+- no funds allocated
+- agent paused
+- global kill switch active
+- per-agent kill switch active
+- bridge unavailable
+- feed stale
+- daily loss limit hit
+- weekly loss limit hit
+- account allocation insufficient
+- risk governor hard block
+- max drawdown exceeded
+- admin disabled agent
+- no approved symbols available
+- open position data stale during required management
+
+Soft block examples:
+- signal late
+- setup score low
+- news risk elevated
+- spread elevated
+- correlation risk
+- quota pressure high
+- confidence decayed
+- market choppy
+
+Soft blocks should cause:
+- wait
+- reduce lot size
+- require extra confirmation
+- prepare only
+- alert
+- no trade
+- log reason
+
+==================================================
+AGENT FUNDING AND AUTONOMY
+==================================================
+
+Self-trade agents can only trade after funds are allocated.
+
+Each agent must have:
+
+- agent ID
+- agent name
+- agent version
+- agent profile/personality
+- autonomy level
+- allocated funds
+- available funds
+- funds tied in open trades
+- realized P/L
+- open P/L
+- daily P/L
+- weekly P/L
+- daily profit goal
+- weekly profit goal
+- daily loss limit
+- weekly loss limit
+- max drawdown
+- max lot size
+- risk per trade
+- allowed symbols
+- allowed sessions
+- allowed strategies
+- news trading permission
+- scalp permission
+- swing permission
+- max open trades
+- daily minimum trades
+- daily base max trades
+- extension mode
+- status
+- kill switch state
+- pause/resume state
+
+No allocated funds = agent status Unfunded and cannot trade.
+
+Funded + active + Level 4 autonomy + all handshakes passed = can trade fully autonomously.
+
+==================================================
+AGENT AUTONOMY LEVELS
+==================================================
+
+Support autonomy levels:
+
+Level 0: Shadow only
+- Watches and logs hypothetical decisions.
+- No live orders.
+
+Level 1: Prepare trades only
+- Creates trade ideas/tickets.
+- No autonomous execution.
+
+Level 2: Execute entries, manual exits
+- Can enter trades.
+- Cannot manage/exit unless manually approved or existing rules allow.
+
+Level 3: Execute and manage positions
+- Can enter, modify SL/TP, protect, and exit based on rules.
+
+Level 4: Full autonomous lifecycle
+- Can scan, enter, manage, exit, review, and learn within allocation/risk rules.
+
+Autonomy level must be admin-controlled.
+
+==================================================
+MANDATORY DAILY TRADE RULE
+==================================================
+
+Funded active self-trade agents must complete at least 3 trades per trading day.
+
+Rule:
+
+Daily Minimum Trades: 3
+Base Daily Max Trades: 5
+Extension allowed after 5 only if healthy.
+
+The daily minimum counts only:
+- real executed trades
+- MT5-confirmed entries
+- agent-owned trades
+- trades tied to that agent’s allocation
+
+Do not count:
+- rejected orders
+- cancelled setups
+- watch-only alerts
+- manual user trades
+- duplicate partial fills unless system intentionally counts them as separate trades
+- scanner ideas that were not executed
+
+The agent must continuously scan approved symbols until the minimum is completed unless a hard block prevents it.
+
+Allowed reasons to miss the 3-trade minimum:
+- no funds allocated
+- agent paused
+- admin disabled agent
+- global kill switch active
+- agent kill switch active
+- bridge unavailable
+- price/feed unavailable
+- daily loss limit hit
+- weekly loss limit hit
+- risk governor hard block
+- no approved symbols available
+- account allocation insufficient
+
+Anything else must be logged as missed quota.
+
+==================================================
+TRADE QUOTA ESCALATION
+==================================================
+
+Agents must satisfy the 3-trade minimum intelligently, not recklessly.
+
+Daily trade quota logic:
+
+0–40% of trading day passed:
+- highest-quality setups only
+- minimum setup score 80+
+- normal risk allowed if all checks pass
+
+40–70% of trading day passed:
+- broaden scanner universe
+- allow scalp and swing if agent supports both
+- minimum setup score 75+
+- normal or slightly reduced risk
+
+70–90% of trading day passed:
+- quota completion mode
+- minimum setup score 70+
+- reduced lot size required
+- extra confirmation required
+- no correlated stacking
+- no dangerous news unless News Agent authorized
+
+90%+ of trading day passed:
+- minimum safe setup allowed only
+- reduced risk
+- no add-ons
+- if no acceptable setup, log hard/soft reason
+
+Quota pressure field:
+Low / Medium / High / Critical
+
+If quota pressure is high:
+- reduce position size
+- require additional confirmation
+- increase audit logging
+- alert My Alerts / Live Decisions
+- mark trade as quota-driven
+
+==================================================
+AFTER 3 TRADES ARE COMPLETE
+==================================================
+
+After daily minimum is met:
+
+If daily goal hit:
+- switch to Protect Mode
+- only A+ setups
+- reduced risk
+- no quota pressure
+- optional stop-for-day setting
+
+If daily goal not hit and loss limits are safe:
+- continue up to base max 5 trades
+- only trade setups above threshold
+
+After 5 trades:
+Extension mode only if:
+- daily loss limit not hit
+- weekly loss limit not hit
+- risk governor approves
+- agent score healthy
+- no repeated mistake pattern
+- no overtrading warning
+- no major drawdown spike
+- setup score usually 85+
+- spread/news conditions acceptable
+
+==================================================
+AGENT PROFILES / PERSONALITIES
+==================================================
+
+Create default agent profile templates:
+
+Agent Alpha — Conservative Protector
+- lower risk
+- avoids news
+- prefers A+ trend/pullback setups
+- prioritizes drawdown control
+
+Agent Blaze — Flame Scalper
+- fast scalps
+- momentum bursts
+- short holds
+- strict late-entry and spread control
+
+Agent Atlas — Swing Strategist
+- higher timeframe
+- lower lot size
+- wider stops
+- longer holds
+- trend/pullback setups
+
+Agent Nova — News Reaction Specialist
+- trades high-impact news only when enabled
+- waits for confirmation
+- strict spread/slippage rules
+
+Agent Titan — Balanced Operator
+- chooses scalp or swing based on regime
+- broad opportunity ranking
+- medium risk profile
+
+These are templates. Admin should be able to create/edit agents.
+
+==================================================
+AGENT PERMISSIONS / SETTINGS
+==================================================
+
+For each agent, admin can set:
+
+- enabled/disabled
+- autonomy level
+- allocated funds
+- allowed symbols
+- allowed volatility symbols
+- allowed sessions
+- allowed strategy types
+- scalp allowed
+- swing allowed
+- news trading allowed
+- max open trades
+- max lot size
+- max risk per trade
+- daily minimum trades
+- daily base max trades
+- extension allowed
+- daily profit goal
+- weekly profit goal
+- daily loss limit
+- weekly loss limit
+- max drawdown
+- max consecutive losses
+- cooldown duration
+- quota mode enabled
+- market ban list
+- news mode
+- kill switch
+- pause/resume
+
+Major behavior changes should require admin approval:
+- increasing risk per trade
+- enabling news trading
+- expanding symbols
+- increasing max trades
+- enabling extension mode
+- increasing allocation
+- removing cooldowns
+
+Ruby can recommend changes, but admin approves them.
+
+==================================================
+AGENT BUDGET BUCKETS
+==================================================
+
+Support optional allocation buckets per agent:
+
+Example:
+Agent Titan Allocation: $1,000
+
+Scalp Budget: $400
+Swing Budget: $400
+News Budget: $200
+
+Budget buckets:
+- Scalp
+- Swing
+- News
+- Experimental / Shadow if needed
+
+If a bucket hits its loss limit, restrict only that bucket if possible.
+
+If not feasible initially, create schema/UI future-ready but do not fake bucket accounting.
+
+==================================================
+SELF-TRADE LEDGER
+==================================================
+
+Each agent needs an internal ledger.
+
+Track:
+
+- allocated funds
+- available funds
+- reserved risk
+- margin used
+- open exposure
+- open P/L
+- realized P/L
+- daily P/L
+- weekly P/L
+- gross profit
+- gross loss
+- fees/commission if available
+- slippage if available
+- deposits/allocation increases
+- allocation decreases
+- removed funds
+- funds tied in open trades
+- lock status if relevant
+
+This ledger separates:
+- manual user allocation
+- scanner-assisted allocation
+- Ruby-assisted user trades
+- admin/operator funds
+- other agent funds
+
+Regular users should not see hidden ARX internal capital/split calculations.
+
+==================================================
+AGENT OWNERSHIP TAGS
+==================================================
+
+Every self-trade must be tagged:
+
+- owner type: Self-Trade AI
+- agent ID
+- agent name
+- agent version
+- strategy
+- setup type
+- mode: autonomous/shadow/assist
+- allocation source
+- budget bucket if used
+- trade thesis ID
+- audit log ID
+- source candidate ID
+- supervisor decision ID
+
+This tag must flow through:
+- Open Trades
+- Wins & Losses
+- Account Analytics
+- Calendar P/L
+- My Alerts
+- Audit Log
+- Ruby Memory
+- Agent Competition
+- Agent Ledger
+
+This is mandatory for clean reporting.
+
+==================================================
+SELF-TRADE SUPERVISOR
+==================================================
+
+Create/upgrade a Self-Trade Supervisor layer.
+
+The Supervisor has final say before execution.
+
+Individual agents can request trades.
+Supervisor approves, denies, reduces size, delays, or assigns the opportunity to another agent.
+
+Supervisor responsibilities:
+- prevent overexposure
+- prevent duplicate/correlated stacking
+- resolve agent conflicts
+- prioritize best opportunity
+- enforce agent budgets
+- enforce daily/weekly limits
+- enforce mandatory trade quota safely
+- decide extension trades
+- pause weak agents
+- promote/demote agents
+- route trade ownership
+- confirm handshakes passed
+- trigger alerts and audit logs
+
+Final decision options:
+
+- Approved
+- Approved with reduced risk
+- Prepare only
+- Watch only
+- Wait for confirmation
+- Denied
+- Blocked by risk
+- Blocked by news
+- Blocked by correlation
+- Blocked by bridge
+- Blocked by quota/risk mode
+- Assigned to another agent
+
+==================================================
+AGENT CONFLICT CONTROL
+==================================================
+
+Detect and manage conflicts:
+
+- same symbol opposite direction
+- same symbol duplicate direction
+- correlated symbol same risk
+- volatility-family opposite run
+- one agent wants to close while another wants to add
+- scalp buy vs swing sell on same symbol
+- multiple agents requesting same trade
+- too many agents exposed to same currency/volatility family
+
+Supervisor decisions:
+- allow only highest-ranked agent
+- assign trade to agent with best historical performance
+- allow multiple but reduce size
+- block both until structure confirms
+- allow one live, others shadow
+- wait for confirmation
+
+Every conflict must be logged.
+
+==================================================
+ONE AGENT PER TRADE OWNERSHIP
+==================================================
+
+Every autonomous trade has one owner agent.
+
+Even if multiple agents contribute signals, only one owns the trade for:
+- management
+- scoring
+- audit
+- ledger
+- competition
+- lessons
+
+Example:
+Owner: Agent Titan
+Support signals: Blaze momentum, Ruby chart read, Scanner ranking
+
+==================================================
+AGENT MARKET ASSIGNMENT
+==================================================
+
+Allow agent market assignments:
+
+Alpha:
+- Forex majors only
+
+Blaze:
+- Volatility indices and fast scalps
+
+Atlas:
+- XAUUSD and indices swing trades
+
+Nova:
+- high-impact USD news only
+
+Titan:
+- all approved markets, best opportunity ranking
+
+Agents should not all chase the same market unless Supervisor approves.
+
+==================================================
+MARKET BAN SYSTEM
+==================================================
+
+Allow temporary/permanent bans:
+
+- symbol ban
+- strategy ban
+- session ban
+- news-event ban
+- volatility-family ban
+
+Example:
+Agent Nova banned from XAUUSD news trades for 7 days.
+Reason: 3 failed trades, high slippage, poor reaction quality.
+
+Bans can be recommended by Ruby/Supervisor but major bans should be admin-visible.
+
+==================================================
+AGENT STATES
+==================================================
+
+Support agent states:
+
+- Unfunded
+- Funded
+- Active
+- Sleeping
+- Scanning
+- Watching
+- Waiting for confirmation
+- Preparing setup
+- Risk checking
+- Ready to execute
+- Executing
+- Managing open trade
+- Protecting
+- Exiting
+- Reviewing
+- Learning
+- Paused
+- Daily Goal Hit
+- Daily Loss Hit
+- Weekly Goal Hit
+- Weekly Loss Hit
+- Blocked by Risk
+- Blocked by News
+- Bridge Unavailable
+- Feed Unavailable
+- Recovery Mode
+- Protect Mode
+- Shadow Mode
+
+Display states in UI with clean labels.
+
+==================================================
+AUTONOMOUS TRADE LIFECYCLE
+==================================================
+
+Every self-trade should move through:
+
+- Candidate
+- Watching
+- Prepared
+- Risk Checking
+- Approved
+- Submitted
+- Filled
+- Managing
+- Protected
+- Partially Closed
+- Closed
+- Reviewed
+- Lesson Saved
+
+Failure states:
+- Rejected
+- Expired
+- Blocked
+- Cancelled
+- Bridge Failed
+- Risk Failed
+- Feed Failed
+- Slippage Failed
+- News Failed
+- Correlation Failed
+
+Log every status transition.
+
+==================================================
+DECISION PIPELINE MODULES
+==================================================
+
+Build or integrate these modules as services/helpers where appropriate:
+
+1. SelfTradeOrchestrator
+2. SelfTradeSupervisor
+3. SelfTradeHandshakeNetwork
+4. AgentLedger
+5. AgentQuotaEngine
+6. AgentCompetitionEngine
+7. AgentScoringEngine
+8. MarketRegimeDetector
+9. SetupClassifier
+10. MultiTimeframeAlignmentEngine
+11. EntryZoneEngine
+12. LateEntryDetector
+13. NoTradeScoreEngine
+14. OpportunityRankingEngine
+15. RiskAwareLotSizer
+16. NewsCalendarGuard
+17. SpreadSlippageGuard
+18. CorrelationGuard
+19. VolatilityRelationshipMatrix
+20. ExecutionPermissionGate
+21. LivePositionManager
+22. PostTradeReviewEngine
+23. AgentLearningAdapter
+24. SelfTradeAuditLogger
+25. DataQualityMonitor
+
+If some modules already exist under different names, reuse/extend them.
+
+Do not over-engineer frontend-only fake services. Put logic where the app’s current architecture expects business logic.
+
+==================================================
+MARKET REGIME DETECTOR
+==================================================
+
+Classify markets:
+
+- Trending
+- Ranging
+- Choppy
+- Breakout forming
+- Breakout already happened
+- Pullback
+- Exhaustion
+- Reversal forming
+- News-driven
+- Low-liquidity
+- High-volatility spike
+
+Strategy choice depends on regime.
+
+Example:
+Market regime: Choppy range
+Best action: No trade
+
+==================================================
+SETUP CLASSIFIER
+==================================================
+
+Classify setup type:
+
+- Flame scalp
+- Trend continuation
+- Pullback entry
+- Breakout
+- Breakout retest
+- Reversal
+- Range edge trade
+- News reaction trade
+- Momentum burst
+- Liquidity sweep
+- Support/resistance bounce
+- Avoid / no trade
+
+Each setup type should have its own scorecard.
+
+==================================================
+MULTI-TIMEFRAME INTELLIGENCE
+==================================================
+
+Use timeframe roles:
+
+M1/M5:
+- entry timing
+
+M15/M30:
+- short-term structure
+
+H1/H4:
+- directional bias
+
+D1:
+- major zones/macro context
+
+If timeframes conflict:
+- lower confidence
+- wait
+- no trade
+
+==================================================
+ENTRY ZONE ENGINE
+==================================================
+
+Every trade needs:
+
+- ideal entry zone
+- acceptable entry zone
+- chase zone
+- no-entry zone
+- invalidation price
+- stop loss zone
+- first target
+- main target
+- stretch target
+
+Agent only enters in ideal or acceptable zone unless quota mode and reduced risk rules allow.
+
+==================================================
+LATE ENTRY DETECTOR
+==================================================
+
+Reject late entries when:
+
+- move already traveled too far
+- price near target
+- candle overextended
+- reward remaining too small
+- momentum candle exhausted
+- entry is chasing
+
+Log:
+Signal rejected: late entry.
+
+==================================================
+PATIENCE ENGINE
+==================================================
+
+Allow these waiting states:
+
+- Waiting for pullback
+- Waiting for candle close
+- Waiting for breakout confirmation
+- Waiting for retest
+- Waiting for spread to normalize
+- Waiting for news window to clear
+- Ready to enter
+- Setup expired
+
+==================================================
+SETUP EXPIRATION TIMER
+==================================================
+
+Every setup must expire.
+
+Track:
+- created time
+- valid until
+- invalidation condition
+- expiry reason
+
+Do not execute stale signals.
+
+==================================================
+CANDLE QUALITY SCORING
+==================================================
+
+Score:
+- body strength
+- wick rejection
+- close quality
+- momentum continuation
+- compression before breakout
+- fakeout risk
+- volume/tick strength if available
+- engulfing/rejection patterns
+
+==================================================
+LIQUIDITY SWEEP DETECTION
+==================================================
+
+Detect:
+- stop hunt above highs
+- stop hunt below lows
+- sweep + rejection
+- failed breakout
+- trap candles
+- break and reclaim
+
+Use this to avoid bad breakouts and detect reversals.
+
+==================================================
+SPREAD + SLIPPAGE INTELLIGENCE
+==================================================
+
+Before entry, estimate:
+- current spread
+- average spread
+- expected slippage
+- worst-case slippage
+- execution quality
+- spread expansion risk
+
+For scalps, this heavily affects permission and lot size.
+
+==================================================
+OPPORTUNITY RANKING
+==================================================
+
+Do not trade the first setup found.
+
+Rank approved opportunities:
+
+Example:
+1. XAUUSD Buy scalp — 84
+2. USDJPY Sell pullback — 76
+3. EURUSD Buy — 61
+4. US30 — Avoid, news risk high
+
+Thresholds:
+90–100: Excellent
+80–89: Strong
+70–79: Acceptable / reduced risk if needed
+60–69: Watch only
+Below 60: No trade
+
+Quota mode can lower threshold to 70 with reduced risk, but not below unless admin explicitly allows.
+
+==================================================
+CORRELATION GUARD
+==================================================
+
+Prevent hidden stacking.
+
+Detect:
+- EURUSD buy + GBPUSD buy = USD weakness exposure
+- USDJPY buy + XAUUSD sell = USD strength exposure
+- US30 buy + NAS100 buy = equity risk
+- volatility family exposure stacking
+- same-symbol multi-agent conflict
+
+Output:
+- allow
+- reduce size
+- block
+- allow only cleaner side
+- hedge/rotation candidate
+
+==================================================
+SESSION INTELLIGENCE
+==================================================
+
+Support sessions:
+- Asia
+- London
+- New York
+- London/New York overlap
+- rollover
+- low-liquidity
+- synthetic/volatility 24/7
+
+Agents should have session permissions and behavior differences.
+
+==================================================
+NEWS / HIGH IMPACT TRADING
+==================================================
+
+Build News Mode with dedicated rules.
+
+Modes:
+- Avoid News
+- Protect Only
+- Reaction Watch
+- Confirmed Reaction Trade
+- Aggressive News Scalping only if admin explicitly enables later
+
+For now, support safest live modes:
+- Protect Only
+- Reaction Watch
+- Confirmed Reaction Trade
+
+Before news:
+- avoid scalps close to release unless News Agent authorized
+- reduce size
+- protect open positions
+- watch affected symbols
+
+During news:
+- check actual vs forecast
+- surprise magnitude
+- first candle reaction
+- spread/slippage
+- fakeout risk
+- correlated market reaction
+
+After news:
+- wait for spread normalize
+- wait for second candle confirmation
+- confirm continuation or reversal
+- decide trade/watch/avoid
+
+News Agent should not blindly enter first spike.
+
+Track News Score:
+- news win rate
+- news slippage
+- spread expansion
+- first-candle fakeout rate
+- confirmed-reaction success
+- best event types
+- worst event types
+
+If news score drops:
+- disable news mode or demote to watch/protect.
+
+==================================================
+TRADE MANAGEMENT INTELLIGENCE
+==================================================
+
+After entry, agent must manage position.
+
+Watch:
+- price moving toward target
+- momentum fading
+- support/resistance
+- SL/TP distance
+- break-even candidates
+- news approaching
+- spread widening
+- trade thesis invalidation
+- open P/L
+- time in trade
+- volatility-family behavior
+
+Actions:
+- hold
+- protect
+- move SL to break-even
+- tighten stop
+- take partial
+- do not add
+- add only if momentum restarts
+- exit if invalidated
+- wait
+
+All actions must use existing position modification/close flows and permissions.
+
+==================================================
+TIME-IN-TRADE INTELLIGENCE
+==================================================
+
+Scalps should not stay open too long.
+
+Example rules:
+- expected scalp duration 2–12 minutes
+- no progress after 5 minutes = confidence decay
+- no movement after 10 minutes = exit/protect consideration
+- trend/swing trades get wider time windows
+
+==================================================
+TRADE THESIS TRACKING
+==================================================
+
+Before every autonomous entry, save trade thesis:
+
+- why this trade
+- why now
+- setup type
+- invalidation
+- stop
+- target
+- expected duration
+- risk present
+- handshakes passed
+- score breakdown
+- agent owner
+- supervisor decision
+
+If no clear thesis, no trade.
+
+After exit, compare:
+- entry thesis
+- exit reason
+- actual outcome
+- whether thesis stayed valid
+- whether management followed plan
+
+==================================================
+CONFIDENCE DECAY
+==================================================
+
+Confidence must change over time.
+
+Track:
+- initial confidence
+- updated confidence
+- reasons for decay
+- failed breakout
+- spread widened
+- timeframe conflict
+- setup expired
+
+If confidence drops below threshold:
+- cancel setup
+- reduce risk
+- no trade
+- protect if already open
+
+==================================================
+ANTI-OVERTRADING LOGIC
+==================================================
+
+Controls:
+- max trades per session
+- base 5 trades daily
+- extension rules
+- cooldown after losses
+- cooldown after win streak if needed
+- stop after repeated mistake
+- stop after drawdown
+- stop after news instability
+
+Daily minimum 3 still applies, but hard safety blocks override.
+
+==================================================
+STRATEGY SCORECARDS
+==================================================
+
+Each setup type should have scorecard.
+
+Flame Scalp example:
+- momentum flame
+- spread
+- entry timing
+- news safety
+- exit room
+- account risk
+
+Pullback example:
+- HTF trend
+- pullback quality
+- support/resistance hold
+- entry candle
+- R:R
+- news safety
+
+News Reaction example:
+- surprise strength
+- first reaction
+- second candle confirmation
+- spread/slippage
+- correlated market response
+- fakeout risk
+
+==================================================
+VOLATILITY RELATIONSHIP MATRIX
+==================================================
+
+Ruby must learn volatility-pair relationships.
+
+Track volatility family symbols such as:
+- V10
+- V25
+- V50
+- V75
+- V100
+- V10 1s
+- V25 1s
+- V50 1s
+- V75 1s
+- V100 1s
+- Boom/Crash if supported
+- Step Index if supported
+
+Use actual available symbols from the app/broker; do not hardcode unavailable symbols as tradable.
+
+Compare:
+- direction
+- momentum strength
+- inverse correlation
+- direct correlation
+- lead/lag behavior
+- decoupling
+- rotation
+- which one is cleaner
+- spread/slippage
+- risk of stacking
+- best opportunity
+
+Relationship states:
+- Moving Together
+- Moving Opposite
+- Decoupled
+- Leader/Follower
+- Rotation Active
+- Divergence Forming
+- Fake Divergence
+- No Relationship
+
+==================================================
+VOLATILITY OPPOSITE-RUN ALERTS
+==================================================
+
+Mandatory rule:
+
+Any time a trader or AI agent is exposed to a volatility symbol, Ruby must monitor related volatility symbols for opposite movement and alert when that relationship creates risk, confirmation, or opportunity.
+
+Trigger when:
+- user is trading any volatility symbol
+- self-trade agent is trading any volatility symbol
+- another related volatility market runs opposite with sufficient momentum
+- relationship is strong enough to matter
+- trade risk/opportunity changes
+
+Alert types:
+1. Confirmation alert
+2. Warning alert
+3. Opportunity alert
+4. Conflict alert
+
+Example:
+Volatility Relationship Alert
+
+You are trading V75.
+V25 is moving opposite with strong momentum.
+
+Ruby’s read:
+This can create opportunity, but it also means volatility markets are rotating. Protect your current trade before adding more risk.
+
+Suggested action:
+Watch V75 confirmation, compare V25 setup, and avoid stacking until Ruby confirms the cleaner side.
+
+Alert should appear in:
+- My Alerts
+- Open Trades
+- Scanner
+- Ruby popup
+- Self-Trade Live Decisions
+- Trade page before entry
+- Account/Risk exposure panels
+
+Self-trade response options:
+- hold current position
+- protect current position
+- do not add
+- close if thesis breaks
+- open opposite setup only if Risk Governor and Supervisor approve
+- take only cleaner side
+- reduce size if both sides active
+
+==================================================
+DO NOT ADD INTELLIGENCE
+==================================================
+
+When trader/agent is already in a volatility trade, Ruby should output:
+
+- Add allowed
+- Add only after pullback
+- Do not add
+- Protect first
+- Take partial first
+- Close if structure breaks
+- Opposite opportunity stronger
+
+This is critical for multi-trade scalping.
+
+==================================================
+DATA QUALITY MONITOR
+==================================================
+
+Self-trade must reduce or stop action if data is unreliable:
+
+- price feed stale
+- candles missing
+- economic calendar unavailable
+- spread feed unavailable
+- MT5 heartbeat stale
+- open positions not refreshing
+- balance mismatch
+- duplicate symbol mapping
+- selected symbol mismatch
+- account allocation mismatch
+
+Alert:
+Self-trade paused: position data is stale.
+Reason: MT5 heartbeat has not updated.
+
+==================================================
+KILL SWITCHES
+==================================================
+
+Support:
+
+- global self-trade kill switch
+- per-agent kill switch
+- per-strategy kill switch
+- per-symbol kill switch
+- news-mode kill switch
+- volatility-family kill switch
+- emergency bridge kill
+- daily loss auto-kill
+- weekly loss auto-kill
+- drawdown auto-kill
+
+All kill switches must be admin-protected and logged.
+
+==================================================
+CAPITAL PROTECTION RULES
+==================================================
+
+Support:
+- max drawdown per agent
+- max drawdown per strategy
+- max drawdown per symbol
+- max loss streak
+- max exposure per volatility family
+- max correlated exposure
+- max news-trade loss
+- mandatory cooldown after large loss
+- mandatory risk reduction after drawdown
+
+==================================================
+RECOVERY MODE
+==================================================
+
+If agent is down but not stopped:
+
+Recovery Mode:
+- smaller lot size
+- no extension trades
+- higher minimum setup score
+- no news trades
+- no add-ons
+- one open trade at a time
+
+==================================================
+PROFIT LOCK / PROTECT MODE
+==================================================
+
+If agent hits daily/weekly goal:
+
+Protect Mode:
+- only A+ setups
+- reduced risk
+- no quota pressure if minimum completed
+- optional stop-for-day setting
+- protect existing positions
+
+==================================================
+AGENT PROMOTION / DEMOTION
+==================================================
+
+Agents should be promoted/demoted based on:
+- P/L
+- P/L percentage on allocation
+- drawdown
+- profit factor
+- win rate
+- risk discipline
+- quota completion
+- execution quality
+- news handling
+- consistency
+- confidence calibration
+- slippage control
+
+Examples:
+- promote: increase risk slightly, allow extension, expand symbols
+- demote: reduce risk, disable news, raise score threshold, move to shadow mode
+
+Major promotions/demotions require admin approval if they alter risk materially.
+
+==================================================
+AGENT RETIREMENT
+==================================================
+
+Rules:
+- loses 3 weeks in row → move to Shadow Mode
+- drawdown exceeds max → freeze allocation
+- rule discipline below 60 → disable autonomous trading
+- repeated news losses → disable news trading
+
+==================================================
+SHADOW MODE
+==================================================
+
+Shadow Mode is not user paper trading. It is internal live-market evaluation.
+
+Agent logs:
+- would-have-entered trade
+- SL/TP
+- expected result
+- actual result
+- why it did/did not trade
+
+Eligibility for live allocation:
+- shadow score above threshold for X days
+- max drawdown below threshold
+- minimum shadow trades
+- rule discipline threshold
+- news safety score
+
+==================================================
+AGENT LEARNING
+==================================================
+
+Agents learn from:
+- own closed trades
+- shadow decisions
+- Ruby lessons
+- volatility relationship results
+- news outcomes
+- missed opportunities
+- rejected setups
+- trade management outcomes
+
+Learning outputs:
+- market specialization
+- strategy specialization
+- session preferences
+- setup thresholds
+- late-entry threshold adjustments
+- news permissions recommendations
+- market bans
+- promotion/demotion recommendations
+
+Agents may learn from each other only through validated patterns, not blind copying.
+
+==================================================
+CONFIDENCE CALIBRATION
+==================================================
+
+Track:
+- predicted confidence
+- actual outcome group win rate
+- calibration gap
+
+If agent says 85% confidence but actual win rate is 52%, lower trust/score until recalibrated.
+
+==================================================
+TRUTH SCORE
+==================================================
+
+Score whether the agent’s prediction matched outcome:
+
+- predicted direction
+- actual move after entry
+- prediction correct
+- entry timing
+- exit quality
+- thesis validity
+- confidence accuracy
+
+==================================================
+EXECUTION QUALITY SCORE
+==================================================
+
+Every trade gets execution score:
+
+- entry inside ideal zone
+- slippage acceptable
+- spread acceptable
+- not late
+- SL correct
+- target realistic
+- thesis followed
+- management followed rules
+
+A losing trade can still have good execution quality.
+
+==================================================
+AGENT COMPETITION
+==================================================
+
+Build Competition tab.
+
+Leaderboard should include:
+- rank
+- agent
+- status
+- allocation
+- P/L
+- P/L %
+- win rate
+- profit factor
+- max drawdown
+- risk-adjusted score
+- quota completion
+- rule discipline
+- execution quality
+- news score
+- consistency
+- best strategy
+- worst mistake
+
+Do not rank only by profit.
+
+Leaderboard categories:
+- Best Overall Agent
+- Best Scalper
+- Best Swing Trader
+- Best News Agent
+- Lowest Drawdown
+- Best Win Rate
+- Best Profit Factor
+- Best Risk Discipline
+- Best Recovery Agent
+- Most Consistent Agent
+- Most Improved Agent
+- Worst Overtrader
+
+==================================================
+SCORING MODEL
+==================================================
+
+Agent Score should include:
+- profit performance
+- P/L percentage
+- consistency
+- win quality
+- risk control
+- drawdown control
+- rule discipline
+- quota completion
+- trade management
+- news handling
+- execution quality
+- confidence calibration
+- volatility relationship handling
+
+Penalties:
+- overtrading
+- late entries
+- high drawdown
+- ignored risk
+- missed quota without hard-block reason
+- bad news trades
+- excessive slippage
+- repeated same mistake
+- correlation stacking
+
+==================================================
+LIVE DECISIONS UI
+==================================================
+
+Create Live Decisions tab/cards showing what agents are doing.
+
+Example:
+Agent Blaze is watching V75.
+Status: Waiting for pullback.
+Setup score: 78/100.
+Quota: 2/3 complete.
+Reason: momentum is strong but entry is slightly late.
+Action: no trade yet.
+
+Show:
+- agent
+- market
+- status
+- setup type
+- setup score
+- quota progress
+- risk state
+- planned action
+- reason
+- handshakes passed/failed
+- time remaining
+- alert state
+
+==================================================
+AUDIT LOG
+==================================================
+
+Audit everything.
+
+Log:
+- scan result
+- candidate detected
+- setup rejected
+- setup accepted
+- setup expired
+- quota pressure
+- all handshake approvals/failures
+- lot sizing calculation
+- supervisor decision
+- execution command
+- fill/reject result
+- position management decision
+- SL/TP modification
+- close/partial close
+- exit decision
+- final result
+- lesson saved
+- agent score change
+- admin override
+- funding allocation change
+- pause/resume
+- kill switch event
+
+Audit log should be filterable by:
+- agent
+- symbol
+- strategy
+- event type
+- decision type
+- status
+- date
+- severity
+
+Regular users should only see what they are allowed to see.
+Admin can see broader logs if role-protected.
+
+==================================================
+HUMAN OVERRIDE LOG
+==================================================
+
+Log:
+- admin funded agent
+- admin defunded agent
+- admin paused/resumed
+- admin changed risk
+- admin enabled news
+- admin changed autonomy
+- admin killed agent
+- admin approved promotion/demotion
+
+==================================================
+DAILY / WEEKLY REPORTS
+==================================================
+
+Generate Self-Trade Daily Report:
+
+- total agents active
+- total trades
+- agents meeting 3-trade minimum
+- missed quota agents and reasons
+- net P/L
+- best agent
+- worst agent
+- best setup
+- worst mistake
+- news impact
+- volatility relationship opportunities
+- tomorrow adjustment
+
+Weekly Report:
+- promote/demote/pause recommendations
+- agent leaderboard
+- strategy performance
+- market specialization
+- risk issues
+- recommended admin actions
+
+Connect reports to:
+- Account Analytics
+- Wins & Losses
+- Ruby Memory
+- My Alerts
+- Agent Competition
+
+==================================================
+UI DESIGN SYSTEM
+==================================================
+
+Use ARX dark fortress style:
+
+Background: #070A0F
+Card background: #0E131B
+Elevated card: #111827
+Card inner surface: #151B26
+Border: rgba(255,255,255,0.08)
+Strong blue border: rgba(47,140,255,0.35)
+ARX blue: #2F8CFF
+Ruby cyan: #35D7FF
+Ruby purple: #C45BFF
+Profit green: #22C55E
+Loss red: #EF4444
+Warning yellow: #FFCC4D
+High risk orange: #F97316
+Critical red: #E11D48
+Gold: #FACC15
+Primary text: #F5F7FA
+Secondary text: #A7AFBE
+Muted text: #6F7785
+
+Use:
+- modern dark cards
+- status chips
+- metric tiles
+- agent cards
+- leaderboards
+- audit timeline
+- decision cards
+- progress bars
+- quota meters
+- risk meters
+- volatility matrix grid
+- bottom-sheet drawers on mobile
+- desktop dashboard grids
+
+==================================================
+SELF-TRADE OVERVIEW TAB
+==================================================
+
+Show:
+- total allocated to self-trade
+- active agents
+- funded agents
+- paused agents
+- today self-trade P/L
+- weekly self-trade P/L
+- open self-trade positions
+- agents meeting quota
+- agents behind quota
+- best agent
+- worst agent
+- global self-trade status
+- global kill switch status
+- risk governor status
+- bridge status
+- Ruby Supervisor summary
+
+==================================================
+AGENTS TAB
+==================================================
+
+Show each agent card:
+- name
+- version
+- profile/personality
+- status
+- autonomy level
+- allocation
+- available funds
+- daily P/L
+- weekly P/L
+- daily quota 0/3 etc.
+- trades today
+- base cap 5
+- extension status
+- score
+- drawdown
+- current mode
+- active market
+- last decision
+- controls: view, pause/resume, settings, audit
+
+==================================================
+ALLOCATIONS TAB
+==================================================
+
+Admin-only or role-protected.
+
+Show:
+- allocate funds
+- remove funds
+- adjust goals
+- adjust loss limits
+- assign budget buckets
+- set allowed symbols
+- set max lot
+- set risk per trade
+- set autonomy level
+- enable/disable news
+- enable/disable extension
+- kill switch
+
+Regular users should not access allocation controls unless intended.
+
+==================================================
+NEWS MODE TAB
+==================================================
+
+Show:
+- upcoming high-impact events
+- affected markets
+- agents allowed to trade news
+- news mode per agent
+- spread/slippage limits
+- pre-news window
+- post-news confirmation rules
+- news performance score
+- news kill switch
+- recent news trades
+- news watch decisions
+
+==================================================
+VOLATILITY MATRIX TAB
+==================================================
+
+Show:
+- volatility family symbols
+- relationship grid
+- moving together/opposite/decoupled states
+- leader/follower
+- momentum
+- best opportunity
+- opposite-run alerts
+- current exposures
+- human trader exposure
+- self-trade agent exposure
+- risk of stacking
+- Ruby’s relationship read
+
+Example:
+V75 vs V25: Moving Opposite
+Leader: V75
+Best opportunity: V75 Buy
+Secondary: V25 Sell
+Risk: Do not add until confirmation
+
+==================================================
+RISK RULES TAB
+==================================================
+
+Show:
+- global self-trade kill switch
+- daily minimum trades
+- base max trades
+- extension conditions
+- daily loss rules
+- weekly loss rules
+- drawdown rules
+- cooldowns
+- quota escalation
+- news rules
+- correlation rules
+- volatility-family rules
+- data quality rules
+- agent risk modes
+
+==================================================
+SETTINGS TAB
+==================================================
+
+Show:
+- global self-trade enable/disable
+- agent creation templates
+- default minimum trades
+- default max trades
+- default risk modes
+- default news behavior
+- audit retention
+- alert preferences
+- Ruby explanation verbosity
+- admin approval requirements
+- shadow mode settings
+
+==================================================
+INTEGRATIONS WITH EXISTING PAGES
+==================================================
+
+Open Trades:
+- show self-trade owner tags
+- show agent name
+- show autonomous management state
+- show Ruby management read
+- show volatility relationship alerts
+
+Wins & Losses:
+- filter by Self-Trade AI
+- filter by agent
+- show agent lessons
+- show execution quality
+- show thesis follow-through
+
+Account Analytics:
+- show self-trade allocation
+- show agent ledger
+- show daily P/L calendar from agent trades
+- show self-trade contribution
+
+My Alerts:
+- agent quota alerts
+- opposite volatility alerts
+- agent paused/blocked alerts
+- news mode alerts
+- hard block alerts
+- kill switch alerts
+
+Scanner:
+- show agent-eligible setups
+- show opportunity ranking
+- show volatility relationship states
+- show whether setup qualifies for self-trade
+
+Trade Command Room:
+- show when a trade was initiated by self-trade
+- do not allow manual user changes to agent-owned trade unless permissioned/admin
+- preserve existing trade actions
+
+Ruby:
+- explain agent decisions
+- answer “Why did Agent Blaze trade?”
+- answer “Why did Nova stop?”
+- answer “Why did this agent miss quota?”
+- answer “What agent is best today?”
+
+Economic Calendar:
+- show News Agent permissions
+- show news trade history
+- show high-impact alerts to self-trade agents
+
+==================================================
+ROLE / PERMISSION RULES
+==================================================
+
+Regular users can see only what they are allowed to see:
+- their own self-trade agent performance if agents belong to them
+- their own allocation if applicable
+- their own trades
+- their own alerts
+- Ruby explanations
+
+Admin can access:
+- agent creation
+- allocation
+- pause/resume
+- kill switches
+- risk settings
+- autonomy levels
+- competition
+- audit logs
+- all agent controls
+only if existing role system confirms admin.
+
+Do not expose:
+- other users’ data
+- ARX internal capital
+- hidden split calculations
+- master account total if not intended
+- raw MT5 payloads
+- backend logs
+- API routes
+- internal formulas
+to regular users.
+
+==================================================
+LANGUAGE CLEANUP
+==================================================
+
+Do not show regular users:
+- backend
+- API
+- raw function names
+- internal enums
+- command queue
+- raw queue ID
+- LLM call
+- system prompt
+- browser flag
+- server-side gates
+- LIVE_LOCKED
+- canPlaceTrades false
+- broker-debug
+- raw MT5 payload
+- raw bridge logs
+
+Use:
+- Self-Trade AI
+- Agent
+- Funded
+- Active
+- Watching
+- Risk checking
+- Executing
+- Managing
+- Protected
+- Quota progress
+- Ruby’s read
+- Supervisor decision
+- Trade thesis
+- Audit log
+- Bridge unavailable
+- Risk lock active
+
+==================================================
+EMPTY STATES
+==================================================
+
+Use:
+- No agents created yet.
+- No funds allocated yet.
+- This agent cannot trade until funds are allocated.
+- No live self-trade decisions yet.
+- Agent competition will appear after agents complete trades.
+- Volatility relationship data will appear once volatility symbols are active.
+- Audit events will appear as agents scan and trade.
+- News mode is waiting for high-impact events.
+- Ruby needs more self-trade history before recommending changes.
+
+Do not delete sections because empty.
+
+==================================================
+QA REQUIRED
+==================================================
+
+After implementation, run build/typecheck/lint if available and verify:
+
+1. Self-Trade AI route loads.
+2. All tabs work.
+3. No runtime errors.
+4. Global header works.
+5. Bottom nav works.
+6. Ruby floating button works.
+7. Regular users cannot access admin-only allocation/kill controls.
+8. Agents cannot trade without funds.
+9. Funded active agents can become eligible for autonomous trading.
+10. Autonomy levels are respected.
+11. Daily minimum trade tracker works.
+12. Daily base max 5 works.
+13. Extension after 5 only works when conditions pass.
+14. Daily loss limit blocks trading.
+15. Weekly loss limit blocks trading.
+16. Global kill switch blocks trading.
+17. Per-agent kill switch blocks trading.
+18. Risk Governor is called before execution.
+19. MT5/shared bridge route is used for execution.
+20. No new direct MT5 UI call exists.
+21. Agent trades are tagged with agent owner.
+22. Agent ledger updates from real trade data.
+23. Open Trades shows self-trade tags.
+24. Wins & Losses filters self-trade trades.
+25. Account Analytics includes self-trade data where wired.
+26. My Alerts receives agent alerts.
+27. Volatility opposite-run alerts trigger when relevant.
+28. News Mode does not trade first spike blindly.
+29. Audit log records decisions.
+30. Missed quota reasons are logged.
+31. Agent competition uses real data only.
+32. No fake P/L/trade/agent performance appears.
+33. Admin controls are role-protected.
+34. No backend/internal wording appears to regular users.
+35. Mobile layout has no horizontal overflow.
+36. No content hidden behind bottom nav.
+37. TypeScript/build/lint/runtime errors fixed.
+
+==================================================
+COMPLETION REPORT REQUIRED
+==================================================
+
+Return a structured report:
+
+- files changed
+- routes added/updated
+- components created/updated
+- existing hooks/services reused
+- self-trade agent model added/updated
+- allocation/ledger wiring confirmed
+- minimum 3 trades daily rule implemented
+- base 5 trades / extension rule implemented
+- handshake network implemented
+- supervisor layer implemented
+- risk governor integration confirmed
+- MT5/shared bridge execution path confirmed
+- agent ownership tags confirmed
+- volatility relationship matrix implemented
+- opposite-run alerts implemented
+- news mode implemented/future-ready
+- audit log implemented
+- competition leaderboard implemented/future-ready
+- integrations with Open Trades/Wins & Losses/Account Analytics/My Alerts confirmed
+- admin/user visibility confirmed
+- empty states preserved
+- mobile QA passed
+- remaining follow-up needed
+
+IMPORTANT:
+Preserve existing wiring first. If exact implementation conflicts with existing architecture, adapt to current architecture while keeping the same product behavior. Do not fake trades, P/L, allocations, volatility relationships, news events, Ruby insights, or agent performance. Every autonomous trade must be funded, permissioned, risk-approved, supervisor-approved, and routed through the existing live/shared MT5 execution path.

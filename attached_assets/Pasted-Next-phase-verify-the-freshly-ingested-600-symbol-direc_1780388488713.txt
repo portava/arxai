@@ -1,0 +1,105 @@
+Next phase: verify the freshly ingested 600-symbol directory is fully wired into the ARX AI live app flow.
+
+Context:
+Command 330 completed successfully through the live EA bridge.
+The EA enumerated all 600 symbols and POSTed the full array back through /api/mt5/command-result.
+The backend ingested all 600 rows into arx_symbol_specs for user 4.
+There were no 413 errors, no 502 errors, and no dropped symbols.
+
+Now perform a full integration verification using the existing live bridge environment.
+
+Required checks:
+
+1. Symbol Directory Usage
+- Confirm the app is now reading from arx_symbol_specs instead of hardcoded/fallback symbols.
+- Confirm all 600 symbols are available to the frontend.
+- Confirm symbols include correct metadata where available:
+  - symbol name
+  - asset class/group
+  - digits
+  - point
+  - min lot
+  - max lot
+  - lot step
+  - contract size
+  - trade mode
+  - spread if available
+  - session/trading status if available
+
+2. Scanner Symbol Search
+- The scanner must allow users to search any available symbol from the 600-symbol directory.
+- The search should not be limited to old preset symbols.
+- Typing a symbol should filter quickly.
+- Clicking a symbol should set that symbol as scanner focus.
+- Market groups should be collapsible.
+- Selecting a symbol should collapse/close the picker cleanly so the user can return to the scanner.
+
+3. Ruby Symbol Awareness
+- When a user selects any symbol, Ruby should explain that symbol in plain English.
+- Ruby should not expose backend names, route names, API names, internal errors, JSON payloads, database table names, or code terms to regular users.
+- Ruby should explain:
+  - what the symbol is
+  - whether it looks tradeable
+  - the current market context
+  - basic technical read
+  - risk considerations
+  - what the user should watch before entry
+- Ruby should say “I’m thinking…” or show the animated typing dots while responding.
+
+4. Trade Modal Symbol Wiring
+- Confirm the trade modal receives the selected symbol correctly.
+- Confirm lot size validation uses live symbol specs from arx_symbol_specs.
+- Confirm min lot, max lot, lot step, digits, and point size are respected.
+- Confirm buy/sell, SL, TP, entry, and risk values are calculated using the selected symbol’s live specs.
+- Confirm no old hardcoded EURUSD-only behavior remains unless the user intentionally chooses EURUSD.
+
+5. LIVE-Only Active Flow
+- Do not add Paper Trading.
+- Do not create a paper fallback.
+- Do not label anything as paper, simulated, fake, mock, sandbox, or test trading in the active product flow.
+- The active production modes are only DEMO and LIVE.
+- This verification is for the current LIVE bridge path.
+- Do not block live functionality with demo-only assumptions.
+
+6. Performance Requirements
+- Symbol search should feel instant.
+- Opening the symbol picker should not lag.
+- Selecting a symbol should update the scanner/Ruby/trade modal quickly.
+- Measure and log timing for:
+  - loading symbol directory
+  - opening scanner
+  - searching symbol
+  - selecting symbol
+  - Ruby explanation start
+  - trade modal open
+  - trade modal validation
+
+7. QA
+- Test at least 20 symbols across different groups if available:
+  - forex majors
+  - forex minors
+  - metals
+  - indices
+  - crypto
+  - synthetic/volatility symbols if present
+  - any broker-specific symbols
+- Confirm symbols do not disappear after refresh.
+- Confirm frontend does not crash with 600 symbols.
+- Confirm mobile layout remains clean.
+- Confirm no internal developer panels or backend text are visible to normal users.
+
+8. Fixes
+- If any part still uses an old hardcoded symbol list, replace it with the live symbol directory.
+- If any page loads slowly because of 600 symbols, optimize the UI with search, grouping, lazy rendering, memoization, or virtualization.
+- Do not remove features to solve load issues.
+- Find a better implementation that preserves functionality and improves speed.
+
+Deliver proof when done:
+- number of symbols available to frontend
+- sample symbols tested
+- scanner search result proof
+- selected-symbol-to-Ruby proof
+- selected-symbol-to-trade-modal proof
+- timing results
+- any bugs found and fixed
+- confirmation that no Paper Trading terminology or fallback exists in the active flow

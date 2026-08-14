@@ -1,0 +1,171 @@
+Run Phase 22V Part 4: actual UI smoke test for ARX AI live shared bridge defaults.
+
+Do not place a live trade.
+Do not insert arx_live_commands.
+Do not bypass the UI.
+Do not weaken the 16-gate evaluator or dispatch chokepoint.
+
+CURRENT STATUS:
+Phase 22V Part 3 passed:
+- Approved users default to LIVE Shared Master Bridge.
+- Unapproved users stay paper/request-only.
+- Admin approval assigns assignedRiskTemplateId.
+- Approved Shared Bridge Default template exists.
+- requireTakeProfit is enforced by the 16-gate path.
+- Missing TP blocks live dispatch.
+- Missing SL blocks live dispatch.
+- Missing risk template blocks live dispatch.
+- arx_live_commands remained 0.
+- Broker execution still requires env AND operator switch.
+- No backend/env/API names leaked to regular users.
+
+GOAL:
+Validate the real app UI end-to-end for:
+1. Unapproved user request flow
+2. Admin approval flow
+3. Approved user default LIVE Shared Bridge mode
+4. Owner/operator live bridge readiness
+5. Master bridge connection/pinning status
+6. No accidental live trade
+
+1. TEST UNAPPROVED USER UI
+Log in as a normal unapproved user.
+
+Verify:
+- User does NOT default to live.
+- User sees Request Live Bridge Access.
+- User can submit request only after risk acknowledgment.
+- Duplicate pending request is blocked.
+- User sees request status: Pending.
+- User does not see admin controls, broker controls, kill switches, audit log, API routes, env names, backend labels, or other users.
+
+2. TEST ADMIN APPROVAL UI
+Log in as OWNER/admin.
+
+Go to:
+- Admin / User Control Center
+- Live Bridge Requests
+or the correct approval queue.
+
+Verify:
+- Pending request appears.
+- Admin can approve with Confirm modal only.
+- No typed phrase.
+- Admin can deny/revoke with reason.
+- Approval assigns:
+  - liveTradingApproved=true
+  - sharedBridgeApproved=true
+  - defaultTradingMode=LIVE
+  - defaultExecutionRoute=SHARED_MASTER_MT5
+  - sharedLiveBridgeDefault=true
+  - assignedRiskTemplateId
+  - Approved Shared Bridge Default risk template
+- Audit log records approval.
+
+3. TEST APPROVED USER DEFAULT UX
+Log in as the approved user after approval.
+
+Verify:
+- User lands/defaults into LIVE Shared Master Bridge context.
+- User does not have to manually switch from paper/demo to live.
+- User sees friendly labels:
+  - Live Bridge Access: Approved
+  - Default Mode: Live Shared Bridge
+  - Execution Route: Shared Master Bridge
+  - Risk Template: Approved Shared Bridge Default
+  - Live Readiness: Ready / Blocked
+- If bridge is not connected, show:
+  “Live bridge is not connected yet.”
+- Do not show backend/internal names.
+
+4. TEST LIVE SHARED ACCOUNT OWNER UI
+Log in as OWNER.
+
+Open Admin / Live Shared Account.
+
+Verify:
+- Mobile layout is clean.
+- No overlapping tabs.
+- Bottom nav and Ruby bubble do not block controls.
+- Main UI shows friendly labels only.
+- Advanced technical details are collapsed by default.
+- Readiness panel shows:
+  - Broker Execution Permission
+  - Operator Broker Execution
+  - Effective Broker Execution
+  - Platform Mode
+  - Routing
+  - Shared Live Trading
+  - Master Bridge
+  - Heartbeat
+  - Kill Switch
+  - First Live Test Mode
+  - Owner Live Access
+  - Overall Live Readiness
+
+5. TEST MASTER BRIDGE CONNECTION / PINNING
+Check current MT5/EA bridge state.
+
+If heartbeat is missing or stale:
+- Pin Current Master Bridge must be disabled.
+- UI must say:
+  “Connect MT5 bridge first, then pin the master bridge.”
+- Overall Live Readiness must stay BLOCKED.
+
+If heartbeat is fresh:
+- Pin Current Master Bridge button can enable.
+- Pin requires Confirm modal only.
+- No typed phrase.
+- Pinned bridge persists after refresh.
+- Broker account login is masked.
+- Broker password/secrets never show.
+
+6. TEST LIVE READINESS BLOCKERS
+Verify friendly blocker reasons.
+
+If readiness is blocked, show exactly why:
+- Bridge not connected
+- Heartbeat stale
+- Broker execution disabled
+- Operator broker execution off
+- Kill switch engaged
+- Risk template missing
+- Stop loss required
+- Take profit required
+- User not approved
+- Master bridge not pinned
+
+7. TEST DRY-RUN ONLY
+Run live readiness dry-run only if available.
+
+Do not create arx_live_commands.
+
+Verify blocked cases:
+- Missing SL blocks.
+- Missing TP blocks.
+- Lot above cap blocks.
+- Missing risk template blocks.
+- Unapproved user blocks.
+- Bridge not pinned blocks.
+- Stale heartbeat blocks.
+- Operator broker execution off blocks.
+
+8. VERIFY arx_live_commands
+Confirm:
+- arx_live_commands remains 0
+- No live trade was placed
+- No live command was queued
+
+9. FINAL REPORT
+Report:
+- Unapproved user flow PASS/FAIL
+- Admin approval flow PASS/FAIL
+- Approved user live default UX PASS/FAIL
+- Owner live shared page PASS/FAIL
+- Master bridge status Connected/Not Connected
+- Heartbeat Fresh/Stale/Missing
+- Overall Live Readiness PASS/BLOCKED
+- arx_live_commands count
+- Any blockers left before one tiny manual live test
+
+Run typecheck/build/tests and fix any failures before stopping.

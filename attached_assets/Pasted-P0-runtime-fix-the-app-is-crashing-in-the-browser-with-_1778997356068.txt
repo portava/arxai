@@ -1,0 +1,59 @@
+P0 runtime fix: the app is crashing in the browser with:
+
+[plugin:runtime-error-plugin]
+Can't find variable: require
+
+Stop the current phase and fix this before continuing.
+
+Do NOT hide the error by setting server.hmr.overlay=false.
+Do NOT unlock live trading.
+Do NOT enable auto-close execution.
+Do NOT weaken any trading safety gate.
+
+Find the exact source of browser-side require usage.
+
+Steps:
+1. Inspect the most recent files changed from the MT5 Bridge Read-Only Sync + Reconciliation + Command Queue Safety phase.
+2. Search the entire project for browser-incompatible CommonJS/Node usage:
+   - require(
+   - module.exports
+   - exports.
+   - Node-only imports accidentally used in frontend/shared browser code such as fs, path, crypto via require, child_process, os, stream, buffer, process
+3. Pay special attention to files imported by:
+   - client
+   - frontend
+   - React components
+   - hooks
+   - shared files imported by the frontend
+   - bridge/reconciliation/command queue UI files
+   - audit/safety gate helpers imported by UI
+
+Fix rules:
+- Frontend/browser code must use ESM imports only.
+- Remove all require() usage from frontend-imported files.
+- If code needs Node-only logic, move it to server/backend-only files.
+- If ID generation used require("crypto"), replace frontend usage with browser-safe crypto.randomUUID() with a safe fallback.
+- If a shared file contains server-only logic, split it into:
+  - server-only module
+  - browser-safe shared types/helpers module
+- Do not import server routes, database code, fs/path, or Node crypto into React/client code.
+- Preserve all existing trading safety behavior.
+
+After fixing:
+1. Run typecheck.
+2. Run the full guard suite.
+3. Run the bridge/command queue safety tests.
+4. Run frontend build.
+5. Start the dev server and verify the app loads without the require runtime overlay.
+6. Smoke test the pages touched by the last phase.
+
+End with a report showing:
+- Exact file that caused require to reach the browser
+- Files changed
+- What was moved/converted
+- Typecheck result
+- Guard result
+- Frontend build result
+- Runtime load result
+- Confirmation that live trading, shared MT5 routing, and auto-close execution remain locked/gated
+- Final answer: READY TO CONTINUE or NOT READY, with reasons.

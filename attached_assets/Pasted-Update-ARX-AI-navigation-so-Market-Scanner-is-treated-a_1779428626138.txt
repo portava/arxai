@@ -1,0 +1,97 @@
+Update ARX AI navigation so Market Scanner is treated as a primary user tool, not hidden.
+
+SCOPE LOCK:
+Only work on navigation placement, labels, menu organization, and scanner entry points.
+
+Do not change:
+- scanner calculations
+- Ruby intelligence
+- MT5 bridge
+- trade execution
+- live/demo permissions
+- admin approvals
+- risk logic
+- login/auth
+- backend trading safety systems
+
+GOAL:
+Market Scanner is one of the most important tools in ARX AI. It should be easy to access from the main user navigation and should not be hidden inside More, Advanced, or only inside the AI page.
+
+Required updates:
+
+1. Promote Market Scanner in the user side menu
+Move Market Scanner into the Primary Tools section near the top.
+
+Recommended Primary Tools order:
+1. Cockpit
+2. Trade
+3. Market Scanner
+4. Open Trades / Positions
+5. AI / Ruby
+6. Risk Command Center
+7. Alerts / Watchlist
+8. Calendar / News
+
+Do not bury Market Scanner under More, Advanced, or AI-only sections.
+
+2. Add Market Scanner to mobile bottom navigation
+Market Scanner should have a visible main bottom-nav shortcut on mobile.
+
+Recommended bottom nav:
+- Cockpit
+- Trade
+- Scanner
+- AI
+- More
+
+Risk Command Center can still remain important inside the side menu and More menu, but Scanner needs first-class bottom access because it drives trade discovery.
+
+If there is already a bottom nav limit, use this order:
+Cockpit / Trade / Scanner / AI / More
+
+3. Keep Market Scanner inside AI page top tabs too
+Since scanner is AI-related, it should also remain available as a top tab inside the AI page.
+
+AI page tabs should include:
+- Ruby
+- Symbols
+- Market Read
+- Scanner
+- Results
+- Alerts
+- Calendar
+- Advanced, if already real
+
+Do not remove scanner from AI. Just also make it primary.
+
+4. Add clear scanner entry points
+Anywhere the user is choosing markets or reading Ruby analysis, add a clean shortcut:
+- “Open Scanner”
+- “Scan Markets”
+- or “Market Scanner”
+
+Keep wording short.
+
+5. Active states
+When user is on Market Scanner:
+- Scanner should highlight in bottom nav
+- Scanner should highlight in side menu
+- Scanner tab should highlight if viewed inside AI page
+
+6. Permissions
+Respect existing user permissions.
+Regular users should see Scanner if they are allowed to use it.
+Admin-only scanner controls must stay hidden from regular users.
+
+7. Do not duplicate confusing routes
+If scanner already exists in multiple places, consolidate the navigation so every Scanner link goes to the correct scanner route or scanner tab.
+Do not create broken duplicate scanner pages.
+
+Acceptance checklist:
+- Market Scanner appears near the top of the side menu.
+- Market Scanner appears in mobile bottom nav.
+- Market Scanner is not hidden under More only.
+- Market Scanner is still available inside AI top tabs.
+- Scanner active state works.
+- Scanner route opens correctly.
+- No scanner logic, trading execution, Ruby brain, MT5 bridge, risk rules, admin controls, or auth logic was changed.

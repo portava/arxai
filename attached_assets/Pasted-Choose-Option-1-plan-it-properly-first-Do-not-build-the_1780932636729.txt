@@ -1,0 +1,124 @@
+Choose Option 1 — plan it properly first.
+
+Do not build the v2 EA blindly yet.
+
+We need the full ARX Bridge v2 Beta Kernel scoped in phases because this touches live execution, broker truth, position truth, quote/candle feed, command whitelist, remote config, and admin traceability.
+
+I want a precise implementation plan first, then we build phase by phase.
+
+Plan the v2 bridge as:
+
+Phase 1 — Existing backend v2 audit
+Verify what already exists:
+- lib/domain/src/bridge-v2/*
+- api-server bridgeV2 ingest
+- routes/bridgeV2.ts
+- bridge-v2-truth CI guard
+- kernel tests
+- event ingest contract
+- sequence tracking
+- lifecycle tracking
+- admin trace
+- message schema
+- auth/security assumptions
+
+Report what is real, what is stubbed, what is partial, and what is missing.
+
+Phase 2 — v2 EA contract design
+Define the exact EA contract before writing the .mq5:
+- bridge identity
+- auth headers/token pattern
+- remote config manifest pull
+- heartbeat payload
+- terminal readiness telemetry
+- OnTradeTransaction event push
+- order result event format
+- position snapshot format
+- account snapshot format
+- quote push format
+- candle CopyRates push format
+- command polling/receiving
+- whitelisted command types only
+- sequence number rules
+- idempotency keys
+- replay protection
+- ack/retry behavior
+- stale command rejection
+- read-only default behavior
+- live-arm behavior
+- emergency stop behavior
+
+Phase 3 — v2 EA build plan
+Plan the new file:
+ARX_AI_Bridge_v2_Beta_Kernel.mq5
+
+It must be separate from v1.50 so we do not corrupt the working EA.
+
+Default safety:
+- ReadOnlyMode = true
+- AllowOrderExecution = false
+- no live order execution until remote config and local inputs both allow it
+- command whitelist enforced
+- stale commands rejected
+- duplicate commands ignored
+- all events sequenced
+- all broker events pushed to backend
+
+Phase 4 — backend compatibility check
+Verify backend can receive every v2 EA event:
+- heartbeat
+- terminal telemetry
+- quote update
+- candle update
+- account snapshot
+- position snapshot
+- trade transaction event
+- command ack
+- command result
+- error event
+
+If backend endpoint/schema is missing, list exact gap before coding.
+
+Phase 5 — UI truth and admin trace plan
+Define how admin sees:
+- bridge v2 connected
+- EA version
+- terminal readiness
+- algo trading allowed
+- read-only mode
+- live armed state
+- remote config version
+- last heartbeat
+- last event sequence
+- dropped/missing sequences
+- last quote/candle push
+- last trade transaction
+- command whitelist status
+- safety lock reason
+
+Regular users must not see backend/internal details.
+
+Phase 6 — live micro-test plan
+Plan the live proof sequence, but do not execute until explicitly approved:
+- connect v2 EA
+- verify heartbeat
+- verify quote push
+- verify candle push
+- verify account snapshot
+- verify position snapshot
+- verify OnTradeTransaction push
+- verify command polling
+- queue one micro live trade only after approval
+- verify broker fill/reject maps back to ARX
+- verify Open Trades updates
+- verify Dashboard P/L updates
+- verify close/reconciliation path
+- verify audit trace
+
+Important:
+Do not mark v2 complete until the EA file exists, backend receives real v2 events, admin trace works, quote/candle feed works, OnTradeTransaction events arrive, and a controlled live micro-test proves broker truth end-to-end.
+
+After the plan, recommend the first build slice.
+
+My expected first build slice after planning:
+Author the separate v2 EA file with defaults locked, OnTradeTransaction event push, remote config pull, whitelisted command handling, quote/candle/account/position push contracts, and no live execution enabled by default.

@@ -1,0 +1,341 @@
+Continue from the ARX Guided Setup + Status Command Center.
+
+Now build the ARX Paper Trading Practice Lab.
+
+Goal:
+Create a complete safe paper/simulator trading environment where users can practice entries, exits, risk sizing, journaling, replay, and performance review without sending any live broker orders.
+
+This is a paper/simulator-only upgrade.
+Do not enable live trading.
+Do not change live broker execution logic.
+Do not alter MT5 order sending.
+Do not bypass risk controls.
+Do not fake broker connection, heartbeat, readiness, or account safety.
+
+Phase 1 — Create Paper Trading Practice Lab page
+Create or upgrade a route/page called:
+
+“Paper Trading Practice Lab”
+
+Purpose:
+A safe place where users can simulate trades, practice entries, review results, and improve discipline before live trading is ever considered.
+
+The page should show:
+- Current mode: Paper / Simulator
+- Selected symbol
+- Sim engine status
+- Paper-only status
+- Live trading disabled status
+- Broker execution disabled status
+- Readiness status
+- Risk status
+- Open paper trades
+- Closed paper trades
+- Daily paper P/L
+- Win/loss count
+- Risk used
+- Safest next step
+
+Phase 2 — Create paper order ticket
+Add a paper-only order ticket.
+
+Fields:
+- Symbol
+- Direction: Buy / Sell
+- Entry type: Market simulation / Limit simulation
+- Entry price
+- Stop loss
+- Take profit
+- Position size
+- Risk percentage
+- Notes / trade thesis
+- Strategy tag
+- Session tag: London / New York / Asia / Custom
+- Confidence rating
+- Emotional state before trade
+
+Buttons:
+- Preview Paper Trade
+- Place Paper Trade
+- Cancel
+- Reset
+
+Hard rule:
+This order ticket must never call live broker execution or MT5 order send functions.
+
+Phase 3 — Add risk validation before paper trade
+Before a paper trade can be placed, validate:
+- stop loss exists
+- take profit exists or user confirms no TP for practice
+- position size is valid
+- risk percentage is within allowed paper risk rules
+- account simulation balance exists
+- selected symbol exists
+- live trading remains disabled
+- broker execution remains disabled
+- emergency stop is not blocking all practice, if that is how the app defines it
+- readiness state is explained clearly
+
+If blocked, show:
+- blocker reason
+- safety explanation
+- suggested fix
+- related page button
+
+Phase 4 — Create simulated execution engine
+Create a paper/simulator execution service.
+
+It should support:
+- opening a simulated trade
+- closing a simulated trade
+- updating unrealized P/L
+- stop loss hit simulation
+- take profit hit simulation
+- manual close
+- cancel pending simulated order
+- trade status: pending / open / closed / canceled / blocked
+
+Use simulated price data already available in the app if present.
+If no live price feed exists, use the existing simulator price source or clearly show “simulation price only.”
+
+Do not use real broker execution.
+
+Phase 5 — Add trade journal
+Every paper trade should create a journal entry.
+
+Journal fields:
+- trade ID
+- date/time opened
+- date/time closed
+- symbol
+- direction
+- entry
+- stop loss
+- take profit
+- exit price
+- P/L
+- risk/reward
+- result: win / loss / breakeven / canceled
+- reason for entry
+- reason for exit
+- mistake tags
+- discipline rating
+- emotional state before
+- emotional state after
+- screenshot placeholder if already supported
+- AI coach notes
+- user notes
+
+Phase 6 — Add performance calendar
+Create a calendar view that shows:
+- winning days
+- losing days
+- breakeven days
+- no-trade days
+- daily paper P/L
+- number of trades per day
+- best day
+- worst day
+- streaks
+- discipline score per day
+
+This should match the user’s goal:
+“A calendar that has my winning and losing days and how much I won or lost that day.”
+
+Phase 7 — Add entry practice / snipe drill mode
+Create a practice mode called:
+
+“Snipe Entry Drill”
+
+Purpose:
+Help the user practice waiting for the best entry window based on their selected trading style.
+
+The drill should include:
+- selected symbol
+- selected session
+- selected trading style: scalping / intraday / swing / custom
+- setup checklist
+- entry confirmation checklist
+- simulated entry timing score
+- risk/reward score
+- patience score
+- discipline score
+- result review after close
+
+The app should evaluate:
+- Did the user wait for confirmation?
+- Was stop loss logical?
+- Was risk controlled?
+- Was entry too early?
+- Was entry too late?
+- Was reward worth the risk?
+- Did the user follow their plan?
+
+Do not tell the user what to buy or sell.
+Do not generate live trade signals.
+Frame this as training and review only.
+
+Phase 8 — Add AI Coach review for paper trades
+After a paper trade closes, ARX Assistant / Coach should review it.
+
+Coach should explain:
+- what the user planned
+- what happened
+- whether risk was controlled
+- whether the trade followed the stated plan
+- what was disciplined
+- what could improve
+- one practical lesson
+- one rule to remember next time
+
+Coach must not say:
+- “You should buy now”
+- “You should sell now”
+- “Take this live”
+- “Live trading is safe”
+
+Safe wording:
+“This is a paper/simulator review. Use it to improve discipline before considering any real-money environment.”
+
+Phase 9 — Add Trade Replay connection
+Connect paper trades to Replay if Replay exists.
+
+Replay should allow:
+- view trade timeline
+- view entry decision
+- view exit decision
+- view price movement if available
+- view journal notes
+- view coach feedback
+- compare planned vs actual behavior
+
+If Replay route does not exist, do not fake it. Link to closest valid page.
+
+Phase 10 — Add Paper Lab dashboard widgets
+Add summary cards:
+- Paper account balance
+- Today’s paper P/L
+- Weekly paper P/L
+- Win rate
+- Average win
+- Average loss
+- Risk/reward average
+- Biggest mistake tag
+- Discipline score
+- Best session
+- Worst session
+- Number of trades
+- Current open paper trades
+
+Phase 11 — Add blocker-safe assistant integration
+ARX Assistant should understand the Paper Trading Practice Lab.
+
+Assistant should answer:
+- What is Paper Trading Practice Lab?
+- Can this place live trades?
+- Why is my paper trade blocked?
+- How do I start a paper session?
+- What does Snipe Entry Drill do?
+- What does my paper calendar show?
+- What does my discipline score mean?
+- Why did risk block my paper trade?
+- What should I practice next?
+- Review my last paper trade.
+- Explain my paper performance.
+
+Assistant safe rule:
+It can guide paper practice and review behavior, but it cannot recommend live trades or bypass locks.
+
+Phase 12 — Add route and knowledge coverage
+Update:
+- route registry
+- UI element registry
+- status registry if needed
+- knowledge compiler
+- assistant manual
+- guided setup checklist
+- Status Command Center route buttons
+- App Doctor route suggestions
+
+Add Paper Trading Practice Lab to:
+- More menu if needed
+- Help Center topics
+- Assistant quick actions
+- Guided setup wizard
+- “Show me around” tour
+
+Phase 13 — Add storage
+Persist paper trades and journal entries using the app’s existing storage/database pattern.
+
+Support:
+- create paper trade
+- update paper trade
+- close paper trade
+- cancel paper trade
+- list open paper trades
+- list closed paper trades
+- daily performance aggregation
+- journal update
+
+Do not store broker credentials or sensitive secrets.
+
+Phase 14 — Add tests
+Add tests for:
+- paper order validation
+- risk validation
+- paper trade creation
+- paper trade close
+- stop loss simulation
+- take profit simulation
+- manual close
+- journal creation
+- calendar aggregation
+- snipe drill scoring
+- AI coach safe wording
+- assistant Paper Lab answers
+- no live broker calls
+- no MT5 order send calls
+- no live trading enablement
+- route registry coverage
+- UI element registry coverage
+- mobile layout
+- desktop layout
+
+Phase 15 — Runtime QA
+Manually verify:
+
+Mobile:
+1. Open Paper Trading Practice Lab.
+2. Create a paper trade preview.
+3. Place a paper/simulator trade.
+4. Confirm no live broker/MT5 order is sent.
+5. Close the paper trade.
+6. Confirm journal entry appears.
+7. Confirm calendar updates.
+8. Ask assistant “Review my last paper trade.”
+9. Confirm bottom nav remains clickable.
+
+Desktop:
+1. Open Paper Lab dashboard.
+2. Check order ticket.
+3. Check open/closed paper trades.
+4. Check calendar.
+5. Check Snipe Entry Drill.
+6. Check coach review.
+7. Confirm route buttons work.
+8. Confirm no live execution behavior changed.
+
+Phase 16 — Report back
+Return:
+- files changed
+- Paper Trading Practice Lab route created/updated
+- paper order ticket created/updated
+- simulated execution service created/updated
+- trade journal created/updated
+- performance calendar created/updated
+- Snipe Entry Drill created/updated
+- assistant Paper Lab knowledge added
+- tests added and pass/fail results
+- mobile QA result
+- desktop QA result
+- confirmation that live trading, MT5 execution, broker execution, and risk controls were not changed

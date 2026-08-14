@@ -1,0 +1,129 @@
+Check what is currently implemented first, then adjust.
+
+The iPhone Safari test still failed.
+
+Observed from screenshot:
+- ARX AI status shows SPEAKING.
+- Mic shows “Mic off”.
+- Auto-listen shows “Auto-listen: off”.
+- Speak is on.
+- The assistant says it will pull scanner/news/price checks, but it stops after that intro message and does not complete the market snapshot.
+- After answering/speaking, it does not return to Listening.
+
+Do not move to any new feature. Fix this voice + market-flow failure only.
+
+Main issues to inspect:
+1. ARX AI popup state machine.
+2. Auto-listen persistence/default logic.
+3. TTS completion callback.
+4. Whether Speak mode disables mic/auto-listen and fails to restore it.
+5. Whether the AI response pipeline sends a preamble but never continues after market tools.
+6. SSE/tool-call streaming lifecycle.
+7. Market snapshot orchestrator final response handling.
+8. iOS Safari mic resume behavior after speech synthesis.
+
+Required behavior:
+
+A. Voice state machine must work like this:
+- Popup opens.
+- If voice is allowed and auto-listen is enabled, status becomes Listening.
+- User speaks.
+- Silence detection auto-sends exactly one prompt.
+- Status becomes Thinking/Responding.
+- If Speak is on, response audio plays and status becomes Speaking.
+- When speech audio ends, status must automatically return to Listening.
+- Mic should restart after speaking finishes.
+- Auto-listen should remain on unless user manually disables it.
+- Closing popup must stop mic capture immediately.
+- Reopening popup must resume auto-listen automatically if permission is still granted.
+- Never leave the UI stuck on Speaking.
+- Never leave Auto-listen off unless the user manually turned it off.
+
+B. Fix the specific bug shown:
+Speak mode appears to be turning off mic/auto-listen and not restoring it.
+Find where speechSynthesis, audio playback, TTS, or “speaking” state sets mic off / autoListen false.
+Change it so speaking temporarily pauses input, but does not permanently disable auto-listen.
+After TTS/audio ends, call resumeAutoListenIfEnabled().
+Add a timeout fallback so if audio end event does not fire on iOS Safari, the app still returns to Listening.
+
+C. Market-condition response must not stop at “Give me a moment.”
+For broad market prompts like:
+- “What are today’s market conditions?”
+- “What’s the market looking like?”
+- “What should I trade right now?”
+- “What’s moving today?”
+- “What’s the best scanner candidate?”
+
+The assistant must complete the full market snapshot flow before finishing the response.
+
+Required market flow:
+1. Send optional short status message only if the UI supports continued streaming.
+2. Run scanner/news/quote/candle checks.
+3. Wait for tool results.
+4. Then produce one final complete response with:
+   - Scanner result/source
+   - News source
+   - Quote/snapshot source if available
+   - TwelveData candle context if available
+   - Freshness label: Fresh / Delayed / Stale / Unavailable
+   - Market bias
+   - Strongest candidates
+   - Weakest candidates
+   - Safe paper-trade interpretation
+   - Reminder that live execution is locked if applicable
+
+If tool calls fail or data is stale:
+- Say exactly which endpoint failed or was stale.
+- Still summarize whatever fresh data exists.
+- Never invent data.
+- Never present stale data as fresh.
+
+D. SSE/tool lifecycle requirements:
+- Do not mark the assistant response complete after the intro/preamble.
+- Do not close the stream until the final market summary has been sent.
+- If the LLM/tool router emits a “planning” message, continue to the actual tool execution and final answer.
+- Add logging for:
+  - marketIntentDetected
+  - toolsStarted
+  - toolsCompleted
+  - finalSummarySent
+  - streamClosed
+- Add a visible error message if tools fail instead of silently stopping.
+
+E. UI requirements:
+- During response: show Thinking/Analyzing.
+- During audio playback: show Speaking.
+- After audio ends: show Listening.
+- Auto-listen pill should show on/active after response if the popup is open.
+- Mic pill should not stay “Mic off” after speaking unless permission is blocked or user disabled it.
+
+F. Tests:
+Add or update tests proving:
+- Speak mode pauses mic temporarily but does not disable auto-listen.
+- TTS end returns state to Listening.
+- TTS timeout fallback returns state to Listening on iOS Safari.
+- Popup close stops mic.
+- Popup reopen resumes listening if permission is granted.
+- Broad market prompt does not end after intro text.
+- Broad market prompt completes tool flow and final summary.
+- Stale data path still returns a final answer with freshness labels.
+- No fake market data is introduced.
+- Scanner/provider logic untouched.
+- TwelveData remains primary candle source.
+- Finnhub remains quotes/news source.
+- Live-trading rails untouched.
+
+Run:
+- pnpm --filter @workspace/trading-dashboard run typecheck --clean
+- pnpm run ci:guards
+- all relevant AI voice, SSE, market-router, and assistant tests
+
+QA gate:
+After implementation, restart the frontend workflow and report:
+1. What caused auto-listen to turn off.
+2. What caused the assistant to stop after the intro.
+3. Files changed.
+4. Tests passed.
+5. Confirmation that Speak mode now returns to Listening.
+6. Confirmation that market-condition prompts finish with a real final summary.
+7. Remaining iPhone Safari manual test steps.

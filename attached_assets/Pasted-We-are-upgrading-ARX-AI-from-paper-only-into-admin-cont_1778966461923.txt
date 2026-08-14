@@ -1,0 +1,217 @@
+We are upgrading ARX AI from paper-only into admin-controlled broker-routed DEMO and LIVE trading support.
+
+Important:
+Do not blindly remove safety. First inspect the existing trading mode, safetyCore.ts, MT5 bridge, assistant safety envelope, user settings, admin controls, database schema, EA command polling, order command model, and current route guards.
+
+Goal:
+Replace the current forced paper-only behavior with a controlled trading-mode system that supports:
+1. DISABLED
+2. SIMULATED / PAPER for internal testing only
+3. DEMO broker trading
+4. LIVE broker trading
+
+The admin must be able to control trading mode by user and globally.
+
+Hard rules:
+1. Do not enable live trading by default.
+2. Do not turn every user live automatically.
+3. Do not allow live trading unless:
+   - global live trading is enabled by admin
+   - user is individually live-approved
+   - user has accepted live trading risk disclosure
+   - user has a connected broker/MT5 live account
+   - bridge token is valid
+   - account type is verified as live
+   - emergency kill switch is off
+   - per-user trading limits exist
+4. Demo trading may be enabled separately from live trading.
+5. All order execution must be broker-routed through the user’s own connected account.
+6. Do not expose MT5_BRIDGE_TOKEN, per-user bridge tokens, SESSION_SECRET, apiKeyHash, OpenAI key, Finnhub key, or any secret.
+7. Add full audit logs for every admin mode change and every trade command.
+8. Add emergency kill switch that instantly blocks all new orders while still allowing dashboard/MT5 data sync.
+9. Add per-user kill switch.
+10. Add max-risk controls:
+   - max lots per trade
+   - max trades per day
+   - max daily loss
+   - allowed symbols
+   - allowed account type
+   - allowed trade direction if needed
+11. Add trade confirmation rules:
+   - demo trades can be one-click if admin allows
+   - live trades require explicit user confirmation before order submission
+12. AI assistant must never silently place a live trade.
+13. AI assistant must distinguish between:
+   - market analysis
+   - trade idea
+   - demo order request
+   - live order request
+14. Live order requests must require clear user confirmation such as:
+   “Confirm live trade”
+15. All trading responses must include current mode:
+   tradingMode: "disabled" | "simulated" | "demo" | "live"
+   globalLiveEnabled: true/false
+   userLiveApproved: true/false
+   emergencyKillSwitch: true/false
+   accountType: "demo" | "live" | "unknown"
+
+Required architecture changes:
+
+A. Database
+Add or update tables/columns for:
+- global_trading_settings
+- user_trading_permissions
+- user_risk_limits
+- trade_command_audit_log
+- admin_action_audit_log
+- live_risk_disclosure_acceptances
+
+Suggested fields:
+global_trading_settings:
+- id
+- simulated_enabled
+- demo_enabled
+- live_enabled
+- emergency_kill_switch
+- updated_by_admin_id
+- updated_at
+
+user_trading_permissions:
+- user_id
+- trading_mode
+- demo_enabled
+- live_approved
+- live_enabled
+- suspended
+- suspension_reason
+- updated_by_admin_id
+- updated_at
+
+user_risk_limits:
+- user_id
+- max_lot_size
+- max_trades_per_day
+- max_daily_loss
+- allowed_symbols
+- require_live_confirmation
+- updated_at
+
+trade_command_audit_log:
+- id
+- user_id
+- connection_id
+- mode
+- account_type
+- symbol
+- side
+- lot_size
+- order_type
+- stop_loss
+- take_profit
+- status
+- rejection_reason
+- requested_by
+- confirmed_by_user
+- created_at
+
+B. Admin UI
+Create an Admin Trading Control page with:
+- global trading status
+- demo enabled toggle
+- live enabled toggle
+- emergency kill switch
+- user list
+- per-user trading mode
+- approve live button
+- suspend trading button
+- risk limit editor
+- audit log viewer
+
+C. User UI
+Add clear account mode banners:
+- Trading disabled
+- Demo trading active
+- Live trading active
+- Live trading pending approval
+- Emergency trading halt active
+
+For live mode, show a strong visible warning:
+“LIVE TRADING ACTIVE — real money risk.”
+
+D. Backend guards
+Every trade command must pass:
+1. authenticated user check
+2. per-user permission check
+3. global trading mode check
+4. emergency kill switch check
+5. account type verification
+6. risk limit check
+7. live confirmation check
+8. bridge token check
+9. audit log write
+10. command queue insert
+
+E. MT5 bridge / EA
+Inspect current EA command-polling flow.
+Only add execution support after backend guards are complete.
+
+If EA currently has no execution functions, add execution only behind strict inputs:
+- AllowOrderExecution must be true
+- TradingMode must be DEMO or LIVE
+- LiveTradingAcknowledged must be true for live
+- Bridge command must be signed/validated
+- Account type must match requested mode
+
+Do not let the EA execute if:
+- account type unknown
+- global kill switch active
+- user not live-approved
+- token invalid
+- command expired
+- command risk check failed
+- duplicate command id
+
+F. AI assistant
+Update assistant context so it knows:
+- current trading mode
+- global live status
+- user live status
+- account type
+- risk limits
+- kill switch state
+
+AI behavior:
+- In demo mode, AI may help submit demo trades if user confirms.
+- In live mode, AI may prepare a live trade ticket, but must require explicit confirmation before sending.
+- AI must never auto-execute live trades from vague language.
+- AI must refuse if risk limits or permissions fail.
+- AI must explain why a trade is blocked.
+
+G. Tests
+Add tests for:
+- new user cannot live trade
+- demo user can only demo trade
+- live user cannot trade if global live disabled
+- live user cannot trade if emergency kill switch on
+- live user cannot trade without confirmation
+- live user cannot exceed risk limits
+- wrong token rejected
+- user cannot access another user’s trade commands
+- AI cannot bypass backend guards
+- audit logs are written
+- demo command goes only to demo account
+- live command goes only to verified live account
+
+H. Final report
+Return:
+1. What files changed.
+2. Database changes made.
+3. Admin controls added.
+4. User trading modes added.
+5. Live trading gates added.
+6. Demo trading gates added.
+7. EA execution status.
+8. AI assistant behavior changes.
+9. Tests passed.
+10. Remaining blockers before real-money live use.
+11. Whether live trading is actually enabled or only structurally ready.

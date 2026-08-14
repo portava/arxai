@@ -1,0 +1,385 @@
+Continue ARX AI by building the AI Performance Coach and Trade Journal Intelligence Engine.
+
+Do not rebuild blindly. Inspect the current:
+- MT5 Execution Reconciliation
+- Trade History
+- Open Trades
+- Trade Action Center
+- Trade Decision Orchestrator
+- Live Trade Intelligence
+- Smart Exit Plan
+- Unified Alerts
+- Risk Governor
+- Calendar/P&L pages
+- Journal system
+- user-owned MT5 routing
+- shared-master attribution ledger
+- AI assistant context builder
+
+Goal:
+Turn completed trades, alerts, risk decisions, AI recommendations, and user actions into a real performance coaching system.
+
+The AI should help users understand:
+- why they won
+- why they lost
+- whether they exited too early
+- whether they held too long
+- whether they ignored alerts
+- whether they over-risked
+- which setups work best
+- which symbols hurt them
+- which sessions perform best
+- what trading habits need improvement
+
+Important:
+Do not invent trade data.
+Do not invent P&L.
+Do not guarantee future performance.
+Do not expose another user’s trades.
+Do not expose shared master account credentials.
+Use only real synced/executed/attributed trade records.
+
+PART 1 — Auto Trade Journal
+
+When a trade closes, automatically create or update a journal entry.
+
+Journal entry should include:
+- user_id
+- trade_id
+- symbol
+- side
+- account type: demo/live
+- routing mode: user-owned/shared-master
+- open time
+- close time
+- entry price
+- exit price
+- lot size
+- realized P&L
+- pips/points
+- win/loss/breakeven
+- session
+- trade duration
+- max favorable excursion
+- max adverse excursion
+- peak profit
+- profit giveback
+- stop loss / take profit if available
+- exit reason
+- AI alerts fired
+- AI decision before close
+- user action taken
+- whether user ignored alerts
+- risk profile at time of trade
+- position size/risk data if available
+- broker rejection/errors if any
+
+If data is missing, show unavailable instead of fake values.
+
+PART 2 — Exit Quality Review
+
+For each closed trade, calculate an Exit Quality score.
+
+Use:
+- final P&L
+- peak unrealized profit
+- profit giveback
+- AI close alerts
+- whether user acted on alert
+- whether trade hit TP/SL
+- whether user manually closed
+- whether close was early/late
+- whether reversal risk was high
+- whether trade efficiency was dropping
+
+Labels:
+- Great exit
+- Protected profit
+- Closed too early
+- Held too long
+- Ignored close alert
+- Stop loss hit
+- Take profit hit
+- Data insufficient
+
+PART 3 — Entry Quality Review
+
+For each trade, calculate Entry Quality if market context exists.
+
+Use:
+- trend alignment
+- spread at entry
+- news/event risk
+- volatility/session context
+- risk/reward
+- stop placement validity
+- symbol rules
+- trade decision state at entry
+- whether trade was opened during blocked/warning conditions
+
+Labels:
+- Strong entry
+- Acceptable entry
+- Late entry
+- Chasing
+- Against trend
+- High news risk entry
+- Poor risk/reward
+- Data insufficient
+
+PART 4 — Trader Performance Dashboard
+
+Create or improve a Performance page.
+
+Show:
+- total trades
+- wins
+- losses
+- breakeven
+- win rate
+- realized P&L
+- average win
+- average loss
+- profit factor if available
+- expectancy if available
+- max drawdown if available
+- best symbol
+- worst symbol
+- best session
+- worst session
+- best setup/tag
+- average hold time
+- average exit quality
+- average entry quality
+- risk consistency score
+- discipline score
+- alert response score
+
+Breakdowns:
+- by day
+- by week
+- by month
+- by symbol
+- by session
+- by account type demo/live
+- by routing mode
+- by strategy/setup tag if available
+
+PART 5 — Calendar Upgrade
+
+Upgrade calendar so each day shows:
+- green day / red day / breakeven
+- realized P&L
+- number of trades
+- biggest win
+- biggest loss
+- mistakes flagged
+- alerts ignored
+- discipline score
+- journal summary
+
+Tapping a day should open that day’s trade review.
+
+PART 6 — AI Performance Coach
+
+Update AI so users can ask:
+
+- How did I trade today?
+- Why did I lose today?
+- What was my best trade?
+- What was my worst trade?
+- Did I hold too long?
+- Did I close too early?
+- Did I ignore any alerts?
+- What mistakes keep repeating?
+- What symbol am I best at?
+- What session do I trade best?
+- Am I over-risking?
+- What should I improve tomorrow?
+- Give me a daily performance review.
+- Give me a weekly trading report.
+
+AI response should include:
+1. Performance summary
+2. Biggest strength
+3. Biggest mistake
+4. Risk behavior
+5. Exit behavior
+6. Best trade
+7. Worst trade
+8. Improvement plan
+9. Data quality warning if needed
+
+AI must not invent missing stats.
+
+PART 7 — Mistake Detection
+
+Create mistake tags:
+
+- over-risked
+- revenge trade
+- held too long
+- closed too early
+- ignored close alert
+- entered during news risk
+- entered during high spread
+- oversized lot
+- no stop loss
+- poor risk/reward
+- traded against trend
+- chased entry
+- duplicate setup
+- exceeded daily trade limit
+- traded after loss limit warning
+- data insufficient
+
+Use real data only. If the system cannot confirm a mistake, label it as possible, not certain.
+
+PART 8 — Coaching Plans
+
+Generate coaching suggestions:
+
+Examples:
+- “You lose most often when trading XAUUSD during high-volatility windows.”
+- “Your best trades happen during New York session with trend alignment.”
+- “You gave back 42% of peak profit on average before closing winners.”
+- “You ignored 3 close alerts this week.”
+- “Your risk size increased after losses. Watch revenge-trade behavior.”
+
+Create:
+- daily coaching note
+- weekly coaching report
+- monthly performance review
+- personalized trading rules
+
+PART 9 — User UI
+
+Add sections:
+- Performance Overview
+- Journal
+- Calendar
+- Mistake Tracker
+- AI Coach
+- Best/Worst Trades
+- Discipline Score
+- Alert Response Score
+- Risk Consistency
+
+Each trade journal detail page should show:
+- trade lifecycle
+- AI decisions
+- alerts fired
+- user actions
+- entry quality
+- exit quality
+- lesson learned
+- notes field
+
+PART 10 — Backend/API
+
+Add or update endpoints:
+
+- GET /api/performance/summary
+- GET /api/performance/calendar
+- GET /api/performance/daily-review
+- GET /api/performance/weekly-review
+- GET /api/journal/trades
+- GET /api/journal/trades/:id
+- PATCH /api/journal/trades/:id/notes
+- POST /api/journal/trades/:id/review
+- GET /api/coach/insights
+- POST /api/coach/ask
+
+Add tables if missing:
+
+trade_journal_entries:
+- id
+- user_id
+- trade_id
+- symbol
+- side
+- account_type
+- routing_mode
+- entry_price
+- exit_price
+- lot_size
+- realized_pnl
+- pnl_pips
+- opened_at
+- closed_at
+- session
+- exit_reason
+- ai_decision_id
+- alerts_fired_count
+- alerts_ignored_count
+- entry_quality_score
+- exit_quality_score
+- mistake_tags
+- user_notes
+- ai_summary
+- created_at
+- updated_at
+
+daily_performance_reviews:
+- id
+- user_id
+- trade_date
+- realized_pnl
+- trade_count
+- win_count
+- loss_count
+- breakeven_count
+- best_trade_id
+- worst_trade_id
+- discipline_score
+- risk_consistency_score
+- alert_response_score
+- mistake_summary
+- ai_coaching_summary
+- created_at
+- updated_at
+
+performance_insights:
+- id
+- user_id
+- insight_type
+- title
+- message
+- supporting_trade_ids
+- severity
+- created_at
+
+PART 11 — Tests
+
+Add or update tests for:
+1. Closed trade creates journal entry.
+2. User can only see their own journal entries.
+3. Shared-master user sees only attributed trade records.
+4. Entry quality calculates only when data exists.
+5. Exit quality calculates from real trade lifecycle.
+6. Missing data is shown as unavailable.
+7. Calendar shows green/red/breakeven days correctly.
+8. Performance summary uses real closed trades only.
+9. AI coach answers from real journal/performance data.
+10. AI does not invent missing stats.
+11. Mistake tags use real evidence or say possible.
+12. User notes save correctly.
+13. Daily review generates after trades close.
+14. Weekly review aggregates correctly.
+15. No secrets exposed.
+16. Mobile performance/journal pages work on iPhone Safari.
+
+Final report:
+Return:
+- PASS or FAIL
+- Auto Journal status
+- Exit Quality Review status
+- Entry Quality Review status
+- Performance Dashboard status
+- Calendar upgrade status
+- AI Performance Coach status
+- Mistake Detection status
+- Coaching Plans status
+- mobile status
+- tests passed
+- remaining blockers

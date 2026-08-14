@@ -1,0 +1,122 @@
+Continue after Build V — Personal Trading Playbook System.
+
+Now begin Build W — AI Edge Discovery Engine.
+
+Goal:
+Create a system that discovers where the trader has a real measurable edge based on actual trading history, strategy results, market conditions, sessions, symbols, and behavior patterns.
+
+Tasks:
+
+1. Audit existing systems:
+- Trader Scoring
+- Trade Feedback
+- Trade Journal
+- Weekly Reviews
+- Strategy Engine
+- Market Intelligence
+- Multi-Timeframe Analysis
+- News Risk Filter
+- Replay Simulator
+- Backtesting Engine
+- Paper Trading
+
+2. Add database models:
+
+edge_discovery_reports:
+- id
+- user_id
+- edge_name
+- symbol
+- strategy_id
+- timeframe
+- session_name
+- market_condition
+- sample_size
+- win_rate
+- average_rr
+- expectancy
+- profit_factor
+- discipline_score_avg
+- execution_score_avg
+- emotional_score_avg
+- confidence_score
+- status
+- ai_summary
+- created_at
+
+edge_warnings:
+- id
+- user_id
+- edge_report_id
+- warning_type
+- message
+- severity
+- created_at
+
+3. Edge statuses:
+- STRONG_EDGE
+- DEVELOPING_EDGE
+- WEAK_EDGE
+- NO_EDGE
+- INSUFFICIENT_DATA
+
+4. Analyze edge by:
+- Symbol
+- Strategy
+- Timeframe
+- Session
+- Market condition
+- News condition
+- Emotional state
+- Risk-to-reward
+- Trade duration
+- Entry quality
+- Exit quality
+
+5. Add rules:
+- Do not label edge as STRONG_EDGE without enough sample size.
+- If sample size is low, status must be INSUFFICIENT_DATA.
+- If expectancy is negative, status should be WEAK_EDGE or NO_EDGE.
+- If win rate is high but R:R is poor, warn user.
+- If profitability depends on one lucky trade, warn user.
+- If edge only works in specific market conditions, clearly show that.
+
+6. API routes:
+- POST generate edge discovery report
+- GET edge discovery reports
+- GET edge report by id
+- GET strongest edges
+- GET weakest areas
+- GET edge warnings
+
+7. Frontend components:
+- Edge Discovery Page
+- Strongest Edge Card
+- Weakest Area Card
+- Edge Confidence Meter
+- Edge Breakdown Table
+- Edge Warning Panel
+- AI Edge Summary Card
+
+8. Connect to:
+- Trade Plan Builder
+- Strategy Fit Score
+- AI Coach
+- Weekly Review
+- Personal Trading Playbook
+- Risk System
+
+Important:
+- Do not claim the app can guarantee profitable trades.
+- Clearly explain edge as historical probability, not certainty.
+- Always include sample size and confidence score.
+- Do not let weak/insufficient edges be shown as proven strategies.
+
+Final output required:
+1. Files changed
+2. Tables/models added
+3. API routes added
+4. Frontend components added
+5. How edge discovery connects to strategy, playbook, and trade planning
+6. Errors or limitations
+7. Recommended next build

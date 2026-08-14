@@ -1,0 +1,278 @@
+Run a full stale-data and balance-accuracy repair pass across the entire ARX AI app.
+
+The app must not show stale balances, dummy balances, placeholder balances, hardcoded balances, mock balances, or old cached account values anywhere. Balance data must refresh automatically from the correct source of truth without me needing to manually command it.
+
+MAIN GOAL
+
+Every profile and role must show accurate, current account balance information based on the correct source of truth:
+
+- OWNER/admin
+- trader users
+- investor/view-only users
+- shared/master account views
+- allocation views
+- active trading views
+- dashboard summaries
+- admin user management
+- investor reports
+- trade panels
+- risk panels
+- Ruby explanations
+- MT5/Deriv bridge status
+- live execution readiness panels
+
+No dummy balances anywhere.
+
+Do not rebuild the app. Do not change live broker execution settings. Do not place trades. Do not modify real balances. This is a data-source, refresh, cache, and display accuracy task.
+
+PHASE 1 — FIND EVERY BALANCE DISPLAY
+
+Search the entire codebase for every place balance, equity, margin, allocation, wallet, funds, investor capital, account value, available balance, realized P/L, unrealized P/L, deposits, withdrawals, credits, or NAV is displayed or calculated.
+
+Include:
+
+- Dashboard
+- Markets
+- Trade
+- Positions
+- Pending orders
+- Risk
+- Ruby
+- Investor pages
+- Admin Hub
+- User management
+- Allocations
+- Live controls
+- MT5/Deriv bridge pages
+- Owner live test panels
+- Reports
+- Settings
+- Any cards, widgets, tables, headers, summaries, or side panels
+
+Search for and remove/replace:
+
+- hardcoded balance numbers
+- dummy balance values
+- mock account values
+- sample investor balances
+- fake allocation data
+- stale fallback balances
+- old cached values used as truth
+- UI-only balances not connected to backend
+- backend balances not exposed to UI
+- profile balances that do not match the source account/allocation
+- investor balances leaking trade-account values
+- trader balances showing placeholder data
+
+PHASE 2 — DEFINE SOURCE OF TRUTH
+
+Establish clear source-of-truth rules.
+
+For live trading account values:
+- Source should be the live MT5/Deriv bridge account snapshot when available.
+- Balance, equity, margin, free margin, margin level, open P/L, and account currency should come from broker/bridge snapshot.
+- If bridge data is unavailable, show “Waiting for live account update” or “Account data unavailable” instead of fake numbers.
+- Never show dummy fallback balances as real values.
+
+For user allocation values:
+- Source should be the app’s user allocation ledger/database.
+- Allocation balance must reconcile to admin-assigned allocation and any approved capital movements.
+- Do not invent user balances from the master balance.
+- If allocation is not configured, show “No allocation assigned yet” instead of $0 if $0 would be misleading.
+
+For investor/view-only values:
+- Source should be investor ledger/reporting data only.
+- Investors must not see trader controls or broker execution balances unless intentionally summarized as investor-safe reporting.
+- If investor reporting data is not yet available, show an honest empty state, not dummy values.
+
+For admin/OWNER:
+- Admin can see master account, bridge snapshot, user allocations, investor records, and reconciliation state where role-appropriate.
+- Admin screens should clearly distinguish broker balance, app allocation, investor capital, realized P/L, unrealized P/L, and pending capital movements.
+
+PHASE 3 — AUTOMATIC REFRESH WIRING
+
+Make balance data refresh automatically.
+
+Implement or verify:
+
+- On app load, fetch the latest account/bridge/allocation data.
+- On dashboard load, refresh relevant balances.
+- On profile switch or role switch, refresh the correct role-specific balance data.
+- On opening Trade, Positions, Risk, Admin, Investor, and Bridge pages, fetch fresh data or subscribe to existing live snapshot state.
+- After order queue, order acceptance, fill, rejection, close, SL/TP modification, deposit approval, withdrawal approval, allocation change, or reconciliation event, invalidate stale balance queries and refresh the affected surfaces.
+- Use polling, heartbeat snapshots, websocket/live subscription, or query invalidation as appropriate based on existing architecture.
+- Do not require manual commands to refresh balances.
+- Do not force excessive polling that slows the app.
+- Use sensible refresh intervals and event-driven invalidation where possible.
+
+PHASE 4 — CACHE AND STALENESS RULES
+
+Add visible staleness handling.
+
+Every balance/card that depends on live or near-live data should know:
+
+- last updated time
+- source of data
+- whether the data is fresh, stale, unavailable, or reconnecting
+- whether the value is broker-reported, app-ledger, investor-ledger, or derived
+
+Rules:
+
+- If data is stale, show a clear stale/reconnecting state.
+- If data is unavailable, show an honest empty state.
+- If bridge heartbeat is stale, do not continue showing old balances as if live.
+- If the broker snapshot fails, do not replace with dummy data.
+- If user allocation is missing, show missing allocation state.
+- If investor ledger is not built or empty, show honest investor-safe empty state.
+
+PHASE 5 — PROFILE AND ROLE CONSISTENCY
+
+Verify balance accuracy across all roles.
+
+OWNER/admin:
+- master broker balance matches bridge snapshot
+- user allocations match app ledger
+- investor records match investor ledger/reporting
+- admin can see reconciliation status
+- no fake admin summary numbers
+
+Trader user:
+- sees only their assigned allocation/account values
+- does not see master balance unless intentionally allowed
+- sees live position P/L tied to their authorized trading context
+- no dummy dashboard balance
+- no stale profile balance after refresh
+
+Investor/view-only:
+- sees only investor-safe balance/reporting values
+- cannot see trade controls
+- cannot see trader risk/trade pages
+- no fake investor balance
+- no trade-config leak
+- no broker execution controls
+
+Logged-out:
+- sees no balance data
+- cannot access balance endpoints by direct route
+
+PHASE 6 — RUBY AND AI DATA ACCURACY
+
+Ruby must not quote stale or dummy balances.
+
+Audit Ruby, scanner, risk, and AI ecosystem prompts/context to ensure:
+
+- Ruby uses the current account/allocation snapshot when discussing balance.
+- Ruby identifies if balance data is stale or unavailable.
+- Ruby never invents a balance.
+- Ruby never reads old cached values as current.
+- Risk calculations use fresh or clearly timestamped account values.
+- Scanner/risk sizing logic does not use dummy capital.
+- Agent/governance traces do not claim account values unless sourced.
+
+If data is unavailable, Ruby should say plainly:
+“Current account balance is unavailable right now” or “This value needs a fresh broker/account update,” not fabricate.
+
+PHASE 7 — DATABASE / API / CLIENT AUDIT
+
+Audit all balance-related APIs and clients.
+
+Check:
+
+- API endpoints returning account snapshots
+- bridge heartbeat endpoints
+- MT5/Deriv account snapshot APIs
+- allocation APIs
+- investor reporting APIs
+- profile APIs
+- admin user APIs
+- frontend hooks/query keys
+- staleTime/cacheTime settings
+- query invalidation
+- generated API clients
+- loading/error states
+- fallback values
+
+Fix:
+
+- endpoints returning placeholder data
+- stale query keys not invalidated
+- frontend default values like 10000, 5000, 1000, 0 when misleading
+- hardcoded test balances
+- mock data in production views
+- cached responses used after role switch
+- investor/trader/admin data mixing
+- missing loading states
+- missing error states
+
+PHASE 8 — RECONCILIATION CHECK
+
+Add or verify a reconciliation check.
+
+Admin should be able to see when values do not match:
+
+- broker balance/equity
+- app allocation totals
+- investor ledger totals
+- pending deposits/withdrawals
+- open P/L
+- realized P/L
+- user-level assigned capital
+- master account balance
+
+If values cannot reconcile because a feature is not built yet, show that clearly instead of forcing fake agreement.
+
+PHASE 9 — TESTING
+
+Run tests proving:
+
+- no hardcoded/dummy balance appears in production UI paths
+- dashboard fetches latest balance data
+- role switch invalidates stale balance queries
+- trader balance comes from correct user allocation/account source
+- investor balance comes from investor-safe source only
+- admin sees correct master/account/allocation distinction
+- bridge stale heartbeat marks balance as stale
+- unavailable broker snapshot shows honest empty state
+- Ruby refuses to quote unavailable balances
+- risk logic does not use dummy capital
+- trade/position updates invalidate affected balances
+- logged-out users cannot access balance endpoints
+- investor users cannot access trade balance endpoints
+- no internal backend/env names leak to normal users
+
+Run:
+- typecheck
+- app/dashboard validation
+- balance-specific tests
+- role-gating tests
+- CI guards
+- architect review if available
+
+PHASE 10 — FINAL REPORT
+
+Report:
+
+1. Every balance display found.
+2. Which ones were stale, dummy, hardcoded, or disconnected.
+3. What source of truth each balance now uses.
+4. What automatic refresh/invalidation was added.
+5. What empty/stale states were added.
+6. What role leaks were fixed.
+7. How Ruby/risk/scanner were prevented from using dummy balances.
+8. What tests passed.
+9. Any remaining blockers with exact file/page/function names.
+
+COMPLETION STANDARD
+
+Do not mark complete until:
+
+- no dummy balances remain in active production UI
+- no stale balance is shown as current
+- all balance surfaces use the correct source of truth
+- balances refresh automatically without manual commands
+- role-based balance visibility is correct
+- Ruby/risk/scanner do not use fake capital
+- admin can distinguish broker balance, allocation ledger, investor ledger, and reconciliation state
+- unavailable data shows honest empty state
+- all validation/tests pass
+- live broker execution settings remain untouched

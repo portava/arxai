@@ -1,0 +1,375 @@
+NEXT PHASE: FULL TESTER ACCESS ACCEPTANCE TEST + AUTO-FIX
+
+Goal:
+Verify the entire app is open for tester access and fix anything that is still blocked, hidden, blank, or broken.
+
+The user wants full access as a tester:
+- full app navigation
+- live chart embed
+- demo manual simulator
+- demo AI simulator
+- live manual tester workflow
+- live AI assist tester workflow
+- live AI auto tester workflow
+- live intent queue
+- journal/calendar/audit logs
+- onboarding and new-system popups
+- MT5 deferred until later
+
+Do not fake MT5 connection.
+Do not claim real broker execution is available yet.
+Do not hide any live testing screens.
+Do not block tester workflows.
+Do not leave blank pages.
+
+==================================================
+1. RUN FULL ROUTE SMOKE TEST
+==================================================
+
+Check every route:
+
+- /
+- /dashboard
+- /trading-command-center
+- /charts
+- /live-chart
+- /manual-trade-ticket
+- /demo-trading
+- /paper-trading
+- /live-trading
+- /live-manual
+- /live-ai-assist
+- /live-ai-auto-test
+- /live-intent-queue
+- /ai-trading
+- /ai-autopilot
+- /ai-decisions
+- /approval-queue
+- /risk-governor
+- /readiness
+- /broker
+- /mt5-status
+- /mt5-setup
+- /orders/live
+- /positions/live
+- /orders/demo
+- /positions/demo
+- /journal
+- /calendar
+- /learning-loop
+- /audit-vault
+- /safety-logs
+- /testing-control-center
+- /settings
+- /admin/system-health
+
+Every route must show:
+- real data, simulated data, empty state, MT5 deferred state, or error card with retry button
+
+No blank screens.
+No hidden routes.
+No broken navigation.
+
+Auto-fix any route that fails.
+
+==================================================
+2. VERIFY GLOBAL TESTER ACCESS STATE
+==================================================
+
+Confirm permission status returns:
+
+{
+  "fullTesterAccess": true,
+  "canViewAllRoutes": true,
+  "canUsePaper": true,
+  "canUseDemoSimulator": true,
+  "canUseLiveTesterWorkflows": true,
+  "canSubmitLiveIntent": true,
+  "canExecuteRealBrokerOrder": false,
+  "mt5Connected": false,
+  "brokerExecutionAvailable": false
+}
+
+Show global banner:
+
+“FULL TESTER ACCESS ACTIVE — MT5 NOT CONNECTED. Live workflows are open for testing, but real broker execution is unavailable until MT5 bridge is connected.”
+
+==================================================
+3. VERIFY LIVE CHART EMBED
+==================================================
+
+Test /live-chart and embedded chart locations:
+
+- /dashboard
+- /trading-command-center
+- /live-trading
+- /manual-trade-ticket
+- /ai-trading
+
+Confirm:
+
+- TradingView chart renders
+- default symbol is FX:EURUSD
+- symbol selector works
+- interval selector works
+- mobile layout works
+- fullscreen works
+- fallback state works if widget fails
+
+Show chart label:
+
+“Live market chart active. Broker execution requires MT5 bridge connection.”
+
+Auto-fix chart if it does not render.
+
+==================================================
+4. TEST ONBOARDING + SYSTEM POPUPS
+==================================================
+
+Test:
+
+- first-time onboarding appears
+- user can skip
+- user can complete
+- user can replay from Help / Tour
+- new-system popup appears once
+- popup can be acknowledged
+- popup can be dismissed
+- skipped onboarding does not break the app
+
+Auto-fix any onboarding issue.
+
+==================================================
+5. TEST DEMO MANUAL SIMULATOR
+==================================================
+
+Run demo manual simulator test:
+
+- select symbol
+- select buy/sell
+- set lot size
+- set stop loss
+- set take profit
+- submit simulated order
+
+Confirm:
+
+- risk governor checks it
+- bad orders are rejected
+- valid simulated order is accepted
+- journal updates
+- calendar updates
+- audit log records it
+- no MT5/live broker execution attempted
+
+==================================================
+6. TEST DEMO AI SIMULATOR
+==================================================
+
+Run:
+
+- DEMO_AI_ASSIST_SIM
+- DEMO_AI_AUTO_SIM
+
+Confirm AI creates trade cards with:
+
+- symbol
+- direction
+- setup
+- entry
+- stopLoss
+- takeProfit
+- confidenceScore
+- riskScore
+- riskRewardRatio
+- maxLoss
+- reasonForTrade
+- invalidationReason
+- marketCondition
+
+Confirm:
+
+- AI assist requires approval
+- AI auto creates only one simulated trade during test
+- learning loop updates
+- decision logs update
+- journal/calendar update
+- no live broker execution attempted
+
+==================================================
+7. TEST LIVE MANUAL TESTER WORKFLOW
+==================================================
+
+Open /live-manual.
+
+Submit a live-intent test order.
+
+Because MT5 is not connected, expected response:
+
+{
+  "accepted": false,
+  "testerAccess": true,
+  "brokerExecution": false,
+  "status": "PENDING_MT5_CONNECTION",
+  "reason": "MT5 bridge is not connected yet. Tester workflow was captured, but no real broker order was placed."
+}
+
+Confirm:
+
+- form is usable
+- risk governor runs
+- intent is saved
+- audit log records it
+- journal records TESTER_INTENT
+- live intent queue receives it
+- no real order is placed
+
+==================================================
+8. TEST LIVE AI ASSIST TESTER WORKFLOW
+==================================================
+
+Open /live-ai-assist.
+
+Test:
+
+- generate AI trade idea
+- reject one idea
+- approve one idea into live-intent queue
+
+Confirm:
+
+- no silent execution
+- approval is required
+- approval timer appears
+- risk checks run
+- AI decision log updates
+- live intent queue receives AI_LIVE_INTENT_PENDING_MT5
+
+==================================================
+9. TEST LIVE AI AUTO TESTER WORKFLOW
+==================================================
+
+Open /live-ai-auto-test.
+
+Test:
+
+- Start AI Live Auto Tester
+- decision stream appears
+- one live-style intent is generated
+- cooldown timer appears
+- stop button works
+- pause button works
+- kill switch UI works
+
+Since MT5 is missing:
+
+- do not place broker order
+- save as PENDING_MT5_CONNECTION
+- log all gate results
+- stop after one intent
+
+==================================================
+10. TEST LIVE INTENT QUEUE
+==================================================
+
+Open /live-intent-queue.
+
+Confirm it shows:
+
+- manual tester intents
+- AI assist intents
+- AI auto tester intents
+- status
+- symbol
+- direction
+- lot size
+- stop loss
+- take profit
+- estimated risk
+- confidence/risk score if AI
+- audit link
+- MT5 pending reason
+
+==================================================
+11. TEST SAFETY + AUDIT SYSTEMS
+==================================================
+
+Verify:
+
+- risk governor active
+- kill switch UI visible
+- audit logs active
+- journal updates
+- calendar updates
+- learning loop updates
+- testing control center shows available-now tests
+- MT5-required items show “Deferred until MT5 bridge is connected”
+
+==================================================
+12. GENERATE FINAL REPORT
+==================================================
+
+Generate:
+
+FULL TESTER ACCESS ACCEPTANCE REPORT
+
+Include:
+
+1. Full app:
+- total routes tested
+- passed routes
+- failed routes
+- fixed routes
+- full tester access active yes/no
+
+2. Live chart:
+- active yes/no
+- default symbol
+- mobile responsive yes/no
+- fallback works yes/no
+
+3. Onboarding:
+- automatic first open yes/no
+- skip works yes/no
+- replay works yes/no
+- new-system popups work yes/no
+
+4. Demo simulator:
+- demo manual pass/fail
+- demo AI assist pass/fail
+- demo AI auto pass/fail
+
+5. Live tester workflows:
+- live manual tester pass/fail
+- live AI assist tester pass/fail
+- live AI auto tester pass/fail
+- live intent queue pass/fail
+
+6. Safety:
+- risk governor pass/fail
+- kill switch UI pass/fail
+- audit logs pass/fail
+- journal pass/fail
+- calendar pass/fail
+- learning loop pass/fail
+
+7. MT5 status:
+- MT5 connected: yes/no
+- MT5 deferred: yes/no
+- real broker execution available: yes/no
+- reason if no
+
+8. Final state:
+- FULL TESTER ACCESS ACTIVE: yes/no
+- LIVE CHART ACTIVE: yes/no
+- LIVE WORKFLOWS OPEN: yes/no
+- REAL BROKER EXECUTION LOCKED UNTIL MT5: yes/no
+
+Hard rules:
+- Do not fake MT5 connection.
+- Do not claim real orders were placed.
+- Do not block tester workflows.
+- Do not hide live pages.
+- Do not leave blank screens.
+- Do not remove risk governor.
+- Do not remove kill switch UI.

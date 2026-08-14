@@ -1,0 +1,239 @@
+Fix the ARX AI admin/user setup controls. The current flow is still too buggy, too complicated, and too technical.
+
+MAIN GOAL:
+Admin should control user access and platform access with simple ON/OFF switches throughout the website. Do not require typing confirmation phrases anywhere.
+
+CURRENT PROBLEMS FROM SCREENSHOTS:
+- Manage Access controls are complicated.
+- Some switches do not work.
+- Admin has to type phrases like ENABLE LIVE TRADING, DISABLE USER, or APPROVE SHARED BRIDGE.
+- Live Shared Account tabs overlap badly on mobile.
+- Internal/backend labels are exposed, including:
+  - ARX_LIVE_BROKER_EXECUTION_ENABLED
+  - platformMode=DEMO
+  - routing=USER_OWNED
+  - sharedLiveTradingEnabled
+  - masterBridgeLiveEnabled
+  - arx_live_commands
+  - POST /api/admin/master-bridge/snapshot
+- Admin sees technical architecture instructions that should not be in the main UI.
+- Admin controls are spread across confusing pages.
+- Bottom nav and Ruby bubble cover controls/content.
+- Toggle buttons look active but do not reliably save or update state.
+
+REQUIREMENTS:
+
+1. REPLACE TYPED CONFIRMATIONS WITH SWITCHES
+Remove all typed confirmation phrase requirements from admin/user setup.
+
+Replace typed confirmations with:
+- Toggle switch
+- Clear confirmation modal for dangerous actions
+- Confirm button
+- Cancel button
+
+Do NOT make admin type phrases.
+
+Dangerous actions that still need a confirmation modal:
+- Enable Live Trading
+- Enable Shared/Master Bridge
+- Disable User
+- Suspend User
+- Release Kill Switch
+- Increase max lot size
+- Increase max daily loss
+- Enable AI auto-close
+- Enable broker execution
+
+The modal should say clearly what will happen, but the admin should only tap Confirm or Cancel.
+
+2. FIX ALL SWITCHES
+Audit every switch/toggle across the app and make sure each one:
+- Updates visually immediately
+- Saves to backend/database
+- Refreshes correctly after page reload
+- Shows success or failure
+- Rolls back visually if save fails
+- Is disabled only when there is a real reason
+- Has a clear friendly reason if disabled
+
+Fix broken switches in:
+- Manage Access
+- Account Access
+- Trading Access
+- Bridge Access
+- Ruby / AI Access
+- Scanner Access
+- Risk Limits
+- Push Settings
+- Live Shared Account
+- Kill Switches
+- Broker Execution
+- User Permissions
+- Any other admin/operator access page
+
+3. MAKE MANAGE ACCESS SIMPLE
+For each user, admin should click only one button:
+- Manage Access
+
+Inside Manage Access, use simple switch rows:
+
+Account Access:
+- User Approved: ON/OFF
+- User Enabled: ON/OFF
+- Admin Role: ON/OFF
+- Operator Role: ON/OFF
+
+Trading Access:
+- Paper Trading: ON/OFF
+- Demo Trading: ON/OFF
+- Live Trading: ON/OFF
+- One-Click Trading: ON/OFF
+- AI Trading Assist: ON/OFF
+- AI Auto-Close: ON/OFF
+
+Bridge Access:
+- Personal MT5 Bridge: ON/OFF
+- Shared/Master Bridge: ON/OFF
+
+Ruby / AI:
+- Ruby Chat: ON/OFF
+- Ruby Voice: ON/OFF
+- Ruby Auto-Listen: ON/OFF
+- News Intelligence: ON/OFF
+- Historical Backtest Intelligence: ON/OFF
+
+Scanner:
+- Scanner Access: ON/OFF
+- Broad Scan: ON/OFF
+- Focus Scan: ON/OFF
+- Trade From Scanner: ON/OFF
+
+Risk Controls:
+- Require Stop Loss: ON/OFF
+- Require Take Profit: ON/OFF
+- Max Lot Size input
+- Max Daily Loss input
+- Max Open Trades input
+- Minimum Reward/Risk input
+
+Admin should not need to jump between tabs to give one user access.
+
+4. ADD SIMPLE PRESET BUTTONS
+Keep presets, but make them easy:
+- Paper Only
+- Demo Tester
+- Demo + Scanner
+- Live Pending Review
+- Live Approved Conservative
+- Live Approved Standard
+- Disable Trading
+- Emergency Lockdown
+
+Admin taps a preset, sees preview, then taps Apply. No typing.
+
+5. CLEAN LIVE SHARED ACCOUNT PAGE
+Fix the Live Shared Account page.
+
+The mobile tabs currently overlap. Replace the tabs with either:
+- Mobile dropdown section selector
+OR
+- Horizontal scroll tabs with no wrapping and proper spacing
+
+Rename technical labels into friendly labels:
+- “Broker Execution Disabled” instead of raw env text
+- “Live Mode: Demo” instead of platformMode=DEMO
+- “Routing: User-Owned Bridge” instead of routing=USER_OWNED
+- “Shared Live Trading: Off” instead of sharedLiveTradingEnabled
+- “Master Bridge: Off” instead of masterBridgeLiveEnabled
+- “Pending Commands: 0” instead of arx_live_commands: 0
+
+Hide backend route text from the main UI:
+- Do not show POST /api/admin/master-bridge/snapshot
+- Replace it with a button: “Pin Current Master Bridge”
+- If the bridge cannot be pinned, show friendly text:
+  “No master bridge connected yet. Connect the MT5 bridge, then tap Pin Current Master Bridge.”
+
+Move architecture details into a collapsed admin-only “Advanced Technical Details” section.
+
+6. SIMPLE PLATFORM-WIDE SWITCH SYSTEM
+Create or standardize one reusable toggle component for the whole app:
+- Clean label
+- Short helper text
+- ON/OFF state
+- Loading state
+- Saved state
+- Failed state
+- Optional confirmation modal
+- Optional disabled reason
+
+Use this reusable switch everywhere instead of custom broken switches.
+
+7. SAFETY WITHOUT COMPLICATION
+Do not remove safety. Make it easier.
+
+For risky actions:
+- Toggle switch turns on
+- Confirmation modal opens
+- Admin taps Confirm
+- Setting saves
+- Audit log records it
+
+No typed phrases.
+
+For regular low-risk actions:
+- Toggle switch saves immediately
+- Show small saved confirmation
+
+8. FIX ADMIN UI CLUTTER
+- Remove overlapping controls.
+- Add spacing between cards.
+- Make sections collapsible.
+- Keep labels simple.
+- Hide backend/internal names.
+- Make mobile layout clean.
+- Make sure bottom nav and Ruby bubble do not cover important buttons.
+- Add enough bottom padding so controls are reachable.
+
+9. AUDIT LOG
+Every switch change must write to audit log:
+- Admin user
+- Target user if applicable
+- Setting changed
+- Previous value
+- New value
+- Timestamp
+- Result
+- Whether confirmation modal was accepted
+
+10. SECURITY
+Regular users must never see:
+- Admin controls
+- User Control Center
+- Live Shared Account operator controls
+- Backend/internal names
+- API route names
+- Test/system users
+- Audit log
+- Kill switches
+- Broker execution controls
+
+Enforce this in UI and backend routes.
+
+11. ACCEPTANCE TEST
+Before stopping, verify:
+- No admin action requires typing a confirmation phrase.
+- Manage Access uses switches instead of confusing typed controls.
+- Every switch saves and reloads correctly.
+- Failed switch saves roll back with a clear message.
+- Live Trading ON requires modal confirmation, not typing.
+- Shared/Master Bridge ON requires modal confirmation, not typing.
+- Disable User requires modal confirmation, not typing.
+- Live Shared Account tabs do not overlap on mobile.
+- Internal labels and API routes are hidden from the main UI.
+- User search still finds andraie.co@gmail.com.
+- Test users remain hidden from normal admin user lists.
+- Regular users cannot see admin/operator controls.
+- Login, scanner, Ruby, trade modal, bridge status, and bottom navigation still work.
+
+Reuse existing code where possible. Do not rebuild unrelated pages. Fix the broken controls and simplify the admin workflow.

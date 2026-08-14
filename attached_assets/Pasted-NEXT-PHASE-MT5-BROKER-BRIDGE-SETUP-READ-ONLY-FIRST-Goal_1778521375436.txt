@@ -1,0 +1,213 @@
+NEXT PHASE: MT5 BROKER BRIDGE SETUP — READ-ONLY FIRST
+
+Goal:
+Build the real MT5 broker integration path so the app can eventually support demo and live-money trading.
+
+Important:
+MT5 cannot be magically connected from Replit unless there is a bridge between Replit and MetaTrader 5.
+
+Build the system so it supports:
+1. MT5 bridge API connection
+2. missing-secret detection
+3. read-only account verification
+4. demo/live environment separation
+5. future guarded live order execution
+
+Do NOT place any real order in this phase.
+Do NOT enable AI live auto-trading yet.
+Do NOT bypass the current 11/11 safety guards.
+
+==================================================
+STEP 1 — CREATE MT5 BRIDGE PROVIDER
+==================================================
+
+Create a broker abstraction layer:
+
+- BrokerProvider interface
+- MT5BridgeProvider
+- MockBrokerProvider fallback
+
+The provider should support:
+
+- getStatus()
+- getAccount()
+- getSymbols()
+- getOpenPositions()
+- getOpenOrders()
+- submitDemoOrder()
+- submitLiveOrderGuarded()
+- closePositionGuarded()
+- cancelOrderGuarded()
+
+For now, only implement read-only calls fully.
+Order-related methods should exist but remain guarded/disabled until the order phase.
+
+==================================================
+STEP 2 — REPLIT SECRETS
+==================================================
+
+Add support for these secrets:
+
+- BROKER_PROVIDER=mt5
+- MT5_BRIDGE_URL
+- MT5_BRIDGE_API_KEY
+- MT5_ACCOUNT_ID
+- MT5_ENVIRONMENT=demo/live
+- LIVE_TRADING_ALLOWED=false
+
+If any required secret is missing:
+- app must not crash
+- broker page should show “Broker credentials required”
+- live trading stays locked
+- demo/paper systems remain usable
+- testing page should show missing secrets clearly
+
+Do not print secret values in logs.
+Only show secret names that are missing.
+
+==================================================
+STEP 3 — CREATE BROKER ENDPOINTS
+==================================================
+
+Create or update:
+
+GET /api/broker/status
+GET /api/broker/account
+GET /api/broker/symbols
+GET /api/positions/live
+GET /api/orders/live
+GET /api/broker/connection-check
+GET /api/broker/secrets-status
+
+Expected response format for /api/broker/status:
+
+{
+  "provider": "mt5",
+  "connected": true/false,
+  "environment": "demo" | "live" | "unknown",
+  "accountIdPresent": true/false,
+  "bridgeUrlPresent": true/false,
+  "apiKeyPresent": true/false,
+  "readOnlyReady": true/false,
+  "liveOrderReady": false,
+  "missingSecrets": [],
+  "lastCheckedAt": "timestamp"
+}
+
+==================================================
+STEP 4 — FRONTEND BROKER CONNECTION CENTER
+==================================================
+
+Create or improve:
+
+/broker
+/mt5-status
+/testing-control-center
+
+Show:
+
+- Broker provider
+- Bridge connected yes/no
+- MT5 environment demo/live
+- Account detected yes/no
+- Equity readable yes/no
+- Balance readable yes/no
+- Margin readable yes/no
+- Symbols readable yes/no
+- Live positions readable yes/no
+- Live orders readable yes/no
+- Missing secrets
+- Last sync time
+- Read-only status
+- Live order status locked/unlocked
+
+If secrets are missing, show:
+
+“MT5 bridge credentials are required before live-money testing can begin.”
+
+Also show the exact Replit Secrets the user needs to add, without exposing values.
+
+==================================================
+STEP 5 — MT5 BRIDGE REQUIREMENT EXPLANATION
+==================================================
+
+Add a setup panel that explains:
+
+“MetaTrader 5 needs a bridge to communicate with this Replit app. This can be done through an MT5 Expert Advisor, VPS bridge, broker API, or bridge service. Until the bridge URL and API key are added, the app can only run paper/demo simulations.”
+
+Include this checklist:
+
+1. Install or run MT5 bridge.
+2. Add MT5 bridge URL to Replit Secrets.
+3. Add MT5 bridge API key to Replit Secrets.
+4. Add MT5 account ID if required.
+5. Set MT5_ENVIRONMENT to demo or live.
+6. Run broker connection check.
+7. Verify account/equity/symbols are readable.
+8. Only then proceed to demo/live order testing.
+
+==================================================
+STEP 6 — SAFETY LOCKS
+==================================================
+
+Keep all live execution locked unless:
+
+- broker connected
+- account readable
+- equity readable
+- live trading armed
+- risk governor active
+- kill switch inactive
+- max loss limits configured
+- guarded order router active
+- audit logger active
+
+All order endpoints must return locked status for now:
+
+{
+  "accepted": false,
+  "reason": "Live order execution is locked until MT5 read-only verification passes."
+}
+
+==================================================
+STEP 7 — RUN READ-ONLY VERIFICATION
+==================================================
+
+After building, run:
+
+- GET /api/broker/secrets-status
+- GET /api/broker/status
+- GET /api/broker/connection-check
+- GET /api/broker/account
+- GET /api/broker/symbols
+- GET /api/positions/live
+- GET /api/orders/live
+- GET /api/live-trading/readiness
+- GET /api/risk-governor/status
+- GET /api/audit/live
+
+Generate:
+
+MT5 READ-ONLY BROKER INTEGRATION REPORT
+
+Include:
+
+1. Broker provider status
+2. Missing Replit Secrets, if any
+3. Bridge connection status
+4. Account read status
+5. Equity/balance read status
+6. Symbol read status
+7. Live positions read status
+8. Live orders read status
+9. Whether live order execution remains locked
+10. Whether 11/11 safety guards still pass
+11. Next required action before demo/live order testing
+
+Hard rules:
+- Do not place real orders.
+- Do not expose secret values.
+- Do not weaken live trading guards.
+- Do not unlock AI auto-live yet.
+- Do not fake broker connection.
+- Do not crash if MT5 bridge is missing.

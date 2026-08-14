@@ -1,0 +1,380 @@
+Build ARX Investor NAV + Profit Split + Reporting Engine v1.
+
+Goal:
+Create the internal accounting engine that calculates investor value, pool NAV, profit/loss, lockups, ARX profit share, and investor statements after deposits are confirmed and allocated.
+
+This should connect to:
+- InvestorAccount
+- InvestorDeposit
+- CryptoFundingIntent
+- CryptoFundingTransaction
+- TreasuryWallet
+- InvestorAllocation
+- InvestorLedgerEntry
+- InvestorWithdrawalRequest
+- InvestorPool
+- BrokerTransferIntent
+
+Important:
+Do not let investors trade.
+Do not let investors move funds.
+Do not use guaranteed-return language.
+Do not count pending/unconfirmed deposits.
+Do not count broker transfer intents as investor profit/loss.
+Do not mix pool accounting with live trade execution gates.
+
+Core concept:
+Investor value should be based on pool NAV and investor units.
+
+Formula:
+- units = principalAmount / navPerUnitAtEntry
+- currentValue = activeUnits * currentNavPerUnit
+- grossPnL = currentValue - principalAmount
+- profitSplit applies only to realized profit, not principal
+
+Example:
+Investor deposits $1,000.
+Pool NAV at entry = $100.
+Investor receives 10 units.
+Later NAV = $120.
+Investor current value = 10 * $120 = $1,200.
+Gross profit = $200.
+
+If profit split is 60/40 investor/ARX:
+Investor keeps $120 profit.
+ARX earns $80 performance share.
+Investor net value = $1,120.
+
+1. Investor Pool NAV Engine
+
+Add service:
+server/investors/navEngine.ts
+
+Responsibilities:
+- calculate pool total principal
+- calculate pool current value
+- calculate total active units
+- calculate navPerUnit
+- record NAV snapshots
+- update investor allocation values
+- exclude pending/unconfirmed deposits
+- exclude rejected/cancelled deposits
+- exclude pending withdrawals until paid
+- include paid withdrawals as reductions
+- support manual NAV update in v1
+
+NAVSnapshot:
+- id
+- poolId
+- navPerUnit
+- totalPoolValue
+- totalActiveUnits
+- totalPrincipal
+- totalGrossPnL
+- totalNetInvestorValue
+- totalArxPerformanceShare
+- source
+  - manual_admin
+  - broker_equity_snapshot
+  - scheduled_calculation
+- createdByAdminId
+- createdAt
+- note
+
+Rules:
+- v1 can use manual admin NAV updates.
+- Later, NAV can be calculated from broker equity snapshots.
+- Every NAV update must create immutable NAVSnapshot.
+- NAV snapshots cannot be edited.
+- Corrections require a new snapshot.
+
+2. Profit Split Engine
+
+Add service:
+server/investors/profitSplitEngine.ts
+
+Pool settings:
+- investorProfitSharePct
+- arxProfitSharePct
+- performanceFeeMode
+  - realized_only
+  - snapshot_based
+  - disabled
+- highWaterMarkEnabled
+- crystallizationFrequency
+  - weekly
+  - monthly
+  - withdrawal_only
+
+Default for v1:
+- investorProfitSharePct = 60
+- arxProfitSharePct = 40
+- performanceFeeMode = realized_only
+- highWaterMarkEnabled = true
+- crystallizationFrequency = withdrawal_only
+
+Rules:
+- ARX performance share applies only to profits.
+- Never take ARX share from principal.
+- If investor is in loss, ARX share is 0.
+- Use high-water mark so ARX does not charge again on already-counted profit.
+- Store profit split calculations in ledger entries.
+- Investor dashboard must show gross P/L and net value clearly.
+
+ProfitSplitCalculation:
+- id
+- investorAccountId
+- allocationId
+- poolId
+- principalAmount
+- currentGrossValue
+- grossProfit
+- investorProfitShareAmount
+- arxProfitShareAmount
+- netInvestorValue
+- highWaterMarkBefore
+- highWaterMarkAfter
+- calculatedAt
+- sourceNavSnapshotId
+
+3. High-Water Mark
+
+Add high-water mark tracking per allocation.
+
+InvestorAllocation add fields:
+- highWaterMarkValue
+- totalArxPerformanceShareCharged
+- totalInvestorProfitCredited
+- lastProfitSplitAt
+
+Rule:
+If current value is below or equal to highWaterMarkValue:
+- no new ARX performance share
+- investor value updates with gross P/L
+- no performance share charged
+
+If current value is above highWaterMarkValue:
+- charge ARX share only on new profit above high-water mark
+
+Example:
+Principal: $1,000
+High-water mark: $1,100
+Current value: $1,300
+New chargeable profit: $200
+If 60/40:
+- investor new profit share: $120
+- ARX new share: $80
+
+4. Investor Dashboard Values
+
+Investor portal should show:
+- Principal
+- Current gross value
+- Net investor value
+- Gross P/L
+- Net P/L after ARX share
+- ARX performance share
+- Units owned
+- NAV at entry
+- Current NAV
+- Lockup start
+- Lockup end
+- Withdrawable amount
+- Pending withdrawals
+- Deposit history
+- Withdrawal history
+- Ledger history
+- Latest NAV update time
+
+Use clear labels:
+- “Current gross value”
+- “Net investor value”
+- “Gross P/L”
+- “Net P/L”
+- “ARX performance share”
+- “Withdrawable amount”
+- “Locked until”
+
+Required disclosure:
+“Values are internal accounting estimates based on the latest confirmed NAV snapshot. Trading involves risk of loss. Values are not guaranteed.”
+
+5. Admin Reporting Dashboard
+
+Create Admin → Investor Reports.
+
+Show:
+- total investor principal
+- total current gross value
+- total net investor value
+- total gross P/L
+- total ARX performance share
+- total active units
+- current NAV per unit
+- latest NAV snapshot
+- pending withdrawals
+- locked capital
+- withdrawable capital
+- investor table
+
+Investor table columns:
+- investor name
+- principal
+- units
+- current gross value
+- net investor value
+- gross P/L
+- net P/L
+- ARX share
+- lockup status
+- withdrawal status
+
+Actions:
+- create NAV snapshot
+- run profit split preview
+- export investor report CSV
+- export ledger CSV
+- view investor statement
+
+6. Investor Statements
+
+Generate monthly or on-demand investor statements.
+
+Statement fields:
+- investor name
+- statement period
+- pool name
+- beginning value
+- deposits
+- withdrawals
+- ending gross value
+- ending net value
+- gross P/L
+- net P/L
+- ARX performance share
+- units
+- NAV at start
+- NAV at end
+- lockup status
+- ledger entries for the period
+- disclosure text
+
+For v1:
+- generate as in-app view and downloadable CSV.
+- PDF can come later.
+
+7. Ledger Entries
+
+Add ledger entry types:
+- nav_snapshot_created
+- investor_value_updated
+- profit_split_previewed
+- profit_split_applied
+- arx_performance_share_accrued
+- investor_statement_generated
+- high_water_mark_updated
+- nav_adjustment
+
+Rules:
+- Preview calculations do not mutate ledger.
+- Applied profit split creates ledger entries.
+- Every NAV snapshot creates a pool-level ledger/audit record.
+- Every investor value update should be traceable to a NAVSnapshot.
+
+8. Withdrawal Eligibility Calculation
+
+Add service:
+server/investors/withdrawalEligibility.ts
+
+Rules:
+- if allocation locked, show locked or early withdrawal review
+- if pending withdrawal exists, subtract from available amount
+- if net investor value <= 0, withdrawable amount = 0
+- if lockup expired, withdrawable amount = net investor value minus pending withdrawals
+- if early withdrawal penalty exists, show estimated early withdrawal value
+
+Fields:
+- isLocked
+- lockupEndsAt
+- daysRemaining
+- grossEligibleValue
+- netEligibleValue
+- pendingWithdrawalAmount
+- estimatedEarlyWithdrawalPenalty
+- estimatedWithdrawableNow
+- reason
+
+9. Permissions
+
+Investor can:
+- view own values
+- view own statements
+- request withdrawal
+- download own CSV statement
+
+Investor cannot:
+- edit NAV
+- trigger profit split
+- view other investors
+- see full pool wallet details
+- trigger broker transfer
+- place trades
+
+Admin can:
+- create NAV snapshots
+- run profit split previews
+- apply profit split if allowed
+- generate reports
+- export CSV
+- view all investor records
+
+10. UI Copy Rules
+
+Do not use:
+- guaranteed profit
+- guaranteed return
+- safe return
+- fixed return
+- risk-free
+- sure payout
+
+Use:
+- current value
+- target
+- projected
+- internal estimate
+- latest NAV
+- risk of loss
+- not guaranteed
+
+11. Tests
+
+Add tests for:
+- NAV per unit calculation
+- investor units calculation
+- investor current value calculation
+- pending deposits excluded from NAV
+- pending withdrawals excluded until paid
+- ARX performance share applies only to profits
+- ARX performance share is zero during losses
+- ARX performance share does not touch principal
+- high-water mark prevents double charging
+- withdrawal eligibility respects lockup
+- pending withdrawal reduces withdrawable amount
+- investor cannot create NAV snapshot
+- investor cannot view another investor statement
+- admin can create NAV snapshot
+- investor statement includes correct period ledger entries
+- profit split preview does not mutate ledger
+- applied profit split creates ledger entries
+- no guaranteed-return language appears in investor UI
+
+Acceptance criteria:
+- Pool NAV can be manually updated by admin.
+- Investor units and values calculate correctly from NAV.
+- Profit split engine supports 60/40 on profits only.
+- High-water mark prevents double-charging performance share.
+- Investor dashboard shows principal, gross value, net value, P/L, lockup, and withdrawal eligibility.
+- Admin reporting shows pool and investor-level accounting.
+- Investor statements can be generated in-app and exported as CSV.
+- All calculations are traceable to NAV snapshots and ledger entries.
+- Investors remain view-only and cannot trade or move funds.

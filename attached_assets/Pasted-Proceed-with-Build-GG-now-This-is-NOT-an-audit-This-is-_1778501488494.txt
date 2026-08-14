@@ -1,0 +1,464 @@
+Proceed with Build GG now.
+
+This is NOT an audit.
+This is NOT a planning report.
+Implement the code changes.
+
+Build GG = Trading Calendar + AI Performance Command Center.
+
+Goal:
+Create a full trading calendar and AI performance dashboard that shows the trader and the AI exactly what is happening over time.
+
+The system should visually answer:
+- What days did I win?
+- What days did I lose?
+- How much did I win or lose each day?
+- Which symbols perform best?
+- Which setups perform best?
+- Which AI decisions were good?
+- Which AI decisions were blocked?
+- Which mistakes keep repeating?
+- Is the AI improving after Build CC learning?
+- What should the trader focus on next?
+
+Important:
+Build GG must NOT place trades.
+Build GG must NOT call MT5 live execution.
+Build GG must NOT enable canPlaceTrades.
+Build GG must NOT modify Build AA/BB/CC/DD/EE/FF safety behavior except to read their data.
+Build GG is a reporting, analytics, calendar, and command-center layer only.
+
+Current system:
+- Build AA = central trade decision orchestrator.
+- Build BB = auto-debrief after paper trade close.
+- Build CC = learning feedback engine.
+- Build DD = read-only market data.
+- Build EE = paper execution engine.
+- Build FF = safe paper autopilot loop.
+- Build GG must now make the system understandable and measurable.
+
+Core requirement:
+Build a calendar and command center that reads from existing paper trades, decision logs, debriefs, learning events, strategy edges, mistake patterns, market data logs, and autopilot cycles.
+
+Build GG tasks:
+
+1. Inspect existing analytics and UI
+Find all existing files/tables/routes/components for:
+- paper trades
+- trade history
+- daily P&L
+- decision logs
+- auto-debriefs
+- learning events
+- strategy edges
+- mistake patterns
+- market data logs
+- autopilot cycles
+- analytics snapshots
+- dashboard pages
+- frontend navigation/menu
+
+Do not duplicate existing analytics if usable.
+Extend cleanly.
+
+2. Create performance aggregation service
+
+Create a service that can calculate:
+
+Daily stats:
+{
+  date,
+  total_trades,
+  wins,
+  losses,
+  break_even,
+  manual_closes,
+  cancelled,
+  win_rate,
+  gross_profit,
+  gross_loss,
+  net_pnl,
+  best_trade,
+  worst_trade,
+  avg_win,
+  avg_loss,
+  profit_factor,
+  symbols_traded,
+  ai_decisions_count,
+  paper_trades_opened,
+  paper_trades_closed,
+  debriefs_created,
+  learning_events_created,
+  mistake_tags,
+  top_lesson,
+  day_rating: "A" | "B" | "C" | "D" | "F",
+  day_status: "WINNING_DAY" | "LOSING_DAY" | "BREAK_EVEN_DAY" | "NO_TRADE_DAY"
+}
+
+Weekly/monthly stats:
+- total trades
+- wins/losses/break-even
+- win rate
+- net P&L
+- average daily P&L
+- best day
+- worst day
+- best symbol
+- worst symbol
+- most repeated mistake
+- most profitable setup
+- most blocked reason
+- AI decision quality trend
+- learning improvement trend
+
+3. Create Trading Calendar API
+
+Add endpoints or equivalent scripts:
+
+GET /api/performance/calendar?month=YYYY-MM
+GET /api/performance/day?date=YYYY-MM-DD
+GET /api/performance/summary?range=7d|30d|90d|all
+GET /api/performance/equity-curve?range=30d
+GET /api/performance/symbols?range=30d
+GET /api/performance/mistakes?range=30d
+GET /api/performance/lessons?range=30d
+GET /api/performance/decision-quality?range=30d
+GET /api/performance/ai-command-center
+POST /api/performance/rebuild
+POST /api/performance/demo
+
+4. Create or update database tables if needed
+
+Additive only.
+
+If existing analytics tables are enough, use them.
+If not, create:
+
+performance_daily_snapshots:
+- id
+- date
+- total_trades
+- wins
+- losses
+- break_even
+- manual_closes
+- cancelled
+- win_rate
+- gross_profit
+- gross_loss
+- net_pnl
+- avg_win
+- avg_loss
+- profit_factor
+- best_trade_id
+- worst_trade_id
+- symbols_traded jsonb
+- mistake_tags jsonb
+- top_lesson
+- day_rating
+- day_status
+- created_at
+- updated_at
+
+performance_symbol_snapshots:
+- id
+- symbol
+- range_key
+- total_trades
+- wins
+- losses
+- win_rate
+- net_pnl
+- avg_pnl
+- best_trade_id
+- worst_trade_id
+- mistake_tags jsonb
+- edge_score
+- learning_confidence
+- created_at
+- updated_at
+
+ai_performance_snapshots:
+- id
+- range_key
+- decisions_created
+- should_trade_count
+- hold_count
+- paper_trades_created
+- blocked_trades
+- debriefs_created
+- learning_events_created
+- avg_confidence
+- avg_risk_score
+- avg_edge_score
+- decision_to_win_rate
+- most_common_blocker
+- most_common_mistake
+- learning_summary
+- improvement_score
+- created_at
+- updated_at
+
+5. Build AI Command Center service
+
+Create one service that returns:
+
+{
+  overallStatus: "IMPROVING" | "STABLE" | "DECLINING" | "INSUFFICIENT_DATA",
+  paperModeStatus: "ACTIVE" | "IDLE" | "BLOCKED",
+  liveTradingStatus: "DISABLED",
+  totalPaperTrades,
+  totalClosedTrades,
+  winRate,
+  netPnl,
+  bestSymbol,
+  worstSymbol,
+  bestSetup,
+  weakestSetup,
+  mostRepeatedMistake,
+  strongestEdge,
+  weakestEdge,
+  aiDecisionStats: {
+    decisionsCreated,
+    buyCount,
+    sellCount,
+    holdCount,
+    blockedCount,
+    avgConfidence,
+    avgRiskScore,
+    avgEdgeScore,
+    decisionToTradeRate,
+    decisionToWinRate
+  },
+  learningStats: {
+    learningEvents,
+    strategyEdgesUpdated,
+    mistakePatternsTracked,
+    improvementScore,
+    learningConfidence
+  },
+  riskStats: {
+    maxDailyLossHitCount,
+    overtradingBlocks,
+    revengeTradeCooldowns,
+    wideSpreadBlocks,
+    staleDataBlocks,
+    highRiskBlocks
+  },
+  nextBestActions: [],
+  warnings: [],
+  generatedAt
+}
+
+6. Add frontend pages/components
+
+Create or update UI for:
+
+A. Trading Calendar page
+- Monthly calendar grid
+- Each day shows:
+  - net P&L
+  - number of trades
+  - win/loss color/status
+  - day rating
+  - small icons/counts for debriefs and lessons
+- Clicking a day opens day detail
+
+B. Day Detail page/panel
+Show:
+- all trades that day
+- each trade’s symbol/action/result/P&L
+- linked decision_id
+- linked debrief
+- mistakes
+- lesson
+- whether AI followed its own decision
+- what the AI learned
+
+C. AI Performance Command Center
+Show:
+- paper mode status
+- live trading disabled badge
+- win rate
+- net P&L
+- current equity curve
+- best/worst symbol
+- strongest/weakest strategy edge
+- repeated mistake patterns
+- AI decision quality
+- learning improvement score
+- next best actions
+
+D. Autopilot section
+Read-only summary from Build FF:
+- last autopilot cycle
+- cycles today
+- paper trades opened
+- paper trades closed
+- safety blocks
+- cooldowns
+- current status
+
+7. Calendar UX requirements
+
+Make UI clean, fast, and easy to understand.
+
+Calendar day states:
+- Green/profitable day
+- Red/losing day
+- Gray/no trade day
+- Yellow/break-even or caution day
+
+Do not overload the screen.
+Use expandable details.
+Mobile-friendly layout.
+Keep navigation simple.
+
+8. AI insight generation
+
+Generate practical insight summaries such as:
+
+- “Your best performance is on Volatility 75 Index during M5 setups.”
+- “Your losses are clustering after high-risk decisions.”
+- “The AI is blocking trades correctly when spread is wide.”
+- “Most losses came from revenge-risk/cooldown violations.”
+- “Learning confidence is still low because sample size is small.”
+- “The system should keep paper practicing before live trading.”
+
+Do not make medical/financial guarantees.
+Do not claim profitability is guaranteed.
+Do not recommend live trading.
+
+9. Build GG safety rules
+
+Hard rules:
+- Reporting only.
+- No live execution.
+- No MT5 order placement.
+- No broker calls.
+- No canPlaceTrades changes.
+- No auto-enabling autopilot.
+- No changing Build AA safety blockers.
+- No changing Build EE paper-only execution rules.
+- Live trading status must display DISABLED.
+
+10. Data source requirements
+
+Build GG must read from:
+- paper_trades
+- paper_execution_logs
+- trade_decision_logs
+- auto-debrief/post-trade debrief tables
+- learning_events
+- strategy_edges
+- mistake_patterns
+- market data logs if available
+- autopilot_cycles
+- autopilot_cycle_logs
+
+If any source is missing, return safe empty states instead of crashing.
+
+11. Rebuild snapshots
+
+POST /api/performance/rebuild should:
+- recalculate daily snapshots
+- recalculate symbol snapshots
+- recalculate AI performance snapshots
+- not duplicate records
+- update existing snapshot records idempotently
+- log rebuild summary
+
+12. Required test scenarios
+
+A. Demo performance data creates calendar output.
+B. Calendar month endpoint returns daily P&L cells.
+C. Day detail endpoint returns trades, debriefs, lessons, and AI decision links.
+D. Summary endpoint returns 7d/30d/all stats.
+E. Equity curve endpoint returns cumulative P&L.
+F. Symbol performance endpoint ranks symbols.
+G. Mistake endpoint ranks repeated mistakes.
+H. Lessons endpoint returns recent lessons.
+I. Decision-quality endpoint measures AA decisions vs paper trade outcomes.
+J. AI Command Center endpoint returns full system status.
+K. Rebuild endpoint is idempotent.
+L. Empty database returns safe empty dashboard.
+M. Live trading remains disabled.
+N. Existing AA-FF systems still work.
+
+13. Logs
+
+Every performance rebuild should log:
+- rebuild started
+- date range calculated
+- trades counted
+- decisions counted
+- debriefs counted
+- learning events counted
+- snapshots created/updated
+- warnings
+- rebuild completed
+
+Every command center request should log:
+- data sources read
+- missing sources if any
+- generated insight count
+- warnings
+
+14. Preserve existing behavior
+
+Do not break:
+- Build AA decision orchestrator
+- Build BB auto-debrief
+- Build CC learning engine
+- Build DD market data layer
+- Build EE paper execution engine
+- Build FF paper autopilot loop
+- manual debrief
+- analytics
+- decision logs
+- learning logs
+- market data logs
+- paper execution logs
+- existing frontend routes
+
+Acceptance criteria:
+- Trading calendar exists.
+- Calendar shows winning/losing/no-trade days.
+- Day detail shows trades, P&L, debriefs, lessons, and decision links.
+- AI Command Center shows performance, mistakes, edges, learning, and next actions.
+- Performance snapshots rebuild idempotently.
+- Empty state works safely.
+- No live trades are placed.
+- App typechecks/builds.
+- Raw endpoint outputs prove the system works.
+- Frontend route/page is accessible.
+
+After implementation, show:
+
+1. Files changed
+2. New files created
+3. Database changes
+4. Frontend routes/pages added
+5. Where GG reads AA decision logs
+6. Where GG reads EE paper trades
+7. Where GG reads BB debriefs
+8. Where GG reads CC learning memory
+9. Where GG reads FF autopilot cycles
+10. Raw output from /api/performance/demo
+11. Raw output from /api/performance/calendar?month=YYYY-MM
+12. Raw output from /api/performance/day?date=YYYY-MM-DD
+13. Raw output from /api/performance/summary?range=30d
+14. Raw output from /api/performance/equity-curve?range=30d
+15. Raw output from /api/performance/symbols?range=30d
+16. Raw output from /api/performance/mistakes?range=30d
+17. Raw output from /api/performance/decision-quality?range=30d
+18. Raw output from /api/performance/ai-command-center
+19. Raw output from /api/performance/rebuild
+20. Sample calendar day object
+21. Sample day detail object
+22. Sample AI insight output
+23. Empty-state proof
+24. Live-trade isolation proof
+25. Any errors or warnings
+26. Whether Build GG is fully complete or partially complete
+27. Final Build GG score out of 10

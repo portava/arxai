@@ -1,0 +1,299 @@
+Continue from the ARX Assistant / ARX Guide upgrade.
+
+Now upgrade the assistant from “answering questions” into a safe in-app action guide.
+
+Main goal:
+The ARX Assistant should be able to guide the user through the app, open the correct pages, run safe diagnostics, explain setup problems, and recommend the next app step — without touching live trade execution, broker order flow, MT5 execution logic, or risk locks.
+
+This is a safe navigation + diagnostics upgrade only.
+
+Phase 1 — Add a safe assistant action router
+Create a controlled action system for the assistant.
+
+Allowed assistant actions:
+- open a route/page
+- explain a page
+- explain current badges
+- run blocker diagnosis
+- run readiness diagnosis
+- open Help Center
+- open Risk page
+- open Trade page
+- open AI page
+- open MT5 Bridge page if it exists
+- open Broker Settings if it exists
+- open Replay if it exists
+- open Data if it exists
+- open More menu if route-based
+- open Report Issue flow
+- start guided walkthrough
+- show safest next step
+- show setup checklist
+
+Forbidden assistant actions:
+- place live trades
+- place paper trades without explicit user action
+- enable live trading
+- disable Emergency Stop
+- bypass risk controls
+- force MT5 execution
+- change broker credentials
+- reveal secrets/API keys
+- change user role
+- override readiness
+- fake heartbeat
+- fake broker connection
+- fake account safety status
+
+If the user asks for a forbidden action, assistant should explain why it cannot do it and offer a safe alternative.
+
+Phase 2 — Create an ARX Setup Checklist
+Add a guided setup checklist that the assistant can open and explain.
+
+Checklist sections:
+1. App status verified
+2. Paper-only mode understood
+3. Simulator mode understood
+4. Risk page reviewed
+5. Readiness reviewed
+6. MT5 bridge status checked
+7. Heartbeat checked
+8. Broker read-only/execution state understood
+9. Emergency Stop understood
+10. Paper session requirements reviewed
+11. Replay/coach/data features understood
+12. Report issue path confirmed
+
+Each checklist item should have:
+- status: complete / incomplete / blocked / unavailable
+- explanation
+- related page link
+- safe next action
+- blocker reason when applicable
+
+Do not mark items complete unless app state supports it.
+
+Phase 3 — Add “Safest Next Step” engine
+Create a function that ranks the safest next action based on current state.
+
+Priority logic:
+- If Emergency Stop is active, explain Emergency Stop first.
+- If live trading is disabled, explain that live trading is unavailable.
+- If MT5 heartbeat is missing, recommend checking MT5 Bridge/heartbeat.
+- If broker is read-only, explain broker connection limitations.
+- If paper session is blocked, explain paper requirements.
+- If readiness is incomplete, recommend Readiness page.
+- If user is confused on a page, recommend “What am I looking at?”
+- If no blockers, recommend paper/simulator practice, not live trading.
+
+Output should include:
+- safest next step
+- why this is safest
+- page to open
+- what not to do
+- whether live trading remains unavailable
+
+Phase 4 — Add “Open Page” assistant buttons
+When the assistant mentions a route, show a real button/link.
+
+Examples:
+- Open Risk
+- Open Trade
+- Open AI
+- Open Help Center
+- Open MT5 Bridge
+- Open Readiness
+- Open Replay
+- Open Data
+- Open Broker Settings
+- Open Report Issue
+
+Rules:
+- Only show buttons for routes that actually exist.
+- Do not invent fake routes.
+- If route does not exist, show closest valid route.
+- Navigation should be client-side and smooth.
+- Do not reset app state unnecessarily.
+
+Phase 5 — Add a source-of-truth route registry
+Prevent assistant knowledge from becoming outdated.
+
+Create or improve:
+- route registry
+- route title map
+- route category map
+- route safety notes
+- route feature tags
+- route assistant quick actions
+
+The assistant should use this registry for:
+- route suggestions
+- “What am I looking at?”
+- page quick chips
+- setup checklist links
+- guided walkthrough routing
+
+Add validation:
+- every route in App.tsx must exist in the route registry
+- every route registry item must have assistant knowledge
+- every route link used by assistant must be valid
+
+Phase 6 — Add status source-of-truth registry
+Create one registry for all major app statuses/badges.
+
+Include:
+- PAPER ONLY
+- LIVE TRADING DISABLED
+- LIVE BROKER EXECUTION DISABLED
+- MT5 DEFERRED
+- SIMULATOR MODE
+- SIM ENGINE
+- FULL TESTER ACCESS
+- FX symbol
+- INTENTS
+- BROKER READ-ONLY
+- AUTOPILOT BLOCKED
+- READINESS
+- EMERGENCY STOP
+- HEARTBEAT
+- BRIDGE CONNECTED
+- BRIDGE DISCONNECTED
+
+Each status should include:
+- plain-English meaning
+- severity
+- what it blocks
+- what it allows
+- safety reason
+- related route
+- assistant explanation
+- safe next step
+
+Phase 7 — Add assistant command examples
+The assistant should understand commands like:
+- Take me to Risk
+- Open MT5 Bridge
+- Explain this page
+- Why am I blocked?
+- What should I do next?
+- Show setup checklist
+- Explain these badges
+- Guide me through paper mode
+- Guide me through MT5 setup
+- Help me understand live trading disabled
+- Report an issue
+- Where is replay?
+- Where do I check heartbeat?
+- Where do I see my data?
+
+The assistant should classify each as:
+- answer only
+- navigation action
+- diagnostic action
+- checklist action
+- walkthrough action
+- forbidden trading action
+
+Phase 8 — Add safe refusal system
+If user asks:
+- Buy EURUSD now
+- Sell now
+- Start live trading
+- Turn on broker execution
+- Ignore risk lock
+- Bypass Emergency Stop
+- Force MT5 order
+- Disable safety mode
+- Change my role to owner
+
+Assistant should respond:
+“I can help explain ARX AI, diagnose blockers, and guide you through safe setup, but I cannot recommend trades, bypass safety systems, or force live broker execution.”
+
+Then offer:
+- Explain current blockers
+- Open Risk page
+- Open Readiness
+- Open MT5 Bridge
+- Use paper/simulator mode
+
+Phase 9 — Add user-facing ARX Guide panel
+Inside assistant, add a “Guide” tab or section.
+
+It should show:
+- Current page
+- Current active safety statuses
+- Safest next step
+- Setup checklist progress
+- Quick actions
+- Suggested walkthrough
+- Report issue button
+
+This should look clean and premium, not cluttered.
+
+Phase 10 — Mobile UI hardening
+The assistant must not block the bottom nav or Help Center chips.
+
+Requirements:
+- collapsed button above bottom nav
+- expanded panel max height based on viewport
+- panel scrolls internally
+- input remains visible when keyboard opens
+- close button always visible
+- bottom offset respects iPhone safe area
+- does not cover More menu when collapsed
+- does not cover Emergency Stop
+- pointer-events-none on wrapper
+- pointer-events-auto on panel/button
+
+Use:
+bottom: calc(env(safe-area-inset-bottom) + 96px)
+
+Phase 11 — Verification tests
+Add tests for:
+- assistant action classifier
+- safe navigation actions
+- forbidden trading actions
+- setup checklist generation
+- safest next step logic
+- route button validity
+- status registry coverage
+- route registry coverage
+- no invalid assistant links
+- no “No help topics” response
+- mobile assistant positioning
+- desktop assistant positioning
+
+Phase 12 — Runtime QA
+Manually verify:
+1. Ask “What should I do next?”
+2. Ask “Why am I blocked?”
+3. Ask “Open Risk.”
+4. Ask “Where is MT5 Bridge?”
+5. Ask “Explain current badges.”
+6. Ask “Show setup checklist.”
+7. Ask “Can you buy EURUSD?”
+8. Ask “Can you bypass live trading disabled?”
+9. Confirm forbidden requests are refused safely.
+10. Confirm route buttons actually navigate.
+11. Confirm assistant still does not overlap bottom nav.
+
+Phase 13 — Report back
+Return:
+- files changed
+- assistant action router created or updated
+- number of safe actions added
+- number of forbidden actions blocked
+- setup checklist status
+- safest next step logic summary
+- route registry coverage count
+- status registry coverage count
+- mobile UI verification result
+- desktop UI verification result
+- test results
+- remaining gaps
+
+Do not enable live trading.
+Do not alter MT5 execution logic.
+Do not alter broker order placement.
+Do not bypass risk controls.
+Do not remove routes.

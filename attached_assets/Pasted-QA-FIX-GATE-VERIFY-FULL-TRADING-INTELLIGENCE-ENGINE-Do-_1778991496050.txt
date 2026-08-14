@@ -1,0 +1,515 @@
+QA/FIX GATE — VERIFY FULL TRADING INTELLIGENCE ENGINE
+
+Do not add new features right now.
+Do not rebuild.
+Do not redesign.
+Do not delete active ecosystem code.
+Do not bypass risk governor.
+Do not bypass confirmation guards.
+Do not bypass paper/live lock.
+Do not fake live market data.
+Do not fake market history.
+Do not fake news.
+Do not invent current events.
+Do not claim certainty.
+
+You just worked on:
+
+- All trading tools
+- Market history
+- Historical price behavior
+- Market news
+- Current events / real-world news
+- Economic calendar/news if available
+- Scanner/radar confluence
+- AI trade recommendation logic
+- Sniper setup logic
+- Close/hold logic
+- Protective auto-close context
+- Risk/account context
+
+Now verify everything and fix only confirmed issues with the smallest safe patch.
+
+==================================================
+PHASE 1 — READ THE REPORT FIRST
+==================================================
+
+Open and read:
+
+FULL_TRADING_INTELLIGENCE_ENGINE_REPORT.md
+
+If it does not exist, inspect the most recent work and create it before continuing.
+
+Classify issues:
+
+P0 — Must fix now:
+- App does not build
+- Typecheck fails
+- CI guards fail
+- AI fabricates news/current events
+- AI fabricates live market data
+- AI fabricates historical market data
+- AI gives trade recommendations without checking available tools
+- AI labels weak setup as sniper
+- Scanner/radar ranks incomplete data as strong
+- Risk governor or confirmation guard is bypassed
+- Paper/live lock is weakened
+- News/current event source missing but AI still claims news support
+- User account/open trade context leaks between users
+
+P1 — Fix now if safe:
+- Missing tool availability status
+- Missing source timestamp
+- Missing unavailable-data warning
+- Missing historical context summary
+- Missing news/current-events summary
+- Missing confluence breakdown
+- Incomplete AI explanation
+- UI does not show missing data clearly
+- Journal does not save recommendation context
+
+P2 — Defer:
+- Cosmetic polish
+- Extra providers
+- More indicators
+- Advanced analytics
+- Extra dashboards
+
+Do not touch P2 unless it blocks core function.
+
+==================================================
+PHASE 2 — VERIFY DATA AVAILABILITY MAP
+==================================================
+
+Confirm every trading source reports:
+
+- available
+- dataStatus
+- lastUpdatedAt
+- provider/source
+- confidence
+- reasonUnavailable
+- apiKeyMissing if relevant
+- sourceName/sourceUrl if available
+
+Verify separate status for:
+
+1. MT5 live/bridge data
+2. Market data provider
+3. Historical price provider
+4. Scanner/radar engine
+5. Economic calendar provider
+6. Financial news provider
+7. General/current events provider
+8. User account/risk data
+9. Journal/history data
+
+If a source is unavailable:
+- AI must say unavailable.
+- UI must not pretend it is live.
+- Scanner/radar must account for missing data.
+- No crash should happen.
+
+==================================================
+PHASE 3 — VERIFY NEWS + CURRENT EVENTS SAFETY
+==================================================
+
+Inspect the news/current-events integration.
+
+Confirm:
+
+1. News is only used if a real provider/source returned it.
+2. Current events are only used if a real provider/source returned them.
+3. Every used headline/event includes:
+   - source/provider
+   - publishedAt
+   - fetchedAt
+   - impacted asset/symbol/currency if available
+   - relevance reason
+   - impact/confidence if available
+4. Stale news is marked stale.
+5. Missing API keys produce clean unavailable state.
+6. AI never says “news caused this” unless supported.
+7. AI never invents headlines.
+8. AI never invents economic events.
+9. Broad current events are treated as risk context, not proof.
+
+If no news provider is connected, expected AI wording should be similar to:
+
+“News/current events data is unavailable because no live news provider is connected.”
+
+==================================================
+PHASE 4 — VERIFY HISTORICAL MARKET CONTEXT
+==================================================
+
+Confirm historical market behavior is used only when data exists.
+
+Verify the engine can include:
+
+- Recent candles
+- Higher timeframe candles
+- Previous day high/low
+- Weekly/monthly levels if available
+- Historical support/resistance
+- Historical reaction zones
+- Prior breakout/fakeout zones
+- ATR/average movement if available
+- Current move compared to historical movement
+
+Rules:
+- Do not say “history shows” unless historical data was checked.
+- If historical data is missing, AI must say historical data is unavailable.
+- TP/SL realism should not be based on fake averages.
+
+==================================================
+PHASE 5 — VERIFY CONFLUENCE ENGINE
+==================================================
+
+Verify every trading analysis can produce:
+
+- bullishSignals
+- bearishSignals
+- neutralSignals
+- conflictingSignals
+- missingSignals
+- historicalContextSummary
+- newsContextSummary
+- currentEventsSummary
+- confidenceScore
+- riskScore
+- decisionStatus
+
+Valid decision statuses:
+
+- STRONG_SETUP
+- MODERATE_SETUP
+- WEAK_SETUP
+- WAIT
+- AVOID
+- INSUFFICIENT_DATA
+- NEWS_RISK_HIGH
+- BLOCKED_BY_RISK
+- BLOCKED_BY_GUARDS
+
+Confirm high confluence does not bypass risk rules.
+
+Confirm missing news/history lowers confidence or adds warning.
+
+==================================================
+PHASE 6 — VERIFY AI TRADING ANSWERS
+==================================================
+
+Every trading-related AI answer must use the intelligence engine first.
+
+Test prompts:
+
+1. “What should I trade?”
+2. “What market looks good?”
+3. “Should I buy or sell?”
+4. “Give me a sniper entry.”
+5. “Is this a pullback or reversal?”
+6. “Is this continuation or fakeout?”
+7. “Should I close?”
+8. “Should I hold?”
+9. “Where should I put TP?”
+10. “Why is this trade moving?”
+11. “Is there news affecting this?”
+12. “Are current events affecting this market?”
+
+Each answer should include:
+
+- Tools checked
+- Historical market data checked
+- News/current events checked
+- What agreed
+- What conflicted
+- What was unavailable
+- Confidence
+- Risk warning
+- SL/TP guidance when relevant
+- Confirmation requirement before action
+
+AI must not:
+- Promise profit
+- Claim certainty
+- Claim live data if unavailable
+- Claim news/current events if unavailable
+- Auto-place trades
+- Auto-close trades unless Protective Auto-Close rules pass
+
+==================================================
+PHASE 7 — VERIFY TRADE RECOMMENDATIONS
+==================================================
+
+Any trade recommendation must include:
+
+- Symbol
+- Direction
+- Setup type
+- Entry or entry zone
+- Stop Loss / invalidation
+- TP1 / TP2 / TP3 if supported by data
+- Risk/reward
+- Confluence score
+- Historical market context
+- News/current-events context
+- Tools supporting the setup
+- Tools warning against the setup
+- Data status
+- Risk status
+- User confirmation required
+
+If not enough data exists, return:
+
+INSUFFICIENT_DATA
+
+Do not allow weak/incomplete data to create a strong trade recommendation.
+
+==================================================
+PHASE 8 — VERIFY SNIPER SETUPS
+==================================================
+
+Sniper setups must be stricter than normal trade ideas.
+
+Verify sniper requires:
+
+1. Strong entry location
+2. Tight invalidation
+3. Clear liquidity or structure reason
+4. Strong risk/reward
+5. Multi-timeframe alignment or clear tactical lower-timeframe setup
+6. TP levels
+7. Historical level/context support
+8. News/current-events risk check
+9. Reversal/fakeout warning
+10. Time sensitivity
+11. Spread/volatility check
+12. No major missing data that makes it unsafe
+
+If these are not met, AI must say:
+
+“This is not a sniper setup.”
+
+Do not allow every trade idea to be labeled sniper.
+
+==================================================
+PHASE 9 — VERIFY CLOSE / HOLD DECISIONS
+==================================================
+
+For close/hold questions, verify ARX AI checks:
+
+- Current P/L
+- Distance to SL
+- Distance to TP
+- Trade invalidation
+- Structure shift
+- Momentum shift
+- Liquidity sweep
+- Reversal signal
+- ATR/volatility
+- Historical reaction zone
+- Historical giveback behavior if available
+- Session/news risk
+- Current-events risk
+- Risk/reward deterioration
+- Profit giveback
+- User risk rules
+- Protective Auto-Close settings if available
+
+Allowed classifications:
+
+- HOLD
+- SCALE_OUT
+- MOVE_TO_BREAKEVEN if rules allow
+- TIGHTEN_SL if supported
+- CLOSE_RECOMMENDED
+- CLOSE_NOW_IF_CONFIRMED
+- ALERT_ONLY
+- INSUFFICIENT_DATA
+
+AI must not close automatically unless Protective Auto-Close rules are enabled and all safety guards pass.
+
+==================================================
+PHASE 10 — VERIFY SCANNER / RADAR
+==================================================
+
+Scanner/radar/opportunities should include:
+
+- confluenceScore
+- toolBreakdown
+- historicalContext
+- newsContext
+- currentEventsContext
+- availableTools
+- missingTools
+- bullishSignals
+- bearishSignals
+- conflictWarnings
+- SL suggestion
+- TP targets
+- RR
+- decisionStatus
+- dataCompleteness
+- newsRiskLevel
+
+Scanner must not rank something as STRONG if:
+
+- key tools are missing
+- signals conflict heavily
+- news/current-event risk is high
+- historical context warns against the setup
+- data is stale or incomplete
+
+==================================================
+PHASE 11 — VERIFY RISK + SAFETY GUARDS
+==================================================
+
+Confirm the intelligence engine only recommends.
+
+Before any action, these must still run:
+
+- Risk governor
+- Action guards
+- Confirmation guard
+- Shared Master rules
+- Paper/live lock
+- Read-only/trading-disabled checks
+
+AI should clearly say:
+
+“Even if the setup looks strong, the trade can still be blocked by risk rules.”
+
+Verify:
+- No automatic trade open.
+- No automatic SL/TP edit.
+- No automatic close except Protective Auto-Close with opt-in and guards.
+- No live execution enabled by default.
+
+==================================================
+PHASE 12 — VERIFY UI + JOURNAL
+==================================================
+
+Recommendation cards should show:
+
+- Confluence score
+- Direction
+- Entry
+- SL
+- TP levels
+- RR
+- Historical context
+- News/current-events status
+- Tools checked
+- Missing data
+- Confidence
+- Risk warning
+
+Journal/audit should save when a user acts on a recommendation:
+
+- tools checked
+- historical data checked
+- news/current events checked
+- confluence score
+- signals used
+- missing data
+- suggested SL/TP
+- selected entry/SL/TP
+- risk/reward
+- recommendation timestamp
+- data status
+- news status
+- current-events status
+- user edits/changes
+
+Records must be user-specific.
+
+==================================================
+PHASE 13 — RUN TESTS
+==================================================
+
+Run all available checks:
+
+- pnpm run typecheck
+- pnpm run ci:guards
+- pnpm test if available
+- pnpm run build if available
+- AI tests if available
+- scanner/radar tests if available
+- risk governor tests if available
+- trade recommendation tests if available
+- news provider fallback tests if available
+- historical data fallback tests if available
+- route smoke tests if available
+
+Required:
+- typecheck green
+- CI guards green
+- no fake live data
+- no fake news/current events
+- no guard bypass
+
+Fix all real errors.
+
+==================================================
+PHASE 14 — MANUAL TEST MATRIX
+==================================================
+
+Manually verify:
+
+1. Ask “What should I trade?” with full data.
+2. Ask “What should I trade?” with missing news data.
+3. Ask “What should I trade?” with missing historical data.
+4. Ask “Give me a sniper setup.”
+5. Ask “Is this a pullback or reversal?”
+6. Ask “Is this continuation or fakeout?”
+7. Ask “Should I close my trade?”
+8. Ask “Where should I place TP?”
+9. Ask “Is news affecting this symbol?”
+10. Ask “Are current events affecting this market?”
+11. Confirm unavailable data is admitted.
+12. Confirm no fake headline is generated.
+13. Confirm no fake historical level is generated.
+14. Confirm scanner/radar uses confluence score.
+15. Confirm risk governor still blocks unsafe trades.
+16. Confirm confirmation is required before trade actions.
+17. Confirm paper/live lock still blocks execution.
+18. Confirm user-specific data does not leak.
+
+==================================================
+FINAL REPORT
+==================================================
+
+Update or create:
+
+FULL_TRADING_INTELLIGENCE_ENGINE_QA_REPORT.md
+
+Include:
+
+1. What was verified
+2. What failed
+3. What was fixed
+4. Files changed
+5. Routes changed
+6. Data availability map status
+7. Historical market data status
+8. News provider status
+9. Current events provider status
+10. Confluence engine status
+11. AI behavior status
+12. Scanner/radar status
+13. Trade recommendation status
+14. Sniper setup status
+15. Close/hold status
+16. Risk guard status
+17. UI status
+18. Journal/audit status
+19. Tests run
+20. Typecheck result
+21. CI guard result
+22. Remaining limitations
+23. Missing API keys/env vars
+24. Confirmation that no fake live data was added
+25. Confirmation that no fake news/current events were added
+26. Confirmation that risk/confirmation/paper/live guards remain enforced
+
+Stop after this QA/fix gate and report.

@@ -1,0 +1,316 @@
+Run a targeted ARX AI safety, documentation-size, dormant-file, and dead-end wiring cleanup pass.
+
+This is not a rebuild.
+Do not create a new product.
+Do not redesign ARX AI.
+Do not duplicate Scanner, Ruby, MT5 bridge, trade execution, permissions, or account modes.
+Do not delete working code just because it looks old.
+Do not break the app to clean it.
+
+Primary goals:
+
+1. Fix the flagged auth/view-mode risk in lib/auth/effectiveViewMode.ts.
+2. Address the oversized replit.md issue by trimming older completed phases into a history archive.
+3. Check for dormant apps, duplicate app folders, unused files, disconnected pages, dead UI, and dead API endpoints.
+4. Repair dead ends that should be responding.
+5. Remove or archive only what is safe.
+6. Run regression tests after every change.
+
+Part 1 — Fix flagged auth/view-mode risk
+
+Target file:
+lib/auth/effectiveViewMode.ts
+
+Reported issue:
+The preview-as-user branch appears to demote admin → USER by mutating the same phantom userSession, causing the branch to never run correctly. This was flagged as latent debt.
+
+Required work:
+
+1. Inspect lib/auth/effectiveViewMode.ts.
+2. Inspect all callers of effectiveViewMode.
+3. Inspect preview-as-user behavior.
+4. Confirm whether admin preview-as-user actually works.
+5. Confirm whether normal users can ever access admin view mode.
+6. Confirm whether admin routes still fail closed through authUser.
+7. Fix the preview-as-user demotion logic safely if broken.
+8. Do not mutate the original authenticated user session.
+9. Keep true authenticated role separate from effective preview role.
+10. Admin should remain admin in auth.
+11. Effective view mode may render the USER view only during preview-as-user mode.
+12. Normal users must never elevate into admin mode.
+13. Admin routes must remain protected by true auth role, not preview role.
+14. Add or update tests for:
+    * admin normal view
+    * admin preview-as-user view
+    * normal user view
+    * normal user attempting admin view
+    * unauthenticated user
+    * admin route fail-closed behavior
+
+Acceptance criteria:
+
+1. Preview-as-user works correctly.
+2. True admin permissions are not destroyed or mutated.
+3. Effective view role is separate from true auth role.
+4. Normal users cannot access admin views.
+5. Admin routes still fail closed.
+6. Existing auth/security guards still pass or improve.
+7. No unrelated Scanner, Ruby, dashboard, MT5 bridge, or trade route behavior breaks.
+
+Part 2 — Trim replit.md size safely
+
+Issue:
+replit.md has grown too large, around 10k tokens. Trim older completed phases into a history archive so the active project instructions stay clean and fast.
+
+Required work:
+
+1. Inspect replit.md.
+2. Identify older completed phases, completed reports, repeated summaries, stale implementation notes, and resolved task history.
+3. Move older completed phases into a history archive file, such as:
+    * docs/history/replit-history.md
+    * or docs/history/replit-history-YYYY-MM-DD.md
+4. Keep replit.md focused only on active/current project instructions.
+5. Do not delete important historical context entirely; archive it.
+6. Do not remove current active constraints.
+7. Do not remove current app identity.
+8. Do not remove current architecture rules.
+9. Do not remove DEMO/LIVE-only rule.
+10. Do not remove MT5 bridge rules.
+11. Do not remove Ruby rules.
+12. Do not remove Scanner priorities.
+13. Do not remove shared/master bridge privacy rules.
+14. Do not remove current safety, permission, and trade-execution rules.
+15. Do not remove unresolved risks.
+16. Do not remove current testing requirements.
+17. Remove or archive repeated completed phase logs.
+18. Remove duplicate wording where it repeats the same resolved work.
+19. Break up overly long lines where practical for readability.
+20. Do not break code blocks, command blocks, markdown tables, or file references while trimming.
+
+After trimming, replit.md should contain:
+
+1. Current ARX AI product identity.
+2. Current architecture summary.
+3. Current active rules.
+4. Current DEMO/LIVE mode rule.
+5. Current MT5 bridge rule.
+6. Current Scanner priority.
+7. Current Ruby behavior rules.
+8. Current permission/security rules.
+9. Current performance goals.
+10. Current unresolved risks.
+11. Short pointer/link to the history archive for older completed phases.
+
+Acceptance criteria:
+
+1. replit.md is significantly shorter and cleaner.
+2. Older completed phases are archived, not destroyed.
+3. Current working instructions remain intact.
+4. App behavior does not change because of documentation cleanup.
+5. No build/test/runtime behavior depends on removed documentation text.
+6. Provide before/after approximate size or line count.
+
+Part 3 — Dormant app, dormant file, duplicate folder, and dead-end audit
+
+Run a safe audit for dormant or duplicate code.
+
+Look for:
+
+1. Duplicate app folders.
+2. Old Scanner versions.
+3. Old Ruby versions.
+4. Old chart components.
+5. Old trade modal components.
+6. Old dashboard components.
+7. Old API routes that are no longer referenced.
+8. Dead frontend pages.
+9. Dead backend services.
+10. Unused utility files.
+11. Duplicate auth helpers.
+12. Duplicate account-mode helpers.
+13. Paper Trading leftovers.
+14. Mock trade execution files.
+15. Simulated trade-history files still connected to active UI.
+16. Dormant buttons.
+17. Dormant tabs.
+18. Dead menus.
+19. API endpoints that should respond but currently fail.
+20. API endpoints that exist but are not wired to UI.
+21. UI controls that call missing endpoints.
+22. UI controls with no action handler.
+23. Backend routes with no frontend caller but still needed for Ruby/admin/MT5.
+24. Files imported nowhere.
+25. Files that are imported but only by old unused routes.
+26. Unused environment/config references.
+
+Important:
+Do not blindly delete files.
+Do not remove files just because they are not obvious.
+Do not remove migrations, schema files, generated files, route config, auth files, bridge files, or shared utility files unless proven safe.
+Do not remove anything used by build, tests, runtime imports, dynamic imports, routing conventions, or deployment.
+
+Classification required:
+Create an audit list with each suspicious item classified as:
+
+1. Active — keep.
+2. Active but needs repair.
+3. Dormant but harmless — leave or archive later.
+4. Dormant and safe to remove.
+5. Duplicate — consolidate only if safe.
+6. Dead endpoint that should respond — repair.
+7. Dead endpoint that is obsolete — remove or archive only if safe.
+8. Admin-only — hide from normal users, keep for admin.
+9. User-facing dead UI — connect, disable with explanation, or remove.
+10. Needs manual review — do not touch yet.
+
+Part 4 — Repair dead ends that should be responding
+
+For any endpoint, button, page, or control that should work:
+
+1. Trace frontend caller.
+2. Trace backend route.
+3. Trace service function.
+4. Trace database query if used.
+5. Trace MT5 bridge call if trading-related.
+6. Trace permission guard.
+7. Trace error handler.
+8. Fix the smallest broken link.
+9. Retest the action.
+10. Confirm clean user-facing response.
+11. Confirm detailed admin/server log.
+12. Confirm no stack traces, route names, raw JSON dumps, or bridge internals appear to normal users.
+
+High-priority dead ends to check:
+
+1. Scanner market selection.
+2. Scanner search.
+3. Broad Scan.
+4. Focus Scan.
+5. Scanner chart.
+6. Buy Market.
+7. Sell Market.
+8. Pending orders.
+9. Modify SL.
+10. Modify TP.
+11. Close trade.
+12. Partial close.
+13. Reverse trade.
+14. Cancel pending order.
+15. Ruby text input.
+16. Ruby voice input.
+17. Ruby speech output.
+18. Admin user approval toggles.
+19. Allocation controls.
+20. Freeze/unfreeze user.
+21. Kill switch.
+22. Dashboard trade status.
+23. User trade history.
+24. MT5 bridge status.
+
+If a dead end is supposed to exist but cannot be fully repaired because bridge support is missing:
+
+1. Do not fake it.
+2. Disable only that specific control.
+3. Show a clean user message.
+4. Log the missing bridge function for admin/developer review.
+5. Include it in the final report.
+
+Part 5 — Safe cleanup rules
+
+Only remove or archive code when all of these are true:
+
+1. It is not imported anywhere.
+2. It is not dynamically routed.
+3. It is not referenced by config.
+4. It is not referenced by tests.
+5. It is not needed by deployment/build.
+6. It is not a database migration/schema file.
+7. It is not a bridge/auth/security file.
+8. It is not used by Ruby action registry.
+9. It is not used by Scanner, trade execution, admin controls, or user account mode.
+10. Tests/build pass after removal.
+
+If unsure:
+
+1. Do not delete.
+2. Mark it as “Needs manual review.”
+3. Leave a note in the audit report.
+
+Part 6 — Regression test after every change
+
+After the auth fix, documentation trim, and any cleanup/repair, run:
+
+1. Typecheck.
+2. Build.
+3. Existing guard tests.
+4. Auth/security tests.
+5. Endpoint auth tests.
+6. Scanner smoke test.
+7. Ruby smoke test.
+8. Admin route protection test.
+9. Normal user route protection test.
+10. API endpoint health check.
+11. Console/network error check if available.
+
+Regression checks:
+
+1. App starts.
+2. Login works.
+3. Admin login works.
+4. Normal user login works.
+5. Preview-as-user works.
+6. Normal users cannot access admin views.
+7. Scanner opens.
+8. Broad Scan works.
+9. Focus Scan works.
+10. Scanner search works.
+11. Trade controls still respond.
+12. Ruby still responds.
+13. MT5 bridge status still displays correctly.
+14. No Paper Trading fallback appears.
+15. No master-account trade data is exposed.
+16. No unrelated app behavior breaks.
+
+If any cleanup breaks the app:
+
+1. Stop.
+2. Revert that cleanup.
+3. Restore the working behavior.
+4. Mark the item as unsafe to remove.
+5. Continue with safer repairs only.
+
+Part 7 — Final report required
+
+Provide a completion report with:
+
+1. Auth/view-mode issue status.
+2. Files changed for auth fix.
+3. Tests added/updated for auth fix.
+4. replit.md before/after approximate size or line count.
+5. History archive file created/updated.
+6. Summary of what was moved into archive.
+7. Dormant files found.
+8. Dormant files removed or archived, if any.
+9. Dormant files left for manual review.
+10. Duplicate files/folders found.
+11. Dead endpoints found.
+12. Dead endpoints repaired.
+13. Dead UI controls found.
+14. Dead UI controls repaired, removed, or disabled.
+15. Paper/mock/simulated leftovers found, if any.
+16. Scanner regression status.
+17. Ruby regression status.
+18. MT5 bridge regression status.
+19. Admin/user permission regression status.
+20. Typecheck result.
+21. Build result.
+22. Guard test result.
+23. Endpoint test result.
+24. Remaining risks.
+25. Exact next recommended fix, if anything remains.
+
+Final instruction:
+Repair and clean in place.
+Do not rebuild ARX AI.
+Do not break the app for documentation trimming or dormant-file cleanup.
+If something is uncertain, leave it in place and report it instead of deleting it.

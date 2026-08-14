@@ -1,0 +1,252 @@
+Next phase: polish the ARX AI simple-first UI after the cleanup pass.
+
+Before changing anything, inspect the current deployed app and active components first. Do not rebuild from scratch. Do not create duplicate pages. Reuse the existing components and only fix what is still cluttered, confusing, repeated, or poorly organized.
+
+Goal:
+Make the app feel clean and beginner-friendly while keeping every power feature available.
+
+Focus areas:
+- reduce visual clutter
+- improve page hierarchy
+- keep important actions near the top
+- collapse advanced details
+- simplify repeated badges/warnings
+- make mobile screens easier to understand
+- preserve all trading, scanner, Ruby, chart, risk, admin, and audit features
+
+1. Inspect the updated UI first
+
+Check these routes/pages:
+- Cockpit/Dashboard
+- Market Scanner
+- Trade
+- Positions
+- Ruby/AI
+- Risk
+- Live Chart
+- Admin/Live Shared
+- More/Admin
+- Settings
+- bottom navigation
+- Ruby floating assistant
+
+For each page, identify:
+- what appears above the fold on iPhone
+- what feels repeated
+- what should be collapsed
+- what should become a tab
+- what should move into Advanced
+- what buttons are most important
+- whether Ruby bubble or bottom nav covers content
+
+2. Apply simple-first hierarchy
+
+Every page should follow this order:
+
+Top:
+- compact status row
+- current context, such as selected market/account/mode
+- primary user action
+
+Middle:
+- Ruby explanation or main page summary
+- current positions/results/readiness
+
+Bottom:
+- secondary actions
+- advanced details
+- diagnostics
+- audit/debug info
+
+Do not put advanced/debug/admin data above primary user actions unless the page is specifically an admin page.
+
+3. Clean status display
+
+Replace scattered badges with one compact row where possible:
+
+Example:
+Mode: Demo/Live/Ready/Blocked
+Market: EURUSD
+Ruby: Active
+Account: Approved/Not Approved
+
+Tapping or expanding this row should show the full details:
+- EA heartbeat
+- bridge mode
+- broker/server
+- server dispatch status
+- kill switch
+- feed status
+- scanner engine
+- admin/tester access
+- readiness details
+
+Do not remove any status data.
+
+4. Improve Market Scanner layout
+
+Scanner should open to the clean Focus view.
+
+Above the fold should show:
+- selected market
+- Ruby read
+- bias
+- confidence
+- risk level
+- Buy/Sell/Wait status
+- View Chart
+- Ask Ruby
+- optional one-click Buy/Sell buttons if enabled
+
+Move these out of the first view:
+- large symbol chip walls
+- synthetic universe list
+- raw scanner metrics
+- feed config notes
+- debug messages
+- long explanations
+- advanced scan controls
+
+Keep them accessible under:
+- Results
+- Symbols
+- Advanced
+
+5. Improve Trade layout
+
+Trade should open to Quick Trade.
+
+Above the fold should show:
+- selected symbol
+- volume
+- Buy
+- Sell
+- current position summary
+- compact status badge
+
+Move these into Advanced:
+- pending order type expansion
+- buy limit/sell limit/buy stop/sell stop/stop limit
+- detailed risk configuration
+- broker technical data
+- debug fields
+
+Positions should have clear one-click Close buttons without being hidden.
+
+6. Improve Ruby layout
+
+Ruby should feel like the guide, not another settings page.
+
+Chat tab:
+- simple message area
+- voice input
+- text input
+- small command hints
+
+Market Read tab:
+- selected market
+- Ruby’s current read
+- confidence
+- entry/stop/target
+- reason breakdown
+
+Commands tab:
+- command examples
+- AI trade command permissions
+- voice command state
+
+Memory tab:
+- saved chats
+- user preferences
+- memory controls
+
+Hide system prompts, diagnostics, API state, and raw AI debug unless Advanced/Admin is opened.
+
+7. Improve admin/live shared pages
+
+Admin pages can stay detailed, but still should not feel messy.
+
+Use collapsible sections:
+- Live Readiness
+- Bridge Heartbeat
+- Account Approval
+- Server Dispatch
+- Kill Switch
+- Audit Logs
+- Advanced Debug
+
+Keep dangerous controls visually separated from informational sections.
+
+8. Mobile cleanup
+
+On iPhone Safari:
+- no horizontal overflow
+- no cramped chip walls above the fold
+- no giant repeated warnings
+- no overlapping Ruby bubble
+- no bottom nav covering buttons
+- primary buttons should be thumb-friendly
+- tabs should remain easy to tap
+- long cards should collapse cleanly
+- cards should have consistent spacing
+
+9. Preserve all features
+
+Do not remove:
+- one-click trading
+- standard trading mode
+- all order types
+- scanner
+- symbols
+- synthetic indices
+- Ruby chat
+- Ruby market reads
+- Ruby commands
+- voice mode
+- chart
+- risk controls
+- admin approvals
+- live shared trading controls
+- kill switch
+- audit logs
+- EA heartbeat/debug
+- readiness checks
+- backend routes
+
+This is polish and organization only.
+
+10. Add helpful empty/loading states
+
+If a section has no data, show calm, useful copy:
+
+Examples:
+- “No open positions.”
+- “No scanner result yet. Run scan or select a market.”
+- “Ruby is ready. Ask about a market or trade.”
+- “Feed not configured. Symbol can still be selected, but live scanner data may be limited.”
+
+Avoid scary wording unless something is actually blocked.
+
+11. Tests
+
+Run:
+- pnpm run typecheck
+- pnpm run ci:guards
+- pnpm --filter @workspace/scripts run test:live-phaseB
+
+Add/update tests proving:
+- Scanner opens to Focus and does not show the full symbol universe above the fold.
+- Trade opens to Quick Trade and advanced order types still exist.
+- Ruby opens to Chat and market read is still available.
+- Admin live shared data is grouped into collapsible sections.
+- Status drawer still exposes full readiness details.
+- No page has horizontal overflow on mobile.
+- Ruby bubble does not cover primary buttons.
+- Bottom nav does not cover page content.
+- No features/routes were removed.
+- No duplicate legacy components are mounted.
+
+Do not change backend trading behavior.
+Do not bypass safety gates.
+Do not remove features.
+Do not auto-arm live trading.

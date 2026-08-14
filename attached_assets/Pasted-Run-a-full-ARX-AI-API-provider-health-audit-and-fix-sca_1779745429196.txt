@@ -1,0 +1,226 @@
+Run a full ARX AI API/provider health audit and fix scanner historical data not showing.
+
+Current issue:
+- No historical data is showing inside the scanner.
+- I want to check every attached API/provider and see which ones are working, failing, unused, misconfigured, or not connected to the scanner.
+- The app may have multiple APIs attached, but scanner/historical data appears broken or routed through the wrong provider.
+
+Important:
+Do NOT expose API keys, tokens, secrets, account numbers, private URLs, or raw credentials in logs, UI, console output, or normal user views.
+Do NOT fake historical data.
+Do NOT generate placeholder candles and present them as real.
+Do NOT remove working providers.
+Do NOT hardcode one provider like TwelveData as the only source.
+Do NOT break live trading, MT5 bridge, Ruby, scanner, or chart features.
+
+Before changing code:
+Search the entire codebase for all market data/API integrations:
+- TwelveData
+- Deriv
+- MT5
+- EA bridge
+- broker feed
+- Alpha Vantage
+- Polygon
+- Finnhub
+- NewsAPI
+- FMP
+- Yahoo
+- TradingView
+- economic calendar
+- market data
+- historical data
+- candles
+- OHLC
+- ticks_history
+- tick history
+- quote
+- scanner
+- backtest
+- chart data
+- provider router
+- feed router
+- API health
+- no feed
+- historical unavailable
+- empty candles
+- failed provider
+- fallback provider
+- environment variables
+- Replit secrets
+
+Step 1: Identify every configured API/provider
+Create an internal provider inventory that checks:
+1. Which provider secrets/env vars exist.
+2. Which providers are actually called in code.
+3. Which providers are configured but unused.
+4. Which providers are used by scanner.
+5. Which providers are used by chart.
+6. Which providers are used by Ruby.
+7. Which providers are used for historical candles.
+8. Which providers are used for live quotes.
+9. Which providers are used for news/economic events.
+10. Which providers are used for Deriv/Volatility/Synthetic symbols.
+
+Step 2: Add admin-only API Health panel
+Add or repair an admin-only diagnostics page/panel called “API Health” or “Provider Health.”
+
+It should show, without exposing secrets:
+- Provider name
+- Secret configured: yes/no
+- Enabled: yes/no
+- Last test status: healthy/degraded/failing/not configured
+- Last successful response time
+- Last successful historical candle pull
+- Last successful live quote/tick
+- Last failed reason, sanitized
+- Rate limit status if available
+- Symbols/timeframes tested
+- Which app modules use this provider:
+  - Scanner
+  - Chart
+  - Ruby
+  - Trade ticket
+  - Watchlist
+  - Backtest
+  - News/calendar
+- Whether the provider is currently selected for a given symbol
+- Fallback provider used if primary fails
+
+Normal users should not see this diagnostics panel.
+
+Step 3: Add backend provider self-tests
+Create a safe backend test routine that checks each provider without printing secrets.
+
+Test all configured providers for:
+1. Live quote support.
+2. Historical candles/OHLC support.
+3. Symbol search support.
+4. Rate limit/auth status.
+5. Expected asset classes.
+
+Historical candle tests should include:
+- EURUSD
+- BTCUSD
+- XAUUSD if supported
+- US stock symbol like AAPL if supported
+- Volatility 75 / V75 if Deriv or MT5 supports it
+- Volatility 75 1s / V75 1s if Deriv or MT5 supports it
+
+Timeframes to test:
+- 1m
+- 5m
+- 15m
+- 1h
+- 4h
+- 1d
+
+Step 4: Fix scanner historical data routing
+The scanner must use the unified Market Data Router, not a single hardcoded provider.
+
+Required routing:
+1. If symbol is tradable through connected MT5 broker:
+   - Use MT5/broker feed first for live pricing.
+   - Use MT5 historical rates if available.
+   - If MT5 historical is unavailable, fall back to the best configured historical provider.
+
+2. For Deriv Volatility/Synthetic symbols:
+   - Use Deriv active_symbols to resolve exact symbol.
+   - Use Deriv ticks for live data.
+   - Use Deriv ticks_history for historical/candles.
+   - Do NOT route V75/V25/V100/etc. to TwelveData first.
+
+3. For normal forex/crypto/stocks/indices:
+   - Use the best configured provider by asset class.
+   - Use fallback providers if the first one fails.
+   - TwelveData should be one provider, not the whole market data system.
+
+4. Scanner should only show “No historical data” after all valid providers fail.
+
+Step 5: Fix empty/failed historical responses
+If historical data is missing:
+1. Log sanitized provider failure in admin diagnostics.
+2. Try the next valid provider.
+3. Show user-friendly scanner status:
+   - “Loading historical data…”
+   - “Trying backup feed…”
+   - “Historical data unavailable for this symbol”
+   - “Provider rate limit reached”
+   - “Symbol not supported by connected feed”
+4. Do not show raw API errors to normal users.
+5. Do not silently return an empty chart/scanner row without a reason.
+
+Step 6: Make scanner display historical data correctly
+Scanner should show/use historical data for:
+- trend direction
+- recent candles
+- support/resistance
+- volatility
+- structure
+- backtest/previous movement checks
+- Ruby explanation window
+- confidence scoring
+- risk/reward suggestions
+- stop loss/take profit logic
+
+Scanner should not run analysis if candle data is missing. It should clearly say what data is missing and from which user-friendly category.
+
+Step 7: Add historical data freshness checks
+For every scanner symbol:
+- Show last candle time internally/admin-only.
+- Reject stale candles from scanner scoring.
+- If candles are stale, try fallback provider.
+- If still stale, show “Historical data stale” instead of using old data.
+- Do not overwrite real data with empty arrays.
+
+Step 8: Protect secrets and logs
+No provider should ever print:
+- API token
+- API key
+- Deriv token
+- MT5 bridge token
+- full account number
+- secret names with values
+- full request headers
+
+Only print masked values in admin diagnostics if needed:
+- configured: yes/no
+- key ending: last 4 characters only if safe
+- status: healthy/failing
+
+Acceptance tests:
+1. Open admin Provider/API Health panel.
+2. Confirm every configured provider is listed.
+3. Confirm providers with secrets show “configured” without exposing values.
+4. Confirm unused configured providers are flagged as “configured but not used.”
+5. Confirm failing providers show sanitized failure reason.
+6. Confirm scanner can pull historical data for EURUSD.
+7. Confirm scanner can pull historical data for BTCUSD if supported.
+8. Confirm scanner can pull historical data for XAUUSD if supported.
+9. Confirm scanner can pull Deriv/Volatility historical data through Deriv or MT5, not TwelveData.
+10. Search V75 and confirm historical data is attempted through Deriv/MT5.
+11. Search V75 1s and confirm ticks_history/candle history works if Deriv supports it.
+12. Confirm “No historical data” only appears after all valid providers fail.
+13. Confirm chart and scanner use the same candle source for the same symbol/timeframe.
+14. Confirm Ruby market explanation uses the same historical data source as the scanner.
+15. Confirm rate-limit failures trigger fallback instead of blank scanner.
+16. Confirm stale candle data is not used for scanner scoring.
+17. Confirm normal users do not see provider names, API errors, keys, tokens, backend constants, or raw JSON.
+18. Confirm admin diagnostics show enough info to know which API is broken.
+19. Confirm no fake candles/prices are generated.
+20. Confirm live trading gates, MT5 bridge, Ruby chat/voice, scanner UI, and mobile views still work.
+
+After audit/fix:
+Run full QA across:
+- API Health panel
+- scanner historical data
+- live quotes
+- charts
+- Ruby market explanations
+- Deriv volatility symbols
+- MT5 broker feed
+- TwelveData fallback
+- all configured providers
+- mobile scanner UI
+
+Repair anything failing before stopping.

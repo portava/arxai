@@ -1,0 +1,46 @@
+QA/FIX GATE — Production Launch Readiness Checklist + Environment Lockdown
+
+Inspect the Production Launch Readiness and Environment Lockdown work from the previous pass.
+
+Do not rebuild unrelated systems. Reuse current code and only repair missing or broken pieces.
+
+Verify:
+
+1. Environment modes are clearly separated: development, test, staging, production.
+2. Production defaults live execution OFF.
+3. ARX_LIVE_BROKER_EXECUTION_ENABLED fails closed when missing/invalid.
+4. Shared master live is blocked unless compliance approval, admin approval, allocation, risk profile, mapping, bridge health, disclosure acceptance, and all safety gates pass.
+5. One-click live defaults OFF.
+6. Global one-click disable is respected.
+7. Kill switches and close-only/force-review states remain respected.
+8. Feature flags fail closed when missing or invalid.
+9. Mock/sample/fake data is not visible in production runtime.
+10. Required env var checklist exists and masks values.
+11. Startup guard warns or blocks unsafe production config.
+12. Public health route does not expose internals or secrets.
+13. Admin readiness route is protected.
+14. Non-admin users cannot access readiness dashboard or admin health details.
+15. Production errors do not show stack traces, raw SQL, raw bridge payloads, or secret values.
+16. Secret masking uses the centralized bridge masking chokepoint.
+17. CI/probes check for secret leakage where practical.
+18. Readiness checklist shows database, migrations, auth, secrets, Ruby, market data, bridge, live flag, kill switches, disclosures, audit logging, reconciliation, mock data, and no-live-command evidence.
+19. Launch blockers are shown clearly.
+20. Public/live launch is blocked when legal/compliance review is incomplete.
+21. Audit logs are created for readiness checks, admin readiness views, launch blockers, feature flag changes, and non-admin access attempts.
+22. Ruby explains production readiness only within the user’s permission level.
+23. Ruby does not reveal raw config values or secrets.
+24. Rate limits or abuse protections exist for high-risk endpoints where practical.
+25. No bridge tokens, API keys, account credentials, session secrets, token hashes, raw audio, private prompts, or sensitive bridge payloads are exposed.
+26. No live trade is fired during QA.
+27. arx_live_commands count remains unchanged.
+
+Return:
+- PASS/FAIL table
+- files inspected
+- tests run
+- issues found
+- fixes applied
+- remaining risks
+- deployment blockers
+- confirmation that no live trade was fired
+- confirmation that arx_live_commands count stayed unchanged

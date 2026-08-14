@@ -1,0 +1,98 @@
+Start T007 — Surgical UX Fixes + Project Memory Trim + Post-Fix Speed QA.
+
+Use the current merged T006 state as the baseline. Do not broad-refactor the app. Do not rebuild unrelated pages. Do not touch the LIVE MT5 bridge, account permissions, kill switches, user approval logic, DEMO/LIVE mode logic, broker/EA connection logic, or trade execution backend unless a tiny frontend symbol payload fix is absolutely required.
+
+Goal:
+Fix the two real UX quirks found during T006 and trim/reorganize project memory without breaking the app.
+
+Scope A — Fix top-bar symbol picker propagation:
+1. Inspect the current top-bar symbol picker, scanner symbol explorer, active chart symbol state, Ruby chart-read state, and trade modal symbol state.
+2. The user should not have to press a separate explorer “Load” button just to make the selected market become the active chart/trade/Ruby symbol.
+3. When a user selects/searches/clicks a symbol from the top-bar picker or scanner symbol explorer:
+   - Active scanner symbol updates immediately.
+   - Active chart updates immediately.
+   - Ruby’s selected market context updates immediately.
+   - Trade modal opens with the same selected symbol.
+   - The scanner sidebar/explorer should collapse back cleanly on mobile after selection.
+4. If the existing Load button still has a useful purpose, keep it but rename/position it so it is not required for normal symbol selection. If it is redundant, remove it only from the UI, not from backend functions unless confirmed unused.
+5. Prevent stale symbol state, mismatched chart symbols, or a trade modal opening with the previous symbol.
+6. Add or update tests/checks proving:
+   - select symbol → chart updates
+   - select symbol → Ruby context updates
+   - select symbol → trade modal receives same symbol
+   - mobile symbol selection collapses cleanly
+
+Scope B — Fix mobile trade modal close control:
+1. Inspect the trade modal layout at mobile viewport sizes, especially 400×720 and narrow iPhone widths.
+2. The close control must always remain visible and tappable.
+3. Keep the modal inside the viewport using safe-area-aware layout.
+4. Make the modal header sticky if needed so the close button remains available while scrolling.
+5. The modal body may scroll, but the modal itself must not create horizontal overflow.
+6. Escape/backdrop close can remain, but they are not enough. The visible close button must work on mobile.
+7. Do not add extra trade confirmation steps.
+8. Do not alter the Confirm trade flow from the current approved behavior.
+9. Add or update tests/checks proving:
+   - trade modal opens on mobile
+   - close button is visible
+   - close button works
+   - no off-screen controls
+   - no horizontal overflow
+
+Scope C — Trim/reorganize replit.md safely:
+1. Do not delete important project history.
+2. Create a docs/history or archive folder if one does not already exist.
+3. Move older completed task details, old command logs, and completed phase notes out of the active root replit.md into dated archive files.
+4. Keep root replit.md short and useful:
+   - current app mission
+   - current architecture summary
+   - active constraints
+   - active modes: DEMO and LIVE only
+   - current QA commands
+   - current known issues
+   - links to archived history files
+5. Do not store secrets, API keys, credentials, tokens, private account details, or live broker credentials in any markdown file.
+6. Preserve references needed for future agents, but remove repetitive completed-task clutter from the active file.
+7. The result should reduce instruction/context load while keeping the project understandable.
+
+Scope D — Performance and regression QA:
+After fixes, run full verification again:
+1. Typecheck must pass.
+2. Build must pass.
+3. Existing ci guards must pass.
+4. Existing view-mode checks must pass.
+5. Run mobile and desktop functional walks:
+   - login
+   - cockpit
+   - scanner
+   - symbol search/select
+   - chart updates
+   - Ruby chart read
+   - trade modal open
+   - trade modal close
+   - settings
+   - notifications
+   - back navigation
+6. Measure the timing of:
+   - route changes
+   - scanner shell appearing
+   - scanner data appearing
+   - symbol select to chart update
+   - symbol select to Ruby context update
+   - trade modal open
+   - trade modal close
+7. No live trade should be placed during this QA unless I explicitly give a separate command for live trade testing.
+8. Do not restart or modify the api-server unless absolutely necessary. If you believe it is necessary, explain why before doing it.
+9. Confirm no new always-on pollers were introduced.
+10. Confirm no Paper Trading terminology or paper mode logic was reintroduced.
+11. Confirm LIVE MT5 path remains untouched.
+
+Deliverables:
+1. List every file changed.
+2. Explain exactly how the symbol propagation issue was fixed.
+3. Explain exactly how the mobile modal close issue was fixed.
+4. Explain how replit.md was trimmed and where archived content went.
+5. Provide before/after timing notes.
+6. Provide final QA results.
+7. Write a clear commit message.
+
+This is a surgical stabilization task, not a redesign.

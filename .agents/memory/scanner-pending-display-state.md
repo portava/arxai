@@ -1,0 +1,12 @@
+---
+name: Scanner header action display resolver
+description: How the header Action cell mirrors the resolved scanner verdict, when PENDING is legitimate, and the effect-rerun trap that wipes lifted verdicts.
+---
+
+**Rule:** A PRESENT data-only verdict from the truth source is a RESOLVED scanner verdict — `useScannerTruth` is keyed by symbol+timeframe with NO `keepPreviousData`, so its consolidated verdict is null mid-switch and always current-key when present. `resolveSelectedSymbolActionabilityDisplay` renders ANY resolved verdict (lifted OR data-only, including the data-only setup-UNKNOWN `WAIT_FOR_CONFIRMATION`) as-is IMMEDIATELY; the neutral PENDING "Checking…" shows ONLY when both are null (truth not yet resolved for the key); `pendingExpired → NO_CONFIRMATION` applies only in that no-verdict gap and never overrides a resolved verdict. The resolver is total (never null). PENDING/NO_CONFIRMATION/CHECK_FAILED stay display-layer-only tokens (`ScannerActionabilityDisplay`), never `ScannerActionability` members — they can't reach any trade/gate path.
+
+**Why:** Two successive bugs. (1) Cold-start: header instantly asserted "Wait for confirmation" for a never-evaluated setup — first fixed by treating the UNKNOWN-WAIT fallthrough as un-resolved PENDING. (2) That over-corrected into a desync: the chart badge showed a resolved "WAIT FOR ENTRY" (V75/15m) while the header sat on "Checking…" then aged into "No confirmation" — because the data-only verdict IS resolved for the current key. The keyed-truth-source property is what makes both honest simultaneously: stale-key leakage is impossible, so a present verdict is safe to mirror.
+
+**How to apply:** New consumers of the lifted/data-only pair should use the display resolver, not `resolveSelectedSymbolActionability` + `SCANNER_ACTIONABILITY_UI` directly. If a truth-like source ever gains `keepPreviousData` (or any previous-key carry), this contract breaks — the resolver's mirror-immediately rule assumes current-key-only truth.
+
+**Effect-rerun trap:** A publisher card whose fetch effect *retracts* its published store key must key-guard the effect (`lastRunKeyRef` on `${symbol}|${mode}`). Effect deps like `mutate` change identity across renders (always in tests where the hook mock returns a fresh object), and an identity-only re-run retracts the lifted verdict with no republish. Pair with a request-key late-response guard so a slow old-selection read can't repaint after a switch.

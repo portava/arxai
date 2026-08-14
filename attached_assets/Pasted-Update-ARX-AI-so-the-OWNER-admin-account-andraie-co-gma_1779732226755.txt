@@ -1,0 +1,194 @@
+Update ARX AI so the OWNER/admin account andraie.co@gmail.com is not restricted by First Live Test Mode limits.
+
+Do not place a trade.
+Do not insert arx_live_commands automatically.
+Do not approve all users.
+Do not remove the live execution chokepoint.
+Do not remove the 16-gate evaluator.
+Do not remove kill switch, bridge heartbeat, broker execution, manual confirmation, or audit logging.
+
+GOAL:
+Remove the First Live Test Mode restrictions from OWNER/admin account:
+- andraie.co@gmail.com
+- OWNER/admin account only
+
+The OWNER should not be limited by:
+- max open trades
+- daily trade count
+- daily loss limit
+- max lot size
+- allowed symbols list
+- allowed market list
+- scanner live restrictions
+- First Live Test Mode default caps
+
+This should apply only to OWNER/admin unless I manually choose to apply a separate risk profile to other users.
+
+1. CREATE OWNER UNRESTRICTED LIVE PROFILE
+Create or update a risk profile/template named:
+
+Owner Unrestricted Live
+
+This profile should have:
+- maxOpenPositions = null / unlimited
+- maxLot = null / unlimited by app, broker still may reject unsupported lots
+- dailyLossLimitUsd = null / unlimited
+- allowedSymbols = "*" / all symbols
+- allowedMarkets = "*" / all markets
+- requireStopLoss = false
+- requireTakeProfit = false
+- scannerLiveEnabled = true
+- tradeFromScannerEnabled = true
+- oneClickTrading = admin controlled
+- aiAutoTrading = admin controlled, default OFF unless I enable it
+- aiAutoClose = admin controlled, default ALERT_ONLY unless I enable it
+- manualConfirmationRequired = true unless I manually disable it later
+- defaultExecutionRoute = SHARED_MASTER_MT5 if live shared bridge is selected
+
+Important:
+No app-level risk caps should block OWNER trades because of lot size, daily loss, open trade count, symbol, or market.
+
+2. ASSIGN TO OWNER ACCOUNT
+Assign this profile to:
+- andraie.co@gmail.com
+- user id 4 if that is the OWNER id
+- role OWNER/admin
+
+Update OWNER live settings:
+- liveTradingApproved = true
+- sharedBridgeApproved = true
+- defaultTradingMode = LIVE
+- defaultExecutionRoute = SHARED_MASTER_MT5
+- sharedLiveBridgeDefault = true
+- assignedRiskTemplateId = Owner Unrestricted Live
+- firstLiveTestMode = false for OWNER
+- firstLiveTestRestrictionsApplied = false
+- scannerLiveEnabled = true
+- tradeFromScannerEnabled = true
+
+3. DO NOT APPLY TO REGULAR USERS
+Regular users should keep the safer approved bridge defaults unless admin changes them.
+
+Do not change regular users:
+- maxOpenPositions
+- maxLot
+- dailyLossLimitUsd
+- allowedSymbols
+- requireStopLoss
+- requireTakeProfit
+- scannerLiveEnabled
+- default risk templates
+
+Only OWNER/admin gets unrestricted app-level trading permissions.
+
+4. UPDATE 16-GATE EVALUATOR FOR OWNER UNRESTRICTED PROFILE
+Modify the 16-gate evaluator and liveTrading chokepoint so:
+
+If user has Owner Unrestricted Live profile:
+- do not block because of max lot
+- do not block because of max open positions
+- do not block because of daily loss limit
+- do not block because of symbol not in allowedSymbols
+- do not block because of missing SL
+- do not block because of missing TP
+- do not block because of scannerLiveEnabled false, because it should be true for OWNER
+
+But still require:
+- authenticated OWNER/admin user
+- liveTradingApproved = true
+- sharedBridgeApproved = true if using shared bridge
+- platform mode LIVE
+- broker execution env permission AND operator switch
+- kill switch released
+- master bridge pinned if using shared master bridge
+- heartbeat fresh
+- valid tradable MT5 symbol if placing live order through MT5
+- manual confirmation before sending live order unless admin later changes this
+- audit log write
+- no data-only Deriv market live execution unless MT5 supports that symbol
+
+5. UPDATE SCANNER TRADE TICKET FOR OWNER
+For OWNER account only:
+- Do not block Review because lot exceeds 0.01
+- Do not show “safe default” cap warning
+- Do not block because of daily loss cap
+- Do not block because of open trade count cap
+- Do not block because symbol is outside EURUSD
+- Allow all MT5-tradable markets
+- If market is data-only via Deriv and not tradable through MT5, still block live execution with friendly reason
+
+For OWNER, if SL or TP is blank:
+- show warning, but do not block unless manualConfirmationRequired or admin setting says to block
+- clearly say “Stop loss not set” / “Take profit not set”
+- allow OWNER to proceed after confirmation if unrestricted profile allows it
+
+6. UPDATE ADMIN UI
+In Admin / User Control Center / Manage Access for OWNER:
+Show:
+- Risk Profile: Owner Unrestricted Live
+- First Live Test Mode: OFF
+- App-Level Lot Cap: No limit
+- App-Level Daily Loss Cap: No limit
+- App-Level Open Trades Cap: No limit
+- Allowed Markets: All MT5-tradable markets
+- Stop Loss Required: OFF
+- Take Profit Required: OFF
+- Scanner Live Trading: ON
+
+Add buttons:
+- Apply Owner Unrestricted Live
+- Revert to First Live Test Mode
+- Revert to Approved Shared Bridge Default
+
+All buttons use Confirm / Cancel modal only. No typed phrase.
+
+7. UPDATE LIVE SHARED ACCOUNT PAGE
+If signed in as OWNER:
+- Do not force First Live Test Mode ON
+- Do not show First Live Test Mode caps as active unless that mode is actually ON
+- Show:
+  “Owner unrestricted live profile active”
+- Show:
+  “No app-level lot, symbol, daily loss, or open trade limits are applied to this OWNER account.”
+- Still show readiness blockers for bridge, heartbeat, broker execution, kill switch, and unsupported symbols.
+
+8. AUDIT LOG
+Write audit log rows for:
+- Owner Unrestricted Live profile created/updated
+- OWNER assigned unrestricted profile
+- First Live Test Mode disabled for OWNER
+- Any revert to First Live Test Mode
+- Any live dispatch attempt by OWNER
+- Any blocked live dispatch attempt
+
+9. SECURITY
+Regular users must not see:
+- Owner unrestricted controls
+- admin risk profile controls
+- other users
+- broker execution controls
+- kill switches
+- env names
+- API routes
+- backend names
+
+10. ACCEPTANCE TEST
+Before stopping, verify:
+- andraie.co@gmail.com has Owner Unrestricted Live profile.
+- First Live Test Mode restrictions are OFF for OWNER.
+- OWNER is not capped at 0.01 lot by app risk template.
+- OWNER is not capped at 1 open trade by app risk template.
+- OWNER is not capped at $10 daily loss by app risk template.
+- OWNER is not restricted to EURUSD only.
+- OWNER can open scanner ticket on USDJPY, XAUUSD, NAS100, EURUSD, and other MT5-tradable symbols without app-level symbol restriction.
+- OWNER can proceed without SL/TP only if unrestricted profile allows it and confirmation is accepted.
+- Data-only Deriv markets remain blocked from live MT5 execution unless MT5 supports them.
+- Regular users still keep safe approved bridge defaults.
+- Broker execution still requires env AND operator switch.
+- Master bridge still requires fresh heartbeat and pinning.
+- Kill switch still blocks all live execution when engaged.
+- arx_live_commands remains 0 during tests unless OWNER manually confirms a live order.
+- No live trade is placed automatically.
+- Login, Ruby voice/chat, scanner, trade modal, bridge status, live request flow, admin queue, and bottom nav still work.
+
+Run typecheck/build/tests and fix errors before stopping.

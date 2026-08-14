@@ -1,0 +1,67 @@
+Proceed with Option A.
+
+Add a controlled temporary owner allocation of $300 to user 4 for the sole purpose of rerunning Bridge v2 #399 live micro-test proof.
+
+Hard rules:
+1. Do not close, modify, or interfere with the 2 real Wall Street 30 positions.
+2. Do not touch any other user allocation.
+3. Do not mark #399 complete until the full controlled live proof passes.
+4. Do not bypass the shared bridge gates.
+5. Do not fabricate fills, confirmations, P/L, or execution proof.
+6. Keep all allocation changes audited.
+7. After the test, report whether the temporary allocation should remain, be reduced, or be reverted.
+
+Preflight before rerunning #399:
+- Confirm master pool heartbeat is fresh.
+- Confirm master pool is_over_allocated=false.
+- Confirm master pool balance/equity.
+- Confirm user 4 allocated_funds=$300.
+- Confirm user 4 available headroom after reservedRisk and openFloatingLoss.
+- Confirm the 2 Wall Street 30 positions are still real and excluded from phantom/stale handling.
+- Confirm no reconciled phantom rows are counted in Open Trades, Dashboard totals, allocation headroom, Ruby summaries, scanner live counts, or admin exposure.
+- Confirm Bridge v2 #399 is still IN_PROGRESS before execution.
+
+Then rerun Bridge v2 #399 as a controlled live micro-test:
+- Use the proven live shared bridge path only.
+- Use the smallest safe 0.01-lot EURUSD test as previously planned, unless the system’s active allowed-symbol/risk rules require a different approved micro symbol.
+- Capture full command lifecycle:
+  - queued
+  - accepted by bridge
+  - sent to MT5/EA
+  - broker response received
+  - fill/reject result mapped
+  - DB position/order row updated
+  - UI Open Trades/Dashboard reflects the same truth
+  - audit rows written
+  - Bridge v2 trace/admin proof created
+- If rejected, prove the exact broker/app/risk reason.
+- If filled, prove ticket/order/deal id, symbol, side, volume, entry price, timestamp, and user mapping.
+
+Required validation after execution:
+1. Open Trades count must match MT5 truth.
+2. Dashboard balance/equity/free margin/margin/open P/L must match the trusted live account snapshot.
+3. Allocation headroom must include the real Wall Street 30 exposure and the new micro-test exposure correctly.
+4. No stale/reconciled phantom rows may reappear in totals.
+5. The result must be visible through the same shared truth path used by Dashboard, Open Trades, admin allocation view, and Ruby/live summaries.
+6. No hidden duplicate row may be created.
+7. No cross-user exposure leakage.
+8. All audit rows must be present.
+9. #399 may only be marked complete if telemetry + live execution + result mapping + UI truth all pass.
+
+Final report required:
+- starting master balance/equity
+- starting user 4 allocation/headroom
+- temporary allocation audit id
+- exact test command id
+- exact bridge id / bridge heartbeat used
+- ticket/order/deal id if filled
+- broker response
+- DB row created/updated
+- UI surfaces checked
+- before/after open P/L
+- before/after open trade count
+- before/after allocation headroom
+- tests run and pass/fail
+- files changed, if any
+- whether #399 is COMPLETE or still IN_PROGRESS
+- whether the $300 allocation should remain, be reduced, or be reverted

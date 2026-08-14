@@ -1,0 +1,63 @@
+Fix MT5 EA live command polling authentication.
+
+The EA v1.27 is reporting AccountType=REAL and ready for live execution, but the Experts log shows:
+
+/api/mt5/live-commands-poll -> HTTP 401
+REJECTED - token rejected
+
+Do not rebuild from scratch. Inspect the existing MT5 bridge auth middleware, token validation, heartbeat route, sync-account route, sync-positions route, sync-live-positions route, and live-commands-poll route.
+
+Goal:
+Make the same valid EA bridge token accepted consistently across all MT5 EA endpoints, including live command polling.
+
+Check and fix:
+- /api/mt5/heartbeat
+- /api/mt5/sync-account
+- /api/mt5/sync-positions
+- /api/mt5/sync-live-positions
+- /api/mt5/live-commands-poll
+- any live command acknowledgment endpoint
+- any live command result/update endpoint
+
+The EA should not get HTTP 401 on live-commands-poll if the same token is accepted for heartbeat/account/positions.
+
+Do not expose or print the token.
+Do not log token values.
+Do not add MT5 credentials.
+Do not weaken live trading gates.
+Do not bypass ARX_LIVE_BROKER_EXECUTION_ENABLED.
+Do not bypass kill switch.
+Do not bypass user approval.
+Do not bypass validation/re-validation.
+
+Add clear server logs without secrets:
+- endpoint name
+- auth passed/failed
+- reason code
+- bridge account id if available
+- masked token fingerprint only, never full token
+
+If live polling is intentionally using a separate token or permission, update the admin bridge setup page to clearly show which token the EA must use.
+
+Return clean error reasons:
+- TOKEN_MISSING
+- TOKEN_INVALID
+- TOKEN_SCOPE_INVALID
+- BRIDGE_NOT_REGISTERED
+- LIVE_POLL_NOT_ALLOWED
+- MASTER_BRIDGE_NOT_PINNED
+
+Acceptance checks:
+- heartbeat accepts valid EA token
+- sync-account accepts valid EA token
+- sync-positions accepts valid EA token
+- sync-live-positions accepts valid EA token
+- live-commands-poll accepts valid EA token
+- invalid token still returns 401
+- no token is printed in logs or UI
+- live-commands-poll returns 200 with empty command list when no commands exist
+- live-commands-poll does not execute anything by itself
+- command dispatch still requires all live gates
+- typecheck passes
+- CI guards pass
+- secret scan passes

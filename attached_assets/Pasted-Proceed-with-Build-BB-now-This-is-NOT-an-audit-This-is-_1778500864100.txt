@@ -1,0 +1,165 @@
+Proceed with Build BB now.
+
+This is NOT an audit.
+This is NOT a planning report.
+Implement the code changes.
+
+Build BB = Closed-Loop Auto-Debrief.
+
+Goal:
+When a paper trade closes, the system should automatically create a post-trade debrief, attach it to the original Build AA decision_id, update analytics, and prepare the result for learning in Build CC.
+
+Current Build AA already created a central trade decision engine and stable decision_id. Build BB must now close the loop between a closed trade and an automatic review.
+
+Core requirement:
+When a paper order transitions into any closed status, automatically run the debrief process.
+
+Closed statuses should include:
+- CLOSED_WIN
+- CLOSED_LOSS
+- CLOSED_BREAK_EVEN
+- CLOSED_MANUAL
+- CANCELLED if the system treats cancellation as a completed trade event
+
+Build BB tasks:
+
+1. Inspect existing paper trade / paper order close flow
+Find where paper trades are created, updated, and closed.
+Do not duplicate existing trade logic.
+Hook into the existing close/update flow.
+
+2. Add auto-debrief trigger
+When a paper trade changes from an open/non-closed state into a closed state:
+- detect the transition
+- capture trade_id / paper_order_id
+- capture decision_id if available
+- capture symbol
+- capture action
+- capture entry price
+- capture exit price
+- capture P&L
+- capture close reason
+- capture opened_at and closed_at
+- capture original Build AA decision if decision_id exists
+
+3. Build an idempotent auto-debrief service
+Create a service that only runs once per closed trade.
+
+If a debrief already exists for that trade_id, do not create a duplicate.
+Return the existing debrief or log that it was already processed.
+
+4. Auto-create post-trade debrief
+Use the existing post-trade debrief system if it already exists.
+
+The auto-debrief should include:
+{
+  trade_id,
+  decision_id,
+  symbol,
+  action,
+  result: "WIN" | "LOSS" | "BREAK_EVEN" | "CANCELLED",
+  pnl,
+  pnl_percent,
+  entry_price,
+  exit_price,
+  opened_at,
+  closed_at,
+  hold_time,
+  original_decision_summary,
+  did_follow_decision,
+  decision_confidence,
+  decision_risk_score,
+  what_worked,
+  what_failed,
+  mistake_tags,
+  lesson,
+  improvement_note,
+  created_by: "SYSTEM_AUTO_DEBRIEF"
+}
+
+5. Update analytics automatically
+After the debrief is created, trigger the existing analytics/snapshot logic if it exists.
+
+The system should update:
+- total closed trades
+- wins
+- losses
+- break-even trades
+- win rate
+- average win
+- average loss
+- net P&L
+- daily P&L
+- symbol performance
+- strategy/decision performance if decision_id exists
+
+6. Prepare Build CC learning handoff
+Build BB should not change future scoring yet.
+That is Build CC.
+
+But it must prepare a clean learning payload for CC:
+{
+  trade_id,
+  decision_id,
+  result,
+  pnl,
+  mistake_tags,
+  lesson,
+  confidence_before_trade,
+  risk_score_before_trade,
+  signals_used,
+  debrief_id,
+  ready_for_learning: true
+}
+
+7. Add logs
+Every auto-debrief should log:
+- paper trade closed
+- decision_id found or missing
+- debrief created or skipped due to idempotency
+- analytics updated or skipped
+- learning payload prepared
+- errors/warnings
+
+8. Add endpoints or test script
+Create a test endpoint or script that proves Build BB works.
+
+Required test scenarios:
+A. Close a paper trade with a valid decision_id and auto-create a debrief.
+B. Close a paper trade without a decision_id and still create a safe debrief with warning.
+C. Try to close/process the same trade twice and prove no duplicate debrief is created.
+D. Confirm analytics update after close.
+E. Confirm learning payload is generated but does not alter scoring yet.
+
+9. Safety rules
+- Do not place live trades.
+- Do not modify MT5 live order logic.
+- Do not change Build AA decision rules.
+- Do not start Build CC.
+- Do not update future scoring yet.
+- Do not create duplicate debriefs.
+- Preserve all existing routes and database tables unless an additive migration is required.
+
+Acceptance criteria:
+- Closing a paper trade automatically creates a debrief.
+- The debrief links to Build AA decision_id when available.
+- The system is idempotent.
+- Analytics update after the debrief.
+- A clean learning payload is prepared for Build CC.
+- No live trades are placed.
+- Existing manual debrief still works.
+- The app still typechecks/builds.
+
+After implementation, show:
+
+1. Files changed
+2. New files created
+3. Database changes
+4. Where the close-trigger hook was added
+5. How idempotency is enforced
+6. Raw test output for each test scenario
+7. Sample auto-debrief JSON
+8. Sample learning payload JSON
+9. Any errors or warnings
+10. Whether Build BB is fully complete or partially complete
+11. Final Build BB score out of 10

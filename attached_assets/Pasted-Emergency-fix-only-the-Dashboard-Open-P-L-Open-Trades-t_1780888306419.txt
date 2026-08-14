@@ -1,0 +1,295 @@
+Emergency fix only the Dashboard/Open P&L/Open Trades truth mismatch.
+
+Problem from screenshot:
+Dashboard shows:
+
+* Balance: $125.13
+* Equity: $158.07
+* Open P/L: +$1944.02
+* Open Trades: 34
+
+That cannot be true from the account snapshot. Open P/L should reconcile with equity minus balance, or with the shared LiveAccountSnapshot position P/L total. This means the visible dashboard is still reading an old/incorrect source, still counting stale/reconciled/closed rows, or not consuming the shared LiveAccountSnapshot contract correctly.
+
+This is not a rebuild.
+Do not redesign the dashboard.
+Do not touch live execution.
+Do not place trades.
+Do not change bridge execution.
+Do not change investor portal.
+Do not add fake data.
+Do not add paper/simulator/mock/demo fallback.
+Do not hide the problem with UI labels.
+Fix the real source of the mismatch.
+
+====================================================
+MISSION
+
+Make the visible Cockpit/Dashboard cards use the same shared LiveAccountSnapshot truth as Open Trades.
+
+The following must agree:
+
+1. Dashboard Open P/L
+2. Dashboard Open Trades count
+3. Open Positions/Open Trades card
+4. Ruby trade monitor
+5. Shared LiveAccountSnapshot adapter output
+
+If they do not agree, show an honest discrepancy state and block the dashboard from showing false numbers.
+
+====================================================
+PART 1 — FIND THE WRONG SOURCE
+
+Trace exactly where the Dashboard top cards get:
+
+* balance
+* equity
+* open P/L
+* open trades count
+
+Inspect the visible Cockpit component shown in the screenshot.
+
+Find:
+
+* file/component rendering ARX AI Cockpit top cards
+* hook/service used for Balance
+* hook/service used for Equity
+* hook/service used for Open P/L
+* hook/service used for Open Trades count
+* whether it uses LiveAccountSnapshot
+* whether it uses old account snapshot
+* whether it uses arx_live_positions directly
+* whether it uses stale cached rows
+* whether it counts closed/reconciled rows
+* whether it counts all rows instead of true open positions
+* whether it includes broker-absent positions
+* whether it includes manual/unattributed positions incorrectly
+* whether it sums unrealized P/L from old source
+* whether it uses a fallback that fabricates/keeps old values
+
+Report the exact file and line/function causing +$1944.02 / 34.
+
+====================================================
+PART 2 — ACCOUNTING TRUTH CHECK
+
+Add a dashboard invariant check:
+
+If balance and equity are both available:
+
+expectedOpenPL = equity - balance
+
+Then compare:
+
+snapshotOpenPL = LiveAccountSnapshot.openPLTotal
+
+If absolute difference is greater than tolerance:
+
+* do not show the stale/wrong Open P/L as normal
+* show “Under review” or “Mismatch”
+* log/admin-warn the discrepancy
+* identify which source differs
+
+Tolerance:
+
+* $0.01 or broker currency precision
+* configurable if needed
+
+For the screenshot:
+Balance $125.13 and Equity $158.07 imply open P/L about +$32.94, not +$1944.02.
+
+So +$1944.02 must be treated as false/stale/unreconciled unless proven by the broker snapshot.
+
+====================================================
+PART 3 — FORCE DASHBOARD TO USE SHARED SNAPSHOT
+
+Dashboard must not calculate Open P/L from its own separate source.
+
+Dashboard must read:
+
+* balance from LiveAccountSnapshot
+* equity from LiveAccountSnapshot
+* openPL from LiveAccountSnapshot.normalizedOpenPL
+* openTradesCount from LiveAccountSnapshot.openPositionsCount
+* freshness from LiveAccountSnapshot.freshnessStatus
+* warnings from LiveAccountSnapshot.warnings
+
+Remove/replace any legacy direct calculation in the dashboard top cards.
+
+Do not duplicate logic.
+
+Do not let dashboard and Open Trades use separate counting rules.
+
+====================================================
+PART 4 — FIX OPEN TRADE COUNT
+
+Open Trades count must count only true open positions from the shared snapshot visibility scope.
+
+Exclude:
+
+* closed positions
+* reconciled positions
+* broker-absent rows
+* stale historical rows
+* pending commands
+* expired commands
+* failed/rejected commands
+* old command rows
+* non-position rows
+* rows without a current valid broker position unless specifically labeled owner/admin historical/unattributed and not counted as open
+
+Owner/admin:
+
+* can see all true current master open positions
+* manual/unattributed positions may appear but must be labeled
+* still count only current broker-open positions
+
+Regular user:
+
+* attributed-only current open positions
+
+Investor:
+
+* no raw open trade controls
+
+====================================================
+PART 5 — FIX OPEN P/L
+
+Open P/L must come from normalized LivePositionPL only.
+
+Rules:
+
+* prefer broker-provided fresh floating P/L
+* if unavailable, compute from fresh quote only
+* buy uses bid
+* sell uses ask
+* if quote stale/missing, mark estimated/stale/unavailable
+* do not include closed/reconciled/broker-absent rows
+* do not sum old command P/L
+* do not sum stale cached rows as current
+* do not show unavailable estimate as Live
+
+If P/L source is estimated:
+show “Estimated”
+
+If P/L source is stale:
+show “Stale”
+
+If P/L source is unavailable:
+show “Unavailable”
+
+====================================================
+PART 6 — FIND WHY RUBY SAYS WAITING FOR MARKET DATA
+
+In the screenshot, Ruby’s Market View says:
+“Ruby is waiting for market data.”
+
+But the top status says:
+“All systems operational” and market EURUSD is selected.
+
+Investigate whether:
+
+* Ruby is using a different market data hook than the dashboard
+* scanner/chart has no candles while account snapshot exists
+* selected symbol is not passed to Ruby Market View
+* Ruby Market View waits for candle data but only quote/account data exists
+* handshake blocks Ruby due to missing chart/candles
+* Ruby should show “live account data available, chart candles unavailable” instead of waiting generically
+
+Fix wording so Ruby’s card is truthful:
+
+* If account snapshot exists but candle data missing: say chart/market candles unavailable, not generic “waiting for market data.”
+* If selected symbol lacks candles: say “Waiting for fresh EURUSD chart data.”
+* If quote exists but candles missing: say “Live quote available; candle feed unavailable.”
+* If all market data missing: then “Ruby is waiting for market data.”
+
+====================================================
+PART 7 — ADD DISCREPANCY WARNING FOR IMPOSSIBLE DASHBOARD VALUES
+
+If dashboard detects impossible values like:
+
+* Open P/L larger than reasonable difference between equity and balance
+* Open P/L source disagrees with equity-balance
+* open trade count includes rows excluded by snapshot
+* Dashboard and Open Trades count differ
+
+Then:
+
+* show admin-visible warning
+* show user-safe “P/L under verification” badge
+* do not display the stale/wrong value as normal green profit
+* log the source mismatch
+
+User-safe message:
+“P/L under verification. Dashboard is reconciling broker snapshot and open positions.”
+
+Admin details:
+
+* dashboard source
+* snapshot source
+* equity-balance derived P/L
+* position-summed P/L
+* excluded row count
+* stale row count
+* reconciled/closed row count
+
+====================================================
+PART 8 — RUNTIME CHECKS
+
+After fixing, verify the actual screen shown in the screenshot.
+
+Expected:
+
+* Balance and Equity remain from broker snapshot.
+* Open P/L must reconcile with shared snapshot.
+* Open Trades count must reconcile with shared snapshot.
+* If true open P/L is around equity-balance, show that.
+* If P/L cannot be trusted, show estimated/stale/unavailable/under verification.
+* Do not show +$1944.02 unless the broker snapshot proves it.
+* Do not show 34 open trades unless there are 34 current broker-open positions in the shared snapshot visibility scope.
+
+====================================================
+PART 9 — TESTS
+
+Run:
+
+* pnpm run typecheck
+* pnpm run test:live-account-snapshot
+* pnpm run ci:guards
+
+Add/extend tests:
+
+1. Dashboard open P/L uses LiveAccountSnapshot.
+2. Dashboard open trades count uses LiveAccountSnapshot.
+3. Closed/reconciled rows excluded from dashboard count.
+4. Broker-absent rows excluded from dashboard count.
+5. Dashboard/Open Trades totals match.
+6. Equity-balance mismatch creates discrepancy warning.
+7. Stale/estimated/unavailable P/L does not show as normal live green P/L.
+8. Owner/admin visibility preserved.
+9. Regular user isolation preserved.
+10. Investor view-only preserved.
+
+====================================================
+PART 10 — FINAL REPORT REQUIRED
+
+Report back with:
+
+1. Exact component/file that produced wrong +$1944.02.
+2. Exact component/file that produced wrong 34 open trades.
+3. Root cause.
+4. Whether dashboard was using old source or wrong filter.
+5. Shared LiveAccountSnapshot wiring proof.
+6. Dashboard/Open Trades agreement proof.
+7. Equity-balance reconciliation proof.
+8. Closed/reconciled exclusion proof.
+9. Owner/admin visibility proof.
+10. Regular user isolation proof.
+11. Ruby Market View waiting-data wording fix proof.
+12. Tests run and results.
+13. Confirmation no fake data added.
+14. Confirmation no live execution path changed.
+15. Confirmation dashboard no longer displays impossible Open P/L as normal.
+
+Final rule:
+The dashboard must tell the account truth.
+If P/L is not trustworthy, show under verification/stale/estimated/unavailable.
+Do not show impossible values as live profit.

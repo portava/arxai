@@ -1,0 +1,210 @@
+Build a true One-Click Live Trading Mode for ARX AI while keeping backend kill switches and account approval protections intact.
+
+Goal:
+The live trading screen should allow an approved operator/user to enter a live trade with one tap and exit with one tap. Do not show a per-trade confirmation modal. Do not force the user to enter a stop loss before submitting. Remove the large repetitive live-money warning modal from the live order ticket.
+
+Important safety boundary:
+Do not remove backend safety gates, admin approval, live readiness, max lot, daily loss limit, kill switch, account approval, or serverLiveExecutionEnabled requirements.
+Do not allow unapproved users to trade.
+Do not enable AI auto-trading by default.
+Do not bypass master live trading approval.
+
+Current screenshot issue:
+The live trade modal shows:
+- “Your account is not approved for master live trading.”
+- “LIVE TRADE — REAL MONEY CAN BE LOST”
+- Stop loss is required.
+- User must confirm this live order.
+- Submit LIVE order button is disabled.
+
+Required UX change:
+
+1. Add One-Click Live Mode
+Create a setting/toggle for approved admin/operator users:
+- oneClickLiveTradingEnabled: boolean
+- defaultSymbol
+- defaultVolume
+- defaultOrderType
+- optionalDefaultStopLoss
+- optionalDefaultTakeProfit
+- allowOrdersWithoutStopLoss: boolean
+- reduceOnlyCloseAllowed: boolean
+
+When oneClickLiveTradingEnabled=true and the account is approved:
+- One tap on BUY opens a market buy.
+- One tap on SELL opens a market sell.
+- One tap on CLOSE closes the selected open position.
+- One tap on CLOSE ALL closes all open positions for that user/account if allowed.
+- Do not show a per-trade “are you sure?” modal.
+- Do not require stop loss.
+- Do not require take profit.
+- Stop loss and take profit fields should be optional.
+
+2. Replace the current live order modal with a fast trade panel
+The panel should show:
+- Symbol selector
+- Volume selector
+- BUY button
+- SELL button
+- Optional SL field
+- Optional TP field
+- Close position button when a position exists
+- Close all button if multiple positions exist
+- Current approval/readiness badge
+
+Remove from the trade ticket:
+- Large red real-money warning box
+- Per-order confirmation checkbox
+- Stop loss required validation
+- “Submit LIVE order” modal flow when one-click mode is enabled
+
+Keep only a small persistent status badge:
+- LIVE READY
+- LIVE DISABLED
+- READY TO ARM
+- KILL SWITCH ACTIVE
+- ACCOUNT NOT APPROVED
+
+3. Fix account approval logic
+If the logged-in user is an approved admin/operator and master live trading is enabled for them, do not show:
+“Your account is not approved for master live trading.”
+
+Instead, show the correct status:
+- If approved and serverLiveExecutionEnabled=false: READY TO ARM
+- If approved and serverLiveExecutionEnabled=true: LIVE READY
+- If not approved: ACCOUNT NOT APPROVED
+- If kill switch active: KILL SWITCH ACTIVE
+
+Add/verify backend fields:
+- user.liveSharedApproved
+- user.liveTradingEnabled
+- user.oneClickLiveTradingEnabled
+- user.maxLiveLot
+- user.dailyLossLimit
+- user.allowedAccountId or approvedSharedBridgeId
+
+Only approved users/operators can use one-click live trading.
+
+4. Backend execution rules
+The backend live execute endpoint must still require:
+- authenticated user
+- user approved for master live trading
+- oneClickLiveTradingEnabled=true for one-click route
+- serverLiveExecutionEnabled=true
+- kill switch inactive
+- real LIVE bridge, not MOCK
+- fresh EA heartbeat
+- EA v1.27+
+- ReadOnlyMode=false
+- EnableLiveExecution=true
+- terminalConnected=true
+- algoTradingAllowed=true
+- volume <= allowed max lot
+- daily loss limit not breached
+- symbol allowed
+- order type allowed
+
+But do not require:
+- per-order confirmation checkbox
+- stop loss
+- take profit
+- repeated warning modal
+
+5. Orders without stop loss
+Allow stopLoss to be null.
+Allow takeProfit to be null.
+If stop loss is blank:
+- Submit stopLoss: null
+- Do not block the order
+- Do not show “Stop loss required”
+
+Keep backend portfolio-level protections:
+- max lot
+- daily loss limit
+- max open exposure if already implemented
+- kill switch
+- account approval
+- server dispatch armed flag
+
+6. One-click close
+Add a one-click close button on every open live position row/card.
+Clicking CLOSE should immediately send a reduce-only close command.
+No confirmation modal.
+No checkbox.
+No warning popup.
+
+Close button rules:
+- Closing/reducing risk should be allowed only for the position owner/operator.
+- If kill switch is active, decide close behavior safely:
+  - block new/open/increase-risk orders
+  - allow reduce-only close orders if backend supports safe close
+  - clearly label this as CLOSE ONLY mode if kill switch is active
+
+7. UI cleanup
+On mobile:
+- BUY and SELL buttons must be large and easy to tap.
+- CLOSE button must be visible on active positions.
+- Ruby bubble must not cover trade buttons.
+- Bottom nav must not cover trade buttons.
+- No horizontal scrolling.
+- No giant warning modal on every trade.
+- No required SL/TP fields.
+- No confirmation checkbox in one-click mode.
+
+8. Add mode distinction
+There should be two modes:
+
+Standard Mode:
+- Can keep confirmation modal if needed.
+- Can show full live warning.
+- Can require confirmation.
+
+One-Click Mode:
+- No per-trade modal.
+- No per-trade checkbox.
+- No required stop loss.
+- Instant BUY, SELL, CLOSE.
+- Still protected by backend approval, max lot, daily loss, server arm flag, and kill switch.
+
+9. Add audit logs
+Every one-click live action must log:
+- user id
+- account id
+- bridge id
+- symbol
+- order type
+- volume
+- stop loss value or null
+- take profit value or null
+- action: BUY / SELL / CLOSE / CLOSE_ALL
+- oneClickLiveTradingEnabled
+- serverLiveExecutionEnabled
+- timestamp
+- result: accepted / rejected
+- rejection reason if rejected
+
+10. Tests
+Run:
+- pnpm run typecheck
+- pnpm run ci:guards
+- pnpm --filter @workspace/scripts run test:live-phaseB
+
+Add/update tests proving:
+- One-click mode removes per-order confirmation requirement.
+- One-click mode allows blank stop loss.
+- One-click mode allows blank take profit.
+- One-click BUY submits immediately when all backend gates pass.
+- One-click SELL submits immediately when all backend gates pass.
+- One-click CLOSE submits immediately for an owned open position.
+- Unapproved user cannot one-click trade.
+- serverLiveExecutionEnabled=false blocks one-click live open orders.
+- kill switch blocks new live open orders.
+- max lot still blocks oversized trades.
+- daily loss limit still blocks trades after limit breach.
+- Standard Mode can still show confirmation flow if enabled.
+
+Do not create duplicate trade pages.
+Do not bypass backend live readiness.
+Do not auto-arm live execution.
+Do not enable AI auto-trading by default.
+The final result should be a fast terminal-style one-click live trading experience for approved users only.

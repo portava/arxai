@@ -1,0 +1,988 @@
+Build ARX Bridge v2 Beta Kernel and verify it with a real live broker test.
+
+This is the launch-beta bridge foundation. It must replace snapshot-only behavior with broker-truth event flow, real-time account state, real-time position truth, phantom-position prevention, CopyRates candle sync, tick/quote freshness, UI truth, Ruby/Scanner/Risk/Governance integration, and admin trace.
+
+This is not a fake test task. After the bridge is built and all preflight checks pass, run a real live micro-test through the connected live MT5/Deriv bridge. Do not use paper trading. Do not use demo. Do not use simulated fills. Do not use fake broker responses. Do not mark complete unless the test proves real broker communication.
+
+Important:
+- Preserve current live broker execution settings unless this task explicitly needs the bridge v2 feature flag enabled for the owner live test.
+- Do not place any live trade until every preflight gate passes.
+- Live test must use the smallest allowed safe live size for the connected account/symbol.
+- If the broker/account rejects the trade, report the true rejection reason.
+- If any required live condition is missing, stop and report the blocker instead of faking success.
+- Never show queued as filled.
+- Never show accepted as filled.
+- Filled must mean broker-confirmed filled.
+- Closed must mean broker-confirmed closed or reconciled through verified broker truth.
+
+MAIN GOAL
+
+Create the ARX Bridge v2 Beta Kernel:
+
+1. One stable EA bridge architecture.
+2. Remote config manifest so future settings/function behavior can be changed from ARX without replacing the EA.
+3. Whitelisted command system so ARX can push approved bridge commands/settings to the EA.
+4. OnTradeTransaction-based trade event push.
+5. Real-time account, positions, pending orders, candle, and tick/quote updates.
+6. Backend event ingest, validation, idempotency, sequence tracking, admin trace, and lifecycle mapping.
+7. Phantom-position dry-run reconciliation.
+8. UI truth contract across Dashboard, Trade, Positions, Admin, Ruby, Scanner, Risk, Governance, Flame Scalp, and Run-On Candle Momentum.
+9. Real live micro-test proving the bridge works end-to-end.
+
+PHASE 1 — CURRENT BRIDGE AUDIT
+
+Audit the current bridge end-to-end before building.
+
+Inspect:
+
+- current EA bridge files
+- EA heartbeat
+- EA download/version system
+- WebRequest endpoints
+- MT5 command queue
+- live order send path
+- broker result mapping
+- account snapshot sync
+- position snapshot sync
+- pending order sync
+- close-fill/P&L mapping
+- reconciler
+- /api/mt5/sync-candles
+- quote/tick feed if present
+- dashboard account state
+- open trades panel
+- trade page
+- admin bridge status
+- owner live test cycle
+- Ruby account/trade context
+- scanner data context
+- risk/account context
+- flame/run-on candle context
+- governance/admin trace
+- UI truth helpers
+
+Identify every place that currently relies on:
+- stale snapshots
+- polling as primary truth
+- guessed order state
+- fake success state
+- stale cached account data
+- missing broker confirmation
+- disconnected bridge contradictions
+- composite candles pretending to be broker-native
+- phantom open positions
+- wrong open P/L
+- wrong balance/equity display
+
+Do not remove working behavior until the replacement path is wired and tested.
+
+PHASE 2 — BRIDGE V2 CONTRACT
+
+Create a formal Bridge v2 contract document and validation schemas.
+
+Contract must include these message types:
+
+1. bridge.heartbeat
+Fields:
+- bridge_id
+- account_id/account_login
+- broker_server
+- ea_version
+- terminal_build
+- connected
+- trading_allowed
+- autotrading_enabled
+- server_time
+- terminal_time
+- sent_at
+- sequence
+- idempotency_key
+
+2. bridge.config.request
+EA requests current config from ARX.
+
+Fields:
+- bridge_id
+- account_id/account_login
+- ea_version
+- terminal_build
+- current_config_version
+- capabilities
+- sent_at
+- sequence
+
+3. bridge.config.response
+Backend returns signed/validated config.
+
+Fields:
+- config_version
+- enabled_modules
+- heartbeat_interval_ms
+- account_snapshot_interval_ms
+- positions_snapshot_interval_ms
+- orders_snapshot_interval_ms
+- candle_sync_interval_ms
+- tick_sync_interval_ms
+- watched_symbols
+- watched_timeframes
+- max_bars_per_payload
+- max_payload_bytes
+- debug_level
+- retry_policy
+- endpoints
+- feature_flags
+- symbol_aliases
+- timeframe_aliases
+- command_poll_interval_ms
+- bridge_mode
+- server_time
+- signature/hash if implemented
+
+4. bridge.command
+Backend sends approved whitelisted commands only.
+
+Allowed commands:
+- SET_CONFIG
+- WATCH_SYMBOL
+- UNWATCH_SYMBOL
+- WATCH_TIMEFRAME
+- UNWATCH_TIMEFRAME
+- SYNC_ACCOUNT_NOW
+- SYNC_POSITIONS_NOW
+- SYNC_ORDERS_NOW
+- SYNC_CANDLES_NOW
+- SYNC_TICKS_NOW
+- REFRESH_SYMBOL_MAP
+- SET_DEBUG_LEVEL
+- PAUSE_STREAM
+- RESUME_STREAM
+- ROTATE_TOKEN
+- PING
+- PLACE_ORDER
+- MODIFY_POSITION
+- CLOSE_POSITION
+- CANCEL_ORDER
+
+No arbitrary remote code execution. No unsafe script injection. Only whitelisted command types the EA already understands.
+
+5. bridge.command.result
+EA reports command result.
+
+Fields:
+- command_id
+- command_type
+- status
+- accepted/rejected/executed/failed
+- reason
+- broker_retcode if applicable
+- order_ticket/deal_ticket/position_ticket if applicable
+- sent_at
+- sequence
+- idempotency_key
+
+6. account.snapshot
+Fields:
+- balance
+- equity
+- margin
+- free_margin
+- margin_level
+- currency
+- open_positions_count
+- pending_orders_count
+- source
+- freshness
+- sent_at
+- sequence
+- idempotency_key
+
+7. trade.transaction
+Triggered by MT5 OnTradeTransaction.
+
+Fields:
+- event_type
+- transaction_type
+- bridge_id
+- account_id/account_login
+- idempotency_key
+- sequence
+- mt5_order_ticket
+- mt5_deal_ticket
+- mt5_position_ticket
+- symbol
+- side
+- volume
+- price
+- sl
+- tp
+- profit
+- commission
+- swap
+- reason
+- retcode
+- comment
+- broker_time
+- terminal_time
+- sent_at
+
+Must support:
+- order sent
+- broker received
+- order accepted
+- order rejected
+- deal created
+- position opened
+- position modified
+- position partially closed
+- position closed
+- manual close
+- broker-side close
+- SL close
+- TP close
+- pending order placed
+- pending order activated
+- pending order canceled
+- failed execution
+
+8. positions.snapshot
+Fields:
+- full broker open-position list
+- ticket
+- symbol
+- side
+- volume
+- open_price
+- current_price
+- sl
+- tp
+- profit
+- swap
+- commission
+- open_time
+- magic_number
+- comment
+- sequence
+- sent_at
+- idempotency_key
+
+9. orders.snapshot
+Fields:
+- full broker pending-order list
+- ticket
+- symbol
+- type
+- volume
+- price
+- sl
+- tp
+- state
+- expiration
+- sequence
+- sent_at
+- idempotency_key
+
+10. market.tick
+Fields:
+- symbol
+- bid
+- ask
+- last if available
+- spread
+- tick_time
+- sequence
+- sent_at
+- idempotency_key
+
+11. market.candles
+Fields:
+- symbol
+- timeframe
+- bars array
+- time
+- open
+- high
+- low
+- close
+- tick_volume
+- spread if available
+- real_volume if available
+- source
+- sequence
+- sent_at
+- idempotency_key
+
+12. bridge.error
+Fields:
+- error_code
+- error_message
+- severity
+- related_event_id
+- recoverable
+- sequence
+- sent_at
+- idempotency_key
+
+PHASE 3 — EA BRIDGE V2 BETA KERNEL
+
+Create or upgrade the EA into a stable Bridge v2 Beta Kernel.
+
+The EA must:
+
+1. Use OnTradeTransaction for broker transaction truth.
+2. Use OnTrade as a backup consistency signal only.
+3. Use OnTimer for:
+   - heartbeat
+   - account snapshot
+   - positions snapshot
+   - orders snapshot
+   - config polling
+   - command polling
+   - candle sync
+   - tick/quote sync
+   - local retry queue flushing
+4. Use WebRequest for beta transport.
+5. Require the ARX backend URL to be configured/allowed in MT5.
+6. Include bridge_id, account_login, EA version, terminal build, sequence, timestamps, and idempotency key in every message.
+7. Maintain a local retry queue for failed sends where possible.
+8. Preserve idempotency keys on retry.
+9. Never duplicate broker effects because of a retry.
+10. Report AutoTrading/trading allowed/server connection status.
+11. Report setup errors clearly:
+    - WebRequest URL missing
+    - bridge token missing
+    - server unreachable
+    - payload rejected
+    - sequence reset
+    - AutoTrading off
+    - broker disconnected
+    - candle sync failed
+    - account snapshot failed
+    - command rejected
+12. Fetch remote config from ARX.
+13. Execute only whitelisted command types.
+14. Reject unknown commands.
+15. Send command results back to ARX.
+16. Push CopyRates candles for watched symbols/timeframes.
+17. Push bid/ask/spread ticks or quotes for watched symbols where safe.
+18. Push account/positions/orders snapshots after trade events and on interval.
+
+EA must not contain ARX AI decision intelligence. The EA is a broker-truth sensor and execution adapter. ARX intelligence remains server-side.
+
+PHASE 4 — BACKEND BRIDGE V2 INGEST
+
+Build backend ingest and processing.
+
+Add or upgrade endpoints:
+
+- /api/bridge/v2/events
+- /api/bridge/v2/heartbeat
+- /api/bridge/v2/config
+- /api/bridge/v2/commands/poll
+- /api/bridge/v2/commands/result
+- /api/bridge/v2/account-snapshot
+- /api/bridge/v2/positions-snapshot
+- /api/bridge/v2/orders-snapshot
+- /api/bridge/v2/ticks
+- /api/mt5/sync-candles
+
+Requirements:
+- authenticate bridge messages
+- validate payloads
+- reject malformed payloads
+- reject unknown bridge/account pairs
+- reject stale/replayed messages where possible
+- dedupe by idempotency_key
+- track sequence per bridge/account/message stream
+- detect sequence gaps
+- store admin-visible trace
+- map MT5 order/deal/position tickets to ARX rows
+- update account snapshot truth
+- update order lifecycle truth
+- update position lifecycle truth
+- update provider contribution truth
+- invalidate frontend queries
+- broadcast SSE/WebSocket updates to UI
+- broadcast truth context to Ruby/Scanner/Risk/Governance/Flame
+- never show fake success
+
+PHASE 5 — ORDER AND POSITION LIFECYCLE TRUTH
+
+Create or upgrade lifecycle mapping.
+
+Allowed lifecycle states:
+
+- requested
+- queued
+- sent_to_bridge
+- broker_received
+- accepted
+- rejected
+- filled
+- partially_filled
+- open
+- modify_requested
+- modified
+- close_requested
+- close_sent
+- close_accepted
+- closed
+- close_failed
+- suspect_absent
+- eligible_for_reconciliation
+- reconciled_closed
+- manual_review_required
+- unknown_stale
+
+Rules:
+- queued is not filled
+- accepted is not filled
+- broker_received is not filled
+- filled requires broker event or fresh broker evidence
+- open requires broker position evidence
+- closed requires broker event or reconciler eligibility
+- rejected/blocked must show the true reason
+- close-fill/P&L must not be guessed
+- manual/broker-side close must be recognized
+- partial close must not be treated as full close
+- app rows must map to MT5 tickets when available
+- Ruby and UI must use this lifecycle truth everywhere
+
+PHASE 6 — PHANTOM POSITION RECONCILER
+
+Build/upgrade phantom-position prevention.
+
+Rules:
+- broker open positions are source of truth
+- if ARX thinks a position is open but fresh broker snapshot does not contain it, mark suspect_absent, not closed immediately
+- increment absence_streak only on fresh successful broker snapshots
+- set first_absent_at only on first confirmed fresh absence
+- do not increment absence_streak when bridge snapshot is stale, missing, failed, or sequence-gapped
+- if position reappears, clear absence_streak and first_absent_at
+- require repeated absence and elapsed time before eligible_for_reconciliation
+- start in dry-run
+- dry-run reports would-close rows without writing final close state
+- add admin trace for each decision
+- do not enable write reconciliation until dry-run proves accuracy
+
+Statuses:
+- broker_confirmed_open
+- pending_confirmation
+- suspect_absent
+- broker_absent_recheck
+- eligible_for_reconciliation
+- reconciled_closed
+- uncertain_bridge_stale
+- manual_review_required
+
+PHASE 7 — REAL-TIME ACCOUNT, BALANCE, EQUITY, MARGIN, P/L
+
+Wire real-time account and P/L truth.
+
+Rules:
+- Dashboard, Trade, Positions, Admin, Risk, Ruby, Scanner, and Investor reporting must consume the correct truth source.
+- Live broker account values come from account.snapshot.
+- Open P/L comes from broker positions snapshot/tick data.
+- Trader allocation comes from app allocation ledger.
+- Investor values come from investor ledger/reporting.
+- No dummy balances.
+- No stale balances shown as current.
+- Each account snapshot needs last_updated and freshness.
+- If account snapshot is stale, show stale/reconnecting.
+- After trade.transaction, immediately request or stream account/positions refresh.
+- Admin can see broker balance, app allocation, investor ledger, and reconciliation status separately.
+
+PHASE 8 — CANDLES, TICKS, CHARTS, SCANNER, FLAME/RUN-ON
+
+Wire broker-native candle/tick truth into all systems.
+
+EA:
+- Push CopyRates bars for watched symbols/timeframes.
+- Push active candle updates where possible.
+- Push enough recent candles to seed chart/scanner after reconnect.
+- Push bid/ask/spread tick/quote data for watched symbols where safe.
+
+Backend:
+- validate OHLC
+- reject impossible candles
+- normalize symbol/timeframe
+- dedupe by symbol/timeframe/time
+- track freshness/source
+- mark MT5 provider non-contributing until real EA candles arrive and are verified
+- do not fake MT5 candles
+- do not label composite candles as broker-native
+
+Feed:
+- chart
+- Scanner
+- Focus Scan
+- Broad Scan
+- Flame Scalp
+- Run-On Candle Momentum
+- Ruby
+- Risk
+- Governance
+- Admin trace
+
+Run-On Candle Momentum must use only fresh candle/tick truth:
+- same-direction candle runs
+- aggressive movement
+- shallow pullbacks
+- strong bodies
+- reduced opposite wicks
+- low overlap
+- clean continuation
+- exhaustion
+- failed run
+- reversal risk
+- chase risk
+- add-on eligibility
+- spread/slippage danger
+
+Rules:
+- too few candles = BLIND/insufficient data
+- stale candles = confidence downgrade
+- composite provider = not broker-native
+- stale tick/quote = scalp confidence downgrade
+- unavailable spread = confidence downgrade
+- late/exhausted run must not boost ranking
+- clean early/active run can boost ranking
+- exhausted/failed/reversal/blind blocks add-ons
+
+PHASE 9 — AI ECOSYSTEM INTEGRATION
+
+Bridge v2 must feed all AI components.
+
+1. Ruby
+Ruby receives:
+- live account mode
+- bridge status
+- account snapshot freshness
+- position lifecycle truth
+- trade fill/reject/close truth
+- candle provider source
+- tick/quote freshness
+- scanner score
+- run-on/flame score
+- risk score
+- governance outcome
+- data limitations
+
+Ruby must:
+- never mention paper/demo/simulation in live flow
+- never invent balances
+- never invent fills
+- never invent candles
+- never claim news/history if unavailable
+- never expose backend names, function names, route names, schema names, or env names
+- explain actual blockers plainly
+
+2. Scanner
+Scanner receives:
+- fresh candles
+- ticks/quotes
+- spread
+- provider freshness
+- bridge health
+- risk downgrade
+- governance outcome
+- flame/run-on score
+- history/news availability
+- stale-data caps
+
+3. Risk
+Risk receives:
+- fresh account/allocation state
+- positions exposure
+- spread/volatility
+- run-on/flame quality
+- SL/TP realism
+- reward-to-risk
+- stale-data status
+
+4. Governance
+Governance can challenge:
+- stale bridge data
+- stale candles
+- stale ticks
+- composite provider overtrust
+- weak run-on/flame signal
+- late/chase-risk scalp
+- unrealistic risk/reward
+- missing news/history
+- phantom/suspect positions
+- bridge sequence gaps
+
+Governance outcome affects:
+- Scanner ranking
+- Ruby wording
+- Risk warning
+- Flame/Run-On confidence
+- Admin trace
+- Agent lifecycle
+
+5. Agent Lifecycle
+Agent scoring/lifecycle responds to:
+- agents ignoring stale data
+- agents overtrusting composite candles
+- agents recommending late run-on entries
+- agents ignoring bridge/provider freshness
+- agents correctly downgrading bad data
+
+6. Traffic Controller
+Traffic Controller decides:
+- which agents need live bridge data
+- which decisions require deep review
+- which agents stay quiet
+- when speed is more important
+- when stale data requires more caution
+
+PHASE 10 — UI TRUTH CONTRACT
+
+Enforce UI truth everywhere.
+
+Rules:
+- if account is live, active UI must not show paper/demo/simulation references
+- connected means heartbeat fresh and provider valid
+- stale means heartbeat/provider stale
+- disconnected means no valid heartbeat/provider
+- no connected/disconnected contradiction
+- queued is not filled
+- accepted is not filled
+- rejected shows rejected
+- filled requires broker confirmation
+- closed requires broker confirmation or reconciliation proof
+- balance must match account snapshot truth
+- candles must show truthful source/freshness
+- MT5 must not be shown as contributing until real candles arrive and are verified
+- Ruby follows the same truth contract
+- normal users do not see backend/internal terms
+- admin sees precise diagnostics
+
+PHASE 11 — REMOTE CONFIG AND COMMAND SYSTEM
+
+Build the server-managed bridge control layer so we do not need to update the EA for every small change.
+
+Remote config must support:
+- watched symbols
+- watched timeframes
+- heartbeat interval
+- account snapshot interval
+- positions snapshot interval
+- orders snapshot interval
+- candle sync interval
+- tick sync interval
+- max bars per payload
+- max payload bytes
+- debug level
+- retry behavior
+- module toggles
+- bridge mode
+- feature flags
+- symbol aliases
+- timeframe aliases
+- endpoint versions
+
+Whitelisted command system must support:
+- sync account now
+- sync positions now
+- sync orders now
+- sync candles now
+- sync ticks now
+- watch/unwatch symbol
+- watch/unwatch timeframe
+- refresh symbol map
+- set debug level
+- pause/resume stream
+- rotate token
+- ping
+- place order
+- modify position
+- close position
+- cancel order
+
+Rules:
+- no arbitrary code execution
+- unknown commands rejected
+- every command gets result
+- every command has idempotency key
+- every broker-impacting command requires existing live permission gates
+- admin trace for every command
+- user role restrictions remain intact
+
+PHASE 12 — SECURITY AND RELIABILITY
+
+Bridge messages must be secure.
+
+Add/verify:
+- bridge_id
+- bridge secret/token
+- HMAC signature or secure token validation
+- timestamp freshness window
+- replay protection
+- account binding
+- sequence validation
+- duplicate detection
+- retry-safe idempotency
+- admin logging of invalid attempts
+- no secrets exposed in UI/Ruby/logs visible to normal users
+
+Handle:
+- terminal offline
+- EA removed
+- AutoTrading disabled
+- WebRequest URL not allowed
+- broker server disconnected
+- sequence gap
+- duplicate event
+- stale heartbeat
+- malformed payload
+- partial payload
+- delayed transaction
+- rejected order
+- accepted but not filled
+- fill without original ARX command
+- manual position opened
+- manual position closed
+- broker-side SL/TP close
+- partial close
+- VPS sleep/network loss
+- backend restart
+- frontend reconnect
+- config fetch failure
+- command retry failure
+
+PHASE 13 — LATENCY TARGETS AND OBSERVABILITY
+
+Define and track latency.
+
+Targets:
+- trade transaction event reaches backend within 250–750ms under normal conditions
+- UI updates within 500ms–1.5s after backend receives event
+- account snapshot after trade event within 1–2s
+- open P/L cadence around 1s when bridge healthy
+- heartbeat every 1–3s
+- stale detection within 5–10s
+- active candle update close to real-time
+- scalp/run-on scanner uses fresh data only
+
+Track:
+- EA event_created_at
+- sent_at
+- backend_received_at
+- backend_processed_at
+- ui_broadcast_at
+- total latency
+- sequence gap count
+- duplicate count
+- retry count
+- stale heartbeat count
+- rejected payload count
+- provider freshness
+- AI decision data age
+
+PHASE 14 — BUILD AND VERIFY WITHOUT FAKE DATA
+
+Build all Bridge v2 backend/app/EA pieces necessary for beta.
+
+Allowed:
+- real EA Bridge v2 code
+- backend endpoints
+- validation schemas
+- config/command system
+- event ingest
+- idempotency
+- sequence tracking
+- lifecycle mapping
+- phantom dry-run reconciler
+- candle validation
+- tick validation
+- UI truth helper updates
+- Ruby truth context
+- Scanner provider freshness
+- Flame/Run-On provider freshness
+- Governance stale-data challenge
+- admin trace
+- tests
+
+Not allowed:
+- fake EA events as live
+- fake broker fills
+- fake candles
+- fake balances
+- simulated test as proof
+- demo/paper test as proof
+- mark bridge v2 healthy unless real bridge messages arrive
+- mark MT5 candles contributing unless real candles arrive
+- enable reconciler writes before dry-run proof
+- bypass role gates
+
+PHASE 15 — PRE-LIVE TEST GATES
+
+Before firing the live test, verify and report:
+
+1. EA Bridge v2 installed/compiled/downloadable.
+2. EA version visible in Admin.
+3. Bridge heartbeat fresh.
+4. Bridge config applied.
+5. Command polling works.
+6. Account snapshot fresh.
+7. Positions snapshot fresh.
+8. Orders snapshot fresh.
+9. Trade event ingest healthy.
+10. Sequence tracking active.
+11. Idempotency active.
+12. Admin trace active.
+13. UI bridge status shows connected with no contradictions.
+14. Account balance/equity/margin displayed from live broker snapshot.
+15. No dummy balances.
+16. No paper/demo/simulation wording in active live flow.
+17. Live broker execution is enabled for OWNER live test if already authorized.
+18. OWNER/admin permissions verified.
+19. Selected live test symbol is tradable.
+20. Minimum lot size determined from broker/symbol rules.
+21. Spread acceptable for micro test.
+22. Market open/tradable.
+23. Kill switch reachable.
+24. Close-position command path verified.
+25. Reconciler remains dry-run.
+26. MT5 candle contribution only marked active if real candles arrived.
+
+If any gate fails, do not place a live trade. Report the blocker exactly.
+
+PHASE 16 — REAL LIVE MICRO-TEST
+
+After all gates pass, fire one real live micro-test through Bridge v2.
+
+No demo. No paper. No fake. No simulation.
+
+Test requirements:
+- Use the smallest allowed live lot/volume for the selected safe symbol.
+- Use a controlled symbol that is currently tradable and visible in the bridge.
+- Place a single live micro trade through the ARX command path.
+- Capture full lifecycle:
+  - requested
+  - queued
+  - sent_to_bridge
+  - broker_received
+  - accepted or rejected
+  - filled if broker fills
+  - open position appears in broker positions snapshot
+  - account snapshot updates
+  - P/L updates live
+  - Ruby/Trade/Admin reflect broker truth
+  - close requested
+  - close sent
+  - close accepted
+  - closed if broker closes
+  - close-fill/P&L reflected
+  - position disappears from broker open positions
+  - reconciler does not leave phantom open position
+- If rejected, stop and report true broker rejection reason.
+- If filled, close it promptly after verifying real-time display.
+- Do not stack positions.
+- Do not run repeated live tests unless explicitly instructed.
+- Do not use fake success wording.
+
+PHASE 17 — POST-LIVE TEST VERIFICATION
+
+After the live test, verify:
+
+- order lifecycle matched broker truth
+- no queued-as-filled bug
+- no fake success toast
+- no phantom open position left
+- open P/L updated in real time while trade was open
+- balance/equity/margin updated after open/close
+- close-fill/P&L reflected correctly
+- Admin trace shows full bridge event path
+- Ruby explains only true state
+- Scanner/Risk/Governance did not consume stale/fake account data
+- bridge latency metrics recorded
+- sequence/idempotency records created
+- UI connected/disconnected status consistent
+- no paper/demo wording appeared
+- reconciler stayed dry-run unless explicitly authorized otherwise
+- live broker execution settings were not changed beyond the authorized live micro-test path
+
+PHASE 18 — TESTS
+
+Run:
+- typecheck
+- bridge contract tests
+- EA payload validation tests if available
+- backend ingest tests
+- command/config tests
+- idempotency tests
+- sequence gap tests
+- lifecycle mapping tests
+- phantom reconciler dry-run tests
+- candle validation tests
+- tick validation tests
+- account snapshot freshness tests
+- UI truth tests
+- Ruby truth tests
+- Scanner provider freshness tests
+- Flame/Run-On provider freshness tests
+- Governance stale-data challenge tests
+- role-gating tests
+- CI guards
+- architect review if available
+
+PHASE 19 — FINAL REPORT
+
+Report:
+
+1. Bridge v2 Beta Kernel files changed/created.
+2. EA Bridge v2 version.
+3. Backend endpoints created/upgraded.
+4. Config manifest system status.
+5. Whitelisted command system status.
+6. Event ingest status.
+7. Lifecycle mapping status.
+8. Phantom reconciler dry-run status.
+9. Account/P&L stream status.
+10. Candle/tick feed status.
+11. Ruby integration status.
+12. Scanner integration status.
+13. Flame Scalp / Run-On integration status.
+14. Risk integration status.
+15. Governance/Agent integration status.
+16. Traffic Controller integration status.
+17. UI truth status.
+18. Security/auth status.
+19. Latency metrics.
+20. Pre-live gate results.
+21. Real live micro-test result:
+    - symbol
+    - volume
+    - order ticket
+    - deal ticket
+    - position ticket
+    - lifecycle events
+    - fill status
+    - close status
+    - final P/L
+    - broker retcodes/comments
+22. Any blocker if live test could not be fired.
+23. What remains before launch beta.
+
+COMPLETION STANDARD
+
+Do not mark complete until:
+
+- Bridge v2 Beta Kernel is built or the exact blocker is reported
+- remote config and whitelisted command system exist
+- backend event ingest exists
+- trade lifecycle truth is broker-confirmed
+- account/P&L stream is real
+- phantom-position prevention is active in dry-run
+- candle/tick path is ready and truthful
+- Ruby/Scanner/Risk/Governance/Flame/Run-On receive bridge truth
+- UI truth contract is enforced
+- all pre-live gates pass before live trade
+- exactly one real live micro-test is attempted only after gates pass
+- test result is reported honestly
+- no fake/demo/paper result is used
+- no dummy broker data is introduced
+- role gates remain intact
+- validation passes or blockers are reported exactly

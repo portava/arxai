@@ -1,0 +1,82 @@
+Upgrade the Validation Command Center with Adversarial Validation.
+
+Goal:
+Actively attempt to break, stress, invalidate, and expose weaknesses in strategies, agent logic, execution assumptions, and behavioral models before any live promotion.
+
+Add:
+
+/src/domain/adversarial-validation/
+  adversarialValidation.engine.ts
+  strategyAttack.engine.ts
+  edgeFragility.engine.ts
+  overfitExposure.engine.ts
+  regimeCollapse.engine.ts
+  executionSabotage.engine.ts
+  behavioralStress.engine.ts
+  contradictionTest.engine.ts
+  assumptionAudit.engine.ts
+
+Adversarial tests must include:
+
+1. Edge Fragility
+- small parameter shifts
+- delayed entries
+- delayed exits
+- reduced liquidity
+- spread widening
+- slippage increase
+
+2. Regime Collapse
+- strategy used in wrong regime
+- sudden trend reversal
+- volatility explosion
+- chop transition
+- liquidity collapse
+
+3. Execution Sabotage
+- partial fills
+- latency spikes
+- rejected orders
+- broker instability
+- execution delays
+
+4. Behavioral Stress
+- post-loss aggression
+- override frequency
+- fatigue conditions
+- revenge-trading conditions
+- overtrading patterns
+
+5. Contradiction Testing
+- conflicting agent votes
+- stale signals
+- incomplete data
+- corrupted data
+- misleading market structure
+
+6. Overfit Exposure
+- randomization
+- shuffled trade order
+- out-of-sample testing
+- synthetic market variations
+- hidden-regime evaluation
+
+Rules:
+- Validation must actively search for failure conditions.
+- Strategies must prove robustness, not just profitability.
+- Fragile strategies must be restricted, demoted, or retired.
+- High profit with weak robustness cannot pass full promotion.
+- All adversarial test results must be logged into the Black Box Vault.
+- Replay Lab must support adversarial replay scenarios.
+- Validation reports must explain exactly what broke the strategy and why.
+
+Required outputs:
+- fragilityScore
+- robustnessScore
+- adversarialFailurePoints
+- regimeCollapseRisk
+- executionFragilityScore
+- behavioralFragilityScore
+- overfitExposureScore
+- contradictionToleranceScore
+- recommendedRestrictions

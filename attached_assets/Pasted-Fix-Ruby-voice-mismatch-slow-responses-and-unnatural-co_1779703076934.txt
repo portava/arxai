@@ -1,0 +1,90 @@
+Fix Ruby voice mismatch, slow responses, and unnatural copy/paste-style message rendering.
+
+Important:
+Ruby already exists. Do NOT rebuild Ruby from scratch. Do NOT create a duplicate assistant, duplicate voice system, duplicate chat system, or duplicate TTS system. Find the existing Ruby chat/voice pipeline and repair it end-to-end.
+
+Current bugs:
+1. The selected voice in the UI does not match the voice Ruby actually speaks with.
+2. Ruby takes way too long to respond.
+3. Ruby’s text response appears like it is pasted all at once instead of feeling like someone is typing naturally.
+
+Before changing code:
+- Search the whole app for Ruby chat, voice selection, selectedVoice, voiceId, voiceName, activeVoice, TTS, ElevenLabs, OpenAI speech, audio playback, preview voice, speak, synthesize, auto-speak, typing indicator, streaming, message rendering, and chat response pipeline.
+- Identify the exact flow from:
+  user selects voice → voice is saved → Ruby responds → TTS request is made → audio plays.
+- Identify where the displayed selected voice differs from the voice ID/name actually sent to the TTS provider.
+- Reuse the current system. Do not add another system beside it.
+
+Voice mismatch fix:
+1. Create/repair one single source of truth for Ruby’s active voice.
+2. The voice selected in the UI must be the exact same voice used in Ruby’s real spoken responses.
+3. Previewing a voice must ONLY preview that sample voice.
+4. Preview must not change Ruby’s active voice unless the user clicks “Use This Voice” / “Set as Ruby Voice.”
+5. When a voice is selected, save both display name and provider voice ID if needed.
+6. Ruby’s actual TTS request must always read from the saved active voice, not from:
+   - preview state
+   - stale local state
+   - hardcoded fallback
+   - cached previous voice
+   - provider default voice
+   - Bella fallback when another voice is selected
+7. Bella should remain the default only when no active voice has been selected.
+8. After voice selection, refresh/reload should still keep the selected voice.
+9. If the user changes voice, immediately use the new voice for the next Ruby spoken response.
+10. Hide all voice IDs, provider names, backend names, internal functions, and debug text from normal users.
+
+Add admin-only/internal diagnostics if useful:
+- Log “selectedRubyVoiceName” and “ttsVoiceActuallyUsed” only in server logs or admin/debug mode.
+- Never show this to normal users.
+
+Ruby speed fix:
+1. Ruby should show “Ruby is thinking…” or animated three-dot typing feedback immediately after the user sends a message.
+2. Do not wait for TTS audio generation before showing the text response.
+3. Text response should start rendering as soon as possible.
+4. TTS/audio generation should happen after or alongside the text response, but must not block the visible response.
+5. Remove unnecessary repeated full-system scans, duplicate API calls, duplicate memory calls, duplicate market calls, or blocking waits from normal chat responses.
+6. Use cached/available context where safe instead of refetching everything for every basic message.
+7. Add request timeout handling and graceful fallback if voice generation is slow.
+8. If Ruby needs longer for market analysis, show progressive status messages like:
+   - “Checking market structure…”
+   - “Reviewing risk…”
+   - “Building answer…”
+   These should feel clean and user-facing, not technical.
+
+Natural typing fix:
+1. Ruby’s text should not appear as one pasted block.
+2. Implement streaming text if the current AI provider supports it.
+3. If true streaming is not available, implement a frontend typewriter/chunk renderer that reveals the completed response in natural chunks.
+4. The typing should feel human:
+   - reveal words/short phrases progressively
+   - keep punctuation pauses subtle
+   - do not reveal giant paragraphs instantly
+   - do not make it painfully slow
+5. Keep the typing animation smooth on mobile.
+6. Do not delay the entire response just to fake typing.
+7. User should see the answer begin quickly, then continue typing naturally.
+8. Auto-scroll should follow the response while Ruby types, without jumping aggressively.
+9. The typing dots should stop only when Ruby’s response is complete.
+10. If audio auto-speak is enabled, text should still type naturally while audio plays or prepares.
+
+Acceptance tests:
+1. Select Bella, ask Ruby a question, confirm Ruby speaks in Bella.
+2. Select another voice, ask Ruby a question, confirm Ruby speaks in that selected voice.
+3. Refresh app, ask again, confirm selected voice persists.
+4. Preview a different voice, then ask Ruby a question, confirm preview did not change active voice.
+5. New user defaults to Bella.
+6. Existing user keeps their saved voice.
+7. Ruby starts showing thinking/typing feedback immediately after send.
+8. Ruby text starts appearing quickly instead of waiting for the whole response/audio.
+9. Ruby response renders progressively like typing, not pasted all at once.
+10. Ruby auto-speaks without needing the play button.
+11. TTS failure should not block text response.
+12. Mobile Safari/iPhone behavior works.
+13. No internal provider IDs, function names, backend names, or debug text appear to normal users.
+14. No duplicate Ruby assistant, duplicate chat, or duplicate voice system was created.
+
+Keep scope focused:
+- Do not rerun Phase 22V.
+- Do not rebuild unrelated trading features.
+- Do not change trading safety settings.
+- Only repair existing Ruby voice selection, Ruby response speed, and Ruby typing/rendering behavior.

@@ -1,0 +1,270 @@
+REAL-DEVICE SPEED VERIFICATION + FINAL UX CLEANUP PASS
+
+Continue from the last checkpoint.
+
+Do not redo the direct-URL containment work.
+Do not redo the Paper Trading containment work.
+Do not redo the Scanner chart API fix.
+Do not disturb backend trade gates.
+Do not disturb the live MT5 path.
+Do not reset live broker execution config.
+Do not place a live trade during this task.
+Do not rebuild the app.
+
+The last pass completed:
+
+1. direct-URL containment
+2. normal-user paper/admin/dev route blocking
+3. Paper Trading removal from normal-user flow
+4. Scanner quick-link cleanup
+5. route access guard
+6. guards 26/26
+7. typecheck green
+8. no backend/live MT5 changes
+
+Now prove the app is actually fast and usable on the real preview, not just type-safe.
+
+Primary goal:
+Verify and fix real-device perceived speed across the app, especially Scanner and trade actions.
+
+Hard requirement:
+The user should not wait 7 seconds for any normal page to become usable.
+
+Target UX:
+
+1. Bottom nav tap feedback: under 100ms.
+2. Page shell visible: under 1 second.
+3. Scanner shell visible: under 1 second.
+4. Scanner search usable: under 1 second.
+5. Chart skeleton visible: under 1 second.
+6. Scanner market selection visual feedback: under 300ms.
+7. Trade button feedback: under 100ms.
+8. Ruby thinking indicator: under 100ms.
+9. If final data takes longer, show loading/pending state immediately.
+
+PART 1 — Test the real preview like a user
+
+Open the actual Replit preview URL and test in mobile viewport and desktop viewport.
+
+Test these pages:
+
+1. Cockpit
+2. Trade, if still present
+3. Scanner
+4. Ruby / AI
+5. More / Settings
+6. Admin page as owner/admin
+7. Any normal-user bottom nav item
+
+For each page, record:
+
+1. tap/click time
+2. first visual feedback time
+3. first usable shell render time
+4. first data render time
+5. total time until usable
+6. console errors
+7. failed network calls
+8. slowest network call
+9. repeated network calls
+10. whether the user sees blank/frozen UI
+
+Do not rely only on typecheck.
+Do not rely only on guard tests.
+Actually open the preview and measure perceived user speed.
+
+PART 2 — Scanner real-device test
+
+Scanner is the highest priority.
+
+Test:
+
+1. Tap Scanner from bottom nav.
+2. Confirm immediate tap feedback.
+3. Confirm Scanner shell renders fast.
+4. Confirm chart skeleton appears fast.
+5. Confirm search input is usable fast.
+6. Confirm selected symbol appears fast.
+7. Confirm quote/chart/results load progressively.
+8. Confirm Ruby does not block Scanner.
+9. Confirm notifications do not block Scanner.
+10. Confirm bridge status does not block Scanner.
+11. Confirm no page-level error boundary appears.
+12. Confirm failed widgets show local retry/error cards only.
+
+If Scanner takes over 1 second to show shell:
+
+1. Identify what is blocking shell render.
+2. Move that dependency after first paint.
+3. Add skeleton/pending state.
+4. Retest.
+
+If Scanner takes multiple seconds because of:
+
+1. quote
+2. candles
+3. bridge health
+4. notification count
+5. Ruby
+6. news
+7. history
+8. backtest
+9. scanner results
+
+then make that dependency asynchronous and non-blocking.
+
+PART 3 — Fix any remaining 7-second cause
+
+Investigate and fix:
+
+1. Heavy global imports.
+2. Chart library loaded outside Scanner.
+3. Ruby voice/speech modules loaded before needed.
+4. Admin-only modules loaded for normal users.
+5. Hidden tabs loading before selected.
+6. Notification badge blocking route render.
+7. Repeated auth/session requests.
+8. Repeated bridge-health requests.
+9. Repeated scanner requests.
+10. Large market list loaded before search is usable.
+11. News/history/backtest blocking first paint.
+12. Excessive console/debug logging.
+13. App rerendering fully on every route change.
+14. Full refetch on every route change.
+15. Any markdown/docs accidentally bundled into frontend.
+16. Any old manual-review pages still in normal-user bundle.
+
+Fix safely:
+
+1. lazy-load heavy components
+2. defer noncritical requests
+3. batch duplicate requests
+4. cache safe static metadata
+5. debounce search
+6. cancel stale requests
+7. memoize heavy components
+8. virtualize long lists if needed
+9. show skeletons immediately
+10. keep user-specific trade data server-filtered
+
+PART 4 — Trade action speed check
+
+Do not place a live trade.
+
+Test the UI flow up to the point before live execution, or use DEMO if safe.
+
+For trade controls:
+
+1. Buy button feedback under 100ms.
+2. Sell button feedback under 100ms.
+3. Trade modal/drawer opens quickly.
+4. Confirm button shows pending immediately.
+5. UI shows “Confirming with broker…” while waiting.
+6. UI does not claim success before MT5 confirmation.
+7. Ruby does not block the trade flow.
+8. Scanner results do not block the trade flow.
+
+Do not fake execution.
+Do not bypass backend validation.
+Do not bypass user ownership.
+Do not bypass permissions.
+
+PART 5 — Confirm Paper Trading is truly out of normal product flow
+
+Verify normal users cannot reach:
+
+1. /demo-trading
+2. /orders/demo
+3. /positions/demo
+4. /my-paper-trades
+5. any Paper Trading labeled page
+6. any Paper Trading fallback UI
+7. any Paper Trading mode selector
+
+Normal users should see only:
+
+1. DEMO
+2. LIVE
+
+The DEMO journal/performance page may stay only if it is clearly DEMO, not Paper Trading.
+
+PART 6 — Optional follow-up tests from architect
+
+Add the architect’s suggested follow-up tests if low risk:
+
+1. containment tests for blocked normal-user routes
+2. nav-subset-of-allowlist parity assertion
+3. command-palette filtering so normal users cannot discover blocked/admin/dev/paper pages through search or commands
+
+Do not add these if they require backend/live MT5 changes.
+
+PART 7 — Trim replit.md if still large
+
+If replit.md is still large, trim old completed details into:
+docs/history/replit-history.md
+
+Keep active rules:
+
+1. ARX identity
+2. DEMO/LIVE only
+3. MT5 bridge rules
+4. Scanner priority
+5. Ruby rules
+6. performance targets
+7. live safety gates
+8. route containment rules
+9. unresolved risks
+
+Report before/after line count.
+
+PART 8 — Regression tests
+
+After every fix, run:
+
+1. typecheck
+2. ci:guards
+3. route access tests
+4. normal-user blocked route tests
+5. admin route access tests
+6. Scanner smoke test
+7. mobile viewport smoke test
+8. performance timing check
+9. console/network error check
+
+Verify:
+
+1. App starts.
+2. Login works.
+3. Cockpit loads quickly.
+4. Scanner loads quickly.
+5. Ruby loads quickly.
+6. More loads quickly.
+7. Normal users cannot access blocked routes.
+8. Admin/owner can access admin routes.
+9. Paper Trading is not in normal-user flow.
+10. DEMO/LIVE remain intact.
+11. Live MT5 path remains untouched.
+12. No master-account trade data leaks.
+13. No new console errors.
+14. No unhandled network failures.
+
+Completion standard:
+Do not mark complete unless real preview/mobile timing is tested.
+
+Final report must include:
+
+1. real mobile preview timing for each page
+2. real desktop timing for each page
+3. Scanner shell timing
+4. chart skeleton timing
+5. search usability timing
+6. trade-button feedback timing
+7. slowest remaining dependency
+8. what was fixed
+9. what was deferred
+10. whether any page still takes over 1 second to become usable
+11. exact reason for anything still slow
+12. confirmation that live MT5 path was untouched
+13. confirmation that normal users cannot reach Paper/admin/dev/dormant routes
+14. tests passed
+15. remaining risks

@@ -1,0 +1,291 @@
+Proceed with Stage 2 — Tabbed Page Restructure.
+
+Stage 1 menu consolidation and role-visibility cleanup is complete and green. Continue from the current merged state. Do not undo Stage 1. Do not delete active routes. Do not rebuild the app.
+
+The goal of Stage 2 is to reduce page clutter by organizing long, crowded pages into clean tabbed sections while preserving every active feature and route.
+
+MAIN GOAL
+
+Convert pages with too many visible sections into grouped tabbed pages so the app feels cleaner, easier to navigate, and less overwhelming.
+
+This is not a full visual redesign. Do not overhaul colors, styling, animations, branding, or layout theme. This is a structure cleanup pass using tabs, grouped panels, and collapsible sections.
+
+STAGE 2 REQUIREMENTS
+
+1. Audit Long/Crowded Pages
+
+Inspect all major pages after Stage 1:
+
+* Dashboard
+* Markets
+* Trade
+* Ruby
+* Risk
+* Intelligence
+* Admin
+* Investor dashboard
+* Settings
+* Any remaining consolidated parent pages
+
+Identify pages with:
+
+* too much vertical scrolling
+* repeated sections
+* unrelated tools stacked together
+* multiple tools that should be tabs
+* admin-only blocks mixed with user-facing blocks
+* duplicated explanation panels
+* dormant or low-use blocks taking prime space
+* repeated alerts or instruction text
+
+Do not delete features. Move them into the correct tab/group.
+
+2. Markets Page Tabs
+
+Organize Markets into tabs such as:
+
+* Focus Scan
+* Broad Scan
+* Flame Scalp
+* Watchlist
+* Market Explain
+* Market History / News Context if already available
+
+Requirements:
+
+* Focus Scan still works.
+* Broad Scan still works.
+* Flame Scalp still works.
+* Selected market explanation still works.
+* Market search/symbol selection remains available.
+* Scanner results remain connected to Ruby, Risk, Agent Scoring, and Governance where currently wired.
+* No scanner path should break.
+
+3. Trade Page Tabs
+
+Organize Trade into tabs such as:
+
+* New Trade
+* One-Click Scalp
+* Positions
+* Pending Orders
+* Modify SL/TP
+* History
+
+Requirements:
+
+* Manual trade ticket remains usable.
+* One-click scalp flow remains usable.
+* Active positions display correctly.
+* Pending orders display correctly.
+* SL/TP editing remains reachable.
+* Trade history remains reachable.
+* Close/modify actions remain connected.
+* Investor/view-only users must not see trade-action tabs.
+* Normal trader permissions must remain correct.
+* Admin/OWNER retains full access.
+
+4. Ruby Page Tabs
+
+Organize Ruby into tabs or grouped sections such as:
+
+* Chat
+* Market Explanation
+* Trade Reasoning
+* Voice
+* Memory / Saved Chats if already present
+
+Requirements:
+
+* Ruby chat still works.
+* Ruby typing/thinking indicator still works.
+* Ruby plain-English market explanations still work.
+* Ruby does not expose backend function names, route names, env names, schema names, or internal code wording to normal users.
+* Voice mode remains available if already implemented.
+* Saved chats/memory remains reachable if already implemented.
+
+5. Risk Page Tabs
+
+Organize Risk into tabs such as:
+
+* Risk Score
+* Reward-to-Risk
+* Stop Loss / Take Profit
+* Exposure
+* Warnings
+
+Requirements:
+
+* Risk score remains connected.
+* Reward-to-risk remains connected.
+* SL/TP logic remains reachable.
+* Exposure/account protection remains reachable if present.
+* Risk warnings still appear where needed across Scanner, Ruby, Trade, and Admin.
+
+6. Intelligence Page Tabs
+
+Organize Intelligence into admin/OWNER-safe tabs such as:
+
+* Agent Scores
+* Lifecycle
+* Governance
+* Learning Camp
+* Agent Factory
+* Household Report
+* Traffic Controller
+* Trace
+
+Requirements:
+
+* Intelligence remains admin/OWNER only.
+* Normal users must not see raw agent internals.
+* Agent scoring/lifecycle remains visible to admin.
+* Governance trace remains visible to admin.
+* Learning Camp remains visible to admin.
+* Agent Factory remains controlled and not user-facing.
+* Traffic Controller visibility remains admin-only.
+
+7. Admin Page Tabs
+
+Organize Admin into tabs such as:
+
+* Users
+* Invites
+* Permissions
+* Live Controls
+* Bridge / MT5 / Deriv
+* EA Download
+* Owner Live Test
+* Logs
+* QA / Health
+* System Settings
+
+Requirements:
+
+* Admin/OWNER keeps full access.
+* Live controls remain gated.
+* Owner live test panel remains reachable.
+* MT5/Deriv bridge status remains reachable.
+* EA download link remains reachable.
+* Invite/user controls remain reachable.
+* Kill switches remain reachable.
+* Execution logs remain reachable.
+* QA/system health remains reachable.
+* Normal users and investors must not see these tabs.
+
+8. Investor View Tabs
+
+Organize investor/view-only area into tabs such as:
+
+* Funds
+* Allocation Preferences
+* Performance
+* Reports
+* Settings
+
+Requirements:
+
+* Investor users remain view-only.
+* Investors cannot place trades.
+* Investors cannot access trader controls.
+* Investors cannot access admin controls.
+* Allocation preference controls remain safe and limited to intended investor actions.
+
+9. Settings Tabs
+
+Organize Settings into grouped sections such as:
+
+* Profile
+* Account
+* Security
+* Notifications
+* Preferences
+* Connections
+
+Requirements:
+
+* Settings remain role-safe.
+* No admin settings leak to normal users.
+* No backend/internal labels exposed.
+
+10. Preserve Direct Routes
+
+Since Stage 1 kept hidden routes reachable, Stage 2 must preserve routing behavior.
+
+If a feature is moved into a tab:
+
+* keep the old route redirecting or deep-linking to the correct tab where reasonable
+* avoid broken links
+* avoid 404s for routes that were previously active
+* preserve command palette access where appropriate
+* preserve role gates
+
+11. Reduce Repeated Text and Alerts
+
+On each tabbed page:
+
+* remove repeated instructions where the same warning appears multiple times
+* collapse long explanation blocks
+* keep critical warnings visible
+* move detailed technical explanations to admin-only details panels
+* use plain user language
+
+12. QA Requirements
+
+Run QA as:
+
+* OWNER/admin
+* regular trader
+* investor/view-only
+* logged-out user
+
+Test:
+
+* bottom nav
+* floating action menu
+* command palette
+* sidebar
+* all consolidated parent pages
+* all tabs
+* direct routes
+* role-based visibility
+* Markets tabs
+* Trade tabs
+* Ruby tabs
+* Risk tabs
+* Intelligence tabs
+* Admin tabs
+* Investor tabs
+* Settings tabs
+* no broken links
+* no missing handlers
+* no admin leaks
+* no trader controls shown to investors
+* no internal/backend wording shown to normal users
+
+13. Final Report
+
+When finished, report:
+
+* which pages were converted to tabs
+* what tabs were created
+* what features moved under each tab
+* what routes were preserved
+* what role gates were verified
+* what duplicate/repeated UI was reduced
+* what remains for later visual UI polish
+* what QA passed
+* any blockers
+
+COMPLETION STANDARD
+
+Do not mark Stage 2 complete until:
+
+* major pages are cleaner and less cluttered
+* long pages are organized into tabs/groups
+* every active feature remains reachable
+* role-based visibility is still correct
+* no routes are broken
+* no backend/internal wording leaks to users
+* all validation/typecheck/guard checks pass
+* the app is ready for manual UI polish afterward

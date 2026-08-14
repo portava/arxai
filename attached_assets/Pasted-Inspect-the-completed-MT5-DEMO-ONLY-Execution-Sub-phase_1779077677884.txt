@@ -1,0 +1,152 @@
+Inspect the completed MT5 DEMO-ONLY Execution Sub-phases 1 + 2 before continuing.
+
+Do NOT build Sub-phase 3 yet.
+Do NOT add EA OrderSend / OrderModify / OrderClose / PositionClose code yet.
+Do NOT send any MT5 command.
+Do NOT unlock live trading.
+Do NOT enable shared MT5 routing.
+Do NOT enable auto-close execution.
+Do NOT weaken live-locked invariants.
+Do NOT expose bridge tokens, broker credentials, session secrets, or private values.
+
+Goal:
+Audit the demo arming state machine and command queue foundation that was just built. Fix only confirmed P0/P1 issues, then stop.
+
+Verify:
+
+1. Demo Execution Modes
+Confirm supported modes exist:
+- PAPER
+- MT5_DEMO_READ_ONLY
+- MT5_DEMO_EXECUTION
+- LIVE_LOCKED
+
+Confirm default remains PAPER / MT5_DEMO_READ_ONLY.
+
+2. Demo Arming State Machine
+Confirm:
+- VERIFIED_DEMO is required.
+- account_type_explicit_demo must PASS.
+- user_owns_bridge must PASS.
+- no_duplicate_ea must PASS or WARN only if globally scoped.
+- safety_envelope_intact must PASS.
+- user arming intent is stored separately from execution permission.
+- arming intent does NOT set allowOrderExecution=true.
+- arming intent does NOT set readOnlyMode=false.
+- arming intent does NOT allow dispatch to MT5.
+
+3. Command Queue Foundation
+Confirm command statuses exist:
+- DRAFT
+- USER_CONFIRMATION_REQUIRED
+- DEMO_APPROVED
+- SENT_TO_MT5_DEMO
+- FILLED_DEMO
+- REJECTED
+- BLOCKED
+- FAILED
+
+Confirm command types exist:
+- PLACE_MARKET_ORDER
+- PLACE_PENDING_ORDER
+- MODIFY_SLTP
+- CLOSE_POSITION
+- CANCEL_PENDING_ORDER
+- SYNC_REQUEST
+- RECONCILE_REQUEST
+
+Confirm:
+- No code path can move a row to SENT_TO_MT5_DEMO in this build.
+- No command can reach MT5 in this build.
+- DEMO_APPROVED is preparatory only.
+- canDispatchToMT5Allowed=false.
+- BROKER_DISPATCH_BUILT=false.
+- commandExecutionAllowed=false.
+
+4. User Confirmation
+Confirm:
+- User confirmation is required before future demo commands.
+- Confirmation state is stored/audited.
+- Confirmation alone does not dispatch anything to MT5.
+- Confirmation cannot bypass VERIFIED_DEMO.
+
+5. API / Route Safety
+Verify forbidden execution endpoints still return blocked/403:
+- queue-command
+- close
+- modify
+- close-all
+
+Expected reason:
+- NOT_ARMED_FOR_LIVE or equivalent safe blocked reason
+
+6. Audit + Safety Snapshots
+Confirm audit events exist for:
+- demo arming intent changed
+- demo command drafted
+- confirmation required
+- command blocked
+- command rejected
+- gate evaluated
+- safety snapshot created
+
+Each relevant audit entry should include:
+- userId
+- bridgeConnectionId if relevant
+- commandId if relevant
+- safetyGateSnapshot
+- result
+- reason
+- timestamp
+
+7. Safety Regression
+Confirm all remain true:
+- liveLocked=true
+- allowOrderExecution=false
+- allowModification=false
+- allowClose=false
+- brokerDispatchBuilt=false
+- canDispatchToMT5Allowed=false
+- commandExecutionAllowed=false
+- brokerPlacementImplemented=false
+- autoCloseMode=ALERT_ONLY
+- sharedMt5RoutingBlocked=true
+- legacy MT5_BRIDGE_TOKEN rejected on EA endpoints
+- per-user isolation intact
+- no secrets leaked
+
+Run:
+1. Typecheck
+2. Full CI guard suite
+3. Stop-limit/order-type QA
+4. Demo arming state machine tests
+5. Command queue lifecycle tests
+6. User confirmation required tests
+7. Forbidden execution endpoint tests
+8. Audit/safety snapshot tests
+9. Secret leakage scan
+10. Per-user isolation regression
+11. Safety-envelope regression
+12. Live trading locked regression
+13. Shared MT5 routing blocked regression
+14. Mandatory code review / architect review
+
+If anything fails:
+- Fix only confirmed P0/P1 issues.
+- Do not build Sub-phase 3.
+- Do not add EA execution code.
+- Rerun checks.
+
+End with:
+- Files inspected
+- Files changed, if any
+- Demo arming result
+- Command queue foundation result
+- User confirmation result
+- Audit/snapshot result
+- Tests run/pass/fail
+- Whether any command can reach MT5
+- Confirmation live trading remains BLOCKED
+- Confirmation demo execution is prepared but NOT sending yet
+- Confirmation MT5 commands remain force-BLOCKED
+- Final answer: READY FOR SUB-PHASE 3 or NOT READY, with reasons.

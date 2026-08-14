@@ -1,0 +1,371 @@
+QA/FIX GATE — VERIFY SAFE LAYERED TRADE TICKET SLICE
+
+Do not add the full EA/bridge execution upgrade yet.
+Do not rebuild.
+Do not redesign.
+Do not delete active ecosystem code.
+Do not fake pending-order execution.
+Do not bypass risk, confirmation, Shared Master, MT5, or AI safety logic.
+
+You just worked on the safe layered trade-ticket slice:
+
+- DB/schema support for pending-order drafts/status if needed
+- Order-type selector in QuickTradeModal
+- Stop Loss field
+- Take Profit field
+- Per-order-type validation
+- Risk/reward calculation
+- Min-stop/min-distance hard guards where data is available
+- AI assistant context for new order types
+- Market orders still using existing execution path
+- Pending orders staying draft/preview-only until EA/bridge upgrade
+
+Now verify everything and fix only confirmed issues with the smallest safe patch.
+
+==================================================
+PHASE 1 — CONFIRM WHAT WAS BUILT
+==================================================
+
+Inspect and report:
+
+1. QuickTradeModal changes
+2. Order type enum/type changes
+3. Stop Loss / Take Profit input changes
+4. Pending-order draft/status storage changes
+5. Risk/reward calculation changes
+6. Validation helper changes
+7. Risk governor changes
+8. AI assistant context changes
+9. Backend payload changes
+10. Any database/schema/migration changes
+
+Confirm supported order types exist:
+
+- BUY_MARKET
+- SELL_MARKET
+- BUY_LIMIT
+- SELL_LIMIT
+- BUY_STOP
+- SELL_STOP
+- BUY_STOP_LIMIT
+- SELL_STOP_LIMIT
+
+If the app uses a different internal naming style, confirm there is a safe mapping layer.
+
+==================================================
+PHASE 2 — MARKET ORDER SAFETY CHECK
+==================================================
+
+Market orders must still work through the existing safe path.
+
+Verify:
+
+1. Buy Market still submits through the existing flow.
+2. Sell Market still submits through the existing flow.
+3. SL/TP are included in market order payloads if supported.
+4. Confirmation is still required.
+5. runActionGuards() still runs.
+6. riskGovernorEnforcement still runs.
+7. Shared Master routing/attribution still runs.
+8. Read-only/live-locked/trading-disabled states still block or preview honestly.
+9. No fake success is returned.
+10. Existing market-order behavior was not broken.
+
+Fix anything broken.
+
+==================================================
+PHASE 3 — PENDING ORDER DRAFT/PREVIEW CHECK
+==================================================
+
+Pending orders are NOT supposed to execute live in this slice.
+
+Verify pending order types can be selected and validated:
+
+- Buy Limit
+- Sell Limit
+- Buy Stop
+- Sell Stop
+- Buy Stop Limit
+- Sell Stop Limit
+
+But submission must remain:
+
+- Draft-only
+- Preview-only
+- Or return honest “EA/bridge upgrade required” status
+
+Confirm pending-order flow does NOT send live execution commands to MT5 yet unless the existing bridge already safely supports it.
+
+Required behavior:
+
+1. User can select pending order type.
+2. Required fields appear.
+3. Validation runs.
+4. Risk/reward displays.
+5. Confirmation/preview appears.
+6. Backend does not fake order placement.
+7. UI does not show “successfully placed” if bridge execution is unsupported.
+8. User sees a clear message:
+   “Pending order execution requires EA/bridge upgrade.”
+
+==================================================
+PHASE 4 — FIELD DISPLAY CHECK
+==================================================
+
+Verify the UI shows only the fields needed.
+
+Buy Market / Sell Market:
+- Symbol
+- Lot size
+- Stop Loss
+- Take Profit
+
+Buy Limit / Sell Limit / Buy Stop / Sell Stop:
+- Symbol
+- Lot size
+- Entry price
+- Stop Loss
+- Take Profit
+
+Buy Stop Limit / Sell Stop Limit:
+- Symbol
+- Lot size
+- Stop trigger price
+- Stop-limit price
+- Stop Loss
+- Take Profit
+
+Fix any UI issue where wrong fields show or required fields are missing.
+
+Keep the layout mobile-friendly.
+
+==================================================
+PHASE 5 — VALIDATION CHECK
+==================================================
+
+Verify validation rules.
+
+BUY_MARKET:
+- SL below entry/current ask
+- TP above entry/current ask
+
+SELL_MARKET:
+- SL above entry/current bid
+- TP below entry/current bid
+
+BUY_LIMIT:
+- Entry below current price
+- SL below entry
+- TP above entry
+
+SELL_LIMIT:
+- Entry above current price
+- SL above entry
+- TP below entry
+
+BUY_STOP:
+- Entry above current price
+- SL below entry
+- TP above entry
+
+SELL_STOP:
+- Entry below current price
+- SL above entry
+- TP below entry
+
+BUY_STOP_LIMIT:
+- Trigger above current ask
+- Limit price at or below trigger unless symbol/MT5 rules require otherwise
+- SL below limit/entry
+- TP above limit/entry
+
+SELL_STOP_LIMIT:
+- Trigger below current bid
+- Limit price at or above trigger unless symbol/MT5 rules require otherwise
+- SL above limit/entry
+- TP below limit/entry
+
+Also verify:
+
+- Numeric-only inputs
+- Symbol precision/digits when available
+- Min stop distance when available
+- Min pending distance when available
+- Lot size rules
+- SL required when user/risk settings require it
+- Missing market data produces honest unavailable/preview state, not fake validation
+
+Fix validation mismatches.
+
+==================================================
+PHASE 6 — RISK / RR CHECK
+==================================================
+
+Verify risk/reward logic.
+
+Confirm the app calculates or displays:
+
+1. SL distance
+2. TP distance
+3. Estimated risk
+4. Estimated reward
+5. Risk/reward ratio
+6. Risk percentage if account data is available
+7. Warning if SL is missing and required
+8. Warning if SL/TP is invalid
+9. Warning if entry/trigger/limit is invalid
+10. Warning if data is unavailable
+
+Risk governor must still be the backend authority.
+
+Frontend validation helps the user, but backend must still block unsafe actions.
+
+==================================================
+PHASE 7 — AI CONTEXT CHECK
+==================================================
+
+Verify ARX AI assistant understands the new trade ticket layer.
+
+AI should know:
+
+- Selected order type
+- Draft entry price
+- Draft trigger price
+- Draft stop-limit price
+- Draft SL
+- Draft TP
+- Risk/reward estimate
+- Why an order is blocked
+- Pending orders are draft/preview-only until EA/bridge upgrade
+- Market orders still use existing execution path
+
+AI should be able to answer:
+
+- What is a Buy Limit?
+- What is a Sell Limit?
+- What is a Buy Stop?
+- What is a Sell Stop?
+- What is a Buy Stop Limit?
+- What is a Sell Stop Limit?
+- Is my SL valid?
+- Is my TP valid?
+- What is my risk/reward?
+- Why can’t this pending order be placed live yet?
+
+AI must not:
+- Claim pending orders were placed live when unsupported
+- Promise profit
+- Bypass risk rules
+- Submit actions without confirmation
+
+==================================================
+PHASE 8 — DATABASE / DRAFT STORAGE CHECK
+==================================================
+
+If DB/schema support was added, verify:
+
+1. Migration is valid.
+2. Pending-order drafts are user-specific.
+3. Drafts do not leak between users.
+4. Draft status is clear.
+5. Draft does not pretend to be a live MT5 order.
+6. Existing trade history/journal is not broken.
+
+If DB/schema support was not needed, report why.
+
+Do not add more schema than necessary.
+
+==================================================
+PHASE 9 — SHARED MASTER SAFETY CHECK
+==================================================
+
+Confirm this slice did not break Shared Master mode.
+
+Verify:
+
+1. Shared Master routing still works.
+2. Market orders still respect attribution.
+3. Draft pending orders are tied to the correct user/session.
+4. Virtual P&L rules were not changed incorrectly.
+5. No user sees another user’s draft SL/TP or order settings.
+6. Existing admin shared-master namespace still works.
+7. Existing admin trading routes remain compatible.
+
+==================================================
+PHASE 10 — RUN CHECKS
+==================================================
+
+Run all available checks:
+
+- npm run lint if available
+- npm run typecheck if available
+- npm test if available
+- npm run build
+- backend/API tests if available
+- route health checks if available
+
+If a script does not exist, report it and continue.
+
+Fix all real errors.
+
+==================================================
+PHASE 11 — MANUAL TEST MATRIX
+==================================================
+
+Manually verify:
+
+1. Buy Market valid SL/TP
+2. Buy Market invalid SL
+3. Buy Market invalid TP
+4. Sell Market valid SL/TP
+5. Sell Market invalid SL
+6. Sell Market invalid TP
+7. Buy Limit valid draft/preview
+8. Buy Limit invalid entry
+9. Sell Limit valid draft/preview
+10. Sell Limit invalid entry
+11. Buy Stop valid draft/preview
+12. Buy Stop invalid entry
+13. Sell Stop valid draft/preview
+14. Sell Stop invalid entry
+15. Buy Stop Limit valid draft/preview
+16. Buy Stop Limit invalid trigger/limit
+17. Sell Stop Limit valid draft/preview
+18. Sell Stop Limit invalid trigger/limit
+19. Missing SL when SL is required
+20. Pending order submit returns draft/preview/unsupported, not fake live success
+21. Market order still requires confirmation
+22. Risk governor still blocks unsafe order
+23. AI explains blocked reason
+24. No fake live data appears
+
+==================================================
+FINAL REPORT
+==================================================
+
+Create or update:
+
+TRADE_TICKET_LAYERED_SLICE_REPORT.md
+
+Include:
+
+1. What was built
+2. What was verified
+3. What failed
+4. What was fixed
+5. Files changed
+6. Routes changed
+7. DB/schema changes
+8. Validation status
+9. Risk governor status
+10. AI context status
+11. Shared Master status
+12. Market order status
+13. Pending order draft/preview status
+14. EA/bridge upgrade still required
+15. Tests run
+16. Build result
+17. Remaining blockers
+18. Next recommended slice
+
+Stop after this QA/fix gate and report.

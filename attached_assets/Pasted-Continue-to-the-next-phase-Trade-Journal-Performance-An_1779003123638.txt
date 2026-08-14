@@ -1,0 +1,242 @@
+Continue to the next phase: Trade Journal + Performance Analytics + Trade History.
+
+Do NOT unlock live trading.
+Do NOT enable auto-close execution.
+Do NOT enable shared MT5 routing.
+Do NOT send MT5 execution, modification, cancel, or close commands.
+Do NOT weaken safety envelope, per-user isolation, command queue, risk, attribution, activityStatus, paper-only, MT5 bridge, ALERT_ONLY, notification, market-data, or audit gates.
+Do NOT fake trades, P&L, win rate, performance stats, market data, candles, news, current events, TP targets, or bridge status.
+Do NOT redesign unrelated pages.
+
+Before coding:
+1. Read the latest QA report appended to docs/FULL_TRADING_INTELLIGENCE_ENGINE_QA_REPORT.md.
+2. Confirm final status says READY / READY FOR NEXT PHASE.
+3. Confirm typecheck, 11/11 guards, 8/8 stop-limit QA, auth probes, notification/push checks, market-data checks, and runtime smoke tests were green.
+4. If anything is not green, stop and fix only confirmed P0/P1 issues first.
+
+Goal:
+Build a real per-user trade journal, trade history, and performance analytics layer so users can track paper/demo trades, review decisions, and learn from outcomes without using fake stats.
+
+A. Trade Journal Model
+Create or verify per-user journal records with:
+- journalId
+- userId
+- tradeId/orderId if linked
+- symbol
+- direction
+- orderType
+- accountMode: PAPER, DEMO, SHARED_MT5_VIRTUAL_LOCKED, LIVE_LOCKED
+- entryPrice if available
+- exitPrice if available
+- stopLoss if available
+- takeProfitTargets if available
+- positionSize if available
+- openedAt
+- closedAt if closed
+- tradeStatus: DRAFT, PENDING, OPEN, CLOSED, CANCELLED, BLOCKED
+- realizedPnL if available
+- unrealizedPnL if available
+- pnlUnavailableReason if applicable
+- setupNotes
+- strategyTag
+- emotionBefore
+- emotionAfter
+- lessonLearned
+- aiSummary if generated
+- createdAt
+- updatedAt
+
+Rules:
+- Journal entries must be scoped to authenticated userId.
+- No cross-user journal leakage.
+- No fake P&L or fake trade outcomes.
+- If no paper/demo trades exist, show empty state honestly.
+- If market data is missing/stale, show P&L unavailable reason.
+
+B. Trade History
+Add or upgrade a per-user Trade History page/section showing:
+- all paper/demo trades
+- pending orders
+- blocked orders
+- cancelled orders
+- manual close attempts
+- SL/TP edits
+- AI alert events linked to trades
+- command blocked events
+- audit trail summary per trade
+
+Filters:
+- Symbol
+- Status
+- Date range
+- P&L positive/negative/unavailable
+- Strategy tag
+- Paper/Demo/Live Locked
+- Alerted trades
+- Near SL/TP if data available
+
+C. Performance Analytics
+Create performance summary using only real user-owned trade records:
+- total trades
+- open trades
+- closed trades
+- pending orders
+- win count
+- loss count
+- breakeven count if applicable
+- win rate only if enough closed trades exist
+- realized P&L
+- unrealized P&L only if fresh price data exists
+- average win
+- average loss
+- largest win
+- largest loss
+- profit factor if enough data exists
+- max drawdown if enough data exists
+- risk/reward summary
+- most traded symbols
+- best/worst strategy tag
+- data quality status
+
+Rules:
+- If no closed trades exist, show “Not enough trade history yet.”
+- Do not calculate win rate from open trades.
+- Do not calculate unrealized P&L without fresh price data.
+- Do not invent account performance.
+- Clearly label unavailable metrics and reasons.
+
+D. AI Journal + Performance Awareness
+AI should answer:
+- How am I performing?
+- What trades did I take today?
+- What was my biggest mistake?
+- Which strategy is working best?
+- Which trade hurt me most?
+- Am I overtrading?
+- What should I review?
+- What lessons can I take from my closed trades?
+
+AI must:
+- Use only logged-in user’s journal/trade/performance data.
+- Be honest when there is not enough data.
+- Never invent trades, P&L, win rate, strategy performance, or lessons.
+- Never execute or queue trades from chat.
+- Mention data limitations clearly.
+
+E. Journal Entry Creation Hooks
+Create or verify automatic journal/audit hooks for:
+- paper order created
+- pending order created
+- order blocked
+- trade opened
+- SL edited
+- TP edited
+- AI trade analysis requested
+- AI alert generated
+- manual close requested
+- manual close blocked
+- trade closed in paper/demo
+- order cancelled
+- duplicate action blocked
+
+Rules:
+- Hooks must not create duplicate journal records.
+- Use idempotency keys where appropriate.
+- Audit duplicate suppression.
+- Journal should mirror real trade lifecycle state.
+
+F. Frontend UI
+Add or upgrade:
+- Journal tab/page
+- Trade History list
+- Trade detail journal drawer/page
+- Performance cards
+- Empty state for no trades
+- Data unavailable state for stale/missing market data
+- AI summary area if available
+- Edit journal notes/strategy/emotion/lesson fields
+- Save confirmation
+
+UI honesty:
+- No fake sample trades.
+- No fake charts.
+- No fake performance.
+- Empty state should explain: “No paper trades yet. Place a paper trade to start building your journal.”
+
+G. Audit Trail
+Audit log:
+- journal entry created
+- journal entry updated
+- journal note edited
+- performance viewed
+- trade history viewed
+- AI journal summary requested
+- AI performance analysis requested
+- metric unavailable due to insufficient data
+- duplicate journal hook suppressed
+
+Each audit entry should include:
+- userId
+- journalId if relevant
+- tradeId/orderId if relevant
+- action
+- previous value if relevant
+- new value if relevant
+- reason if unavailable/blocked
+- timestamp
+
+H. Preserve Safety
+Confirm:
+- Live trading = BLOCKED
+- Auto-close = ALERT_ONLY
+- Shared MT5 routing = BLOCKED
+- MT5 commands = force-BLOCKED
+- Command execution = disabled
+- Backend per-user isolation intact
+- Safety envelope allows read-only AI Q&A only
+- UNKNOWN activity hard-blocks auto-close
+- No fake trades, P&L, performance, market data, candles, news, TP targets, or bridge status
+
+After implementation, run:
+1. Typecheck
+2. Full guard suite
+3. Stop-limit/order-type QA
+4. Frontend build/runtime load check
+5. Browser smoke test
+6. Journal ownership tests
+7. Trade history ownership tests
+8. Wrong-owner journal/trade-history tests
+9. Unauthenticated 401 tests
+10. Empty journal/performance state tests
+11. Performance metric calculation tests with real seeded paper trades
+12. Performance unavailable fallback tests
+13. Unrealized P&L stale-data fallback tests
+14. Journal hook/idempotency tests
+15. AI journal/performance honesty tests
+16. Audit trail tests
+17. Per-user isolation regression
+18. Safety-envelope regression
+19. Frontend smoke test for Journal, Trade History, Performance, Trade Detail, and AI assistant
+
+If anything fails:
+- Fix only confirmed P0/P1 issues.
+- Do not redesign unrelated UI.
+- Do not touch unrelated pages.
+- Rerun all checks.
+
+End with a report showing:
+- Files inspected
+- Files changed
+- Journal model result
+- Trade history result
+- Performance analytics result
+- AI journal/performance result
+- Frontend UI result
+- Tests run/pass/fail
+- Current journal status
+- Current performance status
+- Confirmation live trading remains BLOCKED
+- Confirmation auto-close remains ALERT_ONLY
+- Confirmation shared MT5 routing remains BLOCKED
+- Confirmation MT5 commands remain force-BLOCKED
+- Final answer: READY FOR NEXT PHASE or NOT READY, with reasons.

@@ -1,0 +1,242 @@
+Run the final Build DD verification lock-test.
+
+Do not start Build EE.
+Do not add new features unless a Build DD test fails and must be fixed.
+Do not change Build AA, BB, or CC logic except to fix DD integration issues.
+Do not enable live trading.
+
+Build DD goal:
+Create a safe read-only market data layer that Build AA can use for better decisions, with real provider support and synthetic fallback when real data is unavailable.
+
+Verify Build DD only.
+
+1. Typecheck/build health
+
+Run all relevant commands:
+- typecheck
+- build
+- API server validation
+- database/schema validation if available
+
+Show exact commands run and whether each passed.
+
+2. Market Data Service verification
+
+Confirm one unified market data service exists.
+
+Show the exact files/functions for:
+- marketDataService
+- marketDataProviders
+- fallbackMarketDataProvider
+- realMarketDataProvider placeholder or adapter
+- marketDataTypes
+- marketDataHealthCheck
+
+Confirm the service returns this structure:
+
+{
+  symbol,
+  source: "REAL" | "FALLBACK" | "MOCK",
+  provider,
+  bid,
+  ask,
+  mid,
+  spread,
+  timestamp,
+  timeframe,
+  candles,
+  sessionContext,
+  dataQuality
+}
+
+3. Environment safety verification
+
+Confirm these environment variables are supported if needed:
+
+MARKET_DATA_PROVIDER
+MARKET_DATA_API_KEY
+MARKET_DATA_API_SECRET
+MARKET_DATA_BASE_URL
+MARKET_DATA_MODE=read_only
+
+Confirm:
+- MARKET_DATA_MODE must be read_only
+- provider is rejected if not read_only
+- API secrets are never exposed to frontend code
+- API secrets are never returned by endpoints
+- API secrets are never logged
+
+4. Fallback mode proof
+
+Run market data with no real provider credentials.
+
+Confirm:
+- service still works
+- source is clearly labeled FALLBACK or MOCK
+- provider name is visible
+- warnings explain real data is unavailable
+- Build AA can still evaluate safely using fallback data
+
+5. Endpoint verification
+
+Run and show raw output for:
+
+GET /api/market-data/quote?symbol=Volatility%2075%20Index
+
+GET /api/market-data/candles?symbol=Volatility%2075%20Index&timeframe=M5&limit=100
+
+GET /api/market-data/health
+
+POST /api/market-data/demo
+
+POST /api/trade-decision/evaluate
+
+6. Build AA integration proof
+
+Show exactly where Build AA reads from the Market Data Service.
+
+Run a Build AA decision and show raw JSON output.
+
+Confirm the AA decision includes:
+
+marketDataSummary: {
+  source,
+  provider,
+  symbol,
+  mid,
+  spread,
+  timestamp,
+  timeframe,
+  dataQualityStatus,
+  candlesAvailable,
+  volatilityLevel,
+  liquidityLevel,
+  warnings
+}
+
+Confirm AA uses market data for:
+- trade window evaluation
+- spread safety
+- volatility safety
+- session safety
+- entry quality
+- confidence scoring
+- risk scoring
+
+Confirm:
+- AA safety rules still dominate
+- learning from CC does not override safety
+- market data does not place trades
+- fallback data is clearly labeled
+
+7. Market data safety blocker proof
+
+Run test scenarios for each blocker:
+
+A. Missing bid/ask
+B. Stale quote
+C. Missing candles
+D. Spread too wide
+E. Latency too high
+F. Extreme volatility
+G. Market closed
+H. Provider degraded
+I. Unsupported symbol
+
+For each scenario, show:
+{
+  blocked,
+  reason,
+  severity
+}
+
+Then show that Build AA returns HOLD when the blocker is HIGH or CRITICAL.
+
+8. Good data scenario
+
+Run a good market data scenario.
+
+Confirm:
+- dataQuality.status is GOOD
+- candlesAvailable is sufficient
+- spread is acceptable
+- quote is fresh
+- volatility is acceptable
+- AA continues evaluation instead of blocking immediately
+
+AA may still return HOLD if other risk/safety rules fail. That is acceptable.
+The goal is to prove DD data does not incorrectly block good data.
+
+9. Fallback vs real-provider behavior
+
+Confirm:
+- if real provider credentials are missing, fallback is used
+- if provider is configured incorrectly, fallback or safe HOLD occurs
+- if provider returns degraded data, AA can HOLD
+- the system never silently treats fallback as real data
+
+10. Data quality logs
+
+Show logs proving each market data request records:
+- symbol requested
+- provider used
+- REAL vs FALLBACK vs MOCK
+- latency
+- candles returned
+- data quality status
+- warnings
+- whether AA used or rejected the data
+
+11. Live-trade isolation proof
+
+Search Build DD files and confirm they do NOT call:
+executeTrade,
+execute-trade,
+mt5 order placement,
+livePosition,
+live order,
+setCanPlaceTrades,
+live broker execution,
+or anything that can place real trades.
+
+Confirm Build DD does NOT modify:
+safetyCore.canPlaceTrades
+live broker execution permissions
+MT5 live trade logic
+Build AA safety override rules
+
+12. Existing behavior compatibility
+
+Confirm these still work:
+- Build AA trade decision orchestrator
+- Build BB auto-debrief
+- Build CC learning engine
+- paper trading
+- manual debrief
+- analytics
+- decision logs
+- learning logs
+- existing frontend routes
+
+Required final response format:
+
+1. Verification passed or failed
+2. Commands/tests run
+3. Files changed
+4. New files created
+5. Database changes, if any
+6. Environment variables proof
+7. Market Data Service proof
+8. Raw quote output
+9. Raw candles output
+10. Raw health output
+11. Raw demo output
+12. Raw AA decision showing marketDataSummary
+13. Fallback mode proof
+14. Safety blocker proof
+15. Good data scenario proof
+16. Data quality logs proof
+17. Live-trade isolation proof
+18. Any fixes made during verification
+19. Final Build DD score out of 10
+20. Whether it is safe to proceed to Build EE

@@ -1,0 +1,184 @@
+Task #602 fixed the Scanner Ruby Chart Read panel, but Ruby chat is still using the old “live candles required” path.
+
+Current proof from the running app:
+
+Scanner page selected:
+- Symbol: Volatility 75 Index / V75
+- Timeframe: 1h
+- Data: Historical only
+- Ruby: Limited read
+- Action: Feed limited
+- Ruby Chart Read panel successfully gives a structural read:
+  - Bias: Mixed
+  - Confidence: Low
+  - HTF Bias: No clear edge
+  - Summary: higher-timeframe bias unclear, trend signals mixed, recent downside momentum, price consolidating mid-range
+  - Buy Conditions
+  - Sell Conditions
+  - Support / Resistance: 35977.0 – 36285.5 support, 40567.9 – 40876.5 resistance
+  - Invalidation
+  - Risk Note
+  - exact entry/stop/target levels withheld
+
+That is the correct Task #602 behavior.
+
+But Ruby chat for the same V75 context still says:
+- “Data insufficient, no primary timeframe available”
+- “no live candle trend available”
+- “Key levels — not available”
+- “Bullish scenario — not available”
+- “Bearish scenario — not available”
+- “I can’t give a reliable stance here without live candles”
+- “I can’t honestly call trend, pullback, or reversal”
+
+This is wrong because the page has already produced a valid structural read from closed/historical candles.
+
+Root issue:
+Ruby chat is not using the same read-layer output as the Scanner Ruby Chart Read panel. The panel uses the new Task #602 structural-read path, but chat still appears to use an older market snapshot/live-candle gate that collapses “not live confirmed” into “no structure available.”
+
+Fix this by unifying Ruby chat’s scanner/chart-read answer with the same structural-read contract used by POST /api/me/assistant/read-chart and the Ruby Chart Read panel.
+
+Implementation requirements:
+
+1. Trace Ruby chat path
+Find the exact handler/tool used when the user asks Ruby chat to:
+- “read V75”
+- “analyze V75”
+- “read the chart”
+- “what do you see on V75 1h”
+- “should I hold these V75 buys”
+
+Map the call chain:
+- chat route/controller
+- assistant tool selection
+- market snapshot / scanner opportunity / chart read function
+- final response assembler
+
+Identify where the old output is generated:
+- “Data insufficient, no primary timeframe available”
+- “no live candle trend available”
+- “Key levels not available”
+- “Bullish scenario not available”
+- “Bearish scenario not available”
+
+2. Reuse the same read-chart structural output
+For scanner/chart-specific chat reads, Ruby chat must call or reuse the same backend read-layer used by:
+- POST /api/me/assistant/read-chart
+- buildRubyChartContext
+- deriveRubyReadLayers
+- chart structure analyzer
+
+Do not create a second chart-read interpretation path.
+
+If the page panel can produce structure, chat must be able to produce the same structure for the same symbol/timeframe.
+
+3. Preserve setup withholding
+If the read layer is STRUCTURAL_ONLY:
+Ruby chat may return:
+- bias
+- confidence
+- summary
+- support/resistance
+- buy conditions
+- sell conditions
+- invalidation as structure
+- risk note
+- hold/exit context for existing positions
+
+Ruby chat must still withhold:
+- exact entry
+- exact stop loss
+- TP1/TP2/TP3
+- R:R
+- “enter now” language
+
+4. Fix timeframe resolution
+The chat output says “no primary timeframe available,” while the page clearly selected 1h.
+
+Ruby chat must resolve timeframe in this priority order:
+- explicit user timeframe if provided, for example “V75 1h”
+- selected chart timeframe from scanner context if chat is opened from scanner
+- default scanner timeframe only if neither exists
+
+Add alias normalization so these all resolve to the same symbol:
+- V75
+- Volatility 75 Index
+- VOLATILITY 75 INDEX
+- Deriv internal V75 symbol if applicable
+
+5. Use the panel read as fallback when available
+If Ruby chat is launched from the Scanner page and the Ruby Chart Read panel already has a structural read for the same symbol/timeframe, chat should use that cached/read-layer result instead of recomputing through a weaker live-snapshot-only path.
+
+This prevents disagreement between:
+- panel: “Bias Mixed, support/resistance available”
+- chat: “key levels not available”
+
+6. Fix response wording
+For the current V75 1h case, Ruby chat should say something like:
+
+“Feed is not confirmed at read-time, so this is a low-confidence structural read, not a live-entry signal. V75 1h is mixed and mid-range. Recent downside momentum is present, but price is between support around 35977–36285 and resistance around 40568–40877. A buy case improves only if price holds support and pushes back through resistance with momentum. A sell case improves if price rejects resistance or breaks support with momentum. Exact entry/SL/TP/R:R are withheld until the live feed is confirmed.”
+
+Ruby chat should not say:
+- no key levels available
+- bullish scenario unavailable
+- bearish scenario unavailable
+- no primary timeframe available
+- cannot read trend at all
+
+when the panel already has those fields.
+
+7. Tests required
+Add tests proving:
+
+A. Same selected V75 1h, historical-only but enough candles:
+- read-chart panel output has structural read
+- Ruby chat returns structural read
+- both share same bias/confidence/summary/support/resistance where applicable
+- chat does not say “no primary timeframe available”
+- chat does not say “key levels not available”
+- chat does not say “bullish scenario not available”
+- chat does not say “bearish scenario not available”
+
+B. STRUCTURAL_ONLY layer:
+- Ruby chat gives structure
+- Ruby chat withholds exact entry/SL/TP/R:R
+
+C. Truly no candles:
+- Ruby chat may say no structure available
+
+D. Timeframe resolution:
+- user says “V75 1h”
+- chat uses 1h, not undefined/default
+- scanner-selected timeframe is respected when user does not specify timeframe
+
+E. Symbol alias:
+- V75 / Volatility 75 Index / VOLATILITY 75 INDEX resolve to same chart-read context
+
+8. Existing remaining scanner display bugs still visible
+Do not lose these. They still need to be fixed or kept in the next hardening task:
+
+- XAUUSD card still shows “Ready now” and “Wait for confirmation” together.
+- “No scan run yet for Core Markets” still appears under populated results.
+- Entry 75 / Exec 80 still appears cloned across many rows.
+- Trade Health still headlines “2 open” instead of “2 on this symbol” or “0 on selected / 2 account-wide” depending context.
+- “Overlays: verified” is still misleading next to historical-only/feed-limited status.
+
+But for this task, the priority blocker is Ruby chat not using the structural read that the panel already has.
+
+Validation required:
+- api-server typecheck
+- dashboard typecheck if frontend touched
+- Ruby chat/read-chart tests
+- scanner-truth/read-layer tests
+- import-boundary guard
+- safety integration if available
+
+Completion standard:
+For V75 1h with the current page state, Ruby Chart Read panel and Ruby chat must agree:
+
+- both can give a low-confidence structural read
+- both can show/support key levels
+- both explain feed is not confirmed
+- both withhold exact live setup levels
+- neither says “no primary timeframe” or “key levels unavailable” when the panel has those values
+- no execution gates are changed

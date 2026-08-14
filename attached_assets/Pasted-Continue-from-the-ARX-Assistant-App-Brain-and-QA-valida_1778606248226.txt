@@ -1,0 +1,265 @@
+Continue from the ARX Assistant App Brain and QA validation pass.
+
+Now upgrade ARX Assistant into a true in-app ARX Guide.
+
+Goal:
+The assistant should not only answer questions. It should understand what page the user is on, what status badges are active, why actions are blocked, and what the safest next step is. It should guide the user through the app without giving trading advice or bypassing safety systems.
+
+Phase 1 — Add “What am I looking at?” mode
+Create a global assistant shortcut called:
+“What am I looking at?”
+
+When clicked, the assistant should explain:
+- current page name
+- purpose of the page
+- visible status badges
+- active safety locks
+- main buttons/controls on the page
+- what the user can do safely from this page
+- what is currently blocked and why
+- recommended next app step
+
+Example response:
+“You are on the Help Center page. This page explains ARX safety systems and app blockers. Your app is currently in Paper Only mode, Live Trading Disabled, Live Broker Execution Disabled, and MT5 Deferred / Simulator Mode. That means the system can explain and simulate workflows, but it cannot send live broker orders. Safest next step: review readiness, confirm MT5 heartbeat, then use paper/simulator mode only.”
+
+Phase 2 — Add “Why am I blocked?” diagnostic engine
+Build a blocker diagnosis system that checks current app state and returns a clear explanation.
+
+It should inspect:
+- paper only mode
+- live trading disabled
+- broker execution disabled
+- MT5 deferred
+- simulator mode
+- broker read-only
+- missing heartbeat
+- readiness failures
+- emergency stop status
+- user permission level
+- incomplete setup
+- missing secrets/config
+- disconnected bridge
+- disabled autopilot
+- risk lock conditions
+
+The assistant should answer:
+- what is blocked
+- why it is blocked
+- which safety system caused it
+- whether the block is protective or an error
+- what page to open next
+- what not to do
+- whether live trading remains unavailable
+
+Important:
+Never tell the user to bypass a safety lock. Explain how to resolve setup/readiness properly.
+
+Phase 3 — Add “Guide me there” route suggestions
+When the assistant mentions a relevant page, include an in-app route/action link.
+
+Examples:
+- “Open Risk Page”
+- “Open Trade Page”
+- “Open MT5 Bridge”
+- “Open Readiness”
+- “Open Replay”
+- “Open Data”
+- “Open Help Center”
+- “Open Broker Settings”
+- “Open Emergency Stop Info”
+
+If the route exists, link to it.
+If the route does not exist, do not fake it. Suggest the closest valid page.
+
+Phase 4 — Add guided walkthroughs
+Create guided assistant flows for major app tasks.
+
+Add walkthroughs for:
+1. Understanding ARX AI
+2. Reading status badges
+3. Starting a paper session
+4. Understanding simulator mode
+5. Connecting MT5 safely
+6. Checking heartbeat
+7. Understanding why live trading is disabled
+8. Reviewing readiness
+9. Using the Risk page
+10. Using Replay
+11. Using Coach
+12. Understanding Emergency Stop
+13. Finding hidden routes under More
+14. Reporting an issue
+15. Safest first-time setup path
+
+Each walkthrough should have:
+- title
+- short intro
+- ordered steps
+- related page links
+- safety warning where needed
+- completion state
+
+Phase 5 — Add page-specific quick actions
+Assistant quick chips should change based on the current page.
+
+Examples:
+
+Help Center:
+- What am I looking at?
+- Why am I blocked?
+- Explain current badges
+- What should I do next?
+
+Trade page:
+- Why is live trading disabled?
+- Can I place a paper trade?
+- What is blocking execution?
+- Explain order safety
+
+Risk page:
+- What does Risk protect?
+- Why did risk block me?
+- What is my safest next step?
+- Explain account protection
+
+AI page:
+- What does the AI coach do?
+- Can AI place trades?
+- What does autopilot blocked mean?
+- What does ARX analyze?
+
+MT5 Bridge page:
+- What is heartbeat?
+- Why is MT5 deferred?
+- How do I connect MT5?
+- Why is broker read-only?
+
+More menu:
+- What is under More?
+- Where is broker setup?
+- Where is replay?
+- Where is data?
+- Where is emergency stop?
+
+Phase 6 — Add assistant memory inside session only
+Within the current app session, the assistant should remember the last few assistant questions and answers so follow-ups work.
+
+Example:
+User: “Why is MT5 deferred?”
+Assistant explains.
+User: “How do I fix it?”
+Assistant should know “it” means MT5 deferred.
+
+Do not store sensitive data permanently.
+Do not store broker credentials, API keys, account numbers, or secrets.
+
+Phase 7 — Add missing knowledge admin queue
+Improve the missing knowledge logger.
+
+When the assistant cannot answer confidently:
+- save question
+- current route
+- visible badges
+- matched weak topic
+- fallback used
+- timestamp
+- user role
+- suggested topic category
+
+Create an admin/tester-only view:
+“Assistant Knowledge Gaps”
+
+This page should show:
+- unanswered questions
+- weak answers
+- repeated missing topics
+- route where question was asked
+- button to mark resolved
+- button to add to knowledge base if a knowledge editor exists
+
+Phase 8 — Add app-state grounding to every answer
+Every assistant answer should include hidden/internal grounding fields:
+- route matched
+- topic matched
+- badge matched
+- confidence
+- fallback level
+- current status used
+- whether answer is deterministic/local or AI-assisted
+
+For admin/tester roles, show a small expandable “Why this answer?” diagnostic panel.
+Do not expose this to normal users.
+
+Phase 9 — Strengthen safety boundaries
+The assistant must refuse or redirect if the user asks:
+- What should I buy?
+- Should I enter EURUSD now?
+- Should I use real money?
+- Can you bypass live trading disabled?
+- Can you force MT5 to send orders?
+- Can you ignore risk lock?
+- Can you disable Emergency Stop?
+
+Safe response:
+“I can explain the app, your blockers, paper/sim mode, and risk controls, but I cannot recommend trades, bypass safety systems, or force live execution.”
+
+Phase 10 — UI final polish
+The floating assistant still needs to feel premium.
+
+Requirements:
+- collapsed button floats above bottom nav on mobile
+- expanded card opens upward
+- no overlap with bottom nav
+- no overlap with Help Center chips
+- no overlap with Emergency Stop
+- no full-width pinned bar
+- draggable or repositionable if easy to add
+- remembers collapsed/expanded state during the session
+- close button works
+- Back button works
+- input remains visible when keyboard opens on mobile
+- safe-area inset respected on iPhone
+
+Use:
+bottom: calc(env(safe-area-inset-bottom) + 96px)
+
+Parent overlay:
+pointer-events-none
+
+Actual assistant button/panel:
+pointer-events-auto
+
+Phase 11 — Build verification
+Run:
+- lint
+- typecheck
+- build
+- route coverage test
+- assistant QA test set
+- badge coverage test
+- blocker diagnostic test
+- mobile layout test if available
+- desktop layout test if available
+
+Phase 12 — Report back
+Return a detailed report with:
+- files changed
+- assistant component actually rendering
+- whether the stuck help bar is fully fixed
+- number of guided walkthroughs added
+- number of blocker checks added
+- number of page quick-action sets added
+- whether session follow-up memory works
+- whether “What am I looking at?” works
+- whether “Why am I blocked?” works
+- whether route links work
+- total assistant QA questions tested
+- pass/fail results
+- remaining gaps
+
+Do not change MT5 bridge execution logic.
+Do not change live trading execution logic.
+Do not enable live trading.
+Do not bypass risk controls.
+Do not remove routes.
+This is an assistant intelligence, diagnostics, and UI upgrade only.

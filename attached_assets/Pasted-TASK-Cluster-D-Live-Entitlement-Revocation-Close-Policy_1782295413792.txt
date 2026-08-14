@@ -1,0 +1,196 @@
+TASK: Cluster D — Live Entitlement, Revocation Close Policy, and Emergency-Close Regression Lock
+
+Mode: BUILD, but preserve all existing live-safety foundations. Do not weaken ownership checks, broker confirmation truth, audit truth, route-level permissions, kill-switch semantics, or the live command pipeline. No direct mt5_commands inserts. All live broker actions must flow through the approved pipeline unless explicitly proven otherwise.
+
+Assistant name is Eleanor. Legacy ruby* names are rename debt only; do not rename in this task unless required.
+
+Goal:
+Lock Cluster D with code + tests. This task resolves the remaining defense-in-depth gaps around revoked approvals, investor/admin route access, and admin emergency-close behavior.
+
+Policies to implement:
+
+1. Revoked live approval policy:
+A revoked trader must not be able to OPEN, MODIFY, increase risk, or create new live exposure.
+A revoked trader may still CLOSE their own already-open LIVE position as a reduce-risk action, unless the platform is globally disabled or the normal user kill-switch block is intentionally still active.
+This must be explicit in code comments, tests, and audit metadata.
+
+2. Admin emergency-close during kill switch:
+The kill switch must continue to block normal OPEN/MODIFY/increase-risk actions.
+Admin emergency-close should be allowed during kill switch, but only for verified, ownership-scoped, exposure-reducing CLOSE actions.
+This bypass must be narrow: admin/owner route only, confirmation phrase required, ticket/user ownership verified, CLOSE only, intent audited before dispatch, result audited after dispatch, and status must remain honest as QUEUED/BLOCKED/ERROR. Never claim “closed” until broker confirmation exists.
+
+Scope:
+
+A. Route-level investor deny / admin access hardening
+
+Inspect and harden admin/live-control routes involved in Cluster D, including but not limited to:
+- routes/adminBridgeControl.ts
+- routes/adminTrading.ts
+- any route that approves/revokes live trading
+- any route that can perform emergency close, bridge control, allocation control, or live command operations
+
+Requirements:
+- Investors must be denied at the route level for admin/live-control actions.
+- OWNER/ADMIN may access only the intended admin routes.
+- Do not rely only on frontend hiding.
+- Add or update tests proving investor denial for the relevant A/C/D routes.
+- Preserve existing requireAdmin / role middleware unless a safer centralized helper already exists.
+
+B. Revoked approval close policy
+
+Inspect:
+- routes/meTrades.ts
+- lib/live/routingResolver.ts
+- lib/live/safetyEnvelope.ts
+- routes/adminTrading.ts
+- any user trading permissions model/table helpers
+- audit writers used by close flow
+
+Implement/verify:
+- Revocation updates user_trading_permissions.liveApproved immediately.
+- getEnvelope remains fresh; do not introduce caching.
+- OPEN/MODIFY/increase-risk must require live approval.
+- CLOSE should remain allowed for the user’s own already-open LIVE position after live approval revocation, as reduce-risk behavior.
+- The close handler must explicitly document this policy near the entitlement/routing check.
+- Do not move the close-after-revocation permission into a broad routing resolver rule that accidentally allows new risk.
+- Ownership must remain strict: revoked users can only close their own positions.
+- If global trading is DISABLED, keep the existing hard block.
+- If normal user CLOSE remains kill-switch-blocked, preserve that unless this task explicitly adds a separate product decision. Admin emergency-close bypass is separate.
+
+Audit requirements:
+- When a user CLOSE is allowed after live approval revocation, capture the approval state at close time.
+- Add an audit field/metadata/status label such as:
+  - approvalStateAtClose
+  - liveApprovedAtClose: false
+  - closePolicy: "CLOSE_ALLOWED_AFTER_REVOCATION"
+- Do not mark broker execution as final before broker confirmation. If this overlaps existing premature EXECUTED audit behavior, adjust the close audit to use honest pending/queued language or add a clear pending field without breaking existing consumers.
+- Preserve or improve FI-1/FI-22 audit-truth direction.
+
+Tests required:
+- Approved live user can OPEN when all gates pass.
+- Revoked live user cannot OPEN.
+- Revoked live user cannot MODIFY/increase risk.
+- Revoked live user can CLOSE their own open LIVE position when not globally disabled and not blocked by the user kill-switch rule.
+- Revoked live user cannot CLOSE another user’s position.
+- Close-after-revocation writes distinct audit metadata/label.
+- Global DISABLED still blocks CLOSE.
+- Existing kill-switch behavior for normal user CLOSE remains covered by test.
+
+C. Admin emergency-close pipeline and kill-switch bypass
+
+Inspect:
+- routes/adminBridgeControl.ts
+- lib/live/emergencyClose.ts
+- lib/live/liveCommandPipeline.ts
+- any gate evaluator/order guard called by the live pipeline
+- any audit log used by emergency close
+
+Current proven flow:
+POST /api/admin/bridge/emergency-close
+→ runEmergencyClose
+→ closeOne
+→ createLiveOpsDraft
+→ confirmLiveCommand
+→ dispatchLiveCommand
+
+Preserve this flow.
+
+Implement:
+- Admin emergency-close must continue to use the approved live command pipeline.
+- No direct mt5_commands insert.
+- No bypass of ownership.
+- No bypass of phrase confirmation.
+- No bypass of audit-before-dispatch.
+- No false “closed” status.
+- Add a narrow kill-switch bypass only for admin emergency-close CLOSE operations.
+
+Important implementation guidance:
+- Do not make createLiveOpsDraft globally ignore the kill switch.
+- Add an explicit, narrow option/context such as:
+  - allowKillSwitchCloseBypass
+  - source: "ADMIN_EMERGENCY_CLOSE"
+  - bypassReason: "EMERGENCY_CLOSE_KILL_SWITCH_BYPASS"
+- Only allow this when all are true:
+  1. caller route is admin emergency-close
+  2. role already passed OWNER/ADMIN middleware
+  3. confirmation phrase equals EMERGENCY CLOSE
+  4. command/action is CLOSE only
+  5. ticket/user ownership is verified from trusted DB state
+  6. operation is exposure-reducing only
+  7. intent audit is written before dispatch
+- If any condition fails, return BLOCKED/ERROR honestly.
+- OPEN, MODIFY, allocation-changing, or exposure-increasing operations must never use this bypass.
+
+Audit requirements:
+- Every kill-switch emergency-close bypass attempt must write a distinct audit entry/metadata:
+  - bypassReason: "EMERGENCY_CLOSE_KILL_SWITCH_BYPASS"
+  - killSwitchEngaged: true
+  - action: "CLOSE"
+  - scope
+  - targetUserId
+  - ticket
+  - initiatedBy
+  - status: "INTENT" | "QUEUED" | "BLOCKED" | "ERROR"
+- Wrong phrase attempts must continue to be audited as blocked.
+- Wrong owner/ticket attempts must be blocked and audited.
+- Queued must mean queued only. Do not report filled/closed until broker confirmation exists.
+
+Tests required:
+- Non-admin/investor cannot call admin emergency-close.
+- Admin/owner with wrong phrase is blocked and audited.
+- Admin/owner with correct phrase can emergency-close verified owned ticket.
+- Admin/owner cannot emergency-close a ticket when supplied userId does not own the ticket.
+- Emergency-close uses the live pipeline; test should fail if direct insert path is introduced.
+- With kill switch ON:
+  - normal OPEN is blocked
+  - normal MODIFY/increase-risk is blocked
+  - admin emergency-close CLOSE is allowed to queue when ownership/phrase/role pass
+  - admin emergency-close non-CLOSE is blocked
+  - audit includes EMERGENCY_CLOSE_KILL_SWITCH_BYPASS
+- Emergency-close result remains QUEUED/BLOCKED/ERROR, never “closed” without broker confirmation.
+
+D. Regression lock for FI-16
+
+Add explicit regression tests pinning these invariants:
+- requireAdmin or equivalent role gate protects emergency-close.
+- Confirmation phrase required.
+- Ownership requires trusted userId + ticket match.
+- Gate evaluator/pipeline still runs for close.
+- Emergency close does not directly insert into mt5_commands.
+- Honest pending/queued status.
+- Kill-switch bypass is narrow and CLOSE-only.
+
+E. Documentation/comments
+
+Add concise inline comments where future agents are likely to misunderstand:
+- In the user close handler: revoked approval still allows own-position close as reduce-risk.
+- In the pipeline/emergency-close path: kill-switch bypass is allowed only for admin emergency-close CLOSE flattening, not for new risk.
+- In audit logic: queued/pending is not broker-confirmed closed.
+
+Do not add broad docs unless already standard in this repo.
+
+F. Validation
+
+Run the relevant backend tests for:
+- live command pipeline
+- meTrades close flow
+- admin bridge control / emergency close
+- admin trading approval/revocation
+- role/permission route tests
+
+If the repo has a standard full backend test command, run it too.
+
+Deliverables:
+1. Files changed list.
+2. Tests added/updated list.
+3. Test results with exact command output summary.
+4. Confirmation that:
+   - revoked users cannot open new live risk
+   - revoked users can close their own open live positions
+   - close-after-revocation is distinctly audited
+   - admin emergency-close can close during kill switch
+   - kill-switch bypass is admin-only, phrase-gated, ownership-scoped, CLOSE-only, audited, and honest-status
+   - no direct mt5_commands insert was introduced
+5. Any unresolved issue must be reported clearly with file:line proof.
+
+Do not create unrelated tasks. Do not refactor unrelated systems. Do not rename Eleanor/Ruby files in this task unless absolutely required.

@@ -1,0 +1,94 @@
+Now build Phase 2: the trading intelligence and risk engine.
+
+Create these folders:
+
+/server/strategies
+/server/risk
+/server/market
+/server/execution
+/server/backtest
+/client/src/pages
+/client/src/components
+/client/src/charts
+
+Add these backend files:
+
+1. /server/market/indicators.ts
+Functions:
+- calculateEMA
+- calculateRSI
+- calculateATR
+- detectSwingHighs
+- detectSwingLows
+- detectChop
+- detectVolatilityExpansion
+- calculateCandleBodyStrength
+- detectWickRejection
+
+2. /server/strategies/trendContinuation.ts
+Uses EMA 20, EMA 50, EMA 200, RSI, ATR.
+Returns BUY, SELL, or WAIT.
+
+3. /server/strategies/breakOfStructure.ts
+Detects bullish or bearish break of structure using recent swing highs/lows.
+
+4. /server/strategies/liquiditySweep.ts
+Detects high/low sweeps with rejection candle confirmation.
+
+5. /server/strategies/volatilityExpansion.ts
+Detects strong ATR expansion and trades only with trend.
+
+6. /server/risk/riskManager.ts
+Blocks trades if:
+- daily loss limit reached
+- max trades reached
+- confidence too low
+- losing streak active
+- spread too high
+- ATR too extreme
+- trade size too large
+- bot is paused
+- live mode not confirmed
+
+7. /server/execution/mockExecution.ts
+Fake order system for testing.
+
+8. /server/execution/mt5Bridge.ts
+Create placeholder functions:
+- sendTradeToMT5()
+- closeTradeOnMT5()
+- syncAccountFromMT5()
+- syncOpenTradesFromMT5()
+
+9. /server/execution/derivBridge.ts
+Create placeholder functions for future Deriv WebSocket connection.
+
+10. /server/backtest/backtestEngine.ts
+Reads OHLCV candles and tests each strategy.
+
+The bot should scan every 5 seconds in demo mode and produce a signal object:
+
+{
+  symbol,
+  direction,
+  confidence,
+  entry,
+  stopLoss,
+  takeProfit,
+  strategy,
+  reason,
+  riskApproved,
+  blockedReason
+}
+
+Important trading behavior:
+- Volatility 75 is high-risk and trend-heavy.
+- Volatility 75 1s is extremely fast and noisy.
+- Volatility 25 1s is better for lower-risk testing.
+- Never force trades.
+- WAIT is a valid signal.
+- Risk manager has final authority.
+- Add a confidence score, but do not claim prediction certainty.
+
+Add disclaimer across dashboard:
+“Automated trading is risky. This tool does not guarantee profits. Test in demo first.”

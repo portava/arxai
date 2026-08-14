@@ -1,0 +1,233 @@
+Continue with T005: fix alert dismissal, alert deduplication, connectionId scoping, and live-mode notification accuracy.
+
+Current completed state:
+- T003 complete: unified live/account-mode resolver exists and pages migrated.
+- T004 complete: /my-account now shows user 4 allocation shell correctly.
+- User 4 should now show $70 balance/equity/assigned allocation with $55 manual + $15 AI sleeve.
+- Safety tests are green.
+- arx_live_commands count remains 0.
+- No live trades placed.
+- No operator phrases typed.
+- No safety gates weakened.
+
+Now fix the alert/notification issues from screenshots.
+
+Current bugs:
+1. Alerts panel shows repeated stale “MT5 bridge disconnected” alerts even though the current live bridge is armed/fresh.
+2. Alert close buttons do not work.
+3. Alerts count stays inflated.
+4. Notification Center says ALERTS_ONLY / LIVE TRADING DISABLED while live mode is armed.
+5. Push notification setup is being mixed with live-trading status.
+6. Old demo/paper/test alerts are bleeding into live pages.
+7. Alert rows can crash or misrender when type/status/severity fields are missing.
+8. Normal users should not see raw backend/debug alert details.
+
+Do not place trades.
+Do not insert arx_live_commands.
+Do not type operator phrases.
+Do not broaden the narrow env parser.
+Do not weaken safety gates.
+Do not fake alerts or live status.
+Do not delete audit logs.
+Do not expose master data, backend constants, route names, table names, or raw provider errors to normal users.
+
+Create checkpoint first:
+checkpoint: t005-alert-dismissal-dedupe-connection-scope
+
+Task 1 — Trace alert sources:
+Find every place alerts/notifications are generated, displayed, counted, dismissed, or cleared.
+
+Search:
+- alerts
+- notifications
+- safety alerts
+- MT5 bridge disconnected
+- heartbeat
+- bridge disconnected
+- dismiss alert
+- mark all read
+- clear resolved
+- notification center
+- alert count
+- unread count
+- connectionId
+- accountMode
+- LIVE_SHARED
+- DEMO
+- PAPER
+- TEST
+- userId
+- severity
+- type
+- status
+
+Map:
+- backend alert tables/services
+- notification tables/services
+- frontend alert panels
+- header notification badge
+- Notification Center page
+- Alerts page
+- dashboard alert widgets
+- safety notification cards
+
+Task 2 — Add proper alert mode/connection scoping:
+Every alert query must filter/scope by:
+- userId
+- currentAccountMode
+- accountShellId or sharedMasterAccountId when relevant
+- connectionId when relevant
+- source mode: LIVE_SHARED / DEMO / PAPER / TEST
+- resolved/dismissed state
+
+Required behavior:
+1. LIVE_SHARED pages show only live/shared alerts for the current user/account/connection.
+2. DEMO pages show only demo alerts.
+3. PAPER pages show only paper alerts.
+4. TEST rows must not appear in live user UI.
+5. Old bridge-disconnected alerts from stale/demo/paper connections must not appear when the current live bridge heartbeat is fresh.
+6. If the current bridge reconnects, previous disconnected alerts should become resolved or hidden from active alert panels.
+
+Task 3 — Fix dismiss/close buttons:
+Make every alert close/dismiss button work.
+
+Implement or repair:
+1. Dismiss single alert.
+2. Mark all read.
+3. Clear resolved alerts.
+4. Dismiss repeated stale bridge alerts as a group if appropriate.
+5. Persist dismissal per user.
+6. Update badge counts immediately after dismiss/read/clear.
+7. Do not reappear dismissed alerts on refresh unless a genuinely new alert event is created.
+
+Task 4 — Deduplicate repeated alerts:
+Fix repeated “MT5 bridge disconnected” spam.
+
+Deduping rules:
+1. Same alert type + same user + same connectionId + same mode + same unresolved state should collapse into one visible alert.
+2. Store/update count or lastSeenAt if useful.
+3. Show one clean alert with latest timestamp, not 71 repeated rows.
+4. If heartbeat is now fresh, mark those connection-specific disconnect alerts resolved or hide them from live active alerts.
+5. Admin diagnostics can still show alert history if needed.
+
+Task 5 — Fix Notification Center live status:
+Notification Center must use useTradingMode() / /api/me/account-mode resolver.
+
+Correct behavior in LIVE_SHARED:
+- Do not show “LIVE TRADING DISABLED” if live is armed.
+- Do not show “Paper-only / live trading disabled.”
+- Show clean live-aware alert status:
+  - “Live alerts active”
+  - “Push notifications not configured”
+  - “In-app alerts active”
+  - “No notifications yet”
+- Push notification configuration is separate from live trading mode.
+- A missing push setup must not imply live trading is disabled.
+
+Task 6 — Fix /alerts crash-proofing:
+Make alerts robust to missing/partial alert fields.
+
+Safe handling:
+- missing type -> “Alert”
+- missing severity -> “info” or clean default
+- missing status -> clean default
+- missing message -> “No details available”
+- invalid date -> “Unknown time”
+- missing array -> []
+
+Do not call:
+- .replace on undefined
+- .map on undefined
+- new Date(invalid).toISOString()
+
+Task 7 — User/admin visibility:
+Normal users can see:
+- their own alerts
+- their own notification status
+- clean live-mode messages
+- dismiss/read controls
+
+Normal users must not see:
+- admin diagnostics
+- backend constants
+- raw gate names
+- connection tokens
+- route names
+- table names
+- raw JSON
+- old test/demo rows while in live mode
+
+Admin can see:
+- broader diagnostics if in admin mode
+- alert history
+- provider/connection context in sanitized form
+- dedupe metadata if useful
+
+Admin preview-as-user must behave like user view.
+
+Task 8 — UI cleanup:
+Clean the alert UI:
+1. Remove repeated inner live-money banners on Notification/Alert pages.
+2. Keep one global live bar only.
+3. Use clean empty state: “No active alerts.”
+4. If all alerts are dismissed/read, counts must show zero.
+5. Keep buttons visible and working:
+   - Refresh
+   - Mark all read
+   - Clear resolved
+   - Dismiss
+6. Do not show huge alert spam lists for resolved duplicates.
+
+Task 9 — Regression tests:
+Add tests for:
+1. Alert dismiss persists per user.
+2. Mark all read updates unread count.
+3. Clear resolved removes resolved alerts from active view.
+4. Duplicate MT5 disconnected alerts collapse.
+5. Fresh heartbeat hides stale disconnected alerts for same connection.
+6. LIVE_SHARED user does not see DEMO/PAPER/TEST alerts.
+7. Notification Center does not say live disabled when resolver says live armed.
+8. /alerts does not crash when alert fields are missing.
+9. Admin preview-as-user does not expose diagnostics.
+10. arx_live_commands remains unchanged.
+
+Task 10 — QA:
+Run:
+- typecheck
+- build if available
+- ci:guards
+- test:account-mode
+- test:live-phaseB
+- test:demo-arming
+- test:demo-verify
+- test:live-broker-resolver
+- allocation runtime QA
+- alert/notification regression tests
+- seeded LIVE_SHARED alert E2E if available
+- arx_live_commands count before/after
+
+Verify in actual UI:
+1. Header notification count updates after dismissing alerts.
+2. Alerts page opens without crash.
+3. Alert close buttons work.
+4. Repeated stale MT5 disconnect alerts disappear/collapse when live heartbeat is fresh.
+5. Notification Center no longer says live trading disabled in LIVE_SHARED mode.
+6. Push setup state is separate from live state.
+7. Normal user sees no admin diagnostics.
+8. Admin mode still has diagnostics.
+9. No live trades placed.
+10. arx_live_commands remains 0.
+11. No operator phrases typed.
+12. No safety gates weakened.
+
+Final report only:
+- alert sources found
+- files/routes changed
+- dismissal/dedupe behavior added
+- connectionId/accountMode scoping added
+- Notification Center live status fixed
+- screenshots bugs verified
+- tests added
+- QA results
+- arx_live_commands count
+- remaining issues only if they require manual credentials or browser permission action

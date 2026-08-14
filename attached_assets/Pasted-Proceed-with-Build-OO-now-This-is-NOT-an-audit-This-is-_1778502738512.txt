@@ -1,0 +1,543 @@
+Proceed with Build OO now.
+
+This is NOT an audit.
+This is NOT a planning report.
+Implement the code changes.
+
+Build OO = Final Integration Test Suite + Production Readiness Gate.
+
+Goal:
+Create a final integration test suite and production readiness gate that validates the entire trading app from Build AA through Build NN.
+
+This system should prove:
+- Every subsystem exists.
+- Every major endpoint works.
+- The full paper-only loop works.
+- Live trading is still disabled.
+- Secrets are protected.
+- Security permissions work.
+- Read-only broker mode is enforced.
+- Notifications fire correctly.
+- Admin controls reject unsafe actions.
+- The app is safe enough to continue paper testing.
+
+Important:
+Build OO must NOT place trades.
+Build OO must NOT enable live trading.
+Build OO must NOT call MT5 live execution.
+Build OO must NOT modify canPlaceTrades.
+Build OO must NOT expose API secrets.
+Build OO must NOT recommend live trading.
+Build OO is testing, validation, readiness scoring, regression protection, and release gating only.
+
+Current system:
+- AA = trade decision orchestrator
+- BB = auto-debrief
+- CC = learning feedback engine
+- DD = read-only market data
+- EE = paper execution engine
+- FF = paper autopilot
+- GG = calendar + AI command center
+- HH = risk governor
+- II = trader coach + playbook
+- JJ = replay simulator + strategy lab
+- KK = data import + broker read-only connector
+- LL = notification center
+- MM = system health/admin/audit
+- NN = security/roles/permissions/data protection
+- OO = final integration test suite + readiness gate
+
+Core requirement:
+Create one master readiness gate that runs automated checks across AA-NN and returns:
+
+{
+  readiness_report_id,
+  generated_at,
+  appMode: "PAPER_ONLY",
+  liveTradingStatus: "DISABLED",
+  overallStatus: "PASS" | "PASS_WITH_WARNINGS" | "FAIL" | "BLOCKED",
+  readinessScore: number,
+  readinessGrade: "A" | "B" | "C" | "D" | "F",
+  canProceedToPaperTesting: boolean,
+  canProceedToLiveTrading: false,
+  criticalFailures: [],
+  warnings: [],
+  subsystemResults: {},
+  workflowResults: {},
+  safetyResults: {},
+  securityResults: {},
+  dataProtectionResults: {},
+  frontendResults: {},
+  databaseResults: {},
+  endpointResults: {},
+  recommendedFixes: [],
+  generatedBy: "SYSTEM_READINESS_GATE"
+}
+
+1. Inspect existing test/build systems
+
+Find existing:
+- test framework
+- package.json scripts
+- API routes
+- DB schema validation
+- frontend build command
+- health checks
+- audit logs
+- security checks
+- notification system
+- admin control
+- subsystem services AA-NN
+
+Use existing test tools where available.
+Do not duplicate working validation logic unnecessarily.
+
+2. Create Master Readiness Gate Service
+
+Create a service that runs:
+
+A. Build health checks
+- typecheck
+- build
+- API validation
+- frontend validation
+- schema validation if available
+
+B. Database checks
+- all AA-NN tables exist
+- required columns exist
+- migrations are current
+- write/read check works
+- row counts are safe
+- missing tables are clearly reported
+
+C. Endpoint checks
+- all major endpoints AA-NN reachable
+- demo endpoints return safe output
+- protected endpoints reject unauthorized access
+- forbidden actions reject correctly
+
+D. Safety checks
+- liveTradingStatus is DISABLED
+- appMode is PAPER_ONLY
+- brokerMode is READ_ONLY
+- marketDataMode is read_only
+- canPlaceTrades is false
+- canPlaceLiveTrade is false
+- no live execution calls are reachable
+
+E. Security checks
+- NN roles exist
+- permissions exist
+- forbidden permissions reject
+- redaction works
+- account masking works
+- sensitive routes protected
+- audit events created
+
+F. Workflow checks
+Test the full safe paper workflow:
+AA decision →
+EE paper execution, only if valid →
+FF paper loop/monitor →
+BB auto-debrief →
+CC learning →
+GG performance update →
+HH governor evaluation →
+II coach report →
+LL notification →
+MM audit/health →
+NN permission protection
+
+G. Replay/data workflow:
+KK data import →
+JJ replay scenario →
+JJ replay run →
+JJ replay report →
+II coaching can reference replay guidance safely
+
+H. Notification/admin workflow:
+HH risk event →
+LL critical notification →
+MM admin action →
+NN security validation →
+audit log created
+
+3. Create Regression Test Runner
+
+Create a reusable runner that can run named test groups:
+
+- safety
+- security
+- data_protection
+- database
+- endpoints
+- aa_decision
+- bb_debrief
+- cc_learning
+- dd_market_data
+- ee_paper_execution
+- ff_autopilot
+- gg_performance
+- hh_risk_governor
+- ii_trader_coach
+- jj_replay
+- kk_data_import_broker_readonly
+- ll_notifications
+- mm_system_health_admin
+- nn_security
+- full_paper_loop
+- frontend_smoke
+- production_gate
+
+Each test should return:
+
+{
+  test_id,
+  group,
+  name,
+  status: "PASS" | "WARN" | "FAIL" | "SKIPPED",
+  severity,
+  duration_ms,
+  details,
+  errors,
+  created_at
+}
+
+4. Create database tables
+
+Additive only.
+
+Create:
+
+readiness_reports:
+- id
+- readiness_report_id
+- overall_status
+- readiness_score
+- readiness_grade
+- app_mode
+- live_trading_status
+- can_proceed_to_paper_testing
+- can_proceed_to_live_trading
+- critical_failures jsonb
+- warnings jsonb
+- subsystem_results jsonb
+- workflow_results jsonb
+- safety_results jsonb
+- security_results jsonb
+- data_protection_results jsonb
+- frontend_results jsonb
+- database_results jsonb
+- endpoint_results jsonb
+- recommended_fixes jsonb
+- generated_by
+- created_at
+
+integration_test_runs:
+- id
+- test_run_id
+- status
+- groups_run jsonb
+- total_tests
+- passed
+- warnings
+- failed
+- skipped
+- duration_ms
+- started_at
+- finished_at
+- created_at
+
+integration_test_results:
+- id
+- test_run_id
+- test_id
+- test_group
+- test_name
+- status
+- severity
+- duration_ms
+- details jsonb
+- errors jsonb
+- created_at
+
+readiness_gate_status:
+- id
+- current_status
+- readiness_score
+- readiness_grade
+- app_mode
+- live_trading_status
+- paper_testing_allowed
+- live_trading_allowed
+- last_report_id
+- critical_failure_count
+- warning_count
+- last_checked_at
+- created_at
+- updated_at
+
+production_gate_logs:
+- id
+- readiness_report_id
+- event_type
+- severity
+- message
+- details jsonb
+- created_at
+
+5. Add endpoints or scripts
+
+Create endpoints or equivalent scripts:
+
+GET /api/readiness/status
+POST /api/readiness/run
+GET /api/readiness/reports?limit=20
+GET /api/readiness/reports/:id
+GET /api/readiness/checklist
+POST /api/readiness/demo
+POST /api/readiness/export
+
+POST /api/integration-tests/run
+GET /api/integration-tests/runs?limit=20
+GET /api/integration-tests/runs/:id
+GET /api/integration-tests/runs/:id/results
+GET /api/integration-tests/groups
+POST /api/integration-tests/demo
+
+6. Readiness scoring
+
+Score 0–100.
+
+Suggested categories:
+- Safety and live-trade lock: 25 points
+- Security/data protection: 20 points
+- Core paper workflow AA-CC-EE: 20 points
+- Market data/replay/import reliability DD-JJ-KK: 10 points
+- Performance/coach/notifications/admin GG-II-LL-MM: 15 points
+- Frontend/accessibility/smoke checks: 10 points
+
+Hard fail conditions:
+- live trading enabled
+- canPlaceTrades true
+- broker mode not read_only
+- market data mode not read_only
+- forbidden admin action succeeds
+- secrets exposed
+- paper execution calls live broker code
+- critical security middleware missing
+- readiness gate cannot run
+
+If any hard fail occurs:
+overallStatus must be "BLOCKED" or "FAIL"
+canProceedToPaperTesting can be false
+canProceedToLiveTrading must always be false
+
+7. Production readiness checklist
+
+Create checklist output:
+
+{
+  checklist_id,
+  generated_at,
+  sections: [
+    {
+      name,
+      items: [
+        {
+          item,
+          status: "PASS" | "WARN" | "FAIL",
+          evidence,
+          recommendedFix
+        }
+      ]
+    }
+  ],
+  finalRecommendation
+}
+
+Sections:
+- Safety
+- Security
+- Data protection
+- Database
+- Endpoints
+- Frontend
+- Paper trading loop
+- Replay/data import
+- Notifications/admin
+- Known warnings
+- Next recommended fixes
+
+8. Frontend UI
+
+Add or update:
+
+A. Production Readiness page
+Show:
+- overall status
+- readiness score
+- readiness grade
+- paper testing allowed
+- live trading disabled
+- critical failures
+- warnings
+- subsystem result cards AA-NN
+- recommended fixes
+- run readiness check button
+
+B. Integration Test Results page
+Show:
+- test runs
+- groups
+- pass/warn/fail counts
+- failed tests
+- details drawer
+- duration
+
+C. Readiness Checklist page
+Show:
+- checklist sections
+- pass/warn/fail items
+- evidence
+- recommended fixes
+
+No live trading buttons.
+No live execution controls.
+
+9. Required test scenarios
+
+A. Full readiness run returns AA-NN subsystem status.
+B. Full paper workflow test passes or reports exact failure.
+C. Replay/import workflow test passes or reports exact failure.
+D. Security forbidden action test returns rejected.
+E. Secret redaction test passes.
+F. Live trading simulated enabled flag causes BLOCKED.
+G. canPlaceTrades true causes BLOCKED.
+H. Missing table causes FAIL or DEGRADED with clear fix.
+I. Endpoint failure is captured, not crashed.
+J. Unauthorized sensitive route is denied.
+K. Notification critical alert is generated for hard fail.
+L. Admin forbidden action is audited.
+M. Frontend readiness pages are accessible.
+N. Export readiness report redacts secrets.
+O. Existing AA-NN systems still work.
+P. No live trades are placed.
+
+10. Logs
+
+Every readiness run should log:
+- readiness run started
+- test groups selected
+- subsystem checks started/completed
+- workflow checks started/completed
+- safety checks completed
+- security checks completed
+- database checks completed
+- endpoint checks completed
+- frontend checks completed
+- report stored
+- gate status updated
+- notifications/audits created if critical
+- readiness run completed
+
+11. Integrate with LL, MM, NN, HH
+
+LL:
+- create notification for readiness PASS/FAIL/BLOCKED
+- CRITICAL notification for hard fail
+
+MM:
+- system health should read latest readiness gate status
+- admin control can run readiness check safely
+
+NN:
+- protect readiness/admin endpoints
+- forbidden live actions remain blocked
+
+HH:
+- Risk Governor should read readiness gate hard failures
+- hard readiness failures should produce WATCH_ONLY or LOCKED
+
+12. Safety rules
+
+Hard rules:
+- Build OO cannot place trades.
+- Build OO cannot enable live trading.
+- Build OO cannot set canPlaceTrades true.
+- Build OO cannot call broker order functions.
+- Build OO cannot call MT5 live execution.
+- Build OO cannot expose secrets.
+- Build OO cannot recommend live trading.
+- Build OO can only recommend paper testing, review, fixes, or watch-only.
+- canProceedToLiveTrading must always be false.
+
+13. Preserve existing behavior
+
+Do not break:
+- AA through NN services
+- manual debrief
+- manual paper close
+- analytics
+- frontend routes
+- security
+- notifications
+- admin controls
+- data import
+- replay
+- paper-only execution
+
+Acceptance criteria:
+- Master readiness gate exists.
+- Integration test runner exists.
+- Readiness reports are stored.
+- Readiness status endpoint works.
+- Checklist endpoint works.
+- Full AA-NN subsystem check works.
+- Full safe paper workflow test exists.
+- Security/safety hard fail tests work.
+- Frontend pages are accessible.
+- Hard failures create LL notifications and MM audit logs.
+- Secrets are redacted.
+- Live trading remains disabled.
+- App typechecks/builds.
+- Raw outputs prove major scenarios work.
+
+After implementation, show:
+
+1. Files changed
+2. New files created
+3. Database changes
+4. Frontend routes/pages added
+5. Where OO checks AA
+6. Where OO checks BB
+7. Where OO checks CC
+8. Where OO checks DD
+9. Where OO checks EE
+10. Where OO checks FF
+11. Where OO checks GG
+12. Where OO checks HH
+13. Where OO checks II
+14. Where OO checks JJ
+15. Where OO checks KK
+16. Where OO checks LL
+17. Where OO checks MM
+18. Where OO checks NN
+19. Raw output from /api/readiness/status
+20. Raw output from /api/readiness/run
+21. Raw output from /api/readiness/checklist
+22. Raw output from /api/integration-tests/run
+23. Raw output from /api/integration-tests/groups
+24. Full paper workflow proof
+25. Replay/import workflow proof
+26. Security forbidden action proof
+27. Secret redaction proof
+28. Hard fail BLOCKED proof
+29. Readiness report proof
+30. Notification/audit integration proof
+31. Frontend route proof
+32. Live-trade isolation proof
+33. Any errors or warnings
+34. Whether Build OO is fully complete or partially complete
+35. Final Build OO score out of 10

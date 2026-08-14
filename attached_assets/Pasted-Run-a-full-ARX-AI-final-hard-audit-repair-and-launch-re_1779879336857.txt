@@ -1,0 +1,679 @@
+Run a full ARX AI final hard audit, repair, and launch-readiness pass. Do not ask me any more questions during this command. Make the best code-correct decision, fix what is broken, retest, and keep going until the app is actually usable.
+
+This command is specifically to end the back-and-forth. The app has been patched many times, but the real browser still shows owner/admin live trading blocked by preview mode, missing shared-route allocation, stale mode state, and validation blockers. Fix the entire wiring from front to back so the app works as intended.
+
+Target owner/admin account:
+- userId: 4
+- email: andraie.co@gmail.com
+- role: OWNER
+- this is the operator/admin-user account
+
+Absolute owner requirement:
+For user 4 / andraie.co@gmail.com, the app must behave as an unrestricted LIVE_SHARED owner trading account.
+
+Owner account must:
+- always resolve as LIVE_SHARED
+- never be placed in preview mode for its own session
+- never be downgraded to demo, paper, simulator, tester, or user-preview mode
+- never be blocked by missing per-user allocation
+- never be blocked by missing shared route tuple
+- never be blocked by missing virtual account setup
+- never be blocked by default risk templates
+- never be blocked by safe default caps
+- never be blocked by forced stop loss unless OWNER explicitly turns requireStopLoss on
+- never be blocked by allowedSymbols unless OWNER explicitly sets allowedSymbols
+- never be blocked by maxLot unless OWNER explicitly sets maxLot
+- never be blocked by maxOpenPositions unless OWNER explicitly sets maxOpenPositions
+- never be blocked by dailyLossLimit unless OWNER explicitly sets one
+- never see “contact your operator”
+- never see “your account is not set up”
+- never see “complete allocation”
+- never see “Previewing as User” in its own live trading session
+- never see demo/paper/tester/simulator wording on live pages
+- always use the live shared/master MT5 path for trade entry
+
+Hard broker/safety checks that must still remain:
+- authenticated owner session required
+- active live bridge required
+- broker/MT5 connected when actually dispatching
+- symbol must be valid/tradable with broker/feed
+- order payload must be valid
+- kill switch still blocks everyone, including OWNER
+- broker rejection still blocks
+- insufficient broker margin/capacity still blocks
+- audit logs still write
+- server validation still runs
+- no secrets or raw tokens ever exposed
+- normal users still keep their own restrictions
+- do not place a live trade during automated QA
+
+The goal is not to remove real broker safety. The goal is to remove all app-created prerequisites, stale preview state, demo/paper detours, default risk caps, allocation blockers, and broken wiring from the OWNER account.
+
+Create checkpoints:
+1. checkpoint: before-final-owner-live-unrestricted-deep-audit
+2. checkpoint after every major repaired group
+3. checkpoint: final-owner-live-unrestricted-launch-ready
+
+Do not ask the user for input.
+Do not pause for product questions.
+Do not say something is “out of scope.”
+Do not mark a failure as “pre-existing” and leave it unresolved.
+Do not only update tests.
+Do not fake data.
+Do not fake validation.
+Do not fake broker connection.
+Do not hide errors behind generic text.
+Do not place trades during QA.
+Do not insert arx_live_commands during QA.
+Do not type operator phrases.
+Do not weaken normal-user safety.
+Do not expose admin diagnostics to normal users.
+Do not mutate owner password or sessions.
+Do not require a new owner password setup.
+Do not use smoke-test passwords.
+
+PART A — FULL APP UNRAVELING AUDIT
+
+Do a complete pass through the entire app from beginning to end, then reverse-trace from UI back to backend.
+
+Audit every layer:
+1. package scripts
+2. app entry points
+3. router/App.tsx
+4. sidebar/menu links
+5. auth/session handling
+6. role/permission middleware
+7. account-mode resolver
+8. useTradingMode hook
+9. frontend pages
+10. frontend components
+11. frontend hooks
+12. frontend modals
+13. backend routers
+14. backend services
+15. database schema
+16. market data router
+17. Deriv provider
+18. MT5 bridge routes
+19. trade validation routes
+20. live shared routes
+21. scanner routes
+22. Ruby/AI routes
+23. alert routes
+24. performance/calendar routes
+25. position/trade-history routes
+26. admin routes
+27. diagnostics routes
+28. test/seed harnesses
+29. CI guards
+
+Build a route/action wiring inventory:
+For every page, tab, button, toggle, dropdown, search field, filter, modal, form, card action, and menu item, record:
+- component file
+- route path
+- allowed roles
+- current mode behavior
+- click handler
+- backend endpoint called
+- mutation/query key
+- success behavior
+- error behavior
+- refresh/refetch behavior
+- whether it currently does nothing
+- whether it uses stale/local mode logic
+- whether it can show demo/paper/test data in live mode
+- whether it can leak internals
+
+If anything is wired to:
+- an empty handler
+- console.log only
+- TODO
+- a deleted endpoint
+- a stale route
+- a wrong mode endpoint
+- a demo/test/paper endpoint in LIVE_SHARED mode
+- a local-only state change with no backend persistence
+- a mutation that does not refresh the UI
+fix it.
+
+PART B — OWNER ACCOUNT MODE: NO PREVIEW, NO DOWNGRADE
+
+Fix user 4 / OWNER so the real browser cannot stay in Previewing-as-User.
+
+Trace and repair:
+- X-Arx-View-Mode
+- user-preview
+- previewingAsUser
+- isAdminPreviewingUserMode
+- shouldShowAdminDiagnostics
+- localStorage preview state
+- sessionStorage preview state
+- cookies
+- server-side session view mode
+- top bar preview badge
+- frontend account-mode hook
+- backend /api/me/account-mode
+- every route that uses preview mode
+
+For OWNER user 4:
+- ignore preview headers for its own trading session
+- clear persisted preview state
+- force currentAccountMode=LIVE_SHARED
+- force isAdminPreviewingUserMode=false for owner’s own session
+- do not show “Previewing as User”
+- do not disable Validate/Confirm because of preview
+- do not route owner to user-preview envelope
+- do not hide owner trading controls behind preview mode
+
+Admin preview for viewing other non-owner users can remain, but OWNER’s own account must never be preview-blocked.
+
+Acceptance:
+- Real browser top bar for user 4 must not show “Previewing as User.”
+- Scanner ticket must not show preview-only behavior.
+- Live AI Assist must not show preview-only behavior for owner’s own session.
+- Chart trade ticket must not show preview-only behavior for owner’s own session.
+
+PART C — OWNER LIVE SHARED ROUTING: REMOVE APP PREREQUISITES
+
+Fix the exact blocker still shown in the screenshots:
+“Your account isn’t set up for the shared live route yet. Contact your operator to complete account allocation.”
+
+This must never appear for OWNER user 4.
+
+Trace real runtime path:
+- /market-scanner Buy/Sell
+- LiveSharedTradeTicket
+- Validate trade button
+- frontend payload
+- backend route
+- tradesLiveShared.ts
+- requireSharedRouting()
+- resolveRouting()
+- account-mode resolver
+- owner unrestricted profile
+- live MT5 connection
+- shared_master_accounts
+- virtual_trading_accounts
+- user_slot_allocation
+
+Fix the real runtime route, not only test helpers.
+
+For OWNER:
+- if shared route tuple exists, use it
+- if shared route tuple is missing, use owner fallback from active live MT5/shared master connection
+- if virtual account row status is ACTIVE uppercase, treat it as active
+- if shared_master_accounts row is missing but global live connection exists, create/repair the safe aligned row or bypass only for OWNER using live connection
+- do not require per-user allocation row for OWNER
+- do not require virtual account setup for OWNER
+- do not block OWNER with ROUTING_NOT_RESOLVED, NOT_SHARED_MASTER, SHARED_ROUTING_MISSING_IDS, VIRTUAL_ACCOUNT_ACTIVE, or “allocation required” when the live bridge is active
+- do not show “contact operator” to OWNER
+
+For normal users:
+- keep allocation requirement
+- keep shared routing requirement
+- keep risk caps
+- keep restrictions
+- keep preview behavior if admin intentionally previews them
+
+Owner validation may still block only for:
+- kill switch active
+- live bridge disconnected
+- broker unavailable
+- invalid symbol
+- invalid order payload
+- insufficient broker margin
+- broker rejects order
+- authentication expired
+
+PART D — OWNER UNRESTRICTED RISK PROFILE
+
+Make one canonical risk/profile resolver for OWNER.
+
+For OWNER user 4:
+- ownerUnrestricted=true
+- manualTradingEnabled=true
+- liveTradingEnabled=true
+- oneClickTradingAvailable=true
+- requireStopLoss=false unless explicitly enabled by owner
+- allowedSymbols=null or [] means all broker-supported symbols
+- maxLot=null means unrestricted
+- maxOpenPositions=null means unrestricted
+- dailyLossLimitUsd=null means unrestricted
+- no safe default lot
+- no 0.01/0.1 starter cap
+- no beginner caps
+- no demo defaults
+- no “risk caps required” blocker
+- no “symbol not allowed” unless broker/feed itself rejects symbol
+- no stop loss blocker when requireStopLoss=false
+
+Apply this same owner profile to:
+- Market Scanner
+- Live Shared ticket
+- Live AI Assist
+- Live Chart trade panel
+- Trade Command Room
+- Manual Ticket
+- Ruby trade recommendations
+- Quick Trade
+- any one-click or confirmation trade flow
+
+Normal users must still be restricted by their assigned caps.
+
+PART E — ONE MODAL / ONE CONFIRMATION TRADE FLOW
+
+Every trade entry surface must support one clean OWNER flow:
+- one-click if owner has one-click enabled
+- otherwise one modal and one Confirm Trade button
+
+Fix:
+- Market Scanner Buy/Sell
+- Scanner one-modal ticket
+- Live AI Assist Confirm
+- Chart Buy/Sell
+- Trade Command Room
+- Manual Ticket
+- Live Shared page
+- Ruby trade suggestions
+
+Required:
+1. Buy/Sell opens the real LIVE_SHARED ticket.
+2. No second popup.
+3. No “Use LIVE SHARED above.”
+4. No demo route.
+5. No paper route.
+6. No tester workflow.
+7. No simulator flow.
+8. No typed phrase visible in UI.
+9. Validate runs real live shared validation.
+10. If validation passes, show Confirm Trade in the same modal.
+11. If validation fails, show exact clean broker/safety reason.
+12. Final submit only happens after owner final click unless one-click mode is enabled.
+
+During automated QA:
+- do not click final submit in a way that places a trade
+- arx_live_commands must remain 0
+
+PART F — REMOVE GENERIC BLOCKERS / INTERNAL LEAKS
+
+Normal visible UI must never show:
+- Stage
+- defaultDeny
+- masterSwitchOn
+- VIRTUAL_ACCOUNT_ACTIVE
+- ROUTING_NOT_RESOLVED
+- NOT_SHARED_MASTER
+- SHARED_ROUTING_MISSING_IDS
+- raw gate names
+- raw booleans
+- backend route names
+- table names
+- raw validation JSON
+- env names
+- provider errors
+- token/header names
+
+Admin-only Developer Details drawer can show sanitized diagnostics, but the normal visible blocker must be clean.
+
+Replace generic messages:
+- “Pre-flight checks didn’t pass”
+- “Contact your operator”
+- “Account not set up”
+- “Complete allocation”
+
+For OWNER, if hard blocked, show only:
+- “Trade blocked: live bridge disconnected.”
+- “Trade blocked: kill switch active.”
+- “Trade blocked: broker rejected symbol.”
+- “Trade blocked: invalid order.”
+- “Trade blocked: insufficient broker margin.”
+- “Trade blocked: broker unavailable.”
+- “Trade blocked: session expired.”
+
+If no hard blocker exists:
+- show “All pre-flight checks passed.”
+- show Confirm Trade in the same modal.
+
+PART G — SCANNER FULL REPAIR
+
+Scanner must be fully usable.
+
+Fix:
+- scan button
+- start auto
+- focus/broad scan tabs
+- symbol dropdown
+- universe selector
+- cards
+- Buy/Sell
+- Watchlist
+- Replay
+- Backtest
+- Live Intent
+- Trade Setup
+- Recent scanner trades
+- feed status
+- historical check
+- Ruby setup reason
+
+Rules:
+- LIVE_SHARED scanner uses Market Data Router / Deriv / MT5 live feed
+- synthetic symbols never use simulator in LIVE_SHARED
+- no demo commands in LIVE_SHARED
+- no paper/test rows in LIVE_SHARED
+- no fake candles
+- no fake confidence
+- no fake prices
+- no stale mode copy
+- scanner modal validates through LIVE_SHARED route
+- owner unrestricted profile applies
+- normal users still restricted
+
+PART H — LIVE AI ASSIST FULL REPAIR
+
+Live AI Assist must not fabricate trade cards or use stale symbols.
+
+Fix:
+- symbol dropdown updates selected symbol
+- selected symbol updates AI card
+- selected symbol updates chart
+- selected symbol updates quote/feed
+- selected symbol updates SL/TP
+- selected symbol updates Confirm/Review ticket
+- old stale loadCard responses cannot overwrite new symbol
+- no Math.random
+- no fake confidence
+- no fake prices
+- no fake SL/TP
+- no tester workflow in LIVE_SHARED
+- no preview mode for OWNER
+- owner Confirm routes through LIVE_SHARED
+- normal users still restricted
+
+PART I — CHART SYMBOL PROPAGATION
+
+Create one source of truth for selected symbol across:
+- global symbol picker
+- live chart
+- chart trade panel
+- chart Buy/Sell buttons
+- live shared ticket
+- scanner selected symbol
+- Live AI Assist
+- Ruby explanation
+- Market Data Router feed
+
+Fix mismatches like:
+- ticket says XAUUSD while chart shows EURUSD
+- global selector says V75 while ticket says EURUSD
+- AI Assist card shows old symbol
+- chart panel opens ticket for stale symbol
+
+When symbol changes:
+- cancel stale in-flight requests
+- clear stale card if it belongs to old symbol
+- refetch quote/candles
+- update ticket defaults
+- update Ruby explanation
+- update chart side panel
+- update all labels
+
+PART J — GHOST POSITIONS / OPEN TRADES
+
+Fix every open position surface:
+- dashboard
+- live chart side panel
+- /my-trades
+- /positions
+- /live-trades
+- /my-account
+- trade history
+- P/L cards
+
+Rules:
+- if broker/live sync says no current live positions, show none
+- hide stale demo/paper/test/local ghost rows in LIVE_SHARED
+- reconcile by userId, accountMode, accountShell/sharedMaster, connectionId, broker position id
+- do not delete audit records
+- admin diagnostics may show stale rows separately
+- normal user live view must not show ghost positions
+
+PART K — CALENDAR / P&L / MODE SCOPE
+
+Ensure:
+- LIVE_SHARED calendar shows only live P/L/trades
+- if no live trades, show zero/empty live state
+- no demo/paper/test rows in LIVE_SHARED
+- performance-calendar routes mode-scoped
+- positions/all mode-scoped
+- trade history mode-scoped
+- scanner recent actions mode-scoped
+- alerts mode-scoped
+
+PART L — ALERTS / NOTIFICATIONS
+
+Ensure:
+- dismiss works
+- mark all read works
+- clear resolved works
+- stale MT5 disconnected alerts collapse/hide when heartbeat fresh
+- header badge updates
+- notification center doesn’t say live disabled while live active
+- push notification setup is separate from live state
+- no stale demo/paper/test alerts in live
+- no crash from missing fields
+
+PART M — RUBY
+
+Fix Ruby so:
+- no raw research dumps
+- no backend JSON/tool payloads
+- no stale delayed TTS
+- voice responses cancel if a newer response exists
+- TTS does not block text response
+- Ruby uses same live feed as scanner/chart
+- Ruby explains in plain English with useful technical bits
+- Ruby asks if user wants more detail after concise answer
+- voice setting actually controls voice
+- preview voice does not change active voice
+- default is Bella when unset
+
+PART N — ROUTES / UI WIRING / EMPTY HANDLERS
+
+Audit every route and every action.
+
+Fix any:
+- dead sidebar link
+- hidden route mismatch
+- empty onClick
+- buttons wired to no-op
+- toggles that don’t persist
+- dropdowns that don’t update dependent state
+- search fields that don’t query
+- filters that do nothing
+- modal buttons that don’t submit/close/refetch
+- stale React Query keys
+- old API endpoints
+- deleted route calls
+- swallowed errors
+- raw console-only actions
+- duplicate pages
+- duplicated Audit Vault/Safety Logs confusion
+- inconsistent mobile and desktop behavior
+
+Do this for:
+- dashboard/home
+- my-account
+- settings
+- notifications
+- alerts
+- help
+- market-scanner
+- trade-command-room
+- live-shared
+- live-ai-assist
+- live-chart
+- my-trades
+- positions
+- live-trades
+- trading-calendar
+- live-intent-queue
+- broker-reconciliation
+- live-trading-control
+- action-center
+- audit-vault
+- safety-logs
+- mt5-setup
+- testing-control-center
+- admin/allocations
+- admin/reconciliation-center
+- admin/trading-control
+- admin/audit-center
+- every linked route in sidebar/menu
+
+PART O — SECURITY / PASSWORD / DIAGNOSTICS
+
+Keep:
+- no real user password mutation in tests
+- no seeded owner password
+- no password hash leaks
+- no session token leaks
+- no Deriv token leaks
+- no MT5 bridge token leaks
+- normal users cannot see admin diagnostics
+- admin preview-as-user cannot see admin diagnostics
+- owner own session is not preview mode
+- operator diagnostic pages gated
+
+PART P — REAL BROWSER VERIFICATION
+
+After code fixes, verify in the real running app, not only unit tests.
+
+Use owner user 4 session if available. Do not mutate password.
+
+Required browser checks:
+1. top bar does not show Previewing as User for OWNER
+2. account mode shows Live Shared Master MT5
+3. /my-account shows correct live owner state
+4. /market-scanner Buy/Sell opens one LIVE_SHARED modal
+5. Validate no longer shows allocation/setup/operator blocker for OWNER
+6. Validate either passes to same-modal Confirm Trade or shows a true hard broker blocker
+7. Live AI Assist symbol dropdown updates card/chart/ticket
+8. Live AI Assist Confirm uses LIVE_SHARED path
+9. Chart symbol picker updates chart/trade panel/ticket
+10. Chart Buy/Sell opens LIVE_SHARED ticket
+11. No ghost positions if none are open
+12. Calendar shows no demo/paper rows
+13. Alerts dismiss and stale alerts gone
+14. no admin diagnostics on user pages
+15. no raw internals on normal UI
+16. arx_live_commands remains 0 during QA
+
+Do not click final Confirm Trade during QA unless explicitly performing a manual live order test.
+
+PART Q — TESTS TO ADD OR REPAIR
+
+Add or repair tests proving:
+1. OWNER cannot be preview-blocked in own session
+2. OWNER always resolves LIVE_SHARED
+3. OWNER scanner validation bypasses app allocation prerequisite
+4. OWNER scanner validation bypasses shared-route tuple prerequisite
+5. OWNER scanner validation bypasses default risk caps
+6. OWNER missing stop loss passes when requireStopLoss=false
+7. OWNER invalid broker symbol still blocks
+8. OWNER kill switch still blocks
+9. OWNER live bridge disconnected still blocks
+10. normal users still require allocation/caps
+11. scanner modal one-modal flow
+12. Live AI Assist symbol dropdown propagation
+13. chart symbol propagation
+14. no ghost positions when broker sync says none
+15. mode-scope calendar/P&L/positions
+16. no demo/paper/test rows in LIVE_SHARED
+17. no raw internal leakage
+18. no empty handlers on launch-critical buttons
+19. all sidebar routes registered
+20. arx_live_commands stays 0 in validation tests
+
+PART R — REQUIRED QA SUITE
+
+Run all:
+- pnpm run typecheck
+- pnpm run build if available
+- pnpm run ci:guards
+- test:account-mode
+- test:admin-unrestricted-risk
+- test:mode-scope
+- test:live-shared-reason-copy
+- test:chart-symbol-propagation
+- test:scanner-real-feed
+- test:deriv-warmup
+- test:deriv-scanner-feed
+- test:alert-notification-contract
+- test:crash-hardening
+- test:operator-diag-gating
+- test:live-phaseB
+- test:live-pass-path
+- test:demo-arming
+- test:demo-verify
+- test:auth-login-roles
+- route map test
+- UI wiring test
+- seeded LIVE_SHARED E2E batches
+- arx_live_commands count before/after
+
+If any test fails:
+- determine stale test vs real code bug
+- fix the correct side
+- rerun the test
+- rerun impacted suite
+- do not leave it failing
+
+PART S — FINAL ACCEPTANCE
+
+Do not mark done until:
+
+Owner user 4:
+- can log in
+- is not in preview mode
+- is LIVE_SHARED
+- scanner validates to Confirm Trade or true hard broker blocker
+- no allocation/setup/operator blocker remains
+- live AI assist uses LIVE_SHARED
+- chart trade uses LIVE_SHARED
+- no demo/paper/test/simulator detours
+- no ghost positions
+- no stale alerts
+- no raw internals
+- no app-level restrictions
+
+Normal users:
+- still restricted by allocation/caps
+- cannot see admin diagnostics
+- cannot use owner bypass
+
+Safety:
+- arx_live_commands remains 0 during QA
+- no trades placed during QA
+- no safety gates weakened
+- no env parser broadened
+- no passwords/secrets leaked
+
+Final report only:
+- exact root causes found
+- files/routes changed
+- owner preview mode status
+- owner account-mode status
+- owner scanner validation result
+- one-click/one-confirm flow status
+- live AI assist status
+- chart propagation status
+- ghost positions status
+- calendar/mode-scope status
+- alerts status
+- UI wiring audit result
+- all QA results
+- arx_live_commands before/after
+- confirmation no live trades placed during QA
+- confirmation no safety gates weakened
+- remaining blockers only if they are true broker-side blockers requiring manual broker action

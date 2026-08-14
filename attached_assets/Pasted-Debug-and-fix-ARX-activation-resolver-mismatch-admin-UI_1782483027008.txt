@@ -1,0 +1,144 @@
+Debug and fix ARX activation resolver mismatch: admin UI shows live/shared approved, chart route says not activated.
+
+Problem:
+Before the chart trade attempt, the Admin Manage Access screen already showed the user as:
+- Account status: active
+- Trading mode: live
+- live approved
+- Shared/Master Bridge: approved/on
+- AI Trading: enabled
+
+But the chart order submit still blocks with:
+“Live execution isn’t activated for your account yet.”
+
+Therefore this is not a simple missing approval toggle. It is a resolver mismatch between what the admin UI displays and what the live chart/order route checks at execution time.
+
+Scope:
+Do not weaken live-trading safety. Do not bypass feed freshness, bridge heartbeat, symbol approval, risk checks, kill switch, ownership checks, or the 18 live dispatch gates. Fix only the activation-status source-of-truth mismatch and blocked-reason accuracy.
+
+Required investigation:
+
+1. Compare admin UI resolver vs order-time resolver
+Trace the exact data sources used by:
+- Admin Manage Access modal
+- Live Shared Account page
+- chart trade submit
+- scanner trade submit
+- Eleanor trade submit
+- live dispatch activation gate
+- unified account-mode resolver
+
+For the same user/email, report:
+- userId used by admin UI
+- userId used by chart order route
+- live approval record found
+- shared/master bridge approval record found
+- Full Live Activation field/status
+- arming/confirmation record found
+- account mode resolved by frontend
+- account mode resolved by backend
+- final blocker reason returned by backend
+
+2. Find the mismatch
+Determine whether chart route is incorrectly requiring:
+- old typed “ENABLE LIVE TRADING” phrase
+- old per-user arming record
+- old readiness lock
+- demo/paper account state
+- personal bridge approval instead of shared/master bridge approval
+- a different user ID
+- stale cached session data
+- missing Full Live Activation field
+- a route-specific entitlement check that ignores admin approval
+
+3. Correct source of truth
+Use the existing approved-trader/shared-master-bridge/Full Live Activation resolver as the source of truth.
+
+If a user is:
+- active
+- live approved
+- shared/master bridge approved
+- Full Live Activated by admin/operator
+
+Then order-time resolver must return:
+- accountMode: live
+- liveApproved: true
+- sharedBridgeApproved: true
+- liveExecutionActive: true
+- activationSource: admin_full_live_activation or shared_bridge_full_activation
+
+Do not require old trader typed confirmation when admin Full Live Activation is active.
+
+4. Keep approval vs activation distinct
+If the user is only “live approved” but not Full Live Activated, the UI must say:
+“Approved, but Full Live Activation is missing.”
+
+If Full Live Activation is active, the chart route must not return:
+“Live execution isn’t activated for your account yet.”
+
+5. Fix blocked reason accuracy
+The backend should return structured blockers, not one vague activation message.
+
+Examples:
+- account_not_active
+- live_not_approved
+- shared_bridge_not_approved
+- full_live_activation_missing
+- old_arming_required_unexpected
+- feed_not_confirmed
+- symbol_feed_stale
+- bridge_stale
+- symbol_not_allowed
+- risk_blocked
+- kill_switch
+
+If multiple blockers exist, return all of them.
+
+6. UI copy
+If account is fully active but feed is limited:
+Show:
+“Live execution is active. Entry is blocked because broker feed is not confirmed.”
+
+If account is not fully active:
+Show:
+“Live execution is not active. You are approved, but Full Live Activation is missing.”
+
+If both are failing:
+Show both:
+“Account: Full Live Activation missing.
+Feed: Broker feed not confirmed.”
+
+7. Admin UI clarity
+Update Manage Access modal to show:
+- Live Approved: yes/no
+- Shared Bridge Approved: yes/no
+- Full Live Activation: yes/no
+- Live Execution Active: yes/no
+- Activation Source: admin / trader confirmation / none
+
+If Full Live Activation is controlled elsewhere, show a direct “Manage Full Live Activation” link.
+
+8. Regression tests
+Add/update tests proving:
+- admin UI and chart route resolve the same activation state for the same user
+- live approved + shared bridge approved alone does not falsely claim full live active
+- live approved + shared bridge approved + Full Live Activation resolves liveExecutionActive true
+- chart route does not return “not activated” for a Full Live Activated user
+- chart route still blocks when feed is not confirmed
+- multiple blockers are returned when both activation and feed fail
+- raw gate codes are not shown in normal user copy
+- no live execution gate is weakened
+
+9. Verification
+Run:
+- activation resolver tests
+- admin access tests
+- chart/scanner order blocked-reason tests
+- Eleanor order blocked-reason tests if same resolver is used
+- live dispatch gate tests
+- frontend typecheck
+- backend typecheck
+- ci guards
+
+Acceptance:
+For the same user, Admin Manage Access and chart/scanner/Eleanor order routes agree on activation state. If admin UI shows the user is fully live-activated, the order route no longer blocks with “live execution isn’t activated.” If Full Live Activation is actually missing, both admin UI and chart route say so clearly. Feed/safety gates remain strict and continue to block entries when broker feed is not confirmed.

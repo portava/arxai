@@ -1,0 +1,48 @@
+The volume-key fix is not complete until a real demo order fills end-to-end from the ARX dashboard through the MT5 EA and back into the app UI.
+
+Do not treat unit tests, typecheck, guards, or tarball delivery as success. Runtime is still failing.
+
+Run a full live diagnostic and fix the actual broken link:
+
+1. Confirm the ARX dashboard is sending the demo trade request to the correct server endpoint.
+2. Log the exact outgoing payload for the failed EURUSD 0.02 demo order, including volume, lot, symbol, side, SL, TP, account/session/user id, and command id.
+3. Confirm the command is being inserted into the DB/queue.
+4. Confirm the EA is polling the same server URL/environment the app is using.
+5. Confirm the attached EA version reports v1.26 or newer in its heartbeat.
+6. Confirm the EA heartbeat includes:
+   - account number
+   - broker/server name
+   - symbol list
+   - tradeAllowed
+   - algoTradingAllowed
+   - terminalConnected
+   - lastPollAt
+   - lastCommandIdSeen
+   - lastOrderSendResult
+   - lastRejectReason
+7. Confirm the EA actually receives the latest command id.
+8. If the EA does not receive the command, fix the bridge polling/session routing mismatch.
+9. If the EA receives it but does not send the order, expose the exact EA rejection reason.
+10. If MT5 rejects it, surface the exact MT5 retcode and broker message in the ARX UI.
+11. Add a “Bridge Runtime Status” panel in the app showing:
+   - Connected / Disconnected
+   - EA version
+   - last heartbeat time
+   - current account
+   - selected symbol
+   - trade permission status
+   - last command sent
+   - last command received by EA
+   - last fill/reject result
+12. Add a “Send 0.02 EURUSD Demo Test Order” button that performs one full test and shows every step pass/fail.
+13. Do not continue until a real demo order produces one of these final states in the ARX UI:
+   - FILLED with ticket number, entry price, volume, symbol, and time
+   - REJECTED with exact server/EA/MT5 reason
+
+Acceptance proof required:
+- Screenshot/log showing ARX generated command id
+- Screenshot/log showing EA received same command id
+- Screenshot/log showing MT5 OrderSend result
+- Screenshot/log showing ARX UI updated with the same fill/reject result
+
+If the current EA is not v1.26+, show a clear warning in the ARX UI: “Old EA attached. Please attach latest EA build.”

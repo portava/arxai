@@ -1,0 +1,196 @@
+PHASE 22Q — LIVE APP QA FOR TWELVE DATA SCANNER + ARX AI MARKET RESPONSES
+
+Do NOT rebuild the app.
+Do NOT redesign the UI.
+Do NOT change live-trading safety rails.
+Do NOT fake market data.
+Do NOT remove Twelve Data or Finnhub.
+Do NOT create duplicate provider systems.
+
+CURRENT STATE FROM PHASE 22O:
+- Market provider is now twelve_data.
+- Market status endpoint returns connected:true.
+- features.candles:true.
+- Assistant SSE returned real candidates from 30 real candles.
+- Example candidates: GBPUSD M15 confidence 80, EURUSD H1 confidence 79.
+- Candle cache and in-flight dedupe are working.
+- pnpm run ci passed 11/11.
+- Safety envelope intact: paper_only, liveLocked:true, readOnlyMode:true.
+- MT5 stays future-primary only after MT5 candle endpoints are built.
+
+MAIN GOAL:
+Verify the full live app experience now that real scanner data exists. Patch only what fails.
+
+STEP 1 — RUN REAL BROWSER QA
+
+Open the live app and test these exact flows:
+
+1. Open ARX AI.
+2. Ask:
+   “Check scanner and tell me what market is good to trade right now.”
+
+Expected:
+- ARX should call the scanner.
+- ARX should return real Twelve Data candle-based paper-trade candidates.
+- ARX should include symbol, timeframe, bias, confidence, risk, reason, entry zone, invalidation, and paper-only language.
+- ARX should not say market data is disconnected.
+
+3. Send:
+   “?”
+
+Expected:
+- ARX should follow up on the scanner result.
+- ARX should not explain the current page.
+- ARX should not forget the previous scanner request.
+
+4. Ask:
+   “Why did you pick GBPUSD over EURUSD?”
+
+Expected:
+- ARX should compare scanner scoring factors.
+- ARX should reference the latest scanner candidates.
+- ARX should not invent unsupported data.
+
+5. Ask:
+   “Can I take this live?”
+
+Expected:
+- ARX must say live execution is locked/paper-only.
+- ARX should provide decision-support only.
+- ARX must not place or recommend a live trade.
+
+6. Click quick suggestion:
+   “Market update”
+
+Expected:
+- ARX should use market provider state.
+- If news exists from Finnhub, include it.
+- If news is unavailable, say so cleanly.
+- No fake news.
+
+7. Click quick suggestion:
+   “Analyze my trades”
+
+Expected:
+- If no user trades exist, ARX says no trades yet.
+- If trades exist, ARX analyzes only this user’s trades.
+
+8. Test voice:
+   Speak:
+   “Check scanner.”
+   Then speak:
+   “What did you find?”
+
+Expected:
+- Voice should use the same scanner memory as text.
+- AI should speak back if Speak is on.
+- Auto-listen should only run while popup is open.
+
+STEP 2 — VERIFY SCANNER UI
+
+Check the scanner/dashboard UI.
+
+Expected:
+- It should not still show disconnected if Twelve Data is connected.
+- It should clearly label scanner candidates as paper-trade candidates.
+- It should show source: Twelve Data or equivalent provider label.
+- It should show freshness or timestamp.
+- It should not show simulator candidates as if they are live.
+- If dashboard simulator still exists, label it clearly as simulator/demo and keep ARX assistant using real provider data.
+
+Patch only incorrect state labels or stale UI data binding.
+
+STEP 3 — VERIFY RATE LIMIT PROTECTION
+
+Confirm:
+- candle cache TTL works.
+- repeat scanner calls within the cache window do not hit Twelve Data again.
+- in-flight dedupe works for concurrent scanner requests.
+- UI does not spam scanner endpoint while typing or opening AI.
+- if Twelve Data rate limit is hit, user sees clean message:
+  “Market data provider rate limit reached. Try again shortly.”
+
+Do not expose raw Twelve Data errors.
+
+STEP 4 — VERIFY PROVIDER FALLBACK ORDER
+
+Confirm provider priority:
+
+1. Twelve Data candles for scanner.
+2. Finnhub quotes/news if available.
+3. MT5 only for account/bridge/execution status until MT5 candle endpoint exists.
+4. No fake candidates if provider fails.
+
+If Twelve Data fails:
+- scanner should return clean unavailable/rate-limit/provider-error state.
+- ARX should not fall back to fake simulator candidates.
+
+STEP 5 — VERIFY MEMORY + FOLLOW-UP
+
+Test:
+- “What did I ask earlier?”
+- “Continue from before.”
+- “What did the scanner say?”
+- “What was the confidence?”
+- “What invalidates that setup?”
+
+Expected:
+- ARX uses current user/session memory.
+- ARX references the latest scanner result as recent.
+- ARX labels old scanner results as historical if stale.
+- User A cannot see User B scanner memory.
+
+STEP 6 — VERIFY VOICE REGRESSION
+
+Because voice had issues before, check:
+
+- Open AI popup with mic permission granted.
+- Mic should auto-listen if that feature is enabled.
+- User speaks.
+- AI detects speech.
+- User stops speaking.
+- AI sends the request automatically.
+- AI responds in text.
+- If Speak is on, AI speaks out loud.
+- Mic pauses while AI speaks.
+- Mic resumes after AI speaks.
+- Closing popup stops mic completely.
+
+If any of this fails, patch only the voice state/VAD/TTS issue. Do not touch scanner/provider code unless related.
+
+STEP 7 — QA / FIX GATE
+
+Run QA and fix failures before stopping.
+
+QA must verify:
+
+1. Twelve Data provider is connected in live app.
+2. ARX scanner request returns real candidates.
+3. Scanner candidates are based on real candles.
+4. Scanner UI does not show disconnected incorrectly.
+5. Simulator data is never treated as live.
+6. “?” follows scanner context.
+7. ARX explains candidate ranking.
+8. ARX refuses live execution and keeps paper-only language.
+9. Quick suggestions still work.
+10. Voice scanner request works.
+11. Speakback works when Speak is on.
+12. Auto-listen only runs while popup is open.
+13. Rate-limit errors are clean.
+14. No raw backend/provider errors appear.
+15. No API keys leak to frontend.
+16. User data and scanner history remain user/session scoped.
+17. Mobile Safari layout remains stable.
+18. CI still passes.
+
+FINAL REPORT REQUIRED:
+After completion, report:
+- live app QA results
+- files inspected
+- files changed, if any
+- whether ARX returns scanner candidates in the actual app
+- whether scanner UI shows Twelve Data/live state correctly
+- whether follow-up memory works with scanner
+- whether voice/auto-listen/speakback still work
+- whether rate-limit protection works
+- any remaining issues before production launch

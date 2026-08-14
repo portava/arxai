@@ -1,0 +1,443 @@
+Build ARX Pattern Sync System for synthetic indices.
+
+Goal:
+Create a multi-symbol pattern comparison engine that helps ARX identify when Deriv synthetic indices are moving in the same structure across timeframes. The system should compare V25(1s), V50, V50(1s), V75, V75(1s), and any supported volatility symbols. It should detect which chart is leading, which charts are following, which are lagging, and whether the shared setup is bullish continuation, bearish continuation, pullback, reversal, consolidation, or fakeout risk.
+
+Core concept:
+The user manually identified that V25(1s) and V75 were showing the same pattern:
+- major drop or bottoming structure
+- base/chop
+- aggressive bullish breakout
+- pullback near highs
+- possible continuation if support holds
+
+V75 looked cleaner/stronger. V25(1s) was bullish but weaker/pulling back. V50 was similar but not confirmed. V50(1s) showed a strong rally followed by a short-term pullback.
+
+Build this knowledge directly into ARX.
+
+Required feature name:
+Pattern Sync
+
+Required UI labels:
+- Pattern Sync
+- Market Leader
+- Following Symbol
+- Lagging Symbol
+- Same Pattern Detected
+- Pullback Zone
+- Continuation Risk
+- Fakeout Risk
+- Confirmation Needed
+- Clean Setup
+- Choppy Setup
+
+Backend requirements:
+
+1. Create a Pattern Sync engine.
+
+Add a backend service such as:
+
+server/lib/patternSync/patternSyncEngine.ts
+
+The engine should accept:
+- symbol
+- timeframe
+- candle history
+- optional active trades
+- optional support/resistance levels
+- optional recent signal markers
+
+It should return:
+- detectedPatternType
+- trendBias
+- structureScore
+- momentumScore
+- pullbackScore
+- continuationScore
+- fakeoutRiskScore
+- choppinessScore
+- supportHoldStatus
+- resistanceBreakStatus
+- confidenceScore
+- readableSummary
+
+Supported pattern types:
+- bullish_reversal_into_continuation
+- bearish_reversal_into_continuation
+- bullish_pullback
+- bearish_pullback
+- breakout_continuation
+- failed_breakout
+- range_chop
+- base_building
+- exhaustion_top
+- exhaustion_bottom
+- unclear
+
+2. Add multi-symbol comparison.
+
+Create:
+
+server/lib/patternSync/patternSyncComparator.ts
+
+Compare multiple symbols on the same timeframe.
+
+Example comparison set:
+- Volatility 25 (1s) Index
+- Volatility 50 Index
+- Volatility 50 (1s) Index
+- Volatility 75 Index
+- Volatility 75 (1s) Index
+
+The comparator should rank:
+- strongest bullish chart
+- strongest bearish chart
+- cleanest structure
+- most choppy structure
+- best continuation candidate
+- best pullback candidate
+- weakest/largest fakeout risk
+- leader symbol
+- follower symbols
+- lagging symbols
+
+Pattern match logic:
+Charts are considered “same pattern” when they share most of these conditions:
+- same higher-timeframe bias
+- same recent swing structure
+- similar breakout/pullback sequence
+- similar support/resistance behavior
+- similar momentum direction
+- similar candle compression or expansion behavior
+- similar recovery from bottom or rejection from top
+
+3. Add timeframe logic.
+
+Pattern Sync must compare both:
+- H4 for big-picture direction
+- M15 for entry timing
+
+H4 should answer:
+- Is the chart bullish, bearish, ranging, or reversing?
+- Did it break major structure?
+- Is it holding above breakout support?
+- Is it near exhaustion?
+
+M15 should answer:
+- Is the entry timing clean?
+- Is price pulling back?
+- Is price breaking lower/higher?
+- Is the move already extended?
+- Is the trader late?
+
+ARX should never recommend confidence from M15 alone if H4 disagrees.
+
+4. Add leader/follower logic.
+
+Example rule:
+If V75 breaks out first, holds support, and presses near highs while V25(1s) is still pulling back, then:
+- V75 = Market Leader
+- V25(1s) = Follower but weaker
+- V50 = Lagging / confirmation needed
+- V50(1s) = pullback after rally
+
+Return readable output like:
+
+“V75 is currently the cleanest bullish continuation chart. V25(1s) is showing the same broader pattern but is weaker because it has pulled back deeper from the high. V50 is similar but still choppy and unconfirmed. Wait for V50 to break and hold resistance before treating it as synced.”
+
+5. Add key-level awareness.
+
+Pattern Sync should accept or compute:
+- nearest support
+- nearest resistance
+- breakout level
+- invalidation level
+- continuation trigger
+- pullback danger zone
+
+Example from user analysis:
+V25(1s) H4:
+- support: 831465
+- lower support: 751894
+- current zone: 842700 area
+- resistance: 858000–860000
+- bullish if holding above 831465
+- weaker if losing 831465
+
+V75 H4:
+- support: 37857
+- support 2: 36121
+- breakout base: 34537
+- resistance/top zone: 40000–40300
+- bullish if holding above 37857
+- cleaner continuation if pressing above 40000
+
+These exact numbers should not be hardcoded permanently. They should be treated as examples. The system must compute levels dynamically from candles and allow manual/admin override levels.
+
+6. Add scoring.
+
+Use 0–100 scores.
+
+Pattern Match Score:
+- 80–100 = same pattern strongly confirmed
+- 60–79 = similar but weaker
+- 40–59 = partial match / confirmation needed
+- below 40 = not same pattern
+
+Clean Setup Score:
+Reward:
+- clear higher highs/higher lows for bullish
+- clean lower highs/lower lows for bearish
+- breakout plus support hold
+- pullback into structure
+- aligned H4 and M15
+
+Penalize:
+- chop
+- wick-heavy candles
+- late entries after extended move
+- price trapped between support/resistance
+- H4/M15 disagreement
+- price near exhaustion top/bottom
+
+Fakeout Risk Score:
+Increase risk when:
+- price breaks resistance but closes back below
+- price breaks support but reclaims quickly
+- candles have large wicks
+- current price is near major opposing level
+- the symbol is lagging while leader already moved
+- M15 entry is opposite H4 structure
+
+7. Add trade-context warnings.
+
+If user has an open trade, Pattern Sync should evaluate it against the structure.
+
+Example:
+If user has an open SELL on V50(1s) after a major rally:
+Return:
+“Short-term sell may work only if price breaks below nearby support. But overall structure is still bullish, so this is a countertrend pullback sell. If price reclaims resistance, the sell weakens.”
+
+Required outputs:
+- tradeDirectionAlignment: aligned / countertrend / unclear
+- dangerLevel: low / medium / high
+- invalidationLevel
+- firstTargetZone
+- saferActionSummary
+
+Do not promise profits. Do not say guaranteed. Use risk language.
+
+8. Add API routes.
+
+Create routes:
+
+GET /api/pattern-sync/scan
+Query params:
+- symbols
+- timeframe
+- lookback
+
+POST /api/pattern-sync/compare
+Body:
+{
+  "symbols": ["V25_1S", "V75", "V75_1S", "V50", "V50_1S"],
+  "timeframes": ["H4", "M15"],
+  "includeOpenTrades": true
+}
+
+GET /api/pattern-sync/symbol/:symbol
+Returns full breakdown for one symbol.
+
+POST /api/pattern-sync/manual-levels
+Allows admin/trader to add temporary manual support/resistance levels for comparison.
+
+9. Add database tables.
+
+Create migration for:
+
+pattern_sync_snapshots
+- id
+- created_at
+- symbol
+- timeframe
+- detected_pattern_type
+- trend_bias
+- structure_score
+- momentum_score
+- pullback_score
+- continuation_score
+- fakeout_risk_score
+- choppiness_score
+- confidence_score
+- support_levels jsonb
+- resistance_levels jsonb
+- readable_summary
+- raw_analysis jsonb
+
+pattern_sync_comparisons
+- id
+- created_at
+- timeframe
+- symbols jsonb
+- leader_symbol
+- follower_symbols jsonb
+- lagging_symbols jsonb
+- cleanest_symbol
+- strongest_bullish_symbol
+- strongest_bearish_symbol
+- shared_pattern_type
+- pattern_match_score
+- readable_summary
+- raw_comparison jsonb
+
+pattern_sync_manual_levels
+- id
+- created_at
+- user_id
+- symbol
+- timeframe
+- level_type support/resistance/breakout/invalidation/target
+- price
+- label
+- expires_at
+- is_active
+
+10. Add frontend UI.
+
+Add a Pattern Sync panel to ARX trading dashboard.
+
+Panel sections:
+
+A. Market Leader Card
+Shows:
+- leader symbol
+- timeframe
+- bias
+- confidence
+- reason
+
+Example:
+“V75 is leading the bullish continuation pattern. It is holding above breakout support and pressing near highs.”
+
+B. Same Pattern Watchlist
+Table:
+- symbol
+- pattern match score
+- bias
+- clean setup score
+- fakeout risk
+- status
+
+Statuses:
+- Leader
+- Following
+- Lagging
+- Choppy
+- Confirmation Needed
+- Not Synced
+
+C. H4/M15 Alignment
+Show:
+- H4 bias
+- M15 timing
+- aligned or not aligned
+- entry quality
+
+D. Trade Warning Box
+If open trade exists:
+- aligned or countertrend
+- danger level
+- invalidation level
+- safer summary
+
+E. Human-readable ARX summary
+Example:
+“V75 and V25(1s) are showing the same broader bullish recovery pattern. V75 is cleaner and leading. V25(1s) is still bullish but weaker because it pulled back deeper. V50 is not confirmed yet. Wait for a clean break-and-hold before treating V50 as synced.”
+
+11. Add scanner integration.
+
+Pattern Sync should feed into:
+- ARX scanner
+- live trade guardrails
+- AI trade commentary
+- admin live-trading audit view
+- trader-facing chart summary
+
+Scanner columns:
+- Pattern Sync Status
+- Leader Symbol
+- Match Score
+- H4 Bias
+- M15 Timing
+- Fakeout Risk
+- Entry Quality
+
+12. Add safety rules.
+
+ARX must not auto-trade only because Pattern Sync matches.
+
+Pattern Sync can increase confidence only when:
+- H4 and M15 align
+- current symbol is not lagging too far behind
+- fakeout risk is acceptable
+- price is not extended into resistance/support
+- spread/bridge/feed freshness checks pass
+- existing ARX risk rules pass
+
+Hard rule:
+Pattern Sync is an analysis layer, not an execution bypass.
+
+Do not allow Pattern Sync to skip:
+- live approval
+- one-click confirmation
+- kill switch
+- risk limits
+- broker heartbeat
+- feed freshness
+- max drawdown checks
+- emergency stop
+
+13. Add tests.
+
+Backend tests:
+- detects bullish reversal into continuation
+- detects bearish pullback
+- identifies leader/follower/lagging symbols
+- penalizes choppy V50-style structure
+- marks countertrend sell after major bullish rally
+- rejects high confidence when H4 and M15 disagree
+- does not bypass live execution safety rules
+- stores pattern snapshots correctly
+- manual levels expire correctly
+
+Frontend tests:
+- Pattern Sync panel renders
+- Market Leader card renders
+- watchlist statuses render
+- trade warning appears when open trade exists
+- H4/M15 alignment displays correctly
+- fakeout risk badge displays correctly
+
+14. Required final behavior.
+
+When user uploads or views charts like V25(1s), V75, V75(1s), V50, and V50(1s), ARX should be able to say things like:
+
+“V75 is the cleanest bullish continuation chart.”
+“V25(1s) is showing the same pattern but weaker.”
+“V50 is similar but not confirmed.”
+“V50(1s) is in a pullback after a strong rally; sell is countertrend unless support breaks.”
+“Same-pattern score between V75 and V25(1s): 82/100.”
+“Do not chase. Wait for pullback or support hold confirmation.”
+“Pattern Sync agrees with H4 but M15 entry is late.”
+“Pattern Sync is bullish overall, but fakeout risk is elevated near resistance.”
+
+Acceptance criteria:
+- Multi-symbol comparison works for at least V25(1s), V50, V50(1s), V75, and V75(1s)
+- H4 and M15 are both supported
+- Leader/follower/lagging status is computed
+- Same-pattern score is computed
+- Fakeout risk is computed
+- Open trades receive alignment warnings
+- UI panel is visible in ARX dashboard
+- Pattern Sync does not bypass any live trading guardrails
+- All new backend and frontend tests pass

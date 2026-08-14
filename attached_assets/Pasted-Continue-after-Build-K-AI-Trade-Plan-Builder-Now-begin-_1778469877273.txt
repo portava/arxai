@@ -1,0 +1,114 @@
+Continue after Build K — AI Trade Plan Builder.
+
+Now begin Build L — Smart Alert & Notification System.
+
+Goal:
+Create intelligent alerts that notify the trader about market conditions, risk changes, trade plan updates, broker issues, open position events, and behavior warnings.
+
+Tasks:
+
+1. Audit existing systems:
+- market intelligence
+- trade plans
+- risk locks
+- broker health
+- live positions
+- AI coach
+- weekly goals
+- replay drills
+
+2. Add notification models:
+
+smart_alerts:
+- id
+- user_id
+- alert_type
+- priority
+- title
+- message
+- related_symbol
+- related_trade_id
+- related_position_id
+- related_trade_plan_id
+- is_read
+- action_required
+- created_at
+
+alert_preferences:
+- id
+- user_id
+- market_alerts_enabled
+- risk_alerts_enabled
+- broker_alerts_enabled
+- position_alerts_enabled
+- coach_alerts_enabled
+- weekly_review_alerts_enabled
+- quiet_hours_start
+- quiet_hours_end
+- created_at
+- updated_at
+
+3. Alert types:
+- MARKET_CONDITION
+- RISK_LOCK
+- BROKER_HEALTH
+- POSITION_WARNING
+- TRADE_PLAN_READY
+- TRADE_PLAN_INVALIDATED
+- AI_COACH
+- WEEKLY_REVIEW
+- REPLAY_DRILL
+- EXECUTION_SAFETY
+
+4. Priority levels:
+- LOW
+- MEDIUM
+- HIGH
+- CRITICAL
+
+5. Add alert rules:
+- Alert when market changes to NO TRADE
+- Alert when broker disconnects
+- Alert when price feed is delayed
+- Alert when position approaches stop loss
+- Alert when trade plan becomes invalid
+- Alert when risk lock activates
+- Alert when weekly review is ready
+- Alert when AI recommends a replay drill
+- Alert when user is nearing daily loss limit
+
+6. API routes:
+- GET alerts
+- GET unread alert count
+- PATCH mark alert as read
+- PATCH mark all alerts as read
+- GET alert preferences
+- PATCH update alert preferences
+- POST generate system alert
+
+7. Frontend components:
+- Notification Bell
+- Alerts Drawer
+- Alert Detail Card
+- Critical Alert Banner
+- Alert Preferences Page
+
+8. Connect alerts to dashboard:
+- Show critical alerts at top
+- Show unread count
+- Allow user to click alert and go to related page
+
+Important:
+- Do not spam the user.
+- Do not create duplicate alerts for the same event.
+- Critical safety alerts should be highly visible.
+- No alert should claim guaranteed profit.
+
+Final output required:
+1. Files changed
+2. Tables/models added
+3. API routes added
+4. Frontend components added
+5. Alert rules implemented
+6. Errors or limitations
+7. Recommended next build

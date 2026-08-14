@@ -1,0 +1,331 @@
+Continue from the ARX Living Knowledge System.
+
+Now build the ARX Runtime App Doctor.
+
+Goal:
+The ARX Assistant should understand the live app state in real time, not just static knowledge. It should be able to answer:
+- What is happening right now?
+- Why is this page not working?
+- Why is this blocked?
+- Why is MT5 not connected?
+- Why is heartbeat missing?
+- Why did this API fail?
+- Why does this button not work?
+- What should I fix first?
+- Is this a real trading issue or just simulator/paper mode?
+- Is this a UI issue, setup issue, permission issue, bridge issue, or safety lock?
+
+This is a diagnostic and support upgrade only.
+Do not enable live trading.
+Do not change broker execution logic.
+Do not change MT5 execution logic.
+Do not bypass risk controls.
+
+Phase 1 — Create Runtime Context Collector
+Create a safe runtime context collector for the assistant.
+
+Suggested files:
+- src/assistant/runtimeContext.ts
+- src/assistant/useRuntimeContext.ts
+- src/assistant/runtimeContextTypes.ts
+
+Collect:
+- current route/path
+- current page title
+- viewport mode: mobile/tablet/desktop
+- visible UI elements with data-arx-id
+- visible badges/statuses
+- active safety locks
+- disabled controls
+- current selected symbol
+- current trading mode
+- paper-only status
+- simulator mode status
+- live trading disabled status
+- broker execution disabled status
+- broker read-only status
+- MT5 deferred status
+- MT5 bridge connected/disconnected status
+- heartbeat status and last heartbeat time if available
+- readiness status
+- emergency stop status
+- user role from secure server/auth context
+- recent frontend errors
+- recent failed API calls
+- recent navigation failures
+- recent assistant questions
+- missing knowledge fallback events
+
+Important:
+Never collect or expose:
+- API keys
+- broker credentials
+- account passwords
+- account numbers unless already safely displayed
+- private secrets
+- raw auth tokens
+- server env variables
+
+Phase 2 — Add frontend error capture
+Add a lightweight client-side error buffer.
+
+Capture:
+- uncaught frontend errors
+- React render errors
+- failed fetch requests
+- failed route loads
+- failed component imports
+- assistant errors
+- UI overlap warnings if detectable
+
+Store only the last 25 safe events in memory/session.
+Scrub sensitive values from URLs, headers, bodies, and stack traces.
+
+The assistant should be able to answer:
+“Something failed on this page. Here is the safe summary of what failed and what to check next.”
+
+Phase 3 — Add backend health summary endpoint
+Create or improve a safe health endpoint for the assistant.
+
+Suggested endpoint:
+- GET /api/app/health-summary
+
+Return safe diagnostic info only:
+- server reachable
+- database reachable if applicable
+- auth/session detected
+- feedback/report endpoint healthy
+- MT5 bridge status endpoint reachable
+- readiness endpoint reachable
+- risk endpoint reachable
+- simulator endpoint reachable
+- recent safe server errors count
+- app version/build timestamp if available
+
+Do not expose secrets, stack traces, tokens, or credentials.
+
+Phase 4 — Add MT5/Bridge diagnostic summary
+Create a safe assistant-readable bridge summary.
+
+Suggested endpoint:
+- GET /api/mt5/diagnostic-summary
+
+Return:
+- bridge mode: deferred / simulator / connected / disconnected
+- heartbeat present: yes/no
+- last heartbeat timestamp
+- heartbeat age
+- broker execution enabled: yes/no
+- broker read-only: yes/no
+- live trading enabled: yes/no
+- paper-only mode: yes/no
+- safest next bridge step
+- human-readable reason for current bridge state
+
+Do not alter MT5 bridge behavior.
+Do not send orders.
+Do not enable execution.
+
+Phase 5 — Add App Doctor diagnosis engine
+Create a diagnosis engine.
+
+Suggested file:
+- src/assistant/appDoctor.ts
+
+It should classify issues into:
+- UI/layout issue
+- route/navigation issue
+- permission issue
+- missing setup issue
+- safety lock
+- MT5 bridge issue
+- heartbeat issue
+- broker mode issue
+- readiness issue
+- paper session blocker
+- simulator mode explanation
+- backend/API issue
+- unknown issue
+
+For each diagnosis, return:
+- issue category
+- plain-English explanation
+- evidence from runtime context
+- likely cause
+- safe next step
+- related page link if valid
+- what not to do
+- whether live trading remains unavailable
+
+Phase 6 — Add “Diagnose this page” button
+Inside ARX Assistant, add a quick action:
+“Diagnose this page”
+
+When clicked, assistant should:
+1. Read runtime context.
+2. Identify active statuses and errors.
+3. Explain what is working.
+4. Explain what is blocked.
+5. Explain what failed, if anything.
+6. Recommend the safest next page/action.
+7. Show route buttons only for real routes.
+
+Example:
+“I see you are on Help Center. The app is in Paper Only, Live Trading Disabled, MT5 Deferred, and Simulator Mode. I do not see a confirmed MT5 heartbeat. That means ARX can explain and simulate, but cannot send live broker orders. Safest next step: open MT5 Bridge and verify heartbeat, or continue in simulator mode.”
+
+Phase 7 — Add “What should I fix first?” engine
+Create a priority-based repair advisor.
+
+Priority order:
+1. Emergency Stop active
+2. Live trading safety lock explanation
+3. Missing MT5 heartbeat
+4. Bridge disconnected/deferred
+5. Broker read-only
+6. Readiness incomplete
+7. Paper session blockers
+8. Failed API endpoints
+9. Broken route/navigation
+10. UI overlap/layout issue
+11. Missing assistant knowledge
+
+Output:
+- first thing to fix
+- why it matters
+- how to check it
+- page to open
+- whether this blocks live trading
+- safe alternative if not fixable yet
+
+Important:
+The recommendation should never be “enable live trading.”
+It should be “understand the blocker,” “verify setup,” “use simulator/paper mode,” or “open the correct diagnostic page.”
+
+Phase 8 — Add “Explain current app status” mode
+Add assistant quick action:
+“Explain current app status”
+
+It should combine:
+- route knowledge
+- status registry
+- runtime context
+- health summary
+- bridge diagnostic summary
+- readiness/risk state
+- visible badges
+
+Output should be user-friendly:
+- What mode the app is in
+- What the app can currently do
+- What the app cannot currently do
+- Why live trading remains unavailable
+- What the safest next step is
+- Which page to open next
+
+Phase 9 — Add safe report issue auto-context
+When the user opens Report Issue from the assistant, attach safe diagnostic context.
+
+Include:
+- route
+- viewport mode
+- visible statuses
+- active blockers
+- safe error summaries
+- failed endpoint names only
+- assistant diagnosis category
+
+Exclude:
+- secrets
+- credentials
+- tokens
+- account numbers
+- raw request bodies
+- private broker data
+
+The report form should let the user review what will be attached before submitting.
+
+Phase 10 — Add Runtime Diagnostics panel for tester/admin
+Inside Assistant Knowledge Console or a new admin-only panel, show:
+- current runtime context
+- health summary
+- bridge diagnostic summary
+- frontend error buffer
+- failed API calls
+- route match
+- visible UI elements detected
+- active blockers
+- latest App Doctor diagnosis
+
+Only tester/admin/owner roles can see this.
+Role must come from secure server-side auth/session, not client headers.
+
+Phase 11 — Add diagnostic question examples
+Assistant should handle:
+- Diagnose this page
+- What is happening right now?
+- What should I fix first?
+- Why is MT5 not connected?
+- Why is heartbeat missing?
+- Why is live trading disabled?
+- Why is broker read-only?
+- Why is this button disabled?
+- Why did this page fail?
+- Is this a setup issue or safety lock?
+- Is the server working?
+- Is the bridge working?
+- Is this app in simulator mode?
+- What can I safely do right now?
+- What should I not do right now?
+
+Phase 12 — Add tests
+Add tests for:
+- runtime context collection
+- sensitive data scrubbing
+- frontend error buffer
+- health summary output
+- bridge diagnostic summary output
+- App Doctor classification
+- “Diagnose this page” response
+- “What should I fix first?” priority logic
+- safe report issue context
+- no secrets exposed
+- no live trading enabled
+- no broker execution changed
+- no MT5 execution changed
+- no fake heartbeat
+- no fake broker connection
+- no fake readiness pass
+
+Phase 13 — Runtime QA
+Manually verify mobile:
+1. Open ARX Assistant.
+2. Tap “Diagnose this page.”
+3. Ask “What should I fix first?”
+4. Ask “Why is MT5 not connected?”
+5. Ask “Explain current app status.”
+6. Open Report Issue and confirm safe context is attached.
+7. Confirm assistant still does not block bottom nav.
+
+Manually verify desktop:
+1. Open Knowledge Console.
+2. Open Runtime Diagnostics.
+3. Confirm health summary is visible.
+4. Confirm bridge summary is visible.
+5. Confirm no secrets are visible.
+6. Confirm route links work.
+7. Confirm sidebar/menu remains clickable.
+
+Phase 14 — Final report
+Return:
+- files changed
+- runtime context collector created/updated
+- health endpoint created/updated
+- MT5 diagnostic summary created/updated
+- App Doctor created/updated
+- diagnostic quick actions added
+- sensitive-data scrubber result
+- tests added and pass/fail results
+- mobile runtime QA result
+- desktop runtime QA result
+- remaining diagnostic gaps
+- confirmation that live trading, MT5 execution, broker execution, and risk controls were not changed

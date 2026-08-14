@@ -1,0 +1,91 @@
+Begin Phase 6 only: Replay Lab + What-If Intelligence.
+
+Do not build Portfolio Manager, Evolution, or live auto-execution yet.
+
+Goal:
+Allow the system to replay trades, blocked trades, missed setups, user overrides, agent votes, execution conditions, Trader DNA state, and market conditions so the AI can learn from past decisions.
+
+Build:
+
+/src/domain/replay-lab/
+  replay.types.ts
+  replayEngine.ts
+  candlePlayback.engine.ts
+  marketSnapshotReplay.engine.ts
+  agentReplay.engine.ts
+  judgeReplay.engine.ts
+  blockedTradeReplay.engine.ts
+  missedTradeReplay.engine.ts
+  overrideReplay.engine.ts
+  executionReplay.engine.ts
+  traderDNAReplay.engine.ts
+  globalStateReplay.engine.ts
+  whatIfEngine.ts
+  replayScoring.engine.ts
+  lessonGenerator.engine.ts
+
+Rules:
+- Replay Lab cannot place trades.
+- Replay Lab is simulation and learning only.
+- Every replay must reconstruct:
+  - market conditions
+  - candle sequence
+  - agent votes
+  - judge verdict
+  - execution conditions
+  - Trader DNA state
+  - cognitive state
+  - global state
+  - risk state
+  - Control Tower mode
+  - final outcome
+
+What-if scenarios must support:
+- entered earlier
+- entered later
+- reduced size
+- increased delay
+- exited earlier
+- exited later
+- blocked trade instead
+- took blocked trade instead
+- different execution conditions
+- different cooldown behavior
+- different stop placement
+- different take-profit logic
+
+Replay scoring must grade:
+- decision quality
+- execution quality
+- discipline quality
+- risk quality
+- expectancy impact
+- survival impact
+- agent accuracy
+- confidence calibration
+
+Replay lessons must update:
+- Black Box Vault
+- Agent performance records
+- Trader DNA
+- confidence calibration
+- validation pipeline readiness
+
+Acceptance criteria:
+- Executed trades can replay candle-by-candle.
+- Blocked trades can be reviewed.
+- Missed setups can be reviewed.
+- Overrides can be reviewed.
+- What-if scenarios compare alternate decisions.
+- Replay lessons are stored back into the Vault.
+- Existing app remains stable.
+- No live auto-execution yet.
+
+After Phase 6, stop and report:
+1. Files created
+2. Replay systems implemented
+3. What-if scenarios supported
+4. Replay scoring implemented
+5. Lesson generation implemented
+6. Tests passed/failed
+7. Whether Phase 7 is safe to begin

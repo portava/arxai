@@ -1,0 +1,111 @@
+Start T008 — Published Production Speed Proof + Memory Index Cleanup.
+
+Use the current merged T007 state as the baseline.
+
+This is not a redesign. This is not a live-trade test. Do not change the LIVE MT5 bridge, live permissions, account approval, kill switch, DEMO/LIVE mode logic, broker/EA connection, trade execution backend, or api-server unless an existing production deployment setting absolutely requires verification. Do not place or queue any live trade during this task.
+
+Primary goal:
+Prove real production speed from the published production build, not Replit dev preview, and clean the minor memory/index housekeeping note flagged by the architect.
+
+Scope A — Published production speed verification:
+1. Identify the correct production/published deployment path for the app.
+2. Do not use Vite dev server timing as the final performance result.
+3. Build the app using the production build command.
+4. Serve or deploy the production artifact through the closest real production path available in this environment.
+5. If Replit deployment/publishing is required, use the existing project deployment setup. Do not create a new unrelated deployment.
+6. If a true public production URL cannot be reached from the test harness, clearly state the limitation and use `vite preview` only as a secondary local-production proxy, not as the final claim.
+
+Measure these on mobile viewport 400×720 and desktop 1280×720:
+- first usable login screen
+- login to cockpit
+- cockpit to scanner route change
+- scanner shell render
+- scanner data render
+- symbol search/select to chart update
+- symbol select to Ruby context update
+- Ruby chart-read first visible response/typing state
+- trade modal open
+- trade modal close
+- settings route
+- notifications route
+- back navigation
+
+Performance targets:
+- Route shell should appear quickly with no white screen.
+- Symbol select should feel instant and must not wait on the old Load-button behavior.
+- Trade modal open/close should feel instant and stay within the mobile viewport.
+- Scanner should not hang, blank, or take multi-second time unless caused by authenticated API/data delay, which must be identified separately.
+- Ruby must show “thinking/typing” immediately while a response is being generated.
+- No route should take 7 seconds in production without a clearly identified backend/network reason.
+
+Scope B — Network and bundle audit:
+1. Capture production bundle sizes after T007.
+2. Confirm major chunks are still lazy-loaded where appropriate.
+3. Confirm no new always-on pollers were introduced.
+4. Confirm hidden tabs/panels do not keep polling when invisible.
+5. Confirm scanner, chart, Ruby, and trade modal do not mount heavy components before needed.
+6. Check the network waterfall for slow endpoints, repeated duplicate calls, large payloads, cache misses, or blocked requests.
+7. Separate frontend speed issues from backend/API speed issues in the report.
+8. If a small low-risk performance fix is obvious, fix it.
+9. If a performance issue requires a larger refactor, do not do it silently. Flag it with the exact file/function and recommended next task.
+
+Scope C — Memory/index housekeeping:
+The architect flagged minor memory-formatting issues after T007:
+1. Find the overlong memory/index entries if they are stored in project files.
+2. Split or shorten overlong entries without deleting important project constraints.
+3. Remove duplicate live-environment posture text if it already exists in `replit.md`.
+4. Keep the active project memory concise:
+   - current app mission
+   - DEMO and LIVE only
+   - live testing posture
+   - 16 safety gates / invariants
+   - current known issues
+   - current QA commands
+   - archive links
+5. Do not store secrets, tokens, broker credentials, API keys, private account details, or live account credentials in markdown or memory files.
+6. If these memory/index entries are platform-managed and not accessible from the repo, state that clearly and do not fake a cleanup.
+
+Scope D — Regression QA:
+After any changes, run:
+1. Full workspace typecheck.
+2. Production build.
+3. Existing ci guards.
+4. Existing view-mode checks.
+5. Existing chart-symbol-propagation checks.
+6. Mobile functional walk.
+7. Desktop functional walk.
+8. Architect/code review if required by the workflow.
+
+Functional walk must include:
+- login
+- cockpit
+- scanner
+- symbol search/select
+- chart update
+- Ruby chart read
+- trade modal open
+- trade modal close
+- settings
+- notifications
+- back navigation
+
+Hard constraints:
+1. No Paper Trading terminology or paper mode logic may be reintroduced.
+2. No live trade may be placed or queued.
+3. Do not restart api-server unless absolutely necessary.
+4. Do not touch live MT5 execution paths.
+5. Do not weaken safety gates.
+6. Do not add extra confirmation modals.
+7. Do not undo T007 symbol propagation.
+8. Do not undo the mobile modal fix.
+9. Do not grow `replit.md` back into a large changelog.
+
+Deliverables:
+1. Final production-speed table with mobile and desktop timings.
+2. Bundle/chunk table after T007.
+3. Network/API bottleneck notes.
+4. Any files changed.
+5. Memory/index cleanup result.
+6. QA results.
+7. Architect review result if run.
+8. Clear commit message.

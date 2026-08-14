@@ -1,0 +1,264 @@
+T021 — FIX SHARED MASTER ACCOUNT REAL-TIME MT5 BALANCE SYNC + REFRESH
+
+Current issue:
+On the Cockpit / Shared Master Account card, the balance/equity/open positions are not updating in real time and the refresh button does not appear to actually refresh the live MT5 account state.
+
+User screenshot shows:
+
+* Shared Master Account
+* LIVE
+* Virtual Balance: $7.00
+* Equity: $7.00
+* Open PNL: $0.00
+* Realized (7D): $0.00
+* Broker: Deriv (SVG) LLC ••••0041 LIVE
+* Open positions: 0
+* Recent attributions show multiple reconciled EURUSD entries
+* Refresh icon is visible but the user says it is not refreshable
+
+Required behavior:
+ARX must actively sync with MT5 balance/equity/open positions/P&L in near real time, whether a trade is placed:
+
+1. through ARX, or
+2. directly inside MT5.
+
+This task is only for live account sync/refresh.
+Do not change governance.
+Do not change live trade restrictions.
+Do not change order execution.
+Do not use Demo.
+Do not use Paper.
+Do not fake balances.
+Do not fabricate MT5 data.
+Do not place a live trade in this task.
+
+Primary goal:
+Make the Shared Master Account card reflect the real MT5 account state and make the refresh button perform a real live sync pull.
+
+PART 1 — Audit current data source
+
+Inspect where the Shared Master Account card currently gets:
+
+1. virtualBalance
+2. equity
+3. openPnL
+4. realized 7D
+5. broker/account label
+6. open position count
+7. recent attributions
+8. last updated timestamp
+
+For each field, identify whether it comes from:
+
+1. ARX virtual allocation ledger
+2. ARX cached broker snapshot
+3. MT5 bridge heartbeat
+4. EA account info
+5. MT5 positions sync
+6. stale database values
+7. frontend cached query
+8. mock/demo fallback
+9. computed value
+
+Report which fields are real MT5-sourced and which are ARX/internal.
+
+PART 2 — Define correct display model
+
+The Shared Master Account card should clearly separate:
+
+1. MT5 Real Balance
+2. MT5 Equity
+3. MT5 Margin
+4. MT5 Free Margin
+5. MT5 Open P/L
+6. MT5 Open Positions
+7. ARX Allocated Balance
+8. ARX Available Allocation
+9. ARX Used Allocation
+10. ARX Realized P/L
+11. Last MT5 Sync Time
+12. Sync Status
+
+Do not label ARX virtual allocation as real broker balance unless it is actually MT5 balance.
+
+If the current “Virtual Balance” is ARX allocation, keep it labeled clearly as:
+“ARX Allocated Balance”
+or
+“Virtual Allocation”
+
+If the value is MT5 balance, label it:
+“MT5 Balance”
+
+PART 3 — Fix the refresh button
+
+The refresh button on the Shared Master Account card must trigger a real sync.
+
+When owner/admin taps refresh:
+
+1. call backend refresh endpoint
+2. backend requests latest MT5 account snapshot from bridge/EA
+3. backend requests latest MT5 open positions from bridge/EA
+4. backend reconciles ARX open positions against MT5 open positions
+5. backend updates account snapshot cache
+6. frontend refetches and displays updated values
+7. UI shows loading state during refresh
+8. UI shows last updated timestamp after refresh
+9. UI shows clean failure if bridge/EA unavailable
+
+Do not let refresh only refetch stale database values.
+Do not fake refresh by updating timestamp only.
+
+PART 4 — Add near-real-time sync
+
+Implement near-real-time live sync for the owner/admin Shared Master Account.
+
+Requirements:
+
+1. Poll or subscribe to MT5 account snapshot on a safe interval.
+2. Suggested interval: every 2–5 seconds while Cockpit/Trade/Scanner is visible.
+3. Pause or slow polling when tab is hidden.
+4. Do not create excessive backend load.
+5. Do not block page render on sync.
+6. Show stale indicator if last MT5 sync is old.
+7. If bridge heartbeat is healthy but account snapshot is stale, show warning.
+8. If bridge disconnected, show clean “MT5 sync unavailable.”
+
+The sync should include:
+
+1. balance
+2. equity
+3. margin
+4. free margin
+5. open P/L
+6. open position count
+7. account currency
+8. broker/server/account label if safe
+9. timestamp from MT5 or bridge receipt time
+
+PART 5 — Direct MT5 trades must reflect in ARX
+
+ARX must update if a trade is placed manually in MT5.
+
+Required:
+
+1. If a user opens a trade directly inside MT5, ARX detects the new MT5 open position on next sync.
+2. If the trade belongs to the shared master account, it appears in admin/owner shared master view.
+3. If ARX cannot attribute the manual MT5 trade to a specific ARX user, mark it as:
+    * Source: Manual MT5
+    * Attribution: Unassigned / Admin review
+4. Do not assign manual MT5 trades to a random user.
+5. Do not expose manual MT5 trades to normal users unless attributed/authorized.
+6. Admin/owner should see unattributed manual MT5 trades in a clear section.
+7. If the manual MT5 trade closes, ARX detects and marks it closed/reconciled.
+
+PART 6 — Reconcile stale/recent attribution display
+
+The “Recent Attributions” section currently shows multiple reconciled EURUSD BUY 0.01 entries.
+
+Improve display so it does not look like active trades.
+
+Rules:
+
+1. Active MT5 positions show under “Open Positions.”
+2. Reconciled/closed/stale records show under “Recent Reconciliations” or “Recent Activity.”
+3. Limit visible rows to 3–5 with “View all.”
+4. Show status clearly:
+    * Open
+    * Closed
+    * Reconciled
+    * Failed
+    * Manual MT5
+    * Pending MT5
+5. Do not mix reconciled entries with active positions.
+
+PART 7 — Backend/API requirements
+
+Create or repair endpoints as needed:
+
+1. getSharedMasterAccountSnapshot
+2. refreshSharedMasterAccountSnapshot
+3. getMT5OpenPositions
+4. reconcileMT5Positions
+5. getSharedMasterRecentActivity
+
+Endpoint behavior:
+
+1. owner/admin only
+2. no normal user access to master account data
+3. no raw secrets
+4. no master account number except masked
+5. no tokens/IPs
+6. server-side filtering
+7. bridge/EA failure handled cleanly
+
+PART 8 — UI requirements
+
+Shared Master Account UI should show:
+
+1. Sync status:
+    * Live syncing
+    * Refreshing
+    * Stale
+    * MT5 unavailable
+2. Last updated time
+3. MT5 balance/equity
+4. ARX allocation separately
+5. Open positions count
+6. Open P/L
+7. Manual refresh button with spinner
+8. Clean error state if refresh fails
+9. No misleading stale values
+
+Refresh button behavior:
+
+1. tap gives immediate feedback
+2. spinner appears
+3. button disabled while refreshing
+4. values update when backend returns
+5. last updated timestamp changes only when fresh MT5 data is received
+6. error shows if MT5 data was not refreshed
+
+PART 9 — Tests
+
+Run:
+
+1. pnpm run health:workflows
+2. typecheck
+3. ci:guards
+4. shared master account snapshot test
+5. refresh endpoint test
+6. MT5 account snapshot parsing test
+7. MT5 open positions sync test
+8. manual MT5 trade reconciliation test if possible without placing new trade
+9. owner/admin access test
+10. normal user blocked test
+11. Cockpit UI smoke test
+12. hidden-tab polling pause test
+
+Do not place a live trade for this task.
+
+PART 10 — Final report required
+
+Final report must include:
+
+1. current data source audit
+2. which fields were stale/cached
+3. new real MT5 snapshot fields
+4. refresh button behavior before/after
+5. polling/sync interval
+6. hidden-tab polling behavior
+7. manual MT5 trade detection behavior
+8. open position reconciliation behavior
+9. recent attribution display changes
+10. owner/admin access verification
+11. normal user privacy verification
+12. files changed
+13. health:workflows result
+14. typecheck result
+15. ci:guards result
+16. confirmation no live trade placed
+17. confirmation no Demo/Paper/fake data used
+18. remaining risks
+
+Completion standard:
+This task is complete only when the Shared Master Account card refresh button pulls fresh MT5 data, the card updates in near real time from MT5, manual MT5 trades can be detected/reconciled, and stale/reconciled entries no longer appear like active live positions.

@@ -1,0 +1,65 @@
+Upgrade Phase 2 safely by building the Event-Sourced Trading Black Box Vault as a parallel audit layer first.
+
+Important:
+Do NOT replace the current logging or trade systems yet.
+Do NOT break existing Phase 1 safety systems.
+Build this vault in shadow/audit mode first, then validate it.
+
+Goal:
+Create a reliable event-sourced Black Box Vault that records every important system action without interfering with current app behavior.
+
+Add:
+
+/src/domain/black-box-vault/
+  eventSchema.types.ts
+  eventStore.engine.ts
+  eventId.engine.ts
+  eventChain.engine.ts
+  eventReplay.engine.ts
+  snapshotBuilder.engine.ts
+  auditTrail.engine.ts
+  vaultQuery.engine.ts
+  dataIntegrity.engine.ts
+  retentionPolicy.engine.ts
+  vaultShadowAdapter.engine.ts
+
+Required event fields:
+- eventId
+- timestamp
+- eventType
+- source
+- severity
+- systemMode
+- globalState
+- payload
+- previousEventId
+- checksum
+- schemaVersion
+
+Rules:
+- Vault starts in SHADOW_MODE only.
+- Existing app behavior must not depend on the vault yet.
+- Every important event is copied into the vault.
+- Events are immutable.
+- Corrections must be recorded as new correction events.
+- Add event chaining to detect missing or corrupted records.
+- Add checksums to detect tampering or corruption.
+- Add schemaVersion for future migrations.
+- Add snapshotBuilder so system state can eventually be rebuilt from events.
+- Add eventReplay so past decisions can be reconstructed.
+- Add vaultQuery for filtering by date, symbol, source, severity, mode, strategy, tradeId, and eventType.
+- Add dataIntegrity checks for duplicate IDs, broken chains, corrupted checksums, malformed payloads, missing fields, and invalid timestamps.
+- Add retentionPolicy for hot, warm, and archived data.
+- Keep all Phase 1 tests passing.
+
+Safety requirements:
+- If vault fails, app must continue running safely.
+- If vault detects corruption, it must alert but not execute trades.
+- If vault storage is unavailable, trigger DEGRADED_MODE and log the failure when storage returns.
+- Vault cannot place trades.
+- Vault cannot approve trades.
+- Vault cannot override Risk Governor.
+- Vault cannot override Control Tower.
+
+Core rule:
+If it is not in the vault, it did not happen — but only after the vault is validated and promoted from shadow mode.

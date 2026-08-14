@@ -1,0 +1,42 @@
+QA/FIX GATE — Multi-User Trade Queue + Same-Time Execution Safety
+
+Inspect the multi-user trade queue and same-time execution safety work from the previous pass.
+
+Do not rebuild unrelated systems. Reuse current code and only repair missing or broken pieces.
+
+Verify:
+
+1. Trade commands use one unified pipeline, not a duplicate trade system.
+2. Commands are tied to authenticated userId, account mode, bridge/account mapping, symbol, order type, idempotency key, and reservation where needed.
+3. User A cannot see, close, edit, cancel, or affect User B’s command/trade.
+4. Two users can submit the same symbol without incorrectly blocking each other.
+5. One user double-clicking submit does not create duplicate commands.
+6. Per-user-per-symbol cooldown works correctly.
+7. Shared master exposure reservation prevents over-allocation.
+8. SHARED_MASTER_MT5 blocks if user is not admin-approved.
+9. SHARED_MASTER_MT5 blocks if master account is unmapped.
+10. SHARED_MASTER_MT5 blocks if bridge is unhealthy.
+11. SHARED_MASTER_MT5 blocks if global live flag or EA live settings are unsafe.
+12. Demo commands never create live commands.
+13. Queue dispatcher does not send duplicate bridge requests.
+14. Duplicate EA callbacks are ignored safely.
+15. Stale commands/reservations are expired, released, or marked NEEDS_REVIEW.
+16. Failed commands do not retry blindly if MT5 state is uncertain.
+17. Admin can pause/resume shared master dispatch.
+18. Admin can view blocked/queued/failed commands safely.
+19. Non-admin users cannot access admin queue controls or APIs.
+20. User-facing trade status is clean and understandable.
+21. Ruby explains queued/blocked/needs-review trade states accurately.
+22. Audit logs are created for command lifecycle events.
+23. Previous hardening flags were checked: UI-side block auditing where practical, production-safe requireAdmin output, and bridge-secret masking guard.
+24. No secrets are exposed in UI, logs, routes, or responses.
+25. No live trade is fired during QA.
+
+Return:
+- PASS/FAIL table
+- files inspected
+- tests run
+- issues found
+- fixes applied
+- remaining risks
+- confirmation that no live trade was fired

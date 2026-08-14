@@ -1,0 +1,93 @@
+Now run the live heartbeat binding verification.
+
+Do NOT place a live trade.
+Do NOT enable ARX_LIVE_BROKER_EXECUTION_ENABLED yet.
+Do NOT release any safety gate unless the heartbeat is proven real.
+
+Current MT5 EA v1.27 inputs are set:
+- mode = live
+- account/login = 62470041
+- ReadOnlyMode = false
+- EnableDemoExecution = false
+- EnableLiveExecution = true
+- MaxLiveLot = 0.01
+- SendHeartbeat = true
+- SendAccountSnapshot = true
+- SendPositionsSnapshot = true
+
+Task:
+
+1. Inspect the newest real /api/mt5/heartbeat received by the server.
+   Show:
+   - received_at
+   - bridge_connection_id
+   - user_id
+   - account_id
+   - MT5 account number
+   - broker/server
+   - EA version
+   - account type/mode
+   - ReadOnlyMode
+   - EnableDemoExecution
+   - EnableLiveExecution
+   - MaxLiveLot
+   - terminalConnected
+   - algoTradingAllowed
+   - token accepted/rejected
+   - whether the heartbeat is REAL_MT5 or MOCK
+
+2. Confirm that the Live Trading page is reading this real v1.27 heartbeat, not MOCK or stale bridge data.
+
+3. If the latest Live Trading checklist still shows MOCK:
+   - find why the real EA heartbeat is not binding to the live page
+   - check wrong bridge token
+   - check wrong user/account binding
+   - check stale bridge selection
+   - check heartbeat accepted but not persisted
+   - check REAL vs LIVE normalization
+   - fix the binding
+
+4. Normalize account type:
+   - REAL = LIVE
+   - LIVE = LIVE
+   - DEMO = DEMO
+   - MOCK must never satisfy live readiness
+
+5. Add/confirm Live EA Heartbeat Debug card on /live-trading showing:
+   - latest real heartbeat time
+   - bridge id
+   - MT5 account number
+   - broker/server
+   - EA version
+   - account type
+   - ReadOnlyMode
+   - EnableLiveExecution
+   - MaxLiveLot
+   - terminal connected
+   - algo trading allowed
+   - heartbeat source: REAL_MT5 or MOCK
+
+6. Confirm the controlled live test button stays disabled until all gates pass.
+
+7. Confirm no live command was created.
+   arx_live_commands should remain 0 unless I manually submit a controlled test later.
+
+8. If the only remaining blocker becomes:
+   ARX_LIVE_BROKER_EXECUTION_ENABLED=false/unset
+
+   Then output:
+   READY_FOR_MASTER_SWITCH
+
+9. If any other blocker remains, output:
+   NOT_READY_FOR_MASTER_SWITCH
+   and list exact blockers.
+
+Acceptance proof:
+- Live Trading page shows real EA v1.27 heartbeat
+- Account 62470041 appears
+- AccountType REAL is treated as LIVE
+- ReadOnlyMode=false appears
+- EnableLiveExecution=true appears
+- MaxLiveLot=0.01 appears
+- MOCK heartbeat no longer satisfies live readiness
+- No live trade was placed

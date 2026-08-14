@@ -1,0 +1,122 @@
+Begin Phase 10 only: AI Economy + Evolution Sandbox.
+
+Do not enable unrestricted live auto-execution.
+
+Goal:
+Create a controlled ecosystem where agents, strategies, and mutations can earn trust, lose authority, evolve safely in sandbox mode, and improve ecosystem fitness without bypassing validation, Risk Governor, or Control Tower.
+
+Build:
+
+/src/domain/ai-economy/
+  aiEconomy.types.ts
+  economy.engine.ts
+  agentReputation.engine.ts
+  strategyReputation.engine.ts
+  trustScore.engine.ts
+  specialtyScore.engine.ts
+  disciplineScore.engine.ts
+  authorityReward.engine.ts
+  authorityPenalty.engine.ts
+  survivalCurrency.engine.ts
+
+/src/domain/strategy-lifecycle/
+  lifecycle.types.ts
+  lifecycle.engine.ts
+  promotion.engine.ts
+  demotion.engine.ts
+  quarantine.engine.ts
+  retirement.engine.ts
+  archive.engine.ts
+
+/src/domain/evolution/
+  evolutionLab.engine.ts
+  strategyMutation.engine.ts
+  variationTesting.engine.ts
+  sandboxValidation.engine.ts
+  mutationReport.engine.ts
+
+/src/domain/resource-management/
+  computeAllocator.engine.ts
+  replayPriority.engine.ts
+  validationPriority.engine.ts
+  attentionBudget.engine.ts
+
+/src/domain/ecosystem-fitness/
+  ecosystemFitness.engine.ts
+  contributionScore.engine.ts
+  diversificationContribution.engine.ts
+  executionStressContribution.engine.ts
+  behavioralStressContribution.engine.ts
+  systemicFragility.engine.ts
+
+/src/domain/evolution-constitution/
+  evolutionConstitution.engine.ts
+  forbiddenMutationRules.engine.ts
+  governanceLaws.engine.ts
+
+/src/domain/evolution-sandbox/
+  ecosystemSimulation.engine.ts
+  correlatedFailureScenario.engine.ts
+  ecosystemStress.engine.ts
+  massDisagreementScenario.engine.ts
+
+/src/domain/evolution-memory/
+  mutationMemory.engine.ts
+  collapseHistory.engine.ts
+  adaptationHistory.engine.ts
+
+/src/domain/evolution-fraud/
+  fakeEdgeDetector.engine.ts
+  overfitMutationDetector.engine.ts
+  statisticalIllusion.engine.ts
+
+/src/domain/ecosystem-survival/
+  ecosystemSurvival.engine.ts
+  civilizationStressTest.engine.ts
+  systemicRecovery.engine.ts
+
+Rules:
+- Evolution is sandbox-only.
+- No evolved strategy can touch live money directly.
+- No mutation can skip validation.
+- Ecosystem health matters more than isolated strategy profit.
+- Survival quality matters more than raw profit.
+- Agents and strategies earn trust from measurable performance only.
+- Weak strategies can be demoted, quarantined, retired, or archived.
+- Strong strategies can gain testing priority, not automatic live authority.
+- Evolution Constitution defines permanent safety laws.
+- Forbidden mutations can never be promoted.
+- Fraud detection must identify fake edge, overfitting, and fragile optimization.
+- Ecosystem fitness must measure contribution to diversification, execution stability, behavioral stability, and systemic survival.
+- Risk Governor and Control Tower outrank all AI Economy and Evolution decisions.
+- All reputation changes, lifecycle transitions, mutations, sandbox tests, fraud flags, and ecosystem survival scores must be logged into the Black Box Vault.
+- Keep all previous phase tests passing.
+
+Required outputs:
+- agentReputationScore
+- strategyTrustScore
+- survivalCurrencyScore
+- lifecycleStage
+- promotionEligibility
+- demotionRisk
+- quarantineRisk
+- mutationCandidate
+- sandboxValidationResult
+- ecosystemFitnessScore
+- systemicFragilityScore
+- fraudRiskScore
+- ecosystemSurvivalScore
+- resourcePriority
+- plainEnglishExplanation
+
+After Phase 10, stop and report:
+1. Files created
+2. AI Economy systems implemented
+3. Strategy lifecycle implemented
+4. Evolution sandbox implemented
+5. Ecosystem fitness implemented
+6. Evolution Constitution implemented
+7. Fraud detection implemented
+8. Ecosystem survival scoring implemented
+9. Tests passed/failed
+10. Remaining risks before any live automation

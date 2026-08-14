@@ -1,0 +1,242 @@
+Continue to T009: controlled go-hot activation and micro live test for the shared live-account system.
+
+Do not rebuild from scratch. Do not weaken any safety gate. Do not add MT5 login/password/server credentials to Replit. Keep EA-pull architecture.
+
+Current state:
+- Repository is clean.
+- Typechecks/tests/CI guards pass.
+- Phase A/B/C/T006/T007/T008 are complete.
+- Default-deny is preserved.
+- arx_live_commands has 0 rows.
+- ARX_LIVE_BROKER_EXECUTION_ENABLED is currently unset/default-deny.
+- Activation cockpit exists at /admin/live-shared/activation.
+
+Goal:
+Move from default-deny readiness into controlled live activation only through the admin activation cockpit, then prepare and verify one guarded micro live test using the smallest allowed lot size.
+
+T009 requirements:
+
+1. Inspect current readiness first
+Check:
+- /admin/live-shared
+- /admin/live-shared/activation
+- readiness endpoint
+- activation checklist
+- bridge snapshot
+- EA heartbeat
+- EA version
+- EA inputs
+- user approvals
+- kill switch state
+- ARX_LIVE_BROKER_EXECUTION_ENABLED state
+- command queue state
+- audit logs
+
+2. Add final activation banner
+On /admin/live-shared/activation, show a clear top banner:
+
+State A:
+“Default-deny active. Live execution blocked by server hard kill.”
+
+State B:
+“Hard kill released, but all activation gates must still pass.”
+
+State C:
+“Shared live account is active. Micro live test mode available.”
+
+3. Add final go-hot confirmation panel
+Create or improve a guarded panel called:
+Final Go-Hot Control
+
+It should show:
+- current platform mode
+- current routing mode
+- master bridge mode
+- kill switch state
+- hard kill env state
+- EA live execution input
+- EA read-only input
+- MaxLiveLot
+- approved users
+- command queue count
+- stale command count
+
+It should require typed confirmation before activation:
+ACTIVATE SHARED LIVE TRADING
+
+4. Activation gate enforcement
+Before allowing the activation cockpit to show “go-hot ready,” verify:
+
+- Admin/operator session valid
+- Master bridge pinned
+- Bridge heartbeat fresh
+- EA version >= 1.27
+- EA attached to live master chart
+- EA EnableLiveExecution=true
+- EA ReadOnlyMode=false
+- EA MaxLiveLot <= allowed cap
+- Platform routing shared live
+- Master bridge mode live
+- Platform mode live
+- Kill switch released
+- ARX_LIVE_BROKER_EXECUTION_ENABLED=true
+- At least one user approved
+- Approved user has symbol limits
+- Approved user has order type limits
+- Approved user has max lot
+- Approved user has max open trade limit
+- Approved user has daily loss limit
+- Audit logging active
+- Command queue reachable
+- shared_trade_attribution reachable
+- Demo/paper still functional
+
+5. Replit hard-kill handling
+Do not create new secrets.
+
+Use the existing server-side hard kill:
+ARX_LIVE_BROKER_EXECUTION_ENABLED
+
+If missing/false:
+- Execution remains blocked.
+- Validation still works.
+- Activation checklist shows exactly this blocker.
+- UI says to set Replit Secret ARX_LIVE_BROKER_EXECUTION_ENABLED=true when operator is ready.
+
+If true:
+- Continue requiring all other gates.
+- Do not auto-execute anything.
+
+6. Micro live test panel
+Create or improve:
+Micro Live Test
+
+Requirements:
+- Admin/operator only
+- Select approved test user
+- Select symbol from allowed list
+- Default lot size to smallest bridge-supported lot, capped by MaxLiveLot
+- Require stop loss
+- Require take profit
+- Show risk/reward
+- Show spread/slippage warning if available
+- Call /api/trades/live-shared/validate first
+- Show validation preview
+- Require typed confirmation:
+QUEUE MICRO LIVE TEST
+- Then call /api/trades/live-shared/execute
+- Show commandId, internalTradeId, queuedAt, and command status
+
+Never bypass:
+- validation
+- execute re-validation
+- hard kill
+- kill switch
+- bridge heartbeat
+- user approval
+- attribution insert
+- audit log insert
+- idempotency protection
+
+7. Command pickup monitor
+After micro test is queued, the activation cockpit should monitor:
+- queued
+- picked_up
+- accepted
+- rejected
+- filled
+- failed
+- stale
+- closed
+
+Show:
+- command age
+- EA last poll time
+- EA last response
+- broker ticket if returned
+- rejection reason if rejected
+- attribution status
+- audit log link
+
+8. Stale command safety
+Verify:
+- stale commands cannot execute
+- stale queued commands can be cancelled by admin
+- stale/cancel events are written to audit logs
+- EA should ignore stale commands if it polls late
+
+9. Emergency rollback button
+Keep visible on activation page.
+
+Typed confirmation:
+ROLL BACK LIVE SHARED TRADING
+
+Rollback must:
+- engage kill switch
+- disable global shared live trading
+- pause scanner live entries
+- pause Ruby live assists
+- pause manual live entries
+- cancel queued commands not picked up
+- preserve audit logs
+- preserve trade history
+- keep demo/paper working
+
+10. Ruby final activation knowledge
+Update Ruby so she can answer:
+- Are we ready to go hot?
+- What is blocking live activation?
+- Is the hard kill released?
+- Is the EA live-ready?
+- Is ReadOnlyMode off?
+- What is MaxLiveLot?
+- Which users are approved?
+- Can we queue a micro live test?
+- Did the EA pick up the command?
+- How do we roll back immediately?
+
+Ruby must never execute without explicit confirmation and backend validation.
+
+11. Final tests
+Run:
+- api-server typecheck
+- dashboard typecheck
+- scripts typecheck
+- CI guards
+- Phase B truth table
+- demo verification
+- demo arming
+- activation route smoke test
+- micro live test dry validation
+- command queue monitor smoke test
+- rollback smoke test
+- secret scan
+- console scan
+
+Acceptance checks:
+- Activation cockpit clearly shows default-deny vs go-hot state.
+- ARX_LIVE_BROKER_EXECUTION_ENABLED missing/false blocks execution.
+- ARX_LIVE_BROKER_EXECUTION_ENABLED true does not bypass other gates.
+- Final go-hot panel exists.
+- Micro live test panel exists.
+- Micro live test validates first.
+- Micro live test requires typed confirmation.
+- Micro live test queues only when all gates pass.
+- Command queue monitor shows status changes.
+- Stale commands cannot execute.
+- Rollback works and is guarded.
+- Ruby can explain activation readiness.
+- No MT5 credentials added.
+- No secrets exposed.
+- No frontend path directly queues live commands.
+- Validation never executes.
+- Execution always re-validates.
+- User isolation remains intact.
+- Admin visibility remains intact.
+- Demo/paper still works.
+- Typechecks pass.
+- Tests pass.
+- CI guards pass.
+- No console errors.
+- No broken routes.
+- No blank pages.

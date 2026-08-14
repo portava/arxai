@@ -1,0 +1,355 @@
+We need to add an Account Routing Mode system to ARX AI.
+
+Goal:
+Allow admin to switch between:
+1. Users trading through their own connected MT5 accounts.
+2. Users trading through the same shared admin/master MT5 account.
+
+This must work with the existing Trading Off / Demo Trading / Live Trading platform mode system.
+
+Before changing code:
+Inspect current Phase 3 trading implementation, admin trading controls, MT5 bridge, EA command routing, trade command queue, user permissions, risk limits, audit logs, assistant trade tools, and database schema.
+
+Add this new concept:
+
+accountRoutingMode:
+- USER_OWNED_MT5
+- SHARED_MASTER_MT5
+
+Global admin controls:
+1. Account Routing Mode:
+   - User-owned MT5 accounts
+   - Shared master MT5 account
+2. Platform Trading Mode:
+   - Trading Off
+   - Demo Trading
+   - Live Trading
+3. Emergency Stop
+4. Shared demo master account selector
+5. Shared live master account selector
+6. Per-user override:
+   - follow global routing mode
+   - force user-owned MT5
+   - force shared master MT5
+   - suspended
+
+Core behavior:
+
+USER_OWNED_MT5 mode:
+- Each user trades only through their own connected MT5 account.
+- User must own the MT5 connection.
+- Demo orders require that user’s own connected demo account.
+- Live orders require that user’s own connected live account.
+- User’s orders, P&L, positions, journal, and dashboard come from their own MT5 connection.
+
+SHARED_MASTER_MT5 mode:
+- Users do not connect directly to the MT5 account.
+- Users do not see or receive the master MT5 login, password, investor password, server, bridge token, or credentials.
+- Admin connects one shared master MT5 demo account and/or one shared master MT5 live account.
+- All user trade requests route to the selected shared master MT5 connection.
+- The app must internally track:
+  - user_id
+  - virtual account id
+  - user allocation
+  - user order request
+  - master MT5 order id
+  - master MT5 position id
+  - symbol
+  - side
+  - lot size
+  - entry
+  - stop loss
+  - take profit
+  - close price
+  - P&L attribution
+  - fees/spread/slippage attribution if available
+  - status
+  - rejection reason
+  - audit trail
+
+Database changes:
+Add or update tables:
+
+global_trading_settings:
+- account_routing_mode: "USER_OWNED_MT5" | "SHARED_MASTER_MT5"
+- shared_demo_connection_id
+- shared_live_connection_id
+- platform_mode: "off" | "demo" | "live"
+- emergency_stop
+- updated_by_admin_id
+- updated_at
+
+user_trading_permissions:
+- user_id
+- account_routing_override: "inherit" | "USER_OWNED_MT5" | "SHARED_MASTER_MT5"
+- trading_enabled
+- allowed_demo
+- allowed_live
+- live_approved
+- suspended
+- suspension_reason
+- live_disclosure_accepted_at
+- updated_by_admin_id
+- updated_at
+
+shared_master_accounts:
+- id
+- connection_id
+- account_type: "demo" | "live"
+- broker_name
+- account_number_masked
+- status
+- is_active
+- created_by_admin_id
+- created_at
+- updated_at
+
+virtual_trading_accounts:
+- id
+- user_id
+- routing_mode
+- shared_master_account_id nullable
+- virtual_balance
+- virtual_equity
+- virtual_margin_used
+- virtual_pnl
+- status
+- created_at
+- updated_at
+
+shared_trade_attribution:
+- id
+- user_id
+- virtual_account_id
+- shared_master_account_id
+- master_connection_id
+- trade_command_id
+- mt5_order_ticket
+- mt5_position_ticket
+- symbol
+- side
+- lot_size
+- entry_price
+- close_price
+- stop_loss
+- take_profit
+- pnl
+- fees
+- slippage
+- status
+- opened_at
+- closed_at
+- created_at
+
+trade_command_audit_log:
+Add:
+- account_routing_mode
+- routed_connection_id
+- routed_connection_type: "user_owned" | "shared_master"
+- virtual_account_id
+- shared_master_account_id
+
+Admin UI:
+Update Admin Trading Control page with:
+
+Section 1 — Platform Mode
+- Trading Off
+- Demo Trading
+- Live Trading
+- Emergency Stop
+
+Section 2 — Account Routing Mode
+- User-owned MT5 accounts
+- Shared master MT5 account
+
+Section 3 — Shared Master Accounts
+- Select shared demo MT5 account
+- Select shared live MT5 account
+- Show account number masked
+- Show broker/server
+- Show account type
+- Show connection heartbeat
+- Show command polling status
+- Show sync status
+
+Section 4 — Users
+For each user show:
+- routing mode
+- override mode
+- trading permission
+- account type
+- connected user-owned MT5 account if any
+- virtual account if shared mode
+- current exposure
+- P&L
+- status
+- suspend/revoke buttons
+
+Section 5 — Audit Logs
+- admin mode changes
+- route changes
+- trade command logs
+- shared account attribution logs
+
+Routing decision logic:
+For every trade request, determine:
+
+effectiveRoutingMode =
+- user override if not inherit
+- otherwise global accountRoutingMode
+
+Then:
+
+If effectiveRoutingMode = USER_OWNED_MT5:
+- route command only to the user’s own MT5 connection
+- reject if user has no valid connection
+- reject if account type does not match platform mode
+
+If effectiveRoutingMode = SHARED_MASTER_MT5:
+- route command only to selected shared master connection
+- reject if no shared master connection is configured
+- reject if platform mode is demo and no shared demo master exists
+- reject if platform mode is live and no shared live master exists
+- reject if selected master account type does not match platform mode
+- create or update user virtual account
+- write shared_trade_attribution row
+- tag command with user_id, virtual_account_id, shared_master_account_id
+
+Important mode behavior:
+- Switching routing mode affects NEW orders only.
+- Existing open positions must remain tied to the routing mode and connection they were opened under.
+- Do not migrate or merge open positions automatically.
+- Admin must close or manage old-route positions separately.
+
+MT5 netting/hedging protection:
+Detect whether the shared MT5 master account is hedging or netting if possible.
+
+If hedging:
+- allow separate user trade attribution by order/position ticket.
+
+If netting:
+- warn admin that same-symbol positions can merge.
+- either block conflicting multi-user same-symbol trades or use an aggregation ledger.
+- do not claim clean per-user ticket attribution if the broker account nets positions.
+
+Backend guard chain update:
+Every trade request must pass:
+1. authenticated user
+2. platform mode is not off
+3. emergency stop is false
+4. effective routing mode resolved
+5. user trading enabled
+6. user not suspended
+7. account route exists
+8. routed MT5 account type matches platform mode
+9. bridge token valid
+10. risk limits pass
+11. shared account allocation limits pass if shared mode
+12. duplicate command check passes
+13. command not expired
+14. live disclosure accepted for live mode
+15. explicit confirmation exists for live orders
+16. audit log written
+17. attribution row created if shared mode
+18. command queued only to the resolved routed connection
+
+Risk limits:
+Keep per-user limits even in shared mode:
+- max lot size
+- max trades per day
+- max daily loss
+- max exposure
+- allowed symbols
+- allowed direction if configured
+
+Also add shared-master limits:
+- max total exposure
+- max total lots
+- max daily loss on master account
+- max users trading same symbol
+- block mode mismatch
+- block live shared mode unless admin has explicitly enabled shared live trading
+
+Assistant behavior:
+AI must know the current:
+- platform trading mode
+- account routing mode
+- whether the user is on own MT5 or shared master
+- account type
+- risk limits
+- whether order is blocked
+
+AI should answer:
+- Am I trading on my own MT5 or the shared account?
+- Which routing mode am I in?
+- Can I trade right now?
+- Why is my trade blocked?
+- Is this demo or live?
+- Is my order going to my MT5 or the master MT5?
+
+AI must not expose shared master credentials.
+AI must not let a user trade another user’s allocation.
+AI must not bypass backend guards.
+Live trades still require explicit confirmation.
+
+User UI:
+Show routing mode clearly:
+
+If USER_OWNED_MT5:
+“Routing: Your connected MT5 account.”
+
+If SHARED_MASTER_MT5:
+“Routing: Shared master trading account. Your trades are tracked by ARX AI allocation ledger.”
+
+For demo:
+“DEMO TRADING ACTIVE.”
+
+For live:
+“LIVE TRADING ACTIVE — real money risk.”
+
+Do not show MT5 master credentials to users.
+
+Tests:
+Add tests for:
+1. Admin can switch global routing mode to USER_OWNED_MT5.
+2. Admin can switch global routing mode to SHARED_MASTER_MT5.
+3. Per-user override works.
+4. User-owned mode routes only to user’s own MT5 connection.
+5. Shared mode routes only to selected shared master MT5 connection.
+6. User without own MT5 can trade in shared mode if approved.
+7. User without own MT5 cannot trade in user-owned mode.
+8. Demo platform mode uses shared demo master only.
+9. Live platform mode uses shared live master only.
+10. Demo orders never route to live shared master.
+11. Live orders never route to demo shared master.
+12. User cannot see shared master credentials.
+13. User cannot access another user’s virtual account.
+14. Shared trade attribution row is created.
+15. P&L attribution updates after sync.
+16. Emergency stop blocks both routing modes.
+17. Suspended user blocked in both routing modes.
+18. Risk limits apply in both routing modes.
+19. AI correctly explains routing mode.
+20. AI cannot bypass routing guard.
+21. All admin routing changes are audit logged.
+22. All trade commands include routing mode in audit log.
+23. No secrets exposed in logs or UI.
+
+Final report:
+Return:
+- PASS or FAIL
+- current platform mode
+- current account routing mode
+- admin UI status
+- user-owned routing status
+- shared-master routing status
+- shared demo status
+- shared live status
+- virtual account ledger status
+- attribution tracking status
+- assistant awareness status
+- tests passed
+- remaining blockers
+- exact admin steps to switch all users to their own MT5 accounts
+- exact admin steps to switch all users to shared master MT5 account
+- exact admin steps to override one user

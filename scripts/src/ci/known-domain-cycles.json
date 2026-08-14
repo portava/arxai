@@ -1,0 +1,17 @@
+{
+  "_doc": "Snapshot of pre-existing circular dependencies in lib/domain/src as of Build A baseline. The check-domain-circular guard treats these as known debt (warn) and FAILS only on NEW cycles. To shrink this list, refactor the cycle and remove its entry. Never add new entries without an architectural review.",
+  "_recordedAt": "2026-05-11",
+  "_owner": "Build B follow-up — agent-system + orchestrator decoupling",
+  "cycles": [
+    "agent-system/agentVote.types.ts → agent-system/expiration/voteExpiration.engine.ts → agent-system/agentVote.types.ts",
+    "agent-system/agentVote.types.ts → agent-system/conflict/conflictSeverity.engine.ts → agent-system/agentVote.types.ts",
+    "agent-system/agentVote.types.ts → agent-system/conflict/blockerHierarchy.engine.ts → agent-system/agentVote.types.ts",
+    "agent-system/agentVote.types.ts → agent-system/conflict/hardBlockResolver.engine.ts → agent-system/agentVote.types.ts",
+    "agent-system/agentVote.types.ts → agent-system/contracts/agentContract.types.ts → agent-system/agentVote.types.ts",
+    "orchestrator/orchestrator.engine.ts → orchestrator/strategyPriority.engine.ts → orchestrator/orchestrator.engine.ts",
+    "orchestrator/adaptiveWeighting.engine.ts → orchestrator/orchestrator.engine.ts → orchestrator/adaptiveWeighting.engine.ts",
+    "orchestrator/defenseMode.engine.ts → orchestrator/orchestrator.engine.ts → orchestrator/defenseMode.engine.ts",
+    "orchestrator/orchestrator.engine.ts → orchestrator/preservationMode.engine.ts → orchestrator/orchestrator.engine.ts",
+    "orchestrator/aggressionScaling.engine.ts → orchestrator/orchestrator.engine.ts → orchestrator/aggressionScaling.engine.ts"
+  ]
+}

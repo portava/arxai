@@ -1,0 +1,557 @@
+Run the final Build NN verification lock-test.
+
+Do not start Build OO.
+Do not add new features unless a Build NN test fails and must be fixed.
+Do not enable live trading.
+Do not modify MT5 live execution.
+Do not modify canPlaceTrades.
+Do not expose API secrets.
+Do not recommend live trading.
+Do not change Build AA through MM logic except to fix Build NN security/protection integration issues.
+
+Build NN goal:
+Create a central Security, Roles, Permissions, and Data Protection layer that protects sensitive routes/actions, blocks forbidden actions, masks secrets/account data, logs security events, protects MM admin controls, alerts LL, informs HH Risk Governor, and keeps the full system PAPER_ONLY / READ_ONLY with live trading disabled.
+
+Verify Build NN only.
+
+1. Typecheck/build health
+
+Run all relevant commands:
+- typecheck
+- build
+- API server validation
+- frontend build validation
+- database/schema validation if available
+
+Show exact commands run and whether each passed.
+
+2. Security Service proof
+
+Confirm the Security Service exists.
+
+Show exact files/functions for:
+- securityService
+- permissionService
+- roleService
+- securityMiddleware
+- dataProtectionService
+- redactionUtility
+- securityEventLogger
+- securityRoutes
+- securitySettings
+- frontend Security Center page
+- frontend Roles & Permissions page
+- frontend Security Events page
+- frontend Data Protection panel
+
+Confirm the service returns:
+
+{
+  security_status_id,
+  generated_at,
+  appMode: "PAPER_ONLY",
+  liveTradingStatus: "DISABLED",
+  authStatus,
+  permissionStatus,
+  dataProtectionStatus,
+  securityFlags,
+  warnings,
+  criticalFindings,
+  recommendedActions
+}
+
+3. Database verification
+
+Confirm these tables exist:
+
+security_roles
+security_permissions
+security_role_permissions
+security_user_roles
+security_events
+security_access_logs
+security_settings
+data_protection_exports
+
+Confirm each table has the fields defined in Build NN.
+
+4. Roles and permissions proof
+
+Confirm these roles exist:
+- OWNER
+- ADMIN
+- TRADER
+- ANALYST
+- VIEWER
+- SYSTEM
+
+Confirm permissions exist for:
+- decisions
+- paper trades
+- paper autopilot
+- replay
+- strategy lab
+- performance
+- coach
+- risk governor
+- notifications
+- data import
+- broker read-only
+- admin health/actions
+- audit
+- security
+- forbidden live-trade permissions
+
+Confirm forbidden permissions are marked forbidden and always reject:
+- forbidden:live_trade_enable
+- forbidden:broker_execute
+- forbidden:set_can_place_trades_true
+
+5. Middleware proof
+
+Show exact files/functions for:
+- requireAuth
+- requireRole
+- requirePermission
+- requireAdmin
+- requireOwner
+- requirePaperOnlyMode
+- forbidLiveTradingAction
+- maskSensitiveOutput
+- recordSecurityEvent
+
+Confirm sensitive routes use permission checks.
+
+6. Endpoint verification
+
+Run and show raw output for:
+
+GET /api/security/status
+
+POST /api/security/check
+
+GET /api/security/roles
+
+POST /api/security/roles
+
+GET /api/security/permissions
+
+GET /api/security/role-permissions
+
+POST /api/security/role-permissions
+
+GET /api/security/user-roles
+
+POST /api/security/user-roles
+
+POST /api/security/test-permission
+
+POST /api/security/forbidden-action-test
+
+GET /api/security/events?limit=50
+
+GET /api/security/access-logs?limit=50
+
+GET /api/security/settings
+
+POST /api/security/settings
+
+POST /api/security/demo
+
+POST /api/security/export-data
+
+GET /api/security/data-protection/exports?limit=20
+
+POST /api/security/redaction-test
+
+7. Security status proof
+
+Confirm security status returns:
+- appMode: PAPER_ONLY
+- liveTradingStatus: DISABLED
+- auth/role/permission status
+- protected route count
+- unprotected sensitive routes
+- admin-only routes
+- read-only routes
+- secret redaction status
+- account masking status
+- critical findings if any
+
+Show raw JSON output.
+
+8. Permission test proof
+
+Test each role:
+
+OWNER:
+- can run safe admin/reporting actions
+- cannot enable live trading
+
+ADMIN:
+- can run paper-only admin actions
+- cannot manage OWNER role
+- cannot enable live trading
+
+TRADER:
+- can run AA decisions
+- can create paper trades only if HH allows
+- cannot access security/admin settings
+
+ANALYST:
+- can read reports/replay/coach/playbook
+- cannot create paper trades
+- cannot start autopilot
+
+VIEWER:
+- limited read-only access
+- cannot change anything
+
+SYSTEM:
+- can perform internal service actions
+- cannot place live trades
+- usage is logged
+
+Show raw JSON output.
+
+9. Sensitive endpoint protection proof
+
+Test sensitive endpoints without permission.
+
+Confirm:
+- access is denied
+- status is 403 or safe equivalent
+- security_events record is created
+- security_access_logs record is created
+- no data leak occurs
+
+Then test with allowed permission and confirm it passes.
+
+Show raw output.
+
+10. Forbidden action proof
+
+Attempt:
+
+- enable live trading
+- set canPlaceTrades true
+- call broker.placeOrder
+- call orderSend
+- call positionClose
+- change BROKER_MODE away from read_only
+- change MARKET_DATA_MODE away from read_only
+- disable critical safety alerts
+- expose secrets
+- disable audit logging
+- disable Risk Governor
+
+Each must return:
+
+{
+  status: "REJECTED",
+  severity: "CRITICAL",
+  reason,
+  liveTradingStatus: "DISABLED",
+  audit_id,
+  notification_id
+}
+
+Confirm no unsafe setting changes and no trade is placed.
+
+11. Data protection proof
+
+Run redaction tests using fake secrets:
+
+- API keys
+- API secrets
+- broker passwords
+- tokens
+- session secrets
+- database URLs
+- full account IDs
+- private env values
+
+Confirm:
+- secrets are redacted
+- account IDs show only last 4 characters
+- tokens are masked
+- logs do not store raw secrets
+- frontend-visible output does not contain secrets
+
+Show raw redaction output.
+
+12. Security event logging proof
+
+Confirm security_events are created for:
+- permission granted
+- permission denied
+- forbidden action attempted
+- role changed
+- sensitive endpoint accessed
+- secret redaction triggered
+- repeated denied requests
+- admin/security setting changed
+- export created
+- emergency WATCH_ONLY triggered
+- live trading enable attempt
+
+Show sample records.
+
+13. Repeated denied request proof
+
+Simulate repeated denied requests.
+
+Confirm:
+- repeated denials are counted
+- warning/HIGH security event is created
+- LL notification is created if threshold is hit
+- no lockout breaks safe internal services
+
+Show raw output.
+
+14. Security settings proof
+
+Run security settings endpoint.
+
+Confirm:
+- role_system_enabled true
+- audit_logging_enabled true
+- secret_redaction_enabled true
+- critical_alerts_always_on true
+- paper_only_enforced true
+- live_trading_permanently_disabled true
+
+Attempt unsafe settings:
+- disable redaction
+- disable audit logging
+- disable critical alerts
+- disable paper-only enforcement
+- enable live trading
+
+Confirm unsafe settings are rejected and audited.
+
+15. MM integration proof
+
+Show where MM Admin Control calls NN before executing actions.
+
+Run MM forbidden admin action through MM.
+
+Confirm:
+- NN blocks it
+- MM logs the rejected action
+- audit log created
+- LL notification created
+- live trading remains disabled
+
+Show raw JSON output.
+
+16. HH integration proof
+
+Show where HH Risk Governor reads NN security status.
+
+Simulate NN critical finding:
+- live trading attempt
+- redaction disabled attempt
+- dangerous permission granted
+- broker unsafe mode attempt
+
+Confirm HH returns WATCH_ONLY or LOCKED and still reports:
+- liveTradingStatus: DISABLED
+- liveTradingAllowed: false
+- canPlaceLiveTrade: false
+
+Show raw output.
+
+17. LL integration proof
+
+Confirm LL creates notifications for:
+- forbidden action attempted
+- repeated permission denied
+- live trading attempt
+- secret exposure attempt
+- unsafe security setting attempt
+- role changed
+- emergency WATCH_ONLY triggered
+
+Show raw notification output.
+
+18. Route protection proof across builds
+
+Confirm NN protects sensitive routes/actions in:
+
+AA:
+- decision creation protected where appropriate
+
+EE:
+- paper execution protected
+
+FF:
+- autopilot start/stop protected
+
+HH:
+- risk governor evaluation/admin access protected
+
+KK:
+- broker read-only snapshots protected and masked
+
+LL:
+- notification management protected
+
+MM:
+- admin control protected
+
+Confirm public/demo routes do not leak sensitive data.
+
+19. Export data proof
+
+Run /api/security/export-data.
+
+Confirm:
+- export is redacted
+- data_protection_exports record is created
+- audit log is created
+- no secrets are included
+- live trading remains disabled
+
+Show raw output.
+
+20. Frontend route proof
+
+Confirm frontend pages/routes are accessible:
+- Security Center
+- Roles & Permissions
+- Security Events
+- Data Protection panel
+
+Confirm UI:
+- shows live trading disabled badge
+- shows PAPER_ONLY status
+- shows forbidden permissions locked
+- masks account IDs
+- does not expose secrets
+- does not include live trading controls
+- does not include live execution buttons
+
+21. Logs proof
+
+Show logs proving every security decision records:
+- request received
+- auth checked
+- role checked
+- permission checked
+- result allowed/denied
+- reason
+- sensitive output redacted
+- security event created if needed
+
+22. Secret scan proof
+
+Search frontend-visible responses, logs, exports, and metadata.
+
+Confirm none contain:
+- BROKER_API_KEY
+- BROKER_API_SECRET
+- MARKET_DATA_API_KEY
+- DATABASE_URL
+- session secrets
+- raw broker tokens
+- full account IDs
+
+Show proof.
+
+23. Live-trade isolation proof
+
+Search Build NN files and confirm they do NOT call:
+
+executeTrade,
+execute-trade,
+mt5 order placement,
+MT5 order placement,
+livePosition modification,
+live order,
+setCanPlaceTrades,
+live broker execution,
+broker.placeOrder,
+orderSend,
+positionClose,
+modifyOrder,
+real order placement,
+or anything that can place, close, or modify real trades.
+
+Confirm Build NN does NOT modify:
+- safetyCore.canPlaceTrades
+- live broker permissions
+- MT5 live execution
+- Build AA safety rules
+- Build EE paper-only execution rules
+- Build FF paper-only autopilot rules
+- Build HH liveTradingAllowed rules
+- Build KK broker read-only rules
+- Build LL critical alert rules
+- Build MM forbidden admin action rules
+
+Confirm Build NN:
+- protects access only
+- rejects dangerous actions
+- never executes trades
+- never enables live trading
+- never recommends live trading
+- never exposes secrets
+
+24. Existing behavior compatibility
+
+Confirm these still work:
+- Build AA trade decision orchestrator
+- Build BB auto-debrief
+- Build CC learning engine
+- Build DD market data layer
+- Build EE paper execution engine
+- Build FF paper autopilot loop
+- Build GG trading calendar and command center
+- Build HH risk governor
+- Build II trader coach and playbook
+- Build JJ replay simulator and strategy lab
+- Build KK data import and broker read-only connector
+- Build LL notification center
+- Build MM system health/admin/audit
+- manual debrief
+- manual paper close
+- analytics
+- all existing frontend routes
+
+Required final response format:
+
+1. Verification passed or failed
+2. Commands/tests run
+3. Files changed
+4. New files created
+5. Database proof
+6. Security Service proof
+7. Roles/permissions proof
+8. Middleware proof
+9. Raw security status output
+10. Raw security check output
+11. Raw roles output
+12. Raw permissions output
+13. Raw test-permission output
+14. Raw forbidden-action-test output
+15. Raw security events output
+16. Raw access logs output
+17. Raw settings output
+18. Raw redaction-test output
+19. Sensitive route protection proof
+20. Forbidden action rejection proof
+21. Secret redaction proof
+22. Account masking proof
+23. Repeated denied request proof
+24. MM integration proof
+25. HH integration proof
+26. LL notification proof
+27. Export data proof
+28. Frontend proof
+29. Logs proof
+30. Secret scan proof
+31. Live-trade isolation proof
+32. Any fixes made during verification
+33. Final Build NN score out of 10
+34. Whether it is safe to proceed to Build OO

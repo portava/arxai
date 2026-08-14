@@ -1,0 +1,229 @@
+New task: Audit, validate, and upgrade Market Heat Map accuracy + add country/news heat map on first tab.
+
+Goal:
+Make sure the Market Heat Map is accurate, sourced, fresh, and honest. Then add a first-tab map that shows global market heat by country using market data + news/economic risk.
+
+Problem:
+The current heat map may be showing incomplete, stale, simulated, or unverified market strength without clearly explaining the source/freshness. The first tab should visually show where market risk/heat is coming from by country and news impact.
+
+Scope:
+1. Audit the existing Market Heat Map system.
+2. Validate every data source feeding it.
+3. Fix stale/missing/incorrect heat calculations.
+4. Add a country-based global heat map to the first tab.
+5. Connect news/economic-calendar sentiment/risk into the heat map.
+6. Add source/freshness/coverage labels everywhere.
+
+Surfaces to inspect:
+- Market Heat Map page
+- Scanner first tab / Focus tab
+- Broad Scan
+- Live Market Chart overlays
+- News Risk page
+- Economic Calendar page
+- Ruby explanations
+- Any heat/strength widgets in Cockpit or Dashboard
+
+Audit questions:
+1. What data currently feeds the heat map?
+   - live broker prices?
+   - TwelveData?
+   - Polygon?
+   - AlphaVantage?
+   - Finnhub?
+   - Deriv?
+   - cached/simulated fallback?
+   - hardcoded/mock data?
+
+2. Does each tile/market show:
+   - source
+   - last updated time
+   - freshness
+   - confidence
+   - whether it is broker-live, delayed, historical-only, or unavailable?
+
+3. Are symbols mapped correctly?
+   - EURUSD → Eurozone + United States
+   - GBPUSD → United Kingdom + United States
+   - USDJPY → United States + Japan
+   - XAUUSD → Global gold + United States macro
+   - US30/SPX500/NAS100 → United States
+   - DXY → United States dollar basket
+   - BTCUSD/ETHUSD → crypto/global + USD macro
+   - Deriv synthetics → do not map as real countries unless marked synthetic/non-macro
+
+4. Are country/currency risk relationships correct?
+   - USD news affects USD pairs, gold, indices, crypto
+   - EUR news affects EUR pairs and euro-region assets
+   - GBP news affects GBP pairs
+   - JPY news affects JPY pairs
+   - CNY news can affect Asia/global risk
+   - oil news can affect CAD and global risk if supported
+
+5. Does the heat map avoid false confidence?
+   - No “hot/strong/weak” label when data is stale
+   - No “low risk” label when news/calendar provider is missing
+   - No country heat if there is no source for that country
+   - No synthetic-market heat mixed with real country macro heat unless clearly labeled
+
+Data model / response contract:
+Create or verify a shared MarketHeatVerdict contract:
+
+market_heat_verdict:
+- id
+- scope: global / country / currency / symbol / sector / synthetic
+- key: USD / EUR / US / XAUUSD / V75 / etc.
+- displayName
+- heatScore: -100 to +100
+- direction: bullish / bearish / neutral / risk_on / risk_off / unavailable
+- intensity: low / medium / high
+- sourceStatus: live / delayed / stale / historical_only / unavailable / provider_missing
+- priceSource
+- newsSource
+- calendarSource
+- lastPriceUpdatedAt
+- lastNewsUpdatedAt
+- lastCalendarUpdatedAt
+- confidence: low / medium / high
+- reason
+- affectedSymbols
+- warnings
+
+Heat calculation:
+Market heat should combine:
+1. Price movement / momentum
+2. Volatility
+3. Relative strength
+4. News sentiment / risk
+5. Economic-calendar impact
+6. Session context
+7. Data freshness
+
+Suggested formula:
+price_heat = normalized price momentum and relative strength
+volatility_heat = current volatility vs recent baseline
+news_heat = sentiment/risk score from news headlines
+calendar_heat = upcoming high-impact event risk
+freshness_penalty = downgrade if stale/delayed/provider missing
+
+final_heat_score =
+  weighted(price_heat, news_heat, calendar_heat, volatility_heat)
+  minus freshness_penalty
+
+Rules:
+- If price data is unavailable, heat cannot be high-confidence.
+- If news/calendar provider is missing, show “news unavailable,” not “low news risk.”
+- If both price and news are unavailable, show unavailable/gray state.
+- If only price exists, label “price-only heat.”
+- If only news exists, label “news-only heat.”
+- If both exist and fresh, label “confirmed heat.”
+- If data is stale, heat can display but must be capped to low confidence.
+
+First tab map requirement:
+Add a global country heat map on the first tab / Focus tab.
+
+It should show:
+- country heat by color/intensity
+- top affected countries
+- strongest currency heat
+- high-impact news zones
+- upcoming economic events by country
+- click country → show reasons and affected symbols
+- click symbol → load Scanner/Chart for that symbol
+
+Countries/regions to support first:
+- United States
+- Eurozone
+- United Kingdom
+- Japan
+- Canada
+- Australia
+- New Zealand
+- Switzerland
+- China
+- Global / Crypto
+- Synthetic markets as separate non-country group
+
+Important:
+Deriv synthetic markets should appear in a separate “Synthetic Markets” heat panel, not as country heat.
+
+First tab layout:
+Add a card near the top:
+
+Title:
+Global Market Heat
+
+Subheader:
+Shows country, currency, and news pressure using live market + news/calendar data.
+
+Sections:
+1. World/country heat map
+2. Top hot countries/currencies
+3. News risk today
+4. Upcoming high-impact events
+5. Synthetic market heat separate panel
+6. Provider/freshness status
+
+UI honesty labels:
+- Live
+- Delayed
+- Stale
+- Price-only
+- News unavailable
+- Calendar unavailable
+- Provider missing
+- Synthetic market — not country-based
+
+Economic/news integration:
+Use economic calendar + news risk feeds:
+- High-impact event within next 2 hours increases risk heat for affected country/currency.
+- Negative/positive news sentiment affects country/currency heat.
+- If provider missing, show “calendar/news provider missing” and do not score low risk.
+
+Backend endpoints:
+Add or verify:
+- GET /api/market-heat
+- GET /api/market-heat/countries
+- GET /api/market-heat/symbol/:symbol
+- GET /api/market-heat/diagnostics
+
+Query params:
+- timeframe
+- session
+- symbols
+- countries
+- includeNews=true
+- includeCalendar=true
+
+Diagnostics endpoint should show:
+- provider status
+- source name
+- configured true/false
+- last fetch time
+- last error
+- number of records
+- freshness
+- coverage by country/currency/symbol
+- redacted API key presence only
+
+Testing:
+1. Heat map does not show live/high-confidence when provider is stale.
+2. Missing news provider shows “News unavailable,” not “low news risk.”
+3. Missing calendar provider shows “Calendar unavailable,” not “no events.”
+4. EURUSD maps to EUR + USD heat.
+5. XAUUSD maps to USD + gold/global risk.
+6. US30/SPX500/NAS100 map to United States equity risk.
+7. BTCUSD/ETHUSD map to crypto/global + USD macro.
+8. V75/Boom/Crash/Jump appear under Synthetic Markets, not a country.
+9. Country map renders supported countries with heat scores.
+10. Clicking a country shows reasons and affected symbols.
+11. First tab loads the Global Market Heat card.
+12. If all providers are missing, map shows a clean degraded state, not fake heat.
+13. Heat scores are capped when data is delayed/stale.
+14. Scanner/Ruby can consume heat verdict but cannot let it bypass trade safety gates.
+
+Hard boundary:
+Do not touch live execution gates, broker dispatch, MT5 bridge execution, trade-ticket execution, or risk kill switches.
+Heat map is decision-support only.
+It may explain, warn, rank, or downgrade.
+It must never grant live trade permission.

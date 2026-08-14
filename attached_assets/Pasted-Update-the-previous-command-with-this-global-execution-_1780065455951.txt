@@ -1,0 +1,165 @@
+Update the previous command with this global execution-flow change:
+
+The app should no longer use a two-step “Review → Final Confirm” flow for owner/admin manual LIVE trading anywhere in the app.
+
+This is a high-speed trading environment where seconds matter. The current confirmation flow is too slow.
+
+This must apply globally to every place a manual trade can be placed, including but not limited to:
+1. Scanner trade modal
+2. Main Trade page
+3. Market scanner result cards
+4. Ruby trade suggestion cards
+5. Cockpit trading controls
+6. Chart trading controls
+7. Live bridge test panel
+8. Any BUY/SELL ticket
+9. Any order-entry modal
+10. Any mobile quick-trade surface
+
+Required global change:
+1. Rename every manual live “Review” trade button to “Confirm.”
+2. “Confirm” is the final manual action before the trade goes live.
+3. When the user presses Confirm, the app should immediately submit/queue the live trade through the approved LIVE bridge path, as long as all required readiness and safety gates pass.
+4. Do not open another confirmation modal after Confirm.
+5. Do not ask “Are you sure?” after Confirm.
+6. Do not force a second final button.
+7. Do not require Stop Loss or Take Profit for owner/admin manual LIVE trades.
+8. If SL/TP are blank, show an inline warning before Confirm, but do not create an extra confirmation step.
+9. Manual BUY and SELL should both follow the same simple flow:
+   - User selects BUY or SELL
+   - User checks symbol, lot size, and optional SL/TP
+   - User taps Confirm
+   - The live order is sent if all gates pass
+
+Button behavior:
+1. Disabled state: show exactly why Confirm is disabled.
+2. Enabled state: user taps Confirm once and the live order is sent.
+3. Loading state: show “Sending live order…”
+4. Success state: show “Live order sent” with ticket/status.
+5. Failure state: show a clean user-facing error and exact blocker.
+6. Never silently fail.
+7. Never silently fall back to demo, paper, mock, or simulation.
+
+Required safety gates before Confirm can be enabled:
+1. LIVE bridge readiness passes.
+2. The account is live-enabled.
+3. The owner/admin is approved.
+4. The master live execution switch is enabled.
+5. The kill switch is not active.
+6. The account is not frozen.
+7. Allocation permits the trade.
+8. Symbol is valid and tradable.
+9. Lot size is valid.
+10. Order type is valid.
+11. Broker/EA connection is ready.
+12. Audit logging is active.
+13. There is no stale demo/paper/sim execution state.
+14. The selected mode is truly LIVE.
+
+Stop Loss / Take Profit behavior:
+1. Stop Loss must be optional for owner/admin manual LIVE trades.
+2. Take Profit must be optional for owner/admin manual LIVE trades.
+3. If Stop Loss is blank, send it as null/undefined and do not validate its price direction.
+4. If Take Profit is blank, send it as null/undefined and do not validate its price direction.
+5. Only validate Stop Loss and Take Profit when the user actually enters values.
+6. For BUY:
+   - If TP is entered, TP must be above entry.
+   - If SL is entered, SL must be below entry.
+7. For SELL:
+   - If TP is entered, TP must be below entry.
+   - If SL is entered, SL must be above entry.
+8. Do not treat blank TP/SL as 0, current price, entry price, or invalid price.
+9. Do not block Confirm just because TP or SL is blank.
+10. If the broker itself rejects orders without SL/TP, show the broker’s clean user-facing reason, but the app should not block the order before sending.
+
+Inline warning behavior:
+If SL/TP are blank, show this message above the Confirm button:
+
+“Stop Loss and Take Profit are not set. Confirm will send this live order without automatic exit protection.”
+
+This warning is informational only. It must not require another click.
+
+Side/bias behavior:
+If Ruby’s setup bias does not match the selected trade side, show one of these warnings above Confirm:
+
+“Ruby’s setup bias is SELL, but this ticket is set to BUY.”
+
+or
+
+“Ruby’s setup bias is BUY, but this ticket is set to SELL.”
+
+This warning is informational only unless the user changes the side. It must not create another confirmation step.
+
+BUY / SELL button behavior:
+1. BUY should not mean “review buy.”
+2. SELL should not mean “review sell.”
+3. BUY/SELL should populate the ticket side.
+4. Confirm should be the final send action.
+5. If the UI uses separate quick buttons, label them clearly:
+   - Confirm Buy
+   - Confirm Sell
+6. Pressing Confirm Buy or Confirm Sell sends the live order immediately if all gates pass.
+7. There must not be another modal after Confirm Buy or Confirm Sell.
+
+Safety behavior:
+Do not remove backend safety infrastructure.
+Do not remove audit logging.
+Do not remove kill switch checks.
+Do not remove account freeze checks.
+Do not remove allocation checks.
+Do not remove broker/EA readiness checks.
+Do not remove owner/admin permission checks.
+Do not remove live bridge readiness checks.
+Do not remove symbol/lot validation.
+Only remove the unnecessary extra confirmation layer after the user has already pressed Confirm.
+
+Manual LIVE test rule:
+For owner/admin controlled manual LIVE testing, one enabled Confirm button is enough. Once pressed, the trade is live.
+
+Auto-trading separation:
+1. This one-tap Confirm flow applies to manual owner/admin LIVE trade placement only.
+2. Do not let “Start Auto” place live trades silently.
+3. If “Start Auto” is only scanning, rename it to “Start Auto Scan.”
+4. If any auto-trading feature exists, keep it separate from manual Confirm trading and require its own admin-only controls.
+5. Do not change unattended AI-auto execution rules unless separately instructed.
+
+Global cleanup:
+1. Search the full codebase for Review buttons connected to trade placement.
+2. Replace active trade-placement Review flows with Confirm.
+3. Remove any second confirmation modal in manual LIVE trade placement.
+4. Ensure every manual trade entry point uses the same live readiness validator.
+5. Ensure every manual trade entry point uses the same optional SL/TP validation.
+6. Ensure every manual trade entry point uses the same audit logging.
+7. Ensure every manual trade entry point uses the same no-demo/no-paper/no-sim fallback rule.
+8. Ensure mobile layout remains fast and clean.
+
+Testing required:
+1. Open scanner trade modal in LIVE mode.
+2. Confirm the button says “Confirm,” not “Review.”
+3. Open the main Trade page and confirm it also uses Confirm.
+4. Open any chart trading controls and confirm they also use Confirm.
+5. Open Ruby trade suggestion flow and confirm it also uses Confirm.
+6. Open any quick BUY/SELL flow and confirm it uses Confirm Buy or Confirm Sell as the final action.
+7. Leave SL/TP blank and confirm the button can still activate if all other required checks pass.
+8. Confirm the SL/TP warning is inline only and does not create another modal.
+9. Confirm pressing Confirm immediately queues/sends the live order.
+10. Confirm there is no second final confirmation step anywhere manual trades can be placed.
+11. Confirm failed readiness shows the exact blocker before the button can be used.
+12. Confirm all live order attempts are audit logged.
+13. Confirm the app never silently falls back to demo, paper, mock, or simulation.
+14. Confirm BUY validation only runs against entered BUY values.
+15. Confirm SELL validation only runs against entered SELL values.
+16. Confirm the mobile layout remains clean and fast.
+17. Confirm the first controlled manual LIVE order can be sent from any approved manual trade entry point with one final Confirm action.
+18. Confirm there are no remaining user-facing trade placement buttons labeled Review in the active LIVE path.
+
+Final report required:
+1. List every trade entry point updated.
+2. Confirm whether any Review buttons remain and why.
+3. Confirm whether Confirm is now the final action globally.
+4. Confirm whether SL/TP are optional globally for owner/admin manual LIVE trades.
+5. Confirm whether any second confirmation modal remains.
+6. Confirm whether BUY and SELL both work through the one-tap Confirm flow.
+7. Confirm whether the live bridge receives the order immediately after Confirm.
+8. Confirm whether all safety gates still run before dispatch.
+9. Confirm whether all manual live order attempts are audit logged.

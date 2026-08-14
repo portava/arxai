@@ -1,0 +1,1113 @@
+Continue the Paper Trading removal and performance cleanup from the completed Phase 0 + Phase 1 inventory.
+
+Current context:
+
+* The earlier T1–T6/performance audit session is already complete. Do not redo that.
+* The active deliverable is Paper Trading removal and active-runtime cleanup.
+* Phase 0 + Phase 1 inventory was completed read-only and written to .local/paper-inventory.md.
+* No source files were touched during inventory.
+* No DB writes happened during inventory.
+* No live trades were placed during inventory.
+* The inventory found a major Paper surface, including Paper DB rows, user-facing Paper routes, Paper UI, and Paper-named safety-lock vocabulary.
+
+Main objective:
+Remove Paper Trading as a product feature, active mode, active runtime path, active data source, and active user-facing system while preserving Live trading, Demo trading, admin approval, allocations, bridge readiness, and all live-execution safety protections.
+
+The app should only support two production/user-facing trading modes:
+
+1. DEMO
+2. LIVE
+
+Paper Trading must not remain as:
+
+* user mode
+* account mode
+* trade mode
+* auth mode
+* permission mode
+* scanner mode
+* Ruby mode
+* allocation mode
+* dashboard mode
+* active database mode
+* active trade-history mode
+* AI learning source
+* performance source
+* calendar/journal source
+* hidden backend fallback
+* live-trade prerequisite
+* demo-trade prerequisite
+* route gate
+* feature flag
+* admin setting
+* onboarding state
+* invite state
+* execution state
+
+However, live-execution safety gates must remain intact.
+
+Important distinction:
+If the current code uses Paper terminology for a real live-execution safety lock, do not delete the safety behavior. Rename/rebuild the vocabulary so it accurately describes what it does.
+
+Safety meaning should be:
+“Live trading is blocked unless all required live-execution gates pass.”
+
+Safety meaning should NOT be:
+“User is in Paper Mode.”
+
+Acceptable replacement vocabulary:
+
+* LIVE_EXECUTION_LOCKED
+* BROKER_EXECUTION_LOCKED
+* LIVE_COMMANDS_BLOCKED
+* LIVE_PLACEMENT_DISABLED
+* BROKER_PLACEMENT_DISABLED
+* executionHardLock
+* brokerPlacementLock
+* liveCommandSafetyLock
+* liveExecutionReadinessLock
+* brokerExecutionReadinessLock
+
+Hard constraints:
+
+1. Do not break Live trading.
+2. Do not break Demo trading.
+3. Do not weaken live-execution safety.
+4. Do not delete live audit history.
+5. Do not delete real broker demo history.
+6. Do not blindly delete database rows.
+7. Do not shotgun-delete directories.
+8. Do not route Paper to Live.
+9. Do not silently make old Paper users live-enabled.
+10. Do not leave Paper as a hidden backend fallback.
+11. Do not let fake/simulated Paper data feed Ruby, scanner, AI learning, calendar, journal, or performance reports.
+12. Do not place real live trades during this cleanup unless I explicitly approve a specific live test.
+13. If a change risks launch readiness, do not force that exact approach. Find a safer workaround.
+14. Do not ignore a Paper dependency just because removing it breaks the app. Find a different safe way to reduce load and retest.
+
+Priority order:
+
+1. Preserve Live trading functionality.
+2. Preserve Demo trading functionality.
+3. Preserve live-execution safety gates.
+4. Remove Paper Trading from active/user-facing/product flows.
+5. Remove fake/simulated Paper data from active Ruby/scanner/AI/journal/calendar/performance usage.
+6. Reduce load and speed up the app.
+7. Delete or rename legacy internals only when proven safe.
+
+Decision 1 — Sequencing vs owner MT5 live test:
+Do not block Paper Trading cleanup waiting on my manual MT5 live test.
+
+Proceed with:
+
+* Phase 2 performance baseline
+* Phase 3 removal of visible Paper UI/routes
+* Phase 10 safety-lock rename with compatibility
+
+But do not place a real live trade during cleanup. My manual MT5 live test is separate.
+
+Your job is to:
+
+* preserve Live readiness
+* preserve Demo readiness
+* confirm no live command rows are inserted during cleanup
+* confirm Live/Demo paths still pass tests
+* confirm safety gates still work
+
+If any cleanup step directly risks Live execution, Demo execution, admin approval, allocation, bridge readiness, or safety gates, pause that specific step and apply a safer workaround.
+
+Decision 2 — Paper DB rows:
+Do row classification first before archive/delete.
+
+Do not assume every Paper row is fake without inspecting:
+
+* source fields
+* timestamps
+* command IDs
+* broker/MT5 identifiers
+* user IDs
+* execution source
+* order IDs
+* bridge response metadata
+* status fields
+* mode fields
+* audit references
+
+Classification rules:
+
+1. Real Live data: preserve.
+2. Real broker Demo data: preserve or migrate into clean Demo trade history.
+3. Fake/simulated Paper data: archive/export, then disconnect from active runtime.
+4. Test seed/junk data: dry-run first, then delete only if confirmed.
+5. Unknown data: archive and disconnect from active use, but do not delete.
+
+Going forward, Ruby, scanner, AI learning, journal, calendar, and performance reports should use real sources only:
+
+* MT5 demo execution
+* MT5 live execution
+* broker bridge responses
+* real market data
+* real scanner observations
+* real user trade actions
+* real Ruby-assisted decisions
+
+Fake/simulated Paper rows should not feed active app intelligence anymore.
+
+Decision 3 — Visible /paper-testing-launch sidebar link and 4 App.tsx Paper routes:
+Yes, remove the visible sidebar link and remove/disable the 4 user-facing Paper routes in App.tsx during Phase 3.
+
+This can happen before backend routers are fully unmounted because the link is visible to all users and Paper Trading should not appear as a product feature.
+
+Requirements:
+
+* Remove the sidebar link.
+* Remove or disable the user-facing routes:
+    /paper-trading
+    /paper-testing-launch
+    /active-paper-session
+    /my-paper-trades
+* Replace direct access with a clean 404, Not Found, or admin-only legacy notice if needed.
+* Do not expose Paper Trading to normal users.
+* Do not delete backend route files yet unless dependency checks prove safe.
+* Backend route unmounting can happen later in Phase 11.
+
+Additional non-negotiable cleanup rule:
+Do not ignore a Paper Trading dependency just because removing it breaks the app.
+
+If removing, renaming, disabling, unmounting, archiving, or disconnecting any Paper Trading code/data causes a build failure, test failure, route failure, Live/Demo issue, scanner issue, Ruby issue, admin issue, or performance regression, do not abandon the cleanup.
+
+Instead:
+
+1. Stop that exact approach.
+2. Identify why it broke.
+3. Identify the exact dependency, import, route, query, schema, enum, guard, test, or runtime path that failed.
+4. Find a safer way to reduce the load without breaking the app.
+5. Apply the safer workaround.
+6. Retest.
+7. Document what broke, why it broke, what safer fix was used, and what tests proved the fix works.
+
+Do not simply say:
+“Cannot remove because it breaks the app.”
+
+The goal is not reckless deletion. The goal is to remove Paper Trading from active product/runtime/data flows and make the app lighter while preserving launch readiness.
+
+Acceptable safer workarounds include:
+
+* disconnecting Paper modules from active runtime instead of deleting files immediately
+* removing Paper from user-facing routes while keeping backend files temporarily unmounted
+* lazy-loading or disabling legacy Paper modules so they do not affect normal app speed
+* replacing Paper imports with Demo/Live-safe adapters
+* creating compatibility aliases for renamed safety locks while active code moves to the new names
+* filtering fake/simulated Paper rows out of active Ruby/scanner/AI/journal/calendar/performance queries
+* archiving Paper tables before dropping or deleting anything
+* moving old Paper logic into legacy/internal folders that are not loaded by production
+* moving simulated behavior into test-only utilities
+* adding guards so legacy Paper data cannot affect active app decisions
+* creating migration scripts instead of manual destructive changes
+* replacing broad mode branching with clean Demo/Live branching
+* removing bundle imports, preloads, polling, background jobs, and active queries tied to Paper
+
+Do not leave heavy Paper code active just because deleting it is risky.
+
+If full deletion is unsafe right now, the minimum acceptable outcome is:
+
+* Paper is removed from active UI/product flows.
+* Paper is removed from active auth/session/permission flows.
+* Paper is removed from active scanner/Ruby/trade execution decisions.
+* Paper data is removed from active AI/journal/calendar/performance inputs.
+* Paper routes are not reachable by normal users.
+* Paper services are not loaded in normal production runtime.
+* Live and Demo remain working.
+* Performance improves or does not regress.
+* A follow-up task lists exactly what legacy Paper files remain and why.
+
+PHASE 2 — Performance baseline before cleanup
+
+Measure current performance before removing anything else so we can prove improvement.
+
+Measure:
+
+* app initial load time
+* login/session resolution time
+* dashboard load time
+* account mode resolution time
+* scanner initial results time
+* scanner market switch time
+* Ruby thinking indicator appearance time
+* Ruby first-response start time
+* Ruby full response time
+* trade ticket open time
+* open trade button feedback time
+* close trade button feedback time
+* admin allocation page load time
+* trade history query time
+* performance report query time
+* calendar/journal query time
+* any background jobs or services that load Paper/simulated data
+
+Output a baseline table:
+
+* action
+* expected max time
+* actual time
+* pass/fail
+* suspected bottleneck
+* file/function involved
+
+Do not place real live trades for timing. For live open/close timing, measure UI/pending-state responsiveness and backend readiness without submitting a real order unless explicitly approved.
+
+PHASE 3 — Remove visible Paper UI/sidebar/routes
+
+Remove Paper Trading from every visible user/admin surface.
+
+Check and clean:
+
+* login
+* invite acceptance
+* onboarding
+* dashboard
+* sidebar
+* account mode cards
+* account mode dropdowns
+* account status labels
+* admin controls
+* admin user detail pages
+* admin allocation pages
+* admin approval panels
+* scanner
+* Ruby panel
+* trade ticket
+* market detail page
+* chart panels
+* trade journal
+* performance reports
+* calendar
+* notifications
+* alerts
+* badges
+* tabs
+* filters
+* settings
+* debug panels visible to users/admins
+* empty states
+* error messages
+* loading states
+* mobile views
+* desktop views
+
+The UI should only show:
+
+* Demo Mode
+* Live Mode
+
+Remove:
+
+* Paper Mode
+* Paper Trading
+* paper-only
+* paper account
+* paper balance
+* paper order
+* paper trade
+* paper allocation
+* paper approval
+* paper gate
+* paper access
+* virtual trading
+* fake trading
+* simulated trading as a user-facing account mode
+
+Specific Phase 3 required removal:
+
+* remove /paper-testing-launch from sidebar/user navigation
+* remove or disable normal-user access to:
+    /paper-trading
+    /paper-testing-launch
+    /active-paper-session
+    /my-paper-trades
+
+If a visible safety message currently says paper-only, rewrite it as:
+“Live execution is locked until all required safety checks pass.”
+
+Acceptance for Phase 3:
+
+* No user-facing Paper wording remains.
+* No admin-facing active Paper controls remain.
+* No Paper option appears in account mode controls.
+* No Paper mode appears in scanner, Ruby, trade ticket, journal, or performance views.
+* The 4 Paper routes are not reachable by normal users.
+* Demo and Live still render properly.
+* App still builds.
+
+Retest after Phase 3:
+
+* typecheck
+* affected UI tests
+* affected route tests
+* quick manual route check for the 4 removed Paper routes
+* quick sanity check for dashboard, scanner, Ruby, trade ticket, admin allocation
+
+PHASE 4 — Remove Paper from auth/session/permissions
+
+Remove Paper Trading from authentication and permission logic.
+
+Check and clean:
+
+* login flow
+* invite acceptance flow
+* onboarding flow
+* session payload
+* JWT/session claims
+* user profile/account resolver
+* account status resolver
+* admin role resolver
+* user permission resolver
+* trade permission middleware
+* route guards
+* protected routes
+* feature flags
+* environment gates
+* backend middleware
+* frontend auth context
+* role-based access helpers
+* account mode helpers
+* invite code logic
+* admin approval logic
+
+Remove/replace:
+
+* canTradePaper
+* paperApproved
+* paperEnabled
+* paperModeAccess
+* paperAuthRequired
+* requiresPaperGate
+* paperTradingAllowed
+* isPaperUser
+* paperSession
+* paperToken
+* paperBridgeEnabled
+* paperApproval
+* paperPermission
+* paperGate
+* paperInviteState
+
+Production auth/session should only understand:
+
+* DEMO access/status
+* LIVE access/status
+* admin live approval
+* live freeze/unfreeze
+* allocation/risk controls
+
+Old PAPER users/accounts should be migrated to DEMO, never LIVE.
+
+Do not replace Paper auth by letting everyone through.
+Do not accidentally give live permissions to old Paper users.
+Do not downgrade existing Live users.
+Do not break admin live approval.
+
+Acceptance:
+
+* Auth/session never emits Paper as a mode.
+* API/user context never returns Paper as a production state.
+* Route guards do not check Paper.
+* Paper is not a permission.
+* Paper is not an approval path.
+* Demo still works.
+* Live permissions still work.
+
+PHASE 5 — Remove Paper from backend production mode model
+
+Production account/trading mode must only allow:
+
+* DEMO
+* LIVE
+
+Update:
+
+* TypeScript types
+* shared types
+* Zod schemas
+* backend validators
+* frontend validators
+* database enum usage where safe
+* account mode constants
+* execution mode constants
+* trade mode constants
+* API request contracts
+* API response contracts
+* OpenAPI docs if present
+* frontend mode maps
+* backend mode maps
+* stores/reducers/context providers
+* test factories
+
+Remove PAPER from production unions/enums.
+
+If database enum removal is risky:
+
+1. migrate or archive active PAPER values first
+2. verify no active table still depends on PAPER
+3. update application-level validators to reject Paper
+4. only alter database enum after proving safety
+5. keep a reversible migration or rollback plan
+
+API behavior:
+If a request sends accountMode=paper or executionMode=paper, return:
+“Paper Trading has been removed. Use Demo or Live.”
+
+Do not silently map Paper requests to Live.
+Legacy Paper account state can normalize to Demo only during migration, not as an ongoing hidden runtime fallback.
+
+Acceptance:
+
+* active production type model only supports Demo and Live
+* API rejects Paper as active account/execution mode
+* old Paper state does not become Live
+* no hidden Paper fallback remains
+
+PHASE 6 — Remove Paper from trading execution
+
+Execution paths should only be:
+
+1. Demo execution
+2. Live execution
+
+Remove Paper from:
+
+* order creation
+* order validation
+* open trade
+* close trade
+* modify trade
+* stop loss/take profit logic
+* broker bridge routing
+* master bridge routing
+* shared live bridge routing
+* demo execution routing
+* live execution routing
+* trade journal mode labeling
+* PnL calculations
+* account balances
+* admin allocations
+* risk engine
+* kill switches
+* scanner-to-trade flow
+* Ruby-to-trade flow
+* trade status lifecycle
+* command queue routing
+
+Keep and protect:
+
+* Live approval
+* Live freeze/unfreeze
+* Live allocation
+* risk checks
+* kill switches
+* broker/MT5 safety locks
+* audit logging
+
+Remove:
+
+* paper execution branch
+* paper order lifecycle
+* paper balance lifecycle
+* paper PnL path
+* paper allocation path
+* paper bridge path
+* paper route to trade
+* paper fallback when demo/live fails
+
+If code needs test-only simulated order behavior, move it into test utilities and rename it:
+
+* mockExecution
+* testExecutionHarness
+* simulatedTestOrder
+* fakeBrokerForTestsOnly
+
+Do not call it Paper.
+Do not make it reachable by users.
+
+Acceptance:
+
+* no Paper execution path exists
+* Demo execution still works
+* Live execution still works
+* Live safety gates still work
+* no live order is placed during cleanup tests unless explicitly approved
+
+PHASE 7 — Ruby cleanup
+
+Ruby should only understand Demo and Live.
+
+Remove Paper from:
+
+* Ruby system prompts
+* Ruby tool/context builders
+* market explanation context
+* trade recommendation context
+* risk summary context
+* user/account context
+* scanner context
+* saved conversation metadata
+* AI learning inputs
+* memory/history loaders
+* any paper explanation copy
+
+Ruby should not:
+
+* tell users they are in Paper Mode
+* expose Paper backend terms
+* use paper history as active learning data
+* use fake/simulated Paper trades in recommendations
+* say paper, paper trading, paper account, or paper-only unless discussing legacy cleanup in admin-only logs
+
+Ruby should:
+
+* treat Demo as safe testing/practice connected to broker/demo data
+* treat Live as real-money execution subject to approval/risk controls
+* explain markets in plain English plus technical analysis
+* avoid backend/internal function names in user responses
+* show thinking/typing indicator immediately under 150ms
+* use real market data, real broker demo data, real live data, real scanner observations, and real user trade actions going forward
+
+Acceptance:
+
+* Ruby never presents Paper as a mode
+* Ruby does not use simulated Paper history in active decisions
+* Ruby still works in Demo and Live
+* Ruby response speed is not worse
+
+PHASE 8 — Scanner cleanup
+
+Scanner should only support:
+
+* Demo scan context
+* Live scan context
+
+Remove:
+
+* paper scanner
+* paper execution branch
+* paper results
+* paper PnL
+* paper fake order preview
+* paper filters
+* paper mode labels
+* paper badges
+* paper warnings
+* paper scanner permissions
+* paper fallback if Demo/Live fails
+* fake Paper history as scanner input
+
+Scanner should use:
+
+* real market data
+* real broker/demo data where available
+* live bridge status where relevant
+* technical analysis
+* historical market data
+* news/context sources already integrated
+* real user trade history going forward
+
+Acceptance:
+
+* scanner UI only shows Demo/Live context
+* scanner does not load Paper services in active runtime
+* scanner does not use Paper history
+* scanner performance improves or stays stable
+* scanner still works for Demo and Live
+
+PHASE 9 — Database inspection, archive, migration, and active-use removal
+
+Inspect database before deleting anything.
+
+Find Paper-related rows/tables in:
+
+* users
+* accounts
+* account_modes
+* balances
+* allocations
+* trades
+* orders
+* positions
+* trade_history
+* paper_trades
+* paper_orders
+* scanner_results
+* ruby_messages
+* ruby_context
+* AI learning tables
+* performance tables
+* calendar/journal tables
+* audit_logs
+* live_commands
+* demo_commands
+* paper_commands
+* sessions
+* permissions
+* invites
+* feature_flags
+* admin_settings
+* any mode-related table
+
+Classify rows as:
+
+1. real live trade data
+2. real broker demo trade data
+3. fake/simulated Paper data
+4. test seed data
+5. old junk/backup data
+6. unknown/needs manual review
+
+Rules:
+
+* Preserve real live data.
+* Preserve real broker demo data.
+* Do not mix fake Paper history into Demo or Live history.
+* Do not let fake Paper history feed Ruby, scanner, AI learning, calendar, journal, or performance reports.
+* Archive or export fake Paper data before deleting or disconnecting.
+* Delete only confirmed test junk after dry-run confirmation.
+* If unsure, archive and disconnect from active runtime instead of deleting.
+
+If paper_trades contains fake simulated trades:
+
+* stop active app usage of paper_trades
+* archive/export to legacy_simulated_trade_archive or JSON/CSV report
+* remove it from active history queries
+* remove it from Ruby/AI/scanner/performance/calendar/journal queries
+
+If paper_trades contains real broker demo/live data:
+
+* classify row-by-row
+* migrate real broker demo rows to clean trade_history with mode DEMO and source BROKER/MT5
+* migrate real live rows to clean trade_history with mode LIVE and source BROKER/MT5
+* preserve audit trail
+* do not lose timestamps, symbol, side, quantity/lot, entry, exit, SL, TP, PnL, status, user/admin IDs, command IDs, source, and original row ID
+
+Old active PAPER users/accounts:
+
+* migrate active account mode to DEMO
+* do not make them LIVE
+* remove paper permissions
+* invalidate paper sessions/tokens
+* preserve user identity and non-paper settings
+
+Output dry-run report before destructive action:
+
+* table
+* row count
+* classification
+* proposed action
+* reason
+* risk level
+
+After action, output:
+
+* rows found
+* rows converted
+* rows archived
+* rows deleted
+* rows skipped
+* reason for each skip
+
+Acceptance:
+
+* Paper data is no longer active input to Ruby/scanner/AI/journal/calendar/performance
+* real live data preserved
+* real demo data preserved
+* fake/simulated data archived or disconnected
+* no blind deletes
+
+PHASE 10 — Rename safety locks away from Paper terminology
+
+Do not weaken live safety.
+
+Where Paper terminology actually means “live execution is locked,” rename safely.
+
+Examples:
+
+* safetyMode = “paper_only” → safetyMode = “live_execution_locked”
+* PAPER_ONLY → LIVE_EXECUTION_LOCKED
+* paperOnlyHardLock → liveExecutionHardLock
+* mt5_command_safety_mode = “paper_only” → mt5_command_safety_mode = “live_commands_blocked”
+* live_trading_state.mode = PAPER_ONLY → live_trading_state.mode = LIVE_EXECUTION_LOCKED
+
+Use compatibility if needed:
+
+1. introduce new names
+2. update active code to new names
+3. update tests to prove same behavior
+4. keep deprecated alias only if required temporarily
+5. remove alias after no runtime dependency remains
+
+Guard tests should still prove:
+
+* live orders cannot fire unless all required gates pass
+* broker placement is blocked when readiness fails
+* admin approval is required
+* allocation/risk controls are respected
+* freeze/kill switches work
+* no accidental live command can be inserted
+* no backend fallback bypasses safety
+
+Tests should no longer call the safety state “Paper” unless checking a temporary deprecated alias during migration.
+
+Acceptance:
+
+* safety locks still work
+* tests still verify live chokepoint
+* active safety vocabulary no longer says Paper where safe
+* no live-readiness breakage
+
+PHASE 11 — API and route cleanup
+
+Remove or disable Paper production routes.
+
+Find and remove/replace:
+
+* /api/paper/*
+* /api/trading/paper/*
+* /api/account/paper/*
+* /api/admin/paper/*
+* /api/paper-trades/*
+* /api/paper-orders/*
+* /api/paper-balances/*
+* /api/paper-allocations/*
+* /api/sim/paper/*
+* any route accepting mode=paper
+* any route accepting executionMode=paper
+* any route accepting accountMode=paper
+
+If the valid behavior is needed for Demo, move it under Demo naming.
+
+Do not:
+
+* leave paper endpoints returning fake success
+* leave paper endpoints reachable but hidden
+* redirect paper to live
+* allow paper as a runtime mode
+
+If a legacy endpoint must temporarily remain for migration/admin archive:
+
+* make it admin-only
+* read-only
+* clearly marked legacy
+* not used by active app
+* not loaded by normal users
+* not feeding Ruby/scanner/AI/performance
+
+Acceptance:
+
+* Paper production routes are gone or disabled
+* API rejects Paper as active mode
+* no Paper route participates in active runtime
+* Demo/Live APIs still work
+
+PHASE 12 — Remove from active runtime before deleting files
+
+For Paper directories/files, do not delete blindly.
+
+Likely areas:
+
+* components/paperTrading/
+* components/paper-intelligence/
+* lib/paperSession/
+* lib/paperExecution/
+* routes/api/paper*
+* services/paper*
+* hooks/usePaper*
+* stores/paper*
+* tests/paper*
+* fixtures/paper*
+* migrations/seed paper files
+
+For each file/directory:
+
+1. check imports
+2. check route registration
+3. check build dependency
+4. check test dependency
+5. check Demo dependency
+6. check Live dependency
+7. check runtime load
+8. check bundle impact
+
+Then classify:
+
+* delete now
+* disconnect now, delete later
+* move to test utility
+* rename safety vocabulary
+* keep temporarily with deprecation comment
+* archive/export only
+
+If a file cannot be safely deleted:
+
+* remove it from active runtime
+* stop loading it in production
+* stop using it for Ruby/scanner/AI/journal/performance
+* mark it as legacy/internal
+* create a follow-up removal task
+* do not let it slow down the app
+
+Acceptance:
+
+* no active runtime imports Paper product modules
+* no production route loads Paper modules
+* bundle/load reduced where possible
+* app still builds
+
+PHASE 13 — Performance cleanup after Paper removal
+
+Simplify production branching.
+
+Replace messy production logic like:
+LIVE / DEMO / PAPER / MOCK / SIM / SHARED_LIVE
+
+With:
+LIVE / DEMO
+
+Keep mock/simulated/test execution isolated only in test utilities.
+
+Remove or disconnect:
+
+* unused Paper services
+* Paper background jobs
+* fake-history loaders
+* Paper performance aggregators
+* Paper AI-learning loaders
+* duplicate Paper/Demo mode checks
+* inactive Paper polling
+* hidden Paper UI hydration
+* unnecessary Paper route preloads
+* dead Paper stores/context providers
+
+Optimize:
+
+* trade history queries
+* scanner queries
+* Ruby context queries
+* account mode resolver
+* dashboard load
+* admin allocation load
+* performance report load
+* calendar/journal load
+
+Add indexes only if needed and safe.
+
+After cleanup, re-measure:
+
+* app initial load time
+* dashboard load time
+* scanner response time
+* Ruby response start time
+* trade ticket open time
+* open/close trade UI feedback time
+* admin allocation page load time
+* account mode resolution time
+* database queries touching trade history/performance/Ruby/scanner
+
+Final performance report must show:
+
+* before time
+* after time
+* improvement or regression
+* bottleneck fixed
+* files/functions changed
+* remaining slow areas
+
+Acceptance:
+
+* app is not slower
+* fewer active Paper branches run
+* fake-history loading removed from active flows
+* no dead Paper services slow down runtime
+
+PHASE 14 — Break/fix workflow and retesting rule
+
+After every cleanup attempt:
+
+1. Run the smallest relevant test first.
+2. If it passes, run the broader related tests.
+3. If it fails, identify the exact failure and apply a safer workaround.
+4. Retest after the workaround.
+5. Do not proceed while leaving broken Live/Demo functionality behind.
+
+At minimum, after each major change run:
+
+* typecheck
+* affected unit tests
+* affected API route tests
+* affected UI/Playwright tests where applicable
+
+For every Paper component/service/query that cannot be deleted yet, prove it is no longer increasing active app load. Confirm whether it is:
+
+* not imported in active production bundles
+* not mounted as a route
+* not queried by Ruby/scanner/AI/journal/performance
+* not running as a background job
+* not included in normal dashboard load
+* not included in normal scanner load
+* not included in normal Ruby context load
+
+Add a “Breaks Avoided / Safer Fixes Used” section to the final report showing:
+
+* what originally broke
+* why it broke
+* what safer fix was used
+* what tests proved the safer fix worked
+* whether load was reduced anyway
+
+PHASE 15 — Full tests and verification
+
+Add/update tests to prove Paper Trading is gone but Live/Demo remain safe.
+
+Required tests:
+
+1. UI never renders Paper Mode.
+2. Admin UI never renders active Paper controls.
+3. Ruby never presents Paper as a user mode.
+4. Scanner never presents Paper as a mode/filter/result path.
+5. Trade ticket never presents Paper.
+6. Auth/session never includes Paper as production mode.
+7. Route guards do not check Paper.
+8. API rejects accountMode=paper.
+9. API rejects executionMode=paper.
+10. Admin cannot assign Paper Mode.
+11. User cannot request Paper Mode.
+12. Old PAPER users migrate to DEMO.
+13. Old Paper sessions/tokens are invalidated.
+14. Fake Paper trades are archived/excluded from active trade history.
+15. Fake Paper history does not feed Ruby.
+16. Fake Paper history does not feed scanner.
+17. Fake Paper history does not feed AI learning.
+18. Fake Paper history does not feed performance reports.
+19. Fake Paper history does not feed calendar/journal.
+20. Demo trading still works.
+21. Live trading readiness still works.
+22. Live safety gates still work.
+23. Admin live approval still works.
+24. Admin allocation still works.
+25. Account freeze/unfreeze still works.
+26. Scanner works in Demo.
+27. Scanner works in Live.
+28. Ruby works in Demo.
+29. Ruby works in Live.
+30. No Paper production route remains reachable.
+31. No Paper fallback exists.
+32. No live audit history is deleted.
+33. No real demo broker history is deleted.
+34. No new live command rows are inserted during cleanup tests unless explicitly intended.
+35. Safety-lock rename tests prove the same live-execution chokepoint still works.
+
+Run full verification:
+
+* pnpm –filter @workspace/trading-dashboard run typecheck
+* pnpm run ci:guards
+* test:live-phaseB
+* test:live-pass-path
+* test:demo-arming
+* test:demo-verify
+* test:chart-symbol-propagation
+* test:live-shared-reason-copy
+* test:account-mode
+* test:master-bridge
+* scanner tests
+* Ruby tests
+* admin allocation tests
+* auth/session tests
+* migration tests
+* API route tests
+* Playwright UI tests
+* performance/timing tests
+
+If any test fails:
+
+* do not hide the failure
+* explain whether it is pre-existing or caused by this change
+* fix if safe
+* if risky, stop and recommend a safe workaround
+
+PHASE 16 — Final acceptance criteria
+
+The task is complete only when all are true:
+
+1. No user-facing Paper Mode remains.
+2. No admin active Paper Mode remains.
+3. No backend production Paper Mode remains.
+4. No Paper auth/gate/permission remains as a trading product path.
+5. No Paper fallback remains.
+6. No Paper execution path remains.
+7. No Paper account mode remains.
+8. No Paper scanner mode remains.
+9. No Paper Ruby mode remains.
+10. No Paper allocation mode remains.
+11. No Paper active trade-history mode remains.
+12. No fake/simulated Paper data feeds Ruby.
+13. No fake/simulated Paper data feeds scanner.
+14. No fake/simulated Paper data feeds AI learning.
+15. No fake/simulated Paper data feeds calendar/journal.
+16. No fake/simulated Paper data feeds performance reports.
+17. Safety locks still protect live execution.
+18. Safety locks are renamed away from Paper terminology where safe.
+19. Demo Mode still works.
+20. Live Mode still works.
+21. Admin live approval still works.
+22. Admin allocation still works.
+23. Account freeze/unfreeze still works.
+24. Scanner still works.
+25. Ruby still works.
+26. No live audit history was deleted.
+27. No real demo broker history was deleted.
+28. Fake/simulated Paper history was archived, exported, deleted as confirmed junk, or disconnected from active use.
+29. App performance improved or did not regress.
+30. All required tests pass, or any remaining issue is clearly documented with a safe workaround.
+
+Final output required:
+
+1. Performance baseline before cleanup.
+2. Full Paper inventory summary from .local/paper-inventory.md.
+3. Dependency map showing product Paper vs safety-lock Paper vs test-only mock vs database history.
+4. Files changed.
+5. Files deleted.
+6. Files disconnected from active runtime but not deleted.
+7. Paper routes removed/disabled.
+8. Paper UI removed.
+9. Paper auth/session/permission references removed.
+10. Paper backend branches removed.
+11. Safety locks renamed and how compatibility was handled.
+12. Database Paper rows/tables found.
+13. What data was classified as real live.
+14. What data was classified as real broker demo.
+15. What data was classified as fake/simulated Paper.
+16. What was migrated.
+17. What was archived/exported.
+18. What was deleted as confirmed test junk.
+19. What was skipped and why.
+20. Confirmation no live audit history was deleted.
+21. Confirmation no real demo broker history was deleted.
+22. Confirmation no live command rows were inserted during cleanup tests unless explicitly intended.
+23. Performance before/after table.
+24. Breaks Avoided / Safer Fixes Used section.
+25. Full test results.
+26. Confirmation Demo works.
+27. Confirmation Live readiness works.
+28. Confirmation safety gates still work.
+29. Confirmation Paper Trading no longer operates as a product feature.
+30. Remaining legacy Paper references, if any, and exact reason they remain.
+31. Safe follow-up tasks for anything not removed in this pass.
+
+Proceed now in this order:
+
+1. Phase 2 performance baseline.
+2. Phase 3 remove visible Paper UI/sidebar/routes.
+3. Phase 10 rename safety-lock vocabulary with compatibility and no behavior change.
+4. Retest after each phase.
+5. Then continue through the remaining phases only when safe.
+6. Pause and report if any action threatens Live/Demo readiness.
+
+Main goal:
+Remove Paper Trading from active product flow, remove fake/simulated Paper data from active intelligence/reporting, and reduce app load without breaking Live, Demo, Ruby, scanner, admin approval, allocation, bridge readiness, or safety gates.

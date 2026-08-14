@@ -1,0 +1,189 @@
+Complete the ARX AI live execution safety work before any live trade.
+
+DO NOT place a live trade.
+DO NOT open live access to all users.
+This task is only to complete the final live dispatch safety layer.
+
+CURRENT STATUS FROM LAST PASS:
+Completed:
+- OWNER-only First Live Test Mode tightened
+- First Live Test Mode limits now feed arx_live_user_settings
+- UI truth model shows:
+  - Broker execution permission = env-only
+  - Operator broker execution = DB switch
+  - Effective broker execution = env AND operator
+- Mobile tabs and friendly labels already fixed
+- Typed confirmations removed
+- arx_live_commands count stayed 0
+
+STILL UNSAFE / UNFINISHED:
+- lib/liveTrading Build TT chokepoint is untouched
+- 16-gate evaluator in livePhaseBDispatchGate.ts is untouched
+- resolveLiveBrokerExecutionEnabled still uses env-OR-DB at the server level
+- UI shows stricter AND logic, but backend resolver may still allow OR behavior
+- Final order dispatch must not rely on UI-only readiness
+
+GOAL:
+Make backend live execution truth stricter and impossible to bypass.
+
+1. CHANGE BROKER EXECUTION RESOLVER FROM OR TO AND
+Find resolveLiveBrokerExecutionEnabled / phaseBConfig.ts or equivalent.
+
+Change effective broker execution logic from:
+- env OR operator switch
+
+To:
+- env permission AND operator switch
+
+Effective broker execution should be true ONLY when:
+- ARX_LIVE_BROKER_EXECUTION_ENABLED is true
+AND
+- liveBrokerExecutionArmed / operator broker execution DB switch is true
+
+If env is true but operator switch is off, live execution must be blocked.
+If operator switch is on but env is false, live execution must be blocked.
+Both must be true.
+
+Update all dependent status/readiness responses to use this strict AND result.
+
+2. BUILD FINAL LIVE TRADING CHOKEPOINT
+Implement or complete the final live execution chokepoint in lib/liveTrading.
+
+All live order dispatch must pass through one backend chokepoint before anything can be inserted into arx_live_commands or sent to MT5/EA.
+
+No frontend route, scanner route, Ruby route, trade modal, admin route, or direct API call should bypass this chokepoint.
+
+The chokepoint must check:
+- user is authenticated
+- user is OWNER for First Live Test Mode
+- user has live trading approved
+- shared/master bridge approval exists if shared route is used
+- master bridge is pinned
+- MT5/EA heartbeat is fresh
+- platform mode is LIVE
+- routing is correct
+- shared live trading is ON if shared bridge is used
+- master bridge live is ON
+- effective broker execution is enabled using env AND operator switch
+- kill switch is released
+- First Live Test Mode limits are enforced
+- max open live trades not exceeded
+- lot size does not exceed cap
+- symbol is allowed
+- stop loss is present and valid
+- take profit is present or the system clearly blocks/warns based on configured requirement
+- daily loss limit not exceeded
+- one-click trading is OFF for first live test
+- AI auto-trading is OFF
+- AI auto-close is alert-only
+- manual confirmation was accepted
+- audit log write succeeds or fails safely
+
+If any gate fails, block the order and return a friendly reason.
+
+3. WIRE 16-GATE EVALUATOR INTO CHOKEPOINT
+Do not leave the 16-gate evaluator as a separate display-only checker.
+
+The final live dispatch chokepoint must call the 16-gate evaluator and require PASS before live execution.
+
+If the 16-gate evaluator fails:
+- Do not create arx_live_commands
+- Do not send anything to MT5/EA
+- Return blocked status with friendly failed gates
+- Write an audit log row for blocked attempt
+
+4. MAKE READINESS UI MATCH BACKEND TRUTH
+Update Live Shared Account / Activation Wizard readiness panel to use backend chokepoint/evaluator truth, not duplicated frontend logic.
+
+Show:
+- Overall Live Readiness: PASS / BLOCKED
+- Effective Broker Execution: Enabled / Disabled
+- Env Permission: Allowed / Blocked
+- Operator Broker Execution: On / Off
+- Master Bridge: Connected / Not Connected
+- Heartbeat: Fresh / Stale
+- Platform Mode: Demo / Live
+- Routing: User-Owned / Shared Master
+- Shared Live Trading: On / Off
+- Master Bridge Live: On / Off
+- First Live Test Mode: On / Off
+- Kill Switch: Released / Engaged
+- Owner Live Access: Approved / Not Approved
+
+If blocked, show friendly reasons:
+“Live is blocked because…”
+
+Do not show raw env names in the main UI. Keep raw names only in collapsed admin-only Technical Details.
+
+5. HARD-BLOCK UNAUTHORIZED USERS
+For this first live test:
+- Only OWNER / andraie.co@gmail.com / id=4 can pass live execution
+- Plain admins cannot enable First Live Test Mode
+- Regular users cannot place live orders
+- Test users cannot place live orders
+- Demo users cannot place live orders
+- Paper users cannot place live orders
+
+6. ADD TESTS / ACCEPTANCE PROOFS
+Add or run tests proving:
+
+Broker execution resolver:
+- env=false + operator=false => blocked
+- env=true + operator=false => blocked
+- env=false + operator=true => blocked
+- env=true + operator=true => allowed
+
+Live command insertion:
+- blocked gate does NOT insert arx_live_commands
+- passing gate can create a pending command only after manual confirmation
+- no live trade is created automatically by setup toggles
+
+First Live Test Mode:
+- max open trades = 1 enforced server-side
+- max lot = 0.01 enforced server-side
+- stop loss required enforced server-side
+- allowedSymbols enforced server-side
+- daily loss limit enforced server-side
+- one-click trading disabled
+- AI auto-trading disabled
+
+7. AUDIT LOG
+Audit every attempted live dispatch:
+- allowed or blocked
+- user
+- symbol
+- lot size
+- order type
+- stop loss present yes/no
+- take profit present yes/no
+- failed gates if blocked
+- timestamp
+- operator/admin if applicable
+
+8. SECURITY
+Regular users must not see:
+- live activation controls
+- broker execution controls
+- env names
+- bridge technical details
+- kill switches
+- audit logs
+- other users
+- backend route names
+
+9. ACCEPTANCE TEST
+Before stopping, verify:
+- Backend broker execution uses env AND operator switch, not OR.
+- UI and backend readiness agree.
+- 16-gate evaluator is required by final live dispatch.
+- Final live order chokepoint exists and cannot be bypassed.
+- arx_live_commands stays 0 unless a manually confirmed order passes every gate.
+- First Live Test Mode limits are enforced server-side.
+- OWNER is the only live-test eligible user.
+- Regular users cannot access live controls or live dispatch.
+- No live trade is placed automatically.
+- All blocked attempts return friendly reasons.
+- Audit log records allowed and blocked attempts.
+- Login, scanner, Ruby voice/chat, trade modal, bridge status, admin controls, and bottom nav still work.
+
+Run typecheck/build/tests and fix all errors before stopping.

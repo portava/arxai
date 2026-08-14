@@ -1,0 +1,70 @@
+Check the current live trading readiness system before changing anything.
+
+The app is showing:
+- Blocked: PER_USER_BRIDGE_MODE_ACTIVE
+- Master live trading requires admin approval
+- Live trading paused
+- Technical: BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED
+- Message says EA v1.27 + Phase B is required before broker dispatch
+
+Do a full backend + frontend audit of the live trading readiness pipeline and fix only what is missing or inconsistent.
+
+Required outcome:
+
+1. Add/verify a clear Live Readiness Checklist that shows each blocker separately:
+   - user admin approval status
+   - master bridge mode enabled/disabled
+   - per-user bridge mode conflict
+   - broker execution environment flag
+   - EA heartbeat freshness
+   - broker placement layer status
+   - Phase B gate status
+   - operator kill switch status
+   - user live trading enabled status
+
+2. Do not fake broker execution readiness.
+   If BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED is true, the app must clearly show that real money cannot be sent yet.
+
+3. Fix the mode conflict:
+   If master bridge mode is intended, the system should not also block because PER_USER_BRIDGE_MODE_ACTIVE unless the environment is actually set to per-user mode.
+   Add a clean backend setting that makes the current bridge mode explicit:
+   - demo
+   - per_user_live_bridge
+   - master_live_bridge_readonly
+   - master_live_bridge_execution_pending
+   - master_live_bridge_execution_enabled
+
+4. Add admin approval controls for the 10 test users:
+   - admin can enable/disable live trading per user
+   - admin can see whether each user is demo only, live approved, blocked, or pending
+   - regular users cannot self-enable live trading
+   - every user should feel like they are using the app by themselves, even if a master bridge exists behind the scenes
+
+5. Add a safe “Live Not Yet Available” state:
+   Users can still:
+   - browse scanner
+   - use Ruby
+   - place demo trades
+   - view EA heartbeat
+   - view risk tools
+   - view market explanations
+   But users cannot place real broker trades until all gates pass.
+
+6. Add a developer/admin-only diagnostic panel that lists exact blockers with human-readable explanations, without exposing broker tokens, raw sensitive account numbers, or server credentials.
+
+7. Fix the UI so the warning cards are not confusing:
+   - show “Real live broker execution is locked”
+   - show “Demo trading remains available”
+   - show “Reason: broker placement layer not implemented”
+   - show “Next required step: EA v1.27 + Phase B broker dispatch implementation”
+
+8. Run tests after the fix:
+   - demo user can trade demo
+   - unapproved user cannot access live execution
+   - approved test user still cannot execute real trade while broker placement layer is missing
+   - master bridge mode does not expose broker secrets
+   - kill switch blocks all live execution
+   - stale EA heartbeat blocks live execution
+   - fresh EA heartbeat still does not allow live execution unless broker placement layer is implemented
+
+Use existing code and database structure where possible. Do not rebuild the app. Do not remove safety gates. Do not make the app say live trading is ready unless the backend broker dispatch layer truly exists and all Phase B gates pass.

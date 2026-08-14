@@ -1,0 +1,2050 @@
+Build the Ruby Market Edge System upgrade.
+
+This upgrade is focused on making Ruby faster, smarter, more specific, more trustworthy, and more useful inside the scanner, Smart Chart, trade preview, live trade monitoring, and future investor explanations.
+
+Current problems:
+1. Ruby sometimes sends signals too late after the move has already happened.
+2. Ruby does not spot forming trends early enough.
+3. Ruby scanner explanations are too vague and generic.
+4. Users need to know why a market is bullish or bearish.
+5. Users need to know what happened, whether news/economic conditions affected the trade, whether the signal is early/ready/late, and what invalidates the idea.
+6. Ruby needs to calculate execution cost, spread, slippage, lot-size impact, and approximate starting drawdown/upside before users enter.
+7. News alerts and economic events should appear directly on the Smart Chart before they affect the trade.
+8. Ruby needs to manage and explain trades after entry, not only before entry.
+9. Ruby needs to learn from late signals, missed moves, slippage, wins, losses, and user behavior.
+
+This is an intelligence and UI/analysis upgrade.
+Do not change the live execution path.
+Do not place live trades for this build.
+Do not add Paper Trading, simulator, mock, fake, sandbox, or test-trading language.
+Do not expose backend route names, table names, raw JSON, stack traces, code terms, or developer wording to users.
+Preserve existing scanner, Ruby, Smart Chart, live bridge, trade modal, retcode, admin/user role, investor role, and permission wiring.
+
+====================================================
+PART 1 — INSPECT CURRENT SYSTEM FIRST
+====================================================
+
+Before coding, inspect the current implementation for:
+
+1. Scanner
+- Focus Scan
+- Broad Scan
+- scanner result cards
+- selected-symbol analysis
+- market picker
+- symbol search
+- Ruby Scalp Signals
+- scalp builder
+- scalp status labels
+- current signal scoring
+- current signal refresh timing
+- current stale-data handling
+- current cache behavior
+- current signal result shape
+
+2. Smart Chart
+- existing chart component
+- custom chart drawing system
+- overlays/layers
+- support/resistance drawing if available
+- chart annotations
+- selected symbol sync
+- chart refresh timing
+- current indicator data
+- current candle/OHLC data access
+
+3. Ruby explanations
+- prompt construction
+- market explanation logic
+- selected market explanation
+- scanner explanation
+- Ruby chat response
+- Ruby typing/thinking state
+- voice/text separation
+- any generic/vague templates
+- any exposed internal/backend wording
+
+4. Market data
+- live price source
+- OHLC/candle source
+- bid/ask/spread source
+- historical candles
+- symbol specs from arx_symbol_specs
+- tick size
+- tick value
+- point
+- digits
+- contract size
+- min/max lot
+- lot step
+- spread
+- trade mode
+- market session
+- freshness timestamps
+
+5. News/economic data
+- existing economic calendar integrations
+- existing news APIs
+- existing headline/current event feed
+- market-impact calendar
+- impact level
+- affected currencies/symbols
+- news timestamps
+- any existing admin/news settings
+
+6. Live bridge/execution result data
+- average slippage if available
+- actual fill price
+- requested price
+- retcode
+- fill delay
+- broker ticket
+- spread at entry if stored
+- actual starting P/L if available
+- open position sync
+- closed trade/deal history
+
+7. Admin dashboards
+- existing analytics
+- existing signal logs
+- existing trade history
+- existing scanner logs
+- existing quality/performance dashboards
+
+Reuse existing systems.
+Do not duplicate scanner engines.
+Do not rewrite unrelated app areas.
+Upgrade the existing Ruby/scanner/chart intelligence layer.
+
+Deliver an audit summary:
+- what already exists
+- what was reused
+- what was missing
+- what was added
+- files/modules touched
+
+====================================================
+PART 2 — MAIN FEATURE NAME AND ARCHITECTURE
+====================================================
+
+Feature name:
+Ruby Market Edge System
+
+Purpose:
+Ruby should warn before the move, explain during the move, protect the user at entry, monitor after entry, learn after the trade, and report what she learned.
+
+Build these connected modules:
+
+1. Early Trend Radar
+Detects developing pressure before a trade is ready.
+
+2. Signal Lifecycle Engine
+Classifies every setup as Watching, Trend Forming, Setup Forming, Entry Approaching, Entry Window Open, Late, Invalid, or Expired.
+
+3. Smart Chart Ruby Layers
+Draws Ruby’s levels/zones directly on the chart.
+
+4. Market Impact Radar
+Shows news/economic events and market-impact alerts on the chart before they come into play.
+
+5. Detailed Ruby Explanation Engine
+Explains why bullish/bearish, what happened, what confirms it, what invalidates it, whether news matters, and what user should do.
+
+6. Execution Cost Preview
+Calculates spread, slippage, lot-size impact, estimated starting drawdown, break-even distance, TP/SL after execution cost.
+
+7. Trade Survivability Engine
+Estimates whether a trade can survive normal pullback/noise after entry.
+
+8. Live Trade Health Monitor
+Continues monitoring trades after entry and gives trade health updates.
+
+9. Outcome Learning Engine
+Tracks signal timing, wins/losses, late signals, missed opportunities, slippage, news impact, and explanation accuracy.
+
+10. Admin Ruby Quality Dashboard
+Shows signal quality, late signals, win rate, slippage, outcome learning, and tuning controls.
+
+These modules must share data and not become disconnected systems.
+
+====================================================
+PART 3 — RUBY SIGNAL LIFECYCLE STATES
+====================================================
+
+Ruby should not only output Buy/Sell/No Trade.
+
+Every market/opportunity should move through lifecycle states:
+
+1. Watching
+Meaning:
+- Market is being monitored.
+- No clear setup yet.
+User-facing:
+“Ruby is watching this market. No clean setup yet.”
+
+2. Trend Forming
+Meaning:
+- Early directional pressure is building.
+- Not ready for trade.
+User-facing:
+“Trend pressure is forming, but Ruby needs more confirmation.”
+
+3. Setup Forming
+Meaning:
+- Market is approaching a zone or structure needed for entry.
+- Watch zone should appear.
+User-facing:
+“Setup forming. Wait for price to reach the watch zone.”
+
+4. Entry Approaching
+Meaning:
+- Price is close to ideal entry area.
+- User should prepare, not chase.
+User-facing:
+“Entry may be approaching. Ruby is watching confirmation.”
+
+5. Entry Window Open
+Meaning:
+- Setup is active and fresh.
+- Trade can be reviewed if risk/execution are valid.
+User-facing:
+“Entry window open. Review setup now.”
+
+6. Late — Do Not Chase
+Meaning:
+- Move already traveled too far.
+- Remaining reward is not worth risk.
+User-facing:
+“Late — do not chase. Wait for pullback or new setup.”
+
+7. Invalid
+Meaning:
+- Setup broke.
+- Bias may need reset.
+User-facing:
+“Setup invalidated. Ruby is no longer using this idea.”
+
+8. Expired
+Meaning:
+- Signal timed out or became stale.
+User-facing:
+“Signal expired. Ruby needs fresh data.”
+
+Use these states in:
+- Focus Scan
+- Broad Scan
+- Smart Chart
+- Ruby Scalp Signals
+- trade preview
+- alerting system
+- admin signal logs
+
+====================================================
+PART 4 — EARLY TREND RADAR
+====================================================
+
+Ruby must detect trend pressure earlier, before the trade is obvious and late.
+
+Use available data to detect:
+
+- higher highs / higher lows
+- lower highs / lower lows
+- break of structure
+- change of character
+- liquidity sweep
+- failed breakout
+- failed retest
+- support/resistance rejection
+- wick rejection
+- momentum candles
+- candle body strength
+- candle speed
+- volatility expansion
+- compression before breakout
+- range breakout
+- support/resistance retest
+- moving average alignment if available
+- RSI/MACD/stochastic if available
+- multi-timeframe alignment
+- session behavior
+- spread expansion
+- news proximity
+
+Ruby should detect:
+- bullish pressure building
+- bearish pressure building
+- range/chop
+- potential reversal
+- potential continuation
+- fakeout risk
+- no clean setup
+
+Example bullish explanation:
+“Ruby is leaning bullish because price broke above the short-term resistance zone, held the retest, and is now building higher lows. Buyers are defending the previous breakout area. The setup is forming, not ready yet.”
+
+Example bearish explanation:
+“Ruby is leaning bearish because price rejected the upper zone twice, broke the recent higher-low structure, and sellers are now controlling the pullback. The better sell would be a retest below the broken level, not chasing the drop.”
+
+====================================================
+PART 5 — MARKET READ VS TRADE RECOMMENDATION
+====================================================
+
+Ruby must always separate market direction from trade quality.
+
+A market can be bearish but not a good sell.
+A market can be bullish but not a good buy.
+
+Every scanner analysis should include:
+
+- Market Bias:
+  - Bullish
+  - Bearish
+  - Neutral
+  - Mixed
+  - No Clean Bias
+
+- Trade Quality:
+  - Strong
+  - Good
+  - Acceptable
+  - Weak
+  - Avoid
+
+- Best Action:
+  - Review Trade
+  - Watch Setup
+  - Wait for Retest
+  - Avoid
+  - Do Not Chase
+  - Refresh Signal
+
+Example:
+“Market Direction: Bearish.
+Trade Quality: Weak.
+Reason: entry is late and spread is elevated.
+Best Action: Wait for retest.”
+
+This distinction must appear in scanner UI and Ruby explanations.
+
+====================================================
+PART 6 — SMART CHART RUBY LAYERS
+====================================================
+
+Add Ruby visual intelligence layers to the Smart Chart.
+
+The Smart Chart should visually show what Ruby is thinking.
+
+Layers:
+
+1. Market Structure Layer
+- swing highs/lows if available
+- break of structure
+- change of character
+- trend direction
+
+2. Support/Resistance Layer
+- key levels
+- rejection zones
+- retest zones
+
+3. Watch Zone Layer
+- where Ruby is waiting for price
+
+4. Entry Zone Layer
+- ideal entry area
+- market/limit/stop context if available
+
+5. Do-Not-Chase Zone
+- price level where entry becomes late
+
+6. Expected Fill Zone
+- expected fill range based on bid/ask/spread/slippage
+
+7. Break-Even Line
+- approximate price needed to overcome spread/slippage
+
+8. Normal Pullback Zone
+- expected temporary drawdown area before idea invalidates
+
+9. SL / Invalidation Zone
+- structure invalidation
+- stop-loss risk area
+
+10. TP Zones
+- TP1
+- main TP
+- stretch TP if applicable
+
+11. News/Event Danger Zone
+- upcoming economic/news event marker
+- pre-event caution window
+- event time
+- post-news reaction/cooling window
+
+12. Spread/Slippage Warning Layer
+- wide spread marker
+- execution danger marker
+
+13. Trade Health Layer
+- for open trades:
+  - healthy
+  - weakening
+  - danger
+  - invalidated
+  - TP progress
+  - break-even suggestion
+
+When Ruby says a level in text, the chart must draw or highlight that same level.
+
+Example:
+Ruby text:
+“Bearish below 4628. Cleaner sell zone is 4602–4608. Late below 4592. Invalid above 4628.”
+
+Chart must display:
+- bearish bias label
+- sell zone 4602–4608
+- late zone below 4592
+- invalidation above 4628
+
+Add user toggles so the chart does not get crowded:
+- Show Ruby Zones
+- Show News Events
+- Show Execution Cost
+- Show Trade Health
+- Show Structure
+- Show All / Hide All
+
+====================================================
+PART 7 — MARKET IMPACT RADAR / NEWS CHART OVERLAY
+====================================================
+
+News alerts and economic events must appear directly on the Smart Chart.
+
+Build Market Impact Radar.
+
+Show relevant upcoming events before they affect trades.
+
+Alert timing:
+- 30 minutes before: Early warning
+- 15 minutes before: Preparation alert
+- 5 minutes before: High caution
+- Event time: Live impact marker
+- 5–15 minutes after: Post-news reaction monitor
+
+Smart Chart event marker should include:
+- vertical event line
+- countdown badge
+- impact level
+- affected symbols/currencies
+- Ruby explanation bubble
+- tap/click to expand event details
+
+Event types:
+- Economic event
+- Breaking news
+- Central bank speech
+- Interest rate decision
+- Inflation report
+- Jobs report
+- Market open/close
+- High volatility warning
+- Spread widening warning
+- Liquidity warning
+- Broker/bridge caution
+- Ruby setup warning
+
+Severity:
+- Low
+- Medium
+- High
+- Critical
+
+Example chart alert:
+“USD CPI in 12 minutes.
+Impact: High.
+Affected: Gold, EURUSD, GBPUSD, US30.
+Ruby warning: Avoid chasing entries until the first spike settles.”
+
+For synthetic/volatility markets:
+“No confirmed economic news driver applies. Ruby is reading this move from price action, volatility, and structure.”
+
+Only show relevant alerts for the selected symbol.
+Do not spam unrelated headlines.
+
+Symbol relevance examples:
+
+Gold:
+- USD news
+- inflation
+- rates/yields
+- Fed speech
+- geopolitical risk
+- safe-haven headlines
+
+Forex:
+- currency pair-specific economic news
+- central bank news
+- rate expectations
+- inflation/jobs data
+- session events
+
+Indices:
+- Fed/rates
+- jobs/inflation
+- risk sentiment
+- market open/close
+- earnings risk
+- bond yields
+
+Crypto:
+- crypto headlines
+- regulatory news
+- risk sentiment
+- liquidity events
+- market structure
+
+Synthetics/volatility:
+- no direct economic driver
+- technical/volatility/spread/feed alerts
+- broker/session/feed volatility warnings if available
+
+====================================================
+PART 8 — NEWS BEHAVIOR RULES
+====================================================
+
+Ruby must behave differently around news.
+
+Before high-impact news:
+- downgrade normal scalp signals
+- show watch zones instead of aggressive entries
+- warn user about volatility/spread/slippage
+- avoid market-order recommendations unless setup is extremely clean and risk is defined
+
+During news:
+- mark volatility spike active
+- avoid first reaction candle
+- warn about spread/slippage
+- mark market unstable if needed
+
+After news:
+- watch first spike
+- detect fakeout/reversal/continuation
+- wait for retest or confirmation
+- wait for spread normalization
+- resume signals only when volatility cools or structure confirms
+
+Admin settings:
+- no scalp signals X minutes before high-impact news
+- no market orders X minutes before news
+- watch mode only during high-impact news
+- resume after volatility normalizes
+- post-news wait window
+- affected symbols/currencies settings
+- severity threshold for popups
+
+User-facing examples:
+“News risk is high. Ruby is watching zones, not recommending a market entry.”
+“The first news spike is active. Avoid chasing the first candle.”
+“Post-news direction is not confirmed yet. Ruby is waiting for a retest.”
+
+====================================================
+PART 9 — DETAILED SCANNER EXPLANATION CARD
+====================================================
+
+Replace vague scanner explanations with a structured Ruby Market Read card.
+
+Every selected market analysis should include:
+
+1. Bias
+Bullish / Bearish / Neutral / Mixed / No Clean Bias
+
+2. Stage
+Watching / Trend Forming / Setup Forming / Entry Approaching / Entry Window Open / Late / Invalid / Expired
+
+3. Why This Direction
+Specific structure/momentum/news reason.
+
+4. What Happened
+Recent price action summary:
+- rejected level
+- broke structure
+- retested zone
+- swept liquidity
+- failed breakout
+- compressed/ranged
+- momentum expanded
+- news spike
+
+5. News/Economic Impact
+- confirmed news driver
+- possible news driver
+- no confirmed news driver
+- no direct news dependency for synthetic symbols
+
+6. Entry Timing
+- ready
+- forming
+- wait
+- late
+- invalid
+
+7. Execution Risk
+- spread
+- slippage
+- lot-size impact
+- expected starting drawdown
+- break-even distance
+
+8. Risk/Reward
+- TP logic
+- SL/invalidation logic
+- reward-to-risk after execution cost
+
+9. What Confirms It
+- candle close
+- retest hold
+- level reclaim
+- rejection wick
+- momentum continuation
+- spread normalization
+- post-news confirmation
+
+10. What Invalidates It
+- specific price/zone
+- structure break
+- news reversal
+- spread spike
+- stale data
+
+11. Best Action Now
+- Review Trade
+- Watch Setup
+- Wait for Retest
+- Avoid
+- Do Not Chase
+- Refresh Signal
+
+Example:
+“Ruby is leaning bearish on V75 because price rejected the upper resistance zone twice and then broke below the short-term higher-low structure. Sellers are gaining control, but the setup is still forming. The clean sell area is near 4602–4608. Do not chase if price drops below 4592 before entry because most of the move would already be gone. No confirmed news driver applies to this synthetic symbol, so this read is based on structure, volatility, candle speed, and momentum.”
+
+====================================================
+PART 10 — RUBY MUST SPEAK IN LEVELS
+====================================================
+
+Avoid vague statements:
+“Market looks bearish.”
+“Market is bullish.”
+“Momentum is strong.”
+
+Use specific levels:
+“Bearish below 4628.”
+“Cleaner sell zone: 4602–4608.”
+“Late below 4592.”
+“Invalid above 4628.”
+“TP1 near 4588.”
+“Main TP near 4580.”
+“Break-even after cost near 4598.”
+
+Every Ruby trade/scanner explanation should include actionable levels when data exists.
+
+If exact levels are not available, Ruby should say:
+“Ruby does not have enough clean level data yet. This remains a watch setup.”
+
+====================================================
+PART 11 — CONFIDENCE AND EDGE BREAKDOWN
+====================================================
+
+Do not use one vague confidence score only.
+
+Show separate scores:
+
+- Direction Confidence
+- Entry Quality
+- Execution Quality
+- Risk Quality
+- News Safety
+- Timing Quality
+- Trade Survivability
+- Overall Trade Quality
+- Ruby Edge Score
+
+Confidence = how likely the direction is right.
+Edge = whether the trade is worth taking now.
+
+Example:
+Direction Confidence: 84/100
+Ruby Edge Score: 56/100
+Reason: direction is bearish, but entry is late and spread is elevated.
+
+Evidence breakdown:
+Supporting:
+- Structure broke bearish
+- Resistance rejected twice
+- Momentum expanded down
+- Entry zone nearby
+
+Concerns:
+- Spread slightly elevated
+- News in 12 minutes
+- Move already 45% complete
+- Execution cost reducing reward
+
+Ruby should downgrade a trade when:
+- execution quality is poor
+- entry is late
+- news risk is high
+- spread/slippage destroys reward-to-risk
+- data is stale
+
+====================================================
+PART 12 — LATE SIGNAL PREVENTION
+====================================================
+
+Ruby must detect and prevent late signals.
+
+Calculate:
+- distance from ideal entry zone
+- percent of expected move already completed
+- remaining reward vs risk
+- spread cost vs remaining target
+- current candle extension
+- signal age
+- candle count since setup formed
+- volatility spike already played out
+- distance to TP
+- distance to invalidation
+- entry window expiration
+- data freshness
+
+If price already moved too far:
+- mark Late — Do Not Chase
+- do not show as Entry Window Open
+- do not present as clean trade
+- offer replacement plan
+
+Example:
+“Ruby sees the sell move, but the best entry has already passed. Price has already traveled 70% toward the target zone. Do not chase. Wait for pullback to 4602–4608 or find a fresher setup.”
+
+Add setup replacement:
+If selected market is late, show:
+- next valid pullback zone
+- new watch zone
+- best alternative market from Broad Scan if available
+
+====================================================
+PART 13 — SIGNAL FRESHNESS AND DECAY
+====================================================
+
+Every signal should have:
+- createdAt
+- updatedAt
+- signalAgeSeconds
+- marketDataTimestamp
+- candleTimestamp
+- explanationTimestamp
+- validForSeconds
+- expiresAt
+- stage
+- confidenceAtCreation
+- currentConfidence
+- decay reason if confidence falls
+
+Scalp signals should decay quickly.
+Swing/intraday signals decay slower.
+
+Example:
+“Fresh — updated 6 seconds ago.”
+“Valid for: 2m 14s.”
+“Confidence fading from 82 to 74 because price has not confirmed and spread widened.”
+“Expired — needs fresh scan.”
+
+If stale:
+Do not allow Build Trade from stale signal.
+Show:
+“Signal expired. Ruby needs a fresh scan before trade review.”
+
+====================================================
+PART 14 — MARKET REGIME DETECTOR
+====================================================
+
+Before Ruby recommends a trade, identify market regime:
+
+- Clean trend
+- Choppy range
+- Breakout environment
+- Reversal environment
+- Post-news volatility
+- Low-liquidity drift
+- High-spread danger
+- Fakeout risk
+- No clear regime
+
+Ruby should explain:
+“This is not a clean trend. This is a choppy range, so Ruby needs confirmation before calling a breakout.”
+
+Regime should affect scoring:
+- choppy range lowers breakout confidence
+- clean trend increases continuation confidence
+- post-news volatility increases execution risk
+- low liquidity lowers scalp suitability
+- high spread lowers execution quality
+
+====================================================
+PART 15 — FAKEOUT / LIQUIDITY SWEEP DETECTION
+====================================================
+
+Add detection for:
+- bull trap
+- bear trap
+- liquidity sweep
+- failed breakout
+- failed retest
+- stop-hunt behavior
+- wick rejection
+- fast reclaim of broken level
+- breakout with weak follow-through
+
+User-facing examples:
+“Price swept the previous high and failed to hold. Ruby is watching for possible reversal sell confirmation.”
+“This breakout may be a fakeout because price broke above resistance but quickly returned inside the range.”
+
+Chart should tag:
+- previous high swept
+- previous low swept
+- failed breakout
+- rejection confirmed
+- confirmation pending
+
+====================================================
+PART 16 — MARKET MEMORY BY SYMBOL
+====================================================
+
+Ruby should remember recent reads per symbol.
+
+Store:
+- last market bias
+- last stage
+- last watch zone
+- last entry zone
+- last invalidation zone
+- last reason chain
+- last confidence
+- last decision
+- last update time
+- whether signal was late/invalid/expired
+- what changed since last read
+
+User-facing:
+“Earlier, Ruby marked this sell as forming. Price has now reached the watch zone and rejected once. The setup is closer to ready but needs confirmation.”
+
+If Ruby changes bias:
+“Ruby changed from bullish to neutral because price failed to hold the breakout zone and returned into the range.”
+
+====================================================
+PART 17 — WHAT CHANGED EXPLANATIONS
+====================================================
+
+Whenever Ruby changes:
+- bullish to bearish
+- bearish to bullish
+- ready to late
+- forming to invalid
+- watch to entry
+- high confidence to low confidence
+
+Ruby must explain what changed.
+
+Examples:
+“Ruby changed from bearish to neutral because sellers failed to continue below support and price reclaimed the broken level.”
+“Ruby changed from ready to late because price moved too far from the entry zone and remaining reward collapsed.”
+
+Store these in the signal reason chain.
+
+====================================================
+PART 18 — SYMBOL-SPECIFIC INTELLIGENCE
+====================================================
+
+Ruby should use different logic/playbooks by symbol class.
+
+Gold/Metals:
+- dollar strength/weakness
+- yields/rates
+- inflation data
+- Fed comments
+- safe-haven demand
+- geopolitical risk
+- support/resistance
+- session volatility
+- spread/slippage
+
+Forex:
+- currency strength
+- rate expectations
+- central bank news
+- inflation/jobs data
+- session behavior
+- USD correlation
+- pair-specific news
+
+Indices:
+- risk sentiment
+- Fed expectations
+- bond yields
+- market open/close
+- earnings/news
+- volatility spikes
+- macro data
+
+Crypto:
+- risk sentiment
+- liquidity
+- major headlines
+- regulatory news
+- weekend liquidity
+- volatility/funding/sentiment if available
+
+Synthetic/Volatility:
+- structure
+- candle speed
+- volatility expansion
+- support/resistance
+- momentum
+- no direct economic driver
+- broker/feed/session volatility if available
+
+Ruby should say:
+“News-driven”
+“Technical-driven”
+“Mixed”
+“No confirmed news driver”
+
+====================================================
+PART 19 — SESSION INTELLIGENCE
+====================================================
+
+Ruby should understand sessions:
+
+- Asia session
+- London open
+- New York open
+- London/New York overlap
+- market close
+- low-liquidity hours
+- weekend/holiday conditions
+
+Session should influence:
+- signal confidence
+- slippage risk
+- spread risk
+- volatility expectation
+- scalp suitability
+- news/event sensitivity
+
+Examples:
+“This setup is forming during New York open, so volatility and slippage risk are higher.”
+“Liquidity is thin right now, so this scalp may be less reliable.”
+
+====================================================
+PART 20 — EXECUTION COST PREVIEW
+====================================================
+
+Ruby must calculate execution risk by lot size and order type.
+
+Show inside scanner, Smart Chart, and trade modal preview:
+
+- selected lot size
+- symbol
+- direction
+- current bid/ask
+- spread
+- spread cost in account currency
+- expected slippage
+- expected fill range
+- best reasonable fill
+- likely fill
+- worst normal fill
+- estimated starting drawdown after entry
+- break-even distance
+- TP estimate after execution cost
+- SL estimate after execution cost
+- reward-to-risk after execution cost
+- execution quality score
+
+Use:
+- symbol specs
+- lot size
+- tick value
+- tick size
+- point
+- digits
+- contract size
+- spread
+- bid/ask
+- recent volatility
+- candle speed
+- market session
+- news risk
+- broker execution history
+- previous slippage
+- order type
+
+Example:
+“Lot size: 0.05.
+Expected fill range: 2345.25–2345.55.
+Estimated slippage: $3–$9.
+Spread cost: ~$2.50.
+Estimated starting drawdown: -$5.50 to -$11.50.
+Break-even distance: 4.2 points.
+TP after cost: +$42.
+SL after cost: -$18.”
+
+If exact tick value is unavailable:
+- show estimate only
+- label “estimated”
+- do not invent precision
+- use symbol specs if possible
+- if insufficient data, show clean warning:
+“Ruby needs live symbol specs before estimating execution cost.”
+
+====================================================
+PART 21 — ORDER TYPE COMPARISON
+====================================================
+
+Ruby should compare entry methods:
+
+1. Market Order
+- fastest
+- highest slippage risk
+- best only if entry window is fresh
+
+2. Limit Order
+- better price control
+- may not fill
+- best if price is extended or retest expected
+
+3. Stop Order
+- confirms breakout
+- can slip if price jumps
+- best when waiting for breakout confirmation
+
+4. Wait / Avoid
+- when execution cost is too high or signal is late
+
+Example:
+“Best entry type: Sell Limit near 4608. Market sell is late, but retest entry improves reward-to-risk.”
+
+Trade modal should show Ruby’s recommended order type and why.
+
+====================================================
+PART 22 — TRADE SURVIVABILITY ENGINE
+====================================================
+
+Ruby should estimate whether a trade can survive normal market noise.
+
+Calculate:
+- expected starting drawdown
+- normal pullback range
+- structure invalidation loss
+- stop-loss risk
+- candle volatility
+- spread/slippage risk
+- account impact
+- free margin impact
+- open exposure impact
+- correlation exposure
+
+Show:
+“Trade Survivability: 72/100.
+Expected starting drawdown: -$6 to -$12.
+Normal pullback: -$10 to -$18.
+Structure invalidation: -$31.
+Account impact: Moderate.”
+
+Ruby should explain:
+“This trade may go negative first. That is normal unless price breaks the invalidation zone.”
+
+====================================================
+PART 23 — PAIN-BEFORE-PROFIT ESTIMATE
+====================================================
+
+Add pain-before-profit estimate to scanner/trade preview.
+
+This is not SL risk.
+This estimates normal temporary drawdown if the trade is still valid.
+
+Show:
+- expected normal negative movement
+- invalidation loss
+- approximate time to break-even if available
+- how much movement is needed to overcome spread/slippage
+
+Example:
+“Expected pain before profit: -$8 to -$18.
+Invalidation risk: -$31.
+Price needs about 4.2 points in your favor to overcome entry cost.”
+
+====================================================
+PART 24 — ACCOUNT IMPACT PREVIEW
+====================================================
+
+Before entry, Ruby should calculate user account impact:
+
+- margin use
+- free margin impact
+- estimated starting drawdown
+- SL risk
+- TP potential
+- total open exposure
+- correlated exposure
+- if two similar trades lose
+- if multiple positions are stacked
+- risk compared to user balance/equity
+
+Example:
+“If you open this 0.05 lot trade, estimated margin use is $38, likely starting drawdown is -$8 to -$14, and SL risk is -$28.”
+
+If account cannot handle it:
+“Ruby recommends reducing lot size because the estimated drawdown is too large for your available balance.”
+
+====================================================
+PART 25 — MULTI-ENTRY EXPOSURE CALCULATOR
+====================================================
+
+For multi-trade scalping, Ruby must calculate stacked exposure.
+
+Show:
+- number of entries
+- lot per entry
+- total lot
+- combined margin
+- combined starting drawdown
+- combined SL risk
+- combined TP
+- whether stacking is allowed/recommended
+- conditions for adding next entry
+
+Example:
+“If you open 3 positions at 0.03 lot:
+Total lot: 0.09.
+Estimated combined starting drawdown: -$18 to -$36.
+Combined SL risk: -$84.
+Margin impact: $114.”
+
+Ruby rule:
+Do not recommend adding another position unless:
+- first position moves into profit
+- setup strengthens
+- spread remains acceptable
+- total risk stays within limit
+
+====================================================
+PART 26 — SCALING PLAN
+====================================================
+
+Ruby should suggest planned entries instead of all-in entries.
+
+Example:
+“Entry 1: 0.02 lot at current zone.
+Entry 2: 0.02 lot only after confirmation.
+Entry 3: 0.01 lot only after retest.”
+
+Show:
+- entry sequence
+- lot per step
+- trigger condition
+- risk after each step
+- total exposure if all entries activate
+
+====================================================
+PART 27 — BROKER CONDITION FILTER
+====================================================
+
+Before any signal becomes actionable, Ruby must check:
+
+- bridge fresh
+- broker connected
+- symbol tradeable
+- spread normal
+- execution speed acceptable
+- recent slippage acceptable
+- margin enough
+- latest symbol specs available
+- trade mode open
+- no critical discrepancy
+- no kill switch if applicable
+
+If broker/execution conditions are poor:
+“Ruby sees the setup, but execution conditions are poor. Wait.”
+
+Do not allow Build Trade from a signal if critical execution preconditions fail.
+
+====================================================
+PART 28 — LIVE TRADE HEALTH MONITOR
+====================================================
+
+After user enters a trade, Ruby should continue monitoring.
+
+Trade health states:
+- Healthy
+- Still Valid but Slow
+- Weakening
+- Danger
+- Invalidated
+- Recovery Possible
+- Take Partial
+- Move Stop to Break-Even
+- Close Warning
+- TP Progress
+- Expired Scalp
+
+Monitor:
+- current price vs entry
+- TP progress
+- SL distance
+- structure still valid
+- momentum after entry
+- spread changes
+- slippage impact
+- news approaching
+- drawdown vs expected pain-before-profit
+- open exposure/correlation
+- time in trade vs scalp/swing type
+
+Examples:
+“Trade is healthy. Price rejected the entry zone and is moving toward TP1.”
+“Trade is weakening. Price failed to move away from entry and momentum is fading.”
+“Price reached 70% of TP but momentum is slowing. Consider partial profit or watch for rejection.”
+
+====================================================
+PART 29 — TP PROGRESS TRACKING
+====================================================
+
+For open trades show:
+- TP progress %
+- distance to TP
+- distance to SL
+- current P/L
+- expected vs actual movement
+- trade health
+- time in trade
+- momentum status
+
+Example:
+“TP progress: 42%.
+Distance to TP: 18 points.
+Distance to SL: 31 points.
+Trade health: Good.”
+
+If nearing TP with slowing momentum:
+“TP1 is close, but momentum is fading. Consider partial profit or protect gains.”
+
+====================================================
+PART 30 — BREAK-EVEN MANAGER
+====================================================
+
+Ruby should suggest break-even only when structure supports it.
+
+Do not randomly move SL.
+
+Conditions:
+- trade moved far enough in favor
+- structure confirms continuation
+- price cleared spread/slippage cost
+- moving SL will not choke the trade too early
+- momentum is not too weak
+- news risk does not make the adjustment dangerous
+
+Example:
+“Price moved far enough in your favor to reduce risk. Ruby recommends considering break-even only if price holds above this zone.”
+
+====================================================
+PART 31 — PARTIAL CLOSE INTELLIGENCE
+====================================================
+
+Ruby should guide partial exits:
+
+- take partial at TP1
+- hold runner to TP2
+- close if momentum fades
+- protect profit if news approaching
+- close if setup invalidates
+- avoid holding scalp like swing
+
+Example:
+“TP1 reached. Taking partial profit would lock gains while leaving room for continuation.”
+
+No forced close unless existing permissions allow. This is guidance unless trade management automation already exists and is enabled.
+
+====================================================
+PART 32 — OPEN TRADE CONFLICT DETECTION
+====================================================
+
+If user has open exposure, Ruby must compare new signals against it.
+
+Examples:
+“You already have EURUSD Buy exposure. Ruby is now seeing bearish pressure. This does not mean open a sell immediately, but your current buy is weakening.”
+
+“New Gold Buy signal conflicts with your existing Gold Sell. Review exposure before entering.”
+
+Detect:
+- opposite signal on same symbol
+- correlated exposure conflict
+- stacked risk
+- duplicate position risk
+- overexposure to same currency/asset
+
+====================================================
+PART 33 — CORRELATION AND PORTFOLIO RISK
+====================================================
+
+Ruby should warn when trades are connected.
+
+Examples:
+“Gold Buy, EURUSD Buy, and USD weakness trades are connected. If the dollar strengthens, all may move against you together.”
+
+Track relationships:
+- Gold vs USD
+- EURUSD vs USD
+- GBPUSD vs USD
+- US30 vs yields/risk sentiment
+- GBPJPY vs risk appetite
+- crypto vs risk-on/risk-off
+- same asset class exposure
+- same currency exposure
+
+Show:
+- correlated exposure count
+- combined risk if correlated move happens
+- hedge/conflict warning if applicable
+
+====================================================
+PART 34 — OVERTRADING AND USER BEHAVIOR PROTECTION
+====================================================
+
+Ruby should detect risky user behavior:
+
+- too many trades in short time
+- increasing lot after loss
+- entering late repeatedly
+- ignoring do-not-chase warnings
+- stacking correlated trades
+- revenge trading
+- trading during news after warnings
+- holding scalps too long
+- closing winners too early repeatedly
+- moving stops irrationally if tracked
+
+Ruby should warn:
+“You are increasing risk after a loss. Ruby recommends waiting for a cleaner setup.”
+“You entered 3 late setups today. Wait for confirmed entry zones before another scalp.”
+
+This should be guidance, not an unexpected hard block unless admin/user risk settings require it.
+
+====================================================
+PART 35 — USER INTENT / TRADE STYLE MATCHING
+====================================================
+
+Ruby should match trade setup to user intent:
+
+Trade types:
+- scalp
+- intraday
+- swing
+- news reaction
+- reversal
+- momentum
+- retest
+- breakout
+- range rejection
+
+If user wants a scalp:
+“This is not a clean scalp. It is more of an intraday setup.”
+
+If user wants fast profit:
+“This setup may take longer than your selected time window.”
+
+If selected lot/target does not fit market:
+“Your target is too large for the clean scalp currently available. Ruby recommends lower target or wait.”
+
+====================================================
+PART 36 — SETUP ALTERNATIVES
+====================================================
+
+Ruby should offer alternatives when a setup is not perfect.
+
+Examples:
+“Aggressive entry: now, higher risk.”
+“Better entry: retest zone, lower risk.”
+“Safest entry: confirmation candle, may miss the move.”
+
+Show:
+- alternative entry
+- risk difference
+- reward difference
+- slippage difference
+- likelihood of fill
+- best action
+
+This helps users choose style without Ruby being vague.
+
+====================================================
+PART 37 — BEST MARKET VS SELECTED MARKET
+====================================================
+
+Ruby should compare selected market to better opportunities.
+
+Example:
+“V75 has a sell forming, but Gold currently has the cleaner entry.
+V75: direction strong, entry late.
+Gold: direction strong, entry fresh.
+Best opportunity: Gold Sell.”
+
+Broad Scan should identify:
+- best setup
+- safest setup
+- fastest setup
+- best scalp
+- best wait setup
+- too-late setups
+- avoid list
+
+====================================================
+PART 38 — BROAD SCAN OPPORTUNITY MAP
+====================================================
+
+Broad Scan should categorize markets:
+
+- Ready Now
+- Forming Soon
+- Watch After News
+- Too Late
+- Avoid
+- No Clean Setup
+- Best Scalp
+- Best Retest
+- Best Momentum
+- Best Reversal
+
+Each result should show:
+- market
+- direction
+- stage
+- edge score
+- entry quality
+- news risk
+- execution quality
+- reason
+- best action
+
+Do not show only a flat list.
+
+====================================================
+PART 39 — NO-TRADE INTELLIGENCE
+====================================================
+
+Ruby should get credit for avoiding bad trades.
+
+Show:
+“No-trade confidence: 88/100.
+Reason: mixed structure, wide spread, news risk, and poor reward-to-risk.”
+
+Ruby should explain skipped trades:
+“Ruby skipped this buy because price was bullish, but entry was late and spread was too wide.”
+
+Admin should track avoided bad trades where possible.
+
+====================================================
+PART 40 — OUTCOME LEARNING ENGINE
+====================================================
+
+Every signal should be tracked after it appears.
+
+Store:
+- signal id
+- symbol
+- direction
+- market bias
+- stage at signal
+- entry zone
+- TP
+- SL
+- invalidation
+- createdAt
+- updatedAt
+- signal age
+- whether it was early/on-time/late
+- news nearby
+- spread at signal
+- slippage estimate
+- actual slippage if trade taken
+- expected starting drawdown
+- actual starting drawdown if trade taken
+- max favorable move
+- max adverse move
+- TP hit
+- SL hit
+- expired
+- invalidated
+- user entered or ignored
+- user entered late or on-time
+- Ruby explanation used
+- final outcome
+- what Ruby learned
+
+Ruby should learn from:
+- late signals
+- missed opportunities
+- bad slippage
+- news failures
+- symbol-specific weaknesses
+- best sessions
+- best symbols
+- avoided bad trades
+- explanation accuracy
+
+====================================================
+PART 41 — POST-TRADE RUBY SELF-REVIEW
+====================================================
+
+After trade closes, Ruby should summarize:
+
+- what Ruby got right
+- what Ruby missed
+- whether entry was early/on-time/late
+- whether slippage affected the result
+- whether spread affected result
+- whether news affected result
+- whether trade followed expected path
+- whether user followed or ignored warnings
+- how Ruby will adjust future signals
+
+Example:
+“Ruby got the bearish direction correct, but the entry was slightly late and slippage reduced the reward. Next time Ruby should mark this candle extension as late sooner.”
+
+This should be visible to user in simplified form and to admin in detailed form.
+
+====================================================
+PART 42 — ADMIN RUBY QUALITY DASHBOARD
+====================================================
+
+Create or upgrade admin dashboard for Ruby signal quality.
+
+Admin should see:
+- total signals
+- win rate
+- TP hit rate
+- SL hit rate
+- late signal rate
+- early/on-time/late breakdown
+- average timing quality
+- average slippage
+- average starting drawdown
+- average max favorable move
+- average max adverse move
+- best symbols
+- worst symbols
+- best sessions
+- worst sessions
+- news-related failures
+- execution-cost failures
+- explanation accuracy
+- user ignored warnings
+- avoided bad trades
+- missed opportunities
+- no-trade accuracy
+- signal confidence vs outcome
+- edge score vs outcome
+- Ruby improvements/recommendations
+
+Filters:
+- symbol
+- asset class
+- session
+- trade type
+- signal stage
+- news/no-news
+- scalp/intraday/swing
+- user
+- date range
+
+====================================================
+PART 43 — MISSED OPPORTUNITY REPLAY
+====================================================
+
+Admin should be able to replay a missed move.
+
+Replay should show:
+- 10 minutes before move
+- 5 minutes before move
+- at ideal entry
+- when Ruby alerted
+- after move
+- at TP/SL zone
+
+Show:
+- what Ruby saw
+- why Ruby alerted or did not alert
+- whether data was stale
+- whether news caused move
+- whether spread/slippage filter blocked it
+- what should change next time
+
+This helps tune Ruby and reduce late signals.
+
+====================================================
+PART 44 — ADMIN TUNING CONTROLS
+====================================================
+
+Admin should be able to adjust Ruby without code changes.
+
+Controls:
+- late threshold
+- confidence threshold
+- minimum edge score
+- news lockout window
+- spread limit
+- slippage tolerance
+- minimum reward-to-risk
+- max scalp age
+- candle extension threshold
+- signal decay speed
+- session behavior weights
+- symbol-specific rules
+- fakeout sensitivity
+- liquidity sweep sensitivity
+- minimum evidence count
+- no-trade threshold
+- execution quality threshold
+- auto-expiry by trade type
+- post-news wait period
+
+Store changes in audit log.
+
+====================================================
+PART 45 — MINIMUM EVIDENCE RULE
+====================================================
+
+Ruby should not give actionable signals unless enough evidence exists.
+
+Example:
+At least 3 of 5 must align:
+- structure
+- momentum
+- entry zone
+- risk/reward
+- execution quality
+
+If not enough:
+“Ruby does not have enough evidence yet. Setup remains on watch.”
+
+Allow admin tuning by trade type.
+
+====================================================
+PART 46 — CONFIDENCE CONFLICT / DISPUTE LOGIC
+====================================================
+
+If evidence conflicts, Ruby should say so.
+
+Example:
+“Structure is bearish, but momentum is slowing and price is close to support. Ruby is not calling a clean sell yet.”
+
+Show:
+- what supports trade
+- what argues against trade
+- final decision
+
+This prevents forced signals.
+
+====================================================
+PART 47 — ALERT PRIORITY SYSTEM
+====================================================
+
+Ruby should not spam users.
+
+Alert priorities:
+- Critical: invalidation, news now, spread danger, live trade danger, severe conflict
+- High: entry window open, strong setup, trade health warning
+- Medium: setup forming, retest approaching, news in 15–30 minutes
+- Low: general context
+
+Only Critical and High should pop up by default.
+Medium and Low stay in chart/scanner cards unless user enables more notifications.
+
+User settings:
+- all alerts
+- only high/critical
+- only trade-related
+- mute news alerts
+- mute low-priority context
+
+====================================================
+PART 48 — RUBY EXPLANATION MODES
+====================================================
+
+Add user-facing explanation modes:
+
+1. Simple Mode
+- plain English
+- no heavy technical terms
+- clear action
+
+2. Advanced Mode
+- structure
+- momentum
+- zones
+- reward-to-risk
+- slippage
+- news
+- invalidation
+- execution quality
+
+Default:
+Use clear/medium detail. Do not be too vague.
+
+No matter the mode, every signal must include:
+- why direction
+- why timing
+- what invalidates
+- best action
+
+====================================================
+PART 49 — INVESTOR REPORTING CONNECTION
+====================================================
+
+Prepare Ruby’s market intelligence to feed investor weekly explanations later.
+
+The same market/news/trade attribution used by Ruby should be usable to explain investor weekly gains/losses.
+
+Example:
+“Your account moved this week because Gold and EURUSD exposure reacted to dollar strength after inflation data.”
+
+Do not expose trader/scanner internals to investors.
+Just structure the data so investor reporting can use:
+- strategy pool contributors
+- market contributors
+- economic/news drivers
+- realized/unrealized P/L
+- drawdown reason
+
+====================================================
+PART 50 — UI REQUIREMENTS
+====================================================
+
+Scanner UI should show:
+- Ruby Market Read card
+- lifecycle stage
+- bias
+- trade quality
+- Ruby Edge Score
+- detailed explanation
+- evidence breakdown
+- news/economic impact
+- execution cost preview
+- slippage/drawdown estimate
+- best action
+- freshness timer
+- late/do-not-chase warning
+- watch/build/ask Ruby actions
+
+Smart Chart UI should show:
+- Ruby layers
+- market impact radar
+- event markers
+- zones/levels
+- execution cost overlay
+- trade health overlay
+- tap-to-expand Ruby explanation
+- alert priority behavior
+
+Trade modal preview should show:
+- selected symbol
+- direction
+- order type recommendation
+- lot size
+- expected fill range
+- spread cost
+- slippage estimate
+- starting drawdown estimate
+- break-even distance
+- TP/SL after cost
+- survivability score
+- account impact
+- confirmation/invalidation levels
+
+Open trades UI should show:
+- trade health
+- TP progress
+- SL distance
+- break-even suggestion if valid
+- partial close guidance if valid
+- weakening/danger alerts
+
+Mobile:
+- compact cards
+- collapsible sections
+- no horizontal overflow
+- no clutter
+- chart overlays toggleable
+- important action visible without scrolling forever
+
+====================================================
+PART 51 — PERFORMANCE REQUIREMENTS
+====================================================
+
+Ruby must be fast.
+
+Targets:
+- selected-symbol scan update under 700ms after fresh data is available
+- Ruby explanation starts under 1.5 seconds when data is available
+- Focus Scan signal refresh under 1 second after scanner data update
+- Smart Chart overlay update under 1 second after signal update
+- trade preview execution cost under 700ms if symbol specs/prices available
+- no full-page reloads
+- no heavy loops every render
+- debounce search/input
+- memoize expensive calculations
+- cache safe symbol specs/news context
+- do not use stale data as fresh signal
+
+Log timings:
+- data fetch
+- signal evaluation
+- explanation generation
+- chart overlay render
+- execution cost calculation
+- Broad Scan ranking
+- Smart Chart event render
+
+====================================================
+PART 52 — DATA SHAPES / SERVICE OUTPUTS
+====================================================
+
+Create normalized result objects for Ruby Market Edge signals.
+
+Suggested object:
+
+{
+  signalId,
+  symbol,
+  displayName,
+  assetClass,
+  timeframe,
+  marketBias,
+  tradeType,
+  lifecycleStage,
+  marketRegime,
+  direction,
+  entryZone,
+  watchZone,
+  retestZone,
+  doNotChaseZone,
+  invalidationZone,
+  takeProfitZones,
+  stopLoss,
+  currentPrice,
+  bid,
+  ask,
+  spread,
+  directionConfidence,
+  entryQuality,
+  executionQuality,
+  riskQuality,
+  newsSafety,
+  timingQuality,
+  survivabilityScore,
+  edgeScore,
+  overallTradeQuality,
+  evidenceSupporting,
+  evidenceAgainst,
+  reasonChain,
+  whatHappened,
+  newsImpact,
+  economicImpact,
+  confirmationNeeded,
+  invalidationReason,
+  bestAction,
+  freshness,
+  createdAt,
+  updatedAt,
+  expiresAt,
+  validForSeconds,
+  lateReason,
+  executionPreview,
+  accountImpactPreview,
+  chartLayers,
+  adminDebugAdminOnly
+}
+
+Execution preview object:
+
+{
+  lotSize,
+  orderType,
+  currentBid,
+  currentAsk,
+  expectedFillBest,
+  expectedFillLikely,
+  expectedFillWorstNormal,
+  spreadCost,
+  estimatedSlippageMin,
+  estimatedSlippageMax,
+  estimatedStartingDrawdownMin,
+  estimatedStartingDrawdownMax,
+  breakEvenDistance,
+  tpAfterCost,
+  slAfterCost,
+  rewardToRiskAfterCost,
+  executionRiskLabel,
+  recommendation
+}
+
+====================================================
+PART 53 — TESTING REQUIREMENTS
+====================================================
+
+Run full QA before passing.
+
+Backend tests:
+1. Lifecycle
+- watching
+- trend forming
+- setup forming
+- entry window
+- late
+- invalid
+- expired
+
+2. Late detection
+- move already 70% complete = late
+- price far from ideal entry = late
+- reward-to-risk collapsed = late
+- signal expired = expired
+- stale data blocks signal
+
+3. Explanation quality
+- bearish explanation includes reason chain
+- bullish explanation includes reason chain
+- mixed market does not force a signal
+- no-news synthetic explanation works
+- news-driven Gold/Forex explanation works when data exists
+- no internal wording exposed
+
+4. News overlay
+- event appears before event time
+- relevant symbols only
+- high-impact event changes signal behavior
+- post-news state works
+- unrelated news does not spam chart
+
+5. Execution cost
+- spread cost calculated
+- slippage estimate changes with lot size
+- break-even distance calculated
+- starting drawdown estimate shown
+- market/limit/stop order comparison works
+- missing symbol specs handled safely
+
+6. Trade survivability
+- normal pullback estimate
+- structure invalidation
+- account impact
+- low survivability downgrades trade
+
+7. Open trade health
+- healthy
+- weakening
+- danger
+- invalidated
+- TP progress
+- break-even suggestion
+- partial close guidance
+
+8. Outcome learning
+- signal result stored
+- late signal marked
+- missed opportunity marked
+- actual slippage stored when available
+- TP/SL outcome stored
+- Ruby self-review created
+
+9. Permissions
+- admin can view quality dashboard
+- regular user cannot view admin tuning/debug
+- users see only user-facing Ruby explanation
+- no raw backend logs in UI
+
+Frontend tests:
+- scanner card shows detailed Ruby Market Read
+- chart overlays display levels
+- news event marker appears on chart
+- execution cost preview appears
+- late/do-not-chase warning appears
+- freshness timer appears
+- best action appears
+- chart layer toggles work
+- mobile layout is clean
+- no scanner/trade modal regression
+
+Regression tests:
+- scanner still works
+- Ruby chat still works
+- manual voice recording still works
+- smart chart still loads
+- trade modal still works
+- live bridge status still works
+- retcode display still works
+- open positions visibility still works
+- investor portal not broken
+- admin dashboard not broken
+- no live execution path changed
+
+====================================================
+PART 54 — FINAL DELIVERY PROOF REQUIRED
+====================================================
+
+Report back with:
+
+1. Files changed
+2. What existing scanner/Ruby/chart systems were reused
+3. Early Trend Radar proof
+4. Lifecycle stage proof
+5. Late/do-not-chase detection proof
+6. Detailed Ruby explanation proof
+7. News/economic chart overlay proof
+8. Smart Chart Ruby layers proof
+9. Execution cost/slippage proof
+10. Lot-size slippage impact proof
+11. Starting drawdown estimate proof
+12. Trade survivability proof
+13. Account impact preview proof
+14. Order type recommendation proof
+15. Open trade health monitor proof if completed
+16. Outcome learning proof if completed
+17. Admin Ruby Quality Dashboard proof if completed
+18. Mobile UI proof
+19. Performance timing results
+20. Confirmation no live execution path changed
+21. Confirmation no Paper Trading/simulator/mock/fake fallback added
+22. Confirmation no internal backend wording exposed to users
+23. Known limitations or deferred items
+
+Final rule:
+Do not report complete if Ruby is still vague.
+
+Every scanner analysis should answer:
+- What is happening?
+- Why is it happening?
+- Why this market?
+- Why this direction?
+- Why now?
+- Is it early, ready, or late?
+- What is the entry zone?
+- What is the expected fill/slippage?
+- What is the risk?
+- What confirms it?
+- What invalidates it?
+- What should the user do next?
+- What happens after entry?
+
+Ruby should not only predict direction.
+Ruby must judge whether the trade is still worth taking right now.

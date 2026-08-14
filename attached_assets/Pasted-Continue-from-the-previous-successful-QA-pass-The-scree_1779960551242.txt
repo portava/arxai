@@ -1,0 +1,246 @@
+Continue from the previous successful QA pass. The screenshot confirms QA is mostly green, but Paper Trading removal is NOT complete because several legacy emitters and mounts were intentionally deferred.
+
+Objective:
+Finish the next cleanup phase so the app has only two production/user-facing trading modes:
+
+1. DEMO
+2. LIVE
+
+Paper Trading must no longer exist as a user-facing product mode, backend active mode, account mode, permission mode, scanner mode, Ruby mode, allocation mode, OpenAPI active enum, dashboard mode, trade-history source, AI learning source, performance source, or hidden backend fallback.
+
+Important:
+Do NOT weaken live-trade safety gates, broker execution guards, admin approval gates, kill switches, stop-loss rules, permission checks, or live execution validation. If a safety feature currently uses “paper” wording internally, rebuild/rename it into DEMO/LIVE-safe terminology instead of deleting the protection.
+
+Do not ignore anything because it may break the app. If removing a Paper reference breaks something, find the correct replacement architecture, update the tests, and retest until it works.
+
+Use the previous inventory:
+.local/paper-inventory.md
+
+Phase 9A — Remove / Replace Deferred Paper Permission Seed Keys
+1. Search the full repo for all remaining permission seed keys or constants containing:
+   - paper
+   - PAPER
+   - Paper
+   - PAPER_TRADING
+   - PAPER_OPEN
+   - PAPER_CLOSED
+   - paper route
+   - paper mode
+   - paper account
+   - paper aggregation
+   - paper fallback
+
+2. For permission seed keys:
+   - If the key represents simulated trading access, replace it with DEMO equivalent naming.
+   - If the key controls real live execution safety, rename it to LIVE-safe terminology.
+   - Do not remove any required safety/permission gate.
+   - Do not leave deprecated Paper aliases active unless they are migration-only and completely inaccessible from runtime.
+
+3. Add a compatibility layer only if needed for old database rows, but it must normalize legacy paper values into DEMO at the boundary.
+   Example rule:
+   - incoming legacy “paper” → normalized “DEMO”
+   - runtime mode can only be DEMO or LIVE
+   - outgoing API/UI response must never expose paper
+
+Phase 9B — Remove Paper Route Mounts
+1. Find all route mounts, routers, API handlers, frontend clients, and server endpoints containing paper terminology.
+2. Replace active paper routes with DEMO/LIVE routes.
+3. If old paper routes must remain temporarily for compatibility, they must:
+   - not be advertised in OpenAPI
+   - not be used by the frontend
+   - not appear in Ruby
+   - not appear in the dashboard
+   - return a deprecation response or internally normalize to DEMO
+   - be covered by tests proving no user-facing paper wording leaks
+
+Phase 9C — Fix Read-Side Legacy Emitters
+Update these deferred areas specifically:
+
+1. `getUserModeScope.primaryDataDomain`
+   - Remove “paper” as an output possibility.
+   - Normalize any legacy paper input into DEMO.
+   - Ensure only DEMO or LIVE can be returned to UI, Ruby, scanner, dashboard, account shell, allocation shell, trading sessions, and analytics.
+
+2. `meAccountShell`
+   - Remove paper aggregations from active user account data.
+   - Replace with DEMO account metrics if the data is simulated/demo.
+   - Replace with LIVE account metrics if the data is broker/live-backed.
+   - Do not blend demo and live performance.
+   - Clearly separate:
+     - demoBalance
+     - liveBalance
+     - demoEquity
+     - liveEquity
+     - demoPnL
+     - livePnL
+   - Never label anything as paper.
+
+3. OpenAPI `PAPER_OPEN / PAPER_CLOSED`
+   - Remove or replace these enum values from active OpenAPI contracts.
+   - Use DEMO_OPEN / DEMO_CLOSED if the state represents demo trading.
+   - Use LIVE_OPEN / LIVE_CLOSED if the state represents live trading.
+   - Regenerate OpenAPI schemas if needed.
+   - Update frontend types, API clients, tests, and docs.
+
+4. Autopilot `PAPER_TRADING`
+   - Remove PAPER_TRADING as an active autopilot mode.
+   - Replace with DEMO_AUTOPILOT or LIVE_AUTOPILOT depending on behavior.
+   - Live autopilot must still require the existing live safety, approval, kill-switch, and permission protections.
+   - Do not allow autopilot to silently fall back to simulated paper mode.
+
+Phase 9D — Knowledge Files / Ruby / Walkthrough Cleanup
+1. Search and update:
+   - `arxAppKnowledge`
+   - walkthrough files
+   - `actionRouter`
+   - `_qa-test`
+   - assistant prompt files
+   - Ruby system knowledge
+   - onboarding/help content
+   - scanner help copy
+   - dashboard labels
+   - admin labels
+   - logs visible to users
+   - error strings visible to users
+
+2. Ruby must never tell users they are in “paper trading.”
+3. Ruby may explain only:
+   - DEMO = broker/demo or simulated-safe environment
+   - LIVE = real broker/live execution environment
+4. Ruby should not expose backend enum names, internal function names, route names, database field names, or implementation details to regular users.
+5. Admin-only diagnostics may show technical identifiers only inside admin/dev panels, never in normal user UI.
+
+Phase 9E — Database / Legacy Data Boundary
+Do not perform unsafe destructive DB migrations without confirmation.
+
+Instead:
+1. Add read normalization:
+   - legacy paper rows read as DEMO
+   - active runtime mode remains DEMO or LIVE only
+2. Add write protection:
+   - no new rows may be written with paper/PAPER mode values
+   - no active trade/session/account/allocation/performance/history records may save “paper”
+3. Add validation:
+   - reject or normalize old paper inputs at API boundary
+   - ensure UI never receives paper
+4. Create a migration plan file if actual DB row migration is required:
+   - file: `.local/paper-db-migration-plan.md`
+   - include tables/columns affected
+   - include safest migration path
+   - include rollback plan
+   - include test plan
+
+Phase 9F — UI Verification
+Inspect all user-facing screens and remove Paper wording from:
+- login/onboarding
+- dashboard
+- account shell
+- scanner
+- Ruby chat
+- Ruby voice
+- trade tickets
+- trade confirmations
+- trade history
+- performance
+- allocation
+- autopilot
+- admin user controls
+- permissions
+- invite flow
+- help/tooltips
+- settings
+- notifications
+- error toasts
+- empty states
+
+Final UI rule:
+Users should only see DEMO or LIVE.
+
+Phase 9G — Performance / Load Protection
+While doing this cleanup, do not make the app slower.
+
+1. Avoid broad expensive runtime scans.
+2. Move legacy normalization to clean boundary functions.
+3. Do not add repeated frontend polling.
+4. Do not add blocking startup scans.
+5. Remove dead paper branches that add unnecessary checks.
+6. Ensure scanner, Ruby, trade open/close, account shell, and dashboard remain fast.
+
+If a fix increases load, find a lighter approach and retest.
+
+Phase 9H — Tests Required
+Add or update tests proving:
+
+1. No active user-facing string contains:
+   - Paper Trading
+   - paper trading
+   - PAPER_TRADING
+   - PAPER_OPEN
+   - PAPER_CLOSED
+   - paper mode
+   - paper account
+
+2. Runtime trading modes are only:
+   - DEMO
+   - LIVE
+
+3. Legacy incoming paper values normalize to DEMO at the boundary.
+
+4. No new database writes store paper/PAPER as active mode.
+
+5. OpenAPI does not expose PAPER_OPEN, PAPER_CLOSED, or PAPER_TRADING as active enums.
+
+6. Ruby does not expose backend/internal mode names to users.
+
+7. Scanner does not use paper as a mode, fallback, permission, or result source.
+
+8. Admin dashboard does not expose Paper as an active selectable mode.
+
+9. Live safety gates are still intact:
+   - broker placement layer sentinel remains protected
+   - kill switches still work
+   - live permission approval still works
+   - live execution checks still work
+   - admin controls still work
+   - DEMO and LIVE separation still works
+
+10. Existing QA still passes:
+   - typecheck across all workspace packages
+   - ci:guards
+   - test:live-phaseB
+   - test:demo-verify
+   - test:demo-arming
+   - test:live-pass-path
+   - test:onboarding
+   - any existing scanner/Ruby/account/trade tests
+
+Phase 9I — Report Back Clearly
+At the end, return a concise report with:
+
+1. Files changed
+2. Remaining paper references, if any
+3. Whether each remaining reference is:
+   - removed
+   - renamed
+   - normalized legacy-only
+   - test-only
+   - documentation-only
+   - blocked for DB migration
+4. Confirmation that active runtime modes are only DEMO and LIVE
+5. Confirmation that users cannot see Paper Trading anywhere
+6. Confirmation that live safety was not weakened
+7. Full QA results
+
+Acceptance Criteria:
+- App still builds
+- App still loads
+- DEMO still works
+- LIVE still works
+- Paper Trading is not visible to users
+- Paper is not an active runtime mode
+- Paper is not a hidden fallback
+- Legacy paper data is normalized safely
+- OpenAPI no longer exposes active PAPER values
+- Ruby explains only DEMO and LIVE
+- No live execution safety regression
+- No performance regression

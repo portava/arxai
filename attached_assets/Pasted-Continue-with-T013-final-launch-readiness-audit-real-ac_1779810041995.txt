@@ -1,0 +1,221 @@
+Continue with T013: final launch-readiness audit, real-account verification, and release-candidate cleanup.
+
+Current completed state:
+- T003 unified live/account-mode resolver: complete.
+- T004 /my-account allocation shell: complete.
+- T005 alerts/notifications: complete.
+- T006 mode-scope filters: complete.
+- T007 crash hardening: complete.
+- T008 admin/operator unrestricted limits: complete.
+- T009 scanner real-feed routing: complete.
+- T010 live UI polish: complete.
+- T011 real-account verification: complete.
+- T012 operator diagnostics gating: complete.
+- typecheck PASS.
+- ci:guards 23/23 PASS.
+- account-mode 59/59 PASS.
+- mode-scope 29/29 PASS.
+- alert-notification-contract 13/13 PASS.
+- admin-unrestricted-risk 13/13 PASS.
+- scanner-real-feed 14/14 PASS.
+- live-phaseB 20/20 PASS.
+- demo-arming 18/18 PASS.
+- demo-verify 13/13 PASS.
+- operator-diag-gating 8/8 PASS.
+- arx_live_commands count remains 0.
+- no live trades placed.
+- no operator phrases typed.
+- no safety gates weakened.
+- no env parser broadening.
+- no admin diagnostics exposed to normal users.
+
+Now do final launch readiness.
+
+Do not place trades.
+Do not insert arx_live_commands.
+Do not type operator phrases.
+Do not broaden the narrow env parser.
+Do not weaken safety gates.
+Do not fake data.
+Do not expose admin diagnostics to normal users.
+Do not skip obvious fixable issues.
+
+Create checkpoint first:
+checkpoint: t013-final-launch-readiness-audit
+
+Task 1 — Restart and verify all workflows:
+Restart/reload required dev workflows so latest routes/components are active:
+- api-server
+- trading-dashboard
+- any bridge/dev workflow needed
+
+Then verify:
+- /api/healthz returns healthy
+- /api/me/account-mode works
+- frontend loads without stale bundle
+- no old route/component code is being served
+
+Task 2 — Real-account browser pass:
+Using the real operator/admin account and real user mode where available, verify the actual app UI, not only seeded tests.
+
+Check:
+- /my-account
+- /admin/allocations
+- /settings
+- /notifications
+- /alerts
+- /help
+- /market-scanner
+- /trade-command-room or actual trade route
+- /live-shared
+- /live-ai-assist
+- /live-chart
+- /my-trades or actual open trades route
+- /trading-calendar
+- /action-center
+- /broker-reconciliation
+- /live-trading-control
+- /audit-vault
+- /safety-logs
+- /mt5-setup
+- /testing-control-center
+
+For each page:
+1. No runtime overlay.
+2. No console crash.
+3. No stale demo/paper/test data in LIVE_SHARED mode.
+4. No simulator-only wording in LIVE_SHARED mode.
+5. No typed-phrase wording in normal UI.
+6. No raw booleans/internal constants/table names/routes/provider errors to normal users.
+7. No repeated live-risk banners beyond the global live bar and final trade confirmation.
+8. Page agrees with /api/me/account-mode.
+9. Empty/loading/error states are clean.
+10. Admin diagnostics are hidden from normal users and admin-preview-as-user.
+
+Task 3 — Account and allocation verification:
+Verify real user 4 / andraie.co@gmail.com:
+
+- account mode is SHARED_MASTER_MT5
+- assigned allocation displays correctly
+- manual allocation displays correctly
+- AI sleeve allocation displays correctly
+- My Balance and My Equity reflect the user shell
+- virtual P/L is preserved
+- Bridge Preference does not show own MT5 as active when shared-master attached
+- normal user does not see master bridge balance
+- admin can see master bridge balance/headroom in /admin/allocations
+- admin allocation controls still work without placing trades
+
+Task 4 — Live mode consistency:
+Confirm the app is consistently in LIVE_SHARED / live-armed state where intended.
+
+No page should say:
+- live disabled
+- paper mode active
+- demo trading enabled
+- simulator only
+- mock
+- MT5 bridge not configured
+unless that page is intentionally a demo/paper/settings/operator-diagnostic page.
+
+Settings may show demo/paper only as mode-switch options.
+
+Task 5 — Trade flow verification without execution:
+Open trade tickets from:
+- Market Scanner
+- Trade Command Room
+- Live Shared
+- Live Chart
+- Live AI Assist
+
+Verify:
+- no trade is submitted
+- review/confirm buttons use clean wording
+- no typed phrase UI
+- admin/operator unrestricted limits work
+- normal-user caps still work
+- Buy/Sell does not create demo/paper rows in live mode
+- arx_live_commands remains 0
+
+Task 6 — Market/scanner verification:
+Check:
+- V25 1s
+- V75
+- EURUSD
+
+Verify:
+- synthetic/volatility symbols use router/live feed or honest awaiting-feed state
+- no simulator pipeline wording in live mode
+- no fake candles
+- historical data reports honestly
+- Ruby/scanner explanation uses same feed source
+- recent scanner actions are mode-scoped
+
+Task 7 — Alerts/notifications verification:
+Verify:
+- alert dismiss works
+- clear resolved works
+- unread badge updates
+- stale MT5 disconnected alerts are gone when heartbeat is fresh
+- Notification Center does not say live disabled while live is armed
+- push notification state is separate from live trading state
+
+Task 8 — Data mode isolation verification:
+Verify LIVE_SHARED pages do not show DEMO/PAPER/TEST rows for:
+- Live Intent Queue
+- Trading Calendar
+- Open Positions
+- Trade History
+- P/L
+- Alerts
+- Scanner Trades
+- User Account Shell
+
+Do not delete audit records. Hide or scope correctly.
+
+Task 9 — Operator diagnostics verification:
+Verify:
+- normal user direct URL to /mt5-setup is blocked/sanitized
+- normal user direct URL to /testing-control-center is blocked/sanitized
+- admin-preview-as-user is blocked/sanitized
+- admin normal mode can access diagnostics
+- secrets are always masked
+
+Task 10 — Final QA suite:
+Run:
+- pnpm run typecheck
+- pnpm run build if available
+- pnpm run ci:guards
+- test:account-mode
+- test:mode-scope
+- test:alert-notification-contract
+- test:crash-hardening
+- test:admin-unrestricted-risk
+- test:scanner-real-feed
+- test:operator-diag-gating
+- test:live-phaseB
+- test:demo-arming
+- test:demo-verify
+- allocation runtime QA
+- seeded LIVE_SHARED E2E if available
+- arx_live_commands count before/after
+
+Task 11 — Fix any final issues:
+If any final issue is found:
+1. Fix it directly.
+2. Retest the page.
+3. Retest impacted suite.
+4. Confirm arx_live_commands remains 0.
+5. Create checkpoint.
+
+Final report only:
+- pages verified
+- real account verification result
+- fixes made, if any
+- QA suite results
+- arx_live_commands before/after
+- confirmation no live trades placed
+- confirmation no operator phrases typed
+- confirmation no safety gates weakened
+- remaining launch blockers, only if they require human credentials or manual browser action
+- final launch-readiness verdict

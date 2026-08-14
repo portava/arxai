@@ -1,0 +1,120 @@
+Prepare ARX for a manual controlled live test, but do NOT place a live trade automatically.
+
+Do not auto-click the controlled test.
+Do not create a live command during QA.
+Do not enable public master live trading.
+Do not bypass admin/user approval toggles.
+Do not expose secrets.
+Use the current connected bridge as the platform master bridge.
+
+Before anything:
+1. Confirm Reconciliation Center is complete or list exact blockers.
+2. Confirm arx_live_commands count before testing.
+3. Confirm no live trade has fired.
+
+Build/verify a “Manual Live Test Readiness” panel for admin/operator only.
+
+Panel should show:
+
+A. Current Connected Bridge
+- bridge id
+- MT5 account number
+- broker/server
+- account type REAL/LIVE
+- EA version v1.27+
+- heartbeat age
+- ReadOnlyMode=false
+- EnableLiveExecution=true
+- MaxLiveLot=0.01
+- terminal connected
+- algo trading allowed
+
+B. Master Live Gates
+- ARX_LIVE_BROKER_EXECUTION_ENABLED status
+- shared_live_trading_enabled
+- bridgeMode
+- kill switch status
+- emergency stop status
+- master exposure limit
+- daily loss limit
+- allowed symbols
+- current open exposure
+- current queue depth
+
+C. Operator/User Access
+- current admin/operator user
+- approved_for_master_live
+- master_live_trading_enabled
+- risk disclosure accepted
+- max lot
+- max open positions
+- max exposure per symbol
+- stop loss required
+- scanner live enabled/disabled
+
+D. Controlled Test Preview
+Show a locked preview for:
+- symbol: EURUSD
+- side: BUY
+- volume: 0.01
+- order type: market
+- stop loss: required
+- take profit: optional
+- source: CONTROLLED_MASTER_LIVE_TEST
+- bridge: current connected bridge
+- account: current live MT5 account
+
+Do not submit it.
+
+Add a dry-run/preflight button:
+“Run Live Test Preflight”
+
+The preflight must:
+1. Run every live/master/user/risk/bridge gate.
+2. Return PASS/FAIL for each gate.
+3. Not create arx_live_commands.
+4. Not dispatch to MT5.
+5. Not call live OrderSend.
+6. Not modify positions.
+7. Not change exposure.
+8. Not enable live trading automatically.
+
+If all gates pass, output:
+READY_FOR_MANUAL_CONTROLLED_LIVE_TEST
+
+If any gate fails, output:
+NOT_READY_FOR_MANUAL_CONTROLLED_LIVE_TEST
+and list exact blockers.
+
+Add a final manual test button, but keep it disabled unless:
+- preflight passed
+- admin types ENABLE MASTER LIVE TEST
+- stop loss is entered
+- user checks final risk confirmation
+- kill switch is visible
+
+Button label:
+“Submit Controlled EURUSD 0.01 Live Test”
+
+Warning text:
+“LIVE TRADE — REAL MONEY CAN BE LOST. This will send one EURUSD 0.01 live order through the current connected master bridge.”
+
+QA requirements:
+- preflight does not create live command
+- arx_live_commands count remains unchanged during QA
+- no live trade auto-fires
+- disabled button cannot be submitted
+- enabled button still requires typed phrase and confirmation
+- unapproved user cannot access the panel
+- non-admin cannot access the panel
+- current connected bridge is used
+- stale/mock bridge is rejected
+- secrets are not exposed
+
+Acceptance proof:
+- Live Test Readiness panel exists
+- preflight returns full gate matrix
+- current connected bridge is shown
+- arx_live_commands before/after is unchanged
+- no live order placed
+- final manual test button exists but does not auto-fire

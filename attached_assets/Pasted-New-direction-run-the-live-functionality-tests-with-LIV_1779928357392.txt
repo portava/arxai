@@ -1,0 +1,114 @@
+New direction: run the live functionality tests with LIVE execution enabled.
+
+The account balance/funds are intentionally there for this live testing. Stop treating the test mission as blocked/refusal-path QA.
+
+Undo or bypass any previous instructions, code changes, guards, or pending QA logic that force live testing into LIVE_BLOCKED only.
+
+Required:
+- Do not force the master switch OFF.
+- Do not unset ARX_LIVE_BROKER_EXECUTION_ENABLED.
+- Do not flip global_trading_settings.live_broker_execution_armed to false.
+- Do not auto-neutralize valid live test rows.
+- Do not require QA_TIMING_HARNESS to fail when live execution is ON.
+- Do not force live open/close tests into LIVE_BLOCKED.
+- Do not block the EA from picking up intentional live test commands.
+- Do not convert intentional live commands into audit-only rows.
+- Do not keep UI buttons disabled for the owner account when live is armed.
+- Do not recommend turning live off again.
+
+Owner account:
+- email: andraie.co@gmail.com / Andraie.co@gmail.com
+- owner user id: 4
+- this owner/admin account is authorized to run live testing
+- apply this only to the owner/admin account
+- do not globally unlock every user
+
+Set/confirm live readiness:
+- ARX_LIVE_BROKER_EXECUTION_ENABLED should remain enabled if already enabled.
+- global_trading_settings.live_broker_execution_armed should remain true if already true.
+- owner account must be LIVE enabled.
+- owner account must have LIVE_SHARED access.
+- owner account must be allowed to reach LiveSharedTradeTicket.
+- owner account must be allowed to create SENT_TO_MT5_LIVE rows.
+- owner account must be allowed to send commands to the EA/live bridge.
+- Ruby, scanner, selected market panel, manual trade page, and admin tools must all use the real live execution path for this owner account.
+
+If row 182 still exists:
+- If row 182 is still valid, intentional, not expired, not duplicated, and still EA-pickup eligible, leave it available for the live EA test.
+- If row 182 was already neutralized, do not rewrite audit history. Instead, create a new live test command through the normal owner UI flow.
+- If row 182 is stale/invalid/duplicate, report that clearly and create a fresh live test through the normal owner UI flow.
+
+Run the full live functionality test suite using the real live path:
+1. Log in as the owner account.
+2. Confirm owner account is LIVE enabled.
+3. Confirm live broker execution is armed.
+4. Confirm EA/live bridge pickup path is reachable.
+5. Open the manual trade ticket.
+6. Place an intentional small live test trade through the normal UI.
+7. Confirm the command reaches SENT_TO_MT5_LIVE.
+8. Confirm whether the EA picks it up.
+9. Confirm the broker/EA result:
+   - filled
+   - rejected
+   - failed
+   - pending
+   - timeout
+10. Show the real result in the UI.
+11. Test close-trade flow if the trade fills.
+12. Confirm the close command reaches the live bridge.
+13. Confirm close result from broker/EA.
+14. Test Ruby live trade action.
+15. Test scanner live trade action.
+16. Test selected market live trade action.
+17. Test manual trade page live action.
+18. Test admin dashboard live trade visibility.
+19. Test trade history updates.
+20. Test audit log updates.
+21. Test UI status updates.
+22. Test error handling for rejected/failed/pending live commands.
+
+Timing measurements required:
+- login to dashboard load
+- trade ticket open time
+- Execute button click to backend request
+- backend request to live command creation
+- live command creation to EA pickup
+- EA pickup to broker result
+- broker result to UI update
+- open trade full cycle time
+- close trade full cycle time
+- Ruby live action latency
+- scanner live action latency
+- selected market live action latency
+- manual trade live action latency
+
+Important:
+- Do not fake success.
+- Do not hide broker rejection.
+- Do not mark a trade filled unless the broker/EA confirms it.
+- Do not use demo, paper, preview, sandbox, or blocked-path execution for this owner test.
+- Do not expose backend function names, route names, stack traces, raw JSON, secrets, or debug labels to the user.
+- Keep audit logs.
+- Keep real broker/EA result reporting.
+- Keep other users unchanged.
+- Do not redesign unrelated pages.
+
+Final report must include:
+1. live execution gates confirmed ON
+2. owner account permission status
+3. whether row 182 was used or a fresh command was created
+4. trade symbol
+5. direction
+6. lot/stake
+7. command row id
+8. EA pickup status
+9. broker result
+10. open trade timing
+11. close trade timing if filled
+12. Ruby timing
+13. scanner timing
+14. selected market timing
+15. manual trade timing
+16. errors found
+17. files/components changed
+18. confirmation that no blocked/refusal-path guards remain for the owner live test

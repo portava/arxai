@@ -1,0 +1,280 @@
+ARX AI — SCANNER TRUTH CONTRACT + MOBILE UI + RUBY READ REPAIR
+
+We reviewed the attached scanner screenshots and found serious scanner issues that must be fixed as one connected system, not as isolated visual patches.
+
+Your job is to repair the scanner end-to-end so every visible scanner component agrees with the same truth source, every timeframe uses correct candle data, Ruby never gives misleading reads, and the mobile UI no longer overlaps/clips/cuts off content.
+
+DO NOT remove scanner features.
+DO NOT fake-pass this.
+DO NOT create new duplicate scanner components unless absolutely required.
+Reuse existing routes, hooks, services, scanner components, chart components, Ruby read components, permission gates, and MT5/data feed logic wherever possible.
+Preserve all existing scanner functionality, trading functionality, Ruby functionality, tabs, overlays, and bridge/permission wiring.
+Fix wiring instead of hiding symptoms.
+
+============================================================
+A. MAIN FINDINGS FROM SCREENSHOTS
+============================================================
+
+Fix every one of these:
+
+1. Header quote and chart price mismatch
+- Header shows EURUSD around 1.08467–1.08484.
+- Chart shows 1.15056–1.15059 as LAST-KNOWN.
+- This is a major data truth failure.
+- The scanner must never show a chart price that conflicts with the active quote without clearly marking it as historical/stale and blocking actionable reads.
+
+2. Feed status contradictions
+Same symbol/timeframe shows conflicting messages:
+- Feed unavailable
+- Live feed updated 17s ago
+- Delayed market data
+- Partial data updated 1s ago
+- Live feed unavailable
+- Analysis only
+These cannot all be true at the same time.
+Create one shared feed truth contract used by all scanner sections.
+
+3. Historical/delayed candles are being shown like actionable market context
+The chart says “historical context only / no live price marker,” but the scanner still shows:
+- flame/wait-for-entry state
+- sell bias
+- fair edge
+- timing intelligence
+- Ruby reads
+- overlays verified
+This must be gated by the truth contract.
+
+4. Timeframe candle loading is broken
+1m, 5m, 15m, 1h, 4h, and 1D show drastically inconsistent candle counts.
+Higher timeframes show too few candles, sometimes one candle only.
+This makes structure, bias, support/resistance, and Ruby reads invalid.
+
+5. 4H chart shows one giant candle
+A one-candle chart must never be treated as valid analysis.
+Show an insufficient-data state instead.
+
+6. 1H chart has too few candles
+If the selected timeframe does not meet minimum candle count, block chart read and scanner scoring.
+
+7. Header says “Analysis only / Idle” but other cards still use action language
+If analysis-only, stale, unavailable, or insufficient data, Ruby and scanner cards must downgrade language:
+- No “entry approaching”
+- No “fair edge”
+- No actionable sell/buy bias
+- No wait-for-entry as if live
+Use “historical-only read / not valid for live entry” when appropriate.
+
+8. Manual trading blocked but page still looks execution-ready
+If account permissions block manual trading, show read-only state clearly.
+Do not imply a user can execute from the scanner.
+
+9. Approval and demo/live messaging is confusing
+Screens show Demo badge and also “Live trading requires approval.”
+Separate permission states:
+- demo manual allowed/blocked
+- demo AI allowed/blocked
+- live manual allowed/blocked
+- live AI allowed/blocked
+- shared bridge approval
+- own bridge approval
+Do not show generic wrong approval messages.
+
+10. Ruby Chart Read button is clipped horizontally
+“Read this chart” extends past mobile viewport.
+Fix responsive layout.
+
+11. Scanner tab bar is clipped
+Tabs like Focus / Broad Scan / Scalp Builder / Symbol are cut off.
+Fix horizontal scroll, wrapping, or mobile segmented layout.
+
+12. Top header is duplicated/layered
+Screens show duplicated ARX header/logo/symbol selector/sticky elements.
+Fix z-index/sticky layout so there is one clean top scanner header on mobile.
+
+13. FX:EURUSD pill is stuck/overlapping near the top
+Sticky symbol pill appears detached and overlaps content.
+Fix positioning or remove duplicate sticky display.
+
+14. Bottom nav and Safari controls hide content
+Add safe-area padding and correct bottom spacer so scanner content is not blocked by app nav or browser chrome.
+
+15. Ruby floating bubble blocks scanner content
+Ruby bubble covers chart/cards/overlay status.
+Make scanner-aware placement:
+- avoid covering chart
+- avoid covering action/warning cards
+- allow minimized/docked mode on scanner
+
+16. Search bubble blocks chart/card content
+Move or integrate search bubble into scanner header/card. Do not let it float over chart content.
+
+17. TradingView watermark appears inside chart
+Confirm expected renderer.
+If scanner chart is supposed to be ARX native/lightweight-charts, remove incorrect TradingView embed/wiring.
+If TradingView is intentional, label/handle it correctly and do not mix stale TradingView historical data with live scanner quote.
+
+18. Overlays appear verified even when feed stale
+Overlay verification must fail or downgrade when feed/candles are stale, delayed, unavailable, mismatched, or insufficient.
+
+19. Overlay status changes without explanation
+“Overlays: verified” and “Overlays: check” appear inconsistently.
+Make overlay status deterministic and explain why.
+
+20. Timing Intelligence scores display despite partial/stale data
+If data is partial/stale/unavailable, either hide scores or show them as incomplete/not actionable.
+
+21. Ruby Market Read gives sell bias while feed truth is unstable
+Ruby must use the same truth contract and must cite:
+- symbol
+- timeframe
+- candle source
+- quote source
+- data age
+- confidence
+- whether read is actionable or historical only
+
+22. Symbol formatting inconsistent
+Use consistent user-facing formatting:
+- Header: EUR/USD or EURUSD, choose one standard.
+- Scanner card: same standard.
+- Internal mapping may remain FX:EURUSD but do not expose inconsistent labels.
+
+23. Header price updates while feed unavailable
+Either the quote feed is live and status is wrong, or the price is stale and being updated incorrectly.
+Fix quote freshness detection and display.
+
+24. Too many conflicting badges
+Consolidate statuses into one truth strip:
+- Data: Live / Delayed / Stale / Historical only / Unavailable
+- Trading: Enabled / Read-only / Approval required / Blocked
+- Ruby: Full read / Limited read / No read
+Then subcomponents consume that same truth.
+
+25. Too much internal/debug language exposed to users
+Regular users should not see raw/debug wording like:
+- No AI
+- Polygon
+- Overlays: check
+- Partial data
+unless converted to clean language.
+Admin/debug view may show technical detail.
+
+============================================================
+B. BUILD A SHARED SCANNER TRUTH CONTRACT
+============================================================
+
+Create or repair a single shared scanner truth resolver.
+
+Name can follow current project conventions, but the contract must produce one normalized object consumed by:
+- scanner header
+- chart panel
+- timeframe buttons
+- Ruby Chart Read
+- Ruby Market Read
+- Timing Intelligence
+- overlay validator
+- trade buttons
+- trade permission banners
+- scanner tabs
+- mobile status strip
+
+Required normalized fields:
+
+scannerTruth = {
+  symbolDisplay,
+  symbolInternal,
+  timeframe,
+  quote: {
+    bid,
+    ask,
+    mid,
+    source,
+    sourceLabel,
+    timestamp,
+    ageMs,
+    status: "live" | "delayed" | "stale" | "unavailable",
+    reason
+  },
+  candles: {
+    source,
+    sourceLabel,
+    timeframe,
+    count,
+    requestedCount,
+    firstTime,
+    lastTime,
+    lastClose,
+    ageMs,
+    status: "live" | "delayed" | "stale" | "historical_only" | "insufficient" | "unavailable",
+    reason
+  },
+  consistency: {
+    quoteCandlePriceDelta,
+    quoteCandlePriceDeltaPct,
+    withinTolerance,
+    status: "aligned" | "mismatch" | "unknown",
+    reason
+  },
+  permissions: {
+    demoManualAllowed,
+    demoAIAllowed,
+    liveManualAllowed,
+    liveAIAllowed,
+    sharedBridgeApproved,
+    ownBridgeConnected,
+    manualTradingBlockedReason,
+    liveTradingBlockedReason,
+    effectiveMode: "demo" | "live" | "read_only"
+  },
+  analysis: {
+    allowed: boolean,
+    level: "full" | "limited" | "historical_only" | "blocked",
+    reason
+  },
+  execution: {
+    allowed: boolean,
+    reason
+  },
+  ruby: {
+    chartReadAllowed,
+    marketReadAllowed,
+    readLevel: "full" | "limited" | "historical_only" | "blocked",
+    reason
+  },
+  overlays: {
+    allowed,
+    status: "verified" | "limited" | "check" | "blocked",
+    reason
+  }
+}
+
+Every scanner component must consume this object or a direct derivative of it.
+No scanner component should independently decide feed state using separate stale logic.
+
+============================================================
+C. DATA FRESHNESS RULES
+============================================================
+
+Implement deterministic freshness thresholds.
+
+Use sensible defaults, configurable by timeframe:
+
+1m:
+- quote live max age: <= 10 seconds
+- candle live max age: <= 90 seconds
+- minimum candles: 150
+
+5m:
+- quote live max age: <= 10 seconds
+- candle live max age: <= 6 minutes
+- minimum candles: 150
+
+15m:
+- quote live max age: <= 10 seconds
+- candle live max age: <= 18 minutes
+- minimum candles: 120
+
+1h:
+- quote live max age: <= 10 seconds
+- candle live max age: <= 75 minutes
+- minimum candles: 100

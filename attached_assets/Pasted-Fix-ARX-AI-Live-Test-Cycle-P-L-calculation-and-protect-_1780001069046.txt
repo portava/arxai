@@ -1,0 +1,120 @@
+Fix ARX AI Live Test Cycle P/L calculation and protect allocation ledgers from bad close-price data.
+
+Do not place any trade.
+Do not insert arx_live_commands.
+Do not weaken the 16-gate evaluator, liveTrading chokepoint, env-AND-operator resolver, kill switch, allocation checks, or audit logging.
+Do not create any new modes.
+
+CURRENT ISSUE:
+The OWNER Live Test Cycle successfully opened and auto-closed a real EURUSD 0.01 test trade, but the reported realized P/L was wrong:
+
+realized_pl_usd = -1163.59
+
+Cause:
+The EA close-result POST did not include the actual close fill price.
+close_fill_price landed as 0/null.
+The server incorrectly calculated P/L from close price 0.
+
+GOAL:
+Never calculate or apply realized P/L when the close fill price is missing, null, zero, invalid, or not tied to a verified broker close result.
+
+1. SERVER-SIDE P/L GUARD
+In the live test cycle close-result handler and any live trade close-result handler:
+
+If close_fill_price is:
+- null
+- undefined
+- 0
+- NaN
+- invalid
+- missing from payload
+
+Then:
+- do NOT compute realized_pl_usd
+- set realized_pl_usd = null
+- set pnlStatus = UNKNOWN
+- set dataQualityFlag = MISSING_CLOSE_FILL_PRICE
+- mark the cycle as COMPLETED_PNL_UNKNOWN or COMPLETED with pnlStatus UNKNOWN
+- keep open/close status as successful if broker actually opened and closed the trade
+- show friendly UI:
+  “Trade opened and closed successfully. P/L unavailable because the close fill price was not returned.”
+
+Do not show fake P/L.
+
+2. CORRECT EXISTING BAD TEST CYCLE
+Find the affected completed live test cycle:
+- likely live_test_cycles id=3
+- related commands around 191/192 if applicable
+- ticket 40797138324 if applicable
+
+Correct:
+- realized_pl_usd = null
+- pnlStatus = UNKNOWN
+- dataQualityFlag = MISSING_CLOSE_FILL_PRICE
+- do not delete the cycle
+- do not delete command rows
+- do not alter actual broker history
+
+Add audit log:
+“Corrected invalid computed P/L caused by missing close fill price.”
+
+3. PROTECT ALLOCATION LEDGER
+If pnlStatus is UNKNOWN:
+- do not apply that value to user allocation
+- do not reduce live bridge balance
+- do not reduce AI-managed allocation
+- do not update realized P/L totals
+- do not feed it into Ruby/AI performance learning
+- do not show it as a real loss
+
+Show:
+“P/L unavailable”
+or
+“P/L pending broker close-price sync”
+
+4. VALID P/L ONLY WHEN DATA IS VALID
+If close_fill_price is valid:
+- compute P/L normally
+- update realized P/L
+- update allocation ledger
+- update reports
+- audit the P/L application
+
+If close_fill_price is invalid:
+- skip P/L application
+- preserve raw payload for audit
+- mark data-quality issue
+
+5. UI UPDATE
+Update Live Test Cycle UI:
+- remove the fake -1163.59 display
+- show completed open/close
+- show ticket id
+- show latency timeline
+- show P/L unavailable if close price missing
+- show data-quality warning only to admin/owner
+
+Regular users should not see raw payloads, backend field names, or technical error names.
+
+6. FUTURE EA v1.28 NOTE
+Add follow-up task:
+EA v1.28 should include close fill price from trade.ResultPrice() in close command result payloads.
+
+Do not require EA reinstall for this server-side protection.
+
+7. ACCEPTANCE TEST
+Before stopping, verify:
+- Missing close_fill_price does not compute fake P/L.
+- close_fill_price=0 does not compute fake P/L.
+- Valid close_fill_price computes P/L correctly.
+- Existing bad cycle no longer shows -1163.59 as real P/L.
+- Allocation balances are not changed by unknown P/L.
+- Reports do not count unknown P/L as loss.
+- Ruby/AI learning does not ingest unknown/fake P/L.
+- Audit log records correction.
+- arx_live_commands count does not increase during this fix.
+- No live trade is placed.
+- Demo, Live, and Live Shared remain the only modes.
+- Login, Ruby, scanner, trade modal, bridge status, allocations, admin queue, and bottom nav still work.
+
+Run typecheck/build/tests and fix errors before stopping.

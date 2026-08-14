@@ -1,0 +1,350 @@
+Continue from the last green backend performance sweep.
+
+The screenshot shows backend performance is green, but the job is NOT complete because the following items were deferred:
+
+1. Full Playwright UI timing sweep
+2. Part 10 manual live-trade latency recorder
+3. Admin search debounce upgrade
+4. Ruby TTS await-discipline check
+
+Objective:
+Complete the missing UI-side and interaction-speed work without breaking the existing green backend QA results.
+
+Do not undo the previous work.
+Do not weaken live-trade safety gates.
+Do not reintroduce Paper Trading terminology.
+Do not add heavy polling, blocking startup scans, or expensive repeated frontend checks.
+Do not dispatch any real live trade during automated QA. Live-trade latency should be measured through safe dry-run/probe flow unless an owner-controlled manual live test is explicitly triggered from the UI.
+
+Part 1 — Full Playwright UI Timing Sweep
+
+Build or repair a Playwright-based UI timing sweep that measures the actual delay from user action to visible UI result.
+
+Test these user flows individually:
+
+A. App launch / login flow
+- cold app load
+- login screen appears
+- authenticated dashboard appears
+- bottom nav loads
+- no floating or broken bottom menu
+- no large blank gap under the bottom menu
+- no old dashboard loading before login unless user is authenticated
+
+B. Dashboard
+- dashboard first paint
+- account shell loads
+- demo/live mode indicator loads
+- balance cards load
+- performance widgets load
+- notification/update cards load
+- admin-only information is hidden from normal users
+
+C. Scanner
+- scanner page opens
+- focus scan tab opens
+- broad scan tab opens
+- broad scan results appear under Broad Scan, not as a separate confusing tab
+- symbol search input responds quickly
+- market list collapses and expands quickly
+- selecting a market updates the selected market panel
+- Ruby explanation window appears for selected market
+- no backend/internal function names are exposed to users
+- no Paper/PAPER wording appears anywhere
+
+D. Ruby Chat
+- Ruby chat opens
+- text message sends
+- “Ruby is thinking…” or animated three-dot typing state appears immediately
+- response returns
+- Ruby response is plain English plus useful technical analysis
+- Ruby does not dump raw backend data
+- Ruby does not expose route names, internal functions, database fields, enum names, or hidden system details
+- Ruby does not say Paper Trading
+- Ruby only explains DEMO or LIVE
+
+E. Ruby Voice / TTS
+Find the correct Ruby voice/TTS component path.
+Do not assume the old path is correct.
+Search the repo for:
+- TTS
+- text to speech
+- speech synthesis
+- Ruby voice
+- auto listen
+- voice input
+- voice output
+- /api/me/tts
+- speak
+- transcribe
+- microphone
+- speech
+
+Then verify:
+- microphone button responds
+- voice capture starts
+- voice capture stops when the user stops talking
+- if Ruby does not understand, she asks the user to repeat
+- Ruby can respond out loud when voice response is enabled
+- TTS requests are awaited correctly
+- UI does not hang while TTS is processing
+- text response appears even if TTS fails
+- TTS failure shows a clean user-friendly message, not backend errors
+- no repeated duplicate audio playback
+- no runaway loops
+- no expensive repeated voice polling
+
+F. Trade Ticket / Open / Close Flow
+Measure UI latency without dispatching live trades automatically.
+
+Test:
+- opening trade ticket
+- selecting symbol
+- selecting lot size
+- changing stop loss
+- changing take profit
+- reward-to-risk calculation
+- warning if stop loss is too close to entry due to spread/broker bleed
+- confirmation modal
+- demo trade submit path
+- live trade submit preflight path
+- close trade modal
+- cancel button
+- kill-switch state display
+- permission-denied state display
+- insufficient-permission state display
+
+Important:
+Live execution must not be automatically fired in QA.
+The test should verify the live preflight and owner-confirmation UI path only.
+No real broker dispatch should occur unless a manual owner-triggered live test is intentionally selected.
+
+G. Admin Dashboard
+Test:
+- admin user controls load
+- user search input
+- user permission toggles
+- live enable toggle
+- freeze account toggle
+- allocation input
+- demo/live allocation display
+- account credit adjustment UI
+- invite code management
+- role-based access
+- normal users cannot see admin controls
+
+H. Notifications / Settings / Account
+Test:
+- notifications page opens
+- settings page opens
+- account profile opens
+- permissions display
+- no backend terms exposed
+- no Paper terminology visible
+
+Part 2 — Timing Budgets
+
+For every tested action, log:
+
+- action name
+- page/component
+- user action performed
+- expected result
+- actual visible result
+- frontend time to visible response
+- backend/API time if applicable
+- pass/fail
+- screenshot on failure
+- likely bottleneck
+- file/component responsible
+- fix applied
+
+Use these target budgets:
+
+Critical trading actions:
+- button press to visible loading/confirmation state: under 100ms
+- trade ticket open: under 300ms
+- risk/reward recalculation: under 150ms
+- demo submit visible result: under 800ms
+- live preflight visible result: under 800ms
+- close-trade modal open: under 300ms
+
+Scanner:
+- scanner page usable: under 1200ms
+- tab switch: under 250ms
+- symbol search response: under 150ms
+- selected market panel update: under 300ms
+- Ruby explanation loading state: under 100ms
+- Ruby explanation first useful text: target under 2500ms, with loading state immediately
+
+Ruby:
+- chat open: under 300ms
+- send message to typing indicator: under 100ms
+- text response visible: target under 3000ms when model/API is available
+- voice capture start: under 300ms
+- voice capture stop detection: under 700ms after silence
+- TTS playback starts after text response: target under 1500ms
+- TTS failure fallback: under 500ms after failure
+
+Dashboard:
+- authenticated dashboard usable: under 1500ms
+- account shell visible: under 800ms
+- bottom nav stable: immediate after layout load
+- no layout jump after first render
+
+Admin:
+- admin dashboard usable: under 1500ms
+- user search debounce: 250ms to 400ms
+- search results visible after API response: under 500ms
+- toggle optimistic UI state: under 150ms
+- toggle final confirmed state: under 1000ms
+
+Part 3 — Fix What Fails
+
+If any UI timing test fails:
+1. Identify exact component/file.
+2. Fix the slow path.
+3. Prefer memoization, lazy loading, smaller payloads, debounced inputs, proper suspense/loading states, and reduced duplicate requests.
+4. Remove dead UI branches.
+5. Avoid adding global polling.
+6. Avoid blocking page render on non-critical data.
+7. Avoid making backend calls before the page actually needs them.
+8. Retest the failed action.
+9. Then rerun the whole sweep.
+
+Part 4 — Admin Search Debounce Upgrade
+
+Even though the previous report says this is code-hygiene only, complete it now.
+
+Admin search should:
+- debounce keystrokes between 250ms and 400ms
+- cancel stale requests
+- ignore out-of-order stale responses
+- show immediate local typing response
+- show loading state only when request is active
+- not refetch the full admin dataset on every keystroke
+- not block the admin page
+- not affect normal user pages
+
+Add or update tests proving:
+- only the final debounced query is used
+- stale results do not overwrite newer results
+- empty search clears correctly
+- permissions remain protected
+
+Part 5 — Ruby TTS Await Discipline
+
+Find the real Ruby TTS/voice path and fix it.
+
+Requirements:
+- text response must not be blocked by audio generation
+- audio generation must be awaited only where needed
+- if TTS fails, Ruby text still works
+- if microphone permission is denied, show clean message
+- if speech recognition fails, Ruby asks user to repeat
+- prevent duplicate TTS calls for the same response
+- prevent overlapping playback unless user intentionally interrupts
+- stop playback when user leaves chat or disables voice
+- clean up event listeners on unmount
+- no memory leaks
+- no runaway voice loop
+
+Part 6 — Live Trade Latency Recorder
+
+Build the manual live-trade latency recorder, but keep it owner/admin controlled.
+
+It should record timing for:
+- click live trade button
+- preflight started
+- preflight completed
+- confirmation modal shown
+- owner confirms
+- broker dispatch requested
+- broker response received
+- UI updated
+- trade appears in history/open positions
+- Ruby explanation/log updated
+
+Important:
+Automated tests must not place real live trades.
+Manual recorder should only activate when the owner/admin intentionally starts a live test from the UI and confirms the final execution.
+
+Recorder output should include:
+- symbol
+- mode LIVE
+- account/user
+- timestamp
+- each timing step
+- total execution latency
+- broker response latency
+- UI update latency
+- pass/fail
+- any failure reason
+
+Part 7 — Recheck Paper Removal
+
+While running UI tests, verify again that no user-facing screen shows:
+
+- Paper Trading
+- paper trading
+- PAPER_TRADING
+- PAPER_OPEN
+- PAPER_CLOSED
+- paper mode
+- paper account
+- paper fallback
+
+Only DEMO and LIVE may appear.
+
+Part 8 — Final QA
+
+After fixes, run:
+
+- pnpm run typecheck
+- pnpm run ci:guards
+- test:live-phaseB
+- test:demo-verify
+- test:demo-arming
+- test:live-pass-path
+- test:onboarding
+- backend perf sweep
+- new Playwright UI timing sweep
+- Ruby TTS/voice tests
+- admin debounce tests
+- scanner UI timing tests
+- trade ticket timing tests
+
+Part 9 — Final Report
+
+Return a clear report with:
+
+1. What was deferred before
+2. What was completed now
+3. Files changed
+4. UI timing table for every tested action
+5. Ruby TTS/voice result
+6. Admin debounce result
+7. Trade ticket/open/close timing result
+8. Scanner timing result
+9. Dashboard timing result
+10. Any remaining bottlenecks
+11. Any remaining deferred items and exact reason
+12. Confirmation that no automated live dispatch occurred during QA
+13. Confirmation that manual live-trade recorder is owner/admin controlled
+14. Confirmation that existing live safety gates remain intact
+15. Confirmation that Paper Trading is still not visible as a user-facing mode
+16. Full QA results
+
+Acceptance Criteria:
+- App loads fast
+- UI feels instant after button presses
+- Scanner responds quickly
+- Ruby shows typing immediately
+- Ruby voice/TTS works or fails gracefully
+- Trade ticket opens quickly
+- Live preflight is fast
+- Admin controls are responsive
+- No Paper Trading visible to users
+- No safety regression
+- No backend performance regression
+- All tests green

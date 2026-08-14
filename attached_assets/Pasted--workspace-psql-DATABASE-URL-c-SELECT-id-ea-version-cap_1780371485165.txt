@@ -1,0 +1,47 @@
+~/workspace$ psql $DATABASE_URL -c "SELECT id, ea_version, capabilities->'v150'->>'eaName' AS name, last_heartbeat FROM mt5_connection WHERE user_id = 4 ORDER BY last_heartbeat DESC NULLS LAST LIMIT 3;"
+~/workspace$ psql $DATABASE_URL -c "SELECT count(*) FROM arx_symbol_specs WHERE user_id = 4;"
+ count 
+-------
+     0
+(1 row)
+
+~/workspace$ psql $DATABASE_URL -c "SELECT symbol, broker_symbol, trade_mode, trade_allowed FROM arx_symbol_specs WHERE user_id = 4 ORDER BY symbol;"
+ symbol | broker_symbol | trade_mode | trade_allowed 
+--------+---------------+------------+---------------
+(0 rows)
+
+~/workspace$ # with your authed session cookie:
+curl -s "https://YOUR-URL/api/me/mt5/symbols?tradableOnly=1" | head -c 600
+~/workspace$ fetch("https://89b8800b-d6e7-44ea-9123-824bc19fe4c7-00-1jrbr4pis1x4p.kirk.replit.dev/api/me/mt5/symbols?tradableOnly=1", {credentials:"include"})
+  .then(r => r.json())
+  .then(d => console.log("ok:", d.ok, "count:", d.count, "freshness:", d.overallFreshness,
+    "| V75 present:", d.symbols?.some(s => s.brokerSymbol?.includes("Volatility 75"))));
+bash: syntax error near unexpected token `"https://89b8800b-d6e7-44ea-9123-824bc19fe4c7-00-1jrbr4pis1x4p.kirk.replit.dev/api/me/mt5/symbols?tradableOnly=1",'
+bash: syntax error near unexpected token `r'
+bash: syntax error near unexpected token `d'
+bash: syntax error near unexpected token `('
+~/workspace$ fetch("https://89b8800b-d6e7-44ea-9123-824bc19fe4c7-00-1jrbr4pis1x4p.kirk.replit.dev/api/me/mt5/resolve-symbol", {
+  method:"POST", credentials:"include",
+  headers:{"Content-Type":"application/json"},
+  body: JSON.stringify({symbol:"V75"})
+}).then(r => r.json()).then(d => console.log(JSON.stringify(d, null, 2)));
+bash: syntax error near unexpected token `"https://89b8800b-d6e7-44ea-9123-824bc19fe4c7-00-1jrbr4pis1x4p.kirk.replit.dev/api/me/mt5/resolve-symbol",'
+bash: method:POST,: command not found
+bash: headers:{Content-Type:application/json},: No such file or directory
+bash: syntax error near unexpected token `('
+bash: syntax error near unexpected token `}'
+~/workspace$ fetch("https://89b8800b-d6e7-44ea-9123-824bc19fe4c7-00-1jrbr4pis1x4p.kirk.replit.dev/api/me/mt5/symbols?tradableOnly=1", {credentials:"include"})
+  .then(r => r.json())
+  .then(d => console.log("ok:", d.ok, "| count:", d.count, "| freshness:", d.overallFreshness, "| V75 present:", d.symbols?.some(s => s.brokerSymbol?.includes("Volatility 75"))));
+bash: syntax error near unexpected token `"https://89b8800b-d6e7-44ea-9123-824bc19fe4c7-00-1jrbr4pis1x4p.kirk.replit.dev/api/me/mt5/symbols?tradableOnly=1",'
+bash: syntax error near unexpected token `r'
+bash: syntax error near unexpected token `d'
+~/workspace$ COOKIE="paste-your-session-cookie-here"
+curl -s "https://89b8800b-d6e7-44ea-9123-824bc19fe4c7-00-1jrbr4pis1x4p.kirk.replit.dev/api/me/mt5/symbols?tradableOnly=1" \
+  --cookie "$COOKIE" | head -c 600
+echo ""
+curl -s -X POST "https://89b8800b-d6e7-44ea-9123-824bc19fe4c7-00-1jrbr4pis1x4p.kirk.replit.dev/api/me/mt5/resolve-symbol" \
+  -H "Content-Type: application/json" --cookie "$COOKIE" \
+  -d '{"symbol":"V75"}'
+{"error":"AUTH_REQUIRED","message":"Sign in required."}
+{"error":"AUTH_REQUIRED","message":"Sign in required."}~/workspace$ 

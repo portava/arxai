@@ -1,0 +1,495 @@
+NEXT PHASE: SHADOW MODE + FORWARD TESTING + STRATEGY PROMOTION GATES
+
+Goal:
+Build a professional forward-testing layer where the AI can run in shadow mode, make live-style decisions, track outcomes, rank strategies, and decide which strategies deserve promotion.
+
+The app already has:
+- full tester access
+- live chart
+- market simulator
+- strategy lab
+- backtesting
+- market scanner
+- command room
+- OMS
+- position manager
+- P/L engine
+- Risk Governor 2.0
+- AI Autopilot Orchestrator
+- MT5 deferred
+
+Now build:
+- Shadow Mode
+- Forward Testing
+- Strategy Tournament
+- Confidence Calibration
+- Promotion/Demotion Gates
+- AI Readiness Score
+
+Important:
+- Do not fake MT5 connection.
+- Do not place real broker orders.
+- Do not claim broker fills happened.
+- Keep full tester access open.
+- Keep real broker execution deferred until MT5 is connected later.
+- Shadow mode decisions are observations, not real trades.
+
+==================================================
+1. CREATE SHADOW MODE
+==================================================
+
+Create page:
+
+/shadow-mode
+
+Shadow Mode means:
+- AI scans market conditions
+- AI generates trade ideas
+- AI creates hypothetical entries/exits
+- AI tracks what would have happened
+- AI does not submit simulator orders unless user chooses
+- AI does not create broker orders
+- AI does not claim execution
+
+Shadow decision statuses:
+
+- SHADOW_OBSERVATION
+- SHADOW_TRADE_IDEA
+- SHADOW_WAIT
+- SHADOW_REJECTED
+- SHADOW_TRACKING_OUTCOME
+- SHADOW_WIN
+- SHADOW_LOSS
+- SHADOW_BREAKEVEN
+- SHADOW_EXPIRED
+
+Each shadow decision should include:
+
+- symbol
+- timeframe
+- strategy
+- market condition
+- recommended action
+- entry
+- stop loss
+- take profit
+- confidence score
+- opportunity score
+- entry sniper score
+- trade grade
+- risk governor result
+- reason for decision
+- reason to avoid
+- outcome after tracking period
+
+==================================================
+2. CREATE FORWARD TESTING ENGINE
+==================================================
+
+Create page:
+
+/forward-testing
+
+Forward testing should run strategies on current simulated/live-chart market flow.
+
+Inputs:
+
+- strategy
+- symbols
+- timeframes
+- test duration
+- max shadow trades
+- max trades per day
+- minimum confidence
+- minimum opportunity score
+- minimum trade grade
+- risk profile
+- session filters
+- news filters
+
+Results:
+
+- total shadow decisions
+- shadow trades tracked
+- wins
+- losses
+- breakevens
+- expired setups
+- win rate
+- average R
+- max drawdown
+- opportunity score accuracy
+- confidence calibration
+- best symbol
+- worst symbol
+- best session
+- worst session
+- best strategy
+- weakest strategy
+
+No broker execution.
+
+==================================================
+3. CREATE STRATEGY TOURNAMENT
+==================================================
+
+Create page:
+
+/strategy-tournament
+
+Allow multiple strategies to compete against the same market data.
+
+Default tournament strategies:
+
+- Conservative Pullback
+- Trend Continuation
+- Breakout Confirmation
+- Liquidity Sweep Reversal
+- Gold Scalping Test
+- Custom Strategy
+
+Tournament should rank by:
+
+- win rate
+- average R
+- max drawdown
+- profit factor
+- expectancy
+- risk-adjusted return
+- number of quality setups
+- confidence accuracy
+- risk discipline
+- trade grade average
+
+Show leaderboard:
+
+1. Best Overall Strategy
+2. Best Low-Risk Strategy
+3. Best Scalping Strategy
+4. Best Gold Strategy
+5. Best Forex Strategy
+6. Worst Strategy
+7. Strategy to Retire
+
+==================================================
+4. CREATE CONFIDENCE CALIBRATION SYSTEM
+==================================================
+
+AI confidence must be tested against actual outcomes.
+
+Track:
+
+- AI confidence before setup
+- expected result
+- actual shadow result
+- whether high-confidence trades won
+- whether low-confidence trades lost
+- whether AI was overconfident
+- whether AI was underconfident
+
+Labels:
+
+- WELL_CALIBRATED
+- OVERCONFIDENT
+- UNDERCONFIDENT
+- RANDOM_CONFIDENCE
+- NEEDS_MORE_DATA
+
+Show calibration chart on:
+
+/confidence-calibration
+
+Include:
+
+- confidence bucket 50-60
+- confidence bucket 60-70
+- confidence bucket 70-80
+- confidence bucket 80-90
+- confidence bucket 90-100
+
+Each bucket should show win rate, average R, and sample size.
+
+==================================================
+5. CREATE STRATEGY PROMOTION GATES
+==================================================
+
+Create page:
+
+/strategy-promotion
+
+Strategies should only be promoted if they pass rules.
+
+Promotion levels:
+
+- TESTING
+- WATCHLIST
+- PAPER_APPROVED
+- DEMO_APPROVED
+- LIVE_INTENT_APPROVED
+- FUTURE_MT5_LIVE_LOCKED
+
+Promotion requirements:
+
+PAPER_APPROVED:
+- minimum 20 shadow decisions
+- win rate above configured threshold
+- average R positive
+- max drawdown acceptable
+- no risk governor violations
+
+DEMO_APPROVED:
+- minimum 50 forward-test decisions
+- positive expectancy
+- drawdown under limit
+- confidence calibration acceptable
+- no overtrading behavior
+
+LIVE_INTENT_APPROVED:
+- minimum 100 tested decisions
+- positive expectancy
+- stable confidence calibration
+- risk discipline score above threshold
+- no hard risk violations
+- user/admin approval
+
+FUTURE_MT5_LIVE_LOCKED:
+- visible but locked
+- requires MT5 connection
+- requires real broker readiness
+- requires manual arming later
+
+Do not allow any strategy to jump directly to live.
+
+==================================================
+6. CREATE AI READINESS SCORE
+==================================================
+
+Create page:
+
+/ai-readiness-score
+
+Calculate a score from 0-100.
+
+Factors:
+
+- strategy performance
+- confidence calibration
+- risk discipline
+- drawdown behavior
+- overtrading behavior
+- trade grade average
+- entry sniper average
+- opportunity score accuracy
+- sample size
+- learning loop stability
+- safety compliance
+
+Labels:
+
+- 0-49: NOT_READY
+- 50-69: NEEDS_MORE_TESTING
+- 70-84: PAPER_READY
+- 85-94: DEMO_READY
+- 95-100: LIVE_INTENT_READY
+
+Do not label as real-live-ready while MT5 is deferred.
+
+If MT5 is not connected, show:
+
+“Real broker readiness unavailable until MT5 bridge is connected.”
+
+==================================================
+7. CREATE SHADOW JOURNAL
+==================================================
+
+Create page:
+
+/shadow-journal
+
+Log:
+
+- shadow decisions
+- shadow wins/losses
+- strategy used
+- market condition
+- what AI saw
+- what happened after
+- whether AI was right
+- lesson learned
+
+Separate shadow results from:
+
+- simulator trades
+- paper trades
+- live tester intents
+- future real broker trades
+
+Do not mix environments.
+
+==================================================
+8. CONNECT TO AI AUTOPILOT
+==================================================
+
+Autopilot should support:
+
+- Shadow Observe
+- Shadow Track
+- Shadow Report
+- Promote Strategy
+- Demote Strategy
+
+Autopilot must be able to run without creating orders.
+
+Pipeline:
+
+1. Scan market
+2. Generate trade idea
+3. Run risk governor
+4. If acceptable, create shadow decision
+5. Track price outcome
+6. Grade result
+7. Update confidence calibration
+8. Update strategy score
+9. Update readiness score
+10. Log to shadow journal
+
+==================================================
+9. CREATE STRATEGY DEMOTION RULES
+==================================================
+
+Demote strategies if:
+
+- win rate drops below threshold
+- average R turns negative
+- drawdown exceeds limit
+- overtrading detected
+- repeated risk governor blocks
+- confidence calibration fails
+- too many low-grade trades
+- poor performance during current session
+
+Demotion levels:
+
+- WATCHLIST
+- NEEDS_REVIEW
+- PAUSED
+- RETIRED
+
+User can manually override, but override must be logged.
+
+==================================================
+10. DASHBOARD UPDATES
+==================================================
+
+Add dashboard cards:
+
+- Shadow Mode Status
+- Current Forward Test
+- Top Strategy
+- Worst Strategy
+- AI Readiness Score
+- Confidence Calibration
+- Strategy Promotion Status
+- Shadow Win Rate
+- Shadow Average R
+- Strategy Tournament Winner
+
+==================================================
+11. API ENDPOINTS
+==================================================
+
+Create or update:
+
+GET /api/shadow-mode/status
+POST /api/shadow-mode/start
+POST /api/shadow-mode/stop
+POST /api/shadow-mode/decision
+GET /api/shadow-mode/decisions
+
+POST /api/forward-testing/start
+POST /api/forward-testing/stop
+GET /api/forward-testing/status
+GET /api/forward-testing/results
+
+POST /api/strategy-tournament/start
+GET /api/strategy-tournament/results
+GET /api/strategy-tournament/leaderboard
+
+GET /api/confidence-calibration
+GET /api/strategy-promotion
+POST /api/strategy-promotion/promote
+POST /api/strategy-promotion/demote
+
+GET /api/ai-readiness-score
+GET /api/shadow-journal
+
+==================================================
+12. TESTING CONTROL CENTER UPDATE
+==================================================
+
+Add tests:
+
+- shadow mode start/stop
+- shadow decision creation
+- shadow outcome tracking
+- forward testing run
+- strategy tournament run
+- confidence calibration update
+- promotion gate pass/fail
+- demotion rule test
+- AI readiness score test
+- shadow journal test
+- dashboard cards test
+- environment separation test
+- MT5 deferred honesty test
+
+==================================================
+13. FINAL TEST
+==================================================
+
+Run:
+
+- route smoke test
+- shadow mode test
+- forward testing test
+- strategy tournament test
+- confidence calibration test
+- promotion gate test
+- demotion test
+- AI readiness score test
+- shadow journal test
+- autopilot shadow integration test
+- dashboard update test
+- testing control center update test
+- environment separation test
+- MT5 deferred honesty test
+
+Generate:
+
+SHADOW MODE + FORWARD TESTING REPORT
+
+Include:
+
+- Shadow Mode active yes/no
+- Forward Testing active yes/no
+- Strategy Tournament active yes/no
+- Confidence Calibration active yes/no
+- Strategy Promotion Gates active yes/no
+- AI Readiness Score active yes/no
+- Shadow Journal active yes/no
+- Autopilot connected yes/no
+- Dashboard updated yes/no
+- Testing Control Center updated yes/no
+- Full tester access still active yes/no
+- MT5 still deferred yes/no
+- Real broker execution still not faked yes/no
+
+Hard rules:
+- Do not fake MT5 connection.
+- Do not place real broker orders.
+- Do not claim broker fills happened.
+- Do not promote anything to real live trading while MT5 is deferred.
+- Do not mix shadow results with simulator or future broker records.
+- Do not bypass Risk Governor 2.0.
+- Do not bypass audit logging.
+- Keep full tester access open.

@@ -1,0 +1,442 @@
+Run the final Build SS verification lock-test.
+
+Do not start Build TT.
+Do not add new features unless a Build SS test fails and must be fixed.
+Do not enable live trading.
+Do not modify MT5 live execution.
+Do not modify canPlaceTrades.
+Do not expose API secrets.
+Do not recommend live trading.
+Do not add live trading controls.
+Do not change Build AA through RR logic except to fix Build SS frontend/polish integration issues.
+
+Build SS goal:
+Verify the Final UI Polish, Accessibility, and Mobile Responsiveness Pass.
+
+Build SS must prove:
+- Trading Cockpit feels like the main operating page.
+- Navigation is cleaner and less repetitive.
+- Mobile layout works.
+- Accessibility is improved.
+- Loading, empty, error, and blocked states are polished.
+- Notifications, onboarding, help, and why-blocked drawers are usable.
+- PAPER ONLY and LIVE DISABLED badges are visible.
+- No live trading controls exist.
+- No secrets are exposed.
+- Existing AA-RR systems still work.
+
+1. Typecheck/build health
+
+Run all relevant commands:
+- typecheck
+- build
+- API server validation
+- frontend build validation
+- database/schema validation if available
+- frontend smoke tests if available
+- accessibility/lint tests if available
+
+Show exact commands run and whether each passed.
+
+2. Frontend polish proof
+
+Confirm updated files/components for:
+- shared page layout
+- cards
+- buttons
+- badges
+- status pills
+- empty states
+- loading states
+- error states
+- section headers
+- mobile spacing
+- table/card responsive behavior
+- notification UI
+- onboarding/help UI
+- why-blocked UI
+- navigation/menu cleanup
+
+Show files changed and components updated.
+
+3. Route verification
+
+Confirm these frontend routes/pages load without crashing:
+
+Main:
+- Trading Cockpit
+- Paper Sessions
+- Calendar
+- Coach
+- Playbook
+
+Practice:
+- Replay Simulator
+- Strategy Lab
+- Data Import
+
+System:
+- Notifications
+- Risk Governor
+- Readiness Gate
+- System Health
+- Security
+- Broker Read-Only
+- Help Center
+- Onboarding
+
+For each route, confirm:
+- desktop layout works
+- mobile layout works
+- loading state works
+- empty state works if no data exists
+- no secrets are visible
+- no live trading controls exist
+
+4. Navigation cleanup proof
+
+Show the final navigation grouping.
+
+Confirm:
+- repetitive menu items are removed or grouped
+- Trading Cockpit is the main/default operating page if configured
+- Broker page clearly says READ ONLY
+- Replay pages clearly say simulation/replay only
+- Paper Sessions are clearly paper-only
+- System pages are grouped cleanly
+- no live trading navigation item exists
+- no live execution button exists
+
+5. Trading Cockpit proof
+
+Verify the cockpit shows:
+
+- sticky safety header
+- PAPER ONLY badge
+- LIVE TRADING DISABLED badge
+- primary next action card
+- active session card
+- open paper trades card
+- today performance card
+- coach card
+- alerts card
+- autopilot card
+- system health card
+- onboarding/help widget
+
+Confirm:
+- the most important next action is obvious
+- blocked reasons are easy to understand
+- critical alerts are visible
+- no unsafe controls appear
+- no live trading button exists
+
+Show frontend proof or raw summary output.
+
+6. Mobile responsiveness proof
+
+Test mobile-width layout.
+
+Confirm:
+- no horizontal overflow
+- tables collapse into cards where needed
+- buttons are large enough to tap
+- cards have readable spacing
+- drawers/modals fit the screen
+- sidebar/menu becomes mobile-friendly
+- sticky safety header does not cover content
+- notification drawer is usable
+- Help/Why Blocked drawer is readable
+- session controls are easy to tap
+
+Show screenshot/route proof or test output.
+
+7. Accessibility proof
+
+Confirm improvements for:
+- semantic headings
+- buttons have accessible names
+- icons have labels or aria-hidden
+- status badges include readable text
+- form fields have labels
+- color is not the only way to communicate status
+- focus states are visible
+- keyboard navigation works for key actions
+- modals/drawers trap focus where supported
+- escape closes modals/drawers where appropriate
+- contrast is readable
+- error messages are associated with fields
+- loading states are visible or announced
+
+Show test output or implementation proof.
+
+8. Loading, empty, and error state proof
+
+Verify polished states for:
+
+Trading Cockpit:
+- loading dashboard
+- no active session
+- no paper trades
+- no performance data
+- no coach report
+- blocked session
+- critical alert
+
+Paper Sessions:
+- no sessions
+- session loading
+- blocked preflight
+- session ended
+
+Calendar:
+- no trades this month
+- loading calendar
+- day with no data
+
+Coach/Playbook:
+- no coach report yet
+- no playbook entries yet
+- low sample size state
+
+Replay/Strategy Lab:
+- no scenarios
+- replay running
+- replay failed
+- simulation-only reminder
+
+Data Import:
+- no imports
+- import rejected
+- partial import
+- validation warnings
+
+System pages:
+- no logs
+- degraded subsystem
+- blocked readiness
+- security warning
+- read-only broker disconnected
+
+Show proof.
+
+9. Blocked-state explanation proof
+
+Verify every blocked state explains:
+- what happened
+- why it happened
+- which system blocked it
+- safest next step
+- link to related page
+
+Test examples:
+- Paper session blocked because Readiness Gate failed.
+- Autopilot paused by Risk Governor.
+- Paper execution requires an active paper session.
+- Critical safety alert must be acknowledged.
+- Broker is read-only. Live trading is disabled.
+
+Show proof.
+
+10. Notification UI proof
+
+Verify:
+- notification bell works
+- unread count shows
+- critical count shows
+- notification drawer opens/closes
+- Notification Center page works
+- Critical Safety Banner appears for CRITICAL alerts
+- read/acknowledge/dismiss/snooze buttons work
+- digest panel works
+- critical alerts are obvious but not chaotic
+- no secrets are shown
+- no live trading action appears
+
+Show proof.
+
+11. Onboarding/help UI proof
+
+Verify:
+- onboarding modal works
+- progress tracker works
+- step cards work
+- safety acknowledgement cards work
+- Help Center works
+- Help Drawer works
+- Why Blocked drawer works
+- mobile drawer layout works
+- language is plain and user-friendly
+- no live trading recommendation appears
+
+Show proof.
+
+12. Safe copy proof
+
+Review UI copy and confirm:
+- paper-only is stated where relevant
+- live trading disabled is stated where relevant
+- replay is labeled simulation only
+- imported data is labeled imported/historical
+- broker is labeled read-only
+- no profit guarantees exist
+- no “go live” recommendation exists
+- sample size limitations are mentioned where relevant
+- no hype claims like guaranteed winner exist
+
+Show sample copy.
+
+13. Desktop route proof
+
+Run desktop viewport smoke check or manually verify.
+
+Confirm:
+- main dashboard is readable
+- cards align correctly
+- tables are not broken
+- drawers/modals display correctly
+- no layout overlap
+- no console/runtime errors if detectable
+
+Show proof.
+
+14. Mobile route proof
+
+Run mobile viewport smoke check or manually verify.
+
+Confirm:
+- cockpit is readable
+- session controls fit
+- notification drawer fits
+- help drawer fits
+- calendar is usable
+- paper trade monitor is readable
+- coach/playbook pages are readable
+- no horizontal scroll
+
+Show proof.
+
+15. Frontend performance proof
+
+Confirm:
+- no unnecessary repeated fetch loops
+- large tables use limits/pagination where available
+- API missing data does not crash frontend
+- fallback values are safe/readable
+- loading skeletons/spinners show where needed
+- frontend does not render giant unbounded tables
+
+Show proof.
+
+16. Secret redaction proof
+
+Search frontend-visible output, props, logs, route payloads, and UI text.
+
+Confirm none include:
+- BROKER_API_KEY
+- BROKER_API_SECRET
+- MARKET_DATA_API_KEY
+- DATABASE_URL
+- session secrets
+- raw broker tokens
+- full account IDs
+
+Confirm broker/account info is masked where shown.
+
+17. Live-trade isolation proof
+
+Search Build SS/frontend files and confirm they do NOT call:
+
+executeTrade,
+execute-trade,
+mt5 order placement,
+MT5 order placement,
+livePosition modification,
+live order,
+setCanPlaceTrades,
+live broker execution,
+broker.placeOrder,
+orderSend,
+positionClose,
+modifyOrder,
+real order placement,
+or anything that can place, close, or modify real trades.
+
+Confirm Build SS does NOT modify:
+- safetyCore.canPlaceTrades
+- live broker permissions
+- MT5 live execution
+- Build AA safety rules
+- Build EE paper-only execution rules
+- Build FF paper-only autopilot rules
+- Build HH liveTradingAllowed rules
+- Build KK broker read-only rules
+- Build LL critical alert rules
+- Build MM forbidden admin action rules
+- Build NN forbidden permission rules
+- Build OO readiness gate rules
+- Build PP paper session rules
+- Build QQ cockpit safety rules
+- Build RR onboarding/help safety rules
+
+Confirm SS:
+- polishes UI only
+- never executes trades
+- never enables live trading
+- never recommends live trading
+- never exposes secrets
+- keeps LIVE TRADING DISABLED visible
+
+18. Existing behavior compatibility
+
+Confirm these still work:
+- AA decision orchestrator
+- BB auto-debrief
+- CC learning engine
+- DD market data
+- EE paper execution
+- FF paper autopilot
+- GG calendar and command center
+- HH risk governor
+- II trader coach and playbook
+- JJ replay and strategy lab
+- KK data import and broker read-only
+- LL notifications
+- MM system health/admin/audit
+- NN security/roles/permissions
+- OO readiness gate
+- PP paper session manager
+- QQ trading cockpit
+- RR onboarding/help
+- manual debrief
+- manual paper close
+- analytics
+- all frontend routes
+
+Required final response format:
+
+1. Verification passed or failed
+2. Commands/tests run
+3. Files changed
+4. New files created
+5. Database changes, if any
+6. Frontend polish proof
+7. Route verification proof
+8. Navigation cleanup proof
+9. Trading Cockpit proof
+10. Mobile responsiveness proof
+11. Accessibility proof
+12. Loading/empty/error state proof
+13. Blocked-state explanation proof
+14. Notification UI proof
+15. Onboarding/help UI proof
+16. Safe copy proof
+17. Desktop route proof
+18. Mobile route proof
+19. Frontend performance proof
+20. Secret redaction proof
+21. Live-trade isolation proof
+22. Any fixes made during verification
+23. Final Build SS score out of 10
+24. Whether the app is polished enough for controlled PAPER TESTING
+25. Whether live trading remains fully disabled

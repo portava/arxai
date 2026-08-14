@@ -1,0 +1,295 @@
+Run a full ARX AI Feature Truth Audit across the entire app.
+
+Goal:
+Audit every visible and hidden feature individually and classify what is genuinely built, what is only a shell, what is wired but unreachable from the UI, what is disconnected from the central AI/brain/execution systems, what is still using mock/demo/simulation/paper behavior, and what is misleading users by displaying fake or stale success states.
+
+Do not rebuild the app. Do not redesign features. Do not delete anything yet. First produce a precise truth map with file/path proof, then apply only safe fixes for confirmed misleading or broken behavior.
+
+Core ARX rules:
+- ARX AI is live-first.
+- No paper/demo/simulator mode should be exposed as if it is live.
+- Backtesting may use historical testing, but must never execute live trades.
+- Scanner, chart, Auto Pilot, Profit Mission, manual trade buttons, Eleanor chat, and live dashboard must all connect to the same central truth systems where appropriate.
+- Any feature that can trade must go through the approved live execution queue/pipeline/gates.
+- No feature should display fake “connected,” “running,” “success,” “profit,” “trade sent,” or “AI active” states unless backend truth confirms it.
+- No user-facing shell should pretend to be functional.
+
+Audit scope:
+Search and inspect all app features, routes, pages, cards, panels, tabs, menus, widgets, API routes, services, stores, guards, event logs, and tests.
+
+Include at minimum:
+
+1. Dashboard
+2. Scanner
+3. Chart trading
+4. Manual Buy/Sell
+5. Close/Modify/Pending orders
+6. Eleanor chat
+7. Voice / speech controls
+8. Auto Pilot
+9. Profit Mission
+10. Backtesting Lab / Testing Lab
+11. Strategy builder / strategy controls
+12. FVG / trend setup logic
+13. Scalp / flame engine
+14. Watchlists
+15. Market search
+16. Bridge status / MT5 connection
+17. Live account panels
+18. Open positions
+19. Closed trades / history
+20. Investor portal
+21. Pool / NAV / units
+22. Admin approval
+23. Master bridge assignment
+24. One-click trading
+25. Kill switch
+26. Risk/governance controls
+27. Notifications / alerts
+28. News or high-impact event logic
+29. Settings
+30. User profile / account state
+31. Any hidden routes, orphan components, unused stores, or unlinked backend endpoints
+
+For each feature, create a row in a feature truth table with these columns:
+
+- Feature name
+- UI location / route
+- Backend/API/service location
+- Store/state source
+- Central brain connection: YES / PARTIAL / NO
+- Live execution connection: YES / NO / SHOULD NOT
+- Data source: MT5 bridge / historical candles / provider API / local state / mock / unknown
+- Current status: REAL / PARTIAL / SHELL / HIDDEN / DUPLICATE / MISLEADING / USELESS
+- User-facing risk: LOW / MEDIUM / HIGH / CRITICAL
+- Problem summary
+- Exact file:line evidence
+- Recommended action: keep / connect / hide / subdue / rename / remove later / fix now
+- Tests currently covering it
+- Missing tests
+
+Definitions:
+
+REAL:
+Feature has reachable UI, real backend/data source, honest loading/error states, and tests.
+
+PARTIAL:
+Some real wiring exists, but missing important UI, backend, tests, or state sync.
+
+SHELL:
+Looks like a feature but has placeholder UI, TODO handlers, fake local-only state, mock values, no backend, or dead buttons.
+
+HIDDEN:
+Backend/service/store exists but no reachable UI call or no navigation entry.
+
+DUPLICATE:
+Feature overlaps another working feature and causes confusion or state divergence.
+
+MISLEADING:
+Shows live/success/running/connected/profit/AI-active/trade-ready state without backend proof.
+
+USELESS:
+Feature has no clear purpose, no real workflow, no central connection, and does not support ARX’s core trading mission.
+
+Subdue criteria:
+Mark a feature as “subdue” if it is not worth deleting yet but should be visually de-emphasized, hidden behind an advanced/dev/admin section, renamed as experimental, or removed from primary navigation because it distracts from live trading.
+
+Central brain audit:
+Identify the actual central brain/AI decision system. Then check which features call it and which features use isolated local logic. Specifically verify:
+- Scanner → central signal/decision truth
+- Chart → same symbol/timeframe/action truth
+- Eleanor → same planner/execution truth
+- Auto Pilot → same planner/execution truth
+- Profit Mission → same lifecycle/execution/progress truth
+- Strategy controls → same strategy registry/config
+- Backtesting → same strategy definitions but historical-only execution
+- Notifications → same event/audit/status stream
+
+For every feature not connected to the central brain, classify whether it:
+- should connect now
+- should stay independent
+- should be hidden/subdued
+- should be deleted later
+
+Simulation/demo/mock audit:
+Search for and inspect all use of:
+- mock
+- demo
+- paper
+- simulator
+- simulated
+- dummy
+- fixture
+- Math.random
+- fake
+- placeholder
+- TODO
+- coming soon
+- testOnly
+- localOnly
+- sample
+- stub
+- hardcoded
+- inMemory
+- sandbox
+- dryRun
+- generateDummy
+- seed
+- fakeBalance
+- fakeProfit
+- dummyCandles
+
+Do not treat every test fixture as a bug. Separate:
+- valid test-only fixture
+- valid historical backtest fixture
+- invalid user-facing mock
+- invalid live-path simulation
+- misleading fake display
+
+UI call audit:
+Find backend endpoints/services/stores that are real but hidden. For each hidden real function, decide:
+- add a UI call now
+- link it from existing UI
+- keep admin-only
+- keep backend-only
+- remove/subdue later
+
+Dead button audit:
+Find all buttons, switches, tabs, CTAs, menu items, dropdowns, and form submit handlers that:
+- have no handler
+- only update local state
+- do not call backend when they should
+- do not reflect backend rejection
+- continue showing success after failure
+- do not update after timeout
+- are visually enabled while blocked
+
+For each dead/misleading control, either fix it safely or mark it in the report with evidence.
+
+Live truth audit:
+Verify these features do not lie:
+- bridge connected status
+- account balance/equity/margin
+- scanner action verdict
+- chart action button
+- Auto Pilot running state
+- Profit Mission progress
+- trade submitted/filled/rejected
+- position open/closed state
+- investor NAV/pool value
+- one-click armed state
+- kill switch state
+- admin approval/live activation
+
+If any UI derives live-looking status from local state only, fix it or mark it as misleading.
+
+Execution safety audit:
+For every path that can place, close, modify, or queue a trade:
+- identify the UI origin
+- identify API route
+- identify service
+- identify audit log/event
+- verify it uses the same live execution pipeline
+- verify it respects approval/entitlement/bridge freshness/kill switch where required
+- verify user/account isolation
+- verify no backtest/testing/demo route can reach live execution
+
+Investor/pool honesty audit:
+Verify investor and pool features are not pretending to have real NAV, real deposits, real ownership units, or real payouts unless backend truth exists. If not complete, mark them as:
+- shell
+- partial
+- admin-only
+- subdue from main nav
+- hide until real money flow is built
+
+Autopilot and AI honesty audit:
+Verify any “AI active,” “Auto Pilot running,” “Eleanor watching,” or “mission active” state is backed by actual scheduled/looped/server-side behavior, not only a frontend toggle. If Auto Pilot only starts in-memory or only while page is open, clearly mark it. If it requires admin-only or live queue, verify UI says that honestly.
+
+Backtesting honesty audit:
+Verify all backtesting/testing screens:
+- use real historical candles or explicitly uploaded data
+- never use Math.random in user-facing results
+- never touch live execution imports/routes
+- clearly label historical results
+- do not show fake precision when history is missing
+
+Deliverables:
+
+Part 1 — Executive Summary
+Give counts:
+- Total features audited
+- Real features
+- Partial features
+- Shell features
+- Hidden real features
+- Misleading features
+- Useless/subdue candidates
+- Simulation/demo/mock leaks
+- Critical fixes needed
+
+Part 2 — Feature Truth Table
+Give the complete table with file:line proof.
+
+Part 3 — Critical Lies
+List every place the app currently lies or could mislead a user. Examples:
+- shows live but is local-only
+- shows profit but uses fake/stale data
+- says running but no backend process exists
+- says connected but bridge is stale
+- says order submitted but backend rejected
+
+Part 4 — Hidden Real Features
+List real backend/service functions that are built but have no UI call.
+
+Part 5 — Shell / Useless / Subdue Candidates
+List features that should be hidden, subdued, renamed experimental, or removed from primary navigation.
+
+Part 6 — Central Brain Disconnects
+List features not connected to the central AI/decision/execution truth and recommend how to connect or subdue them.
+
+Part 7 — Simulation/Demo/Paper Leaks
+List all user-facing mock/demo/sim/paper behavior and whether it was fixed or still needs work.
+
+Part 8 — Safe Fixes Applied
+Apply only safe fixes that do not require product decisions:
+- replace fake success with honest blocked/error state
+- hide obvious dead nav items behind admin/dev/experimental flags
+- redirect legacy shell pages to real pages
+- wire existing UI to existing backend if the backend is complete and safe
+- add missing error states for backend rejection
+- add guards preventing testing/backtest routes from importing live execution
+- add tests for known misleading states
+
+Part 9 — Tests / Guards Added
+Add or update tests for:
+- no user-facing Math.random/fake data in live surfaces
+- no backtest route imports live execution
+- dead buttons either call real backend or show disabled/blocked state
+- Auto Pilot status reflects backend truth
+- Profit Mission progress reflects real P/L
+- scanner/chart/header action truth stays aligned
+- bridge stale state cannot display live-ready success
+- investor/pool pages do not show fake NAV/payout if backend is missing
+
+Part 10 — Validation
+Run:
+- relevant frontend tests
+- relevant backend/API tests
+- dashboard/app typecheck
+- scripts typecheck
+- full CI guards
+- any existing scanner/chart/live execution regression tests
+
+Final report must include:
+1. What is truly built
+2. What is only a shell
+3. What is hidden without UI access
+4. What is useless or should be subdued
+5. What is disconnected from the central brain
+6. What is still simulation/demo/mock/paper
+7. What features are misleading or lying
+8. What was safely fixed
+9. What needs a product decision before fixing
+10. Exact validation results
+
+Do not claim a feature is real unless you have UI + backend/data + state + tests or direct file proof. Be strict. ARX should feel smaller and more honest after this audit, not bigger and faker.

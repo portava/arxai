@@ -1,0 +1,486 @@
+Run a full ARX AI safe repair, regression audit, dependency check, and deployed mobile QA pass.
+
+Goal:
+Make sure the full app is functional after the last 15 commands. Repair what is broken, missing, stale, duplicated, or visually wrong — but every repair must be done safely so fixing one area does not break another area.
+
+Critical rule:
+Do not make a repair blindly. Before changing anything, understand what depends on it. If a fix breaks another feature, revert that fix and choose a different safer approach. The final app must pass full functional QA across trading, Ruby, scanner, chart, risk, admin, navigation, mobile layout, and backend gates.
+
+Important:
+Do not rebuild from scratch.
+Do not create duplicate pages/components.
+Do not remove features.
+Do not bypass live trading safety gates.
+Do not auto-arm live trading.
+Do not enable AI autonomous trading by default.
+Do not expose internal function names to normal users.
+Do not change backend trading behavior except to repair broken wiring/regressions.
+Do not leave the app partially working.
+
+1. Create a baseline before repairs
+
+Before changing code:
+- inspect current git status
+- identify active branch/commit
+- note recent checkpoints/commits from the last 15 commands
+- inspect .local/session_plan.md if present
+- inspect active deployed routes/components
+- run baseline tests if possible:
+  pnpm run typecheck
+  pnpm run ci:guards
+  pnpm --filter @workspace/scripts run test:live-phaseB
+- capture current failures before making changes
+
+Do not start changing code until the broken areas are identified.
+
+2. Build a regression map
+
+Review the last 15 commands/session changes and map the affected areas:
+
+- live readiness / shared live trading
+- one-click live trading
+- global instant trade router
+- Ruby text/voice trade commands
+- Ruby typing/thinking states
+- no internal function names exposed
+- scanner / selected market / symbol focus
+- simple-first UI cleanup
+- trade page
+- positions/orders
+- chart trade entry
+- risk page
+- cockpit/dashboard
+- admin/live shared pages
+- bottom navigation
+- Ruby floating assistant
+- mobile Safari layout
+
+For each area, identify:
+- active component/route
+- backend route/service used
+- related tests
+- other features that depend on it
+- risk of breakage if changed
+
+3. Safe repair rule
+
+For every repair:
+- make the smallest possible change
+- fix the active runtime path only
+- do not create duplicate replacement components
+- do not remove existing capability
+- run targeted tests after the change
+- manually verify affected UI if possible
+- check dependent features after the change
+
+If the fix causes a new failure:
+- revert that specific change
+- explain what it broke internally
+- choose a safer alternate implementation
+- retest
+- repeat until the repair does not create new breakage
+
+No repair is complete until the affected feature and its nearby dependencies still work.
+
+4. Full live readiness QA and repair
+
+Verify and repair:
+
+Expected live bridge identity:
+- Account: 62470041
+- Broker: Deriv (SVG) LLC
+- Server: DerivSVG-Server
+- EA version: v1.27+
+- mode: LIVE
+- accountType: live
+- heartbeat fresh
+- ReadOnlyMode=false
+- EnableLiveExecution=true
+- terminalConnected=true
+- algoTradingAllowed=true
+
+Readiness UI must:
+- exclude serverLiveExecutionEnabled from failed pre-arm count
+- show READY TO ARM or EA READY / SERVER DISPATCH OFF when all pre-arm checks pass but server dispatch is OFF
+- not show Locked when only server dispatch is OFF
+- not show old text “Phase A: server live execution is pinned OFF”
+- use three separate fields for account, broker, and server confirmation
+- send non-empty values to backend:
+  confirmedAccountNumber
+  confirmedBrokerName
+  confirmedServerName
+- pass #12 with exact values:
+  62470041
+  Deriv (SVG) LLC
+  DerivSVG-Server
+- identify only the exact mismatched field when #12 fails
+- read the typed phrase from actual input state, not placeholder/stale state
+- show correct badge states:
+  LOCKED
+  READY TO ARM
+  LIVE BROKER EXECUTION ENABLED
+  KILL SWITCH ACTIVE — LIVE ORDERS BLOCKED
+
+Backend must:
+- refuse live dispatch unless serverLiveExecutionEnabled=true and all gates pass
+- keep kill switch override
+- audit live state changes
+
+Repair any failure without weakening safety gates.
+
+5. One-click trading QA and repair
+
+Verify and repair One-Click Live Mode:
+
+- approved operator can enable it
+- BUY executes instantly
+- SELL executes instantly
+- CLOSE executes instantly
+- CLOSE ALL executes instantly if enabled
+- no per-trade confirmation modal in One-Click Mode
+- no per-order checkbox in One-Click Mode
+- stop loss is optional
+- take profit is optional
+- blank SL/TP submit as null
+- Standard Mode still exists when One-Click Mode is disabled
+
+Blockers must still work:
+- unapproved users cannot trade
+- serverLiveExecutionEnabled=false blocks live open orders
+- kill switch blocks new/increase-risk orders
+- max lot blocks oversized trades
+- daily loss limit blocks after breach
+- account/bridge approval is enforced
+- reduce-only CLOSE works where supported
+
+If a one-click repair breaks Standard Mode, do not keep that repair. Rework it so both modes function.
+
+6. Global Instant Trade Router QA and repair
+
+Verify the same shared instant router is used by:
+
+- Trade page Quick Trade BUY/SELL
+- Scanner BUY/SELL
+- SelectedMarketPanel BUY/SELL
+- ChartTradeEntry BUY/SELL
+- OpenLivePositions CLOSE
+- OpenLivePositions CLOSE ALL
+- Market cards trade actions
+- Watchlist trade actions if present
+- Alert/opportunity trade actions if present
+- Ruby text trade commands
+- Ruby voice trade commands
+
+One-Click Mode should not open the old modal flow.
+
+Every instant action must audit:
+- user id
+- account id
+- bridge id
+- source
+- action
+- symbol
+- order type
+- volume
+- stopLoss or null
+- takeProfit or null
+- accepted/rejected
+- rejection reason
+- broker command id if accepted
+- timestamp
+
+If wiring one surface breaks another, revert and introduce a shared adapter so all surfaces call the router safely without breaking their local UI state.
+
+7. Ruby command QA and repair
+
+Ruby must execute only clear direct trade commands when allowed:
+
+Allowed clear examples:
+- Buy EURUSD 0.01
+- Sell EURUSD 0.01
+- Buy this
+- Sell this
+- Close my EURUSD trade
+- Close all trades
+- Close all profitable trades
+- Move stop loss to break even
+- Set take profit to 1.0920
+
+Ruby must not trade from vague prompts:
+- What should I trade?
+- Is EURUSD good?
+- Do you think I should buy?
+- Find me a setup.
+- Where is this going?
+
+Ruby command gates must remain:
+- aiInstantTradeCommandsEnabled required for Ruby open commands
+- allowRubyOpenCommands required for opens
+- allowRubyCloseCommands required for closes
+- allowRubyModifyCommands required for modifications
+- vague/unknown parser result never executes
+
+Repair any unsafe or broken Ruby routing without enabling autonomous trading.
+
+8. Ruby chat UX QA and repair
+
+Verify and repair:
+
+- sending any message immediately shows “Ruby is thinking…” with animated dots
+- streaming/rendering shows “Ruby is typing…” with animated dots
+- quick suggestion clicks show the same indicator
+- voice mode shows:
+  Ruby is listening…
+  Ruby is understanding you…
+  Ruby is thinking…
+  Ruby is typing…
+  Ruby is speaking…
+- input placeholder says “Ask Ruby…”
+- performance summary does not show getMyPerformanceSummary
+- raw tool/function chips are hidden from normal users
+- typing indicator disappears after final response
+
+Internal details may appear only in collapsed admin/dev Developer details.
+
+9. No internal names exposed QA and repair
+
+Normal users must not see:
+
+- getMyPerformanceSummary
+- getMarketRead
+- executeInstantTrade
+- executeTradeIntent
+- validateLiveTrade
+- fetchScannerData
+- serverLiveExecutionEnabled
+- oneClickLiveTradingEnabled
+- aiInstantTradeCommandsEnabled
+- liveSharedApproved
+- confirmedAccountNumber
+- confirmedBrokerName
+- confirmedServerName
+- /api/ route names
+- raw JSON
+- stack traces
+- camelCase function/state labels
+- database field names
+
+Replace with friendly labels:
+- Ruby is reviewing your performance…
+- Ruby is checking this market…
+- Sending trade…
+- Checking trade readiness…
+- Live trading is not armed yet.
+- Account not approved.
+- Kill switch active.
+- Broker confirmation does not match.
+- Trade could not be sent.
+
+Add or verify a guard/test that prevents these from appearing in normal user UI.
+
+10. Simple-first UI QA and repair
+
+Verify and repair without removing features.
+
+Scanner:
+- opens to clean Focus tab
+- Focus shows selected market, Ruby read, bias, confidence, risk, entry/stop/target, main actions
+- Results tab has scanner cards/opportunities
+- Symbols tab has search, favorites/recent, symbol groups
+- Advanced tab has scan universe, feed status, diagnostics, raw metrics
+- large symbol chip walls do not crowd the first screen
+
+Trade:
+- opens to Quick Trade
+- shows selected symbol, volume, BUY, SELL, position summary, compact status
+- Positions tab shows open positions and one-click close
+- Orders tab exists
+- Advanced tab contains pending order types and detailed controls
+- all order types still exist:
+  buy limit
+  sell limit
+  buy stop
+  sell stop
+  buy stop limit
+  sell stop limit
+
+Ruby:
+- Chat, Market Read, Commands, Memory tabs exist
+- system/debug/API details hidden unless advanced/admin
+
+Risk:
+- Summary, Limits, Rules, Audit available
+
+Admin/live shared:
+- sections grouped/collapsible:
+  Live Readiness
+  Bridge Heartbeat
+  Account Approval
+  Server Dispatch
+  Kill Switch
+  Audit Logs
+  Advanced Debug
+
+If simplifying UI hides a required feature, adjust the tab/drawer structure instead of deleting or disabling the feature.
+
+11. Market/symbol focus QA and repair
+
+Verify and repair:
+
+- selected market updates top symbol badge
+- symbol selection updates Ruby market context
+- symbol selection updates scanner focus
+- symbol selection updates chart/trade default where supported
+- selecting a symbol never places a trade
+- missing DERIV_APP_ID does not make synthetic symbols appear nonexistent
+- feed unavailable means data unavailable, not symbol unavailable
+- symbol groups are collapsible and do not dominate mobile UI
+
+12. Bottom menu bar repair — no gaps underneath
+
+Fix globally, not page-by-page.
+
+On iPhone Safari/mobile:
+- bottom menu bar fixed flush to bottom safe area
+- no visible gap underneath bottom nav
+- no white/blank/transparent strip below nav
+- no floating detached bottom menu unless intentionally designed
+- nav background extends through iOS safe-area inset
+- nav does not overlap page content
+- page content has bottom padding equal to nav height + safe area
+- no double bottom bars
+- no body/page background mismatch under nav
+- no horizontal overflow caused by nav
+- browser toolbar changes do not leave a gap
+- Ruby bubble visible or hidden does not affect nav layout
+
+Implementation guidance:
+- check html, body, root, app shell, page wrappers, and nav container
+- use 100dvh/min-height where appropriate
+- use env(safe-area-inset-bottom)
+- remove accidental margins/padding under nav
+- ensure fixed nav background covers safe area
+- ensure main content scrolls above nav
+
+If a nav fix breaks scrolling or covers content, revert that approach and use a safer app-shell layout fix.
+
+13. Full mobile QA
+
+Use iPhone Safari-sized viewport.
+
+Verify:
+- no horizontal overflow
+- bottom nav has no gap underneath
+- bottom nav does not cover buttons/cards
+- Ruby bubble does not cover BUY, SELL, CLOSE, scanner controls, checklist rows, or chat input
+- primary buttons are thumb-friendly
+- long sections collapse cleanly
+- status badges wrap cleanly
+- no giant repeated warnings dominate normal screens
+- admin/debug details collapsed by default
+- chat input usable above bottom nav
+- last item on every page can scroll above bottom nav
+
+14. Full app functional smoke test
+
+Verify the full app still works after repairs:
+
+- login/session state
+- Cockpit/Dashboard loads
+- Scanner loads and tabs work
+- Symbol selection works
+- Ruby chat works
+- Ruby voice states work
+- Trade page loads
+- Quick Trade controls work
+- Advanced order types still accessible
+- Positions load
+- Close buttons visible
+- Risk page loads
+- Live chart loads
+- Admin/live shared page loads
+- More/Settings page loads
+- bottom navigation works on every tab
+- no duplicate legacy page appears
+- no blank screens
+- no console-breaking runtime errors
+- no fatal mobile layout issues
+
+15. Tests
+
+Run:
+- pnpm run typecheck
+- pnpm run ci:guards
+- pnpm --filter @workspace/scripts run test:live-phaseB
+
+Also run existing tests related to:
+- Ruby chat
+- instant trade router
+- scanner
+- mobile layout
+- bottom navigation/app shell
+- user-facing label sanitization
+- live readiness
+- one-click trading
+
+Add/update tests for:
+- 14/14 pre-arm + server dispatch OFF = READY TO ARM, not Locked
+- exact account/broker/server confirmation passes
+- empty confirmation values fail #12
+- one-click BUY/SELL/CLOSE route through instant router
+- blank SL/TP allowed in One-Click Mode
+- Ruby clear trade commands route to instant router
+- Ruby vague questions do not trade
+- normal users do not see internal function names
+- Ruby typing/thinking indicator appears during response states
+- Scanner opens to Focus
+- Trade opens to Quick Trade
+- bottom nav has no gap underneath on mobile
+- bottom nav does not cover content
+- no mobile horizontal overflow
+
+16. Repair loop
+
+If anything fails:
+- identify the exact active component/route
+- identify what depends on it
+- fix with the smallest safe change
+- run targeted tests
+- run dependent smoke checks
+- if the fix breaks something else, revert and use a different approach
+- repeat until the app is functional
+
+17. Final report
+
+At the end, provide:
+
+A. Passed
+All verified working areas.
+
+B. Fixed
+Every issue found and repaired.
+
+C. Regressions from last 15 commands
+What was broken by recent work and how it was fixed.
+
+D. Alternative fixes used
+Any time the first repair broke something else, explain the safer alternative chosen.
+
+E. Still blocked
+Anything that cannot be completed and why.
+
+F. Manual checks needed
+Anything I need to verify in the live app.
+
+G. Exact runtime status
+Include:
+- active commit/build id
+- active readiness route/component
+- active instant trade router route
+- active Ruby chat component
+- active scanner component
+- active app shell/bottom nav component
+- test results summary
+
+Do not stop at inspection.
+Repair, retest, verify dependencies, and make sure the full app is functional.

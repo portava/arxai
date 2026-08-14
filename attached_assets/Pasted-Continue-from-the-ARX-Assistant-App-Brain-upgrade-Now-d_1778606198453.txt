@@ -1,0 +1,195 @@
+Continue from the ARX Assistant / App Brain upgrade.
+
+Now do a full proof, QA, and runtime validation pass so we know the assistant truly understands the app and the floating UI is actually fixed in the live app.
+
+Main objective:
+The ARX Assistant should be able to answer app-wide questions from any page, using real app state when available, and it must never show “No help topics for this page yet.”
+
+Phase 1 — Verify actual assistant behavior
+1. Run the app locally.
+2. Open the live UI in mobile width and desktop width.
+3. Confirm which assistant component is actually rendering.
+4. Confirm the old stuck/pinned help behavior is gone.
+5. Confirm the expanded assistant panel does not block:
+   - bottom nav
+   - More button
+   - Help Center chips
+   - Emergency Stop
+   - menu/sidebar
+   - page buttons
+
+If it still blocks anything, fix the actual rendered CSS/component before continuing.
+
+Phase 2 — Connect assistant to real app status
+The assistant should not only use static help text. It should read current app state where possible.
+
+Wire these real statuses into the assistant context:
+- current route/path
+- current page title
+- user role from secure server/auth context
+- paper only status
+- live trading disabled status
+- live broker execution disabled status
+- MT5 deferred / simulator mode status
+- sim engine status
+- selected symbol, such as FX:EURUSD
+- intents count
+- broker connection status
+- heartbeat status, if available
+- readiness status, if available
+- emergency stop status, if available
+
+Important:
+Do not hardcode these statuses if existing state/store/API values already exist. Reuse the app’s real state sources.
+
+Phase 3 — Add assistant answer test set
+Create a deterministic QA test set with at least 75 app questions.
+
+Include questions like:
+- What is ARX AI?
+- What does Analyze. Risk. eXecute. mean?
+- Why is live trading disabled?
+- Why is broker execution disabled?
+- Why am I in paper only mode?
+- Why is MT5 deferred?
+- What is simulator mode?
+- What does Sim Engine mean?
+- What does FX:EURUSD mean?
+- What does 33 intents mean?
+- What does Emergency Stop do?
+- Why can’t I start a paper session?
+- Why is autopilot blocked?
+- Why is broker read-only?
+- What is the safest next step?
+- What does Cockpit do?
+- What does Trade do?
+- What does AI do?
+- What does Risk do?
+- What is the More menu?
+- How do I connect MT5?
+- What is the MT5 heartbeat?
+- What happens if heartbeat is missing?
+- What does the coach do?
+- What does replay do?
+- What does readiness check?
+- What does data show?
+- What does the Help Center do?
+- What does the assistant know?
+- Can the assistant tell me what to buy or sell?
+- Can the assistant bypass safety locks?
+- Where do I find broker settings?
+- What should I fix first?
+
+For each test question, verify:
+- answer is not empty
+- answer does not say “No help topics”
+- answer references the right app area
+- answer gives a safe next step
+- answer does not give financial advice
+- answer does not claim live trading is available unless the app state proves it
+- answer does not hallucinate a feature not present in the app
+
+Phase 4 — Route coverage validation
+Create a route knowledge coverage validator.
+
+It should scan all visible routes from App.tsx and confirm each route has:
+- title
+- page purpose
+- main controls
+- safety notes
+- common questions
+- related route/page links
+
+Report:
+- total routes found
+- total routes covered
+- uncovered routes
+- duplicate route knowledge
+- weak/placeholder entries
+
+Do not fake coverage. If a route has weak coverage, mark it as weak and improve it.
+
+Phase 5 — Status badge coverage validation
+Create a badge/status knowledge validator.
+
+Every major badge must have an explanation:
+- FULL TESTER ACCESS
+- LIVE BROKER EXECUTION DISABLED
+- MT5 DEFERRED
+- SIMULATOR MODE
+- SIM ENGINE
+- FX:EURUSD
+- INTENTS
+- PAPER ONLY
+- LIVE TRADING DISABLED
+- BROKER READ-ONLY
+- AUTOPILOT BLOCKED
+- EMERGENCY STOP
+- READINESS
+
+For each badge, assistant should explain:
+- plain-English meaning
+- why it matters
+- what can/cannot happen while active
+- safe next action
+
+Phase 6 — Add in-app assistant diagnostics
+Add an internal/dev-only diagnostic panel or console output that shows:
+- assistant mode: local deterministic or OpenAI/API grounded mode
+- current route context
+- current status context
+- matched knowledge source
+- confidence level
+- fallback level used
+- missing knowledge logs
+
+Only show this to tester/admin/owner roles. Do not expose secrets or API keys.
+
+Phase 7 — Fix fallback behavior
+Assistant fallback must follow this order:
+1. current page knowledge
+2. route-related knowledge
+3. status/badge knowledge
+4. global ARX app knowledge
+5. safe fallback with missing-knowledge logging
+
+The user should always receive a useful answer, even if the exact page has no custom topic yet.
+
+Replace “No help topics for this page yet” with something like:
+“I don’t have a page-specific note for this exact area yet, but here’s what I know from the ARX app system…”
+
+Phase 8 — Final runtime test
+In the live app, test at mobile width:
+- open Help Center
+- open ARX Assistant
+- ask “Why can’t I start a paper session?”
+- ask “Why is live trading disabled?”
+- ask “What does MT5 Deferred mean?”
+- ask “What should I do next?”
+- tap More menu while assistant is collapsed
+- tap bottom nav while assistant is collapsed
+- confirm no overlap/blocking
+
+Test at desktop width:
+- sidebar/menu remains clickable
+- assistant floats bottom-right
+- expanded panel opens upward
+- no full-width stuck bar
+- emergency stop remains visible and separate
+
+Phase 9 — Report back
+Return a detailed implementation report with:
+- exact assistant component/file that renders in live UI
+- files changed
+- total routes found
+- total routes covered
+- number of assistant topics added
+- number of badge/status explanations added
+- QA test count and pass/fail results
+- mobile UI test result
+- desktop UI test result
+- whether assistant uses local deterministic mode or OpenAI/API grounded mode
+- remaining weak knowledge areas
+- confirmation that no MT5 bridge logic, trading execution logic, risk rules, or routes were changed
+
+Do not move to new trading features until this assistant passes the route, badge, question, and UI overlap tests.

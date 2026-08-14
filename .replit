@@ -1,0 +1,151 @@
+modules = ["nodejs-24", "python-3.11", "postgresql-16"]
+
+[deployment]
+router = "application"
+deploymentTarget = "autoscale"
+
+[deployment.postBuild]
+args = ["pnpm", "store", "prune"]
+env = { "CI" = "true" }
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "safety-integration"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "typecheck"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "ci-guards"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "targeted-tests"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "full-ci"
+
+[[workflows.workflow]]
+name = "safety-integration"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "ARX_REQUIRE_INTEGRATION_DB=true pnpm run ci:integration"
+
+[workflows.workflow.metadata]
+isValidation = true
+
+[[workflows.workflow]]
+name = "typecheck"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm run typecheck:ci"
+
+[workflows.workflow.metadata]
+isValidation = true
+
+[[workflows.workflow]]
+name = "ci-guards"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm run ci:guards"
+
+[workflows.workflow.metadata]
+isValidation = true
+
+[[workflows.workflow]]
+name = "targeted-tests"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm --filter @workspace/scripts run test:ruby-chat-chart-read-parity && pnpm --filter @workspace/api-server run test:read-chart-structure-tool && pnpm --filter @workspace/api-server run test:ruby-read-layers && pnpm --filter @workspace/api-server run test:scanner-truth-caps && pnpm --filter @workspace/api-server run test:chart-timeframe-normalization"
+
+[workflows.workflow.metadata]
+isValidation = true
+
+[[workflows.workflow]]
+name = "full-ci"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "NODE_OPTIONS=--max-old-space-size=2560 pnpm run ci"
+
+[workflows.workflow.metadata]
+isValidation = true
+
+[agent]
+stack = "PNPM_WORKSPACE"
+expertMode = true
+integrations = ["resend:1.0.0"]
+
+[postMerge]
+path = "scripts/post-merge.sh"
+timeoutMs = 600000
+
+[[ports]]
+localPort = 5000
+externalPort = 5000
+
+[[ports]]
+localPort = 5173
+externalPort = 3001
+
+[[ports]]
+localPort = 8080
+externalPort = 8080
+
+[[ports]]
+localPort = 8081
+externalPort = 80
+
+[[ports]]
+localPort = 8082
+externalPort = 3002
+
+[[ports]]
+localPort = 8083
+externalPort = 3003
+
+[[ports]]
+localPort = 24210
+externalPort = 3000
+
+[[ports]]
+localPort = 24310
+externalPort = 5173
+
+[nix]
+channel = "stable-25_05"
+packages = ["zip"]
+
+[userenv]
+
+[userenv.shared]
+VAULT_OVERRIDE_TOKEN = "phase2-test-token"
+ARX_BETA_INVITE_REQUIRED = "true"
+ARX_LIVE_BROKER_EXECUTION_ENABLED = "true"
+ARX_LEGACY_OWNER_DEMOTE_EMAIL = "andraie.co@gmail.com"
+ECONOMIC_CALENDAR_PROVIDER = "fred"
+CLAUDE_FIX_AGENT_ENABLED = "true"
+CLAUDE_FIX_AGENT_DRY_RUN = "true"
+CLAUDE_PROVIDER = "replit_managed"
+CLAUDE_MODEL = "claude-sonnet-4-6"
+REGISTRATION_KEY_PEPPER = "059ad89d5f55acb0b80009cecb41376a60ddb60a86bb99d0efbe5a1f84a7bfe0"

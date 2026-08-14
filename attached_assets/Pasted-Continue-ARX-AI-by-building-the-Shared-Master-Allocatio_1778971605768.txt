@@ -1,0 +1,400 @@
+Continue ARX AI by building the Shared Master Allocation, Trade Copy, and P&L Attribution Engine.
+
+Do not rebuild blindly. Inspect the current:
+- account routing mode system
+- USER_OWNED_MT5 routing
+- SHARED_MASTER_MT5 routing
+- shared master account setup
+- virtual trading accounts
+- shared trade attribution ledger
+- Risk Governor
+- Portfolio Exposure Engine
+- Prop Firm / Account Rules Engine
+- Trade Action Center
+- MT5 execution reconciliation
+- open trades
+- trade history
+- journal/performance
+- admin trading controls
+- AI assistant context builder
+
+Goal:
+Make SHARED_MASTER_MT5 mode work like a real controlled allocation system where multiple users can trade through one admin/master MT5 account while ARX AI tracks each user’s virtual balance, exposure, trades, P&L, limits, and audit trail separately.
+
+Important:
+Do not expose master MT5 credentials.
+Do not expose shared bridge tokens.
+Do not let users see other users’ trades, tickets, allocations, P&L, or balances.
+Do not auto-place trades.
+Do not bypass Risk Governor.
+Live/demo actions still require user confirmation.
+Shared live trading must remain gated behind explicit admin approval.
+
+PART 1 — Shared Master Allocation Ledger
+
+Create or improve a virtual allocation ledger for each user.
+
+Each shared-mode user should have:
+- virtual starting balance
+- virtual current balance
+- virtual equity
+- virtual margin used
+- virtual free margin estimate if available
+- realized P&L
+- unrealized P&L
+- open exposure
+- daily P&L
+- max daily loss
+- max allocation loss
+- account rule profile if assigned
+- close-only status
+- active/suspended status
+
+Ledger must update when:
+- trade opens
+- trade partially closes
+- trade closes
+- SL/TP modifies
+- execution rejects
+- broker slippage occurs
+- P&L sync updates
+- admin adjusts allocation
+- user is suspended or close-only
+
+PART 2 — Shared Order Attribution
+
+Every shared master order must be attributed to exactly one user/action.
+
+Track:
+- user_id
+- virtual_account_id
+- shared_master_account_id
+- master_connection_id
+- trade_action_request_id
+- trade_command_id
+- MT5 order ticket
+- MT5 position ticket
+- symbol
+- side
+- requested lot
+- filled lot
+- entry price
+- close price
+- realized P&L
+- unrealized P&L
+- slippage
+- commission/fees if available
+- status
+- opened_at
+- closed_at
+
+If ticket-level attribution is unavailable because the account is netting, clearly mark the trade as:
+“Allocation estimate — broker netting account may merge positions.”
+
+PART 3 — Netting vs Hedging Protection
+
+Detect shared master account mode if possible:
+- hedging
+- netting
+- unknown
+
+If hedging:
+- allow cleaner per-user position attribution by ticket.
+
+If netting:
+- warn admin that same-symbol trades may merge.
+- prevent conflicting same-symbol multi-user trades unless admin enables aggregation mode.
+- support an aggregation ledger only if safe.
+- label P&L as estimated when exact ticket attribution is not possible.
+
+Admin should see:
+- account accounting mode
+- attribution confidence
+- same-symbol conflict warnings
+- netting risk warnings
+
+PART 4 — Shared Master Risk Limits
+
+Add shared-master-level risk controls:
+
+- max total open lots
+- max total exposure
+- max exposure per symbol
+- max users on same symbol
+- max users on same direction
+- max daily master loss
+- max per-user allocation loss
+- max virtual drawdown
+- block new shared trades when master risk is high
+- allow closes/risk reduction during close-only
+
+Risk Governor must check:
+1. user virtual allocation
+2. user risk profile
+3. account rule profile
+4. shared master total exposure
+5. shared master symbol exposure
+6. netting/hedging conflict
+7. master account health
+8. platform mode
+9. emergency stop
+10. live confirmation if live
+
+PART 5 — Admin Shared Master Control Center
+
+Add an admin page/section for Shared Master Control.
+
+Show:
+- selected shared demo master
+- selected shared live master
+- account type
+- broker/server
+- masked account number
+- heartbeat status
+- command polling status
+- execution callback status
+- accounting mode: hedging/netting/unknown
+- total master exposure
+- total master P&L
+- virtual user allocations
+- users trading shared mode
+- users in close-only
+- users near allocation breach
+- same-symbol conflicts
+- recent shared executions
+- attribution confidence
+
+Admin actions:
+- assign virtual allocation to user
+- adjust virtual balance
+- suspend shared access
+- put user close-only
+- pause shared master trading
+- block symbol on shared master
+- force attribution recalculation
+- export shared allocation report
+
+PART 6 — User Shared Account UI
+
+For users in SHARED_MASTER_MT5 mode, show:
+
+- Routing: Shared Master Account
+- virtual balance
+- virtual equity
+- virtual P&L
+- open attributed trades
+- allocation risk
+- daily loss remaining
+- current permissions
+- account type: demo/live
+- whether data is exact or estimated
+
+Do not show:
+- master account number except masked if admin allows
+- master login
+- password
+- server credentials
+- bridge token
+- other users’ trades
+- other users’ balances
+- total master account balance unless admin intentionally exposes a safe summary
+
+PART 7 — Trade Ticket Shared Preview
+
+Before confirmation in shared mode, trade ticket must show:
+
+- user virtual allocation
+- requested lot
+- estimated risk
+- allocation remaining
+- shared master account type
+- master risk status
+- symbol availability
+- netting/hedging warning if relevant
+- whether trade may conflict with existing shared master exposure
+- pass/fail from Risk Governor
+
+Examples:
+- “Blocked: shared master max XAUUSD exposure reached.”
+- “Warning: master account is netting. Same-symbol positions may merge.”
+- “Passed: this trade fits your virtual allocation.”
+
+PART 8 — P&L Attribution Sync
+
+When MT5 position/order updates arrive:
+- match them to trade_command_id or action_request_id when possible
+- update shared_trade_attribution
+- update virtual account P&L
+- update open trades
+- update trade history
+- update journal after close
+- update calendar/performance
+- update portfolio/account health
+- update account rule status
+
+If unmatched MT5 trade appears on shared master:
+- mark as unattributed
+- show in admin only
+- do not assign to a random user
+- alert admin
+
+PART 9 — AI Shared Master Awareness
+
+Update AI so users can ask:
+
+- Am I trading on my own MT5 or the shared account?
+- What is my virtual balance?
+- How much allocation do I have left?
+- Why was my shared trade blocked?
+- Is my shared trade exact or estimated?
+- Am I near my shared allocation loss limit?
+- Can I open another trade on the shared account?
+- Did my shared trade execute?
+- What is my P&L on the shared account?
+
+AI must answer from real shared allocation data only.
+AI must not expose master credentials or other users’ data.
+AI must explain netting/hedging limitations when relevant.
+
+PART 10 — Backend/API
+
+Add or update endpoints:
+
+- GET /api/shared-account/status
+- GET /api/shared-account/allocation
+- GET /api/shared-account/trades
+- GET /api/shared-account/pnl
+- POST /api/shared-account/recalculate
+- GET /api/admin/shared-master/overview
+- PATCH /api/admin/shared-master/settings
+- POST /api/admin/shared-master/users/:id/allocation
+- POST /api/admin/shared-master/users/:id/close-only
+- POST /api/admin/shared-master/recalculate-attribution
+- GET /api/admin/shared-master/unattributed-trades
+
+Add or update tables:
+
+shared_master_accounts:
+- id
+- connection_id
+- account_type
+- broker_name
+- server_name
+- account_number_masked
+- accounting_mode
+- status
+- is_active
+- created_by_admin_id
+- created_at
+- updated_at
+
+virtual_trading_accounts:
+- id
+- user_id
+- shared_master_account_id
+- virtual_starting_balance
+- virtual_balance
+- virtual_equity
+- virtual_margin_used
+- virtual_unrealized_pnl
+- virtual_realized_pnl
+- daily_pnl
+- allocation_limit
+- daily_loss_limit
+- close_only
+- status
+- created_at
+- updated_at
+
+shared_trade_attribution:
+- id
+- user_id
+- virtual_account_id
+- shared_master_account_id
+- master_connection_id
+- trade_action_request_id
+- trade_command_id
+- mt5_order_ticket
+- mt5_position_ticket
+- symbol
+- side
+- requested_lot_size
+- filled_lot_size
+- entry_price
+- close_price
+- stop_loss
+- take_profit
+- realized_pnl
+- unrealized_pnl
+- fees
+- slippage
+- attribution_confidence
+- status
+- opened_at
+- closed_at
+- created_at
+- updated_at
+
+shared_master_risk_snapshots:
+- id
+- shared_master_account_id
+- total_open_lots
+- total_exposure
+- exposure_by_symbol
+- exposure_by_direction
+- users_active
+- master_daily_pnl
+- master_risk_score
+- warning_flags
+- created_at
+
+unattributed_master_trades:
+- id
+- shared_master_account_id
+- master_connection_id
+- mt5_order_ticket
+- mt5_position_ticket
+- symbol
+- side
+- lot_size
+- reason
+- status
+- created_at
+
+PART 11 — Tests
+
+Add or update tests for:
+1. Shared-mode user only sees own virtual allocation.
+2. Shared-mode user never sees master credentials.
+3. Shared-mode user never sees another user’s trades.
+4. Admin can assign virtual allocation.
+5. Shared trade creates attribution row.
+6. Execution result updates attribution row.
+7. Closed shared trade updates virtual realized P&L.
+8. Open shared trade updates virtual unrealized P&L.
+9. Unmatched master trade becomes admin-only unattributed trade.
+10. Netting account warns about attribution limitations.
+11. Hedging account supports ticket-level attribution.
+12. Shared master exposure limits block new trades.
+13. Close-only allows risk reduction but blocks new opens.
+14. Risk Governor checks virtual allocation before command queue.
+15. AI explains shared account status using real data.
+16. AI does not expose credentials or other users’ data.
+17. Mobile shared account UI works on iPhone Safari.
+18. No secrets are exposed.
+
+Final report:
+Return:
+- PASS or FAIL
+- Shared Allocation Ledger status
+- Shared Order Attribution status
+- Netting/Hedging Protection status
+- Shared Master Risk Limits status
+- Admin Shared Master Control status
+- User Shared Account UI status
+- Trade Ticket Shared Preview status
+- P&L Attribution Sync status
+- AI Shared Master Awareness status
+- mobile status
+- tests passed
+- remaining blockers

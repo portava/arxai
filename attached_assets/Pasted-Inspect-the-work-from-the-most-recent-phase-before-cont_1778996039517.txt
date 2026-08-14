@@ -1,0 +1,112 @@
+Inspect the work from the most recent phase before continuing.
+
+Do NOT build new features yet.
+Do NOT unlock live trading.
+Do NOT enable real auto-close execution.
+Do NOT remove or weaken any paper-only, live-trading, MT5 bridge, user opt-in, inactivity, activityStatus, or ALERT_ONLY gates.
+
+Your job now is to audit and fix the frontend safety visibility phase you just implemented.
+
+Verify these exact items:
+
+1. Protective Auto-Close Settings UI
+- Confirm the UI exists.
+- Confirm default is OFF.
+- Confirm opt-in is required.
+- Confirm saving preferences does NOT unlock execution.
+- Confirm the UI clearly shows ALERT_ONLY when gates are missing.
+- Confirm missing gate reasons are shown clearly:
+  bridgeConnected=false
+  activityStatus="UNKNOWN"
+  opt-in missing
+  inactivity not confirmed
+  high-confidence multi-signal missing
+  paper/live unlock missing
+  duplicate-action protection active
+
+2. Activity Ping / User Presence
+- Confirm ACTIVE, IDLE, AWAY, and UNKNOWN are supported.
+- Confirm fallback/default is UNKNOWN.
+- Confirm app close/background/stale/failed verification returns UNKNOWN.
+- Confirm UNKNOWN hard-blocks auto-close execution.
+- Confirm activity is scoped per logged-in user/session.
+- Confirm no user activity leaks across accounts.
+
+3. Trade Card Safety Badges
+Confirm real backend-driven badges appear correctly for:
+- Paper Only
+- Live Trading Blocked
+- Bridge Offline
+- ALERT_ONLY
+- Auto-Close OFF
+- Auto-Close Opt-In Required
+- Activity Unknown
+- Data Insufficient
+- News Unavailable
+- TP Targets Available / TP Targets Unavailable
+- SL/TP Editable if supported
+- Manual Close Available if supported
+
+Badges must come from real backend state, not hardcoded fake UI labels.
+
+4. Current Events / Real-World News Channel
+- Confirm this is now separate from financial market news.
+- Confirm missing provider/API key returns connected:false, events:[], and a clear unavailable reason.
+- Confirm the AI says current events / real-world news are unavailable instead of inventing.
+- Confirm current events are treated only as risk/context modifiers, not fake trade signals.
+
+5. Decision Status Enum Cleanup
+- Confirm the centralized decisionStatus enum exists.
+- Confirm old statuses still map safely without breaking the UI.
+- Confirm supported statuses include:
+  STRONG_SETUP
+  WAIT
+  AVOID
+  REVIEW
+  HOLD
+  NEWS_RISK_HIGH
+  DATA_INSUFFICIENT
+  SCANNER_OFFLINE
+  BRIDGE_OFFLINE
+  ALERT_ONLY
+
+6. Safety Regression
+Confirm all of these remain true:
+- Auto-close remains ALERT_ONLY unless every gate passes.
+- Live trading remains BLOCKED unless explicitly unlocked and every required gate passes.
+- MT5 commands remain blocked while bridge/token/live gates are missing.
+- No AI open/add/widen trade tools exist.
+- No fake candles.
+- No fake scanner opportunities.
+- No fake news.
+- No fake TP targets.
+- No fake bridge status.
+- Per-user SQL/session filters remain intact.
+
+Run these checks:
+1. Typecheck
+2. Full guard suite
+3. Stop-limit/order-type QA
+4. Trading intelligence regression
+5. Scanner/news/data fallback tests
+6. Auto-close gate tests
+7. Activity UNKNOWN hard-block test
+8. Per-user isolation test
+9. Frontend smoke test for trade cards, safety badges, and auto-close settings UI
+
+If anything fails:
+- Fix only confirmed P0/P1 issues.
+- Do not redesign unrelated UI.
+- Do not touch unrelated pages.
+- Rerun the full checks after fixes.
+
+End with a clear QA report showing:
+- Files inspected
+- Files changed, if any
+- Tests run
+- Pass/fail result for each test
+- Remaining gated items
+- Auto-close execution status
+- MT5/live trading status
+- Whether frontend state matches backend state
+- Final answer: READY FOR NEXT PHASE or NOT READY, with reasons.

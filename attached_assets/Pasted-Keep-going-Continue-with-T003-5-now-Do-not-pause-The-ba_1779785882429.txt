@@ -1,0 +1,142 @@
+Keep going. Continue with T003-5 now.
+
+Do not pause. The backend resolver backbone is done, so migrate the user-facing pages to use the new unified live/account-mode resolver.
+
+Use the new backend resolver:
+GET /api/me/account-mode
+
+Use the frontend hook:
+useTradingMode()
+
+Do not create another resolver.
+Do not let pages compute live/demo/paper mode independently anymore.
+Do not place trades.
+Do not insert arx_live_commands.
+Do not type operator phrases.
+Do not weaken safety gates.
+Do not fake balances, allocations, positions, alerts, or live readiness.
+Do not expose backend diagnostics to normal users.
+
+Create checkpoint first:
+checkpoint: t003-5-migrate-user-facing-pages-to-account-mode-resolver
+
+Migrate these pages first:
+1. /my-account
+2. /settings
+3. /notifications
+4. /help
+5. /live-ai-assist
+6. /trade
+7. /live-shared
+8. /trading-calendar
+9. /live-intent-queue
+10. /open-trades / live chart position panel if it shares the same source
+
+Required behavior:
+- All pages must agree with the global header.
+- Live is intentionally ON.
+- LIVE_SHARED pages should not show demo, paper, simulator, mock, or live-disabled wording.
+- Demo/paper should only appear as mode switch options in Settings.
+- User-facing pages should use clean labels only.
+- Admin diagnostics can still show technical details in admin-only mode.
+
+Page-specific fixes:
+
+/my-account:
+- Show SHARED_MASTER_MT5 when the user is attached.
+- Show assigned allocation, manual allocation, AI sleeve allocation, balance, equity, available capacity, and risk caps from the user account shell.
+- Do not default to “Use my own MT5 bridge” for attached shared-master users.
+- Do not show $0 if allocation exists.
+
+/settings:
+- In LIVE_SHARED mode, show shared master bridge/account state.
+- Move personal MT5 bridge setup to optional mode/bridge preference.
+- Do not show “MT5 Bridge Not Configured” as the main state while shared master live bridge is active.
+
+/notifications:
+- Do not show LIVE TRADING DISABLED while live is armed.
+- Push notification status is separate from live trading mode.
+- Trade alerts should be live-aware.
+
+/help:
+- Do not show MT5 mode Mock, MT5 connected no, or live broker dispatch off if the resolver says live bridge is armed.
+- Hide backend env text from normal users.
+
+/live-ai-assist:
+- Remove raw booleans such as canExecuteRealBrokerOrder, canSubmitLiveIntent, and mt5Connected from normal UI.
+- Replace with clean labels from the resolver.
+- Remove “Tester” wording in live mode.
+
+/trade and /live-shared:
+- Remove simulator-only language in live mode.
+- Remove typed-phrase wording from visible UI.
+- Use button-based language:
+  - Review trade
+  - Confirm trade
+  - Cancel
+  - Trade blocked: clean reason
+- Preserve backend safety behavior and audit logging.
+
+/trading-calendar:
+- In LIVE_SHARED mode, show only live trade/P&L data.
+- If no live trades exist, show empty/zero live state.
+- Do not show paper/demo P&L or paper trades in live mode.
+
+/live-intent-queue:
+- In LIVE_SHARED mode, show only live shared intents for the current user/account.
+- Hide demo/paper/test intents from live view.
+
+/open-trades and live chart position panel:
+- Show only true current live positions for the current user/account shell/mode.
+- Do not show stale demo/test positions in live mode.
+- If no live positions exist, show no open positions.
+
+Also migrate any shared components used by those pages:
+- badges
+- banners
+- page headers
+- empty states
+- warning panels
+- action cards
+- footer/status strips
+
+Add safeguards:
+- safeArray()
+- safeString()
+- safeDate()
+- safeLabel()
+where needed so pages do not crash from undefined arrays, missing strings, or invalid dates.
+
+Run tests:
+- typecheck
+- build
+- ci:guards
+- test:live-phaseB
+- test:demo-arming
+- test:demo-verify
+- allocation runtime QA
+- account-mode resolver tests
+- mode-scoped UI tests
+
+Add or update regression tests proving:
+1. Live pages do not show demo/paper/simulator copy when account mode is LIVE_SHARED.
+2. /my-account uses SHARED_MASTER_MT5 allocation when attached.
+3. /notifications agrees with the live resolver.
+4. /help agrees with the live resolver.
+5. /live-intent-queue filters out demo/paper/test rows.
+6. /trading-calendar filters out paper/demo rows in live mode.
+7. /open-trades filters out stale demo/test positions in live mode.
+8. No normal-user page exposes admin diagnostics.
+
+After T003-5, continue into:
+- T003-6 regression tests
+- T003-7 full QA
+
+Final report only:
+- pages migrated
+- components migrated
+- remaining pages not migrated, if any
+- tests added
+- QA results
+- confirmation arx_live_commands remains 0
+- confirmation no safety gates were weakened

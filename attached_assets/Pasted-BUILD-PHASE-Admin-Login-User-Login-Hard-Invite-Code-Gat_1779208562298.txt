@@ -1,0 +1,131 @@
+BUILD PHASE — Admin Login + User Login + Hard Invite Code Gate
+
+Use the current codebase. Do not rebuild unrelated systems.
+
+Goal:
+Implement the 5-step minimal auth/invite hardening plan from the inspection pass:
+1. Hard invite-gated registration.
+2. Server-side 10-user beta cap.
+3. Safe invite code hashing/validation.
+4. Transactional audit logging for invite actions.
+5. Frontend logout cache clearing.
+
+Important:
+Do not enable public registration.
+Do not enable live trading.
+Do not create live commands.
+Do not fire trades.
+Do not touch the live trade execution surface.
+
+1. Hard invite gate
+Add/use:
+
+ARX_BETA_INVITE_REQUIRED=true
+
+When enabled, registration must require a valid invite code.
+
+Block registration if:
+- invite code is missing
+- invite does not exist
+- invite is revoked
+- invite is expired
+- invite was already accepted/used
+- beta cohort is already full at 10 accepted users
+- email binding exists and the invite does not match the registering email
+
+Return clean user messages:
+- “Private beta invite required.”
+- “This invite is no longer active.”
+- “This invite has expired.”
+- “This invite was already used.”
+- “Private beta is currently full.”
+
+2. Server-side beta cap
+Enforce the 10-user cap on the backend, not only in the UI.
+
+Rules:
+- ARX_PRIVATE_BETA_10 max accepted users = 10
+- 10 accepted users allowed
+- 11th user blocked or waitlisted server-side
+- direct API calls cannot bypass the cap
+- invite acceptance must be atomic so two users cannot consume the final seat at the same time
+
+3. Invite code hashing
+Do not expose plaintext invite codes outside the admin invite-copy flow.
+
+Use SHA-256 invite code hashing if the current repo helper supports it.
+
+Rules:
+- validate invite by hashed code
+- do not store new plaintext invite codes unless current architecture absolutely requires it
+- do not expose invite hashes or raw codes in normal user responses
+- admin can copy the intended one-time invite link/code only from protected admin UI
+- no invite codes in frontend bundle, logs, public APIs, or normal user UI
+
+4. Transactional audit logging
+For invite accept/reject/revoke/cap-block events:
+- insert the audit row in the same transaction as the invite action where practical
+- if the audit insert fails during invite acceptance/revoke, abort the action
+- follow the existing /approve audit pattern from the repo
+- audit invite validation failures safely without logging secrets
+
+Audit:
+- invite accepted
+- invite rejected
+- invite revoked
+- invite expired
+- invite already used
+- registration blocked by missing invite
+- beta cap reached
+- 11th user blocked/waitlisted
+- non-admin invite API access attempt
+
+5. Frontend logout cache clearing
+Update frontend logout behavior:
+- after logout API call resolves, call queryClient.clear()
+- clear user-specific cache/state after logout
+- prevent previous user dashboard/scanner/Ruby/notifications/trades from appearing after login switch
+- add an e2e probe for logout/login cache clearing
+
+6. Admin/user login protection check
+Do not rewrite auth.
+Only verify existing:
+- admin routes remain protected
+- user login still works
+- registration still works with valid invite
+- logout still works
+- requireAdmin remains production-safe
+- no hardcoded admin credentials appear in frontend code
+
+7. Tests
+Add or update one focused test file for:
+- registration blocked without invite when ARX_BETA_INVITE_REQUIRED=true
+- valid invite allows registration
+- revoked invite blocks registration
+- expired invite blocks registration
+- used invite cannot be reused
+- 10 accepted users allowed
+- 11th user blocked or waitlisted
+- direct API cannot bypass invite gate
+- invite acceptance writes audit record
+- audit insert failure aborts invite acceptance where applicable
+- non-admin cannot access invite admin APIs
+- logout clears queryClient/user cache
+- User A cached state does not appear for User B
+- no secrets exposed
+- no live command created
+- arx_live_commands count unchanged
+
+Return:
+- what was built
+- files changed
+- env flag added/used
+- registration gate behavior
+- beta cap behavior
+- invite hashing behavior
+- audit behavior
+- logout cache behavior
+- tests added/run
+- remaining risks
+- confirmation no live trade was fired
+- confirmation arx_live_commands count stayed unchanged

@@ -1,0 +1,99 @@
+Continue after Build W — AI Edge Discovery Engine.
+
+Now begin Build X — Trader Benchmark & Skill Level System.
+
+Goal:
+Create a system that ranks the trader’s development level based on discipline, execution, consistency, risk control, journal quality, replay practice, and live/paper performance.
+
+Tasks:
+
+1. Audit existing systems:
+- Trader Scoring
+- Edge Discovery
+- Weekly Reviews
+- Trade Journal
+- Replay Simulator
+- Paper Trading
+- Prop Challenge Mode
+- AI Coach
+- Rule Contract System
+
+2. Add database models:
+
+trader_skill_profiles:
+- id
+- user_id
+- skill_level
+- total_score
+- discipline_score
+- execution_score
+- risk_score
+- emotional_control_score
+- consistency_score
+- planning_score
+- review_score
+- practice_score
+- created_at
+- updated_at
+
+skill_level_history:
+- id
+- user_id
+- previous_level
+- new_level
+- reason
+- created_at
+
+3. Skill levels:
+- Beginner
+- Developing Trader
+- Disciplined Trader
+- Consistent Trader
+- Advanced Trader
+- Elite Trader
+
+4. Scoring factors:
+- follows trading rules
+- respects risk limits
+- completes trade plans
+- journals trades
+- completes post-trade debriefs
+- improves weekly goals
+- avoids revenge trading
+- avoids overtrading
+- uses replay/paper practice
+- demonstrates positive consistency over time
+
+5. API routes:
+- GET trader skill profile
+- POST calculate trader skill profile
+- GET skill level history
+- GET skill improvement suggestions
+
+6. Frontend components:
+- Trader Skill Profile Page
+- Skill Level Badge
+- Skill Breakdown Card
+- Level Progress Meter
+- Next Level Requirements Card
+
+7. Connect to:
+- AI Coach
+- Weekly Review
+- Dashboard
+- Playbook
+- Edge Discovery
+
+Important:
+- Skill level should measure process quality, not just profit.
+- Do not call users elite only because of short-term gains.
+- Do not make guaranteed-profit claims.
+
+Final output required:
+1. Files changed
+2. Tables/models added
+3. API routes added
+4. Frontend components added
+5. How skill level connects to trader scoring and weekly review
+6. Errors or limitations
+7. Recommended next build

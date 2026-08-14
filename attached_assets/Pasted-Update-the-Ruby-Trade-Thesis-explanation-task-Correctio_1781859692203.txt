@@ -1,0 +1,111 @@
+Update the Ruby Trade Thesis explanation task.
+
+Correction:
+Do NOT use collapsible "Why Ruby thinks this" sections.
+
+Ruby must show one full, properly labeled reasoning block directly inside:
+- Scalp Builder card
+- Scanner result card
+- Opportunity Map detail/card
+- Ruby Chat response
+- Ruby Chart Read
+- Trade setup card
+- Auto-bot proposed trade review
+
+Goal:
+A trader should immediately see Ruby's full reasoning without opening anything extra.
+
+Required format:
+Every Ruby buy/sell/wait/no-trade/scalp/retest answer must include one visible reasoning block with clearly labeled lines.
+
+Standard Ruby Reasoning Block:
+
+Decision:
+- Conditional SELL scalp / BUY setup / WAIT / NO TRADE / TOO LATE / AVOID
+
+Why:
+- The main reason Ruby leans that way.
+
+Evidence:
+- Structure:
+- Momentum:
+- Pattern:
+- Support/Resistance:
+- Feed/Data:
+- Risk:
+
+Confirmation:
+- The exact condition that makes the idea stronger.
+
+Invalidation:
+- The exact condition that cancels the idea.
+
+Trader Test:
+- One or two simple things the trader can check on the chart to confirm or reject Ruby's read.
+
+Risk Note:
+- The biggest reason not to force the trade.
+
+Compact example:
+Decision: Conditional SELL scalp
+Why: Price is fading near resistance, but the broader chart read is low-confidence.
+Evidence:
+- Structure: Short-term lower highs favor sellers.
+- Momentum: Upside momentum is cooling.
+- Pattern: Possible continuation, not fully confirmed.
+- Support/Resistance: Price is close to support, so room is limited.
+- Feed/Data: Live feed confirmed.
+- Risk: Selling into support can bounce fast.
+Confirmation: Sell strengthens only if price stays below 1.14709 and breaks 1.1454 with momentum.
+Invalidation: Cancel the sell if price reclaims and holds above 1.14709.
+Trader Test: Mark 1.1454 support and watch whether the next candle breaks or rejects it. Do not chase if price stalls at support.
+Risk Note: This is a conditional scalp, not a full-confidence trade.
+
+Rules:
+1. No collapsible UI.
+2. No hidden reasoning behind "expand."
+3. No vague answer like "BUY because bullish."
+4. Use labeled lines every time.
+5. Keep it compact enough for a card, but complete enough to test.
+6. If data is limited, say that inside Feed/Data.
+7. If chart confidence is low, say that inside Risk or Why.
+8. If near support/resistance, always mention it.
+9. If news/calendar provider is missing, say "news/calendar unavailable," not "low risk."
+10. If answer is WAIT, explain exactly what Ruby is waiting for.
+11. If answer is NO TRADE, explain what would need to change.
+12. If answer is TOO LATE, explain what made it late.
+13. This reasoning block does not grant live execution permission.
+
+Surface-specific display:
+Scalp Builder:
+- Show the full reasoning block below entry/SL/TP.
+- Do not hide behind accordion/collapse.
+
+Scanner cards:
+- Show a compact but complete reasoning block.
+- If cards get too tall, use shorter labels, not collapse.
+
+Opportunity Map:
+- Row can show compact reason, but selected/detail view must show the full reasoning block visibly.
+
+Ruby Chat:
+- Always answer with the same labeled reasoning format.
+
+Ruby Chart Read:
+- Replace scattered bullet explanations with one organized reasoning block.
+
+Tests:
+1. Scalp SELL card renders Decision, Why, Evidence, Confirmation, Invalidation, Trader Test, Risk Note.
+2. WAIT answer renders what Ruby is waiting for.
+3. NO TRADE answer renders what would need to change.
+4. TOO LATE answer renders why it is late.
+5. Feed-limited setup includes Feed/Data limitation.
+6. Near-support sell includes support risk.
+7. Low-confidence chart read says conditional or wait, not strong.
+8. No reasoning block is hidden behind collapsed/accordion UI.
+9. Ruby Chat and Scalp Builder use the same labeled format.
+10. Scanner compact card still includes all required labels.
+
+Hard boundary:
+Do not touch live execution gates, broker dispatch, MT5 execution, emergency stop, kill switches, or owner/admin permissions.
+This task improves explanation clarity and trader testability only.

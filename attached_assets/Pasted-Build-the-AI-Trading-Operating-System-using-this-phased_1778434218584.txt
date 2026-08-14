@@ -1,0 +1,226 @@
+Build the AI Trading Operating System using this phased roadmap.
+
+IMPORTANT:
+Do not build everything at once.
+Each phase must be completed, tested, and verified before moving to the next.
+
+PHASE 1 — FOUNDATION / SAFETY CORE
+
+Purpose:
+Create the non-negotiable safety and control systems before any advanced AI execution.
+
+Build:
+- Control Tower
+- Risk Governor
+- Global State Machine
+- System Modes
+- Kill Switch
+- Recovery Mode
+- Resilience Engine
+- Black Box Vault foundation
+
+Acceptance criteria:
+- App can switch between OBSERVE_ONLY, SUGGEST_ONLY, PAPER_TRADING, LOCKDOWN, and RECOVERY_MODE.
+- No trade can execute unless Control Tower allows it.
+- Risk Governor can block any trade.
+- All major decisions are logged.
+- Safe shutdown works.
+- MT5 disconnect triggers degraded mode or lockdown.
+
+PHASE 2 — DATA + MEMORY CORE
+
+Purpose:
+Make every action replayable and learnable.
+
+Build:
+- Trading Black Box Vault
+- Market Truth storage
+- Decision Truth storage
+- Execution Truth storage
+- Behavior Truth storage
+- Outcome Truth storage
+- Vault query engine
+
+Acceptance criteria:
+- Every signal, blocked trade, executed trade, user override, agent vote, spread reading, latency event, and final outcome is logged.
+- Every trade can be reconstructed from stored data.
+- Bad or missing data is flagged.
+- Data can be queried by symbol, session, strategy, date, agent, and regime.
+
+PHASE 3 — AGENT SYSTEM V2
+
+Purpose:
+Create the AI trading council.
+
+Build:
+- Sensor Layer
+- Specialist Agents
+- Red Team Agent
+- Blue Team Agent
+- Judge Agent
+- Disagreement Score
+- Agent Authority System
+- Explainability Layer
+- Attention Engine
+
+Acceptance criteria:
+- Agents cannot place trades.
+- Agents only produce votes, evidence, blockers, and confidence.
+- Red Team challenges every trade.
+- Judge creates verdict.
+- Risk Governor still has final veto.
+- Attention Engine prioritizes what the UI shows.
+- Every decision has a plain-English explanation.
+
+PHASE 4 — EXECUTION REALISM
+
+Purpose:
+Prevent good-looking trades from failing due to real-world execution problems.
+
+Build:
+- Execution Microstructure Engine
+- Slippage Predictor
+- Spread Behavior Engine
+- Fill Probability Engine
+- Broker Reliability Engine
+- Order Quality Engine
+
+Acceptance criteria:
+- Trade approval includes execution quality score.
+- High spread, low fill probability, latency spike, or broker instability can block or reduce size.
+- Execution results are logged into Black Box Vault.
+- Replay can compare expected execution vs actual execution.
+
+PHASE 5 — TRADER DNA + COGNITIVE ENGINE
+
+Purpose:
+Protect the trader from emotional and behavioral risk.
+
+Build:
+- Trader DNA
+- Cognitive Load Engine
+- Stress Model
+- Fatigue Model
+- Revenge Trading Detector
+- Overtrade Guard
+- Pacing Engine
+
+Acceptance criteria:
+- System detects overtrading risk.
+- System detects post-loss danger.
+- System can force cooldown or recovery mode.
+- Trader performance is tracked by symbol, session, strategy, behavior state, and time of day.
+- UI explains behavior risk without shaming the user.
+
+PHASE 6 — REPLAY LAB
+
+Purpose:
+Let the AI learn from every trade, blocked trade, missed setup, and override.
+
+Build:
+- Trade Replay Engine
+- Candle Playback
+- Agent Replay
+- Blocked Trade Replay
+- Missed Trade Replay
+- What-If Engine
+- Replay Scoring
+- Lesson Generator
+
+Acceptance criteria:
+- Executed trades can be replayed candle-by-candle.
+- Blocked trades can be reviewed.
+- Missed opportunities can be analyzed.
+- What-if tests can compare different entries, exits, sizing, and blocks.
+- Replay lessons are stored back into the Vault.
+
+PHASE 7 — VALIDATION PIPELINE
+
+Purpose:
+Make sure no strategy, agent, or rule earns authority without proof.
+
+Build:
+- Backtest Validator
+- Walk-Forward Validator
+- Shadow Mode Validator
+- Paper Trade Validator
+- Micro-Lot Validator
+- Promotion Criteria
+- Demotion Criteria
+- Live Readiness Score
+
+Acceptance criteria:
+- No strategy can jump directly to live trading.
+- Strategies must pass validation stages.
+- Failed strategies are demoted.
+- Edge decay triggers review.
+- Risk Governor can freeze promotion.
+- Validation reports are logged.
+
+PHASE 8 — DECISION INTELLIGENCE
+
+Purpose:
+Optimize decision quality, not just win/loss outcomes.
+
+Build:
+- Decision Quality Engine
+- Expectancy Engine
+- Conviction Engine
+- Strategic Patience Engine
+- Future Risk Simulation
+- Market Personality Engine
+- Adaptive Aggression Engine
+
+Acceptance criteria:
+- Winning bad decisions are not rewarded blindly.
+- High-quality losing trades can still receive good process scores.
+- No-trade decisions can count as successful decisions.
+- System measures expectancy, RR quality, survival quality, and decision discipline.
+- Conviction controls sizing and aggression.
+
+PHASE 9 — PORTFOLIO MANAGER
+
+Purpose:
+Allocate risk across strategies, symbols, sessions, and agents intelligently.
+
+Build:
+- Risk Budget Engine
+- Strategy Allocation Engine
+- Symbol Priority Engine
+- Session Priority Engine
+- Reserve Capital Engine
+- Exposure Balancer
+
+Acceptance criteria:
+- Approved strategies do not receive equal risk automatically.
+- Risk allocation changes based on validation, performance, regime fit, and execution quality.
+- Reserve risk is kept during uncertain conditions.
+- Exposure never violates global risk rules.
+
+PHASE 10 — AI ECONOMY + EVOLUTION SANDBOX
+
+Purpose:
+Let strategies and agents improve over time without endangering live trading.
+
+Build:
+- Agent Reputation Engine
+- Strategy Lifecycle Engine
+- Authority Reward/Penalty Engine
+- Evolution Lab
+- Strategy Mutation Sandbox
+- Resource Management Engine
+
+Acceptance criteria:
+- Agents earn or lose trust based on actual performance.
+- Strategies move through lifecycle stages.
+- Weak strategies retire.
+- Evolution only happens in sandbox.
+- No evolved strategy can skip validation.
+- All results are logged.
+
+FINAL RULES:
+- Live auto-execution stays disabled until Phases 1–7 are stable.
+- Full auto-execution stays disabled until Decision Intelligence and Risk Governor prove reliable.
+- Evolution Sandbox never touches live money directly.
+- Risk Governor and Control Tower always outrank AI agents.
+- Every important decision must be logged, explainable, replayable, and reversible.

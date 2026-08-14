@@ -1,0 +1,767 @@
+Run a dedicated end-to-end governance and AI-layer involvement test for the ARX AI Agent Ecosystem.
+
+This is not a visual-only QA. The purpose is to prove the new AI governance layer is actually active, purposeful, connected to app actions, and influencing decisions where appropriate.
+
+Do not just confirm that agent records, pages, or database tables exist. Prove that the agents are involved in real app workflows and that their outputs affect scanner decisions, Ruby responses, risk downgrades, trade/no-trade recommendations, speed routing, learning records, and admin visibility.
+
+Do not rebuild the app. Do not remove existing features. Do not introduce paper trading or simulation as a product feature. Do not block the existing live-trading mission. This is a test, repair, and integration pass for the new governance/AI layer.
+
+============================================================
+PRIMARY OBJECTIVE
+
+Verify that the AI governance layer is not decorative.
+
+Confirm that each governance component has a real purpose and is called during the correct app actions:
+
+1. Ruby
+2. Market Structure AI
+3. Scalp AI
+4. Risk AI
+5. Entry Timing AI
+6. Exit / TP AI
+7. Scanner AI
+8. Trade Review AI
+9. Agent Traffic Controller AI
+10. Agent Immune System AI
+11. Learning Camp AI
+12. Agent Factory AI
+13. Promotion Board AI
+14. Execution AI
+15. Agent Court
+16. Truth-locked prediction journal
+17. No-trade reward system
+18. Agent speed/step-back system
+19. Daily Household Report
+20. Admin governance controls
+
+Every agent must either:
+
+* actively participate in the correct workflow,
+* step back intentionally because it is not needed,
+* run in background mode when appropriate,
+* or be marked as unavailable/not yet implemented with a specific fix plan.
+
+No agent should exist with no purpose, no route, no service call, no logs, no database activity, and no effect on the app.
+
+============================================================
+ABSOLUTE RULES
+
+1. Do not claim an agent is functional just because it exists in the database.
+2. Do not claim a page works if it uses hardcoded/fake data.
+3. Do not claim governance works unless it changes routing, scoring, Ruby wording, scanner ranking, risk decisions, admin state, or stored records.
+4. Do not allow every agent to run on every action.
+5. Do not let deep governance slow live execution.
+6. Do not let new or shadow agents influence live trade recommendations.
+7. Do not allow Agent Factory, Learning Camp, Promotion Board, or Household Reports to run during live execution actions.
+8. Do not ignore broken or missing integrations.
+9. If an agent exists but is not connected, connect it or mark it clearly as not built.
+10. If an agent slows the app without value, make it step back and log why.
+11. Ruby must remain the clean user-facing voice.
+
+============================================================
+STEP 1 — MAP EVERY APP ACTION TO GOVERNANCE
+
+Create an action-to-agent governance map.
+
+Inspect the app and list every major action, including:
+
+* User login
+* Admin login
+* Investor login
+* Ruby chat message
+* Ruby market analysis request
+* Scanner page load
+* Scanner refresh
+* Focus scanner search
+* Broad scanner search
+* Scalp opportunity request
+* Trade modal open
+* Trade confirmation
+* Live trade queue/submit action
+* Live trade close action
+* Emergency close action if present
+* Position refresh
+* Trade history refresh
+* Admin agent page load
+* Agent detail page load
+* Agent promotion/demotion action
+* Agent Learning Camp action
+* Agent creation request
+* Agent child creation
+* Household Report generation
+* Agent prediction review
+* No-trade reward review
+* Agent speed/step-back event
+
+For each action, document:
+
+* Which agents should be involved
+* Which agents should not be involved
+* Which agents should step back
+* Which records should be written
+* Which logs should appear
+* Which UI/admin updates should happen
+* Whether the action is user-facing, admin-facing, or background-only
+* Whether the action is speed-critical
+
+Then compare expected behavior to actual code behavior.
+
+Fix any mismatches.
+
+============================================================
+STEP 2 — ADD GOVERNANCE TRACE LOGS
+
+Add or verify governance trace logging.
+
+Each major app action should create a governance trace record/log showing:
+
+* action_id
+* action_type
+* user_id if applicable
+* role
+* symbol/timeframe if market-related
+* trade_id if trade-related
+* scanner_signal_id if scanner-related
+* active_mode
+* agents_requested
+* agents_allowed_to_run
+* agents_blocked
+* agents_that_stepped_back
+* step_back_reasons
+* agent_outputs
+* final_governance_decision
+* Ruby_summary_used boolean
+* risk_veto_used boolean
+* prediction_locked boolean
+* review_created boolean
+* no_trade_reward_created boolean
+* speed_cost_ms
+* total_governance_runtime_ms
+* live_execution_blocked_by_ai boolean
+* created_at
+
+This trace can be database-backed or structured server logs, but it must be inspectable from admin or logs.
+
+Purpose:
+I need proof that agents are actually involved in workflows and not just sitting in tables.
+
+============================================================
+STEP 3 — TEST RUBY GOVERNANCE INVOLVEMENT
+
+Test Ruby with real app requests.
+
+Run these tests:
+
+1. User asks Ruby for market analysis.
+    Expected:
+
+* Ruby calls or receives prepared output from Market Structure AI.
+* Risk AI checks major dangers.
+* Entry/Exit agents contribute only if trade levels are discussed.
+* Traffic Controller decides which agents are needed.
+* Prediction journal records agent opinions if a trade idea/no-trade decision is formed.
+* Ruby gives a clean plain-English summary.
+
+2. User asks Ruby, “Is this a scalp?”
+    Expected:
+
+* Traffic Controller enters Scalp Mode.
+* Scalp AI is active.
+* Risk AI is active.
+* Entry Timing AI is active.
+* Exit / TP AI is active.
+* Market Structure AI performs fast higher-timeframe check.
+* Nonessential agents step back.
+* Ruby summarizes consensus.
+
+3. User asks Ruby why a trade is risky.
+    Expected:
+
+* Risk AI leads.
+* Entry Timing AI checks late/chase behavior.
+* Market Structure AI checks major zones.
+* Ruby explains clearly.
+
+4. User asks what agents are saying.
+    Expected:
+
+* Ruby gives summarized consensus, not raw dumps.
+* Admin may see more detail than regular user.
+* Internal trace shows which agents contributed.
+
+Fix if Ruby:
+
+* answers without governance involvement,
+* ignores Risk AI,
+* ignores Traffic Controller,
+* dumps raw logs,
+* runs all agents unnecessarily,
+* or becomes slow because of governance calls.
+
+============================================================
+STEP 4 — TEST SCANNER GOVERNANCE INVOLVEMENT
+
+Run scanner tests.
+
+For each scanner action, confirm:
+
+A. Scanner page load
+
+* Does not run all agents deeply.
+* Uses cached/prepared decision packets where possible.
+* Traffic Controller chooses Scanner Mode.
+* Scanner AI participates.
+* Slow background agents step back.
+
+B. Scanner refresh
+
+* Scanner AI ranks opportunities.
+* Market Structure AI contributes bias.
+* Risk AI downgrades bad opportunities.
+* Scalp AI only contributes to scalp-style setups.
+* Entry AI flags late/chase entries.
+* Exit AI validates realistic TP/SL.
+* Traffic Controller prevents unnecessary agents.
+
+C. Focus search
+
+* Uses relevant agents only.
+* Produces ranked opportunities.
+* Labels weak setups as watchlist/caution/no-trade.
+* Does not force every scan into a trade.
+
+D. Broad search
+
+* Scanner AI filters noise.
+* No-trade reward system can reward filtered bad setups later.
+* Traffic Controller protects speed.
+
+E. Scalp opportunity request
+
+* Enters Scalp Mode.
+* Only fast scalp-critical agents run.
+* Long/deep agents step back.
+* Output is fast and useful.
+* Ruby explanation is short and actionable.
+
+For every scanner test, verify:
+
+* governance trace exists,
+* agent outputs exist,
+* final ranking uses agent scores,
+* rejected/no-trade setups are stored,
+* slow agents step back,
+* no hardcoded/fake agent consensus is used.
+
+Fix if scanner is only showing UI labels without backend governance.
+
+============================================================
+STEP 5 — TEST TRADE MODAL AND LIVE ACTION GOVERNANCE
+
+Test trade modal and live action workflows.
+
+Important:
+The governance layer must protect and inform live actions, but it must not block urgent live execution with deep analysis.
+
+A. Trade modal open
+Expected:
+
+* Traffic Controller chooses correct mode.
+* Risk AI checks trade danger.
+* Entry AI checks entry quality.
+* Exit AI checks TP/SL realism.
+* Ruby can summarize the setup.
+* Prediction is truth-locked if an official recommendation is formed.
+
+B. Trade confirmation
+Expected:
+
+* Execution AI confirms live execution path readiness.
+* Risk AI performs critical final safety check.
+* Nonessential agents step back.
+* Agent Factory, Learning Camp, Promotion Board, Household Reports do not run.
+* Live execution is not delayed by deep AI.
+
+C. Live trade queue/submit
+Expected:
+
+* Traffic Controller switches to Live Execution Mode.
+* Execution AI logs live action context.
+* Risk AI only performs critical check if configured.
+* No shadow/new agent influences live action.
+* No deep analysis blocks submission.
+* Governance trace proves nonessential agents stepped back.
+
+D. Close trade / emergency close
+Expected:
+
+* Execution priority wins.
+* Governance layer does not slow close.
+* Nonessential agents are bypassed.
+* Logs show bypass/step-back.
+
+Fix if:
+
+* live action waits on nonessential AI,
+* all agents run during execution,
+* shadow agents influence live recommendations,
+* no governance trace exists,
+* or trade UI is disconnected from governance.
+
+============================================================
+STEP 6 — TEST AGENT TRAFFIC CONTROLLER
+
+Prove the Traffic Controller is functional.
+
+Run actions in each mode:
+
+1. Live Execution Mode
+    Expected active:
+
+* Execution AI
+* Risk AI only if critical
+* Ruby only for short status if needed
+
+Expected sleeping/background:
+
+* Learning Camp AI
+* Agent Factory AI
+* Promotion Board AI
+* Household Report
+* Deep Review
+* Nonessential specialists
+
+2. Scalp Mode
+    Expected active:
+
+* Scalp AI
+* Risk AI
+* Entry Timing AI
+* Exit / TP AI
+* Market Structure AI fast-check
+* Scanner AI if scanner-driven
+
+Expected step-back:
+
+* Agent Factory
+* Learning Camp
+* Promotion Board
+* News/deep long-term agents unless directly relevant
+
+3. Scanner Mode
+    Expected active:
+
+* Scanner AI
+* Market Structure AI
+* Risk AI
+* relevant specialists
+
+4. Ruby Explanation Mode
+    More agents may contribute because speed is less critical.
+5. Learning Mode
+    Only background learning/review agents should run.
+6. Agent Creation Mode
+    Only Agent Factory, Immune System, Risk AI, parent agent, and admin approval logic should run.
+
+For each mode, prove:
+
+* selected agents match mode,
+* skipped agents are logged,
+* step-back reason is logged,
+* runtime is measured,
+* incorrect agents are not running.
+
+Fix routing if Traffic Controller is fake, unused, or too broad.
+
+============================================================
+STEP 7 — TEST AGENT PURPOSE BY AGENT
+
+Test every core agent one by one.
+
+For each agent, answer in the QA report:
+
+* What is this agent’s purpose?
+* Which actions call it?
+* Which actions should not call it?
+* What database records does it write?
+* What UI/admin areas show its state?
+* How does it affect decisions?
+* What happens if it is disabled?
+* What is its speed cost?
+* Does it step back when unnecessary?
+* Is it involved in the right workflows?
+
+Test agents:
+
+Ruby:
+
+* User-facing summary and coordination.
+
+Market Structure AI:
+
+* Higher timeframe bias, structure, support/resistance.
+
+Scalp AI:
+
+* Scalp detection and short-term momentum.
+
+Risk AI:
+
+* Risk downgrade, veto, danger warning.
+
+Entry Timing AI:
+
+* Late/chase/clean entry analysis.
+
+Exit / TP AI:
+
+* TP/SL realism and exit logic.
+
+Scanner AI:
+
+* Opportunity ranking and noise filtering.
+
+Trade Review AI:
+
+* Post-outcome scoring and agent learning records.
+
+Traffic Controller AI:
+
+* Mode routing and speed protection.
+
+Immune System AI:
+
+* Duplicate/slow/useless/unsafe agent detection.
+
+Learning Camp AI:
+
+* Underperforming agent retraining.
+
+Agent Factory AI:
+
+* Governed child agent creation.
+
+Promotion Board AI:
+
+* Rank/status/authority updates.
+
+Execution AI:
+
+* Live execution priority and nonessential AI bypass.
+
+If an agent has no real purpose or no workflow calls, fix it or mark it as not implemented.
+
+============================================================
+STEP 8 — TEST AGENT COURT
+
+Create or use a controlled disagreement scenario.
+
+Example:
+
+* Scalp AI approves buy.
+* Risk AI rejects because price is too close to resistance.
+* Entry Timing AI cautions because entry is late.
+* Market Structure AI says higher timeframe is bearish.
+
+Expected:
+
+* Agent Court is triggered.
+* It does not simply average votes.
+* It checks specialty authority, recent performance, risk veto, setup type, and current mode.
+* Final decision is downgraded to caution/watchlist/no-trade if risk dominates.
+* Ruby summary reflects the downgrade.
+* Disagreement is saved.
+* Later review can grade which agents were right.
+
+Fix if Agent Court does not actually affect the final decision.
+
+============================================================
+STEP 9 — TEST TRUTH-LOCKED JOURNAL
+
+Prove truth-locking works.
+
+Test:
+
+1. Agent creates prediction.
+2. Prediction locks.
+3. Try to edit prediction after lock.
+4. Confirm edit fails.
+5. Add outcome review.
+6. Confirm review is appended separately.
+7. Confirm score updates.
+8. Confirm original prediction stays unchanged.
+
+Prediction should include:
+
+* agent
+* action/trade/signal reference
+* symbol
+* timeframe
+* setup type
+* direction
+* decision
+* confidence
+* entry
+* invalidation
+* TP/SL
+* reasoning
+* risk warning
+* timestamp
+
+Fix if predictions can be rewritten.
+
+============================================================
+STEP 10 — TEST PROMOTION / DEMOTION / LEARNING CAMP
+
+Use test data or controlled records to verify scoring movement.
+
+Test:
+
+* Good decisions increase trust/quality.
+* Correct risk blocks increase protection score.
+* Correct step-back improves speed/usefulness score.
+* Poor decisions trigger Warning.
+* Continued poor decisions trigger Probation.
+* Continued failure sends agent to Learning Camp or Restricted.
+* Learning Camp records reason and correction rules.
+* Agent returns in Shadow/Supervised mode, not full authority.
+* Agent can be promoted only after enough proof.
+* Shutdown Recommended requires admin review unless emergency restriction is triggered.
+
+Fix if status/rank changes are not actually connected to scores.
+
+============================================================
+STEP 11 — TEST AGENT FACTORY / SELF-REPLICATION GOVERNANCE
+
+Test child-agent creation.
+
+Scenario:
+A qualified agent detects a repeated gap and requests/creates a child agent.
+
+Expected:
+
+* Creation reason is required.
+* Duplicate check runs.
+* Immune System checks bloat.
+* Risk AI checks safety.
+* Parent agent is recorded.
+* Child receives birth certificate.
+* Child starts Shadow Mode.
+* Child has 0% live authority.
+* Child cannot influence live recommendations.
+* Parent accountability is active.
+
+Negative tests:
+
+* Low-rank agent cannot create child agent.
+* Duplicate agent is blocked.
+* Missing creation reason is blocked.
+* Child cannot start Active with authority.
+* Agent creation does not run during live execution.
+
+Fix if Agent Factory creates agents without governance or live restrictions.
+
+============================================================
+STEP 12 — TEST AGENT IMMUNE SYSTEM
+
+Create or detect problematic patterns:
+
+* Duplicate agent
+* Slow agent with low usefulness
+* Agent family bloat
+* Agent repeating generic analysis
+* Agent drifting outside mission
+* Agent trying to influence live decisions without authority
+* Parent creating too many poor children
+
+Expected:
+
+* Immune System detects issue.
+* Recommendation is logged.
+* Admin sees recommendation.
+* Correct action is available:
+    * quarantine
+    * merge
+    * retire
+    * archive
+    * Learning Camp
+    * reduce authority
+    * freeze creation rights
+    * freeze family
+
+Fix if Immune System is only a static page and does not detect anything.
+
+============================================================
+STEP 13 — TEST SPEED / STEP-BACK SYSTEM
+
+Prove agents can acknowledge when they slow the system and step back.
+
+Test:
+
+* Make or identify a slow agent call.
+* Confirm runtime is measured.
+* Confirm usefulness is measured.
+* Confirm duplicate contribution is detected.
+* Confirm agent moves to Fast Mode, Silent Support, On-Demand Only, Sleeping, or Background.
+* Confirm step-back reason is logged.
+* Confirm Traffic Controller respects the step-back status.
+* Confirm Ruby/scanner remains faster.
+* Confirm step-back can be rewarded when correct.
+
+Expected examples:
+
+* “My analysis overlaps with Market Structure AI. I am stepping back.”
+* “This is a fast scalp cycle. I am switching to Fast Mode.”
+* “My recent usefulness is low and I am adding delay. I recommend On-Demand Only.”
+* “Risk AI is better suited for this decision. I will remain silent unless called.”
+
+Fix if agents cannot step back or if all agents always run.
+
+============================================================
+STEP 14 — TEST NO-TRADE REWARD SYSTEM
+
+Prove no-trade decisions matter.
+
+Scenario:
+
+* Scanner finds weak setup.
+* Risk AI rejects.
+* Entry AI cautions.
+* Ruby says no-trade/watchlist.
+* Prediction locks as no-trade/reject.
+* Later outcome shows setup failed or remained bad.
+* Risk AI/Entry AI/Scanner AI receive reward.
+
+Expected:
+
+* No-trade record exists.
+* Protection score updates.
+* Ruby can summarize avoided loss.
+* Household Report counts no-trade win.
+
+Fix if only executed trades are scored.
+
+============================================================
+STEP 15 — TEST ADMIN DASHBOARD GOVERNANCE VISIBILITY
+
+Admin must be able to see and control the ecosystem.
+
+Verify pages show real backend data:
+
+1. Agent Ecosystem Overview
+2. Agent Family Tree
+3. Agent Detail
+4. Agent Creation Requests
+5. Learning Camp records
+6. Prediction journal
+7. Agent reviews
+8. Speed metrics
+9. Agent Court disagreements
+10. Household Reports
+11. Immune System recommendations
+
+Verify admin controls:
+
+* promote
+* demote
+* restrict
+* send to Learning Camp
+* restore
+* archive
+* shutdown recommend/approve
+* freeze creation rights
+* approve child activation
+* change authority
+* put agent On-Demand Only
+* put agent Sleeping
+* merge/retire/archive where implemented
+
+Fix dead buttons, fake data, unprotected routes, or missing backend links.
+
+============================================================
+STEP 16 — TEST ROLE PERMISSIONS
+
+Verify governance access by role.
+
+Admin:
+
+* Can see full governance layer.
+* Can control agents.
+* Can approve/reject agent actions.
+
+Trader/user:
+
+* Can use Ruby/scanner.
+* Can receive summarized agent consensus.
+* Cannot manipulate agent scores/ranks/authority.
+* Cannot access internal admin-only logs unless allowed.
+
+Investor:
+
+* View-only.
+* Cannot access trade execution.
+* Cannot access admin governance controls.
+* Cannot manipulate agents.
+
+Fix all permission leaks.
+
+============================================================
+STEP 17 — PURPOSE TEST: DOES THE LAYER CHANGE APP BEHAVIOR?
+
+This is the most important test.
+
+Prove the governance layer changes behavior.
+
+Run these before/after or controlled comparisons:
+
+1. Risk downgrade test
+    Without Risk AI influence, setup would be “buy.”
+    With Risk AI active, setup becomes caution/watchlist/no-trade.
+2. Traffic Controller test
+    Without Traffic Controller, all agents would run.
+    With Traffic Controller, only needed agents run and others step back.
+3. Agent Court test
+    One agent approves, another rejects.
+    Final decision reflects court logic, not simple average.
+4. No-trade reward test
+    Rejected weak setup is stored and later rewarded.
+5. Learning Camp test
+    Poor-performing agent loses authority and is retrained.
+6. Agent Factory test
+    Good agent creates child in Shadow Mode only.
+7. Speed test
+    Slow agent steps back and scanner/Ruby gets faster or avoids extra delay.
+
+If the governance layer does not change any decisions, routing, scoring, state, or logs, it is not functional. Fix it.
+
+============================================================
+STEP 18 — FINAL REPORT REQUIRED
+
+When finished, provide a detailed report.
+
+Do not give a vague “all good.”
+
+Report must include:
+
+1. Which governance components are fully functional.
+2. Which governance components were missing or decorative.
+3. What you connected.
+4. What you fixed.
+5. What is still partial.
+6. Which app actions now call which agents.
+7. Proof that Traffic Controller routes agents by mode.
+8. Proof that agents step back when not needed.
+9. Proof that Risk AI can downgrade or veto.
+10. Proof that Agent Court affects decisions.
+11. Proof that no-trade rewards work.
+12. Proof that truth-locked journal cannot be edited.
+13. Proof that Agent Factory creates Shadow Mode children only.
+14. Proof that Learning Camp changes agent status and authority.
+15. Proof that admin can see/control the ecosystem.
+16. Proof that regular users/investors cannot control it.
+17. Performance impact before/after.
+18. Any remaining risks or missing pieces.
+19. Exact files changed.
+20. Exact tests run and pass/fail results.
+
+Do not mark this complete unless the governance layer is actually involved in app workflows and not just present in the database/UI.

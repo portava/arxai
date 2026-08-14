@@ -1,0 +1,194 @@
+Approve Phase 3 and begin Phase 4: Per-user MT5 command routing, scoped command polling, and safe bridge execution queue.
+
+IMPORTANT SCOPE:
+- Do NOT touch the MT5 EA .mq5 files unless absolutely necessary and approved.
+- Do NOT place live trades.
+- Do NOT enable live execution.
+- Keep READ_ONLY / PAPER_ONLY safety active.
+- Keep liveLocked = true.
+- Keep AllowOrderExecution = false.
+- Do NOT weaken MT5 bridge token security.
+- Do NOT reset or wipe the database.
+- Do NOT change unrelated UI.
+- Do NOT move to Phase 5 until Phase 4 QA passes.
+
+Current status:
+- Phase 1 identity foundation: PASS.
+- Phase 2 per-user data scoping: PASS.
+- Phase 3 per-user trading sessions and per-user MT5 connection records: PASS.
+- Remaining issue noted in Phase 3: GET /api/mt5/commands still returns global pending commands. This must now be fixed.
+
+Main goal:
+MT5 command polling must become user/connection scoped. An EA using a specific bridge token should only receive commands intended for that exact user’s MT5 connection. No EA should ever pull another user’s commands.
+
+Phase 4A — Command ownership model:
+Audit/create the MT5 command queue table.
+
+Each command should include:
+- id
+- userId
+- mt5ConnectionId
+- tradingSessionId nullable
+- commandType
+- payload
+- status: pending / claimed / sent / completed / failed / expired / cancelled
+- requestedByUserId
+- requestedAt
+- claimedAt
+- completedAt
+- failedAt
+- expiresAt
+- resultPayload
+- errorMessage
+- safetyMode: paper_only / read_only / live_locked
+- createdAt
+- updatedAt
+
+Requirements:
+- Every command must belong to a userId.
+- Every command must target one mt5ConnectionId.
+- Commands must never be global unless explicitly marked as system/demo and excluded from user personal EA polling.
+- Never accept userId from frontend for ownership. Use req.authUser.id.
+
+Phase 4B — Scope GET /api/mt5/commands by bridge token:
+Update GET /api/mt5/commands so the EA must send:
+
+Header:
+X-MT5-Bridge-Token: <connection token>
+
+Backend must:
+1. Hash the token.
+2. Find the matching mt5_connections row.
+3. Reject invalid or revoked token.
+4. Use the matched connection’s userId and mt5ConnectionId.
+5. Return only pending commands for that userId + mt5ConnectionId.
+6. Never return another user’s commands.
+7. Mark returned commands as claimed/sent safely if current system uses claim semantics.
+8. Keep response shape compatible with the existing EA if possible.
+
+If current EA does not send token on command polling, report that clearly and add backend-safe support only if the EA already has the token available. Do not silently fall back to global commands.
+
+Phase 4C — Scope POST /api/mt5/command-result:
+Update command-result handling so EA result submissions are also token-scoped.
+
+Backend must:
+1. Require X-MT5-Bridge-Token.
+2. Hash and match token to mt5Connection.
+3. Only allow result update for commands owned by that matched userId + mt5ConnectionId.
+4. Reject attempts to complete another user’s command.
+5. Store resultPayload and errorMessage safely.
+6. Never expose raw bridge token.
+
+Phase 4D — User-facing command creation:
+Add or verify safe user routes for creating paper/demo commands only:
+
+- POST /api/me/mt5-connections/:id/test-command
+- POST /api/me/mt5-connections/:id/commands
+- GET /api/me/mt5-connections/:id/commands
+- GET /api/me/mt5-commands
+- POST /api/me/mt5-commands/:id/cancel
+
+All routes must:
+- require login
+- scope by req.authUser.id
+- verify the mt5Connection belongs to req.authUser.id
+- default to paper_only/read_only safety
+- reject live trade commands for now
+- prevent order execution unless future approved safety gates are added
+
+For now, allow safe commands only:
+- PING
+- HEARTBEAT_TEST
+- ACCOUNT_SNAPSHOT_REQUEST
+- POSITIONS_SNAPSHOT_REQUEST
+- PAPER_ORDER_TEST only if it does not place a real broker order
+
+Do NOT allow:
+- LIVE_BUY
+- LIVE_SELL
+- MODIFY_LIVE_ORDER
+- CLOSE_LIVE_POSITION
+- any real OrderSend path
+
+Phase 4E — Dashboard / UI behavior:
+Update only the MT5 bridge/trading session areas needed.
+
+The UI should show:
+- queued commands
+- command status
+- last command result
+- command failed reason
+- “Send safe test command”
+- “Request account snapshot”
+- “Request positions snapshot”
+
+The UI must not show global commands as personal user commands.
+
+If user has no MT5 connection:
+Show:
+“No MT5 connection yet. Create a connection to send safe test commands.”
+
+If user has connection but no heartbeat:
+Show:
+“Waiting for MT5 heartbeat before commands can be delivered.”
+
+Phase 4F — Safety:
+Keep all order-mutating routes blocked unless explicitly future-approved.
+
+Hard requirements:
+- liveLocked remains true.
+- allowOrderExecution remains false by default.
+- readOnlyMode remains true by default.
+- refuseWhenNotArmed middleware remains on any route that could mutate live broker orders.
+- Any command that looks like live execution must return blocked/safety error.
+
+Phase 4G — Tests:
+Add/extend isolation tests.
+
+Required test:
+1. Create User A.
+2. Create User B.
+3. User A creates MT5 connection and token.
+4. User B creates MT5 connection and token.
+5. User A queues command.
+6. User B queues command.
+7. Simulate EA polling with User A token.
+8. Confirm only User A command returns.
+9. Simulate EA polling with User B token.
+10. Confirm only User B command returns.
+11. Simulate command result with User A token for User B command.
+12. Confirm rejected.
+13. Revoke User A token.
+14. Confirm User A polling is rejected.
+15. Confirm invalid token is rejected.
+16. Confirm no global commands leak.
+17. Confirm live trade command is blocked.
+
+Phase 4H — QA/fix gate:
+After implementation, run QA and fix every issue before stopping.
+
+QA must confirm:
+- App starts.
+- Login/register/logout/me still work.
+- Phase 2 isolation still passes.
+- Phase 3 per-user MT5 connections still pass.
+- GET /api/mt5/commands is no longer global.
+- POST /api/mt5/command-result is scoped.
+- User A/User B command isolation passes.
+- Invalid/revoked tokens are rejected.
+- No live trade executed.
+- No MT5 EA files changed unless explicitly required and reported.
+- Safety contract still passes.
+- Existing unrelated paperIntelligence.ts:123 typecheck issue is reported separately if still present.
+
+Final report format:
+1. Files changed
+2. Tables added/changed
+3. Routes added/changed
+4. How command polling is now scoped
+5. How command results are now scoped
+6. User A/User B command isolation result
+7. Safety verification
+8. Any remaining errors
+9. Whether Phase 4 is PASS or FAIL
+10. Stop and wait for my approval before Phase 5

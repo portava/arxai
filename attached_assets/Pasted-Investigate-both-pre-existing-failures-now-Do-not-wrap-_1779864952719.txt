@@ -1,0 +1,65 @@
+Investigate both pre-existing failures now.
+
+Do not wrap yet. Audit the two failing test areas and determine whether each failure is:
+
+1. a stale test expectation from the recent fixes, or
+2. a real regression/real launch gap.
+
+Failures to investigate:
+
+* test:admin-unrestricted-risk 12/13 — ScannerTradeModal#09 pattern check
+* test:mode-scope 21/29 — 8 failures in positions/all + performance-calendar routes
+
+Do not place trades.
+Do not insert arx_live_commands.
+Do not type operator phrases.
+Do not weaken safety gates.
+Do not fake data.
+Do not broaden the env parser.
+Do not expose admin diagnostics to normal users.
+
+For each failure:
+
+1. Open the failing test.
+2. Identify the exact assertion failing.
+3. Compare it against the current intended behavior after the recent fixes.
+4. If the test is stale, update the test to match the new correct contract.
+5. If the code is wrong, fix the code.
+6. Re-run the specific test.
+7. Re-run the impacted safety and regression tests.
+
+For ScannerTradeModal#09:
+
+* Confirm admin/operator unrestricted behavior still works.
+* Confirm normal users still respect their caps.
+* Confirm scanner one-modal LIVE_SHARED ticket does not expose old demo/default cap patterns.
+* Confirm no hidden “safe default 0.1” or stale forced stop-loss logic remains for unrestricted owner/admin.
+
+For mode-scope failures:
+
+* Confirm /positions/all is correctly scoped by userId, accountMode, accountShell/sharedMaster, and connection where relevant.
+* Confirm performance-calendar routes do not leak paper/demo/test rows into LIVE_SHARED.
+* Confirm LIVE_SHARED shows empty/zero when no live trades exist.
+* Confirm admin broad views remain admin-only.
+
+After fixing or updating stale tests, run:
+
+* test:admin-unrestricted-risk
+* test:mode-scope
+* test:account-mode
+* test:live-phaseB
+* test:demo-arming
+* test:demo-verify
+* ci:guards
+* typecheck
+* arx_live_commands count before/after
+
+Final report only:
+
+* which failures were stale tests
+* which failures were real code gaps
+* files changed
+* test results
+* arx_live_commands before/after
+* confirmation no live trades placed
+* confirmation no safety gates weakened

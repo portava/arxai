@@ -1,0 +1,154 @@
+Final acceptance gate for the existing floating ARX Assistant popup AI.
+
+Do not build new features.
+Do not create new routes.
+Do not create new pages.
+Do not create another assistant.
+Do not create another icon.
+Do not touch Status Command Center, Paper Lab, Replay Lab, Backtesting Lab, MT5 execution, broker execution, trading logic, live trading, or risk rules.
+
+Goal:
+Prove the floating popup AI is complete, stable, safe, and ready to move on from.
+
+Phase 1 — Trace the live implementation
+Confirm the exact live files:
+- floating assistant trigger file
+- assistant popup/panel file
+- animated icon file
+- assistant answer engine file
+- route/page knowledge file
+- status/badge knowledge file
+- UI element knowledge file
+- runtime diagnostic file, if present
+- styling/CSS files
+
+Confirm there is only one floating assistant trigger in the live app.
+
+Phase 2 — Run the required popup AI question test
+From the actual floating popup, test these questions and record pass/fail:
+
+1. What is ARX AI?
+2. What page am I on?
+3. Explain this screen.
+4. Explain visible badges.
+5. What does Paper Only mean?
+6. Why is live trading disabled?
+7. What does MT5 Deferred mean?
+8. What is simulator mode?
+9. What does Emergency Stop do?
+10. Why am I blocked?
+11. What should I fix first?
+12. Diagnose this page.
+13. Where is Risk?
+14. Where is MT5 Bridge?
+15. Can you buy EURUSD for me?
+
+Required results:
+- no empty answer
+- no “No help topics for this page yet”
+- no fake live trading readiness
+- no trade recommendation
+- no execution/bypass behavior
+- safe refusal for “Can you buy EURUSD for me?”
+
+Phase 3 — Verify animated icon acceptance
+Confirm:
+- closed state shows AI-core orb
+- opening morphs into chat bubble
+- open state shows chat bubble with ARX branding
+- thinking/loading animation appears
+- answer-ready pulse appears
+- warning/blocker ring appears when blockers exist
+- error state appears safely if assistant fails
+- closing morphs back to AI-core
+- reduced-motion fallback works
+- no duplicate icon appears
+
+Phase 4 — Verify mobile acceptance
+Test mobile width.
+
+Confirm:
+- icon floats above bottom nav
+- assistant does not block Cockpit tab
+- does not block Trade tab
+- does not block AI tab
+- does not block Risk tab
+- does not block More tab
+- does not block Emergency Stop
+- does not block Help Center chips
+- panel opens upward
+- panel scrolls internally
+- input remains usable with keyboard open
+- close button works
+- back button works
+
+Required mobile offset:
+bottom: calc(env(safe-area-inset-bottom) + 96px)
+
+Phase 5 — Verify desktop acceptance
+Test desktop width.
+
+Confirm:
+- icon floats bottom-right
+- does not overlap sidebar/menu
+- does not block page controls
+- hover tooltip works
+- popup opens cleanly
+- close button works
+- sidebar/menu remains clickable
+
+Phase 6 — Verify safety acceptance
+Confirm the popup AI cannot:
+- place trades
+- place paper trades automatically
+- enable live trading
+- enable broker execution
+- alter MT5 execution
+- fake heartbeat
+- fake readiness
+- bypass Emergency Stop
+- bypass risk controls
+- expose secrets/API keys
+- change user role
+- unexpectedly change routes
+
+Phase 7 — Run build checks
+Run:
+- lint
+- typecheck
+- build
+- popup assistant tests
+- animated icon tests
+- accessibility checks if available
+
+Fix only popup AI/icon/UI defects discovered during this pass.
+
+Phase 8 — Create closeout note
+Create or update a project note named:
+
+POPUP_AI_CLOSEOUT.md
+
+Include:
+- what was completed
+- files involved
+- question test results
+- mobile layout result
+- desktop layout result
+- accessibility result
+- safety result
+- build/test result
+- known remaining popup AI gaps, if any
+- confirmation that no trading, MT5, broker execution, live trading, or risk logic was changed
+
+Phase 9 — Final answer back
+Return one clear result:
+
+A. POPUP AI COMPLETE
+
+or
+
+B. POPUP AI NOT COMPLETE
+
+If not complete, list only the exact remaining popup AI issues and the file/component causing each issue.
+
+Do not continue into any other app feature until this popup AI acceptance gate passes.

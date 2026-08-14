@@ -1,0 +1,70 @@
+Begin Phase 7 only: Validation Pipeline.
+
+Do not build Portfolio Manager, Evolution, or live auto-execution yet.
+
+Goal:
+Make sure no strategy, agent, rule, or AI behavior earns live authority without proof.
+
+Build:
+
+/src/domain/validation-pipeline/
+  validation.types.ts
+  validationPipeline.engine.ts
+  backtestValidator.engine.ts
+  walkForwardValidator.engine.ts
+  shadowModeValidator.engine.ts
+  paperTradeValidator.engine.ts
+  microLotValidator.engine.ts
+  limitedLiveValidator.engine.ts
+  liveReadinessScore.engine.ts
+  promotionCriteria.engine.ts
+  demotionCriteria.engine.ts
+  validationReport.engine.ts
+
+Rules:
+- Nothing can jump directly to live trading.
+- Every strategy, rule, and agent behavior must pass staged validation.
+- Validation stages:
+  - BACKTEST
+  - WALK_FORWARD
+  - SHADOW_MODE
+  - PAPER_TRADING
+  - MICRO_LOT_LIVE
+  - LIMITED_LIVE
+  - FULL_GOVERNED_LIVE
+- Failed systems are demoted.
+- Edge decay triggers review.
+- Risk Governor can freeze promotion.
+- Control Tower controls rollout stage.
+- All validation decisions must be logged into the Black Box Vault.
+- Replay Lab results must influence validation scoring.
+- Execution Intelligence must influence validation scoring.
+- Trader DNA and Cognitive Risk must influence validation scoring.
+- No full live auto-execution yet.
+
+Promotion requirements:
+- minimum sample size
+- positive expectancy
+- acceptable max drawdown
+- acceptable losing streak
+- confidence calibration score
+- execution quality score
+- risk compliance score
+- survival score
+- low false approval rate
+- low false block rate
+
+Acceptance criteria:
+- System can validate strategies by stage.
+- System can promote, demote, freeze, or retire a strategy.
+- Live readiness score is explainable.
+- Failed validation creates a report.
+- All previous phase tests still pass.
+
+After Phase 7, stop and report:
+1. Files created
+2. Validation stages implemented
+3. Promotion/demotion rules added
+4. Live readiness scoring added
+5. Tests passed/failed
+6. Whether Phase 8 is safe to begin

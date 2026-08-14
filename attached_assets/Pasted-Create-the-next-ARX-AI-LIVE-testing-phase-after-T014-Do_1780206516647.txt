@@ -1,0 +1,97 @@
+Create the next ARX AI LIVE testing phase after T014.
+
+Do not rerun T014. T014 is complete and its one allowed live trade was already used.
+
+New phase name:
+T015 — Owner/Admin Controlled Manual LIVE Trading Continuation
+
+Purpose:
+Allow continued owner/admin manual LIVE testing through the approved LIVE bridge path without pretending this is still the original one-trade T014 test.
+
+Important:
+
+1. Do not weaken live safety gates.
+2. Do not fake readiness.
+3. Do not use demo, paper, mock, or simulation.
+4. Do not place trades automatically.
+5. Do not use the old T014 “max ONE live trade” limiter for this new phase.
+6. Keep the T014 audit record intact.
+7. Treat T014 as completed history.
+8. Create a new live test phase with its own audit label, counters, and readiness status.
+
+Required T015 behavior:
+
+1. Owner/admin manual LIVE trading may continue after T014.
+2. Andraie.co@gmail.com is the approved owner/admin tester.
+3. Manual trades must still pass all active safety gates before dispatch.
+4. The Confirm button is the final action before the live trade is sent.
+5. There must be no second “Review → Final Confirm” flow.
+6. Stop Loss and Take Profit remain optional for owner/admin manual LIVE trades.
+7. If SL/TP are blank, show only the inline warning:
+    “Stop Loss and Take Profit are not set. Confirm will send this live order without automatic exit protection.”
+8. Do not block Confirm just because SL/TP are blank.
+9. BUY and SELL both use the same one-tap Confirm flow.
+10. All manual live order attempts must be audit logged under T015.
+
+T015 safety gates:
+Before Confirm can dispatch a live order, confirm:
+
+1. LIVE bridge readiness passes.
+2. Live account is connected.
+3. Live EA heartbeat is active.
+4. Live execution master switch is enabled.
+5. Andraie.co@gmail.com is owner/admin approved.
+6. Account is not frozen.
+7. Kill switch is not active.
+8. Allocation permits the trade.
+9. Symbol is tradable.
+10. Lot size is valid.
+11. Order type is valid.
+12. Margin/balance can support the trade.
+13. No demo/paper/sim fallback exists on the active execution path.
+14. Audit logging is active.
+
+Allocation:
+Use the current owner allocation of $7.00 unless the admin changes it manually.
+Do not revert allocation to $70.
+Do not use fake balances.
+Do not bypass allocation unless explicitly creating a separate owner-direct mode with clear audit labeling.
+
+UI cleanup:
+
+1. Remove any stale text that says the only allowed live trade is already spent if the user is now in T015.
+2. If showing T014 history, label it clearly as completed historical test.
+3. Active manual trading should show T015 live readiness, not T014 one-trade exhaustion.
+4. Active LIVE surfaces must not show “Test in demo first.”
+5. Active LIVE surfaces should say:
+    “Decision support only — confirm live readiness and risk before trading.”
+6. Manual trade buttons should say Confirm / Confirm Buy / Confirm Sell, not Review.
+7. No second confirmation modal should appear after Confirm.
+
+Testing required:
+
+1. Verify T014 remains completed in audit history.
+2. Verify T015 exists as the active live-testing phase.
+3. Verify T015 does not inherit the T014 max-one-trade limiter.
+4. Verify T015 still uses live safety gates before dispatch.
+5. Verify owner allocation is $7.00.
+6. Verify no demo, paper, mock, or simulation fallback exists.
+7. Verify scanner trade modal can enter T015 readiness.
+8. Verify chart trade controls can enter T015 readiness.
+9. Verify main Trade page can enter T015 readiness.
+10. Verify Ruby trade suggestion flow can enter T015 readiness.
+11. Verify Confirm is the final action globally for manual LIVE trades.
+12. Verify SL/TP are optional globally for owner/admin manual LIVE trades.
+13. Verify all live order attempts are audit logged under T015.
+14. Do not place an automatic trade during QA.
+15. Report whether the next manual owner/admin LIVE trade can be sent when the user presses Confirm.
+
+Final report:
+
+1. Confirm T014 is completed history.
+2. Confirm T015 is active.
+3. Confirm the T014 one-trade limiter is not blocking T015.
+4. Confirm owner/admin manual LIVE trading continuation is ready.
+5. Confirm all safety gates still run before dispatch.
+6. Confirm no demo/paper/sim fallback exists.
+7. Confirm whether the next manual LIVE trade can be sent by pressing Confirm.

@@ -1,0 +1,44 @@
+Proceed with #266 first: add an automatic retention/pruning policy for heat_snapshots.
+
+Keep the existing /admin/timing-brain-snapshots page, API route, OpenAPI contract, admin/owner gate, AdminDiagnosticsGate, pagination, symbol filter, distinct symbol list, and all current security protections intact.
+
+Goal:
+Prevent the heat_snapshots table from growing forever and slowing the app while preserving useful recent and learning-relevant data.
+
+Requirements:
+1. Inspect the current heat_snapshots schema, insert path, admin read route, and any consumers before editing.
+2. Add configurable retention rules.
+3. Default retention should preserve enough recent data for admin review and timing brain learning.
+4. Suggested default:
+   - Keep all snapshots from the last 30 days.
+   - Keep reduced/rolled-up summaries from 31–180 days if summaries already exist or can be safely future-readied.
+   - Never delete snapshots tied to a trade decision, self-trade decision, major alert, high-impact news event, AACI decision, chart replay, or audit-required event unless policy explicitly allows it.
+5. If full rollups are not safe yet, implement safe pruning only and mark rollups future-ready.
+6. Add admin-safe configuration constants or policy object, not scattered hardcoded values.
+7. Add dry-run support if feasible:
+   - how many rows would be deleted
+   - oldest retained timestamp
+   - protected rows count
+8. Add safe logging/audit event for pruning runs.
+9. Add admin-only status to the timing brain snapshots page:
+   - retention policy active
+   - last prune run
+   - rows pruned
+   - protected rows
+   - oldest retained snapshot
+10. Do not expose this to regular users.
+11. Do not delete audit-critical records.
+12. Do not break the existing admin table or symbol filter.
+13. Run typecheck and existing CI guards.
+
+Completion report:
+- files changed
+- retention policy added
+- prune method added
+- protected snapshot rules
+- dry-run status
+- admin status UI changes
+- QA/typecheck results
+- any follow-up needed
+
+After #266 passes, we will proceed with #265: per-symbol trend chart on /admin/timing-brain-snapshots.

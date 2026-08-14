@@ -1,0 +1,76 @@
+Begin Phase 8 only: Decision Intelligence Layer.
+
+Do not build Portfolio Manager, Evolution, or unrestricted live auto-execution yet.
+
+Goal:
+Optimize decision quality, expectancy, conviction, patience, survival, and governance — not just trade outcomes.
+
+Build:
+
+/src/domain/decision-intelligence/
+  decisionIntelligence.types.ts
+  decisionQuality.engine.ts
+  expectancy.engine.ts
+  conviction.engine.ts
+  strategicPatience.engine.ts
+  futureRiskSimulation.engine.ts
+  marketPersonality.engine.ts
+  adaptiveAggression.engine.ts
+  decisionChainScoring.engine.ts
+  noTradeQuality.engine.ts
+
+/src/domain/decision-intelligence/governance/
+  decisionGovernance.engine.ts
+  decisionPermission.engine.ts
+  aggressionLimit.engine.ts
+  convictionToSizing.engine.ts
+  decisionPolicy.engine.ts
+  decisionOverrideRules.engine.ts
+
+Rules:
+- A winning trade is not automatically a good decision.
+- A losing trade is not automatically a bad decision.
+- No-trade decisions can be scored as successful.
+- Decision quality must consider risk discipline, setup quality, execution quality, trader state, market regime, expected value, survival impact, and rule compliance.
+- Conviction controls aggression, size, hold time, and monitoring intensity.
+- Strategic Patience can recommend WAIT, MONITOR_ONLY, SOFT_BLOCK, or HARD_BLOCK.
+- Future Risk Simulation must test dangerous scenarios before approval.
+- Decision Governance must convert decision quality into permission level, aggression level, and execution limits.
+- Risk Governor and Control Tower can override Decision Governance.
+- All outputs must be logged into the Black Box Vault.
+- Keep all previous phase tests passing.
+- No unrestricted live auto-execution yet.
+
+Required outputs:
+- decisionQualityScore
+- expectancyScore
+- convictionScore
+- patienceScore
+- survivalImpactScore
+- futureRiskScore
+- noTradeQualityScore
+- allowedPermissionLevel
+- maxAggressionLevel
+- maxPositionSize
+- requiredConfirmation
+- requiredDelay
+- recommendedAction
+- plainEnglishExplanation
+
+Acceptance criteria:
+- Bad winning trades can receive low decision scores.
+- Good losing trades can receive high decision scores.
+- No-trade decisions can be rewarded.
+- Conviction affects trade aggression.
+- Future risk scenarios can reduce or block approval.
+- Decision Governance maps decisions into clear permissions.
+- Existing tests still pass.
+
+After Phase 8, stop and report:
+1. Files created
+2. Decision scoring implemented
+3. Future risk simulation implemented
+4. Decision governance implemented
+5. Risk Governor and Control Tower integration completed
+6. Tests passed/failed
+7. Whether Phase 9 is safe to begin

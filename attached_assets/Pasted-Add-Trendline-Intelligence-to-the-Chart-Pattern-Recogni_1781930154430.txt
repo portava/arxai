@@ -1,0 +1,280 @@
+Add Trendline Intelligence to the Chart Pattern Recognition Phase 2 task.
+
+Goal:
+Eleanor should detect trend lines, trendline breaks, trendline changes, and pattern changes, then feed those into Pattern Truth and Scanner Truth.
+
+This must improve chart reading and explanations without creating live trade permission.
+
+New module:
+TrendlineTruth / TrendlineIntelligence
+
+It should detect:
+1. Uptrend support trendline
+2. Downtrend resistance trendline
+3. Parallel channel
+4. Trendline break
+5. Trendline retest
+6. Trendline reclaim
+7. Trendline failure
+8. Trendline acceleration
+9. Trendline flattening
+10. Trendline change / trend shift
+11. Pattern change / pattern transition
+
+Trendline detection rules:
+Use measurable geometry, not visual guessing.
+
+Inputs:
+- swing highs
+- swing lows
+- candle closes
+- ATR-normalized tolerance
+- slope
+- touch count
+- break distance
+- close confirmation
+- retest confirmation
+- volatility context
+- higher-timeframe context
+
+TrendlineTruthVerdict:
+- symbol
+- timeframe
+- feedStatus
+- freshness
+- activeTrendlines[]
+- dominantTrendline
+- trendlineBias: bullish / bearish / neutral / mixed
+- trendlineStatus: none / forming / respected / broken / retested / reclaimed / failed / exhausted
+- trendlineConfidence: 0–100
+- trendlineQuality: poor / fair / good / strong
+- trendlineChange:
+  - changed: boolean
+  - from: uptrend / downtrend / range / unknown
+  - to: uptrend / downtrend / range / unknown
+  - reason
+  - confirmationLevel
+  - invalidationLevel
+- patternChange:
+  - changed: boolean
+  - fromPattern
+  - toPattern
+  - reason
+  - confirmationLevel
+  - invalidationLevel
+- warnings[]
+
+ActiveTrendline:
+- id
+- type: support / resistance / channel_upper / channel_lower
+- direction: up / down / flat
+- slope
+- intercept
+- touchCount
+- startTime
+- endTime
+- anchorPoints[]
+- lastTouchTime
+- lastBreakTime
+- status: forming / respected / broken / retested / reclaimed / failed
+- confidence
+- quality
+- projectedLevelNow
+- invalidationLevel
+- confirmationLevel
+- reason
+
+Trendline rules:
+
+Uptrend support trendline:
+- requires at least 2 meaningful swing lows
+- 3 touches improves quality
+- higher lows preferred
+- respected if price reacts from line
+- broken only if candle closes below line by ATR-normalized threshold
+- confirmed break requires follow-through or failed retest
+- invalidated break if price reclaims line quickly
+
+Downtrend resistance trendline:
+- requires at least 2 meaningful swing highs
+- 3 touches improves quality
+- lower highs preferred
+- respected if price rejects line
+- broken only if candle closes above line by ATR-normalized threshold
+- confirmed break requires follow-through or retest hold
+- invalidated break if price falls back below line quickly
+
+Parallel channel:
+- requires support and resistance trendlines with similar slope
+- upper/lower touches
+- channel break must say which side broke
+- failed channel break returns to range/channel status
+
+Trendline break:
+- do not count wick-only pierces as confirmed breaks
+- require close beyond line
+- require ATR-normalized break distance
+- require follow-through or retest confirmation for high confidence
+- if break is low momentum, label as weak/possible fakeout
+
+Trendline retest:
+- after break, price returns to line
+- support-to-resistance or resistance-to-support behavior is detected
+- rejection/hold confirms the retest
+- failed retest cancels or weakens the break thesis
+
+Trendline change / trend shift:
+Detect when:
+- uptrend support breaks and starts forming lower highs
+- downtrend resistance breaks and starts forming higher lows
+- trendline slope flattens into range
+- range breaks into directional trend
+- previous pattern invalidates and a new pattern begins
+
+Pattern change:
+Eleanor should detect pattern transitions like:
+- triangle forming → breakout confirmed
+- bull flag forming → failed flag / range
+- breakout → failed breakout / trap
+- uptrend channel → broken trend / reversal watch
+- downtrend channel → breakout / reversal watch
+- range → trend continuation
+- continuation pattern → exhaustion / too late
+
+PatternChangeVerdict:
+- previousPattern
+- currentPattern
+- changeType:
+  - confirmation
+  - invalidation
+  - failure
+  - transition
+  - exhaustion
+  - reversal_warning
+- reason
+- confirmationLevel
+- invalidationLevel
+- scannerTruthImpact
+- rubyExplanation
+
+Scanner Truth integration:
+TrendlineTruth should become a child input to Scanner Truth alongside PatternTruth.
+
+Scanner Truth can use trendlines to:
+- explain bias
+- cap confidence
+- confirm/reject pattern setups
+- mark trendline break/retest
+- identify failed breakout/trap
+- mark too-late/exhaustion
+- warn that a trend has changed
+
+Scanner Truth cannot let trendlines:
+- create READY_NOW by themselves
+- override feed truth
+- override Trade Health
+- override risk gates
+- override candle sufficiency
+- grant live execution
+
+Eleanor reasoning block:
+Add Trendline to the Evidence section if detected.
+
+Reasoning format:
+Decision:
+Why:
+Evidence:
+- Structure:
+- Momentum:
+- Pattern:
+- Trendline:
+- Support/Resistance:
+- Feed/Data:
+- Risk:
+Confirmation:
+Invalidation:
+Trader Test:
+Risk Note:
+
+Examples:
+
+Example 1:
+Decision: WAIT
+Why: Price broke the uptrend support trendline, but the break is not confirmed yet.
+Evidence:
+- Structure: Higher lows are weakening.
+- Trendline: Uptrend support broke on close, but no retest has confirmed.
+- Pattern: Prior bull flag is transitioning into range/reversal watch.
+Confirmation: Bearish shift confirms if price retests the broken trendline and rejects.
+Invalidation: Bullish thesis returns if price reclaims the trendline and holds above it.
+Trader Test: Draw the prior swing-low trendline and watch the retest.
+Risk Note: Do not chase the first break without confirmation.
+
+Example 2:
+Decision: Conditional BUY
+Why: Price broke above the downtrend resistance trendline and is retesting it as support.
+Evidence:
+- Structure: Lower-high sequence is weakening.
+- Trendline: Downtrend line broke and is being retested.
+- Pattern: Possible reversal or breakout-retest.
+Confirmation: Buy strengthens if the retest holds and price makes a higher low.
+Invalidation: Cancel if price closes back under the broken trendline.
+Trader Test: Check whether the retest candle holds above the old resistance line.
+Risk Note: Failed retests often trap breakout buyers.
+
+Tests:
+1. Uptrend support trendline detected from rising swing lows.
+2. Downtrend resistance trendline detected from falling swing highs.
+3. Third touch increases trendline quality.
+4. Wick-only break does not confirm trendline break.
+5. Close beyond trendline marks broken.
+6. Break + retest rejection confirms support-to-resistance flip.
+7. Break + reclaim invalidates bearish trendline break.
+8. Downtrend line break + retest hold confirms resistance-to-support flip.
+9. Parallel channel detected from matching slopes.
+10. Channel break marks which side failed.
+11. Trendline flattening transitions trend to range.
+12. Uptrend break + lower high marks trendline change.
+13. Downtrend break + higher low marks trendline change.
+14. Pattern change from forming triangle to confirmed breakout is detected.
+15. Pattern change from breakout to failed breakout/trap is detected.
+16. Pattern change from continuation to exhaustion marks too-late.
+17. Trendline on historical/feed-limited data is context-only.
+18. Trendline cannot upgrade Scanner Truth to READY_NOW alone.
+19. Eleanor reasoning block includes Trendline evidence when available.
+20. Auto-bot cannot execute from trendline break alone.
+
+Learning loop:
+Track trendline outcomes:
+- trendline_id
+- type
+- direction
+- touchCount
+- break/retest status
+- symbol
+- timeframe
+- session
+- trade_taken
+- outcome
+- realized_r
+- max favorable/adverse excursion
+- false break rate
+- retest success rate
+
+Validation:
+- trendline detector tests
+- pattern change tests
+- scanner truth cap tests
+- Eleanor reasoning tests
+- pattern/trendline outcome tests
+- typecheck:ci
+- ci-guards
+- targeted-tests
+- safety-integration alone
+- architect code review
+
+Hard boundary:
+Do not touch live execution gates, MT5 bridge execution, broker dispatch, trade ticket execution, kill switches, owner/admin permissions, or risk bypass logic.
+Trendlines and pattern changes are read-quality only.
+They may explain, warn, confirm, or downgrade.
+They must never grant trade permission by themselves.

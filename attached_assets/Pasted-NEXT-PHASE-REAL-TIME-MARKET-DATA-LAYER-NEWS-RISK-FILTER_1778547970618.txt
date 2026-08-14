@@ -1,0 +1,475 @@
+NEXT PHASE: REAL-TIME MARKET DATA LAYER + NEWS RISK FILTER + SESSION CLOCK
+
+Goal:
+Upgrade the trading app so the AI scanner, strategy brain, backtesting, trade tickets, alerts, and command room all use a centralized market data layer.
+
+The app currently has:
+- full tester access
+- live chart embed
+- simulator market engine
+- strategy lab
+- backtesting
+- trade grader
+- market scanner
+- command room
+- alerts
+- watchlist
+- MT5 deferred
+
+Now build the data foundation so the system can operate like a real trading platform even before MT5 is connected.
+
+Important:
+- Do not fake MT5 connection.
+- Do not claim broker execution is live.
+- Do not place real trades.
+- Do not remove simulator mode.
+- Do not break TradingView chart embed.
+- MT5 remains deferred until the user connects desktop/VPS bridge later.
+
+==================================================
+1. CREATE MARKET DATA PROVIDER LAYER
+==================================================
+
+Create a provider abstraction:
+
+MarketDataProvider
+
+Supported providers:
+
+- SimulatorMarketDataProvider
+- TradingViewChartOnlyProvider
+- MT5BridgeMarketDataProvider, future
+- ExternalMarketDataProvider, placeholder
+
+The app should clearly distinguish:
+
+- chart visualization data
+- simulator data
+- broker/MT5 data
+- external quote data
+
+Do not assume the chart embed provides executable broker data.
+
+Create shared response format:
+
+{
+  "symbol": "XAUUSD",
+  "provider": "SIMULATOR" | "MT5_BRIDGE" | "EXTERNAL" | "CHART_ONLY",
+  "bid": number,
+  "ask": number,
+  "mid": number,
+  "spread": number,
+  "timestamp": "ISO",
+  "isLive": boolean,
+  "isExecutable": boolean,
+  "environment": "SIMULATOR" | "DEMO" | "LIVE" | "UNKNOWN"
+}
+
+==================================================
+2. CREATE REAL-TIME QUOTE STORE
+==================================================
+
+Create a centralized quote store used by:
+
+- dashboard
+- live chart page
+- trade command room
+- manual trade ticket
+- demo trading
+- live manual tester
+- live AI assist
+- live AI auto tester
+- market scanner
+- watchlist
+- alerts
+- strategy lab
+
+Quote store should support:
+
+- selected symbol
+- latest quote
+- bid/ask
+- spread
+- timestamp
+- stale data detection
+- provider source
+- executable yes/no
+- simulated yes/no
+
+If data is stale, show:
+
+“Market data stale. Refreshing…”
+
+If no MT5/external source exists, fallback to simulator and clearly label:
+
+“Using simulator quote data.”
+
+==================================================
+3. CREATE CANDLE DATA STORE
+==================================================
+
+Create candle service:
+
+GET /api/market/candles/:symbol
+
+Support:
+
+- M1
+- M5
+- M15
+- H1
+- H4
+- D1
+
+Candle response:
+
+{
+  "symbol": "EURUSD",
+  "timeframe": "M15",
+  "provider": "SIMULATOR",
+  "candles": [
+    {
+      "time": "...",
+      "open": number,
+      "high": number,
+      "low": number,
+      "close": number,
+      "volume": number
+    }
+  ]
+}
+
+Use this for:
+
+- AI market analysis
+- market scanner
+- backtesting
+- market replay
+- entry sniper score
+- trade grader
+
+==================================================
+4. ADD MARKET SESSION CLOCK
+==================================================
+
+Create a market session system.
+
+Page/component:
+
+/market-sessions
+
+Track:
+
+- Sydney session
+- Tokyo session
+- London session
+- New York session
+- overlap windows
+- current active session
+- next session open
+- next session close
+- recommended trading condition
+
+Show in global header:
+
+- current session
+- active overlap
+- session volatility label
+
+Session labels:
+
+- QUIET
+- NORMAL
+- ACTIVE
+- HIGH_VOLATILITY
+- AVOID
+
+Use session info inside AI:
+
+- avoid low-volume periods if strategy requires momentum
+- warn during high-volatility periods
+- rank session-fit for each strategy
+
+==================================================
+5. ADD NEWS RISK FILTER
+==================================================
+
+Create a news risk module.
+
+Page:
+
+/news-risk
+
+For now, because no external calendar API may be connected yet, create:
+
+- manual high-impact news input
+- simulated news events
+- future external calendar provider placeholder
+
+News event fields:
+
+- eventName
+- currency
+- impact: low / medium / high
+- eventTime
+- affectedSymbols
+- avoidBeforeMinutes
+- avoidAfterMinutes
+- notes
+
+AI should use news risk to:
+
+- reject trades close to high-impact news
+- warn tester before live intent
+- add alert if trade is near event time
+- mark scanner card as NEWS_RISK
+- reduce opportunity score if affected
+
+Create endpoints:
+
+GET /api/news-risk/events
+POST /api/news-risk/events
+PATCH /api/news-risk/events/:id
+DELETE /api/news-risk/events/:id
+GET /api/news-risk/current
+
+==================================================
+6. ADD SPREAD + VOLATILITY MONITOR
+==================================================
+
+Create:
+
+/market-health
+
+Monitor:
+
+- spread
+- average spread
+- volatility
+- candle range
+- stale quote status
+- session risk
+- news risk
+- scanner health
+- simulator health
+- MT5 bridge health, deferred
+
+Market health labels:
+
+- TRADEABLE
+- CAUTION
+- HIGH_SPREAD
+- HIGH_VOLATILITY
+- LOW_LIQUIDITY
+- NEWS_RISK
+- DATA_STALE
+- MT5_DEFERRED
+
+Risk governor should read this before approving any simulated/demo/live-intent trade.
+
+==================================================
+7. UPGRADE RISK GOVERNOR WITH MARKET HEALTH
+==================================================
+
+Risk governor should now reject or warn on:
+
+- stale quote data
+- spread too high
+- volatility too high
+- low liquidity session
+- high-impact news window
+- missing stop loss
+- poor risk/reward
+- oversized lot
+- max daily loss reached
+- too many trades
+- overtrading risk
+- low AI confidence
+
+Risk result format:
+
+{
+  "approved": true/false,
+  "riskLevel": "LOW" | "MEDIUM" | "HIGH" | "BLOCK",
+  "reasons": [],
+  "warnings": [],
+  "marketHealth": {},
+  "newsRisk": {},
+  "sessionRisk": {},
+  "maxLoss": number,
+  "riskRewardRatio": number
+}
+
+==================================================
+8. CONNECT DATA LAYER TO AI SCANNER
+==================================================
+
+Market scanner should use:
+
+- centralized quote store
+- candle store
+- market session clock
+- news risk filter
+- spread monitor
+- volatility monitor
+- risk governor
+
+Scanner cards should now show:
+
+- data provider
+- data freshness
+- session label
+- news risk label
+- spread status
+- volatility status
+
+Add badges:
+
+- DATA_FRESH
+- DATA_STALE
+- SIMULATOR_DATA
+- MT5_DEFERRED
+- NEWS_RISK
+- SESSION_GOOD
+- SESSION_WEAK
+- SPREAD_ACCEPTABLE
+- SPREAD_TOO_HIGH
+
+==================================================
+9. CONNECT DATA LAYER TO TRADE TICKET
+==================================================
+
+Manual and AI trade tickets should show:
+
+- quote source
+- bid/ask
+- spread
+- session
+- news risk
+- market health
+- executable status
+
+For MT5 deferred state:
+
+“Quote source may be simulator/chart-only. Real broker execution requires MT5 bridge.”
+
+For tester live intent:
+
+“Intent captured using tester data. Verify again after MT5 connection before execution.”
+
+==================================================
+10. CREATE DATA QUALITY PANEL
+==================================================
+
+Create page:
+
+/data-quality
+
+Show:
+
+- quote source
+- candle source
+- last quote time
+- last candle time
+- stale data yes/no
+- simulator active yes/no
+- chart active yes/no
+- MT5 connected yes/no
+- broker executable data yes/no
+- market scanner using which provider
+- risk governor using which provider
+
+This prevents confusion about what is live, simulated, or broker-executable.
+
+==================================================
+11. UPDATE DASHBOARD
+==================================================
+
+Add dashboard cards:
+
+- Market Data Source
+- Current Session
+- News Risk
+- Market Health
+- Spread Monitor
+- Volatility Monitor
+- Data Quality
+- MT5 Deferred Status
+
+==================================================
+12. API ENDPOINTS
+==================================================
+
+Create or update:
+
+GET /api/market/data-source
+GET /api/market/quote/:symbol
+GET /api/market/quotes
+GET /api/market/candles/:symbol
+GET /api/market/health
+GET /api/market/sessions
+GET /api/market/session-clock
+GET /api/market/spread-monitor
+GET /api/market/volatility-monitor
+
+GET /api/news-risk/events
+POST /api/news-risk/events
+PATCH /api/news-risk/events/:id
+DELETE /api/news-risk/events/:id
+GET /api/news-risk/current
+
+GET /api/data-quality
+
+==================================================
+13. FINAL TEST
+==================================================
+
+Run:
+
+- route smoke test
+- market data provider test
+- quote store test
+- candle store test
+- simulator fallback test
+- session clock test
+- news risk test
+- spread monitor test
+- volatility monitor test
+- market health test
+- risk governor market health integration test
+- scanner data integration test
+- trade ticket data integration test
+- dashboard cards test
+- data quality panel test
+- MT5 deferred honesty test
+
+Generate:
+
+REAL-TIME MARKET DATA LAYER REPORT
+
+Include:
+
+- market data provider layer active yes/no
+- quote store active yes/no
+- candle store active yes/no
+- simulator fallback active yes/no
+- session clock active yes/no
+- news risk filter active yes/no
+- spread monitor active yes/no
+- volatility monitor active yes/no
+- market health active yes/no
+- risk governor upgraded yes/no
+- scanner connected to data layer yes/no
+- trade ticket connected to data layer yes/no
+- data quality panel active yes/no
+- MT5 still deferred yes/no
+- real broker execution still not faked yes/no
+
+Hard rules:
+- Do not fake broker data.
+- Do not fake MT5 connection.
+- Do not claim chart data is broker-executable.
+- Do not place real orders.
+- Do not remove simulator mode.
+- Do not remove risk governor.
+- Do not remove kill switch UI.

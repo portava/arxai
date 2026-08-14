@@ -1,0 +1,176 @@
+Continue the ARX AI truth cleanup with a focused two-part pass.
+
+Primary goals:
+1. Fix the remaining Fund Book dev-DB drift so CI is green.
+2. Run a Scanner Entry / Exec Score Honesty Audit and safely fix any misleading score behavior.
+
+Do not rebuild systems. Do not weaken investor protection, pool isolation, live execution gates, scanner safety contracts, or route guards. Apply only targeted fixes with file/test proof.
+
+Part A — Fix remaining Fund Book dev-DB drift
+
+Known context:
+test:fundbook is already fixed and green under the June 19 Balanced-only investor visibility contract:
+- Investor Fund Book view shows only BALANCED pools.
+- CASH_RESERVE remains hidden from investor API/UI.
+- Hidden-pool holdings/math are verified through direct DB truth.
+
+Remaining red suites are believed to be pre-existing shared dev-DB pool drift:
+- test:fundbook-overlay
+- test:fundbook-capital
+- test:fundbook-waterfall
+- test:fundbook-weekly
+
+Task:
+Inspect these failing suites and make them deterministic and aligned with the current pool contract.
+
+Rules:
+- Do not re-expose hidden pools just to satisfy old tests.
+- Do not weaken investor isolation.
+- Do not loosen NAV/unit math.
+- Do not remove meaningful assertions.
+- Prefer deterministic test setup/fixtures over relying on polluted shared dev DB state.
+- If tests need direct DB reads for hidden/internal pool math, use direct DB truth instead of expecting hidden pools in investor responses.
+- Preserve the June 19 Balanced-only visibility contract.
+- Add comments where needed so future agents understand why CASH_RESERVE is hidden from investor API/UI.
+
+Audit/fix checklist:
+- Identify exactly what each failing Fund Book suite assumes.
+- Separate stale product contract assumptions from genuine bugs.
+- Reset/seed test pools deterministically where possible.
+- Ensure BALANCED pool assertions use the correct tier/pricing assumptions.
+- Ensure CASH_RESERVE assertions are either admin/internal/direct-DB only or explicitly hidden from investor views.
+- Ensure weekly payout/waterfall/capital overlay tests do not depend on leftover dev DB rows.
+- Confirm investor A cannot see investor B holdings.
+- Confirm hidden pool values do not leak through API.
+- Confirm admin/internal views still see what they are allowed to see.
+
+Required validation for Part A:
+- Run test:fundbook
+- Run test:fundbook-overlay
+- Run test:fundbook-capital
+- Run test:fundbook-waterfall
+- Run test:fundbook-weekly
+- Run any full fundbook/investor test command if one exists
+
+Part B — Scanner Entry / Exec Score Honesty Audit
+
+Goal:
+Verify that Scanner Entry Score and Exec Score are real, honest, fresh, and connected to the same scanner/chart/action truth — or hide/subdue them when they are unavailable.
+
+Audit scope:
+Search for:
+- Entry Score
+- Exec Score
+- Execution Score
+- entryScore
+- execScore
+- executionScore
+- confidence
+- signalScore
+- setupScore
+- scanner score
+- actionability score
+- verdict score
+- flame score
+- FVG score
+
+Inspect:
+- Scanner cards
+- Scanner header
+- Chart badge/action button
+- Selected market panel
+- Market scanner route
+- Any backend/API producing score fields
+- Any frontend local score calculation
+- Stores/hooks that cache or display scanner truth
+- Tests around scanner truth/actionability
+
+Truth rules:
+- Do not show Entry Score or Exec Score as numeric truth if they are hardcoded, random, stale, fixture-based, or disconnected from the selected symbol/timeframe verdict.
+- Do not show a score from a previous symbol/timeframe after the user switches markets.
+- Do not show score confidence when verdict is unresolved.
+- If score inputs are missing, show an honest unavailable/insufficient-data state.
+- If score is only a UI projection, label it clearly as a projection.
+- If Entry Score and Exec Score are duplicates or do not drive any decision, subdue them or hide until connected.
+- If the chart/header/action truth says WAIT/NO_CONFIRMATION/BLOCKED, scores must not imply immediate live readiness.
+- If the bridge/market data is stale, scores must show stale/blocked/unavailable.
+- If FVG/flame/trend setup contributes to score, cite exact input source and ensure it is current for symbol/timeframe.
+
+Central-truth checks:
+- Scanner card score must match selected symbol/timeframe truth.
+- Header score/status must match chart action truth.
+- Chart action button must not conflict with score.
+- Score must update/reset on symbol/timeframe change.
+- Score must not override a resolved verdict.
+- Score must not be used as a hidden execution bypass.
+- Score display should derive from the same keyed truth source as the chart/header action.
+
+Safe fixes allowed:
+- Replace fake/hardcoded scores with honest “Unavailable” or “Waiting for data.”
+- Reset stale score state on symbol/timeframe switch.
+- Hide scores from primary UI if they are not connected to real scanner truth.
+- Rename misleading labels such as “Exec Score” to “Setup Score” if it is not actually execution readiness.
+- Add explanatory tooltip/copy for what the score means.
+- Add guards/tests preventing random/fake score values in user-facing scanner UI.
+- Add tests proving late-arriving score/verdict for old symbol does not overwrite current symbol.
+- Add tests proving unresolved verdict shows no numeric score.
+- Add tests proving resolved verdict score displays consistently across scanner/header/chart where applicable.
+
+Do not:
+- Change live execution gates.
+- Change the scanner’s trading decision logic unless a proven bug is found.
+- Add new strategy math without proof.
+- Invent score formulas to make UI look complete.
+- Let a score place a trade directly.
+
+Required validation for Part B:
+- Run affected scanner tests.
+- Run scanner truth/actionability regression tests.
+- Run market-scanner page tests.
+- Run dashboard/frontend typecheck.
+- Run CI guards.
+- Add or update tests for every fixed misleading score behavior.
+
+Final report must include:
+
+Part 1 — Fund Book Drift Fix
+- Which suites were failing
+- Root cause of each failure
+- What was changed
+- Why the fix preserves Balanced-only investor visibility
+- Validation results
+
+Part 2 — Scanner Entry / Exec Score Truth Map
+For each score surface, list:
+- UI location
+- Source field/service/store
+- Whether it is real/partial/shell/misleading
+- Whether it is connected to central scanner truth
+- Whether it can become stale
+- Fix applied or recommended action
+
+Part 3 — Misleading Score Behavior Found
+List every score issue found:
+- fake
+- stale
+- disconnected
+- duplicate
+- overconfident
+- unavailable but shown
+- conflicts with action truth
+
+Part 4 — Safe Fixes Applied
+List exact files changed and behavior now.
+
+Part 5 — Tests/Guards Added or Updated
+
+Part 6 — Validation
+Give exact commands and pass/fail counts.
+
+Acceptance criteria:
+- All Fund Book suites listed above are green or any remaining failure is proven unrelated with file/test evidence.
+- Fund Book tests are deterministic and not dependent on polluted shared dev DB rows.
+- CASH_RESERVE remains hidden from investor API/UI under the June 19 contract.
+- Scanner Entry/Exec scores do not lie, stale, or conflict with chart/header/scanner action truth.
+- No score surface can imply live readiness when verdict/bridge/data truth says otherwise.
+- Dashboard typecheck and CI guards are green.

@@ -1,0 +1,555 @@
+Proceed with Build KK now.
+
+This is NOT an audit.
+This is NOT a planning report.
+Implement the code changes.
+
+Build KK = Data Import + Broker Read-Only Connector.
+
+Goal:
+Create a safe data-import and read-only broker connector layer so the trading system can use better historical candles, imported datasets, account snapshots, symbol info, and read-only broker data without allowing live execution.
+
+The system should be able to:
+- import candle data from CSV/JSON/manual payloads
+- validate and normalize candle data
+- store imported historical data
+- turn imported candles into Replay Simulator scenarios for Build JJ
+- feed imported candles into Build DD market data when requested
+- support read-only broker/account snapshots if credentials are configured
+- expose broker symbols, account balance/equity, open positions, and price quotes in read-only mode only
+- reject any provider or connector that is not read-only
+
+Important:
+Build KK must NOT place live trades.
+Build KK must NOT enable live trading.
+Build KK must NOT call MT5 live execution.
+Build KK must NOT modify canPlaceTrades.
+Build KK must NOT modify live broker permissions.
+Build KK must NOT create live orders.
+Build KK must run in DATA_IMPORT / BROKER_READ_ONLY mode only.
+
+Current system:
+- Build AA = trade decision orchestrator
+- Build BB = auto-debrief
+- Build CC = learning feedback engine
+- Build DD = read-only market data layer
+- Build EE = paper execution engine
+- Build FF = paper autopilot loop
+- Build GG = calendar + AI command center
+- Build HH = risk governor
+- Build II = trader coach + playbook
+- Build JJ = replay simulator + strategy lab
+- Build KK = data import + broker read-only connector
+
+Core requirement:
+Create a data ingestion and read-only broker layer that improves data quality for DD, JJ, GG, HH, and II without creating any execution pathway.
+
+Build KK tasks:
+
+1. Inspect existing data systems
+
+Find existing files/routes/tables for:
+- market data service
+- synthetic fallback candles
+- replay scenarios
+- replay runs
+- strategy lab
+- broker/MT5/Deriv code if present
+- account snapshots if present
+- symbol metadata if present
+- market data logs
+- risk governor data checks
+
+Do not duplicate usable systems.
+Integrate cleanly.
+
+2. Create Data Import Service
+
+Create a service that accepts candle data and returns:
+
+{
+  import_id,
+  status: "VALIDATED" | "IMPORTED" | "REJECTED" | "PARTIAL",
+  symbol,
+  timeframe,
+  source: "CSV" | "JSON" | "MANUAL" | "DEMO",
+  candles_received,
+  candles_valid,
+  candles_rejected,
+  start_time,
+  end_time,
+  dataQuality: {
+    status: "GOOD" | "DEGRADED" | "REJECTED",
+    duplicateCount,
+    gapCount,
+    invalidOhlcCount,
+    outOfOrderCount,
+    warnings,
+    errors
+  },
+  created_at
+}
+
+3. Candle validation rules
+
+Validate every candle:
+
+Required fields:
+- time
+- open
+- high
+- low
+- close
+- volume optional
+
+Validation:
+- time must be valid date/timestamp
+- open/high/low/close must be numeric
+- high must be >= low
+- high must be >= open and close
+- low must be <= open and close
+- duplicate timestamps should be detected
+- candles must be sortable by time
+- gaps should be detected based on timeframe
+- extreme outliers should be warned, not always rejected
+- empty imports should be rejected
+- unsupported timeframe should be rejected
+
+4. Normalize candle format
+
+Normalize imported data to:
+
+{
+  candle_id,
+  import_id,
+  symbol,
+  timeframe,
+  time,
+  open,
+  high,
+  low,
+  close,
+  volume,
+  source,
+  created_at
+}
+
+5. Create imported-data catalog
+
+The system should let the app see:
+- all imports
+- import status
+- symbol/timeframe
+- candle count
+- data quality score
+- start/end range
+- whether import can be used for replay
+- whether import can be used as DD historical fallback
+- validation warnings
+
+6. Connect imports to Build JJ Replay
+
+Add ability to turn imported candles into a replay scenario:
+
+POST /api/data-import/imports/:id/create-replay-scenario
+
+The scenario should be stored in Build JJ replay_scenarios with:
+
+source: "IMPORTED"
+
+It must not create paper trades.
+It must not create live trades.
+It only creates replay-ready scenarios.
+
+7. Connect imports to Build DD Market Data
+
+Allow DD to optionally read imported candles as historical fallback when live/read-only provider is unavailable.
+
+Rules:
+- imported data must be clearly labeled IMPORTED
+- imported historical candles must never be labeled REAL live data
+- AA decisions using imported historical data must include warnings unless in replay mode
+- imported data can be used for strategy lab/replay safely
+- imported data should not be treated as current live market quote unless explicitly marked as simulated/replay context
+
+8. Create Broker Read-Only Connector
+
+Create a broker read-only adapter system.
+
+Required structure:
+- brokerReadOnlyService
+- brokerReadOnlyProviders
+- brokerReadOnlyTypes
+- mt5ReadOnlyProvider placeholder/adapter if MT5 code exists
+- derivReadOnlyProvider placeholder/adapter if relevant
+- brokerReadOnlyHealthCheck
+- brokerReadOnlyLogs
+
+The read-only connector may return:
+
+{
+  connector_id,
+  mode: "READ_ONLY",
+  provider,
+  connected,
+  account: {
+    accountIdMasked,
+    currency,
+    balance,
+    equity,
+    margin,
+    freeMargin,
+    leverage,
+    serverTime
+  },
+  symbols: [],
+  openPositions: [],
+  latestQuotes: [],
+  dataQuality: {
+    status: "GOOD" | "DEGRADED" | "MISSING",
+    latencyMs,
+    warnings,
+    errors
+  },
+  liveTradingAllowed: false,
+  canPlaceLiveTrade: false,
+  generatedAt
+}
+
+9. Broker connector safety rules
+
+Hard rules:
+- mode must be READ_ONLY
+- reject any connector with execution permissions enabled
+- reject any provider if BROKER_MODE is not read_only
+- never expose API secrets
+- never store full account credentials in frontend code
+- never return raw API keys
+- never call order placement
+- never call position closing
+- never call modify order
+- never call live broker execution
+- never set canPlaceTrades to true
+- never create live order tickets
+
+10. Environment variables
+
+Support safe variables if needed:
+
+BROKER_PROVIDER=
+BROKER_MODE=read_only
+BROKER_API_KEY=
+BROKER_API_SECRET=
+BROKER_ACCOUNT_ID=
+BROKER_SERVER=
+BROKER_BASE_URL=
+
+Rules:
+- if BROKER_MODE is missing, default to read_only
+- if BROKER_MODE is anything other than read_only, connector must reject and Risk Governor should see a critical warning
+- secrets must never be logged or returned by endpoints
+
+11. Broker snapshots
+
+Create safe account/position snapshot storage.
+
+Use snapshots only for:
+- risk awareness
+- account context
+- paper sizing reference if explicitly safe
+- command center display
+- read-only status
+
+Never use snapshots to place trades.
+
+12. Database changes if needed
+
+Additive only.
+
+Create:
+
+data_imports:
+- id
+- import_id
+- symbol
+- timeframe
+- source
+- status
+- candles_received
+- candles_valid
+- candles_rejected
+- start_time
+- end_time
+- data_quality jsonb
+- warnings jsonb
+- errors jsonb
+- created_at
+- updated_at
+
+imported_candles:
+- id
+- candle_id
+- import_id
+- symbol
+- timeframe
+- time
+- open
+- high
+- low
+- close
+- volume
+- source
+- created_at
+
+broker_readonly_snapshots:
+- id
+- snapshot_id
+- provider
+- mode
+- connected
+- account_masked jsonb
+- symbols jsonb
+- open_positions jsonb
+- latest_quotes jsonb
+- data_quality jsonb
+- live_trading_allowed
+- can_place_live_trade
+- created_at
+
+broker_readonly_logs:
+- id
+- connector_id
+- event_type
+- severity
+- message
+- details jsonb
+- created_at
+
+data_import_logs:
+- id
+- import_id
+- event_type
+- severity
+- message
+- details jsonb
+- created_at
+
+13. Add endpoints or scripts
+
+Create endpoints or equivalent scripts:
+
+POST /api/data-import/demo
+POST /api/data-import/validate
+POST /api/data-import/candles
+GET /api/data-import/imports?limit=20
+GET /api/data-import/imports/:id
+GET /api/data-import/imports/:id/candles?limit=200
+POST /api/data-import/imports/:id/create-replay-scenario
+GET /api/data-import/logs?limit=50
+
+GET /api/broker-readonly/status
+POST /api/broker-readonly/health-check
+GET /api/broker-readonly/account
+GET /api/broker-readonly/symbols
+GET /api/broker-readonly/positions
+GET /api/broker-readonly/quotes?symbols=Volatility%2075%20Index
+POST /api/broker-readonly/snapshot
+GET /api/broker-readonly/snapshots?limit=20
+GET /api/broker-readonly/logs?limit=50
+POST /api/broker-readonly/demo
+
+14. Integrate with Risk Governor HH
+
+HH should read broker read-only status.
+
+Risk Governor should flag:
+- BROKER_MODE not read_only
+- connector exposes execution permission
+- canPlaceLiveTrade true
+- canPlaceTrades true
+- broker provider attempting live mode
+- missing read-only safety config
+
+But HH should not crash if no broker connector is configured.
+
+15. Integrate with GG Command Center
+
+GG should display:
+- broker read-only status
+- data import status
+- latest import quality
+- imported candle count
+- latest broker snapshot time
+- live trading disabled badge
+- broker read-only badge
+
+GG must remain read-only.
+
+16. Integrate with II Trader Coach
+
+II should be able to mention:
+- data quality issues
+- imported scenario availability
+- whether sample data is synthetic/imported/read-only
+- whether more replay testing is recommended
+
+II must not recommend live trading.
+
+17. Frontend pages/components
+
+Add or update:
+
+A. Data Import page
+Show:
+- import status
+- symbol/timeframe
+- candles received/valid/rejected
+- data quality warnings
+- button to create replay scenario
+- import logs
+
+B. Broker Read-Only Status page/panel
+Show:
+- provider
+- connection status
+- account summary with masked account ID
+- symbols
+- open positions read-only
+- latest quotes
+- live trading disabled badge
+- read-only mode badge
+- safety warnings
+
+No live execution buttons.
+
+18. Required test scenarios
+
+A. Demo import creates valid candles.
+B. Valid JSON/manual candle import succeeds.
+C. Empty candle import is rejected safely.
+D. Bad OHLC data is rejected or partially rejected.
+E. Duplicate timestamps are detected.
+F. Gaps are detected.
+G. Imported data creates a Build JJ replay scenario.
+H. Replay can run from imported scenario.
+I. DD can list or use imported historical fallback safely.
+J. Broker read-only demo returns account/symbol/position snapshot.
+K. BROKER_MODE not read_only is rejected.
+L. API secrets are not exposed in endpoint output or logs.
+M. HH detects unsafe broker mode as a hard block.
+N. GG displays broker/data status.
+O. II coaching mentions data quality if degraded.
+P. No live trades are placed.
+
+19. Logs
+
+Data import logs should record:
+- import received
+- validation started
+- validation results
+- candles stored
+- import rejected/partial/imported
+- replay scenario created
+- errors/warnings
+
+Broker read-only logs should record:
+- connector health check
+- provider selected
+- read-only mode verified
+- snapshot created
+- account masked
+- symbols read
+- positions read
+- unsafe mode rejected
+- errors/warnings
+
+20. Safety language
+
+All outputs must clearly label:
+- imported data as IMPORTED
+- demo data as DEMO
+- broker data as READ_ONLY
+- replay data as SIMULATION/REPLAY
+- live trading as DISABLED
+
+21. Preserve existing behavior
+
+Do not break:
+- Build AA decision orchestrator
+- Build BB auto-debrief
+- Build CC learning engine
+- Build DD market data layer
+- Build EE paper execution engine
+- Build FF paper autopilot loop
+- Build GG trading calendar and command center
+- Build HH risk governor
+- Build II trader coach and playbook
+- Build JJ replay simulator and strategy lab
+- manual debrief
+- manual paper close
+- analytics
+- decision logs
+- learning logs
+- market data logs
+- paper execution logs
+- autopilot logs
+- performance endpoints
+- risk governor endpoints
+- coach endpoints
+- replay endpoints
+- existing frontend routes
+
+Acceptance criteria:
+- Data Import service exists.
+- Candle validation/normalization works.
+- Imported candles can create replay scenarios.
+- Broker read-only connector exists.
+- Broker connector rejects non-read-only mode.
+- Broker snapshots are stored safely.
+- HH can detect unsafe broker config.
+- GG can display read-only broker/data status.
+- II can mention data quality.
+- No secrets are exposed.
+- No live trading is enabled or recommended.
+- App typechecks/builds.
+- Raw outputs prove all major scenarios work.
+
+After implementation, show:
+
+1. Files changed
+2. New files created
+3. Database changes
+4. Frontend routes/pages added
+5. Environment variables added
+6. Where KK integrates with DD
+7. Where KK integrates with JJ
+8. Where KK integrates with HH
+9. Where KK integrates with GG
+10. Where KK integrates with II
+11. Raw output from /api/data-import/demo
+12. Raw output from /api/data-import/validate
+13. Raw output from /api/data-import/candles
+14. Raw output from /api/data-import/imports?limit=20
+15. Raw output from create replay scenario endpoint
+16. Raw output from /api/broker-readonly/status
+17. Raw output from /api/broker-readonly/health-check
+18. Raw output from /api/broker-readonly/account
+19. Raw output from /api/broker-readonly/symbols
+20. Raw output from /api/broker-readonly/positions
+21. Raw output from /api/broker-readonly/quotes
+22. Raw output from /api/broker-readonly/snapshot
+23. Valid import proof
+24. Bad candle validation proof
+25. Duplicate/gap detection proof
+26. Imported replay scenario proof
+27. Broker read-only proof
+28. Unsafe broker mode rejection proof
+29. Secret redaction proof
+30. HH unsafe broker detection proof
+31. GG broker/data display proof
+32. II data-quality coaching proof
+33. Frontend route proof
+34. Live-trade isolation proof
+35. Any errors or warnings
+36. Whether Build KK is fully complete or partially complete
+37. Final Build KK score out of 10

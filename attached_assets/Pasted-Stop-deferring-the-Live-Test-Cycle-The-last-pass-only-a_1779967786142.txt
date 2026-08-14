@@ -1,0 +1,115 @@
+Stop deferring the Live Test Cycle.
+
+The last pass only audited, cleaned up half-built schema, and did not build the requested feature. That is not the goal.
+
+Build the Live Test Cycle now and run the real live test cycle only if all live gates pass.
+
+Do not create new trading modes.
+The only modes are:
+- Demo
+- Live
+- Live Shared
+
+Live Test Cycle is not a mode. It is an OWNER-only test action inside Live / Live Shared.
+
+DO NOT:
+- create Paper, Watch Only, View Only, Analysis Only, Scanner Off, or any other mode
+- place more than one test trade
+- run endless trading
+- bypass 16-gate evaluator
+- bypass liveTrading chokepoint
+- bypass env AND operator broker execution
+- bypass kill switch
+- bypass bridge heartbeat
+- bypass master bridge pinning
+- bypass allocation checks
+- bypass audit logging
+
+BUILD NOW:
+1. Replace the old ControlledLiveTestButton completely.
+2. Add live_test_cycles table/schema.
+3. Add backend endpoints:
+   - preview live test cycle
+   - start live test cycle
+   - poll live test cycle status
+   - manual resolve failed/stuck cycle
+4. Add owner-only UI panel:
+   - Preview Live Test Cycle
+   - Start Live Test Cycle
+   - Current cycle status
+   - Open latency
+   - Close latency
+   - Full result
+5. Add single-flight guard:
+   - no second test if one is open, pending, stuck, or unresolved
+6. Add auto-close:
+   - after broker confirms open, queue close for the same MT5 ticket
+   - if close fails, lock cycle and show “Manual close required”
+7. Add latency recorder:
+   - preflight start
+   - open command queued
+   - EA pulled open
+   - broker open result
+   - position detected
+   - close command queued
+   - EA pulled close
+   - broker close result
+   - position removed
+   - cycle completed
+8. Add audit events for every step.
+
+LIVE TEST AUTHORIZATION:
+The MT5 account has $9 dedicated to live testing.
+
+After the feature is built:
+1. Run dry-run simulation first.
+2. If dry-run passes and live readiness passes, run one real live test cycle.
+3. Use:
+   - OWNER only
+   - Live Shared bridge
+   - EURUSD
+   - 0.01 lot
+   - market order
+   - open one trade
+   - verify EA/broker result
+   - automatically close the same trade
+4. Do not open another trade.
+5. If any gate fails, do not force the trade. Report the blocker.
+
+PRECHECK BEFORE REAL TEST:
+Confirm:
+- OWNER signed in
+- EA heartbeat fresh
+- master bridge pinned
+- broker execution env enabled
+- operator broker execution ON
+- effective broker execution enabled
+- kill switch released
+- EA EnableLiveExecution=true
+- EA ReadOnlyMode=false
+- EA allowOrderExecution=true
+- marketOrders capability=true
+- EURUSD is MT5-tradable
+- no existing ARX live test trade open
+- 16-gate evaluator PASS
+- liveTrading chokepoint PASS
+
+FINAL REPORT:
+Return:
+- feature build status
+- dry-run result
+- real live test result if executed
+- open command id
+- MT5 open ticket if available
+- close command id
+- MT5 close result if available
+- realized P/L
+- open latency
+- close latency
+- full cycle duration
+- arx_live_commands before/after
+- whether any trade remains open
+- blockers if any
+- confirmation that no new modes were created
+
+Do not defer this again unless a live gate fails. If a gate fails, report the exact gate and whether it is code-side or operator-side.

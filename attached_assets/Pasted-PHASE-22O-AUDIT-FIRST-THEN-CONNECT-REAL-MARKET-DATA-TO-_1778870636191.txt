@@ -1,0 +1,290 @@
+PHASE 22O — AUDIT FIRST, THEN CONNECT REAL MARKET DATA TO ARX SCANNER
+
+Do NOT rebuild the AI.
+Do NOT rebuild the scanner.
+Do NOT redesign the UI.
+Do NOT fake market data.
+Do NOT fake scanner candidates.
+
+FIRST inspect what already exists, then only connect or patch what is missing.
+
+CURRENT STATE FROM LAST REPORT:
+- Scanner: liveDataConnected:false
+- MT5: isConnected:false
+- Market provider: nullProvider
+- Missing possible env keys: FINNHUB_API_KEY / ALPHA_VANTAGE_API_KEY / POLYGON_API_KEY / NEWSAPI_API_KEY
+- Trades/risk are already scoped per user
+- Memory correctly does not override live market state
+
+MAIN GOAL:
+Connect ARX AI scanner to a real market data source so it can scan live or recent market conditions honestly.
+
+DATA PRIORITY ORDER:
+1. MT5 bridge live data should be primary if available.
+2. Third-party market API should be backup.
+3. Cached data can be used only if clearly labeled recent/stale.
+4. If no real data exists, scanner must return disconnected/no candidates.
+
+STEP 1 — AUDIT EXISTING DATA PROVIDERS FIRST
+
+Inspect and report:
+
+A. MT5 bridge
+- Does the EA send heartbeat?
+- Does it send symbols?
+- Does it send bid/ask/spread?
+- Does it send OHLC/candles?
+- Does it send timeframe data?
+- Is the data scoped per user/session?
+- Where is bridge data stored?
+- What route exposes bridge status?
+- What route exposes market/tick/candle data?
+
+B. Existing market provider code
+Check for existing adapters/routes for:
+- Polygon
+- Finnhub
+- Alpha Vantage
+- NewsAPI
+- any broker feed
+- any cached provider
+- nullProvider
+
+Report:
+- which adapters already exist
+- which ones are wired
+- which env vars are missing
+- which one is best for scanner OHLC/candles
+- which one should be easiest to activate now
+
+C. Scanner dependency
+- What exact data does the scanner need?
+- Does it need symbols only?
+- Does it need candles?
+- Does it need bid/ask/spread?
+- Does it need news events?
+- Does it need account info?
+- What data is currently missing?
+
+Before patching, output:
+
+LIVE DATA AUDIT REPORT:
+- Files inspected:
+- Existing MT5 data routes:
+- Existing provider adapters:
+- Existing env vars found:
+- Missing env vars:
+- Current scanner data requirements:
+- Best primary source:
+- Best backup source:
+- What is already working:
+- What is missing:
+- Minimal patch plan:
+
+STEP 2 — USE MT5 AS PRIMARY LIVE DATA SOURCE IF POSSIBLE
+
+If MT5 bridge already has or can expose tick/candle data, wire scanner to MT5 first.
+
+Required MT5 market data contract:
+
+{
+  "ok": true,
+  "source": "MT5",
+  "connected": true,
+  "freshness": "live" | "recent" | "stale",
+  "timestamp": "...",
+  "symbols": [
+    {
+      "symbol": "XAUUSD",
+      "bid": 0,
+      "ask": 0,
+      "spread": 0,
+      "time": "..."
+    }
+  ],
+  "candles": {
+    "XAUUSD": {
+      "M5": [],
+      "M15": [],
+      "H1": []
+    }
+  }
+}
+
+If MT5 is connected but candles are missing:
+- return a clear partial status.
+- do not pretend scanner can rank properly.
+- add a clean message:
+  “MT5 is connected, but candle data is not available yet.”
+
+STEP 3 — THIRD-PARTY PROVIDER BACKUP
+
+If MT5 is not connected, inspect existing provider support.
+
+Do not hardcode keys.
+Do not expose keys in frontend.
+Use Replit Secrets / server env only.
+
+Provider behavior:
+- If POLYGON_API_KEY exists and adapter exists, use Polygon.
+- If FINNHUB_API_KEY exists and adapter exists, use Finnhub.
+- If ALPHA_VANTAGE_API_KEY exists and adapter exists, use Alpha Vantage.
+- If no key exists, keep nullProvider and return disconnected.
+
+Provider contract:
+
+{
+  "ok": true,
+  "source": "polygon" | "finnhub" | "alpha_vantage",
+  "connected": true,
+  "freshness": "live" | "recent" | "stale",
+  "timestamp": "...",
+  "symbols": [],
+  "candles": {}
+}
+
+If provider key is missing:
+{
+  "ok": false,
+  "code": "MARKET_PROVIDER_NOT_CONFIGURED",
+  "message": "No market data provider key is configured.",
+  "source": "none"
+}
+
+STEP 4 — NORMALIZE ALL MARKET DATA
+
+Create or patch a single market data normalization layer.
+
+Scanner should not care whether data came from:
+- MT5
+- Polygon
+- Finnhub
+- Alpha Vantage
+- cached source
+
+Scanner should receive one normalized structure:
+- source
+- connected
+- freshness
+- timestamp
+- symbols
+- bid
+- ask
+- spread
+- candles by symbol/timeframe
+- warnings
+
+Do not let raw provider response shapes leak into scanner or frontend.
+
+STEP 5 — SCANNER CONNECTION
+
+Patch scanner so it:
+
+1. Calls normalized market data source.
+2. Checks freshness.
+3. If connected and candles exist, scores candidates.
+4. If connected but data is incomplete, returns partial/not-ready message.
+5. If disconnected, returns no candidates.
+6. If cached/stale, labels the output clearly.
+7. Never invents candles, spread, bid/ask, or confidence.
+
+Scanner disconnected response:
+{
+  "ok": false,
+  "code": "MARKET_DATA_NOT_CONNECTED",
+  "marketDataConnected": false,
+  "source": "none",
+  "freshness": "unavailable",
+  "message": "Market data is not connected yet. Connect MT5 or a live data provider before using the scanner.",
+  "candidates": []
+}
+
+STEP 6 — ARX AI RESPONSE BEHAVIOR
+
+When user asks:
+- “What should I trade right now?”
+- “Check scanner”
+- “What market looks good?”
+- “Find me a setup”
+
+ARX must:
+1. Check market data source.
+2. Call scanner if data exists.
+3. Return ranked paper-trade candidates if valid.
+4. Say disconnected if no data exists.
+5. Say partial setup if MT5 connected but candles missing.
+6. Never fake live trade recommendations.
+
+Correct if disconnected:
+“Market data is not connected yet, so I can’t honestly tell you the best market right now. Connect MT5 or a live data provider, then I can scan live conditions.”
+
+Correct if connected but no setup:
+“I would wait right now. The scanner does not show a clean paper-trade setup.”
+
+Correct if connected with candidates:
+“Scanner found these paper-trade candidates. This is decision support only, not live execution.”
+
+STEP 7 — UI STATUS UPDATE
+
+Patch only data state labels if needed.
+
+Dashboard/scanner/AI should show:
+- “MT5 connected” only if MT5 heartbeat is fresh.
+- “Market data connected” only if real market provider or MT5 data is available.
+- “Data stale” if timestamp is old.
+- “No market data” if no source is active.
+- “Demo data” only if demo mode is explicitly active.
+
+Do not show fake connected state.
+
+STEP 8 — USER/SESSION SCOPING
+
+All market/scanner/MT5 data must be scoped correctly.
+
+Rules:
+- MT5 bridge data belongs to the correct user/session.
+- Scanner runs belong to the correct user/session.
+- AI should only see that user’s scanner data.
+- User A must never see User B’s market connection, trades, or scanner history.
+
+STEP 9 — QA / FIX GATE
+
+After patching, run QA and fix failures before stopping.
+
+QA must verify:
+
+1. Existing providers were audited first.
+2. No duplicate market provider system was created unnecessarily.
+3. If no MT5 and no provider key exists, scanner returns disconnected.
+4. If MT5 heartbeat exists but no candles, scanner returns partial/not-ready.
+5. If real market data exists, scanner receives normalized data.
+6. Scanner does not fake candles or candidates.
+7. ARX answers scanner questions using the real data state.
+8. “?” after scanner request follows up correctly.
+9. Market provider keys are server-side only.
+10. Frontend never exposes API keys.
+11. MT5 status is user/session-specific.
+12. Scanner history is user/session-specific.
+13. Text chat still works.
+14. Voice auto-listen still works.
+15. Speakback still works.
+16. Quick suggestions still work.
+17. Loading states clear after success/failure.
+18. No raw backend errors appear.
+19. Mobile Safari layout remains stable.
+
+Only continue if QA passes. If anything fails, fix it and rerun QA.
+
+FINAL REPORT REQUIRED:
+After completion, report:
+- live data audit findings
+- files inspected
+- files changed
+- current MT5 data status
+- current provider status
+- env vars detected/missing
+- which source scanner uses now
+- whether scanner has candles/OHLC
+- whether scanner can rank real candidates yet
+- what remains needed if scanner still cannot rank
+- QA results

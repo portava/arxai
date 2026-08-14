@@ -1,0 +1,780 @@
+Run a continuous in-place ARX AI full-system performance, wiring, repair, cleanup, and regression loop until the app reaches the required result or gets as close as technically possible without breaking existing functionality.
+
+This is not a rebuild.
+Do not create a new product.
+Do not replace the existing ARX AI app.
+Do not duplicate Scanner, Ruby, trade execution, permissions, user accounts, account modes, or MT5 bridge systems.
+Do not wipe working code.
+Do not redesign the app from scratch.
+This is a continuous repair, optimization, wiring, and verification pass on the existing app.
+
+Primary Mission:
+Continuously run through the entire existing ARX AI app piece by piece until every visible action responds in under 1 second or as close to under 1 second as technically possible, with special priority on:
+
+1. Scanner page load
+2. Scanner market selection
+3. Scanner search
+4. Scanner chart response
+5. Scanner trade placement
+6. Buy/Sell execution flow
+7. Pending order placement
+8. Closing trades
+9. Modifying trades
+10. Ruby response and action execution
+
+The app must not break to achieve speed.
+If a speed fix breaks functionality, revert that fix and find a safer solution.
+If removing UI breaks a workflow, restore it and collapse/simplify it instead.
+If optimizing a backend route creates a permission or trade-risk issue, undo it and optimize safely.
+Do not sacrifice trading correctness, user privacy, trade ownership, or MT5 confirmation just to make the app appear fast.
+
+Continuous Work Loop:
+Do not stop after one pass.
+Run the app through this cycle repeatedly:
+
+1. Baseline test the current app.
+2. Measure every action.
+3. Identify the slowest or broken action.
+4. Fix only the smallest necessary area.
+5. Retest that action.
+6. Retest the page around it.
+7. Run regression checks to confirm nothing else broke.
+8. Record the result.
+9. Move to the next slowest or broken action.
+10. Repeat until all actions meet the speed target or the remaining delay is caused by an unavoidable external system such as MT5/broker response time.
+
+Do not mark complete after pages merely render.
+Do not mark complete if Scanner still lags.
+Do not mark complete if trade placement feels slow.
+Do not mark complete if buttons appear dead.
+Do not mark complete if Ruby blocks trading.
+Do not mark complete if any visible user action is disconnected.
+Do not mark complete if a speed optimization creates broken features.
+
+Stop only when:
+
+1. All tested actions visually respond in under 1 second, or
+2. Any remaining actions over 1 second are proven external blockers, clearly documented, and the UI still shows immediate progress/pending feedback.
+
+Performance Requirement:
+Every UI action must show visible response in under 1 second from the moment the user clicks/taps.
+
+Visible response means one of the following:
+
+1. The value updates.
+2. The selected state changes.
+3. A skeleton loads.
+4. A loading state appears.
+5. A pending state appears.
+6. A confirmation state appears.
+7. An error appears.
+8. Ruby thinking dots appear.
+9. Chart selection changes.
+10. Trade action status changes to “Sending,” “Updating,” “Closing,” or “Confirming.”
+
+The user should never tap anything and wonder if the app worked.
+
+Target timings:
+
+1. Button/tap feedback: under 100ms.
+2. Tab switch feedback: under 300ms.
+3. Page navigation initial usable state: under 1 second.
+4. Scanner page first usable state: under 1 second.
+5. Scanner chart first render: under 1 second.
+6. Scanner symbol selection visual response: under 300ms.
+7. Scanner search input response: under 300ms.
+8. Chart drag response: under 50ms.
+9. Ruby thinking indicator: under 100ms.
+10. Trade pending state after Confirm: under 100ms.
+11. Trade request sent to backend: immediately after Confirm.
+12. Backend target response: under 800ms where possible.
+13. MT5 final confirmation: as fast as broker/bridge allows, but never fake success before confirmation.
+
+Important Trading Speed Rule:
+Do not fake trade execution.
+
+For trading actions:
+
+1. UI must respond immediately.
+2. The request must be sent immediately.
+3. The UI must show a pending state immediately.
+4. The UI must not show “Trade placed,” “Trade closed,” “Trade updated,” or “Order cancelled” until MT5 confirms.
+5. If MT5 takes longer than 1 second, keep the UI alive with “Confirming with broker…” or similar.
+6. If MT5 rejects the action, show a clean rejection and roll back any optimistic visual state.
+7. Do not use fake trade data.
+8. Do not use Paper Trading fallback.
+9. Do not bypass backend validation for speed.
+10. Do not bypass trade ownership or permissions for speed.
+
+Existing-App Protection Rules:
+Before making changes:
+
+1. Detect the current frontend framework structure.
+2. Detect the current backend route/service structure.
+3. Detect the current database schema.
+4. Detect the current Scanner implementation.
+5. Detect the current chart implementation.
+6. Detect the current Ruby implementation.
+7. Detect the current MT5 bridge implementation.
+8. Detect existing DEMO/LIVE handling.
+9. Detect existing admin/user role handling.
+10. Detect current trade placement flow.
+
+Preserve:
+
+1. Existing login.
+2. Existing admin role system.
+3. Existing user role system.
+4. Existing invite-only access rules.
+5. Existing Scanner page.
+6. Existing Broad Scan.
+7. Existing Focus Scan.
+8. Existing Ruby.
+9. Existing MT5 bridge.
+10. Existing DEMO/LIVE flow.
+11. Existing admin dashboard.
+12. Existing user dashboard.
+13. Existing trade ledger.
+14. Existing working trade placement.
+15. Existing security and privacy rules.
+
+Do not create:
+
+1. A second Scanner.
+2. A second trading system.
+3. A second Ruby system.
+4. A second permission system.
+5. A second MT5 bridge.
+6. A second account-mode system.
+7. A new Paper Trading system.
+8. Mock trade execution.
+9. Fake trade history.
+10. Frontend-only trading actions.
+
+Scanner Priority:
+Scanner is the highest-priority performance and functionality area.
+
+Continuously test and repair Scanner until it feels instant.
+
+Scanner must:
+
+1. Open quickly.
+2. Show usable content in under 1 second.
+3. Load the chart without waiting for Ruby.
+4. Load the chart without waiting for full scanner results.
+5. Let the user search symbols quickly.
+6. Let the user click/select markets quickly.
+7. Update selected symbol visually immediately.
+8. Update chart symbol quickly.
+9. Show scanner results progressively.
+10. Keep Broad Scan working.
+11. Keep Focus Scan working.
+12. Keep Scanner tabs working.
+13. Keep Scanner filters working.
+14. Keep trade controls working.
+15. Keep Ruby explanations separate from chart/trading speed.
+16. Avoid duplicate network calls.
+17. Avoid full-page blocking loaders.
+18. Avoid re-rendering the whole Scanner when only one section changes.
+19. Avoid repeated bridge status blocks.
+20. Avoid long repeated explanations on the Scanner page.
+
+Scanner optimization rules:
+
+1. Render chart shell first.
+2. Render trade controls immediately.
+3. Render last-known/cached symbol if available.
+4. Load current quote independently.
+5. Load user trade overlays independently.
+6. Load scanner results independently.
+7. Load Ruby analysis independently.
+8. Use skeletons for slower sections.
+9. Use memoization for heavy scanner components.
+10. Debounce search input.
+11. Cancel stale search requests.
+12. Batch repeated scanner API calls.
+13. Cache symbol metadata safely.
+14. Do not cache user-specific trade data in a way that leaks between users.
+15. Server-filter trade data before sending it to frontend.
+
+Trade Placement Priority:
+Trade placement is the second highest priority after Scanner speed.
+
+The user flow from chart or Scanner result to trade request must be fast, clear, and reliable.
+
+For every trade action:
+
+1. Confirm button feedback must appear immediately.
+2. Trade pending state must appear immediately.
+3. Backend request must start immediately.
+4. Backend must validate quickly.
+5. MT5 bridge request must start quickly.
+6. UI must remain responsive while waiting.
+7. UI must display final success only after MT5 confirms.
+8. UI must display rejection cleanly if MT5 rejects.
+9. Trade ledger must update correctly.
+10. Scanner chart must update after trade confirmation.
+11. Ruby must not block the trade.
+12. Repeated warnings must not slow the flow.
+13. Do not add extra confirmation modals unless required by existing app rules.
+14. Do not make users click through unnecessary steps.
+
+Trade actions to continuously test:
+
+1. Buy Market.
+2. Sell Market.
+3. Buy Limit.
+4. Sell Limit.
+5. Buy Stop.
+6. Sell Stop.
+7. Modify SL.
+8. Modify TP.
+9. Move pending entry.
+10. Cancel pending order.
+11. Close full position.
+12. Partial close.
+13. Reverse position.
+14. Move SL to break-even.
+15. Close all for symbol if permission allows.
+16. Cancel all pending for symbol if permission allows.
+
+Every trade action must enforce:
+
+1. User login.
+2. User role permission.
+3. DEMO or LIVE mode only.
+4. No Paper Trading fallback.
+5. Account not frozen.
+6. Kill switch not active.
+7. User allocation available.
+8. User is approved for LIVE if LIVE.
+9. MT5 bridge connected.
+10. EA connected if required.
+11. Symbol allowed.
+12. Lot size valid.
+13. Price precision valid.
+14. Broker minimum stop distance valid.
+15. Margin rules valid.
+16. Trade ownership valid.
+17. Pending order ownership valid.
+18. MT5 confirmation before final UI success.
+
+Do not bypass these rules for speed.
+
+Full App Continuous Test Coverage:
+Run through every visible part of the existing app:
+
+1. Login.
+2. Logout.
+3. Auth state persistence.
+4. Invite-only user restrictions.
+5. User dashboard.
+6. Admin dashboard.
+7. Role-based access.
+8. User account mode.
+9. DEMO/LIVE mode.
+10. User allocation balance.
+11. Add allocation.
+12. Remove allocation.
+13. Freeze user.
+14. Unfreeze user.
+15. Kill switch.
+16. Scanner.
+17. Broad Scan.
+18. Focus Scan.
+19. Scanner search.
+20. Scanner result selection.
+21. Scanner chart.
+22. Chart timeframe.
+23. Chart trade overlays.
+24. Trade placement.
+25. Trade modification.
+26. Trade closing.
+27. Pending orders.
+28. Trade history.
+29. Open positions.
+30. MT5 bridge status.
+31. Ruby chat.
+32. Ruby market explanation.
+33. Ruby voice input.
+34. Ruby voice output.
+35. Ruby memory/chat history.
+36. Notifications/alerts if present.
+37. Mobile layout.
+38. Desktop layout.
+39. Bottom navigation.
+40. Settings/profile if present.
+41. Admin logs.
+42. User-facing errors.
+43. Database reads/writes.
+44. API route health.
+45. Console errors.
+46. Network errors.
+47. Slow queries.
+48. Dormant UI.
+49. Repetitive UI.
+50. Security/privacy leaks.
+
+For every visible page:
+
+1. Load it.
+2. Measure first usable render.
+3. Click every button.
+4. Submit every form with valid input.
+5. Submit every form with invalid input.
+6. Check loading state.
+7. Check success state.
+8. Check error state.
+9. Check permission behavior.
+10. Check mobile layout.
+11. Check desktop layout.
+12. Check console errors.
+13. Check failed network calls.
+14. Check whether any UI is dead or dormant.
+15. Repair in place.
+16. Retest after repair.
+
+Dormant UI and Repetitive UI Cleanup:
+Remove clutter only after verifying it is not needed.
+
+For every suspicious UI element:
+
+1. Check if it is connected to a real action.
+2. Check if the action has backend wiring.
+3. Check if the backend wiring is still valid.
+4. Check if the UI is visible to the correct role.
+5. Check if it repeats information already shown elsewhere.
+6. Check if it slows the page.
+7. Check if it confuses normal users.
+8. Check if it exposes admin/debug/backend details.
+
+Then:
+
+1. If useful but disconnected, wire it.
+2. If useful but too noisy, collapse it.
+3. If useful but admin-only, hide it from users.
+4. If repetitive, consolidate it.
+5. If dead and not useful, remove it.
+6. If removal breaks something, restore it and choose a safer cleanup.
+
+Do not remove core app functionality for speed.
+Do not remove Scanner controls.
+Do not remove trade controls.
+Do not remove Ruby.
+Do not remove admin controls.
+Do not remove safety/risk controls.
+Do not remove permission checks.
+
+Ruby Continuous Repair and Speed:
+Ruby must be fast, useful, and connected to existing app actions.
+
+Ruby should:
+
+1. Show thinking dots immediately.
+2. Never freeze the app.
+3. Stream or progressively display if supported.
+4. Explain Scanner results in plain English.
+5. Explain selected market.
+6. Explain open trades.
+7. Explain pending orders.
+8. Explain chart risk.
+9. Explain spread/volatility.
+10. Explain why a trade action failed in user-friendly language.
+11. Navigate or assist with app sections if already supported or cleanly addable.
+12. Prepare allowed trade actions.
+13. Execute allowed actions only through the same backend permissions as the UI.
+14. Ask the user to repeat if voice input is unclear.
+15. Respond with voice when voice output is enabled.
+16. Save chats/memory unless user clears them.
+
+Ruby must not:
+
+1. Bypass permissions.
+2. Bypass live approval.
+3. Bypass account freeze.
+4. Bypass kill switch.
+5. Bypass allocation limits.
+6. Bypass MT5 confirmation.
+7. Show backend routes.
+8. Show function names.
+9. Show stack traces.
+10. Show bridge internals.
+11. Show other users’ trades.
+12. Invent fake results.
+13. Block Scanner.
+14. Block trade placement.
+
+Ruby action layer:
+
+1. Audit existing Ruby action system.
+2. Reuse existing actions where possible.
+3. Every Ruby action must map to a real app/backend action.
+4. Every Ruby action must declare required permission.
+5. Every Ruby action must declare confirmation requirements.
+6. Trading actions must always go through backend validation.
+7. Admin actions must require admin role.
+8. Dangerous actions must require confirmation unless safely covered by existing approved one-click settings.
+9. Ruby must not call unvalidated backend functions directly.
+
+MT5 / Bridge Continuous Test:
+Continuously test the MT5 bridge and repair wiring without creating a second bridge.
+
+Test:
+
+1. Bridge health.
+2. EA health.
+3. Live quote.
+4. Candles.
+5. Symbol rules.
+6. Allowed symbols.
+7. Min lot.
+8. Max lot.
+9. Lot step.
+10. Spread.
+11. Stop distance.
+12. Open positions.
+13. Pending orders.
+14. Market buy.
+15. Market sell.
+16. Pending order placement.
+17. Pending order modification.
+18. Pending cancellation.
+19. SL modification.
+20. TP modification.
+21. Close position.
+22. Partial close.
+23. Reverse position.
+24. Break-even.
+25. Trade ledger sync.
+26. Chart overlay sync.
+
+If bridge function exists:
+
+1. Reuse it.
+2. Fix wiring to it.
+3. Improve speed safely.
+
+If bridge function is missing:
+
+1. Add only the missing function.
+2. Do not fake it.
+3. Do not create a duplicate bridge.
+4. Disable only the specific UI control until the function works.
+5. Log the missing function in the final report.
+
+User Privacy / Shared Bridge Rule:
+Because ARX may use a centralized/master MT5 bridge, user trade filtering must happen server-side.
+
+Continuously verify:
+
+1. User A cannot see User B trades.
+2. User B cannot see User A trades.
+3. The frontend never receives all master-account trades.
+4. The frontend never filters other users’ trades visually after receiving them.
+5. Backend returns only the logged-in user’s authorized trades.
+6. Admin broader trade visibility is role-gated.
+7. Trade ledger maps every MT5 order/ticket to the correct ARX user.
+8. Chart overlays only show that user’s trades.
+9. Ruby only discusses trades the user is allowed to see.
+
+Database Performance and Integrity:
+Audit and optimize database without breaking records.
+
+Check:
+
+1. Slow queries.
+2. Missing indexes.
+3. Duplicate calls.
+4. Orphan trade records.
+5. Trades without user ownership.
+6. Pending orders without user ownership.
+7. Duplicate account-mode fields.
+8. Paper Trading records still connected to active flows.
+9. Stale mock/simulated data appearing in user pages.
+10. Ruby chat storage.
+11. Ruby memory storage.
+12. Scanner data storage.
+13. Market data cache.
+14. Admin logs.
+15. Trade ledger sync.
+
+Fix safely:
+
+1. Add indexes where needed.
+2. Optimize queries.
+3. Batch repeated requests.
+4. Remove duplicate reads.
+5. Do not leak user-specific data through cache.
+6. Do not delete real user/trade records unless clearly test/dormant and safe.
+7. Migrate carefully if required.
+8. Preserve backups/checkpoints when making schema changes.
+
+Frontend Performance:
+Continuously optimize frontend without changing the product.
+
+Use:
+
+1. Immediate visual feedback.
+2. Skeleton loading.
+3. Local state updates where safe.
+4. Pending states.
+5. Memoization.
+6. Debounced search.
+7. Request cancellation for stale searches.
+8. Lazy loading heavy sections.
+9. Code splitting if needed.
+10. Virtualized lists if scanner/result lists are heavy.
+11. Avoid full-page rerenders.
+12. Avoid repeated API calls on every render.
+13. Avoid blocking Scanner with Ruby.
+14. Avoid blocking chart with scanner results.
+15. Avoid large repeated status blocks.
+16. Avoid loading admin-only panels for normal users.
+17. Avoid rendering hidden heavy components.
+
+Backend Performance:
+Continuously optimize backend without weakening validation.
+
+Use:
+
+1. Faster route handlers.
+2. Query indexes.
+3. Request batching.
+4. Safe caching.
+5. Parallel non-dependent calls.
+6. Timeouts for slow external calls.
+7. Clear fallback states without fake data.
+8. Move noncritical logging after user response where safe.
+9. Avoid duplicate MT5 bridge calls.
+10. Avoid retrieving all master trades when only one user’s trades are needed.
+11. Avoid blocking trade placement with noncritical Ruby analysis.
+12. Avoid blocking Scanner with slow news/history data.
+
+Critical Rule:
+Never move permission, ownership, or risk validation only to frontend.
+Backend must remain the source of enforcement.
+
+Live Dummy Trade Test:
+Perform a controlled dummy LIVE trade only if the app is already configured and approved for it.
+
+Do not fake this test.
+Do not mark LIVE verified unless the real test executes and closes.
+
+Only run the LIVE dummy trade if:
+
+1. Logged-in account is approved owner/admin live-test account.
+2. LIVE mode is enabled for that account.
+3. LIVE bridge is connected.
+4. EA is connected and ready.
+5. Kill switch is not active.
+6. Account is not frozen.
+7. Allocation is available.
+8. Symbol is allowed.
+9. Market is open.
+10. Lot size is broker minimum or configured test minimum.
+11. Spread is within configured test maximum.
+12. LIVE_DUMMY_TRADE_TEST_ENABLED=true or equivalent admin-approved flag exists.
+
+Dummy trade rules:
+
+1. Use TEST_SYMBOL if configured.
+2. Use broker-minimum lot size.
+3. Do not open multiple trades.
+4. Do not scale in.
+5. Use configured test direction if present.
+6. If no direction is configured, require admin selection in the app.
+7. Place the trade.
+8. Confirm MT5 ticket.
+9. Confirm ARX ledger entry.
+10. Confirm Scanner chart displays it for correct user only.
+11. Confirm Ruby can explain it.
+12. Immediately close the trade.
+13. Confirm MT5 close.
+14. Confirm ARX ledger marks closed.
+15. Confirm chart updates.
+16. Log result in admin-only report.
+
+If readiness fails:
+
+1. Do not place the trade.
+2. Do not fake it.
+3. Report exactly which condition failed.
+4. Keep DEMO test result separate from LIVE test result.
+
+Regression Protection:
+After every fix, run regression checks.
+
+At minimum, after each change verify:
+
+1. App starts.
+2. Login still works.
+3. Normal user view still works.
+4. Admin view still works.
+5. Scanner still opens.
+6. Scanner search still works.
+7. Broad Scan still works.
+8. Focus Scan still works.
+9. Chart still loads.
+10. Trade buttons still respond.
+11. Ruby still responds.
+12. No console errors.
+13. No new failed network calls.
+14. No user-facing internal errors.
+15. DEMO/LIVE modes still behave correctly.
+16. Permissions still enforce correctly.
+17. Normal users cannot see admin controls.
+18. Users cannot see other users’ trades.
+
+If any regression appears:
+
+1. Stop the current optimization.
+2. Identify the exact change that caused it.
+3. Revert or repair that change.
+4. Retest.
+5. Continue with a safer approach.
+
+Do not continue stacking changes on top of a broken state.
+
+Action Timing Matrix:
+Create or update an internal timing report for every major action.
+
+For each action log:
+
+1. action name
+2. page/component
+3. click/tap timestamp
+4. first visual feedback timestamp
+5. backend request start
+6. backend response time
+7. database query time if available
+8. MT5 bridge request time if applicable
+9. MT5 bridge response time if applicable
+10. final UI update timestamp
+11. total perceived user time
+12. pass/fail under 1 second
+13. reason if over 1 second
+14. fix applied
+15. result after fix
+
+Critical actions that must be included:
+
+1. Login.
+2. Dashboard load.
+3. Scanner load.
+4. Broad Scan.
+5. Focus Scan.
+6. Scanner search.
+7. Market selection.
+8. Chart first render.
+9. Chart symbol change.
+10. Chart timeframe change.
+11. Buy Market.
+12. Sell Market.
+13. Place pending order.
+14. Modify SL.
+15. Modify TP.
+16. Close trade.
+17. Partial close.
+18. Reverse trade.
+19. Cancel pending.
+20. Ruby text prompt.
+21. Ruby voice input.
+22. Ruby speech response.
+23. Admin user allocation update.
+24. Freeze/unfreeze user.
+25. Kill switch toggle.
+26. Bottom navigation.
+27. Every other visible button or form discovered during audit.
+
+User-Facing Error Cleanup:
+Normal users should only see clean, plain messages.
+
+Allowed examples:
+
+1. “Working…”
+2. “Updating…”
+3. “Confirming with broker…”
+4. “Trade placed.”
+5. “Trade updated.”
+6. “Trade closed.”
+7. “Order cancelled.”
+8. “Trade update failed. Please try again.”
+9. “This price is too close to the current market.”
+10. “This order type is not valid at that price.”
+11. “Insufficient available allocation.”
+12. “Bridge connection unavailable.”
+13. “You do not have permission for this action.”
+
+Do not show normal users:
+
+1. stack traces
+2. backend route names
+3. function names
+4. raw JSON
+5. bridge internals
+6. database errors
+7. environment variable names
+8. server file paths
+9. debug panels
+10. admin-only logs
+
+Admin logs should keep technical details.
+
+Completion Standard:
+Do not claim completion until:
+
+1. Full app has been tested.
+2. Scanner has been tested repeatedly.
+3. Trade placement has been tested repeatedly.
+4. Ruby has been tested.
+5. MT5 bridge wiring has been tested.
+6. Every visible action either works, is permission-gated, or is removed/disabled for a clear reason.
+7. Every action shows visible feedback under 1 second or the remaining delay is documented as external.
+8. No major regression is present.
+9. No Paper Trading fallback is active.
+10. No master-account trade data leaks to normal users.
+11. App remains stable.
+
+Final Report Required:
+Provide a detailed completion report with:
+
+1. Overall app health status.
+2. Number of full audit loops completed.
+3. Pages tested.
+4. Actions tested.
+5. Actions under 1 second.
+6. Actions still over 1 second.
+7. Exact reason any action remains over 1 second.
+8. Scanner timing before and after.
+9. Trade placement timing before and after.
+10. Ruby timing before and after.
+11. MT5 bridge timing.
+12. Database slow queries found.
+13. Indexes added.
+14. Duplicate API calls removed.
+15. Frontend render issues fixed.
+16. Backend bottlenecks fixed.
+17. Dormant UI removed.
+18. Repetitive UI consolidated.
+19. Broken wiring repaired.
+20. Files changed.
+21. Routes changed.
+22. Components changed.
+23. Bridge actions fixed or added.
+24. DEMO trading test result.
+25. LIVE dummy trade test result.
+26. Reason LIVE dummy trade did not run, if blocked.
+27. User privacy verification.
+28. Master bridge privacy verification.
+29. Security/permission verification.
+30. Remaining disabled controls, if any.
+31. Remaining bridge limitations, if any.
+32. Remaining risks.
+33. Exact next recommended fix if anything remains.
+
+Final Instruction:
+Keep looping through measure → fix → retest → regression-check until the app is fast, wired, cleaned, and stable, or until every remaining issue is clearly documented as an external dependency or bridge limitation.
+
+The app must not break to achieve this.
+Scanner and trade placement are the highest priority.
+The user should never click anything and wonder if the app responded.

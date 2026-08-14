@@ -1,0 +1,377 @@
+NEXT PHASE: BETA QA RUN + P0/P1 BUG FIX SPRINT
+
+Goal:
+Run the first complete beta QA cycle, find broken systems, auto-fix critical issues, and generate a clean beta readiness report.
+
+Do not add new trading features in this phase.
+Do not fake MT5 connection.
+Do not place real broker orders.
+Do not claim broker fills.
+Do not hide tester workflows.
+Do not block owner tester access.
+Keep full tester access open.
+Keep MT5 deferred until the desktop/VPS bridge is connected later.
+
+==================================================
+1. FREEZE FEATURE BUILDING
+==================================================
+
+For this phase, stop adding new modules.
+
+Focus only on:
+
+- broken routes
+- broken APIs
+- UI crashes
+- mobile layout issues
+- tester workflow blockers
+- bad state mismatches
+- missing empty states
+- simulator bugs
+- AI workflow bugs
+- OMS bugs
+- risk governor bugs
+- audit/logging bugs
+- persistence bugs
+- release readiness blockers
+
+Do not create random new pages unless needed to fix an existing route.
+
+==================================================
+2. RUN RELEASE READINESS CHECK
+==================================================
+
+Run:
+
+GET /api/release/readiness
+GET /api/system/full-health
+GET /api/release/version
+GET /api/auth/permissions
+GET /api/broker/status
+GET /api/data-quality
+
+Expected current truth:
+
+- fullTesterAccess = true
+- owner/tester access active
+- MT5 connected = false
+- MT5 deferred = true
+- real broker execution available = false
+- simulator available = true
+- live tester workflows open = true
+- risk governor active = true
+- kill switch UI active = true
+
+If any page says MT5 is connected while no real heartbeat exists, fix it.
+
+If any page says broker execution is available while MT5 is deferred, fix it.
+
+==================================================
+3. RUN FULL ROUTE QA
+==================================================
+
+Test every major route:
+
+- /dashboard
+- /trade-command-room
+- /live-chart
+- /manual-trade-ticket
+- /demo-trading
+- /paper-trading
+- /live-manual
+- /live-ai-assist
+- /live-ai-auto-test
+- /live-intent-queue
+- /orders
+- /positions
+- /journal
+- /calendar
+- /strategy-lab
+- /backtesting
+- /market-replay
+- /trade-grader
+- /market-scanner
+- /autopilot-control-center
+- /shadow-mode
+- /forward-testing
+- /risk-command-center
+- /risk-profile
+- /market-health
+- /news-risk
+- /data-quality
+- /broker
+- /mt5-status
+- /mt5-setup
+- /testing-control-center
+- /release-status
+- /qa-checklist
+- /feedback-center
+- /admin/issues
+- /admin/system-health
+- /admin/security-status
+- /admin/data-management
+
+Every route must render:
+
+- real data
+- simulator data
+- empty state
+- MT5 deferred state
+- or error card with retry
+
+No blank pages.
+No black screens.
+No hidden tester pages.
+No dead links.
+
+Auto-fix failed routes.
+
+==================================================
+4. RUN CORE WORKFLOW QA
+==================================================
+
+Test these workflows in order:
+
+1. Owner session loads
+2. Full tester access loads
+3. Live chart renders
+4. Selected symbol syncs across chart and trade ticket
+5. Demo manual simulator trade works
+6. Demo AI assist simulator trade works
+7. Demo AI auto simulator trade works
+8. Live manual tester intent works
+9. Live AI assist tester intent works
+10. Live AI auto tester intent works
+11. Live intent queue receives all tester intents
+12. OMS records orders correctly
+13. Position manager opens/closes simulator positions
+14. P/L engine updates
+15. Journal updates
+16. Calendar updates
+17. Risk governor rejects bad trades
+18. Kill switch UI works
+19. Audit vault records actions
+20. Shadow mode records observations
+21. Forward testing records results
+22. AI readiness score updates
+23. QA checklist saves results
+24. Feedback center submits issue
+25. Diagnostics export works
+
+Auto-fix any failed non-MT5 item.
+
+Mark true MT5-dependent features as:
+
+“Deferred until MT5 bridge is connected.”
+
+==================================================
+5. CLASSIFY BUGS
+==================================================
+
+Create or update issues in /admin/issues.
+
+Use this priority system:
+
+P0 Critical:
+- app cannot load
+- owner locked out
+- full tester access broken
+- risk governor missing
+- kill switch missing
+- simulator trade crashes
+- live tester workflows inaccessible
+- MT5 falsely shown as connected
+- real broker execution falsely shown as available
+- secrets exposed
+
+P1 Major:
+- route broken
+- API broken
+- journal/calendar not updating
+- OMS not recording
+- AI card generation broken
+- live intent queue broken
+- mobile navigation broken
+- audit logs missing
+
+P2 Normal:
+- bad UI state
+- layout issue
+- missing empty state
+- unclear label
+- slow loading
+- chart fallback missing
+
+P3 Minor:
+- copy polish
+- small visual spacing
+- tooltip improvement
+
+Fix all P0 and P1 issues immediately.
+Fix P2 issues if quick.
+Leave P3 issues in known issues.
+
+==================================================
+6. AUTO-FIX COMMON FAILURE TYPES
+==================================================
+
+Fix:
+
+- missing route components
+- missing API handlers
+- frontend/backend state mismatch
+- broken navigation links
+- broken mobile layout
+- missing empty states
+- unhandled loading states
+- unhandled API errors
+- invalid response shapes
+- missing audit events
+- missing environment labels
+- simulator/live tester data mixing
+- persistence after refresh
+- hidden owner/tester pages
+- incorrect MT5 status
+- green status badges on MT5-dependent items
+
+Do not mark anything green if it depends on MT5 and MT5 is not connected.
+
+==================================================
+7. RUN SECURITY + SECRET CHECK
+==================================================
+
+Verify:
+
+- no MT5 token shown in frontend
+- no secret values in logs
+- no API keys exposed
+- export files exclude secrets
+- diagnostics exclude secrets
+- protected mutation endpoints check role
+- owner still has full tester access
+- viewer cannot mutate data
+- reset actions require confirmation
+- audit logs record admin/security actions
+
+==================================================
+8. RUN REGRESSION TESTS
+==================================================
+
+Run:
+
+npm run test:system
+
+If that command does not exist, create it.
+
+It should test:
+
+- route health
+- API health
+- auth/session
+- owner permissions
+- full tester access
+- MT5 deferred state
+- simulator order flow
+- live intent flow
+- risk governor rejection
+- OMS lifecycle
+- P/L calculation
+- journal/calendar updates
+- audit logging
+- shadow mode
+- forward testing
+- release readiness
+
+==================================================
+9. UPDATE RELEASE STATUS
+==================================================
+
+Update /release-status with:
+
+- current beta version
+- readiness score
+- last QA run timestamp
+- P0 issue count
+- P1 issue count
+- known issues
+- passed gates
+- failed gates
+- MT5 deferred status
+
+Keep stage:
+
+BETA_TESTER
+
+Do not move to production.
+
+==================================================
+10. GENERATE FINAL REPORT
+==================================================
+
+Generate:
+
+BETA QA RUN + BUG FIX SPRINT REPORT
+
+Include:
+
+1. Release readiness:
+- readiness score before fixes
+- readiness score after fixes
+- release stage
+
+2. Route QA:
+- total routes tested
+- passed routes
+- failed routes
+- fixed routes
+- remaining route issues
+
+3. Workflow QA:
+- demo manual simulator pass/fail
+- demo AI assist pass/fail
+- demo AI auto pass/fail
+- live manual tester intent pass/fail
+- live AI assist tester intent pass/fail
+- live AI auto tester intent pass/fail
+- OMS pass/fail
+- P/L pass/fail
+- journal/calendar pass/fail
+- audit pass/fail
+
+4. Bug triage:
+- P0 found
+- P0 fixed
+- P1 found
+- P1 fixed
+- P2 remaining
+- P3 remaining
+
+5. Security:
+- secrets hidden yes/no
+- protected mutations yes/no
+- owner access preserved yes/no
+- audit logging active yes/no
+
+6. MT5 honesty:
+- MT5 connected yes/no
+- MT5 deferred yes/no
+- real broker execution available yes/no
+- broker execution correctly locked yes/no
+
+7. Final state:
+- FULL TESTER ACCESS ACTIVE: yes/no
+- LIVE CHART ACTIVE: yes/no
+- SIMULATOR READY: yes/no
+- LIVE TESTER WORKFLOWS OPEN: yes/no
+- RELEASE READY FOR TESTING: yes/no
+- CRITICAL BLOCKERS REMAINING: yes/no
+
+Hard rules:
+- Do not fake pass results.
+- Do not fake MT5 connection.
+- Do not place real broker orders.
+- Do not claim broker fills.
+- Do not expose secrets.
+- Do not block owner tester access.
+- Do not hide live tester workflows.
+- Fix broken systems before adding new features.

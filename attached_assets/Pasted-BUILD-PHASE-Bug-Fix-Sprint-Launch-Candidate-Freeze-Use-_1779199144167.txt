@@ -1,0 +1,265 @@
+BUILD PHASE — Bug Fix Sprint + Launch Candidate Freeze
+
+Use the current codebase. Do not rebuild unrelated systems.
+
+Goal:
+Turn the current ARX AI build into a stable launch candidate by fixing only confirmed bugs, safety blockers, privacy leaks, failed tests, broken routes, broken mobile layouts, broken Ruby flows, and launch-critical issues. Do not add new major features in this phase.
+
+Important:
+This is a stabilization/freeze phase.
+Do not fire demo or live trades unless using safe mock/demo flows already approved by the test suite.
+Do not create real live bridge commands.
+Do not turn on public live trading.
+Do not bypass any safety gate to make tests pass.
+
+1. Inspect the full staging dry-run report first
+Review the output from:
+- full staging dry run
+- production lockdown QA
+- audit/export QA
+- reconciliation QA
+- close-only QA
+- kill switch QA
+- Ruby voice QA
+- shared master ledger QA
+- onboarding QA
+- scanner/trade QA
+
+Create a launch-blocker list grouped by:
+
+Critical blockers:
+- live safety failures
+- user privacy leaks
+- admin access leaks
+- secret exposure
+- live command created unexpectedly
+- broken auth/session
+- broken bridge safety
+- broken kill switch
+- broken queue/concurrency
+- broken ownership checks
+
+High blockers:
+- failed core user flow
+- failed admin flow
+- failed Ruby assistant flow
+- failed demo trading flow
+- failed disclosure/risk acceptance
+- failed audit export
+- failed reconciliation workflow
+- failed mobile-critical flow
+
+Medium blockers:
+- confusing UI text
+- missing empty states
+- mobile layout issues
+- unclear error messages
+- missing audit coverage
+- incomplete manual test steps
+
+Low blockers:
+- polish issues
+- minor copy cleanup
+- non-critical warnings
+- future TODOs
+
+2. Fix only launch-critical issues
+Fix:
+- failing tests
+- broken routes
+- broken APIs
+- broken UI states
+- broken mobile layouts
+- broken admin protection
+- broken user privacy filters
+- broken Ruby context scoping
+- broken voice state cleanup
+- broken audit masking
+- broken export protection
+- broken readiness checks
+- broken kill switch enforcement
+- broken close-only enforcement
+- broken reconciliation states
+- broken disclosure acceptance enforcement
+- broken environment startup guards
+
+Do not add new features.
+Do not redesign unrelated sections.
+Do not rewrite working systems.
+Do not silence tests without fixing the cause.
+Do not remove safety checks to make tests pass.
+
+3. Freeze feature surface
+After critical/high blockers are fixed:
+- mark current feature set as Launch Candidate
+- prevent accidental feature expansion
+- create a launch candidate version identifier
+- create or update release notes
+- create or update known issues list
+- create or update manual QA checklist
+- create or update rollback notes
+- create or update deployment checklist
+- create or update environment checklist
+
+Suggested version label:
+ARX_AI_LAUNCH_CANDIDATE_0.1
+
+4. Verify protected modes remain locked
+Confirm:
+
+Demo:
+- works safely
+- no live command creation
+
+Personal MT5:
+- setup/status works
+- live blocked unless every safety/disclosure/env gate passes
+
+Shared Master:
+- request/approval/allocation works
+- normal users do not see master totals
+- live blocked unless compliance/admin/allocation/risk/mapping/bridge/safety gates pass
+
+Production:
+- live execution defaults OFF
+- mock data hidden
+- feature flags fail closed
+- secrets masked
+- admin routes protected
+
+5. Verify no regressions
+Run targeted regression checks for:
+
+- login/session
+- onboarding
+- clean first-load state
+- demo trading
+- scanner direct symbol
+- Ruby market explanation
+- trade ticket
+- SL/TP
+- pending orders
+- chart position window
+- private user dashboard
+- shared master ledger
+- virtual balance/risk limits
+- admin approval console
+- multi-user queue
+- kill switches
+- close-only mode
+- reconciliation center
+- audit center
+- evidence export
+- disclosures/legal warnings
+- production readiness dashboard
+- Ruby app brain
+- Ruby voice
+- voice trade guardrails
+- mobile layout
+
+6. Security and privacy freeze check
+Verify:
+- User A cannot see User B data
+- normal users cannot access admin pages/APIs
+- normal users cannot see shared master global totals
+- Ruby cannot reveal other users
+- Ruby cannot reveal admin-only data
+- exports cannot leak secrets
+- logs cannot leak secrets
+- prompts cannot leak secrets
+- frontend cannot receive raw bridge secrets
+- cache clears on logout/account switch
+- session userId is used on backend, not frontend userId
+
+7. Live safety freeze check
+Verify:
+- no live command is created during freeze
+- arx_live_commands count before/after remains unchanged
+- global live flag defaults OFF
+- global kill switch blocks live
+- one-click live defaults OFF
+- close-only blocks new opens
+- force-review works
+- queue pause works
+- unapproved users blocked
+- missing allocation blocked
+- missing disclosure blocked
+- compliance flag false blocks shared master live
+- bridge unhealthy blocks live
+- unmapped shared master blocks live
+- risk/exposure/cooldown blocks work
+- voice cannot bypass confirmation
+- Ruby cannot bypass trade safety
+
+8. Create Launch Candidate report
+Generate a final internal report with:
+
+- launch candidate version
+- commit/build identifier if available
+- environment tested
+- tests run
+- tests passing/failing
+- blockers fixed
+- remaining blockers
+- remaining risks
+- known issues
+- manual QA checklist
+- mobile QA checklist
+- admin QA checklist
+- user QA checklist
+- trading safety checklist
+- secret masking checklist
+- no-live-command evidence
+- arx_live_commands count before
+- arx_live_commands count after
+- confirmation no live trade was fired
+
+9. Add freeze guard where practical
+Add lightweight protection so future changes are intentional:
+- README note or LAUNCH_CANDIDATE.md
+- release checklist
+- “do not enable live without approval” warning
+- environment checklist
+- required QA command list
+- known blockers file
+- optional test script alias for launch candidate verification
+
+Suggested script:
+npm run qa:launch-candidate
+
+This script should run the most important safety, privacy, admin, Ruby, queue, audit, production lockdown, and no-live-command tests.
+
+10. Tests
+Add or update tests for:
+- launch candidate QA script runs
+- no live command count change
+- secrets masked
+- admin routes protected
+- user privacy isolation
+- feature flags fail closed
+- production live defaults OFF
+- Ruby does not leak data
+- voice cannot bypass safety
+- kill switches still block
+- close-only still blocks opens
+- reconciliation still marks uncertain states NEEDS_REVIEW
+- evidence export remains masked
+- demo flow still works
+- onboarding still works
+- no fake first-load data appears
+
+Return:
+- what was fixed
+- files changed
+- blockers found
+- blockers resolved
+- remaining blockers
+- remaining risks
+- launch candidate version
+- QA script names
+- tests added/run
+- manual QA checklist
+- release notes location
+- known issues location
+- confirmation that no live trade was fired
+- confirmation arx_live_commands count stayed unchanged

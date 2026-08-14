@@ -1,0 +1,278 @@
+PHASE 22J — AUDIT FIRST, THEN ADD PER-USER MEMORY + ACCOUNT ISOLATION ACROSS ARX AI
+
+Do NOT rebuild the app. Do NOT redesign the UI. Do NOT duplicate existing auth/session systems.
+
+FIRST inspect what already exists, then only patch what is missing or broken.
+
+WHY THIS PHASE MATTERS:
+ARX AI is now expected to remember each user’s conversations, trading setup, scanner questions, risk preferences, MT5 status, and app usage. That memory must be isolated per user/session. One user must never see another user’s trades, chat history, MT5 bridge status, analysis, scanner history, or AI memory.
+
+MAIN GOAL:
+Make ARX AI and trading data personal to each user.
+
+Each user should have:
+- their own account/session
+- their own ARX AI conversation memory
+- their own trade history
+- their own MT5 bridge connection status
+- their own scanner/analysis history
+- their own risk settings
+- their own onboarding state
+- their own empty/fresh-user state
+
+STRICT RULES:
+1. Audit first before patching.
+2. Do not replace working auth if it already exists.
+3. Do not create duplicate user tables if users already exist.
+4. Do not mix demo/sample data with real user data.
+5. Do not expose one user’s AI memory or trading data to another user.
+6. Do not fake MT5 connection status.
+7. Do not fake scanner results.
+8. Do not break text chat, voice chat, or quick suggestions.
+9. Do not remove paper-only/live execution lock.
+10. Do not store raw voice audio unless absolutely necessary. Prefer transcript + metadata.
+
+STEP 1 — AUDIT CURRENT USER / SESSION SYSTEM FIRST
+
+Inspect and report what currently exists for:
+
+A. Authentication / user identity
+- Is there login/signup?
+- Are users stored in database?
+- Is there a userId available on frontend?
+- Is there a userId available on backend?
+- Are anonymous users assigned a sessionId?
+- Are sessions persisted after refresh?
+
+B. ARX AI memory
+- Are conversations stored?
+- Are messages connected to userId/sessionId?
+- Are voice transcripts stored?
+- Are quick suggestion messages stored?
+- Is there a conversationId?
+- Is there a rolling memory summary?
+- Is there pendingAction storage?
+
+C. Trading data isolation
+- Are trades scoped by userId?
+- Are paper trades scoped by userId?
+- Are analyses scoped by userId?
+- Are risk settings scoped by userId?
+- Are scanner results scoped by userId/sessionId?
+- Are MT5 bridge records scoped by userId?
+
+D. Fresh-user state
+- Does a new user see fake data?
+- Does a new user see old/demo trades?
+- Does a new user see another session’s AI memory?
+- Does dashboard show proper empty states?
+
+E. Backend query safety
+- Check all database queries for missing userId filters.
+- Check all API routes for missing user/session validation.
+- Check AI routes for shared/global memory leaks.
+- Check MT5 bridge routes for shared/global bridge state.
+- Check scanner routes for shared/global market state.
+
+Before patching, report:
+- files inspected
+- what is already done
+- what is partial
+- what is missing
+- what is unsafe
+- exact patch plan
+
+STEP 2 — CREATE OR FIX USER SESSION IDENTITY
+
+If full auth already exists:
+- use existing userId everywhere.
+
+If user is not logged in:
+- create anonymousSessionId.
+- persist it locally.
+- use it only for temporary memory and app state.
+- do not mix anonymous sessions with logged-in users.
+
+If user logs in:
+- attach future data to userId.
+- optionally migrate anonymous session data into that user only if safe.
+- never merge anonymous data into the wrong user.
+
+Every AI/trading request should include:
+- userId if logged in
+- anonymousSessionId if not logged in
+- conversationId where applicable
+
+STEP 3 — STORE ARX AI CONVERSATIONS PER USER
+
+Create or fix AI conversation storage.
+
+Minimum storage model:
+- conversations
+  - id
+  - userId nullable
+  - anonymousSessionId nullable
+  - title
+  - createdAt
+  - updatedAt
+
+- conversation_messages
+  - id
+  - conversationId
+  - userId nullable
+  - anonymousSessionId nullable
+  - role: user | assistant | tool | system_summary
+  - content
+  - channel: text | voice | quick_suggestion | tool
+  - metadata JSON
+  - createdAt
+
+- ai_memory_summaries
+  - id
+  - userId nullable
+  - anonymousSessionId nullable
+  - summary
+  - preferences JSON
+  - unresolvedActions JSON
+  - updatedAt
+
+Rules:
+- Store text user messages.
+- Store assistant responses.
+- Store voice transcripts, not raw audio by default.
+- Store tool results safely.
+- Store pendingAction/unresolved request state.
+- Keep recent 10–20 messages in prompt.
+- Use memory summary for older context.
+
+STEP 4 — MAKE VOICE, TEXT, AND QUICK SUGGESTIONS SHARE MEMORY
+
+All of these must use the same message pipeline:
+- typed message
+- voice transcript
+- quick suggestion button
+- scanner request
+- MT5 bridge request
+- risk analysis request
+
+No separate isolated voice brain.
+
+Every response should update:
+- conversation messages
+- pendingAction if needed
+- memory summary if needed
+- user/session activity timestamp
+
+STEP 5 — PATCH AI CONTEXT BUILDER
+
+Before ARX answers, backend should build context from:
+
+- current user/session
+- recent conversation history
+- rolling memory summary
+- pending unresolved action
+- current page context
+- MT5 bridge status for this user/session
+- market data status
+- scanner status
+- user risk settings
+- user trading style if available
+- trade history if available
+
+Important:
+If user says:
+- “?”
+- “what did you find?”
+- “I asked you earlier”
+- “continue”
+- “what about scanner?”
+
+ARX should check that user/session’s current conversation and pendingAction before answering.
+
+STEP 6 — SCOPE TRADING DATA TO USER
+
+Audit and patch APIs so these are user/session-specific:
+
+- paper trades
+- trade journal
+- AI analysis history
+- risk settings
+- strategy preferences
+- scanner history
+- MT5 bridge heartbeat/status
+- dashboard cards
+- calendar wins/losses
+- onboarding progress
+
+A new user should not see:
+- old trades
+- fake balances
+- someone else’s scanner results
+- someone else’s AI messages
+- shared MT5 bridge state
+- shared risk profile
+
+STEP 7 — FRESH USER EMPTY STATE
+
+For new users or unauthenticated sessions:
+- show “Run your first AI analysis”
+- show “Connect MT5”
+- show “Set risk settings”
+- show “Choose trading style”
+- show no fake trades unless clearly in demo mode
+- show no fake balance unless clearly labeled demo
+- show no fake win/loss history
+
+Demo mode must be explicitly labeled:
+“Demo data”
+
+STEP 8 — ADD PRIVACY CONTROLS FOR AI MEMORY
+
+Add backend support and simple UI hooks if already available for:
+- clear current conversation
+- clear all ARX AI memory for this user
+- start new conversation
+- optional export later
+
+Do not overbuild the UI in this phase. Add backend routes and simple controls only if the current UI already has a place for them.
+
+STEP 9 — QA / FIX GATE
+
+Run QA after patching.
+
+QA must verify:
+
+1. User A sends AI messages.
+2. User B cannot see User A’s messages.
+3. User A scanner request does not appear for User B.
+4. User A MT5 bridge status does not appear for User B.
+5. User A paper trades do not appear for User B.
+6. Anonymous session keeps temporary chat memory after refresh.
+7. Logged-in user keeps conversation memory after refresh.
+8. Voice transcript is stored in the same conversation as text.
+9. Quick suggestions are stored in the same conversation as text.
+10. “?” follows up using that user’s own conversation only.
+11. New user sees clean empty state, not fake data.
+12. Demo data only appears if demo mode is clearly active.
+13. AI still works if market data is disconnected.
+14. Text chat still works if voice fails.
+15. Voice still works if text history exists.
+16. No raw backend errors appear in UI.
+17. No cross-user database query leaks found.
+18. Mobile Safari layout remains stable.
+
+Only continue if QA passes. If anything fails, fix it and rerun QA.
+
+FINAL REPORT REQUIRED:
+After completion, report:
+- files inspected
+- files changed
+- current auth/session setup
+- how anonymous users are handled
+- how logged-in users are handled
+- where AI conversations are stored
+- where AI memory summaries are stored
+- how voice/text/quick suggestions share the same memory
+- how trades/scanner/MT5/risk data are scoped per user
+- proof that User A and User B data stay separate
+- remaining recommended improvements

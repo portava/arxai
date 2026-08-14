@@ -1,0 +1,404 @@
+CONTINUE FROM LAST CHECKPOINT — COMPLETE THE DEFERRED SCANNER SPEED + DORMANT SURFACE CLEANUP
+
+The previous pass was only a safe first step. It did nav pruning, lazy-loaded a few pages, created a pruning map, and trimmed docs. It did not complete the full Scanner progressive-layering rewrite or the physical/manual-review dormant-page cleanup.
+
+Now complete the remaining deferred work.
+
+This is not a rebuild.
+Do not create a new product.
+Do not duplicate Scanner, Ruby, MT5 bridge, trade execution, auth, permissions, account modes, or admin systems.
+Do not disturb the live MT5 path.
+Do not reset live broker execution config.
+Do not place a live trade during this task.
+Do not weaken trade gates, allocation checks, kill switch, account freeze, user ownership, or MT5 confirmation rules.
+
+Primary goals:
+
+1. Finish the Scanner progressive-layering rewrite.
+2. Fix the remaining page-load speed problem.
+3. Finish the dormant/manual-review surface cleanup.
+4. Remove Paper Trading remnants from active product flow.
+5. Keep ARX AI focused on Analyze, Risk, Execute, Ruby, and Admin safety.
+
+PART 1 — Do not stop at nav visibility only
+
+The previous pass only hid/reorganized navigation. That is not enough.
+
+Now inspect the pruning map and every route classified as:
+
+* MANUAL-REVIEW
+* dormant
+* duplicate
+* old experiment
+* old test page
+* Paper/PaperTrades
+* inactive dashboard
+* disconnected tool
+* dev-only utility
+* route reachable only by direct URL
+
+For each one, decide:
+
+1. If it fits ARX AI’s active product nature, keep or move it to the right surface.
+2. If it is admin/dev-only, protect it behind admin/dev role gating.
+3. If it is obsolete but risky to delete, remove from all normal user routes and mark archived/manual review.
+4. If it is safe to remove, delete it after verifying imports, routes, tests, dynamic references, and build.
+5. If it is a dead route that should respond, repair it.
+6. If it is a dead route that should not exist, remove or redirect it safely.
+
+Important:
+Do not leave non-product pages reachable by direct URL for normal users just because they were removed from nav.
+Normal users should not be able to reach old experiments, dead pages, test pages, Paper Trading pages, or admin/dev pages by typing the URL.
+
+PART 2 — Investigate and remove Paper Trading remnants
+
+The previous pass mentioned MyPaperTradesPage was lazy-loaded.
+
+This must be reviewed immediately.
+
+ARX AI should only have DEMO and LIVE user-facing trading modes.
+
+Paper Trading should not exist as:
+
+1. user mode
+2. account mode
+3. trade mode
+4. auth mode
+5. permission mode
+6. scanner mode
+7. Ruby mode
+8. allocation mode
+9. dashboard mode
+10. active database mode
+11. active trade-history mode
+12. active performance source
+13. hidden backend fallback
+14. reachable product page
+
+Required work:
+
+1. Locate MyPaperTradesPage.
+2. Locate every import, route, nav item, permission reference, API reference, and UI reference tied to Paper/PaperTrades.
+3. Confirm whether it is active, historical, dev-only, or orphaned.
+4. Remove it from normal user UI and direct user routes.
+5. If it is obsolete and safe, delete it.
+6. If not safe to delete yet, move/archive it outside active routing and mark it manual-review.
+7. Make sure no Paper Trading text appears to normal users.
+8. Make sure no Paper fallback is used for scanner, Ruby, trade history, allocations, performance, or trading logic.
+9. Keep DEMO and LIVE only.
+
+Do not delete real DEMO trading.
+DEMO is allowed.
+Paper Trading is not.
+
+PART 3 — Complete full Scanner progressive-layering rewrite
+
+Scanner is the highest-priority page.
+
+The Scanner must load progressively and must never wait for every data source before rendering.
+
+Build/verify these independent layers:
+
+Layer 1: Scanner shell
+
+* renders first
+* selected symbol
+* compact mode/status chips
+* symbol search
+* tab controls
+* chart skeleton
+* trade controls skeleton
+* visible in under 1 second
+
+Layer 2: Chart shell and quote
+
+* chart container
+* selected symbol
+* bid/ask/spread
+* live quote
+* timeframe selector
+* loads without waiting for scanner results or Ruby
+
+Layer 3: User trade overlays
+
+* user open positions
+* user pending orders
+* entry lines
+* SL/TP lines
+* floating P/L
+* only logged-in user’s authorized trades
+* server-filtered before frontend
+
+Layer 4: Scanner results
+
+* Broad Scan
+* Focus Scan
+* result cards
+* loading independently
+* failure here must not break the chart
+
+Layer 5: Ruby explanation
+
+* plain-English market explanation
+* Ruby thinking indicator immediately
+* must not block chart, search, trade controls, or results
+
+Layer 6: Noncritical extras
+
+* news
+* history
+* backtest
+* deeper analytics
+* load after Scanner is usable
+* never block first paint
+
+Rules:
+
+1. Scanner shell must render even if quote fails.
+2. Scanner shell must render even if candles fail.
+3. Scanner shell must render even if Ruby fails.
+4. Scanner shell must render even if Broad Scan fails.
+5. Scanner shell must render even if Focus Scan fails.
+6. Scanner shell must render even if MT5 bridge status is slow.
+7. Scanner shell must render even if notifications fail.
+8. One failed widget must show a local inline error, not crash the page.
+9. Keep section-level error boundaries around chart, tabs, trade modal, results, Ruby, overlays, and notifications.
+10. Do not let the page-level “This page hit a snag” boundary appear during normal Scanner use.
+
+PART 4 — Fix the real 7-second page-load problem
+
+The app still feels too slow.
+
+Measure and fix:
+
+1. initial app load
+2. Cockpit load
+3. Scanner load
+4. Ruby page load
+5. More page load
+6. Trade page load if still kept
+7. bottom nav tap response
+8. first usable shell render
+9. first data render
+10. slowest API calls
+11. repeated API calls
+12. heavy frontend imports
+13. notification count delay
+14. auth/session delay
+15. bridge status delay
+16. chart library load delay
+17. Ruby voice module load delay
+18. scanner market data delay
+
+Fix safely:
+
+1. Lazy-load heavy route modules.
+2. Lazy-load chart library only when Scanner/chart is opened.
+3. Lazy-load Ruby voice/speech modules only when voice is opened.
+4. Lazy-load admin-only panels only for admin users.
+5. Do not load hidden tabs until selected.
+6. Do not load old/manual-review pages in the normal user bundle.
+7. Do not load all markets before search is usable.
+8. Do not load news/history/backtest before Scanner shell.
+9. Make notifications load after main page paint.
+10. Limit notification count queries.
+11. Reduce repeated auth/session calls.
+12. Reduce repeated bridge health calls.
+13. Batch duplicate requests.
+14. Cancel stale Scanner/search requests.
+15. Debounce search.
+16. Memoize heavy components.
+17. Virtualize long lists if needed.
+18. Remove heavy debug logging from normal user path.
+19. Add timeouts for slow external calls.
+20. Use skeletons/pending states instead of blank waits.
+
+Hard UX target:
+Every tap/click must show visible feedback immediately.
+
+Targets:
+
+1. Button feedback: under 100ms.
+2. Bottom nav response: under 100ms.
+3. Page shell visible: under 1 second.
+4. Scanner shell visible: under 1 second.
+5. Scanner chart skeleton visible: under 1 second.
+6. Search input usable: under 1 second.
+7. Market selection visual response: under 300ms.
+8. Search typing response: under 100–300ms.
+9. Broad Scan start feedback: under 100ms.
+10. Focus Scan start feedback: under 100ms.
+11. Trade button feedback: under 100ms.
+12. Ruby thinking dots: under 100ms.
+
+If final data takes longer, show:
+
+* Loading quote…
+* Loading chart…
+* Loading your trades…
+* Scanning…
+* Ruby is thinking…
+* Confirming with broker…
+
+Do not let the app feel frozen.
+
+PART 5 — Trade placement must stay fast but truthful
+
+Do not fake execution.
+
+For every Buy/Sell or trade action:
+
+1. tap shows feedback immediately
+2. Confirm shows pending immediately
+3. backend request fires immediately
+4. UI shows “Confirming with broker…” while MT5 responds
+5. UI does not say “Trade placed” until MT5 confirms
+6. if MT5 rejects, show clean error and rollback
+7. Ruby must not block trade placement
+8. Scanner results must not block trade placement
+9. news/history/backtest must not block manual trade placement
+10. noncritical logging must not block user feedback
+11. do not bypass backend validation for speed
+12. do not bypass permission checks for speed
+13. do not bypass trade ownership for speed
+
+PART 6 — Physical cleanup of manual-review dormant pages
+
+From docs/PRUNING_MAP.md, review all MANUAL-REVIEW items.
+
+For each one:
+
+1. verify imports
+2. verify routes
+3. verify dynamic path usage
+4. verify tests
+5. verify build references
+6. verify admin/dev need
+7. verify whether normal users can reach it
+8. verify whether it affects Scanner, Ruby, MT5 bridge, auth, trade ledger, allocations, or safety gates
+
+Then:
+
+1. delete if proven safe
+2. archive if obsolete but worth preserving
+3. admin-gate if admin/dev-only
+4. redirect or 404 if normal users should not reach it
+5. keep only if it supports ARX’s active product nature
+
+Do not delete uncertain files.
+Mark uncertain files clearly as “Needs manual review — left in place.”
+
+PART 7 — Keep product surfaces focused
+
+Normal user app should move toward:
+
+1. Cockpit
+2. Scanner / Trading Terminal
+3. Ruby / AI
+4. More / Settings
+
+Admin-only can keep advanced areas, but normal users should not see:
+
+1. Advanced Trading clutter
+2. Advanced AI/Strategy clutter
+3. Advanced Risk/Data clutter
+4. Records/System clutter
+5. old experiments
+6. old QA/test pages
+7. Paper Trading pages
+8. raw dev tools
+9. internal diagnostics
+10. repeated backend status cards
+
+Normal users should see a fast trading app, not the project’s construction history.
+
+PART 8 — Regression testing
+
+After every meaningful cleanup or speed fix, test:
+
+1. App starts.
+2. Login works.
+3. Bottom nav works.
+4. Cockpit loads.
+5. Scanner loads.
+6. Scanner does not hit page-level error boundary.
+7. Scanner shell renders quickly.
+8. Scanner search works.
+9. Broad Scan works or shows clean local error.
+10. Focus Scan works or shows clean local error.
+11. Chart shell renders.
+12. Trade controls respond.
+13. Ruby page loads.
+14. Ruby responds.
+15. More page loads.
+16. Admin view works for admin.
+17. Normal users cannot access admin/dev pages.
+18. Removed pages do not break routing.
+19. Old manual-review pages are not reachable by normal users.
+20. Paper Trading pages are not reachable by normal users.
+21. DEMO/LIVE modes remain intact.
+22. MT5 bridge status remains intact.
+23. Live MT5 path remains untouched.
+24. User trade filtering remains server-side.
+25. No Paper Trading fallback appears.
+26. No master-account trade data leaks.
+27. No new console errors.
+28. No unhandled failed network calls.
+
+If anything breaks:
+
+1. stop
+2. identify exact change
+3. revert or repair that change
+4. retest
+5. continue with safer approach
+
+PART 9 — Completion standard
+
+Do not mark complete if only another small surgical fix was done.
+
+This task is complete only when:
+
+1. Scanner progressive layering is actually implemented.
+2. Scanner shell loads independently.
+3. Scanner is stable.
+4. The app no longer feels like it takes 7 seconds per page.
+5. Normal user navigation is focused and product-fit.
+6. Paper Trading remnants are removed from active product flow.
+7. Manual-review dormant pages are resolved or clearly documented.
+8. Every remaining direct route is either core, admin/dev-gated, redirected, archived, or documented.
+9. No live MT5 path is disturbed.
+10. Regression tests pass.
+
+Final report required:
+
+1. Scanner progressive-layering work completed.
+2. Before/after Scanner shell timing.
+3. Before/after page-load timing.
+4. Before/after bottom-nav response timing.
+5. Before/after trade-control feedback timing.
+6. Slowest remaining dependency.
+7. Heavy modules lazy-loaded.
+8. Duplicate requests removed.
+9. Routes removed from normal access.
+10. Pages deleted.
+11. Pages archived.
+12. Pages admin-gated.
+13. Pages left manual-review with reason.
+14. Paper Trading remnants found.
+15. Paper Trading remnants removed/archived.
+16. Pruning map updates.
+17. Files changed.
+18. Tests passed.
+19. Tests failed and fixed.
+20. Anything still over 1 second and exact reason.
+21. Confirmation that live MT5 path was not disturbed.
+22. Remaining risks.
+23. Exact next recommended fix if anything remains.
+
+Final instruction:
+Continue from the last checkpoint.
+Do not redo completed chart API fix.
+Do not stop at nav visibility.
+Do not claim complete while Scanner progressive layering and manual-review cleanup are still deferred.
+Finish the remaining work safely, in place, with regression checks after every change.

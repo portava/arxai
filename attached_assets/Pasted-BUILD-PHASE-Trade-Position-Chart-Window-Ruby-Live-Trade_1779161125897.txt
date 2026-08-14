@@ -1,0 +1,116 @@
+BUILD PHASE — Trade Position Chart Window + Ruby Live Trade Context
+
+Use the current codebase. Do not rebuild unrelated systems.
+
+Goal:
+Whenever a user places, opens, views, or selects a demo/live trade, the app should show the entered position directly on the chart and display a clean trade window beside the chart with position details, risk, P/L, and Ruby’s live explanation.
+
+1. Position-on-chart display
+- Add chart markers/lines for every active selected trade:
+  - entry price
+  - stop loss
+  - take profit
+  - current price
+  - profit/loss area if supported
+- Entry line should clearly show where the position was entered.
+- Stop loss and take profit lines should be draggable only if the system already supports safe SL/TP editing; otherwise show them as view-only for now.
+- Support both demo and live positions.
+- Never show another user’s trade on the wrong user session.
+- If the chart data is unavailable, show a clean message instead of breaking the page.
+
+2. Trade detail window beside chart
+- When a user opens or selects a position, show a trade detail window next to the chart.
+- Include:
+  - symbol
+  - buy/sell direction
+  - order type
+  - entry price
+  - current price
+  - lot size
+  - stop loss
+  - take profit
+  - open time
+  - current P/L
+  - risk amount
+  - risk-to-reward estimate
+  - trade status
+  - account mode: Demo / Live / Shared Master MT5
+- Keep language clean and user-facing.
+
+3. Ruby trade explanation
+- Add a Ruby explanation section inside the trade window.
+- Ruby should explain:
+  - why the trade is moving the way it is
+  - whether it looks like pullback, retracement, continuation, rejection, fakeout, reversal risk, or consolidation
+  - whether the current trade still matches the original setup
+  - where risk is increasing
+  - where the trade may need attention
+  - possible TP management areas
+  - possible SL adjustment areas, but do not auto-change anything without permission
+- Ruby must use available trading tools, chart history, market structure, indicators, market news, current events, real-world news, economic calendar, impact calendar, and scanner context.
+
+4. Trade actions
+- Add clear buttons:
+  - Close trade
+  - Edit stop loss
+  - Edit take profit
+  - Ask Ruby about this trade
+  - Refresh analysis
+- Close trade must always require confirmation unless one-click close is explicitly enabled and approved.
+- Editing SL/TP must validate price direction and account mode.
+- Do not bypass existing live safety gates.
+- Do not create live commands unless full safety flow passes.
+
+5. Sniper close / alert preparation
+- Add the UI and backend structure for Ruby to flag:
+  - “Watch closely”
+  - “Profit protection zone”
+  - “Possible reversal”
+  - “Consider partial close”
+  - “Consider closing”
+  - “Invalidation risk”
+- For now, these should be alerts/recommendations only unless an existing safe auto-close system is already approved.
+- Do not auto-close live trades without explicit user/admin-approved rules.
+
+6. Performance
+- Make updates efficient for multiple users.
+- Use per-user/per-position subscriptions or polling.
+- Throttle chart position refreshes.
+- Cache Ruby trade analysis snapshots.
+- Avoid duplicate AI calls.
+- If 10 users place or view trades at the same time, each user should only receive their own trade state.
+- Keep the app smooth on mobile.
+
+7. Audit logs
+Add safe audit logs for:
+- position selected
+- chart position displayed
+- trade detail window opened
+- Ruby trade analysis refreshed
+- close trade requested
+- SL/TP edit requested
+- safety gate blocked action
+- command submitted after approval
+
+Do not log secrets, bridge tokens, API keys, session secrets, account credentials, or token hashes.
+
+8. Tests
+Add or update tests for:
+- chart position marker renders for selected trade
+- entry/SL/TP/current price display correctly
+- user A cannot see user B trade
+- demo position window works
+- live position window blocks unsafe actions
+- close trade requires confirmation
+- SL/TP edits validate correctly
+- Ruby explanation renders
+- Ruby explanation refresh is throttled/cached
+- no live command is created without full approval
+
+Return:
+- what was built
+- files changed
+- tests added/run
+- manual test route names
+- screenshots if available
+- confirmation that no live trade was fired during this build

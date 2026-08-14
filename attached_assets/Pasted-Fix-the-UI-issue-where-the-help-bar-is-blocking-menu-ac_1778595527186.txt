@@ -1,0 +1,110 @@
+Fix the UI issue where the help bar is blocking menu access.
+
+Goal:
+Turn the help/help bar into a floating assistant-style widget and reorganize the menu so navigation feels cleaner, less crowded, and easier to use.
+
+Requirements:
+
+1. Help Bar Fix
+- Remove the current help bar from any fixed position that blocks the app menu.
+- Convert it into a floating help widget.
+- Place it in the bottom-right corner on desktop and bottom-right above the mobile navigation on phones.
+- It should appear as a small circular or rounded floating button by default.
+- When clicked, it expands into a small floating help panel.
+- The expanded panel should not cover the main menu or bottom navigation.
+- Add a close/minimize button.
+- Add proper z-index layering so it floats above content but does not interfere with menu clicks.
+- Use pointer-events carefully so only the help widget itself is clickable, not its empty surrounding area.
+- Add a soft shadow, glass-style background, rounded corners, and slight 3D floating perspective.
+- Make it feel like a premium trading assistant, not a basic help bar.
+
+2. Floating Perspective Style
+Use a design like:
+- position: fixed
+- bottom/right spacing that adjusts for mobile
+- backdrop blur
+- soft border
+- shadow
+- slight transform hover effect
+- smooth expand/collapse animation
+- compact by default
+
+Example visual direction:
+A small floating “?” or “AI Help” button that opens into a clean assistant card.
+
+3. Menu Organization
+Reorganize the app menu into clear sections instead of one long repeated list.
+
+Recommended structure:
+
+Main
+- Dashboard
+- Live Market
+- AI Trade Setup
+- Watchlist
+
+Trading
+- MT5 Bridge
+- Open Trades
+- Trade History
+- Risk Manager
+- Execution Center
+
+Performance
+- Journal
+- Calendar
+- Win/Loss Report
+- Account Analytics
+- Discipline Score
+
+AI Tools
+- AI Coach
+- Entry Sniper
+- Trade Review
+- Market Bias
+- Strategy Lab
+
+System
+- Settings
+- Profile
+- Notifications
+- Help
+- Admin / Developer Tools only if user has admin role
+
+4. Mobile Navigation
+- Make the mobile menu clean and easy to open.
+- Do not let the help widget sit on top of the menu button.
+- Add spacing so floating help never blocks bottom tabs or hamburger menu.
+- If the menu is open, automatically minimize the help widget.
+- On smaller screens, the expanded help panel should use max-width: calc(100vw - 24px).
+
+5. Desktop Navigation
+- Use a sidebar or grouped menu layout.
+- Add section labels.
+- Remove duplicate menu items.
+- Keep only the most important items visible.
+- Put less-used items under Settings, Tools, or Admin.
+
+6. Clean UI Rules
+- No menu item should appear twice unless absolutely necessary.
+- Use icons consistently.
+- Active page should be clearly highlighted.
+- Add hover states.
+- Add spacing between menu groups.
+- Make the sidebar/menu feel premium, simple, and fast.
+- Keep the ARX AI fortress-style branding: disciplined, sharp, protected, professional.
+
+7. Safety
+- Do not break current routes.
+- Do not delete working pages.
+- If a route exists but is not in the main menu, move it into the correct group instead of removing it.
+- Preserve existing authentication and MT5 bridge functionality.
+- Test that all menu links still work after reorganizing.
+
+8. Final Check
+After implementation, report:
+- What files were changed.
+- How the help widget now behaves.
+- What menu items were reorganized.
+- Any duplicate menu items removed.
+- Any route or layout issues found.

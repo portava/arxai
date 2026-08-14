@@ -1,0 +1,252 @@
+Run the seeded E2E DOM sweep again, but this time with the seeded user truly in LIVE_SHARED mode.
+
+The last sweep passed, but it ran across 20 user-facing pages in DEMO mode because the seeded user was not live-armed. That does not fully prove the screenshot bugs are fixed for the real live account experience.
+
+Current good state:
+- Seeded E2E harness exists
+- Batch A/B/C/D passed in DEMO mode
+- Raw gate constant leaks were fixed
+- arx_live_commands count stayed 0
+- CI guards 23/23 PASS
+- account-mode tests 43/43 PASS
+- live-phaseB 20/20 PASS
+- demo-arming 18/18 PASS
+- demo-verify 13/13 PASS
+- live-broker-resolver 4/4 PASS
+- no live trades placed
+- no operator phrases typed
+- no safety gates weakened
+
+Now fix the missing part:
+Create a true seeded LIVE_SHARED user/account-mode fixture and rerun the DOM sweep in LIVE_SHARED mode.
+
+Do not place live trades.
+Do not insert arx_live_commands.
+Do not type operator phrases.
+Do not broaden the narrow env parser.
+Do not weaken safety gates.
+Do not fake production data.
+Do not run against production/replit.app deployments.
+Do not expose admin diagnostics to normal users.
+
+Create checkpoint first:
+checkpoint: seeded-live-shared-dom-sweep
+
+Task 1 — Harden the harness baseline:
+Fix the architect finding:
+- Persist arx_live_commands baseline before seed
+- Check after seed
+- Check after every sweep batch
+- Check after cleanup
+- Fail the test if arx_live_commands changes at any point
+
+Task 2 — Create true LIVE_SHARED seeded fixture:
+The seeded normal user must be in LIVE_SHARED mode, not DEMO.
+
+Seed:
+- normal user
+- admin/operator user
+- shared master account shell
+- active live bridge resolver state
+- attached SHARED_MASTER_MT5 user account
+- user allocation greater than zero
+- AI sleeve allocation if supported
+- complete user risk caps
+- account shell with balance/equity/capacity from allocation
+- no open live positions unless a specific optional test requires one
+- separate stale DEMO/PAPER/TEST rows for mode-filter verification
+- live mode notification rows
+- alert rows with missing fields
+- broker reconciliation response with missing arrays
+- audit event with invalid/missing createdAt
+- scanner rows tagged by mode
+- calendar/P&L rows tagged by mode
+
+The seeded user’s account-mode resolver must return:
+- currentAccountMode = LIVE_SHARED
+- attached to shared master
+- allocation present
+- user-safe account shell present
+- no admin diagnostics for normal user
+- no demo/paper default state
+
+Task 3 — Rerun segmented E2E batches in LIVE_SHARED mode:
+Run the same route-mapped batches, but verify the seeded user is LIVE_SHARED before each batch.
+
+Batch A — Normal user account/status:
+- my account/profile actual route
+- settings actual route
+- notifications/alerts actual route
+- help/system status actual route
+- action center actual route
+
+Batch B — Normal user trading:
+- trade/command room actual route
+- live shared actual route
+- live AI assist actual route
+- live chart actual route
+- open trades/my trades/positions actual route
+
+Batch C — Normal user data/history:
+- market scanner actual route
+- trading calendar actual route
+- live intent queue actual route
+- trade history actual route if registered
+- watchlist/scanner trades actual route if relevant
+
+Batch D — Admin:
+- admin allocations actual route
+- broker reconciliation actual route
+- live trading control actual route
+- audit vault actual route
+- safety logs actual route
+
+Batch E — Admin preview-as-user:
+- my account
+- trade
+- live shared
+- live AI assist
+- notifications/help
+
+Task 4 — LIVE_SHARED DOM assertions:
+For normal user LIVE_SHARED view, assert these do not appear on primary live pages unless inside Settings mode-switch options or admin-only diagnostics:
+
+- paper trade
+- demo trade
+- simulator only
+- mock
+- live trading disabled
+- MT5 bridge not configured
+- type ENABLE LIVE TRADING
+- QUEUE MICRO LIVE TEST
+- EXECUTE LIVE SHARED
+- canExecuteRealBrokerOrder
+- canSubmitLiveIntent
+- mt5Connected:
+- brokerExecutionStatus
+- liveBrokerExecutionEnabled
+- primaryReason
+- blockReasons
+- BROKER_PLACEMENT_LAYER
+- READ_ONLY
+- endpoint mounted
+- raw JSON
+- database table names
+- backend route names
+
+Task 5 — Recheck the original screenshot bugs in LIVE_SHARED:
+Verify and fix failures:
+
+1. /my-account
+- shows SHARED_MASTER_MT5
+- shows assigned allocation
+- shows AI sleeve allocation if configured
+- shows balance/equity/capacity from user account shell
+- does not show own MT5 bridge as active
+- does not show $0 when allocation exists
+
+2. /settings
+- does not show stale MT5 Bridge Not Configured while shared master live bridge is active
+- personal MT5 bridge setup appears only as optional bridge/mode preference
+
+3. /notifications
+- does not say ALERTS_ONLY / LIVE TRADING DISABLED while live is armed
+- trade alerts are live-aware
+- push setup is separate from live mode
+
+4. /alerts
+- does not crash on missing alert type/status/severity
+- alerts can be dismissed
+- repeated stale MT5 disconnected alerts are deduped and hidden when current heartbeat is fresh
+
+5. /broker-reconciliation
+- does not crash on missing brokerOrders/brokerPositions/mismatches
+- shows clean empty state
+
+6. /live-trading-control
+- does not crash on invalid/missing createdAt
+- uses safe date formatter
+
+7. /trading-calendar
+- live mode shows only live P&L/trades
+- if no live trades exist, shows empty/zero live state
+- no paper/demo trade stats in live mode
+
+8. /live-intent-queue
+- shows only LIVE_SHARED intents for current user/account
+- hides demo/paper/test rows
+
+9. /open-trades and live chart side panel
+- shows only current live positions for current user/account shell
+- if none open, shows no open positions
+- no stale/ghost demo/test positions
+
+10. /market-scanner
+- synthetic/volatility scanner uses real Market Data Router feed when connected
+- no “symbol not available in simulator” when real feed exists
+- no simulator pipeline wording in live mode
+
+11. /trade and Trade Command Room
+- no “Simulator only” in live mode
+- no typed phrase wording
+- button-based review/confirm language only
+
+12. /live-shared
+- no typed phrase language
+- button-based confirmation copy only
+
+13. /live-ai-assist
+- no raw booleans
+- no “Tester” wording in live mode
+- clean readiness labels only
+
+14. /action-center
+- user mode does not show admin/operator review wording
+- if no pending user actions, says “No pending trade actions”
+
+15. /help
+- does not say MT5 mode Mock / MT5 connected no when resolver says live bridge active
+- no backend env text to normal users
+
+16. /safety-logs and /audit-vault
+- either distinct pages or one clear tabbed page
+- no duplicate/confusing menu behavior
+
+Task 6 — Fix as failures appear:
+For every failing page:
+1. Identify whether failure is route mapping, mode resolver, stale query, stale copy, missing guard, or unsafe render.
+2. Fix the page or shared component.
+3. Retest that page.
+4. Retest the batch.
+5. Confirm arx_live_commands count is unchanged.
+6. Checkpoint meaningful fixes.
+
+Task 7 — Final QA:
+Run:
+- pnpm run typecheck
+- pnpm run build if available
+- pnpm run ci:guards
+- test:account-mode
+- test:live-phaseB
+- test:demo-arming
+- test:demo-verify
+- test:live-broker-resolver
+- attached-active-case
+- allocation runtime QA
+- seeded LIVE_SHARED E2E DOM batches
+- arx_live_commands baseline checks across seed/sweep/cleanup
+
+Final report only:
+- confirmation sweep ran in LIVE_SHARED mode, not DEMO
+- corrected route map if changed
+- batches run
+- pages tested
+- failures found
+- fixes made
+- checkpoints created
+- QA results
+- arx_live_commands baseline before/after
+- confirmation no live trades placed
+- confirmation no operator phrases typed
+- confirmation no safety gates weakened
+- remaining issues only if they require human credentials or manual browser action

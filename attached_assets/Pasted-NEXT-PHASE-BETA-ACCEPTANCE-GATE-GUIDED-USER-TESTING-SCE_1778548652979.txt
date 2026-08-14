@@ -1,0 +1,414 @@
+NEXT PHASE: BETA ACCEPTANCE GATE + GUIDED USER TESTING SCENARIOS
+
+Goal:
+Run real owner/tester acceptance scenarios from start to finish and determine if the app is actually usable as a beta.
+
+Do not add new trading features.
+Do not fake MT5 connection.
+Do not place real broker orders.
+Do not claim broker fills.
+Do not expose secrets.
+Do not block owner tester access.
+Keep MT5 deferred until the desktop/VPS bridge is connected later.
+
+==================================================
+1. VERIFY PREVIOUS QA STATUS FIRST
+==================================================
+
+Before running acceptance testing, check:
+
+- /api/release/readiness
+- /api/system/full-health
+- /api/admin/issues
+- /api/auth/permissions
+- /api/broker/status
+
+If any P0 or P1 issue remains, stop and fix it first.
+
+P0/P1 blockers include:
+- owner locked out
+- full tester access broken
+- app route crash
+- simulator trade crash
+- live tester workflow inaccessible
+- risk governor missing
+- kill switch missing
+- MT5 falsely shown as connected
+- real broker execution falsely available
+- secrets exposed
+
+Only proceed if:
+- owner full tester access works
+- app loads
+- simulator works
+- live tester workflows are visible
+- MT5 is honestly shown as deferred
+- real broker execution remains unavailable
+
+==================================================
+2. CREATE ACCEPTANCE TEST RUNNER
+==================================================
+
+Create page:
+
+/acceptance-testing
+
+This page should run guided beta test scenarios.
+
+Each scenario should have:
+
+- scenario name
+- objective
+- steps
+- expected result
+- actual result
+- pass/fail/needs review
+- timestamp
+- related logs
+- issue creation button
+
+Add button:
+
+Run Full Acceptance Test
+
+==================================================
+3. SCENARIO 1 — FIRST-TIME USER FLOW
+==================================================
+
+Test:
+
+1. App opens.
+2. Owner session loads.
+3. Onboarding appears if not completed.
+4. User can skip onboarding.
+5. User can replay onboarding from Help/Tour.
+6. Global tester banner appears.
+7. Dashboard loads.
+8. MT5 deferred banner appears.
+
+Expected:
+- no crash
+- no blank screen
+- owner full tester access active
+- MT5 shown as deferred
+- real broker execution not available
+
+==================================================
+4. SCENARIO 2 — LIVE CHART + SYMBOL SYNC
+==================================================
+
+Test:
+
+1. Open /live-chart.
+2. Confirm chart renders.
+3. Change symbol to XAUUSD.
+4. Open Trade Command Room.
+5. Confirm selected symbol follows.
+6. Open Manual Trade Ticket.
+7. Confirm ticket defaults to selected symbol.
+
+Expected:
+- chart works
+- symbol sync works
+- trade ticket updates
+- no MT5 execution attempted
+
+==================================================
+5. SCENARIO 3 — DEMO MANUAL SIMULATOR TRADE
+==================================================
+
+Test:
+
+1. Open Demo Trading.
+2. Create manual simulator order.
+3. Use small lot size.
+4. Add stop loss.
+5. Add take profit.
+6. Submit.
+7. Confirm Risk Governor approves or explains rejection.
+8. Confirm OMS records order.
+9. Confirm position manager opens simulated position if filled.
+10. Confirm journal/calendar/audit update.
+
+Expected:
+- simulated trade works
+- no real broker order
+- P/L engine updates correctly
+- environment = DEMO_SIMULATOR
+
+==================================================
+6. SCENARIO 4 — BAD TRADE REJECTION
+==================================================
+
+Test bad orders:
+
+- no stop loss
+- lot too large
+- poor risk/reward
+- low confidence AI idea
+- high spread condition
+- daily risk exceeded
+
+Expected:
+- Risk Governor blocks bad trades
+- rejection reason is clear
+- audit/risk event logs update
+- app does not crash
+
+==================================================
+7. SCENARIO 5 — DEMO AI ASSIST
+==================================================
+
+Test:
+
+1. Open AI Trading or Trade Command Room.
+2. Generate AI trade idea.
+3. Confirm AI trade card appears.
+4. Review explanation panel.
+5. Approve simulated trade if risk passes.
+6. Reject another idea.
+7. Confirm AI decisions are logged.
+
+Expected:
+- AI card includes confidence, risk, entry, stop loss, take profit, reason, invalidation
+- approval required where expected
+- learning loop receives result
+- environment = DEMO_SIMULATOR
+
+==================================================
+8. SCENARIO 6 — LIVE MANUAL TESTER INTENT
+==================================================
+
+Test:
+
+1. Open Live Manual Tester.
+2. Fill live-style order.
+3. Submit Live Intent.
+4. Confirm MT5 is not connected.
+5. Confirm order is captured as tester intent.
+6. Confirm no real broker execution.
+7. Confirm live intent queue updates.
+
+Expected response:
+
+{
+  "brokerExecution": false,
+  "status": "PENDING_MT5_CONNECTION",
+  "reason": "MT5 bridge is not connected yet. Tester workflow was captured, but no real broker order was placed."
+}
+
+==================================================
+9. SCENARIO 7 — LIVE AI ASSIST TESTER INTENT
+==================================================
+
+Test:
+
+1. Open Live AI Assist Tester.
+2. Generate AI live-style idea.
+3. Reject one idea.
+4. Approve one idea into live intent queue.
+5. Confirm no silent execution.
+6. Confirm no broker order.
+
+Expected:
+- AI idea saved as AI_LIVE_INTENT_PENDING_MT5
+- risk checks run
+- audit logs update
+- live intent queue updates
+
+==================================================
+10. SCENARIO 8 — AUTOPILOT SAFE TEST
+==================================================
+
+Test:
+
+1. Open Autopilot Control Center.
+2. Start OBSERVE_ONLY.
+3. Force scan.
+4. Confirm AI logs observations only.
+5. Start DEMO_AUTO_SIMULATOR with max 1 trade.
+6. Confirm pipeline follows scanner → strategy → risk → OMS.
+7. Stop autopilot.
+8. Confirm report generated.
+
+Expected:
+- no real broker execution
+- risk governor controls decisions
+- audit logs record state changes
+- autopilot can stop safely
+
+==================================================
+11. SCENARIO 9 — SHADOW MODE + FORWARD TESTING
+==================================================
+
+Test:
+
+1. Start Shadow Mode.
+2. Create at least one shadow decision.
+3. Track outcome.
+4. Start Forward Testing.
+5. Generate basic result.
+6. Confirm AI readiness score updates.
+7. Confirm strategy promotion does not promote to real live trading.
+
+Expected:
+- shadow results are separate
+- no simulator/live/broker mixing
+- MT5 live promotion remains locked
+
+==================================================
+12. SCENARIO 10 — ADMIN / SECURITY / EXPORT
+==================================================
+
+Test:
+
+1. Open Security Status.
+2. Confirm current role is OWNER.
+3. Confirm secrets hidden.
+4. Open Data Management.
+5. Export diagnostics.
+6. Confirm diagnostics do not include secrets.
+7. Test reset confirmation modal.
+8. Confirm reset requires exact phrase.
+
+Expected:
+- owner access preserved
+- secrets not exposed
+- protected actions require permission
+- audit log records admin actions
+
+==================================================
+13. SCENARIO 11 — MOBILE TEST
+==================================================
+
+Test mobile layout for:
+
+- Dashboard
+- Trade Command Room
+- Live Chart
+- Manual Trade Ticket
+- Live Manual Tester
+- Market Scanner
+- Autopilot Control Center
+- Risk Command Center
+- Orders
+- Positions
+- Journal
+- Calendar
+
+Expected:
+- no horizontal overflow
+- bottom nav works
+- chart resizes
+- trade ticket usable
+- kill switch reachable
+- forms usable
+- cards readable
+
+==================================================
+14. SCENARIO 12 — FULL SYSTEM HEALTH AFTER TESTING
+==================================================
+
+After all scenarios, run:
+
+- /api/system/full-health
+- /api/release/readiness
+- /api/risk/budget
+- /api/orders
+- /api/positions
+- /api/audit/live
+- /api/data-quality
+- /api/broker/status
+
+Expected final truth:
+
+- FULL TESTER ACCESS ACTIVE: yes
+- SIMULATOR READY: yes
+- LIVE TESTER WORKFLOWS OPEN: yes
+- MT5 CONNECTED: no
+- MT5 DEFERRED: yes
+- REAL BROKER EXECUTION AVAILABLE: no
+- RISK GOVERNOR ACTIVE: yes
+- KILL SWITCH UI ACTIVE: yes
+- SECRETS HIDDEN: yes
+
+==================================================
+15. GENERATE ACCEPTANCE REPORT
+==================================================
+
+Generate:
+
+BETA ACCEPTANCE TEST REPORT
+
+Include:
+
+1. Acceptance summary:
+- total scenarios
+- passed
+- failed
+- needs review
+- beta usable yes/no
+
+2. First-time user:
+- onboarding pass/fail
+- dashboard pass/fail
+- tester banner pass/fail
+
+3. Trading:
+- demo manual simulator pass/fail
+- demo AI simulator pass/fail
+- live manual tester intent pass/fail
+- live AI tester intent pass/fail
+
+4. AI:
+- scanner pass/fail
+- autopilot pass/fail
+- shadow mode pass/fail
+- forward testing pass/fail
+- AI readiness score pass/fail
+
+5. Risk/safety:
+- risk governor pass/fail
+- bad trade rejection pass/fail
+- kill switch UI pass/fail
+- audit logs pass/fail
+
+6. Records:
+- OMS pass/fail
+- positions pass/fail
+- P/L pass/fail
+- journal pass/fail
+- calendar pass/fail
+
+7. Admin/security:
+- owner access pass/fail
+- secrets hidden yes/no
+- exports safe yes/no
+- protected actions yes/no
+
+8. Mobile:
+- mobile usable yes/no
+- broken mobile pages
+- layout issues
+
+9. MT5 honesty:
+- MT5 connected yes/no
+- MT5 deferred yes/no
+- real broker execution available yes/no
+- no fake broker execution yes/no
+
+10. Final decision:
+- READY FOR OWNER TESTING
+- NEEDS BUG FIX SPRINT
+- BLOCKED BY P0/P1
+- WAITING ON MT5 SETUP
+
+Hard rules:
+- Do not fake pass results.
+- Do not fake MT5 connection.
+- Do not place real broker orders.
+- Do not claim broker fills.
+- Do not expose secrets.
+- Do not block owner tester access.
+- Do not hide live tester workflows.
+- If a scenario fails, create an issue automatically.

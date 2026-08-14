@@ -1,0 +1,99 @@
+Fix Demo Execution Readiness so it uses the current fresh per-user MT5 bridge connection instead of a stale old connection row.
+
+Problem shown in UI:
+Demo Execution Readiness is blocked by:
+- HEARTBEAT_STALE
+- ACCOUNT_TYPE_NOT_REPORTED
+- EA_VERSION_TOO_OLD: unknown < 1.26
+- BRIDGE_NOT_CONNECTED
+
+The UI appears to be evaluating an old stale connection row instead of the current active/fresh VPS bridge connection. Prior diagnostics showed older rows have account_type=unknown and stale heartbeats, while the current live connection has fresh heartbeats and should report accountType=demo after EA v1.26.
+
+Do NOT unlock live trading.
+Do NOT enable live execution.
+Do NOT enable shared MT5 routing.
+Do NOT enable live auto-close.
+Do NOT expose bridge tokens, broker passwords, session secrets, account passwords, API keys, hashes, or private values.
+Do NOT send any MT5 command yet.
+
+Goal:
+Make Demo Execution Readiness and Demo Execution Control evaluate the correct active bridge connection for the logged-in user.
+
+Required fixes:
+
+1. Active bridge selection
+- For the logged-in user, select the most recent/fresh valid mt5_connection row.
+- Prefer:
+  - userId matches req.authUser.id
+  - revoked=false
+  - heartbeatFresh=true
+  - bridgeConnected=true
+  - eaConnected=true
+  - accountType explicitly reported
+  - eaVersion >= 1.26
+  - latest lastHeartbeatAt
+- Do not select stale older rows when a fresh row exists.
+- If multiple active rows exist, choose the newest fresh row and show duplicate-EA warning as WARN only.
+
+2. Demo readiness gate
+Update the gate so it reports:
+- selectedBridgeConnectionId
+- selectedLastHeartbeatAt
+- selectedHeartbeatFresh
+- selectedEaVersion
+- selectedAccountType
+- selectedAccountLogin if safe
+- why any older connection rows were ignored
+
+Do not expose tokens or secrets.
+
+3. Demo Execution Control UI
+Update the card to show which bridge connection it is evaluating:
+- Current selected bridge connection
+- Heartbeat fresh/stale
+- EA version
+- Account type
+- Demo verification status
+- Duplicate/old connection warning if applicable
+
+4. Old/stale connection handling
+- Mark old rows as stale/inactive when heartbeat is stale.
+- Do not let old stale rows block a current fresh row.
+- If no fresh row exists, then show NOT READY with HEARTBEAT_STALE.
+
+5. Safety
+Even if VERIFIED_DEMO passes:
+- Do not dispatch commands automatically.
+- Require Arm button.
+- Require user confirmation.
+- Keep liveLocked=true.
+- Keep live execution blocked.
+- Keep shared MT5 routing blocked.
+- Keep auto-close ALERT_ONLY.
+
+Run:
+1. Typecheck
+2. CI guards
+3. Demo verification gate tests
+4. Active bridge selection tests
+5. Stale old connection ignored test
+6. Multiple connection warning test
+7. Demo execution readiness UI test
+8. Secret leakage scan
+9. Per-user isolation regression
+10. Live trading locked regression
+11. Shared MT5 routing blocked regression
+12. Safety-envelope regression
+
+End with:
+- Which bridge connection row is selected now
+- Whether heartbeatFresh=true
+- Whether EA version >= 1.26
+- Whether accountType=demo is explicit
+- Whether VERIFIED_DEMO passes
+- Whether the Arm button is enabled
+- Confirmation no MT5 command was sent
+- Confirmation live trading remains BLOCKED
+- Confirmation shared MT5 routing remains BLOCKED
+- Confirmation live auto-close remains ALERT_ONLY
+- Final answer: DEMO READINESS FIXED or NOT READY, with reasons.

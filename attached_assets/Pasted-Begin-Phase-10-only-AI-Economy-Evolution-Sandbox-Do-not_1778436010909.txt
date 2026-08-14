@@ -1,0 +1,89 @@
+Begin Phase 10 only: AI Economy + Evolution Sandbox.
+
+Do not enable unrestricted live auto-execution.
+
+Goal:
+Create a controlled system where agents and strategies can earn or lose trust, evolve in sandbox mode, and move through lifecycle stages without ever bypassing validation, Risk Governor, or Control Tower.
+
+Build:
+
+/src/domain/ai-economy/
+  aiEconomy.types.ts
+  economy.engine.ts
+  agentReputation.engine.ts
+  strategyReputation.engine.ts
+  trustScore.engine.ts
+  specialtyScore.engine.ts
+  disciplineScore.engine.ts
+  authorityReward.engine.ts
+  authorityPenalty.engine.ts
+  survivalCurrency.engine.ts
+
+/src/domain/strategy-lifecycle/
+  lifecycle.types.ts
+  lifecycle.engine.ts
+  promotion.engine.ts
+  demotion.engine.ts
+  quarantine.engine.ts
+  retirement.engine.ts
+  archive.engine.ts
+
+/src/domain/evolution/
+  evolutionLab.engine.ts
+  strategyMutation.engine.ts
+  variationTesting.engine.ts
+  sandboxValidation.engine.ts
+  mutationReport.engine.ts
+
+/src/domain/resource-management/
+  computeAllocator.engine.ts
+  replayPriority.engine.ts
+  validationPriority.engine.ts
+  attentionBudget.engine.ts
+
+Rules:
+- Agents earn or lose reputation based on evidence, not opinions.
+- Strategies earn or lose trust based on validation, replay, live micro-results, survival score, execution quality, and decision quality.
+- Weak strategies move to quarantine, demotion, retirement, or archive.
+- Strong strategies can gain more testing priority or controlled allocation.
+- Evolution and mutation are sandbox-only.
+- No evolved strategy can skip validation.
+- No mutation can touch live money directly.
+- Survival quality matters more than raw profit.
+- Resource management prioritizes the most valuable tests, replays, and validations.
+- Risk Governor and Control Tower outrank all AI Economy decisions.
+- All reputation changes, lifecycle transitions, mutations, and sandbox results must be logged into the Black Box Vault.
+
+Strategy lifecycle stages:
+- RESEARCH
+- TESTING
+- SHADOW
+- PAPER
+- MICRO
+- LIMITED_LIVE
+- ACTIVE
+- UNDER_REVIEW
+- QUARANTINED
+- DEGRADED
+- RETIRED
+- ARCHIVED
+
+Required outputs:
+- agentReputationScore
+- strategyTrustScore
+- survivalCurrencyScore
+- lifecycleStage
+- promotionEligibility
+- demotionRisk
+- mutationCandidate
+- sandboxValidationResult
+- resourcePriority
+
+Acceptance criteria:
+- Agents and strategies gain/lose trust from measurable performance.
+- Strategy lifecycle transitions work.
+- Weak systems can be quarantined or retired.
+- Evolution runs only in sandbox.
+- Mutated strategies must enter validation from the beginning.
+- All previous tests still pass.
+- No unrestricted live auto-execution is enabled.

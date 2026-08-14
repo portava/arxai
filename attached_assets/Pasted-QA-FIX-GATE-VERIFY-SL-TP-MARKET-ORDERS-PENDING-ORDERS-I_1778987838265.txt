@@ -1,0 +1,460 @@
+QA/FIX GATE — VERIFY SL/TP + MARKET ORDERS + PENDING ORDERS IMPLEMENTATION
+
+Do not add new features right now.
+Do not rebuild.
+Do not redesign.
+Do not delete active ecosystem code.
+
+You just worked on or are about to work on the trade ticket upgrade for:
+
+- Stop Loss
+- Take Profit
+- Buy Market
+- Sell Market
+- Buy Limit
+- Sell Limit
+- Buy Stop
+- Sell Stop
+- Buy Stop Limit
+- Sell Stop Limit
+- Editing SL/TP on open trades
+- Editing SL/TP on pending orders
+- Saved/default SL/TP outside of trade
+
+Now verify the implementation completely and fix anything broken with the smallest safe patch.
+
+==================================================
+PHASE 1 — CHANGE INVENTORY
+==================================================
+
+First, report exactly what changed or currently exists.
+
+List:
+
+1. Trade ticket UI files
+2. Open position card files
+3. Pending order card files
+4. Trade action backend routes
+5. MT5 bridge action files
+6. Risk governor files
+7. Shared Master routing/attribution files affected
+8. AI context files affected
+9. Journal/audit files affected
+10. Database/schema files affected
+11. Any new enums/types/interfaces added
+
+Confirm whether order types are normalized into one consistent internal format.
+
+Required order types:
+
+- BUY_MARKET
+- SELL_MARKET
+- BUY_LIMIT
+- SELL_LIMIT
+- BUY_STOP
+- SELL_STOP
+- BUY_STOP_LIMIT
+- SELL_STOP_LIMIT
+
+If the app uses different naming internally, confirm there is a safe mapping layer.
+
+==================================================
+PHASE 2 — UI VERIFICATION
+==================================================
+
+Verify the trade ticket UI.
+
+The user must be able to select:
+
+1. Buy Market
+2. Sell Market
+3. Buy Limit
+4. Sell Limit
+5. Buy Stop
+6. Sell Stop
+7. Buy Stop Limit
+8. Sell Stop Limit
+
+Confirm the UI only shows fields needed for each order type.
+
+Market orders should show:
+- Symbol
+- Lot size
+- Stop Loss
+- Take Profit
+
+Limit/Stop pending orders should show:
+- Symbol
+- Lot size
+- Entry price
+- Stop Loss
+- Take Profit
+
+Stop-limit orders should show:
+- Symbol
+- Lot size
+- Stop trigger price
+- Stop-limit price
+- Stop Loss
+- Take Profit
+
+Verify:
+- Mobile layout works
+- Inputs are readable
+- Validation messages are clear
+- Confirmation modal appears before submit
+- No button silently submits live trades
+- No fake success messages appear
+
+Fix any broken UI wiring.
+
+==================================================
+PHASE 3 — VALIDATION LOGIC
+==================================================
+
+Verify the validation logic for every order type.
+
+Market Buy:
+- SL below entry/current ask
+- TP above entry/current ask
+
+Market Sell:
+- SL above entry/current bid
+- TP below entry/current bid
+
+Buy Limit:
+- Entry below current price
+- SL below entry
+- TP above entry
+
+Sell Limit:
+- Entry above current price
+- SL above entry
+- TP below entry
+
+Buy Stop:
+- Entry above current price
+- SL below entry
+- TP above entry
+
+Sell Stop:
+- Entry below current price
+- SL above entry
+- TP below entry
+
+Buy Stop Limit:
+- Stop trigger above current ask
+- Stop-limit price at or below trigger unless MT5 rules require otherwise
+- SL below stop-limit/entry
+- TP above stop-limit/entry
+
+Sell Stop Limit:
+- Stop trigger below current bid
+- Stop-limit price at or above trigger unless MT5 rules require otherwise
+- SL above stop-limit/entry
+- TP below stop-limit/entry
+
+Also verify:
+- Numeric input only
+- Symbol precision/digits respected
+- Minimum stop distance checked when available
+- Minimum pending-order distance checked when available
+- Lot size rules checked
+- Risk rules checked
+- Empty SL allowed only if risk settings allow it
+- Required SL blocks trade/order if missing
+
+If MT5/symbol data is unavailable:
+- App must say data is unavailable
+- App may show preview only
+- App must not fake live validation
+
+==================================================
+PHASE 4 — BACKEND ROUTE VERIFICATION
+==================================================
+
+Verify backend accepts and validates the full trade payload.
+
+Payload should support:
+
+- symbol
+- orderType
+- direction
+- lotSize
+- entryPrice
+- stopTriggerPrice
+- stopLimitPrice
+- stopLoss
+- takeProfit
+- expiration
+- confirmedByUser
+- accountRoutingMode
+- platformMode
+
+Verify these backend actions exist or are safely mapped:
+
+1. placeMarketOrder
+2. placePendingOrder
+3. modifyPositionProtection
+4. modifyPendingOrderProtection
+5. cancelPendingOrder, only if supported
+
+Confirm:
+
+- Backend validates again even if frontend already validated
+- runActionGuards() is still used
+- riskGovernorEnforcement is still used
+- explicit_confirmation guard is still required
+- live execution remains blocked unless enabled
+- read-only/live-locked mode blocks or previews honestly
+- Shared Master routing is respected
+- No route returns fake success
+
+Fix broken route mappings or missing validation.
+
+==================================================
+PHASE 5 — MT5 BRIDGE VERIFICATION
+==================================================
+
+Inspect the MT5 bridge command layer.
+
+Confirm support status for:
+
+- Market Buy
+- Market Sell
+- Buy Limit
+- Sell Limit
+- Buy Stop
+- Sell Stop
+- Buy Stop Limit
+- Sell Stop Limit
+- Modify open position SL/TP
+- Modify pending order SL/TP
+- Cancel pending order
+
+For supported actions:
+- Confirm payload fields match what the EA/bridge expects.
+- Confirm SL/TP are passed to MT5.
+- Confirm stop-limit orders pass both trigger and limit price.
+
+For unsupported actions:
+- Do not fake success.
+- Return a clear unsupported message.
+- Report exactly what EA/bridge action must be added.
+
+Confirm the bridge does not attempt live execution when:
+- Bridge disconnected
+- Read-only mode
+- Live locked
+- Trading disabled
+- User confirmation missing
+- Risk governor blocks action
+
+==================================================
+PHASE 6 — RISK GOVERNOR VERIFICATION
+==================================================
+
+Verify SL/TP and pending-order prices feed into risk.
+
+Risk governor must calculate/check:
+
+1. Estimated loss if SL hits
+2. Estimated reward if TP hits
+3. Risk/reward ratio
+4. Risk percentage of account
+5. Required SL rules
+6. Max risk per trade
+7. Daily loss guard
+8. Prop firm mode rules if present
+9. Invalid pending order prices
+10. Invalid stop-limit trigger/limit relationship
+11. Shared Master routing permission
+12. User-specific risk settings
+
+If unsafe:
+- Block action
+- Return clear reason
+- Do not bypass on frontend
+- Do not bypass through AI
+- Do not bypass through Shared Master
+
+==================================================
+PHASE 7 — OPEN TRADE + PENDING ORDER MANAGEMENT
+==================================================
+
+Verify open trades show:
+
+- Symbol
+- Direction
+- Entry
+- Current price
+- Floating P/L
+- Stop Loss
+- Take Profit
+- Edit SL/TP action
+
+Verify editing SL/TP on open trades:
+
+1. Opens modal/sheet
+2. Shows current SL/TP
+3. Validates new SL/TP
+4. Shows risk impact
+5. Requires confirmation
+6. Sends backend request
+7. Backend validates again
+8. MT5 bridge modifies the position if supported
+9. UI refreshes after success
+10. Journal/audit records the update
+
+Verify pending orders show:
+
+- Order type
+- Entry price
+- Trigger price if stop-limit
+- Stop-limit price if stop-limit
+- Stop Loss
+- Take Profit
+- Status
+- Edit SL/TP action
+- Cancel action only if supported
+
+Closed trades:
+- Show historical SL/TP if available
+- Do not allow live SL/TP edits
+
+==================================================
+PHASE 8 — AI CONTEXT VERIFICATION
+==================================================
+
+Verify ARX AI assistant can understand the new trade ticket and order types.
+
+AI should be able to answer:
+
+- What is my stop loss?
+- What is my take profit?
+- What is my risk/reward?
+- Is my SL valid?
+- Is my TP realistic?
+- What order type am I placing?
+- What is a Buy Limit?
+- What is a Sell Limit?
+- What is a Buy Stop?
+- What is a Sell Stop?
+- What is a Buy Stop Limit?
+- What is a Sell Stop Limit?
+- Can I edit my SL/TP?
+- Why was my trade/order blocked?
+
+AI must not:
+- Claim live data if unavailable
+- Promise profit
+- Bypass risk rules
+- Submit trade actions without confirmation
+
+==================================================
+PHASE 9 — SHARED MASTER + JOURNAL VERIFICATION
+==================================================
+
+Confirm the new trade/order fields do not break Shared Master mode.
+
+Verify:
+
+1. Shared Master routing still works
+2. Trade attribution still works
+3. Virtual P&L sync still follows approved rules
+4. User-specific SL/TP data does not leak between users
+5. Pending orders are attributed to the correct user/session
+6. Open trades are attributed correctly
+7. Journal records:
+   - Market order placed with SL/TP
+   - Pending order placed with SL/TP
+   - Pending order modified
+   - Pending order canceled, if supported
+   - Open trade SL/TP modified
+   - Trade closed
+
+Do not modify virtual equity on every unrealized tick.
+
+==================================================
+PHASE 10 — RUN TESTS
+==================================================
+
+Run all available checks:
+
+- npm run lint if available
+- npm run typecheck if available
+- npm test if available
+- npm run build
+- backend/API tests if available
+- route health checks if available
+
+If a script does not exist, report that clearly and continue.
+
+Fix real errors.
+
+==================================================
+PHASE 11 — MANUAL SCENARIO MATRIX
+==================================================
+
+Manually verify these scenarios:
+
+1. Buy Market valid SL/TP
+2. Buy Market invalid SL
+3. Buy Market invalid TP
+4. Sell Market valid SL/TP
+5. Sell Market invalid SL
+6. Sell Market invalid TP
+7. Buy Limit valid
+8. Buy Limit invalid entry above current price
+9. Sell Limit valid
+10. Sell Limit invalid entry below current price
+11. Buy Stop valid
+12. Buy Stop invalid entry below current price
+13. Sell Stop valid
+14. Sell Stop invalid entry above current price
+15. Buy Stop Limit valid
+16. Buy Stop Limit invalid trigger/limit relationship
+17. Sell Stop Limit valid
+18. Sell Stop Limit invalid trigger/limit relationship
+19. Missing SL when SL is required
+20. Edit SL/TP on open trade
+21. Edit SL/TP on pending order
+22. Try editing closed trade SL/TP
+23. Try live order while bridge disconnected
+24. Try live order in read-only mode
+25. Try live order without confirmation
+26. Try order blocked by risk governor
+27. AI explains rejected order reason
+28. Journal records action correctly
+29. Shared Master attribution remains correct
+30. No fake live data appears
+
+==================================================
+FINAL REPORT
+==================================================
+
+Create or update:
+
+TRADE_TICKET_QA_REPORT.md
+
+Include:
+
+1. What passed
+2. What failed
+3. What was fixed
+4. Files changed
+5. Routes changed
+6. MT5 bridge support status
+7. Unsupported bridge actions, if any
+8. Risk governor result
+9. Shared Master result
+10. AI context result
+11. Journal/audit result
+12. Tests run
+13. Build result
+14. Remaining limitations
+15. Confirmation that no rebuild/redesign was done
+16. Confirmation that no fake live data was added
+17. Confirmation that risk and confirmation guards remain enforced
+
+Stop after this QA/fix gate and report.

@@ -1,0 +1,262 @@
+T009 — REAL APP SPEED FIX ONLY, NO MORE MEMORY/DOCS PROOF
+
+Stop doing memory housekeeping, documentation-only cleanup, or theoretical bundle proof.
+
+T008 did not change application code and did not prove real user speed. It only changed .agents/memory/*.md, ran bundle/backend checks, and explicitly skipped interactive functional walkthrough. That is not enough.
+
+This is a new task: fix the actual app experience on the real running preview.
+
+Do not mark this complete with:
+
+* memory edits
+* docs edits only
+* bundle size proof only
+* backend loopback timing only
+* typecheck only
+* ci:guards only
+* architect review only
+* “static serve 13ms” only
+
+Those are helpful, but they do not prove the user’s real phone experience.
+
+Primary issue:
+The user experienced pages taking around 7 seconds to load on the actual Replit preview. Scanner and trading actions must feel immediate.
+
+This is not a rebuild.
+Do not create a new product.
+Do not disturb the live MT5 path.
+Do not reset live broker execution config.
+Do not place a live trade.
+Do not weaken backend permissions, ownership filtering, kill switch, allocation checks, account freeze, or MT5 confirmation rules.
+
+Goal:
+Make the actual running ARX AI app feel fast on mobile and desktop.
+
+Hard UX target:
+
+1. Bottom nav tap feedback: under 100ms.
+2. Page shell visible: under 1 second.
+3. Scanner shell visible: under 1 second.
+4. Scanner search usable: under 1 second.
+5. Chart skeleton visible: under 1 second.
+6. Trade button feedback: under 100ms.
+7. Ruby thinking indicator: under 100ms.
+8. Any slow backend/MT5/Ruby/market data call must show a loading state immediately.
+
+PART 1 — Verify the running app is actually updated
+
+Before timing anything, verify the real preview is serving the latest committed frontend.
+
+Check:
+
+1. current git commit shown by app/version if available
+2. frontend build timestamp/hash
+3. service worker/cache behavior if present
+4. browser cache
+5. Replit preview process status
+6. stale/orphaned process status
+7. whether the app is serving old build assets
+8. whether the “failed workflow” state is stale or real
+
+If stale processes or stale frontend assets are serving old code:
+
+1. stop only the stale/orphaned process
+2. restart the correct frontend/app process safely
+3. do not restart or disturb live MT5 bridge/api-server unless necessary
+4. confirm latest frontend is served
+5. report what was restarted and why
+
+PART 2 — Real interactive browser timing required
+
+Open the actual running preview and test it like a user.
+
+Test on:
+
+1. mobile viewport
+2. desktop viewport
+
+Pages:
+
+1. Cockpit
+2. Scanner
+3. Trade, if still present
+4. Ruby / AI
+5. More / Settings
+6. Admin as owner/admin, if available
+
+For each page measure:
+
+1. click/tap time
+2. first visible feedback
+3. shell visible
+4. first usable content
+5. first data render
+6. total perceived usable time
+7. console errors
+8. failed network requests
+9. slowest network call
+10. duplicate network calls
+11. whether the page appears frozen
+
+Do not skip the interactive walkthrough.
+
+If the harness cannot access the non-proxied preview URL:
+
+1. say so clearly
+2. add temporary dev-only real-user timing instrumentation inside the app
+3. record route timings from the actual browser using PerformanceNavigationTiming, route-change timestamps, and component render markers
+4. expose the timing report in an admin/dev-only panel or console table
+5. have the app report:
+    * route name
+    * nav tap time
+    * shell render time
+    * first usable time
+    * slow API calls
+    * duplicate calls
+    * blocking dependency
+6. then test the actual app using that instrumentation
+7. do not claim speed is verified without real frontend timing
+
+PART 3 — Fix real 7-second blockers
+
+Find and fix anything causing slow page shells.
+
+Inspect:
+
+1. heavy global imports
+2. chart/TradingView library loaded globally
+3. Ruby voice/speech modules loaded globally
+4. admin-only modules loaded for normal users
+5. hidden tabs loading before selected
+6. notification badge blocking route render
+7. repeated auth/session calls
+8. repeated permission calls
+9. repeated bridge-health calls
+10. repeated scanner requests
+11. large market list loading before search is usable
+12. news/history/backtest blocking first paint
+13. full app rerender on route changes
+14. full refetch on route changes
+15. excessive debug logging
+16. unbounded lists rendering all at once
+17. missing memoization
+18. stale service worker/cache
+19. old build assets
+20. preview process mismatch
+
+Fix safely:
+
+1. lazy-load heavy components
+2. defer noncritical requests
+3. batch duplicate calls
+4. cache safe static metadata
+5. debounce search
+6. cancel stale requests
+7. memoize heavy components
+8. virtualize long lists if needed
+9. show skeletons immediately
+10. move notifications after page paint
+11. reduce bridge-health polling
+12. do not load hidden tabs until selected
+13. do not load admin/dev pages for normal users
+14. do not let Ruby block Scanner
+15. do not let news/history/backtest block Scanner
+16. do not let MT5 bridge health block first page shell
+
+PART 4 — Scanner must be tested and fixed first
+
+Scanner is the highest priority.
+
+Measure:
+
+1. tap Scanner bottom nav → feedback
+2. feedback → Scanner shell
+3. shell → chart skeleton
+4. shell → search usable
+5. shell → trade controls usable
+6. shell → quote/candles
+7. shell → Broad Scan/Focus Scan
+8. shell → Ruby explanation
+
+Scanner must load in progressive layers:
+
+1. shell first
+2. chart skeleton
+3. search and tabs
+4. trade controls
+5. quote/candles
+6. user trade overlays
+7. scanner results
+8. Ruby explanation
+9. news/history/backtest last
+
+If Scanner waits on any slow dependency before showing shell, fix it.
+
+One failed Scanner widget must not crash or delay the whole page.
+
+PART 5 — Trade action responsiveness test
+
+Do not place a live trade.
+
+Measure UI responsiveness only, or use DEMO only if safe.
+
+Test:
+
+1. Buy button feedback
+2. Sell button feedback
+3. trade drawer/modal open
+4. lot input response
+5. Confirm pending state
+6. backend request start
+7. “Confirming with broker…” state
+8. Ruby not blocking trade flow
+
+Rules:
+
+1. trade button feedback under 100ms
+2. pending state under 100ms
+3. do not fake execution
+4. do not say “Trade placed” until MT5 confirms
+5. do not bypass backend validation
+6. do not bypass permissions
+7. do not bypass user ownership
+
+PART 6 — No more false completion
+
+Do not mark complete unless a real timing table is delivered.
+
+Final report must include:
+
+1. whether the running preview was stale or current
+2. whether any process/cache restart was required
+3. mobile timing table
+4. desktop timing table
+5. Cockpit timing
+6. Scanner timing
+7. Ruby timing
+8. More/Settings timing
+9. Trade page timing if present
+10. bottom-nav feedback timing
+11. Scanner shell timing
+12. chart skeleton timing
+13. search usable timing
+14. trade button feedback timing
+15. slowest network call
+16. duplicate calls removed
+17. heavy imports lazy-loaded
+18. blocking dependencies deferred
+19. any page still over 1 second and exact reason
+20. confirmation live MT5 path was untouched
+21. confirmation no live trade was placed
+22. typecheck result
+23. ci:guards result
+24. console/network error result
+25. remaining risks
+26. exact next fix if anything remains slow
+
+Completion standard:
+T009 is complete only when the real running app preview has been interactively timed and any safe frontend speed fixes are applied.
+
+Do not complete this with documentation-only or memory-only work.
+Do not complete this with bundle proof only.
+Do not complete this without real frontend timing.

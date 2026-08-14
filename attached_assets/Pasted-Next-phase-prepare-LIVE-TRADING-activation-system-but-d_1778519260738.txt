@@ -1,0 +1,331 @@
+Next phase: prepare LIVE TRADING activation system, but do NOT enable live trading yet.
+
+Goal:
+Build the full live-trading activation layer safely, with hard gates, micro-live limits, audit logging, emergency shutdown, and manual approval requirements.
+
+Important:
+The user wants the system ready for live trading, but current audit shows:
+- 2 unacknowledged CRITICAL alerts
+- Paper testing has not completed yet
+- HH grade is C / score 77 because learning confidence is still low
+- Live trading is currently disabled by multiple independent gates
+- This must NOT be bypassed
+
+Do not enable unrestricted live trading.
+Do not change liveTradingDisabled to false unless all readiness rules below pass.
+
+Build the following system:
+
+1. Live Trading Readiness Gate
+
+Create a centralized endpoint:
+
+GET /api/live-trading/readiness
+
+It must return:
+
+{
+  liveTradingEligible: boolean,
+  currentMode: "READ_ONLY" | "PAPER_ONLY" | "MICRO_LIVE_READY" | "LIVE_LOCKED",
+  blockers: [],
+  warnings: [],
+  requiredActions: [],
+  safetyScore: number,
+  paperStats: {},
+  riskStatus: {},
+  brokerStatus: {},
+  lastUpdated: timestamp
+}
+
+Live trading is eligible only if ALL are true:
+
+- 0 unacknowledged CRITICAL alerts
+- 0 active hard safety blockers
+- /api/paper-sessions/preflight passes
+- /api/risk-governor/status passes
+- /api/permission/status confirms live trading is still locked unless armed
+- broker connection is healthy
+- broker account balance/equity can be read
+- max daily loss limit exists
+- max trade size exists
+- max open positions exists
+- emergency kill switch exists
+- audit logging is active
+- paper/live databases are isolated
+- paper-autopilot-isolation CI guard passes
+- can-place-trades-invariant CI guard passes
+- no live position/order table mutation happened during paper mode
+- user has completed at least one controlled paper session
+- latest paper session report has no critical failures
+
+2. Live Trading Must Have 3 Levels
+
+Add modes:
+
+A. READ_ONLY
+- Default mode
+- Broker data can be read
+- No trades can be placed
+- No orders can be modified
+- No positions can be closed
+
+B. PAPER_ONLY
+- AI can make simulated decisions
+- No broker execution
+- Live trading remains disabled
+
+C. MICRO_LIVE
+- Only unlocked after readiness passes
+- Requires manual user confirmation
+- Allows tiny test trades only
+- Hard limits apply
+
+Do NOT create full unrestricted live trading yet.
+
+3. Micro-Live Safety Limits
+
+When MICRO_LIVE is eventually unlocked, enforce:
+
+- Max 1 symbol at a time
+- Max 1 open live position
+- Max 1 live trade per session
+- Max 3 live trades per day
+- Max lot size: 0.01 unless user later changes it manually
+- Max account risk per trade: 0.25%
+- Max daily loss: 0.5%
+- Max weekly loss: 1.5%
+- Stop trading immediately after daily loss limit is hit
+- Stop trading immediately after 2 consecutive live losses
+- No martingale
+- No averaging down
+- No revenge trading
+- No trade without stop loss
+- No trade without take profit or defined exit logic
+- No trade during disconnected broker state
+- No trade during high-spread condition
+- No trade if AI confidence is below threshold
+- No trade if risk governor returns caution or block
+
+4. Manual Approval Layer
+
+Before any live order is placed, require manual confirmation.
+
+The AI must generate a trade card first:
+
+{
+  symbol,
+  direction,
+  entry,
+  stopLoss,
+  takeProfit,
+  lotSize,
+  riskAmount,
+  riskPercent,
+  confidenceScore,
+  riskScore,
+  reasonForTrade,
+  invalidationReason,
+  maxLossIfWrong,
+  approvalRequired: true
+}
+
+User must approve manually before execution.
+
+Do not allow auto-live execution yet.
+
+5. Live Order Execution Guard
+
+Create a single protected function for live orders.
+
+Name it:
+
+placeLiveOrderGuarded()
+
+This function must check:
+
+- live mode is MICRO_LIVE
+- live trading is armed
+- emergency stop is not active
+- user approved the exact trade
+- approval has not expired
+- order has unique idempotency key
+- no duplicate order exists
+- risk governor approves
+- permission system approves
+- broker status is healthy
+- spread is acceptable
+- symbol is allowlisted
+- position count is under limit
+- daily loss limit not breached
+- weekly loss limit not breached
+- order size within cap
+- stop loss exists
+- audit log is ready
+
+If any check fails, reject the trade and log the reason.
+
+6. Emergency Kill Switch
+
+Create:
+
+POST /api/live-trading/kill-switch
+
+When activated:
+
+- Cancel pending live orders if broker supports it
+- Block all new live orders
+- Set liveTradingDisabled true
+- Set emergencyStopActive true
+- Log reason, timestamp, user, and system state
+- Require manual reset before any future live trading
+
+Also add:
+
+POST /api/live-trading/reset-kill-switch
+
+Reset only if:
+- user is admin
+- all critical alerts are cleared
+- readiness gate passes
+- reason is provided
+- event is logged
+
+7. Arm / Disarm System
+
+Create:
+
+POST /api/live-trading/arm
+
+Required body:
+
+{
+  confirmationPhrase: "I UNDERSTAND THIS CAN LOSE REAL MONEY",
+  mode: "MICRO_LIVE"
+}
+
+Rules:
+- Reject if phrase is not exact
+- Reject if readiness gate fails
+- Reject if critical alerts exist
+- Reject if paper session was not completed
+- Reject if kill switch is active
+- Reject if max loss limits are missing
+- Reject if broker is unhealthy
+- Log the activation
+
+Create:
+
+POST /api/live-trading/disarm
+
+This should instantly return the system to READ_ONLY / PAPER_ONLY safe state.
+
+8. Frontend UI
+
+Add a Live Trading Control Center.
+
+It must show:
+
+- Current mode
+- Live trading locked/unlocked status
+- Readiness score
+- Blockers
+- Warnings
+- Required actions
+- Broker status
+- Account equity
+- Daily loss limit
+- Weekly loss limit
+- Max trade size
+- Emergency kill switch button
+- Arm micro-live button
+- Disarm button
+- Latest paper session report
+- Live trade approval queue
+- Audit history
+
+Use very clear visual states:
+
+- Red: Live locked / blockers active
+- Yellow: Micro-live ready but not armed
+- Green: Micro-live armed
+- Black/Red warning banner: Real-money risk active
+
+9. Audit Logging
+
+Every live-related event must be logged:
+
+- readiness check
+- blocker detected
+- critical alert acknowledged
+- live mode arm attempt
+- arm success
+- arm failure
+- disarm
+- kill switch activation
+- kill switch reset
+- trade approval generated
+- trade approved
+- trade rejected
+- order submitted
+- order filled
+- order failed
+- stop loss hit
+- take profit hit
+- manual close
+- risk governor block
+- broker disconnect
+- spread rejection
+- duplicate order prevention
+
+Each log should include:
+- timestamp
+- user/session
+- mode
+- symbol
+- decision id
+- risk score
+- confidence score
+- broker response
+- before/after state
+
+10. Final Verification
+
+After building, run:
+
+- /api/live-trading/readiness
+- /api/permission/status
+- /api/risk-governor/status
+- /api/readiness/status
+- /api/broker-readonly/status
+- /api/paper-sessions/preflight
+- CI guard can-place-trades-invariant
+- CI guard paper-autopilot-isolation
+- CI guard live-trading-readiness-lock
+- CI guard emergency-kill-switch
+- CI guard live-order-risk-limits
+
+Expected result right now:
+
+liveTradingEligible: false
+
+Because the user still must:
+- acknowledge the 2 CRITICAL alerts
+- complete controlled paper session #1
+- verify paper session report has no critical failures
+
+11. Do Not Bypass These Rules
+
+Hard rules:
+- Do not enable full live trading.
+- Do not silently clear alerts.
+- Do not remove read-only protections.
+- Do not weaken risk governor.
+- Do not allow live trades without manual approval.
+- Do not allow live trading while critical alerts exist.
+- Do not allow live trading before controlled paper testing passes.
+- Do not fake readiness.
+- Do not let AI directly place live trades without user approval.
+- Do not allow unlimited live trading.
+
+Deliverable:
+Build the live-trading activation infrastructure now, but keep the system locked until readiness is truly passed.

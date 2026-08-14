@@ -1,0 +1,51 @@
+QA/FIX GATE — Audit Log Center + Compliance Evidence Export
+
+Inspect the Audit Log Center and Compliance Evidence Export work from the previous pass.
+
+Do not rebuild unrelated systems. Reuse current code and only repair missing or broken pieces.
+
+Verify:
+
+1. Audit Log Center is admin-only.
+2. Non-admin users cannot access audit center pages.
+3. Non-admin users cannot call admin audit APIs.
+4. Non-admin users cannot export evidence.
+5. Admin can search/filter audit events by event type, severity, user, admin, account mode, symbol, commandId, reservationId, bridgeId, date range, result, and safety reason.
+6. Admin can open audit event detail safely.
+7. Audit events show readable summaries and related entity references.
+8. Audit events do not expose secrets.
+9. Trade command lifecycle creates audit events.
+10. Safety gate blocks create audit events.
+11. Kill switch changes create audit events.
+12. Queue pause/resume creates audit events.
+13. Close-only changes create audit events.
+14. Reconciliation scans/resolutions create audit events.
+15. User approval/allocation/risk changes create audit events.
+16. Ruby help/trading requests create safe audit events.
+17. Ruby voice trade guardrails create safe audit events.
+18. Duplicate callback ignored creates audit event.
+19. Stuck reservation/release creates audit event.
+20. Admin audit views/searches/exports are themselves audited.
+21. Normal user “My Activity,” if added, shows only current user events.
+22. User A cannot see User B activity/audit data.
+23. Evidence export works for selected events or filters.
+24. Export includes timestamp, admin user, filters, event count, masked summaries, and disclaimer.
+25. Export does not include bridge tokens, API keys, account credentials, session secrets, token hashes, raw audio, private prompts, or sensitive bridge payloads.
+26. Export files are protected and not publicly accessible.
+27. No-live-command QA evidence can be exported or viewed.
+28. Ruby explains audit/activity only within the user’s permission level.
+29. requireAdmin output is production-safe.
+30. bridge evidence masking uses the centralized masking chokepoint.
+31. CI/probes cover secret leakage where practical.
+32. No live trade is fired during QA.
+33. arx_live_commands count remains unchanged.
+
+Return:
+- PASS/FAIL table
+- files inspected
+- tests run
+- issues found
+- fixes applied
+- remaining risks
+- confirmation that no live trade was fired
+- confirmation that arx_live_commands count stayed unchanged

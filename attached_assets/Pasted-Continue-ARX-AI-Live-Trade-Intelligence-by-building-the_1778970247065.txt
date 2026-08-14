@@ -1,0 +1,286 @@
+Continue ARX AI Live Trade Intelligence by building the Smart Exit Plan Engine.
+
+Do not rebuild blindly. Inspect the current:
+- Live Trade Intelligence snapshots
+- real-time trade monitor worker
+- Sniper Exit Watchlist
+- trade alert preferences
+- Trade Detail page
+- Open Trades UI
+- MT5 sync-position flow
+- shared-master attribution ledger
+- close review modal
+- partial close / move stop review
+- AI assistant context
+- audit timeline
+
+Goal:
+Every open trade should have a clear AI-generated exit plan based on the user’s trading style, trade timeframe, risk, current P&L, market behavior, and live trade conditions.
+
+Important:
+Do not guarantee maximum profit.
+Do not auto-close trades.
+Do not silently move stops.
+Do not bypass backend guards.
+Do not expose secrets.
+All live actions require explicit confirmation.
+
+PART 1 — Smart Exit Plan
+
+For every open trade, generate an Exit Plan with:
+
+1. Primary exit idea
+2. Conservative exit level
+3. Aggressive exit level
+4. Protect-profit level
+5. Invalidation level
+6. Partial-close suggestion if available
+7. Stop-move suggestion if available
+8. Trailing-stop suggestion if available
+9. Time-based exit warning
+10. What would make the AI change its opinion
+
+Exit plan should answer:
+- Where should I consider closing?
+- Where should I protect profit?
+- Where is the trade invalidated?
+- What level proves continuation?
+- What level suggests fakeout/reversal?
+- When does holding become risky?
+- Should I take partial profit?
+- Should I move stop loss to break-even?
+- Should I trail stop?
+
+PART 2 — Time-Based Sniper Close Logic
+
+Add time horizon support.
+
+Users should be able to choose:
+- scalp: 1–15 minutes
+- short intraday: 15–60 minutes
+- intraday: 1–6 hours
+- swing: multi-day
+- custom hold time
+
+The AI should track:
+- trade age
+- how long the trade has been profitable
+- how long the trade has been stalled
+- how long momentum has weakened
+- whether price has failed to continue within expected time
+- whether the trade is near end of user’s intended hold window
+
+Add alerts:
+- “This trade has stalled longer than your preferred hold time.”
+- “Profit has not expanded after your expected window.”
+- “Momentum is fading near your time-based exit zone.”
+- “Review close: the trade is no longer moving efficiently.”
+
+PART 3 — Trade Efficiency Score
+
+Add a Trade Efficiency Score from 0–100.
+
+Use available data:
+- profit per minute/hour
+- drawdown while open
+- profit giveback
+- time in trade
+- continuation strength
+- volatility risk
+- distance from TP/SL
+- current momentum if candle/scanner data exists
+
+Labels:
+- Efficient winner
+- Healthy hold
+- Slowing down
+- Stalling
+- Profit fading
+- High-risk hold
+- Exit review recommended
+
+PART 4 — Exit Plan UI
+
+On each Trade Detail page, add a section:
+
+“AI Exit Plan”
+
+Show:
+- current status
+- AI label
+- trade efficiency score
+- close urgency score
+- protect-profit level
+- invalidation level
+- continuation confirmation level
+- suggested partial close level
+- suggested trail stop level
+- time-based warning
+- data quality
+
+Action buttons:
+- Review Close
+- Review Partial Close
+- Review Move Stop
+- Set Alert
+- Ask AI Why
+- Hold and Monitor
+
+Every action opens a modal first. No instant execution.
+
+PART 5 — Exit Plan Alerts
+
+Create alerts when:
+- price reaches protect-profit level
+- price breaks invalidation level
+- price confirms continuation
+- trade efficiency score drops below threshold
+- profit giveback exceeds preference
+- trade stalls past expected time window
+- close urgency rises
+- trend strength weakens
+- reversal/fakeout risk increases
+
+Alert examples:
+- “EURUSD reached your protect-profit zone. Consider reviewing stop or close.”
+- “Gold is stalling after 42 minutes. Trade efficiency is dropping.”
+- “Your profit has given back 38% from peak. Sniper exit review recommended.”
+- “Price broke the invalidation level. Review close immediately.”
+
+PART 6 — AI Conversation Upgrade
+
+AI should now answer:
+
+- What is my exit plan?
+- What price should I watch?
+- What would make this trade invalid?
+- Is this trade still efficient?
+- Is it worth holding longer?
+- What should I do if price pulls back?
+- What is my sniper close zone?
+- When should I protect profit?
+- What is the safest exit plan?
+- What is the aggressive exit plan?
+- What is the conservative exit plan?
+- Did this trade stall?
+- Is the trade still moving efficiently?
+
+AI response format:
+1. Current trade status
+2. Exit plan summary
+3. Key levels
+4. Time warning
+5. What would change the plan
+6. Suggested review action
+7. Data quality warning if needed
+
+AI must clearly say when live candles/scanner data are missing.
+
+PART 7 — User Preferences
+
+Add or update user preferences:
+
+- preferred trading style
+- default hold time
+- conservative/balanced/aggressive exit style
+- profit protection sensitivity
+- partial close preference
+- move stop to break-even preference
+- trailing stop preference
+- alert when trade stalls
+- alert when efficiency drops
+- alert when invalidation level breaks
+
+PART 8 — Backend/API
+
+Add or update endpoints:
+
+- GET /api/trades/:id/exit-plan
+- POST /api/trades/:id/exit-plan/recalculate
+- PATCH /api/trades/:id/exit-plan/preferences
+- POST /api/trades/:id/exit-plan/ask-ai
+- POST /api/trades/:id/review-close
+- POST /api/trades/:id/review-partial-close
+- POST /api/trades/:id/review-move-stop
+
+Add table if missing:
+
+trade_exit_plans:
+- id
+- user_id
+- trade_id
+- routing_mode
+- account_type
+- symbol
+- side
+- entry_price
+- current_price
+- protect_profit_level
+- invalidation_level
+- continuation_level
+- conservative_exit_level
+- aggressive_exit_level
+- partial_close_level
+- trail_stop_level
+- trade_efficiency_score
+- close_urgency_score
+- time_warning
+- recommended_action
+- explanation
+- data_quality
+- created_at
+- updated_at
+
+PART 9 — Audit Timeline
+
+Every exit plan update should be logged into the trade timeline:
+
+- exit plan created
+- exit plan recalculated
+- protect-profit alert fired
+- invalidation alert fired
+- efficiency dropped
+- user reviewed close
+- user ignored exit alert
+- user confirmed close
+- user moved stop
+- user partial closed
+- trade closed
+
+PART 10 — Tests
+
+Add or update tests for:
+1. Exit plan is created for user’s own trade.
+2. User cannot access another user’s exit plan.
+3. Shared-master user only sees attributed trade exit plan.
+4. Protect-profit level is generated only from available data.
+5. Missing scanner/candle data is disclosed.
+6. Trade efficiency score updates as P&L/time changes.
+7. Time-based alert fires when trade stalls.
+8. Profit giveback alert fires correctly.
+9. Review Close opens modal, not instant execution.
+10. Live close requires explicit confirmation.
+11. Partial close review does not execute without confirmation.
+12. Move stop review does not execute without confirmation.
+13. Emergency Stop blocks execution actions.
+14. Suspended user cannot close or modify.
+15. AI explains exit plan without guaranteeing profit.
+16. AI does not invent missing market data.
+17. Audit timeline records exit plan events.
+18. Mobile layout works on iPhone Safari.
+19. No secrets are exposed.
+
+Final report:
+Return:
+- PASS or FAIL
+- Smart Exit Plan status
+- Time-Based Sniper Close status
+- Trade Efficiency Score status
+- Exit Plan UI status
+- Exit alerts status
+- AI exit conversation status
+- user preferences status
+- audit timeline status
+- mobile status
+- tests passed
+- remaining blockers

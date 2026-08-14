@@ -1,0 +1,169 @@
+Continue with T003-6 and T003-7 now.
+
+T003-5 is complete:
+- /api/me/account-mode backend resolver exists
+- useTradingMode() hook exists
+- global components migrated
+- typed-phrase UI removed from normal user flow
+- raw diagnostic booleans hidden from normal users
+- typecheck green
+- ci:guards 23/23 PASS
+- test:live-phaseB 20/20 PASS
+- test:demo-arming 18/18 PASS
+- test:demo-verify 13/13 PASS
+- arx_live_commands count remains 0
+- no safety gates weakened
+- no live trades placed
+
+Now finish T003-6 regression tests and T003-7 full QA / architect review.
+
+Do not place trades.
+Do not insert arx_live_commands.
+Do not type operator phrases.
+Do not broaden the narrow env parser.
+Do not weaken safety gates.
+Do not fake balances, positions, allocations, alerts, orders, P/L, mode status, or live readiness.
+Do not expose admin diagnostics to normal users.
+Do not create duplicate mode systems.
+
+Create checkpoint first:
+checkpoint: t003-6-7-regression-tests-and-full-mode-qa
+
+T003-6 — Add regression tests:
+
+1. Env/live mode parser
+- Confirm ARX_LIVE_BROKER_EXECUTION_ENABLED only enables live when value is literal true, case-insensitive and trimmed.
+- Confirm 1, yes, on, empty, missing, false, and whitespace-only do not enable live.
+- Confirm all live pages read the resolver instead of reading env directly.
+
+2. Account-mode precedence matrix
+Test combinations for:
+- live armed + shared-master attached
+- live armed + allocation missing
+- live armed + account shell missing
+- live armed + operator disabled
+- live armed + user frozen
+- live armed + user risk caps missing
+- demo selected
+- paper selected
+- admin previewing user mode
+
+Verify the resolver returns the right currentAccountMode, cleanBlockedReason, and user-safe fields.
+
+3. Non-admin contract
+Verify normal users never receive:
+- master balance
+- master free margin
+- other users
+- backend constants
+- brokerExecutionStatus raw internals
+- provider credentials
+- adminDiagnostics
+- raw safety gate fields
+- raw typed phrases
+
+4. DOM/content checks for live mode
+For LIVE_SHARED mode, assert the following words/phrases do not appear on primary live pages unless inside Settings mode-switch options or admin-only diagnostics:
+- paper trade
+- demo trade
+- simulator only
+- mock
+- live trading disabled
+- MT5 bridge not configured
+- type ENABLE LIVE TRADING
+- QUEUE MICRO LIVE TEST
+- EXECUTE LIVE SHARED
+- canExecuteRealBrokerOrder
+- canSubmitLiveIntent
+- mt5Connected raw boolean labels
+
+5. Page crash regressions
+Add/confirm tests for:
+- /alerts does not crash when alert type/status/severity is missing
+- /broker-reconciliation does not crash when brokerOrders/brokerPositions/mismatches are undefined
+- /live-trading-control does not crash when createdAt is missing/invalid
+- safeArray/safeString/safeDate/safeLabel helpers cover these cases
+
+6. Mode-scoped data tests
+Verify LIVE_SHARED pages do not show DEMO/PAPER/TEST rows for:
+- Live Intent Queue
+- Trading Calendar
+- Open Positions
+- Trade History
+- P/L
+- Alerts
+- Scanner Trades
+- User Account Shell
+
+7. Allocation/user shell tests
+Verify:
+- /my-account uses SHARED_MASTER_MT5 allocation when user is attached
+- assigned allocation appears after admin allocation
+- AI sleeve allocation appears if configured
+- own MT5 bridge is not shown as active for attached shared-master users
+- user account shell updates from zero after real allocation save/refresh
+
+8. Notification/help/status tests
+Verify:
+- /notifications agrees with account-mode resolver
+- /help agrees with account-mode resolver
+- live mode does not show stale mock/no connection state
+- push notification status is separate from live trading status
+
+T003-7 — Full QA / architect review:
+
+Run:
+- typecheck
+- build
+- ci:guards
+- test:live-phaseB
+- test:demo-arming
+- test:demo-verify
+- allocation runtime QA
+- account-mode resolver tests
+- attached-active-case test
+- new T003-6 regression tests
+- route/import graph checks
+- user/admin visibility leak checks
+- arx_live_commands count check
+
+Then manually or through safe browser/runtime QA verify these pages:
+- /my-account
+- /settings
+- /notifications
+- /help
+- /live-ai-assist
+- /trade
+- /live-shared
+- /trading-calendar
+- /live-intent-queue
+- /open-trades
+- /live-chart
+- /market-scanner
+- /alerts
+- /broker-reconciliation
+- /live-trading-control
+- /admin/allocations
+
+For each page verify:
+- uses useTradingMode/account-mode resolver
+- agrees with global header
+- does not show demo/paper/simulator copy in live mode
+- does not show stale test/demo data in live mode
+- does not crash on missing fields
+- normal users do not see admin diagnostics
+- admin can still access diagnostics
+- no live commands are inserted
+- no trades are placed
+- no safety gates are weakened
+
+If a test fails and the cause is clear, fix it directly, retest, and checkpoint again.
+
+Final report only:
+- tests added
+- pages verified
+- bugs fixed
+- remaining pages not migrated, if any
+- arx_live_commands count
+- safety gate status
+- launch readiness status

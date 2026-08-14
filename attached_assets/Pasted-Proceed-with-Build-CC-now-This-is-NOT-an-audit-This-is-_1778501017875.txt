@@ -1,0 +1,270 @@
+Proceed with Build CC now.
+
+This is NOT an audit.
+This is NOT a planning report.
+Implement the code changes.
+
+Build CC = Learning Feedback Engine.
+
+Goal:
+Use the learning payload created by Build BB to update future trade setup scoring. This is the part that closes the loop:
+
+Build AA decides →
+paper trade closes →
+Build BB auto-debriefs →
+Build CC learns from the result →
+future Build AA decisions read the updated edge data.
+
+Important:
+Build CC should NOT place trades.
+Build CC should NOT change live broker logic.
+Build CC should NOT make unsafe automatic trading decisions.
+Build CC should only update scoring intelligence, signal weights, mistake patterns, confidence calibration, and decision edges used by future AA calls.
+
+Core requirement:
+When Build BB produces a learning payload with ready_for_learning: true, Build CC should process it exactly once and update the system’s internal scoring memory.
+
+Learning payload expected from BB:
+
+{
+  trade_id,
+  decision_id,
+  result,
+  pnl,
+  mistake_tags,
+  lesson,
+  confidence_before_trade,
+  risk_score_before_trade,
+  signals_used,
+  debrief_id,
+  ready_for_learning: true
+}
+
+Build CC tasks:
+
+1. Inspect existing scoring / strategy / analytics systems
+Find where:
+- strategy signals are generated
+- setup scoring exists or should exist
+- Build AA reads confidence/risk/signal data
+- Build BB stores learning payloads
+- analytics stores win/loss/P&L performance
+
+Do not duplicate existing systems if they exist.
+Integrate cleanly.
+
+2. Create learning tables if needed
+
+Create append-only learning event storage:
+
+learning_events:
+- id
+- trade_id
+- decision_id
+- debrief_id
+- symbol
+- action
+- result
+- pnl
+- pnl_percent
+- confidence_before_trade
+- risk_score_before_trade
+- signals_used jsonb
+- mistake_tags jsonb
+- lesson
+- learning_summary
+- processed_at
+- created_at
+
+Create edge/scoring memory storage if missing:
+
+strategy_edges:
+- id
+- symbol
+- strategy_name
+- signal_name
+- action
+- sample_count
+- win_count
+- loss_count
+- break_even_count
+- net_pnl
+- avg_pnl
+- confidence_adjustment
+- risk_adjustment
+- edge_score
+- last_result
+- last_trade_id
+- updated_at
+- created_at
+
+Create mistake pattern memory if missing:
+
+mistake_patterns:
+- id
+- tag
+- symbol
+- action
+- count
+- last_trade_id
+- severity_score
+- recommended_guardrail
+- updated_at
+- created_at
+
+3. Build an idempotent learning processor
+
+Create a Build CC service that:
+- accepts a BB learning payload
+- checks if trade_id / debrief_id / decision_id was already processed
+- if already processed, returns existing learning event
+- if not processed, creates a learning event
+- updates strategy edge memory
+- updates mistake pattern memory
+- prepares updated scoring adjustments for future AA decisions
+
+Idempotency rule:
+The same trade/debrief should never update learning twice.
+
+4. Learning logic
+
+For each learning payload:
+
+If result is WIN:
+- increase edge_score slightly for signals that supported the winning decision
+- improve confidence_adjustment modestly
+- reduce risk_adjustment if risk was controlled
+- increase win_count and sample_count
+
+If result is LOSS:
+- decrease edge_score modestly for signals that supported the losing decision
+- add/increase mistake pattern tags
+- increase risk_adjustment if risk was high
+- reduce confidence_adjustment if confidence was high but trade lost
+- increase loss_count and sample_count
+
+If result is BREAK_EVEN:
+- small or neutral update
+- do not overreward or overpunish
+- increase break_even_count and sample_count
+
+If result is CANCELLED:
+- do not update strategy edge strongly
+- log operational lesson only
+- mark as low learning impact
+
+5. Add learning safety rails
+
+Build CC must avoid overfitting.
+
+Rules:
+- One trade can only create a small adjustment.
+- Edge score must have min/max boundaries.
+- Confidence adjustment must have min/max boundaries.
+- Risk adjustment must have min/max boundaries.
+- Small sample sizes should be marked as low confidence.
+- Bad outlier trades should not destroy a strategy by themselves.
+- Never convert learning directly into live trade permission.
+- Never change safetyCore.canPlaceTrades.
+- Never bypass Build AA safety blockers.
+
+6. Wire Build CC into Build BB
+
+After BB creates a learning payload:
+- call the Build CC learning processor
+- only if ready_for_learning === true
+- only after debrief creation succeeds
+- if CC processing fails, BB should still preserve the debrief and log a warning
+- CC errors should not crash the trade-close flow
+
+7. Wire Build CC into Build AA
+
+Build AA should read the current strategy_edges and mistake_patterns when evaluating a trade.
+
+Future AA decision objects should include:
+- learningEdgeSummary
+- edgeScoreUsed
+- confidenceAdjustmentApplied
+- riskAdjustmentApplied
+- knownMistakeWarnings
+- learningSampleSize
+- learningConfidence: "LOW" | "MEDIUM" | "HIGH"
+
+AA must still return HOLD if safety rules fail.
+Learning should influence scoring, not override safety.
+
+8. Add logs
+
+Every CC learning event should log:
+- learning payload received
+- prior edge state
+- result processed
+- adjustments made
+- new edge state
+- mistake tags updated
+- whether sample size is low/medium/high
+- whether learning was skipped due to idempotency
+- whether AA can now read the updated edge
+
+9. Add endpoints or scripts for testing
+
+Create endpoints or scripts to prove Build CC works:
+
+Required endpoints or test utilities:
+- POST /api/learning/process
+- GET /api/learning/events?limit=10
+- GET /api/learning/edges?symbol=...
+- GET /api/learning/mistakes?symbol=...
+- POST /api/learning/demo
+
+Required test scenarios:
+A. Process a WIN learning payload and show edge_score improves.
+B. Process a LOSS learning payload and show edge_score/risk/confidence adjust safely.
+C. Process BREAK_EVEN and show neutral learning.
+D. Process the same payload twice and prove idempotency.
+E. Confirm Build AA reads the updated strategy edge data.
+F. Confirm safety rules still override learning.
+G. Confirm no live trades are placed.
+
+10. Preserve existing behavior
+
+Do not break:
+- Build AA trade decision orchestrator
+- Build BB auto-debrief
+- existing manual debrief
+- paper trading
+- analytics
+- database schema
+- existing frontend routes
+
+Additive changes only unless a small fix is required.
+
+Acceptance criteria:
+- BB learning payloads are processed automatically.
+- Each trade/debrief is learned from only once.
+- Strategy edge memory updates after wins/losses/break-even trades.
+- Mistake patterns update after losses.
+- Build AA reads learning data on future evaluations.
+- Safety rules still dominate.
+- No live trades are placed.
+- The app still typechecks/builds.
+- Raw test outputs prove the loop works.
+
+After implementation, show:
+
+1. Files changed
+2. New files created
+3. Database changes
+4. Where BB calls CC
+5. Where AA reads CC learning memory
+6. Raw test output for WIN payload
+7. Raw test output for LOSS payload
+8. Raw test output for BREAK_EVEN payload
+9. Raw idempotency proof
+10. Sample updated strategy_edges record
+11. Sample mistake_patterns record
+12. Sample AA decision showing learningEdgeSummary
+13. Live-trade isolation proof
+14. Any errors or warnings
+15. Whether Build CC is fully complete or partially complete
+16. Final Build CC score out of 10

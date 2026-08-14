@@ -1,0 +1,57 @@
+Improve the global AI assistant widget behavior and closing animation.
+
+Current problem:
+The AI assistant widget opens, but it does not function efficiently. When the user clicks or taps outside the AI assistant panel, it should close automatically. When it closes, it should animate smoothly instead of disappearing instantly.
+
+Required fixes:
+1. Keep the AI assistant as a global component visible on every authenticated app page.
+2. When the AI assistant panel is open, clicking/tapping outside the panel should close it.
+3. Clicking inside the AI assistant panel should NOT close it.
+4. Pressing the Escape key should also close the AI assistant on desktop.
+5. Add smooth open and close animations.
+6. Do not instantly unmount the widget before the close animation finishes.
+7. Make sure the widget still works properly on mobile.
+
+Behavior:
+- User clicks AI icon → assistant opens with animation.
+- User clicks outside assistant → assistant closes with animation.
+- User clicks the X/close button → assistant closes with animation.
+- User presses Escape → assistant closes with animation.
+- User clicks inside assistant → assistant remains open.
+- AI icon remains visible after the widget closes.
+- Plus button should never cover or interfere with the AI assistant.
+
+Animation requirements:
+Use a clean professional animation:
+- Open: fade in + slide up slightly + scale from 0.96 to 1
+- Close: fade out + slide down slightly + scale from 1 to 0.96
+- Duration: 180ms to 250ms
+- Easing: ease-out for open, ease-in for close
+
+Implementation details:
+Use separate state for mounted/open animation if needed.
+
+Example logic:
+- isAssistantOpen controls whether the assistant should be visible.
+- isClosing controls the close animation.
+- When closing:
+  1. Set isClosing = true
+  2. Wait for animation duration
+  3. Set isAssistantOpen = false
+  4. Set isClosing = false
+
+Click outside logic:
+- Add a ref to the AI assistant panel.
+- Add a document-level pointerdown or mousedown listener only when the assistant is open.
+- If the click target is outside the panel and outside the AI floating button, close the assistant.
+- Clean up the event listener when the assistant closes or component unmounts.
+
+Acceptance test:
+- AI assistant opens smoothly.
+- AI assistant closes smoothly when clicking outside.
+- AI assistant closes smoothly when clicking X.
+- AI assistant closes with Escape key.
+- Clicking inside the AI chat panel does not close it.
+- Closing animation fully plays before the panel disappears.
+- Works on dashboard, trade room, journal, risk manager, calendar, settings, MT5 bridge, and all main app pages.
+- No overlap with plus button, bottom nav, help bar, cards, or menus.

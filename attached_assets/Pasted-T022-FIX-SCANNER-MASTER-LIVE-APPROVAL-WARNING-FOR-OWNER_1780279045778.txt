@@ -1,0 +1,187 @@
+T022 — FIX SCANNER MASTER-LIVE APPROVAL WARNING FOR OWNER/ADMIN + REMOVE DEMO COPY
+
+Current issue:
+On the Scanner page, the owner/admin sees this warning:
+
+“Master live trading requires admin approval.”
+“You can still browse signals and use demo mode. Contact an administrator to request approval for master live trading.”
+
+This is wrong for the owner/admin account after T019.
+
+Current expected state:
+
+1. Owner/admin is already approved/armed for LIVE.
+2. Owner Live Control Mode is ON.
+3. Owner/admin app-added restrictions are governed by Admin Risk/Governance.
+4. Scanner should not show “requires admin approval” to the owner/admin.
+5. Scanner should not mention Demo mode in the active LIVE product flow.
+6. If the account is live-ready, Scanner should show a live-ready status, not an approval warning.
+
+This task is only for this Scanner approval-warning bug.
+Do not change live execution.
+Do not change Governance behavior unless the Scanner is reading the wrong Governance/permission source.
+Do not change order placement logic.
+Do not use Demo.
+Do not use Paper.
+Do not place a live trade in this task.
+Do not fake live readiness.
+
+Primary goal:
+Make Scanner read the correct effective live authorization state and display the correct owner/admin LIVE status.
+
+PART 1 — Find source of warning
+
+Locate the component and logic that renders:
+
+1. “Master live trading requires admin approval.”
+2. “You can still browse signals and use demo mode.”
+3. “Contact an administrator to request approval for master live trading.”
+
+Identify which flags it uses, including any of:
+
+1. masterLiveApproved
+2. scannerLiveEnabled
+3. liveApproved
+4. liveArmed
+5. accountMode
+6. sharedLiveMode
+7. user role
+8. isOwner
+9. isAdmin
+10. ownerLiveControlMode
+11. effectiveTradingGovernance
+12. old demo/paper mode flags
+13. stale query/cache value
+
+Report the exact source file and condition.
+
+PART 2 — Replace stale permission logic with effective live state
+
+Scanner should use the same effective live authorization model used by backend/live-readiness:
+
+Required effective state checks:
+
+1. authenticated user
+2. owner/admin or live-approved user
+3. LIVE / LIVE_SHARED account mode
+4. Owner Live Control Mode if owner/admin
+5. effectiveTradingGovernance
+6. live-readiness summary
+7. no Paper/Demo active flow
+
+For owner/admin:
+If owner/admin is approved and Owner Live Control Mode is ON, the warning must not show.
+
+For normal non-approved users:
+A clean request-access message may show, but it must not say “use demo mode” if Demo is not part of the active product flow.
+
+PART 3 — Correct user-facing copy
+
+Remove Demo/Paper wording from this Scanner warning.
+
+Replace old warning with role-aware messages.
+
+Owner/admin live-ready:
+Show one of:
+
+1. “Live trading ready.”
+2. “Owner Live Control Mode active.”
+3. “Live via Shared Master MT5.”
+
+Owner/admin not ready:
+Show exact clean reason:
+
+1. “MT5 bridge unavailable.”
+2. “EA heartbeat stale.”
+3. “Account is frozen.”
+4. “Kill switch is active.”
+5. “Broker account is not ready.”
+6. “Governance setting is blocking this action: [setting].”
+
+Normal user not approved:
+Show:
+“Live trading requires approval. Contact an administrator to request access.”
+
+Do not mention:
+
+1. Demo mode
+2. Paper Trading
+3. backend route names
+4. internal flags
+5. stack traces
+
+PART 4 — Fix conflicting status
+
+The screenshot shows both:
+
+1. approval warning, and
+2. “Tradable via MT5” on EURUSD.
+
+This is confusing.
+
+Scanner should distinguish:
+
+1. Symbol is tradable via MT5.
+2. User is authorized to trade live.
+3. Live bridge is ready.
+4. Governance allows the action.
+
+If symbol is tradable and owner/admin is authorized:
+Do not show approval warning.
+
+If symbol is tradable but user is not authorized:
+Show:
+“Symbol tradable. Live access not approved for this user.”
+
+If user is authorized but symbol is not tradable:
+Show:
+“Live access approved. Symbol not currently tradable through MT5.”
+
+PART 5 — Cache/refetch fix
+
+Check whether the warning persists because Scanner is using stale frontend cache.
+
+Fix as needed:
+
+1. invalidate/refetch live authorization query after login
+2. invalidate/refetch after Governance changes
+3. invalidate/refetch after account mode changes
+4. use the same source as admin diagnostics
+5. avoid old query key collisions
+6. avoid stale localStorage/sessionStorage approval state
+
+PART 6 — Tests
+
+Run:
+
+1. pnpm run health:workflows
+2. typecheck
+3. ci:guards
+4. Scanner owner/admin live-ready UI test
+5. Scanner normal-user not-approved UI test
+6. Scanner symbol-tradable/user-not-authorized UI test
+7. Scanner user-authorized/symbol-not-tradable UI test
+8. no Demo/Paper copy test
+9. route containment test
+
+PART 7 — Final report required
+
+Final report must include:
+
+1. file/component where warning was rendered
+2. old condition
+3. new condition
+4. source of truth now used
+5. owner/admin Scanner result
+6. normal user Scanner result
+7. confirmation Demo/Paper wording removed
+8. confirmation live execution logic unchanged
+9. confirmation Governance behavior unchanged except stale read fixed if needed
+10. health:workflows result
+11. typecheck result
+12. ci:guards result
+13. files changed
+14. remaining risks
+
+Completion standard:
+This task is complete only when owner/admin no longer sees the false “master live trading requires admin approval” warning, Scanner uses effective live authorization/Governance state, and Demo/Paper wording is removed from the active Scanner flow.

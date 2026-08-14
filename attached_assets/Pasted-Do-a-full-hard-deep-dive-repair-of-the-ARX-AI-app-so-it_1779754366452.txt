@@ -1,0 +1,221 @@
+Do a full hard deep-dive repair of the ARX AI app so it is launch-ready.
+
+You have permission to do a hard fix, but only fix what is actually broken. Do not rebuild the app from scratch. Do not create duplicate systems. Do not remove working features. Do not hide real safety blockers. Do not fake live readiness, fake balances, fake API feeds, fake historical data, or fake broker execution.
+
+Primary goal:
+The app must feel ready to launch and operate cleanly in live mode, with accurate UI, working APIs, clean scanner data, Ruby functioning properly, MT5/Deriv/provider routing working, and no false error spam.
+
+Important repair rule:
+If fixing something breaks another part of the app, do not stop and send the broken result back. Figure out a safer repair path, rollback that specific change if needed, and fix it another way. Only report issues that genuinely require outside credentials, platform access, or human action.
+
+Rollback/checkpoint rule:
+Before starting, save a rollback checkpoint.
+
+Use the best available method:
+1. If git is available:
+   - Check git status.
+   - Create a pre-repair commit/checkpoint named:
+     checkpoint: pre-launch-hard-deep-dive
+2. If git is not available:
+   - Use Replit checkpoint/history if available.
+   - Otherwise create a timestamped backup copy of the changed files before modifying them.
+
+After each meaningful fix, save another checkpoint/commit with a clear message, such as:
+- fix: ruby response speed and stale tts
+- fix: provider health and scanner history
+- fix: live ui status resolver
+- fix: mt5 balance sync
+- fix: deriv volatility feed routing
+
+Do not group every change into one huge untraceable edit.
+
+Deep dive scope:
+Audit and repair the entire ARX AI app, especially:
+
+1. App launch/build/runtime errors
+- Run install/build/typecheck/lint/tests using the existing project scripts.
+- Fix clear errors directly.
+- Do not leave obvious build/runtime errors unresolved.
+- Confirm the app boots cleanly.
+
+2. Live trading UI accuracy
+- The app is live/armed and should not look like a broken debug/testing screen.
+- Remove false, stale, misleading, or internal error banners from normal user views.
+- Only show failures when they are actually true.
+- Normal users should not see raw backend constants, debug flags, endpoint names, provider names, secret names, internal validation labels, or raw errors.
+- Admin can see diagnostics only inside admin-only expandable panels.
+- Keep all real safety gates, kill switches, approvals, risk caps, and validations intact.
+
+3. Paper/demo/live separation
+- Paper trading must not block live trading readiness.
+- Demo trading must not poison live state.
+- Live shared mode must use its own readiness resolver.
+- Paper errors should only appear in paper mode or admin diagnostics.
+- Live blockers must only come from actual live gates.
+
+4. MT5 bridge and account balance
+- Verify MT5/EA heartbeat.
+- Verify EA version readiness if available.
+- Verify account sync/balance/equity/free margin.
+- Fix the app not showing the MT5 balance when money exists in MT5.
+- Do not show paper/demo balance as live balance.
+- In master/shared bridge mode:
+  - Admin should see real master MT5 broker balance/equity/free margin.
+  - Normal users should see their assigned allocation/trading capacity, not misleading full master account balance unless intentionally allowed.
+- Do not overwrite real balance with zero because of stale/failed refresh.
+- Show last updated time and clean stale warning if needed.
+
+5. API/provider health
+- Inventory every configured API/provider in Replit secrets/env/config without exposing values.
+- Identify which are configured, enabled, used, unused, failing, degraded, or missing.
+- Add/repair admin-only Provider/API Health panel.
+- No secrets/tokens/keys should ever appear in logs, UI, console output, or normal user views.
+- Show sanitized provider status only.
+
+6. Scanner historical data
+- Scanner historical data is currently not showing.
+- Fix historical candles/OHLC routing.
+- Scanner must not rely on only TwelveData.
+- Use the unified Market Data Router.
+- For tradable MT5 symbols, prefer MT5/broker feed when available.
+- For Deriv/Volatility/Synthetic symbols, use Deriv WebSocket/ticks_history or MT5 broker feed, not TwelveData.
+- Only show “No historical data” after all valid providers fail.
+- Do not generate fake candles or placeholder prices.
+
+7. Deriv/Volatility feed
+- Verify Deriv secrets exist without printing values:
+  - DERIV_ENABLED
+  - DERIV_APP_ID
+  - DERIV_API_TOKEN
+  - DERIV_WS_URL
+- Test Deriv WebSocket connection.
+- Pull active_symbols.
+- Map aliases like:
+  - V75
+  - Volatility 75
+  - Volatility 75 1s
+  - V25 1s
+  - V10
+  - V50
+  - V100
+- Use Deriv ticks for live data and ticks_history for candles/history.
+- Do not route Deriv synthetic symbols to TwelveData first.
+
+8. Market Data Router
+- Create or repair one unified router used by:
+  - scanner
+  - charts
+  - Ruby
+  - trade ticket
+  - watchlist
+  - market search
+  - backtest/historical checks
+- Route by asset type and actual provider support.
+- Add fallback logic.
+- Do not show “no feed” just because one provider failed.
+- Admin diagnostics should show selected provider/fallback chain.
+- Normal users should see only clean statuses.
+
+9. Ruby assistant
+- Ruby already exists. Do not rebuild Ruby.
+- Fix slow response time.
+- Fix delayed voice playback.
+- Fix stale audio playing minutes later.
+- Fix selected voice not matching spoken voice.
+- Fix Ruby pasting entire research dumps.
+- Ruby should respond quickly, type naturally, and summarize research.
+- TTS must not block text response.
+- TTS should read only the concise final answer, not raw research.
+- Cancel stale audio if the user sends a new message.
+- Tie TTS jobs to message IDs.
+- Normal users should never see raw API payloads, JSON, backend logs, internal scoring, or research dumps.
+
+10. User/admin visibility
+- Normal users should see clean launch-ready UI.
+- Admins should have diagnostics, health checks, commands, approvals, routing, and provider panels.
+- Do not expose dangerous/internal controls to regular users.
+- Do not expose backend internals to normal users.
+
+11. Live command safety
+- Do not auto-submit operator phrases.
+- Do not type or bypass phrases like:
+  - QUEUE MICRO LIVE TEST
+  - EXECUTE LIVE SHARED
+  - ROLL BACK LIVE SHARED TRADING
+- The human operator must type those manually.
+- Keep execution-time revalidation through the live safety pipeline.
+- Stale commands must not execute.
+- Admin must be able to cancel stale queued commands.
+
+12. Mobile UI and launch polish
+- Fix crowded false-error UI.
+- Fix overlapping banners/cards.
+- Fix stale warning badges.
+- Fix scanner/history blank states.
+- Fix dashboard/live status consistency.
+- Fix bottom nav/menu layout issues if present.
+- Keep UI clean, professional, and live-ready.
+
+Repair process:
+1. Start with a checkpoint.
+2. Run full project scan.
+3. Run build/typecheck/lint/tests where available.
+4. Inspect runtime console/server logs.
+5. Create a prioritized bug list internally.
+6. Fix one category at a time.
+7. After each meaningful fix:
+   - run targeted tests
+   - verify nothing else broke
+   - save checkpoint/commit
+8. If a fix creates regressions:
+   - rollback that specific fix
+   - repair using another approach
+   - do not leave the app worse
+9. Do not stop at the first error if it is clearly fixable.
+10. Only ask for help if the problem requires missing credentials, third-party dashboard action, or human-only confirmation.
+
+Required final QA:
+Run full QA across:
+- app boot
+- login
+- admin dashboard
+- user dashboard
+- live status UI
+- paper/demo/live separation
+- MT5 bridge status
+- MT5 balance/account sync
+- provider/API health
+- Deriv volatility feed
+- scanner historical data
+- market search
+- charts
+- Ruby text response
+- Ruby voice/TTS
+- selected Ruby voice
+- trade ticket
+- command queue
+- admin user approval
+- mobile layout
+
+Acceptance criteria:
+1. App builds and launches cleanly.
+2. Normal users do not see false/internal errors.
+3. Live mode UI looks launch-ready when live gates pass.
+4. Real blockers still show accurately and cleanly.
+5. Paper mode does not block live readiness.
+6. MT5 balance/account data reflects correctly.
+7. Scanner historical data loads or shows a real clean reason.
+8. API Health shows which providers work/fail without exposing secrets.
+9. Deriv/Volatility symbols are not wrongly routed to TwelveData.
+10. Ruby responds faster, types naturally, and does not dump research.
+11. Ruby voice does not play minutes late.
+12. No duplicate systems were created.
+13. No safety gates were bypassed.
+14. Every major fix has a rollback checkpoint/commit.
+
+Final response should include:
+- What was checked
+- What was fixed
+- What still requires outside action, only if truly necessary
+- Which checkpoints/commits were created
+- Any remaining risks before launch

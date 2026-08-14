@@ -1,0 +1,394 @@
+Build an invite-key registration shield for ARX AI so the app stays private/in-house for now.
+
+Goal:
+Users may download ARX or visit the app site, but they cannot create an account unless they have a valid one-time registration key. Registration keys must be generated and managed by admins only.
+
+Important:
+Preserve all existing ARX wiring, auth routes, admin permissions, live-trading safety logic, Ruby logic, MT5 bridge logic, scanner logic, user roles, and existing onboarding flows. Do not break existing users. This is a registration gate only.
+
+Build this as a full backend + frontend feature.
+
+========================
+1. DATABASE / SCHEMA
+========================
+
+Create a new table:
+
+registration_keys
+
+Fields:
+- id uuid primary key
+- key_hash text unique not null
+- key_prefix text not null
+- created_by_user_id uuid nullable references users(id)
+- assigned_email text nullable
+- role_grant text nullable default 'user'
+- status text not null default 'unused'
+  Allowed values:
+  - unused
+  - used
+  - revoked
+  - expired
+- used_by_user_id uuid nullable references users(id)
+- used_at timestamp nullable
+- expires_at timestamp nullable
+- note text nullable
+- created_at timestamp default now()
+- updated_at timestamp default now()
+
+Rules:
+- Never store raw registration keys in the database.
+- Store only a secure hash.
+- Show only the prefix in admin lists, for example ARX-9K4M-****.
+- Each key can be used only once.
+- A key can optionally be assigned to one email.
+- A key can optionally expire.
+- Revoked keys cannot be used.
+- Used keys cannot be reused.
+- Expired keys cannot be used.
+
+Add indexes:
+- key_hash unique
+- status
+- assigned_email
+- created_at
+- expires_at
+
+Add migration safely.
+
+========================
+2. KEY FORMAT
+========================
+
+Generate keys in this format:
+
+ARX-XXXX-XXXX-XXXX
+
+Use cryptographically secure random generation.
+
+Example:
+ARX-7F3K-Q9MA-Z2LP
+
+Normalize input:
+- uppercase
+- trim spaces
+- allow users to paste with or without extra spaces
+- preserve hyphens or normalize internally
+
+Hashing:
+- Use a server-side secret pepper from env:
+  REGISTRATION_KEY_PEPPER
+- Hash format:
+  sha256(normalized_key + REGISTRATION_KEY_PEPPER)
+
+If REGISTRATION_KEY_PEPPER is missing:
+- backend should refuse to generate or validate keys
+- show a clear server-side error
+- do not silently downgrade security
+
+========================
+3. BACKEND API
+========================
+
+Add admin-only endpoints.
+
+A. Generate registration keys
+
+POST /api/admin/registration-keys
+
+Body:
+{
+  "count": 1,
+  "assignedEmail": optional string,
+  "roleGrant": "user" | "investor" | "admin" optional,
+  "expiresAt": optional ISO date,
+  "note": optional string
+}
+
+Rules:
+- Admin only.
+- Count defaults to 1.
+- Max count per request: 100.
+- Return raw keys only once in the response.
+- Also return masked display values.
+- Do not log raw keys.
+- Do not store raw keys.
+
+Response example:
+{
+  "keys": [
+    {
+      "rawKey": "ARX-7F3K-Q9MA-Z2LP",
+      "displayKey": "ARX-7F3K-****",
+      "status": "unused",
+      "assignedEmail": null,
+      "roleGrant": "user",
+      "expiresAt": null
+    }
+  ]
+}
+
+B. List registration keys
+
+GET /api/admin/registration-keys
+
+Admin only.
+
+Support filters:
+- status
+- assignedEmail
+- createdBy
+- search
+- limit
+- offset
+
+Return:
+- id
+- displayKey / keyPrefix
+- status
+- assignedEmail
+- roleGrant
+- usedByUserId
+- usedByEmail if available
+- usedAt
+- expiresAt
+- note
+- createdAt
+- createdByUserId
+
+Never return raw key or key hash.
+
+C. Revoke registration key
+
+PATCH /api/admin/registration-keys/:id/revoke
+
+Admin only.
+
+Rules:
+- Can revoke only unused keys.
+- Used keys remain used.
+- Expired keys remain expired.
+- Return updated key summary.
+
+D. Optional: regenerate is not allowed
+
+Do not allow raw key recovery or regeneration from an existing row. If admin loses the raw key, they must create a new key.
+
+========================
+4. REGISTRATION FLOW
+========================
+
+Modify signup/register endpoint so registration requires:
+
+- email
+- password or existing auth fields
+- registrationKey
+
+Before creating the user:
+1. Normalize the provided registration key.
+2. Hash it with REGISTRATION_KEY_PEPPER.
+3. Find matching registration_keys row.
+4. Validate:
+   - exists
+   - status is unused
+   - not expired
+   - not revoked
+   - if assigned_email is set, it must match signup email case-insensitively
+5. Create the user in a transaction.
+6. Mark key as used in the same transaction:
+   - status = used
+   - used_by_user_id = new user id
+   - used_at = now()
+7. Apply role_grant if present, but do not allow privilege escalation unless the key was created by an existing admin.
+8. Return normal signup success response.
+
+Critical:
+- This must be transactional.
+- Two users cannot race and use the same key.
+- Use row locking or an atomic update where status = unused.
+- If key usage fails, do not leave a created user orphaned.
+- If user creation fails, do not mark key used.
+
+Error messages:
+- Invalid key: “This registration key is invalid.”
+- Used key: “This registration key has already been used.”
+- Revoked key: “This registration key has been revoked.”
+- Expired key: “This registration key has expired.”
+- Email mismatch: “This registration key is assigned to a different email.”
+
+Do not leak whether a specific key exists beyond these safe states unless the matched key is found after hashing.
+
+========================
+5. FRONTEND REGISTRATION SHIELD
+========================
+
+Update public registration page.
+
+Add required field:
+
+Registration Key
+
+Placeholder:
+ARX-XXXX-XXXX-XXXX
+
+Helper text:
+“ARX is private right now. Enter your one-time access key to register.”
+
+Behavior:
+- User cannot submit without a key.
+- Auto-uppercase input.
+- Format while typing if reasonable.
+- Show clear validation errors from backend.
+- Do not expose admin-only information.
+
+If app currently has a public “Create Account” button:
+- Keep it visible, but registration form must require the key.
+- Do not let any alternate signup path bypass the key.
+- Check email/password signup, OAuth signup, invite signup, and any test/dev signup route.
+- If OAuth exists, make OAuth registration require key before first account creation.
+
+Existing users:
+- Existing login must not require a key.
+- Only new account creation requires key.
+
+========================
+6. ADMIN UI
+========================
+
+Add an Admin page/section:
+
+Admin → Registration Keys
+
+Features:
+- Generate key button
+- Generate multiple keys
+- Optional assigned email
+- Optional role grant
+- Optional expiration date
+- Optional internal note
+- List all keys
+- Filter by status: unused, used, revoked, expired
+- Copy raw generated key immediately after creation
+- Show warning: “Raw keys are only shown once. Save them now.”
+- Revoke unused keys
+- Show who used a key and when
+- Show masked key only after creation screen is dismissed
+
+Admin UI table columns:
+- Key
+- Status
+- Assigned email
+- Role
+- Used by
+- Used at
+- Expires
+- Note
+- Created
+- Actions
+
+Actions:
+- Copy raw key only from the immediate generation result
+- Revoke if unused
+- No delete needed unless already supported by admin patterns
+
+Use existing ARX admin styling and permission guards.
+
+========================
+7. SECURITY REQUIREMENTS
+========================
+
+Do not store raw keys.
+Do not log raw keys.
+Do not expose key hashes.
+Do not expose raw generated keys after the initial generation response.
+Do not allow non-admin users to call key generation/list/revoke endpoints.
+Do not allow frontend-only protection. Backend must enforce key requirement.
+Do not allow direct API registration without a key.
+Do not allow race-condition double use.
+Do not break existing users.
+Do not block existing users from logging in.
+
+Add rate limiting to registration key validation/signup:
+- Limit repeated failed key attempts by IP/email.
+- Return safe generic errors where needed.
+
+Add audit log entries if audit logging exists:
+- registration_key.created
+- registration_key.used
+- registration_key.revoked
+- registration_key.failed_attempt
+
+========================
+8. ENVIRONMENT
+========================
+
+Add required env var:
+
+REGISTRATION_KEY_PEPPER
+
+Add startup validation:
+- Production should fail closed if missing.
+- Development can show a clear setup message, but should not allow key generation/validation without it.
+
+Update .env.example:
+REGISTRATION_KEY_PEPPER=replace-with-long-random-secret
+
+Do not commit real secrets.
+
+========================
+9. TESTS
+========================
+
+Add backend tests:
+
+1. Admin can generate one key.
+2. Admin can generate multiple keys.
+3. Non-admin cannot generate keys.
+4. Raw key is returned only at creation.
+5. Raw key is never stored.
+6. Valid unused key allows signup.
+7. Used key cannot be reused.
+8. Revoked key cannot be used.
+9. Expired key cannot be used.
+10. Assigned-email key only works for that email.
+11. Existing users can still log in without key.
+12. Registration without key is rejected.
+13. Invalid key is rejected.
+14. Concurrent signup attempts with same key result in only one successful user.
+15. Role grant is applied correctly.
+16. Admin list never returns raw keys or hashes.
+17. Missing REGISTRATION_KEY_PEPPER fails closed.
+
+Add frontend tests:
+- Registration form requires key.
+- Backend error shows under key field.
+- Admin can generate and see raw key once.
+- Admin key table shows masked keys only.
+- Revoke button appears only for unused keys.
+
+========================
+10. ACCEPTANCE CRITERIA
+========================
+
+The feature is complete only when:
+
+- A brand-new visitor cannot register without a valid ARX key.
+- A valid ARX key can create exactly one account.
+- The same key cannot be reused.
+- Admin can generate keys from the admin panel.
+- Admin can revoke unused keys.
+- Admin can see key status and usage history.
+- Existing users can still log in normally.
+- No raw key is stored, logged, or returned after generation.
+- All alternate signup paths are protected.
+- Tests pass.
+- Existing ARX trading, Ruby, MT5 bridge, scanner, dashboard, and admin wiring remain intact.
+
+After implementation, report:
+1. Files changed.
+2. Migration name.
+3. API endpoints added.
+4. Screens added/changed.
+5. Tests added.
+6. Any existing signup bypasses found and closed.
+7. Verification results.

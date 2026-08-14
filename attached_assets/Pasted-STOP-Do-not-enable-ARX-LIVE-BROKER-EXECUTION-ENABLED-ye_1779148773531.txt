@@ -1,0 +1,86 @@
+STOP. Do not enable ARX_LIVE_BROKER_EXECUTION_ENABLED yet.
+
+The MT5 EA screen says v1.27 is ready for LIVE execution, but the ARX server readiness check says the latest stored heartbeat is mode=MOCK and lacks v1.27 live fields.
+
+Fix the live heartbeat / bridge binding mismatch first.
+
+Tasks:
+
+1. Inspect the latest /api/mt5/heartbeat records received by the server.
+   Show:
+   - received_at
+   - bridge_connection_id
+   - user_id
+   - account_id
+   - mt5 account number
+   - broker/server
+   - EA version
+   - AccountType / mode
+   - ReadOnlyMode
+   - EnableDemoExecution
+   - EnableLiveExecution
+   - MaxLiveLot
+   - terminalConnected
+   - algoTradingAllowed
+   - token accepted/rejected
+   - environment/base URL receiving the heartbeat
+
+2. Confirm whether the real EA v1.27 heartbeat from my MT5 VPS is reaching this server.
+   If not, show exactly why:
+   - wrong URL
+   - wrong token
+   - stale bridge
+   - old EA
+   - heartbeat rejected
+   - heartbeat accepted but not persisted
+   - UI reading mock bridge instead of real bridge
+
+3. Disable MOCK heartbeat from satisfying any live readiness check.
+   Live readiness must only use a real MT5 heartbeat.
+
+4. Normalize AccountType:
+   Treat REAL and LIVE as equivalent for live readiness.
+   Treat DEMO only as demo.
+   Do not allow MOCK as live.
+
+5. Make sure v1.27 heartbeat fields are persisted into the live bridge record:
+   - eaVersion
+   - accountType
+   - readOnlyMode
+   - enableLiveExecution
+   - maxLiveLot
+   - terminalConnected
+   - algoTradingAllowed
+   - lastHeartbeatAt
+
+6. Add a “Live EA Heartbeat Debug” card on /live-trading showing:
+   - latest real heartbeat time
+   - bridge id
+   - MT5 account
+   - broker/server
+   - EA version
+   - account type
+   - ReadOnlyMode
+   - EnableLiveExecution
+   - MaxLiveLot
+   - terminal connected
+   - algo trading allowed
+   - whether heartbeat came from REAL MT5 or MOCK
+
+7. Add a “Copy Live EA Inputs” section showing the exact server base URL and bridge token the EA should use.
+   Do not expose the full token by default; allow copy button only.
+
+8. If the current live page is reading bridge 231/old mock/stale bridge, change selection logic to use the freshest real v1.27 live-capable heartbeat for the authenticated user/account.
+
+9. Do not release the kill switch.
+10. Do not enable the global master switch.
+11. Do not place a live order.
+
+Acceptance proof:
+- ARX Live Trading page shows real EA v1.27 heartbeat, not MOCK.
+- AccountType REAL is accepted as LIVE.
+- ReadOnlyMode=false is visible.
+- EnableLiveExecution=true is visible.
+- MaxLiveLot=0.01 is visible.
+- The real bridge id matches the MT5 EA heartbeat.
+- The only remaining blockers are app arming/admin/global/master-switch related, not heartbeat/mock/stale bridge.

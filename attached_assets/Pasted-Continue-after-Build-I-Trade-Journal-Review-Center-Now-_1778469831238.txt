@@ -1,0 +1,167 @@
+Continue after Build I — Trade Journal & Review Center.
+
+Now begin Build J — Weekly Performance Review & AI Improvement Plan.
+
+Goal:
+Create an automatic weekly review system that summarizes trader performance, identifies patterns, and gives the user a focused improvement plan for the next week.
+
+Tasks:
+
+1. Audit current review data
+Find:
+- trade journal entries
+- trader scores
+- trade feedback reports
+- AI coach notes
+- replay scores
+- strategy performance
+- market intelligence reports
+- live trade history
+
+2. Add weekly review models
+
+Create safe migrations for:
+
+weekly_performance_reviews:
+- id
+- user_id
+- week_start
+- week_end
+- total_trades
+- winning_trades
+- losing_trades
+- net_profit_loss
+- win_rate
+- average_rr
+- best_trade_id
+- worst_trade_id
+- best_strategy
+- worst_strategy
+- best_session
+- worst_session
+- strongest_score_area
+- weakest_score_area
+- biggest_mistake_pattern
+- biggest_strength_pattern
+- ai_summary
+- next_week_focus
+- created_at
+
+weekly_improvement_goals:
+- id
+- user_id
+- weekly_review_id
+- goal_title
+- goal_description
+- target_metric
+- starting_value
+- target_value
+- status
+- created_at
+- updated_at
+
+3. Build Weekly Review Service
+
+The service should calculate:
+
+- weekly P/L
+- win rate
+- average R:R
+- best/worst trade
+- best/worst strategy
+- best/worst trading session
+- most common mistake tag
+- most common strength tag
+- discipline score trend
+- execution score trend
+- emotional control trend
+- consistency trend
+- replay practice trend
+- journal behavior trend
+
+4. Generate AI Weekly Summary
+
+The AI should explain:
+
+- what improved
+- what got worse
+- what caused most losses
+- what created most wins
+- what behavior repeated
+- what market conditions helped or hurt
+- what strategy should be used more
+- what strategy should be reduced
+- one main focus for next week
+
+Tone:
+- professional
+- direct
+- calm
+- no hype
+- no guaranteed profits
+
+5. Add weekly goals
+
+Create 1–3 improvement goals each week.
+
+Examples:
+- “Wait for confirmation before entering.”
+- “Limit trades to 3 per day.”
+- “Only take setups with 2:1 R:R or better.”
+- “Avoid trading after 2 consecutive losses.”
+- “Complete 3 replay drills before live trading.”
+
+6. API routes
+
+Create:
+- GET weekly performance reviews
+- GET latest weekly review
+- POST generate weekly review
+- GET weekly improvement goals
+- PATCH update weekly goal status
+- GET weekly score trends
+
+7. Frontend components
+
+Create:
+- Weekly Review Page
+- Weekly Performance Summary Card
+- Best/Worst Trade Cards
+- Score Trend Cards
+- Mistake Pattern Card
+- Strength Pattern Card
+- AI Weekly Summary Card
+- Next Week Improvement Plan
+- Weekly Goal Tracker
+
+8. Dashboard integration
+
+Add a small card to dashboard:
+
+“Weekly Focus”
+Shows:
+- current goal
+- progress
+- main warning
+- next recommended drill
+
+9. Testing
+
+Test:
+- weekly review generation
+- weekly goal creation
+- score trend calculations
+- AI summary generation
+- dashboard weekly focus card
+- mobile responsiveness
+- no duplicate review creation for same week unless updating
+
+Final output required:
+
+1. Files changed
+2. Tables/models added
+3. API routes added
+4. Frontend components added
+5. How weekly review connects to journal, scoring, strategy, replay, and AI coach
+6. Errors or limitations
+7. Recommended next build

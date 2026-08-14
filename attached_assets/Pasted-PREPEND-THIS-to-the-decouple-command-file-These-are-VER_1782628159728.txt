@@ -1,0 +1,47 @@
+PREPEND THIS to the decouple command file. These are VERIFIED audit findings from a static read of artifacts/travel-buddy. They resolve Phase 1's audit — the agent should CONFIRM them but they are already mapped. The extraction is LOW-RISK: this app is nearly standalone already.
+
+═══════════════════════════════════════════════════════════════════
+VERIFIED: external dependencies are minimal (audit already done)
+═══════════════════════════════════════════════════════════════════
+
+FINDING 1 — Cross-boundary imports are MOSTLY FALSE ALARMS.
+The many `../../` imports in src/components/** resolve to paths INSIDE the app:
+  ../../theme/tokens      → src/theme/tokens.ts        (inside app)
+  ../../services/...      → src/services/...           (inside app)
+  ../../hooks/...         → src/hooks/...              (inside app)
+  ../../context/...       → src/context/...            (inside app)
+  ../../lib/...           → src/lib/...                (inside app)
+  ../lib/stampMotif       → src/lib/stampMotif         (inside app)
+These are intra-app relative paths, NOT monorepo escapes. They move with the app, zero work. Do NOT treat them as external dependencies.
+
+FINDING 2 — Only ONE @workspace/* code dependency, and it is DEAD.
+package.json declares: "@workspace/api-client-react": "workspace:*"
+BUT it is imported ZERO times anywhere in src/ or app/ (verified: 0 usages).
+ACTION: DELETE this line from package.json. It is unused dead weight. Nothing imports it, nothing breaks. Do NOT vendor or recreate it — just remove it. (Confirm zero usages before deleting.)
+
+FINDING 3 — Two @workspace/scripts dev scripts (not runtime).
+package.json scripts reference @workspace/scripts:
+  "routes:guard": "pnpm --filter @workspace/scripts run routes:guard"
+  "routes:self-heal": "pnpm --filter @workspace/scripts run routes:self-heal"
+These are dev tooling, not app runtime. ACTION: remove them from the standalone package.json (or, if the owner wants route-guarding, copy the @workspace/scripts logic into a local scripts/ folder — but default to removal; they are not needed to build or run).
+
+FINDING 4 — Four catalog: deps to pin to concrete versions.
+In artifacts/travel-buddy/package.json these use "catalog:" and must be pinned to the root catalog values (from pnpm-workspace.yaml catalog, verified):
+  "@tanstack/react-query": "catalog:"  →  "^5.80.7"
+  "react": "catalog:"                  →  "19.1.0"
+  "react-dom": "catalog:"              →  "19.1.0"
+  "zod": "catalog:"                    →  "^3.24.2"
+ACTION: replace each "catalog:" with the exact version above. Do NOT guess versions — these are the actual root catalog values. Confirm against ~/workspace/pnpm-workspace.yaml before writing.
+
+═══════════════════════════════════════════════════════════════════
+EXTRACTION VERDICT: clean, low-risk
+═══════════════════════════════════════════════════════════════════
+Total real external-dependency work:
+  - delete 1 dead @workspace dependency (FINDING 2)
+  - drop 2 dev scripts (FINDING 3)
+  - pin 4 catalog versions (FINDING 4)
+Everything else (all src/, theme, services, hooks, context, lib, components, app/ routes, MapLibre setup, assets) is self-contained and moves AS-IS. No vendoring, no shared-package recreation, no code rewrites required.
+
+After these four resolutions, the standalone app should have a self-contained package.json with concrete versions and no workspace/catalog references. Then generate its own lockfile (pnpm install inside the standalone dir), its own .npmrc (node-linker=hoisted), its own eas.json at the app root, and standard standalone Metro/babel/tsconfig (the existing ones likely work unchanged since imports are all intra-app).
+
+KEEP the hard rules from the main command: do not delete the original artifacts/travel-buddy until the standalone installs + typechecks clean; do not fabricate versions; preserve all safety/location/geofence/privacy code; keep the web map fallback native-import-free.

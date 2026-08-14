@@ -1,0 +1,131 @@
+Run ARX AI cleanup candidates pass before public beta polish.
+
+SCOPE LOCK:
+Only work on cleanup candidates identified in the final QA:
+1. Legacy mt5-bridge.tsx references/page.
+2. Duplicate QuickTradeModal.
+3. Duplicate /ai-mentor route.
+4. Duplicate AI route/nav references.
+5. Any dead imports caused by removing/redirecting those items.
+
+Do not change:
+- MT5 bridge backend logic
+- live/demo execution permissions
+- kill switches
+- admin approvals
+- scanner scoring
+- Ruby intelligence
+- historical/news logic
+- auth/session logic
+- open-trade P/L
+- slot allocation math
+- backend trading safety systems
+
+GOAL:
+Remove or safely retire public-confusing legacy surfaces before beta users see them.
+
+PHASE 1 — CHECK FIRST
+Inspect before changing:
+- route registry
+- navigation config
+- MobileBottomNav
+- side menu / More menu
+- AI tabs
+- scanner trade modal imports
+- trade ticket imports
+- mt5 bridge page references
+- ai-mentor route references
+- QuickTradeModal references
+- any tests/guards expecting these routes
+
+Do not delete anything until proven unused or replaced.
+
+PHASE 2 — RETIRE LEGACY MT5 BRIDGE PAGE
+If mt5-bridge.tsx is a legacy user-facing page:
+- remove it from regular user navigation
+- remove public links to it
+- replace user-facing references with the current MT5/Broker Status or Risk/Connection status page
+- if the route is still reachable, redirect it to the current safe MT5 status page or admin-only bridge health page
+- do not change backend MT5 bridge logic
+- do not change EA/bridge endpoints
+- do not expose MT5 credentials or debug data
+
+If it is still needed internally/admin-only:
+- keep it admin-only
+- hide from regular users
+- label it cleanly as “Broker Bridge Status” or similar, not debug wording
+
+PHASE 3 — CONSOLIDATE QUICKTRADEMODAL
+Find duplicate QuickTradeModal usage.
+
+If ScannerTradeModal / TradeTicket is now the correct flow:
+- remove QuickTradeModal from user-facing scanner/trade paths
+- replace references with the current safe trade ticket modal
+- ensure BUY/SELL scanner buttons still open the correct prefilled ScannerTradeModal
+- opening modal must not place trades
+- confirm still passes existing safety gates
+
+Do not delete QuickTradeModal file unless:
+- no imports remain
+- no routes use it
+- no tests require it
+- it is proven dead
+
+If uncertain, leave file but remove from active app paths and list it as cleanup-candidate retained.
+
+PHASE 4 — CONSOLIDATE /ai-mentor ROUTE
+If /ai-mentor is duplicate/legacy:
+- remove from navigation
+- remove from bottom nav/side menu/AI tabs
+- redirect /ai-mentor to the current AI/Ruby main route, likely /ai-command-center
+- ensure AI bottom-nav link goes only to the current AI/Ruby page
+- ensure AI tabs still work
+- ensure selected symbol context remains synced
+
+Do not leave duplicate AI pages reachable to beta users unless intentionally redirected.
+
+PHASE 5 — CLEAN IMPORTS / DEAD ROUTES
+Remove:
+- unused imports
+- unused route entries
+- duplicate nav links
+- debug labels
+- stale references to old modal/page names
+
+Do not remove uncertain files. Report them instead.
+
+PHASE 6 — QA
+Run:
+- typecheck
+- build
+- CI guards
+- route smoke tests
+- mobile nav smoke test
+
+Verify:
+1. App builds.
+2. /ai-command-center works.
+3. /ai-mentor redirects safely or is removed from public reach.
+4. AI bottom-nav link works.
+5. Scanner opens.
+6. Scanner BUY/SELL opens the correct ScannerTradeModal.
+7. Old QuickTradeModal is not used in active user flow.
+8. mt5-bridge legacy page is not visible to regular users.
+9. MT5 backend/EA/bridge endpoints are untouched.
+10. Regular users cannot see admin bridge/debug controls.
+11. Admin mode still works.
+12. Andraie Regular Mode still hides admin controls.
+13. No “real money” or “live money” wording appears in normal UI.
+14. No live trades were placed.
+15. No execution permissions, kill switches, or admin approvals changed.
+
+FINAL OUTPUT:
+Return:
+- files changed
+- legacy routes removed/redirected
+- duplicate modals consolidated
+- cleanup candidates deleted
+- cleanup candidates retained
+- tests/checks run
+- final score estimate after cleanup
+- confirmation no live trades were placed

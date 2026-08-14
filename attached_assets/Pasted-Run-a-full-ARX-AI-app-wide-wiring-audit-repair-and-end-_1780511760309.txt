@@ -1,0 +1,549 @@
+Run a full ARX AI app-wide wiring audit, repair, and end-to-end cooperation check.
+
+The goal is to make sure the entire app and entire AI ecosystem are actually connected across all layers, functions, pages, agents, services, routes, UI surfaces, backend logic, admin controls, scanner, Ruby, risk system, scalp engine, governance, lifecycle, live execution readiness, and MT5/Deriv bridge systems.
+
+The premise of ARX AI only works if every part of the system cooperates with the rest of the system. Do not leave isolated modules, decorative agents, fake traces, unused services, disconnected UI buttons, orphaned functions, duplicated logic, or features that exist in code but do not affect real app behavior.
+
+Do not rebuild the app. Do not remove working features. Do not redesign the UI. This is a full wiring, integration, repair, and proof pass.
+
+MAIN OBJECTIVE
+
+Search every file, every function, every route, every service, every agent, every scanner path, every Ruby path, every admin path, every trade path, every risk path, every lifecycle/governance path, and every UI action.
+
+Confirm that each feature:
+
+* has a clear purpose
+* is reachable from the correct UI surface
+* is connected to the correct backend logic
+* respects role permissions
+* cooperates with related systems
+* produces visible user/admin impact where intended
+* does not expose internal backend/code terms to normal users
+* does not silently fail
+* does not duplicate another feature unnecessarily
+* does not exist as dead code, mock-only code, or decorative UI
+
+Fix anything incorrectly wired. Wire anything not yet wired. Remove or flag anything that is dead, duplicated, fake, unsafe, or misleading.
+
+PHASE 1 — FULL CODEBASE INVENTORY
+
+Create a complete internal inventory of:
+
+* all frontend pages
+* all route files
+* all menu/navigation items
+* all tabs
+* all buttons
+* all forms
+* all modals
+* all dashboards
+* all scanner functions
+* all Ruby functions
+* all AI agent functions
+* all governance functions
+* all lifecycle/scoring functions
+* all risk functions
+* all scalp/flame functions
+* all trade placement functions
+* all position management functions
+* all SL/TP modification functions
+* all pending order functions
+* all admin/OWNER functions
+* all investor/view-only functions
+* all MT5/Deriv bridge functions
+* all EA download/bridge status functions
+* all live test cycle functions
+* all database tables/schemas
+* all API endpoints
+* all background jobs
+* all validation/guard scripts
+* all logs/traces
+
+For each item, determine:
+
+* what it does
+* what calls it
+* what it calls
+* what role can access it
+* what UI surface exposes it
+* what backend service powers it
+* whether it is active, partial, duplicated, fake, dead, or disconnected
+
+PHASE 2 — APP-WIDE WIRING MAP
+
+Build and verify the full cooperation map between systems:
+
+1. Ruby
+    Ruby must be connected to:
+
+* Scanner signals
+* selected market explanations
+* agent scoring/lifecycle
+* governance outcomes
+* risk analysis
+* reward-to-risk analysis
+* stop loss/take profit reasoning
+* scalp/flame analysis
+* market history
+* market news/current events where available
+* user role/permissions
+* saved chats/memory
+* admin-safe vs user-safe explanation modes
+
+Ruby must explain things in plain English and never expose backend function names, raw schema names, route names, environment variable names, or developer-only wording to normal users.
+
+2. Scanner
+    Scanner must be connected to:
+
+* Focus Scan
+* Broad Scan
+* Flame Scalp
+* selected market explanation
+* Ruby reasoning
+* agent scores
+* governance decisions
+* risk downgrades
+* reward-to-risk logic
+* news/current-event caution
+* market history/backtest context where available
+* user-facing ranking
+* admin trace
+
+Scanner rankings must actually change when agent confidence, risk score, governance outcome, or scalp/flame quality changes.
+
+3. Flame Scalp Engine
+    Flame Scalp must be connected to:
+
+* scanner results
+* Focus path
+* Broad path
+* Builder path
+* Ruby explanations
+* risk engine
+* reward-to-risk
+* candle momentum logic
+* multi-trade scalp logic
+* entry/exit management
+* stop loss/take profit reasoning
+* agent lifecycle/scoring
+* governance challenges
+* admin trace
+
+Confirm flame/scalp logic is not just detecting fast candles. It must evaluate strength, continuation, exhaustion, choppiness, late entry risk, reversal risk, wick rejection, spread/slippage concern, and whether the move has a true running flame.
+
+4. Risk Engine
+    Risk must be connected to:
+
+* scanner ranking
+* Ruby explanation
+* trade ticket
+* one-click scalping
+* SL/TP editor
+* reward-to-risk
+* agent governance
+* agent lifecycle
+* account protection
+* exposure checks
+* active positions
+* pending orders
+* admin visibility
+
+Risk AI must be able to downgrade or caution weak setups. It should not be decorative.
+
+5. Reward-to-Risk / SL / TP Logic
+    Reward-to-risk must be connected to:
+
+* scanner
+* Ruby
+* trade ticket
+* recommended stop loss
+* recommended take profit
+* market structure
+* broker spread/bleed consideration
+* risk warning
+* scalp engine
+* active trade modification
+* admin trace when needed
+
+Users should be able to enter and edit SL/TP where intended. Recommended SL/TP should make sense based on the market assessment and not sit unrealistically at entry where broker bleed/spread could cause bad execution.
+
+6. AI Agent Scoring & Lifecycle
+    Agent scoring/lifecycle must be connected to:
+
+* Ruby
+* Scanner
+* Flame Scalp
+* Risk
+* Governance
+* Admin trace
+* Learning Camp
+* agent demotion
+* agent promotion
+* agent muting
+* Traffic Controller
+* Agent Factory
+
+Weak agents should lose influence. Strong agents should gain influence. Agents in shadow or Learning Camp should not influence real recommendations as if they are active.
+
+7. Governance Court
+    Governance must be connected to:
+
+* agent challenges
+* scanner ranking changes
+* Ruby explanation changes
+* risk warnings
+* scalp/flame confidence
+* agent lifecycle changes
+* admin trace
+* Traffic Controller
+* Agent Factory
+
+Governance must produce actual outcomes such as approved, approved with caution, downgraded, rejected, escalated, needs more data, muted due to low confidence, delayed for speed, or Learning Camp review required.
+
+8. Traffic Controller
+    Traffic Controller must be connected to:
+
+* Ruby requests
+* scanner runs
+* scalp/flame scans
+* governance reviews
+* agent participation
+* speed protection
+* admin trace
+
+Do not call every agent for every action. Only call agents that are needed for the workflow. Slow or unnecessary agents should step back.
+
+9. Agent Factory
+    Agent Factory must be connected to:
+
+* governance
+* lifecycle
+* admin visibility
+* missing-task detection
+* validation requirements
+* shadow/advisory activation only
+
+Do not allow uncontrolled self-replication. New agent proposals must require purpose, permissions, inputs, outputs, failure rules, scorecard, testing, and admin visibility.
+
+10. Admin / OWNER
+    Admin must be connected to:
+
+* user management
+* invite codes
+* role permissions
+* live trading permissions
+* investor permissions
+* owner live test cycle
+* live broker execution status
+* MT5/Deriv bridge status
+* EA download link
+* kill switches
+* execution logs
+* agent scoring
+* governance trace
+* Learning Camp
+* Agent Factory
+* QA reports
+* environment/system status where appropriate
+
+Admin/OWNER should have visibility and control. Normal users should not.
+
+11. Trader User
+    Trader user must be connected only to user-safe surfaces:
+
+* Dashboard
+* Markets
+* Trade
+* Ruby
+* Risk
+* Settings
+
+Trader users should not see admin controls, backend logs, raw execution variables, internal agent details, system secrets, owner-only test panels, or developer wording.
+
+12. Investor/View-Only User
+    Investor/view-only users must only see investor-safe areas:
+
+* funds
+* allocation preference
+* performance/reporting
+* view-only activity
+* settings
+
+Investor users must not be able to place trades, access trader controls, access admin controls, or modify system execution.
+
+13. Live Execution / MT5 / Deriv Bridge
+    Audit the live execution path without accidentally disabling it or changing authorized live settings.
+
+Confirm:
+
+* bridge status is accurately displayed
+* live execution controls are role-gated
+* owner/admin permissions are respected
+* order queue path is connected
+* result mapping is connected
+* fills/close fills are reflected correctly
+* P/L mapping is correct
+* active positions update correctly
+* pending orders update correctly
+* close/modify actions connect correctly
+* logs are visible to admin
+* errors explain the real block reason
+* no fake “success” appears if broker did not accept or fill the order
+
+Do not silently turn live trading off. Do not add demo-only restrictions. Do not break existing live testing configuration. If live execution is blocked by a real missing connection, report the exact blocker and fix it if it is in-app wiring.
+
+PHASE 3 — SEARCH FOR DISCONNECTED / FAKE / DEAD SYSTEMS
+
+Search the entire app for:
+
+* unused functions
+* unused exports
+* orphaned routes
+* duplicate scanner logic
+* duplicate Ruby panels
+* duplicate risk calculations
+* duplicate trade forms
+* duplicate admin panels
+* mock data still powering real UI
+* placeholder agent decisions
+* fake governance traces
+* fake scanner outputs
+* fake Ruby reasoning
+* buttons with no handler
+* handlers with no UI
+* APIs with no callers
+* UI with no backend
+* backend with no UI
+* dead tabs
+* hidden but active dangerous controls
+* visible but nonfunctional controls
+* old menu items pointing to outdated pages
+* user pages exposing admin data
+* admin pages missing key data
+* raw backend wording exposed to users
+
+For each issue found:
+
+* wire it correctly if it belongs in the app
+* merge it if duplicated
+* hide it if role-inappropriate
+* remove it only if clearly dead/test-only and safe to remove
+* otherwise flag it in the final report
+
+PHASE 4 — FUNCTION-BY-FUNCTION COOPERATION CHECK
+
+For every major function, verify:
+
+* input source
+* output destination
+* caller
+* permission gate
+* error handling
+* UI state
+* loading state
+* success state
+* failure state
+* logging/tracing
+* related systems notified
+* no internal wording exposed
+* test coverage or validation
+
+Functions should not complete in isolation if related systems need updates.
+
+Examples:
+
+* Scanner result changes should notify Ruby/risk/governance surfaces where appropriate.
+* Trade placement should update positions/order status/logs/admin trace.
+* SL/TP edits should update trade display and risk/reward.
+* Governance downgrade should update scanner score and Ruby explanation.
+* Agent demotion should reduce influence across all related surfaces.
+* Learning Camp state should affect agent participation.
+* Traffic Controller should affect which agents run.
+* Market selection should update explanation, scanner context, Ruby context, and risk context.
+
+PHASE 5 — UI / BACKEND CONSISTENCY CHECK
+
+Verify every visible UI item has a working backend connection.
+
+Check:
+
+* all menu items
+* all tabs
+* all buttons
+* all search boxes
+* all dropdowns
+* all toggles
+* all scanner controls
+* all trade buttons
+* all admin controls
+* all investor controls
+* all Ruby controls
+* all voice controls
+* all market selection controls
+* all role switches
+* all invite controls
+* all bridge controls
+* all EA download controls
+* all live test controls
+
+Fix missing handlers, broken routes, stale labels, bad permissions, loading bugs, and broken state updates.
+
+PHASE 6 — ROLE AND PERMISSION HARDENING
+
+Run the app as:
+
+* OWNER/admin
+* regular trader user
+* investor/view-only user
+* unauthorized/logged-out user
+
+Verify each role sees only what they should see.
+
+OWNER/admin:
+
+* full controls
+* admin dashboard
+* live controls
+* AI ecosystem controls
+* governance traces
+* bridge/EA controls
+* QA tools
+
+Trader:
+
+* user-safe market/trade/Ruby/risk tools
+* no admin internals
+* no unrestricted controls unless explicitly authorized
+
+Investor:
+
+* view-only funds/allocation/reporting
+* no trade placement
+* no scanner trade buttons
+* no admin tools
+
+Logged-out:
+
+* login/invite flow only
+* no dashboard bypass
+* no direct route access
+
+Fix any role leakage.
+
+PHASE 7 — PERFORMANCE / SPEED COOPERATION CHECK
+
+The app must be fast.
+
+Check the speed of:
+
+* login
+* dashboard load
+* market page load
+* scanner start
+* scanner result display
+* market explanation
+* Ruby response
+* trade ticket open
+* order submit button response
+* position update
+* close/modify trade action
+* admin dashboard load
+* governance trace load
+* agent ecosystem run
+
+Identify slow functions and fix obvious bottlenecks.
+
+Do not let the AI ecosystem call unnecessary agents. Use Traffic Controller routing to reduce load.
+
+PHASE 8 — END-TO-END WORKFLOW TESTS
+
+Run full end-to-end tests for these workflows:
+
+1. User logs in and lands on correct dashboard.
+2. User opens Markets.
+3. User runs Focus Scan.
+4. User runs Broad Scan.
+5. User runs Flame Scalp scan.
+6. Scanner rankings reflect agent/risk/governance influence.
+7. User selects a market.
+8. Ruby explains the market in plain English.
+9. Risk AI cautions or supports where appropriate.
+10. Reward-to-risk produces reasonable SL/TP logic.
+11. Trade ticket opens with correct symbol/context.
+12. User can enter lot size, SL, TP, and order type where intended.
+13. Pending order types are reachable where intended.
+14. Active positions display correctly.
+15. SL/TP modification works.
+16. Close trade path reports real result correctly.
+17. Admin can see execution/logging status.
+18. Governance trace shows agent cooperation.
+19. Learning Camp/demotion affects agent influence.
+20. Traffic Controller prevents unnecessary agent load.
+21. Investor user cannot access trading controls.
+22. Normal user cannot access admin controls.
+23. Logged-out user cannot bypass login.
+24. No internal backend/code terms appear to normal users.
+
+PHASE 9 — FIX EVERYTHING FOUND
+
+For every failed or partial item:
+
+* fix it
+* retest it
+* verify the fix did not break related features
+* check whether another layer must be updated because of the fix
+* update the final wiring map
+
+Do not mark complete after only fixing surface-level issues. Follow the chain until connected systems cooperate correctly.
+
+PHASE 10 — FINAL REPORT
+
+When complete, provide a clear final report with:
+
+1. Full system wiring status:
+
+* Ruby
+* Scanner
+* Flame Scalp
+* Risk
+* Reward-to-Risk
+* SL/TP
+* Trade execution UI
+* MT5/Deriv bridge
+* Admin/OWNER
+* Investor view
+* Agent scoring/lifecycle
+* Governance
+* Learning Camp
+* Agent Factory
+* Traffic Controller
+
+2. What was disconnected and fixed.
+3. What was duplicated and merged.
+4. What was not yet wired and is now wired.
+5. What was role-leaking and fixed.
+6. What was fake/decorative and made operational.
+7. What was dead/test-only and removed or flagged.
+8. What tests passed.
+9. Any remaining blockers with exact file/function/page names and why they could not be fixed in this pass.
+
+COMPLETION STANDARD
+
+Do not mark this task complete until:
+
+* every active feature is reachable
+* every reachable feature works
+* every major backend function has a caller or is flagged
+* every major UI button has a working handler or is removed/flagged
+* AI agents cooperate across Ruby, Scanner, Risk, Scalp, Governance, Lifecycle, Admin, and Traffic Controller
+* governance decisions affect real app behavior
+* scanner rankings respond to agent/risk/governance changes
+* Ruby explains agent/risk/governance influence in plain English
+* admin can inspect what happened
+* normal users do not see internal code/backend terms
+* role permissions are correct
+* live execution settings are not accidentally disabled or changed
+* all validation/typecheck/guard tests pass
+* the app behaves like one connected system instead of separate disconnected tools
+
+This is a full app and full AI ecosystem wiring repair pass. The system only works if every layer cooperates with the others.

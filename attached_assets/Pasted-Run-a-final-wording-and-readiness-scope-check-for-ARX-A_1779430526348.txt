@@ -1,0 +1,81 @@
+Run a final wording and readiness scope check for ARX AI.
+
+Do not add new features.
+Do not refactor.
+Do not change live execution permissions.
+Do not enable live trading.
+Do not change kill switches.
+Do not change admin approval logic.
+Do not place trades.
+
+Goal:
+Confirm the app is clean after the last QA pass, with special attention to “real money” wording and backend readiness.
+
+1. User-facing wording rule:
+Remove “live money,” “real money,” and “LIVE MODE — REAL MONEY” from all normal app UI areas, including:
+- top banners
+- status chips
+- scanner
+- AI/Ruby page
+- Risk Command Center
+- Trade page
+- Open Trades page
+- side menu
+- bottom nav
+- dashboard/cockpit
+
+Allowed exception:
+The phrase “real money” may appear only inside an explicit live-trading consent confirmation gate/modal where the user is about to enable or approve live broker execution. It must not appear as a normal status badge or page label.
+
+Normal UI labels should use:
+- Trading Off
+- Broker Execution Disabled
+- Trading Access Locked
+- Simulator
+- Broker Execution Enabled
+
+2. Verify ARX_LIVE_BROKER_EXECUTION_ENABLED:
+If ARX_LIVE_BROKER_EXECUTION_ENABLED is unset, confirm:
+- live broker execution remains disabled
+- demo/simulator path still works
+- the app does not show broken warnings
+- the app explains the state cleanly as “Broker Execution Disabled” or “Trading Off”
+- no regular user can accidentally access live broker execution
+
+Do not set the variable unless explicitly instructed.
+
+3. Backend verification:
+Confirm backend still works as intended:
+- all routers register
+- /api/healthz returns 200
+- auth works
+- admin routes are protected
+- regular users cannot access admin/master account data
+- MT5 bridge read endpoints fail cleanly if unavailable
+- open trades/account metrics show real data or clean disconnected state
+- slot allocation endpoints enforce per-user isolation
+- no raw errors, stack traces, secrets, or debug labels exposed
+
+4. UI verification:
+Confirm:
+- BUY buttons say only BUY and are green
+- SELL buttons say only SELL and are red
+- Market Scanner is primary in navigation
+- AI tabs work
+- side menu is organized
+- horizontal symbol chips work
+- mobile layout has no overlapping banners/chips
+- no duplicate broken routes/pages
+
+5. Cleanup:
+Only remove proven-unused duplicate/dormant code.
+If uncertain, report it instead of deleting it.
+
+Final output:
+- Whether “real money” appears anywhere outside consent gates
+- Whether ARX_LIVE_BROKER_EXECUTION_ENABLED remains safely disabled/unset
+- Backend pass/fail
+- UI pass/fail
+- Any remaining cleanup candidates
+- Final score after this check
+- Confirm no live trades were placed

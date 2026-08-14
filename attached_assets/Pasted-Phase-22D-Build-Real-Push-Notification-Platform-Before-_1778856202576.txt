@@ -1,0 +1,243 @@
+Phase 22D — Build Real Push Notification Platform
+
+Before making changes, inspect Phase 22C results first. Do not continue if Phase 22C did not successfully make `/api/me/notifications*` the canonical notification surface and register the assistant tool `getRecentNotifications`.
+
+Goal:
+Build real browser/PWA push notification infrastructure on top of the existing per-user notification system. Do not fake push. Do not claim push is active unless the service worker, subscription flow, VAPID keys, backend send route, and user preferences are all working.
+
+Known current status:
+- In-app notifications work.
+- `/api/me/notifications*` is intended to be canonical.
+- Push notifications were previously truthful but not built:
+  - no service worker
+  - no `navigator.serviceWorker`
+  - no `pushManager`
+  - no VAPID keys
+  - no real web-push send route
+- This phase must implement the missing real push platform safely.
+
+Tasks:
+
+1. Full pre-check
+- Inspect existing notification files, push status endpoint, notification preferences, frontend Notification Center, and app shell.
+- Confirm whether the app already has a service worker or PWA setup.
+- Confirm whether any push subscription stubs exist in `routes/meNotifications.ts` or related files.
+- Produce a short pre-check report before edits.
+
+2. Environment configuration
+Add support for these environment variables:
+
+- `VAPID_PUBLIC_KEY`
+- `VAPID_PRIVATE_KEY`
+- `VAPID_SUBJECT`
+
+Rules:
+- Never expose `VAPID_PRIVATE_KEY` to the frontend.
+- Expose only the public key through a safe authenticated status/config endpoint.
+- If keys are missing, push status must return configured:false.
+- Do not hardcode real keys.
+- Add `.env.example` entries if the project has one.
+
+3. Backend push subscription model
+Create or update a per-user push subscription storage model/table.
+
+Each subscription must store:
+- userId
+- endpoint
+- p256dh key
+- auth key
+- user agent if available
+- createdAt
+- updatedAt
+- revokedAt/null
+- enabled true/false
+
+Rules:
+- Subscriptions must be scoped to authenticated users only.
+- One user may have multiple devices/subscriptions.
+- Duplicate endpoints for the same user should update existing record instead of creating duplicates.
+- Revoked/invalid subscriptions should be disabled, not blindly retried forever.
+
+4. Backend push routes
+Create authenticated routes under the modern `/api/me` surface:
+
+- `GET /api/me/push/status`
+  - Returns:
+    - configured
+    - publicKey
+    - permissionKnown if available
+    - activeSubscriptions count for current user
+    - pushEnabled preference
+    - setupHint
+
+- `POST /api/me/push/subscribe`
+  - Requires user auth.
+  - Accepts browser PushSubscription JSON.
+  - Validates endpoint and keys.
+  - Stores/updates current user subscription.
+  - Enables push preference if user explicitly opted in.
+
+- `POST /api/me/push/unsubscribe`
+  - Requires user auth.
+  - Disables or revokes matching subscription for current user.
+
+- `POST /api/me/push/test`
+  - Requires user auth.
+  - Sends a test push only to the current user.
+  - Must only work when VAPID is configured and user has active subscription.
+  - Return honest result if not configured or no subscription exists.
+
+5. Backend push send service
+Create a central push sending service.
+
+It should:
+- Accept a userId and notification payload.
+- Look up active push subscriptions for that user.
+- Respect notification preferences.
+- Send via web-push only if configured.
+- Handle expired/410/invalid subscriptions by disabling them.
+- Never send another user’s notifications.
+- Never send trade execution instructions through push.
+- Use safe payload fields:
+  - title
+  - body
+  - type/category
+  - notificationId
+  - url/deepLink if safe
+  - createdAt
+
+6. Connect push to notification creation
+When a new real in-app notification is created through the canonical notification service, optionally trigger push delivery if:
+- push is configured
+- user has push enabled
+- user has active subscription
+- notification category is allowed by preferences
+
+Do not duplicate notifications.
+Push is delivery only. `/api/me/notifications` remains the source of truth.
+
+7. Frontend service worker
+Add a real service worker file.
+
+It must:
+- Listen for `push` events.
+- Show notification using the payload title/body.
+- Use safe fallback copy if payload is missing.
+- Listen for notification click.
+- Focus/open the app to the relevant deep link or Notification Center.
+- Not expose secrets.
+- Not claim push is active unless subscription succeeds.
+
+8. Frontend push manager
+Add client-side push setup logic.
+
+It should:
+- Check browser support:
+  - `serviceWorker`
+  - `Notification`
+  - `PushManager`
+- Register the service worker.
+- Ask permission only when the user intentionally enables push.
+- Subscribe using VAPID public key.
+- Send subscription to `/api/me/push/subscribe`.
+- Allow disabling through `/api/me/push/unsubscribe`.
+- Refresh status through `/api/me/push/status`.
+
+9. Notification settings UI
+Update existing notification preferences/settings only.
+
+Do not redesign the whole app.
+
+The UI should show:
+- In-app notifications: active
+- Push notifications:
+  - Not configured
+  - Not supported
+  - Permission denied
+  - Ready to enable
+  - Enabled
+  - Disabled
+- A “Send test push” button only when configured and subscribed.
+- Honest setup messages.
+
+Do not display fake push alerts.
+Do not say push notifications are live if the user is not subscribed.
+
+10. Assistant awareness
+Update `getRecentNotifications` or related assistant status output so it includes:
+- `pushConfigured`
+- `pushSupported` if available from backend/client context
+- `pushEnabled`
+- `activePushSubscriptions`
+- `pushPermissionStatus` if available
+
+Assistant answers must stay truthful:
+- If push is not configured, say it is not configured.
+- If configured but user is not subscribed, say push is available but not enabled for this user.
+- If enabled, say push is enabled and show active subscription count if available.
+
+11. Tests required
+Add/update tests for:
+
+Backend:
+- anonymous user cannot access push routes
+- user A cannot subscribe/unsubscribe user B
+- push status returns configured:false when VAPID keys missing
+- push status returns configured:true when VAPID keys exist
+- subscribe stores subscription per current user
+- duplicate endpoint updates instead of duplicates
+- unsubscribe disables only current user’s subscription
+- test push fails honestly when not configured
+- test push fails honestly when no subscription exists
+- invalid push subscription is disabled after send failure
+- notification creation triggers push only when allowed
+
+Frontend:
+- no service worker unsupported browser crash
+- enable push handles denied permission
+- disable push updates UI
+- status copy does not claim push is active unless subscribed
+- Notification Center still uses `/api/me/notifications`
+- no frontend usage of legacy `/api/alerts*` for general notifications
+
+12. QA gate
+After implementation, run:
+- typecheck
+- lint if available
+- unit tests
+- backend route tests
+- frontend smoke test
+- service worker registration test/manual verification
+- forbidden string scan for fake/sample/placeholder push claims
+- grep for:
+  - `navigator.serviceWorker`
+  - `pushManager`
+  - `VAPID_PUBLIC_KEY`
+  - `VAPID_PRIVATE_KEY`
+  - `/api/me/push`
+  - `/api/alerts`
+
+13. Final report required
+Return a Phase 22D report with:
+
+- files changed
+- service worker status
+- VAPID env status
+- backend push route status
+- subscription storage status
+- per-user isolation result
+- push test result
+- notification preference result
+- assistant awareness result
+- UI honesty result
+- tests passed/failed
+- remaining Phase 22E work
+
+Important constraints:
+- Do not redesign the app.
+- Do not fake push notifications.
+- Do not expose private VAPID keys.
+- Do not make push required for app usage.
+- Do not send trade execution alerts as instructions.
+- Do not bypass user notification preferences.
+- Do not move to Phase 22E unless QA passes.

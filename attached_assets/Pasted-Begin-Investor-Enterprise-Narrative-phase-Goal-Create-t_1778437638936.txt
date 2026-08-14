@@ -1,0 +1,128 @@
+Begin Investor + Enterprise Narrative phase.
+
+Goal:
+Create the positioning, messaging, narrative, and strategic framing for the AI Trading Governance & Intelligence Infrastructure company.
+
+Define:
+
+1. Core Narrative
+
+Primary positioning:
+- AI Trading Governance & Intelligence Infrastructure
+
+Not:
+- AI prediction bot
+- guaranteed-profit system
+- copy-trading engine
+- hype automation platform
+
+2. Core Problem Statement
+
+Define the industry problems:
+- black-box AI trading
+- poor validation
+- lack of governance
+- lack of explainability
+- execution failure
+- behavioral risk
+- overfitting
+- unsafe automation
+- no replayability
+- no accountability
+
+3. Core Solution Narrative
+
+Explain how the platform solves:
+- governance
+- validation
+- replay
+- execution intelligence
+- Trader DNA
+- risk hierarchy
+- survival optimization
+- adaptive oversight
+
+4. Enterprise Value Proposition
+
+Define value for:
+- prop firms
+- trading teams
+- brokerages
+- trading educators
+- fintech platforms
+- institutional strategy groups
+
+5. Defensibility Narrative
+
+Explain:
+- why the moat compounds over time
+- why Black Box Vault matters
+- why Trader DNA matters
+- why replay intelligence matters
+- why governance infrastructure matters
+- why validation memory compounds
+
+6. Infrastructure Narrative
+
+Position the platform as:
+- trading intelligence infrastructure
+- governance infrastructure
+- validation infrastructure
+- execution intelligence infrastructure
+
+7. Safety + Trust Narrative
+
+Highlight:
+- staged automation
+- replayability
+- explainability
+- auditability
+- governance hierarchy
+- risk-first architecture
+- continuous validation
+
+8. Long-Term Vision Narrative
+
+Define:
+- ecosystem vision
+- enterprise vision
+- developer platform vision
+- infrastructure platform vision
+- long-term scalability narrative
+
+9. Investor Narrative
+
+Explain:
+- TAM opportunity
+- infrastructure positioning
+- API expansion potential
+- platform economics
+- compounding data advantage
+- enterprise expansion potential
+- trust moat
+- behavioral intelligence moat
+
+10. Brand Direction
+
+Target brand feeling:
+- calm
+- trustworthy
+- intelligent
+- institutional
+- modern
+- operationally precise
+
+Avoid:
+- gambling energy
+- hype AI branding
+- “get rich quick” positioning
+- unrealistic profit claims
+
+Deliver:
+- company positioning
+- investor narrative
+- enterprise narrative
+- product narrative
+- moat narrative
+- brand direction
+- long-term strategic vision

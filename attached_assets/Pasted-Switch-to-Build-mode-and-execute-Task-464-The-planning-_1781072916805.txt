@@ -1,0 +1,150 @@
+Switch to Build mode and execute Task #464.
+
+The planning work is complete. Proceed with the scoped build for:
+
+Task #464 — Scanner feed-truth honesty + GBPUSD reason + mobile fix
+
+Do not restart the broad feed audit.
+Do not rebuild the scanner.
+Do not weaken feed-truth gates.
+Do not make stale/delayed data look live.
+Do not change live execution routing.
+Do not bypass Risk Governor, AACI, Security Handshake, Chart Truth, or Scanner Truth.
+Do not expose admin-only/internal diagnostics directly to regular users.
+
+Use the already-confirmed findings:
+
+- resolveScannerTruth already exists and produces the single ScannerTruth object.
+- Header, chart, and Ruby already consume ScannerTruth/feedStatus.
+- GET /api/chart/candles is the honest source.
+- GBPUSD is stale/delayed because MT5 broker candles are not active for that symbol/timeframe and fallback intraday forex provider coverage is limited.
+- This is not a missing-key bug.
+- Volatility working proves Deriv synthetics work, not that MT5 broker candles are feeding forex.
+- Remaining work is user-facing clarity, stale-action blocking confirmation, and mobile overflow repair.
+
+==================================================
+BUILD SCOPE
+==================================================
+
+Execute S002–S009 from Task #464.
+
+Focus on:
+
+1. GBPUSD user-facing reason panel
+Surface the exact reason in regular-user language:
+
+“GBPUSD live broker chart feed is not active yet. ARX is using fallback analysis data, but this feed is delayed/stale for this timeframe. Ruby can only give a limited read until verified live candles are available.”
+
+Do not show internal labels like:
+- assistant_real
+- aiUsable
+- feedStatus
+- mt5Provider
+- truthResult
+- route names
+- adminDetail
+- provider slot IDs
+
+Admin diagnostics can retain detailed provider attempts.
+
+2. Header clarity
+Make execution/account truth separate from market-data truth.
+
+The header should make it clear:
+
+- Execution bridge: connected/disconnected
+- Account/positions: broker truth
+- Market data: live / delayed / stale / waiting for broker candles
+- Ruby read: verified / limited / blocked
+
+Do not let a connected MT5 heartbeat imply broker chart candles are active.
+
+3. Plan Buy/Sell blocking on stale data
+Confirm and enforce:
+
+- stale/delayed/non-aiUsable data cannot create a confident Plan Buy/Sell
+- trade buttons should not look ready based on stale chart data
+- if execution bridge is live but chart feed is stale, user-facing action should say limited/read-only unless broker trade path independently passes all gates
+
+4. Scanner/chart/Ruby consistency
+Make sure Scanner header, Scanner chart, and Ruby read all tell the same story for GBPUSD:
+
+- same data status
+- same freshness
+- same limited-read reason
+- no contradictory “final trade read” language
+- no hidden stale condition
+
+5. Mobile overflow fix
+Fix 390px/430px mobile overflow on the affected scanner/feed-truth panels.
+
+Check:
+- scanner header
+- feed reason panel
+- chart area
+- Ruby read card
+- CTA/action row
+- status chips
+- long provider/reason text
+- horizontal scrolling or clipped content
+
+Use wrapping, truncation, compact labels, stacked layout, or responsive sizing as needed.
+
+==================================================
+AUTHENTICATED CONFIRMATION
+==================================================
+
+Run the authenticated diagnostic curl/login flow only after switching to Build mode.
+
+Confirm live GBPUSD response with:
+
+- endpoint used
+- status
+- feedStatus
+- reason surfaced
+- stale/delayed state
+- aiUsable false if applicable
+- user-facing copy appears correctly
+- admin diagnostics remain admin-only
+
+==================================================
+TESTS / VERIFICATION
+==================================================
+
+Run relevant checks:
+
+- scanner feed-truth tests
+- chart feedStatus tests
+- Ruby read limited-data tests
+- Plan Buy/Sell stale-block tests
+- mobile viewport checks at 390px and 430px
+- typecheck
+- CI guards if feasible
+
+Do not claim done until:
+
+1. GBPUSD reason is visible and understandable to a regular user.
+2. Header separates execution bridge status from market-data status.
+3. Plan Buy/Sell does not present stale feed as ready.
+4. Mobile overflow is fixed at 390px and 430px.
+5. Admin-only diagnostics do not leak to regular users.
+6. Tests/typecheck/guards are reported.
+
+==================================================
+COMPLETION REPORT
+==================================================
+
+Return:
+
+- files changed
+- exact GBPUSD root cause shown to user
+- header/status copy changes
+- Plan Buy/Sell stale-block confirmation
+- mobile overflow fix details
+- authenticated diagnostic result
+- tests run
+- typecheck/guard results
+- remaining blocker, if any
+
+Final rule:
+Build Task #464 now. The app should be honest: MT5 execution/account can be connected while GBPUSD broker chart candles are still inactive or delayed. Users must understand that clearly without reading admin diagnostics.

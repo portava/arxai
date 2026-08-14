@@ -1,0 +1,339 @@
+Proceed with the frontend/runtime verification phase for the LiveAccountSnapshot + SSE shared truth work.
+
+The backend adapter and SSE scaffold are complete. Now wire the running UI safely without rebuilding the app.
+
+Important:
+Do not rebuild the app.
+Do not change live execution.
+Do not place live trades.
+Do not add fake tick-live P/L.
+Do not label stale or estimated values as Live.
+Do not weaken user isolation.
+Do not expose raw broker payloads or internal backend names to users.
+
+Goal:
+Dashboard, Cockpit/Open Trades, Ruby trade monitor, and account cards must consume the shared LiveAccountSnapshot truth and show honest freshness badges.
+
+====================================================
+PART 1 — RUN VERIFICATION FIRST
+====================================================
+
+Run:
+
+- pnpm run typecheck
+- pnpm run test:live-account-snapshot
+- pnpm run ci:guards
+
+If any fail:
+- fix only the failing area
+- do not rewrite unrelated systems
+- rerun until clean
+
+Report exact results.
+
+====================================================
+PART 2 — FRONTEND SHARED SNAPSHOT HOOK
+====================================================
+
+Create or upgrade one shared frontend data hook for live account snapshot consumption.
+
+Suggested names, following current project style:
+- useLiveAccountSnapshot
+- useAccountSnapshotStream
+- useLiveSnapshot
+
+This hook must:
+
+1. Subscribe to the SSE endpoint if available.
+2. Fall back to polling if SSE fails or disconnects.
+3. Reconnect cleanly.
+4. Clean up on unmount.
+5. Keep last valid snapshot.
+6. Expose freshness state.
+7. Expose connection state.
+8. Expose last updated time.
+9. Expose safe empty state for not-live/closed-mode users.
+10. Never fabricate P/L.
+
+Hook output should include:
+
+- snapshot
+- positions
+- totals
+- freshnessStatus
+- connectionStatus
+- lastSnapshotAt
+- lastQuoteAt if available
+- lastPositionSyncAt if available
+- notLiveReason if applicable
+- isEstimated
+- isStale
+- isUnavailable
+- warnings
+- reconnecting
+- errorSafeMessage
+
+Connection statuses:
+- connected
+- reconnecting
+- polling
+- disconnected
+- unavailable
+
+Freshness statuses:
+- Fresh
+- Delayed
+- Stale
+- Estimated
+- Unavailable
+
+====================================================
+PART 3 — DASHBOARD WIRING
+====================================================
+
+Wire Dashboard balance/equity/P&L/open position cards to the shared snapshot hook.
+
+Dashboard must show:
+
+- Balance
+- Equity
+- Open P/L
+- Open positions count
+- Margin
+- Free margin
+- Freshness badge
+- Last updated timestamp
+
+Rules:
+- Use the same snapshot contract as Open Trades.
+- Do not separately recalculate open P/L in Dashboard.
+- Do not include closed/reconciled positions.
+- Do not show phantom P/L.
+- If snapshot is stale, show Stale.
+- If P/L is estimated, show Estimated.
+- If unavailable, show Unavailable.
+- If broker snapshot is fresh but quote is stale, show the correct mixed warning.
+
+Example user-facing badge:
+“Fresh · updated 8s ago”
+“Estimated · quote unavailable”
+“Stale · last broker update 4m ago”
+“Unavailable · waiting for broker sync”
+
+====================================================
+PART 4 — OPEN TRADES / COCKPIT WIRING
+====================================================
+
+Wire Open Trades/Cockpit to the same shared snapshot hook.
+
+Open Trades must show the same count and open P/L total as Dashboard.
+
+For owner/admin:
+- show all real master positions allowed by owner/admin visibility
+- include manual/unattributed master positions
+- label them clearly:
+  - ARX-attributed
+  - Manual master position
+  - Unattributed
+  - Pending attribution if applicable
+
+For regular users:
+- show attributed positions only
+- do not show manual master positions
+- do not show other users’ positions
+- do not show master exposure
+
+For investors:
+- no raw trade controls
+- investor portal remains view-only
+
+====================================================
+PART 5 — RUBY TRADE MONITOR WIRING
+====================================================
+
+Ruby’s trade monitoring should consume the shared snapshot contract.
+
+When user says:
+- “show my live trades”
+- “monitor my trade”
+- “close when necessary”
+- “what is my open P/L”
+- “what is happening with my position”
+
+Ruby must use the same snapshot truth as Dashboard/Open Trades.
+
+Ruby should not say:
+- paper-only
+- sandbox
+- simulated
+- mock
+- backend table names
+- route names
+- raw source names
+
+Ruby should say clean user-facing status:
+
+If fresh:
+“I found your open position. The latest broker snapshot is fresh.”
+
+If stale:
+“I found the last synced position, but the broker update is stale. I can analyze it, but I need a fresh sync before treating P/L as current.”
+
+If unavailable:
+“I don’t have a current broker position update yet. I’m waiting for the live position sync.”
+
+====================================================
+PART 6 — SSE RUNTIME BEHAVIOR
+====================================================
+
+Validate SSE behavior in the running app.
+
+Requirements:
+- connects after login
+- respects authenticated user
+- no cross-user subscription
+- sends account_snapshot events
+- sends heartbeat events
+- sends error_safe events if needed
+- cleans up on disconnect
+- reconnects safely
+- fallback polling works
+- does not leak secrets
+- does not leak raw broker payloads
+- does not show master data to regular users
+
+The 3-second re-evaluation cadence is acceptable as safe fallback.
+Do not label it tick-live.
+
+Label correctly:
+- “Fresh” only if broker snapshot freshness supports it
+- “Delayed/Stale” when cadence/source is behind
+- “Estimated” when P/L is computed from available quote or partial data
+- “Unavailable” when no trustworthy P/L exists
+
+====================================================
+PART 7 — UI CONSISTENCY CHECK
+====================================================
+
+Verify:
+
+1. Dashboard Open P/L equals Open Trades Open P/L.
+2. Dashboard open position count equals Open Trades count.
+3. Closed positions do not appear.
+4. Reconciled positions do not contribute P/L.
+5. Broker-absent positions do not contribute P/L.
+6. Owner/admin sees true master exposure.
+7. Regular user only sees attributed positions.
+8. Investor sees no raw trade controls.
+9. Freshness badges are visible.
+10. No component says “Live” when the source is stale/estimated.
+
+====================================================
+PART 8 — FRONTEND PERFORMANCE
+====================================================
+
+Avoid lag.
+
+Requirements:
+- do not rerender entire dashboard unnecessarily
+- throttle snapshot updates if needed
+- memoize derived totals
+- do not create multiple duplicate SSE subscriptions per page
+- clean subscriptions on page change
+- fallback polling should not hammer backend
+- mobile UI remains smooth
+
+Add console/logging only if development-safe.
+Do not expose logs to users.
+
+====================================================
+PART 9 — EMIT-ON-WRITE TODO
+====================================================
+
+Leave or complete the emit-on-write follow-up depending on safe runtime access.
+
+If safe now:
+- emit account_snapshot immediately when snapshot/reconciliation writes occur
+- keep 3s polling fallback
+- keep heartbeat
+
+If not safe now:
+- leave TODO clearly
+- document exact file/function to connect
+- do not break stream
+
+Important:
+Even with emit-on-write, true tick-level P/L still requires EA quote push or per-tick P/L push.
+
+====================================================
+PART 10 — EA QUOTE PUSH BLOCKER NOTE
+====================================================
+
+Keep the blocker documented:
+
+True tick-level P/L requires EA quote push or per-tick P/L push.
+
+Until then:
+- dashboard reflects newest available broker snapshot
+- SSE delivery is near-real-time relative to app snapshot updates
+- UI must show Fresh/Delayed/Stale/Estimated/Unavailable honestly
+- no false tick-live label
+
+====================================================
+PART 11 — QA REQUIRED
+====================================================
+
+Run and report:
+
+- pnpm run typecheck
+- pnpm run test:live-account-snapshot
+- pnpm run ci:guards
+
+Runtime UI checks:
+- Dashboard loads snapshot
+- Open Trades loads same snapshot
+- Dashboard and Open Trades totals match
+- SSE connects
+- SSE reconnects
+- fallback polling works
+- stale badge appears when source stale
+- estimated badge appears when P/L estimated
+- unavailable state appears when no trustworthy P/L exists
+- owner/admin visibility correct
+- regular user isolation correct
+- investor view-only untouched
+- Ruby monitor uses shared snapshot
+- no live execution path changed
+
+====================================================
+PART 12 — FINAL PROOF REQUIRED
+====================================================
+
+Report back with:
+
+1. Files changed
+2. Typecheck result
+3. test:live-account-snapshot result
+4. ci:guards result
+5. Shared frontend hook proof
+6. Dashboard wiring proof
+7. Open Trades/Cockpit wiring proof
+8. Ruby monitor wiring proof
+9. SSE connection proof
+10. SSE reconnect/fallback proof
+11. Freshness badge proof
+12. Estimated/unavailable state proof
+13. Dashboard/Open Trades agreement proof
+14. Closed/reconciled exclusion proof
+15. Owner/admin master visibility proof
+16. Regular user isolation proof
+17. Investor view-only proof
+18. Confirmation no live execution path changed
+19. Confirmation no fake tick-live P/L added
+20. Remaining blocker for true tick-level P/L: EA quote push/per-tick P/L push
+
+Final rule:
+Dashboard and Open Trades must agree because they consume the same LiveAccountSnapshot output.
+
+If data is not live, the UI must say so clearly.
+Do not pretend stale or estimated values are live.

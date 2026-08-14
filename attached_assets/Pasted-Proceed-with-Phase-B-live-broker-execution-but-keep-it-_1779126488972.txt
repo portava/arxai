@@ -1,0 +1,142 @@
+Proceed with Phase B live broker execution, but keep it protected and controlled.
+
+Current Phase A state:
+- Live UI, server gating, kill switch, live settings, live command tables, live positions panels, and scanner live-lock are complete.
+- Demo regression tests pass.
+- Live command pipeline currently blocks with BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED.
+- Do not remove the safety system.
+- Do not bypass the live unlock checklist.
+- Do not allow live execution unless the user has passed the protected live unlock flow.
+
+Phase B goal:
+Implement the real MT5 live broker placement layer for live commands only after all Phase A gates pass.
+
+Requirements:
+
+1. Create EA v1.27 live-ready execution path.
+   EA v1.27 must support:
+   - demo execution path unchanged
+   - live execution path separate from demo
+   - live OrderSend only when EnableLiveExecution=true
+   - ReadOnlyMode=false
+   - AccountType=LIVE
+   - server live command is approved
+   - bridge token/account/session match
+   - live command id is valid and not already processed
+
+2. Keep demo path unchanged.
+   Do not break:
+   - /api/mt5/demo-commands-poll
+   - FILLED_DEMO
+   - demo positions
+   - demo bridge reporting
+   - market scanner demo trading
+
+3. Implement live command polling separately.
+   Use a separate endpoint from demo, such as:
+   - /api/mt5/live-commands-poll
+   - /api/mt5/live-command-result
+
+4. Live command must only dispatch if all gates pass:
+   - liveBrokerExecutionEnabled=true
+   - userLiveApproved=true
+   - globalLiveEnabled=true
+   - kill switch not active
+   - account is LIVE
+   - EA heartbeat fresh
+   - EA version >= 1.27
+   - EA reports EnableLiveExecution=true
+   - EA reports ReadOnlyMode=false
+   - terminal connected
+   - algo trading allowed
+   - symbol allowed
+   - lot <= max live lot
+   - daily loss limit not reached
+   - stop loss present unless admin override is enabled
+
+5. Replace the current blocked broker placement layer.
+   placeLiveOrderGuarded() should call the live MT5 dispatch layer only after all guards pass.
+   If any guard fails, return LIVE_BLOCKED with exact reason.
+
+6. Add live result writeback.
+   Store:
+   - LIVE_FILLED
+   - LIVE_REJECTED
+   - LIVE_FAILED
+   - broker ticket
+   - fill price
+   - executed volume
+   - MT5 retcode
+   - broker message
+   - rejection reason
+   - sent_to_mt5_at
+   - filled_at / rejected_at
+
+7. Add live position sync.
+   Live Positions panel must show real MT5 live positions separately from demo positions:
+   - ticket
+   - symbol
+   - side
+   - volume
+   - entry price
+   - current price
+   - floating P/L
+   - stop loss
+   - take profit
+   - opened time
+   - source command id
+
+8. Add live close/modify support, but guarded.
+   Actions:
+   - close selected live position
+   - modify stop loss
+   - modify take profit
+
+   Every action requires confirmation and must respect kill switch/new-trade lock rules.
+
+9. Keep Market Scanner live trading protected.
+   Scanner live trade can only be submitted after live mode is unlocked.
+   Scanner live command source must be MARKET_SCANNER_LIVE.
+   Ruby must show:
+   “This is not guaranteed. Confirm risk before placing a live trade.”
+
+10. Add controlled first-live-test mode.
+   Before full live trading is considered ready, add a controlled live test button:
+   “Run Controlled EURUSD 0.01 Live Test”
+
+   It must:
+   - require protected live mode enabled
+   - require typed confirmation: ENABLE LIVE TRADING
+   - require stop loss
+   - use max 0.01 lot
+   - show account number and broker
+   - create only one command with idempotency key
+   - show lifecycle live
+   - show LIVE_FILLED / LIVE_REJECTED / LIVE_FAILED
+   - show broker ticket if filled
+
+11. Never auto-run a real live test from code.
+   The app can provide the button, but the user must manually press it after reviewing risk.
+
+12. Add CI guards:
+   - live path cannot bypass liveBrokerExecutionEnabled
+   - live path cannot bypass kill switch
+   - live path cannot trade on demo endpoint
+   - demo path cannot use live endpoint
+   - live OrderSend requires AccountType=LIVE
+   - live OrderSend requires EA v1.27+
+   - live OrderSend requires EnableLiveExecution=true
+   - duplicate live command id cannot execute twice
+   - no secrets exposed in UI/logs/Ruby memory
+
+Acceptance proof:
+- Demo trading still passes.
+- Phase A live guards still pass.
+- Live command is blocked when live mode is not unlocked.
+- Live command is blocked when kill switch is active.
+- Live command is blocked when EA is not v1.27+.
+- Live command is blocked when EA reports ReadOnlyMode=true.
+- Live command is blocked when EA reports EnableLiveExecution=false.
+- Controlled EURUSD 0.01 live test button exists but does not auto-run.
+- When user manually submits a live test after all gates pass, command reaches LIVE_FILLED, LIVE_REJECTED, or LIVE_FAILED with exact broker result.
+- Live Positions panel updates from MT5 live account sync.

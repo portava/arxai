@@ -1,0 +1,344 @@
+ADD AUTOMATIC FIRST-TIME ONBOARDING + NEW SYSTEM POPUPS
+
+Goal:
+When a user opens the app for the first time, automatically guide them through the platform with a clean onboarding flow.
+
+Also add popups/tooltips for new systems so users understand what changed, what each feature does, and how to use it.
+
+Important:
+- Onboarding must appear automatically on first app open.
+- User must have a clear Skip option.
+- Skipping onboarding must NOT bypass live trading safety, risk checks, confirmation phrases, or kill switch requirements.
+- New system popups should appear once per user unless reset by admin or updated by version.
+- Do not create annoying popups that appear every login.
+
+1. First-Time Onboarding Flow
+
+Create a global onboarding system that triggers when:
+
+- user logs in for the first time
+- user opens the app and onboardingCompleted = false
+- app version introduces major new systems
+- admin manually resets onboarding for the user
+
+User should see:
+
+- Start Tour
+- Skip for Now
+- Do Not Show Again
+- Continue Later
+
+Store the user’s choice.
+
+2. Onboarding Screens
+
+Create a polished multi-step onboarding modal or full-screen flow.
+
+Steps:
+
+A. Welcome Screen
+Title:
+“Welcome to Your AI Trading Command Center”
+
+Explain:
+- demo trading
+- live trading
+- manual trading
+- AI-assisted trading
+- AI auto-test
+- risk controls
+- trade journal
+- learning loop
+
+Button:
+“Start Tour”
+
+Secondary:
+“Skip for Now”
+
+B. Dashboard Tour
+Show:
+- main dashboard
+- trading mode
+- broker status
+- daily P/L
+- active alerts
+- system health
+
+C. Trading Modes Tour
+Explain each mode:
+
+- OFF
+- READ_ONLY
+- DEMO_MANUAL
+- DEMO_AI_ASSIST
+- DEMO_AI_AUTO
+- LIVE_MANUAL
+- LIVE_AI_ASSIST
+- LIVE_AI_AUTO_TEST
+
+Make this very clear:
+
+“Demo mode uses simulated/demo execution. Live mode uses real money.”
+
+D. Risk Governor Tour
+Explain:
+
+- max trade size
+- daily loss limit
+- stop-loss requirement
+- spread checks
+- confidence checks
+- broker health checks
+- kill switch
+
+E. Manual Trading Tour
+Explain:
+
+- symbol selection
+- buy/sell
+- lot size
+- stop loss
+- take profit
+- estimated max loss
+- submit order
+
+F. AI Trading Tour
+Explain:
+
+- AI trade card
+- confidence score
+- risk score
+- entry reason
+- invalidation reason
+- approval queue
+- auto-test mode
+
+G. Live Money Warning
+Before showing live trading features, show a clear risk screen:
+
+“Live trading uses real money. Losses are possible. The app includes risk controls, but no system can guarantee profits.”
+
+This screen is educational only.
+It does not arm live trading.
+It does not replace the required live arming confirmation.
+
+H. Kill Switch Tour
+Show the kill switch clearly.
+
+Explain:
+
+- stops AI autopilot
+- blocks new live orders
+- returns system to safe mode
+- logs the event
+
+I. Journal + Calendar Tour
+Explain:
+
+- every trade is logged
+- winning and losing days appear on calendar
+- AI decisions are stored
+- learning loop reviews outcomes
+
+J. Final Screen
+Options:
+
+- Start Demo Manual Test
+- Open Dashboard
+- Open Testing Control Center
+- Review Live Trading Control Center
+
+3. Coach Marks / Tooltips
+
+Add guided tooltips across the app for important sections.
+
+Examples:
+
+- “This shows your current trading mode.”
+- “This tells you if live money is active.”
+- “This is your emergency kill switch.”
+- “This is where AI trade ideas appear.”
+- “This is where you approve or reject AI trades.”
+- “This calendar shows daily wins/losses.”
+- “This log proves what the AI did and why.”
+
+Tooltips should appear only during onboarding or when the user clicks “Help / Show Tour.”
+
+4. New System Popups
+
+Create a versioned announcement popup system.
+
+When a new feature is added, show a popup like:
+
+Title:
+“New System Added: Live AI Assist”
+
+Body:
+“AI can now scan for live trade ideas and generate trade cards. You must approve each live trade before execution.”
+
+Buttons:
+- Got It
+- View Feature
+- Remind Me Later
+- Don’t Show Again
+
+Each popup should be tied to:
+
+- featureKey
+- version
+- userId
+- acknowledgedAt
+- dismissedAt
+- remindLaterAt
+
+Examples of feature popups:
+
+- New Live Trading Control Center
+- New Demo Trading Mode
+- New AI Autopilot Test Mode
+- New Risk Governor
+- New Kill Switch
+- New Trade Journal
+- New Daily P/L Calendar
+- New Learning Loop
+- New Audit Vault
+- New Testing Control Center
+
+5. Backend Data Model
+
+Add tables or equivalent storage:
+
+onboarding_progress:
+- id
+- userId
+- onboardingVersion
+- completed
+- skipped
+- currentStep
+- completedSteps
+- startedAt
+- completedAt
+- skippedAt
+- lastSeenAt
+
+feature_announcements:
+- id
+- featureKey
+- title
+- body
+- version
+- route
+- severity: info | warning | critical
+- active
+- createdAt
+
+user_feature_acknowledgements:
+- id
+- userId
+- featureKey
+- version
+- acknowledged
+- dismissed
+- remindLater
+- acknowledgedAt
+- dismissedAt
+- remindLaterAt
+
+6. Required API Endpoints
+
+Create:
+
+GET /api/onboarding/status
+POST /api/onboarding/start
+POST /api/onboarding/progress
+POST /api/onboarding/complete
+POST /api/onboarding/skip
+POST /api/onboarding/reset
+
+GET /api/feature-announcements
+POST /api/feature-announcements/acknowledge
+POST /api/feature-announcements/dismiss
+POST /api/feature-announcements/remind-later
+
+GET /api/help/tour/:route
+
+7. Frontend Components
+
+Create reusable components:
+
+- OnboardingProvider
+- OnboardingModal
+- OnboardingStep
+- CoachMark
+- FeatureAnnouncementPopup
+- WhatIsNewPanel
+- HelpTourButton
+- RiskEducationModal
+- LiveMoneyWarningModal
+
+Add a “Help / Tour” button on every major page so users can replay the tour.
+
+8. User Experience Rules
+
+On first open:
+
+- load app
+- check onboarding status
+- if onboarding is incomplete, show onboarding automatically
+- user can skip
+- user can continue later
+- user can restart from Help / Tour
+
+For new systems:
+
+- check active feature announcements
+- show only announcements the user has not acknowledged
+- never show the same popup repeatedly after acknowledgment
+- allow admin to create new announcements for future updates
+
+9. Safety Rules
+
+Hard rules:
+
+- Skipping onboarding does not unlock live trading.
+- Skipping onboarding does not bypass confirmation phrases.
+- Skipping onboarding does not bypass risk governor.
+- Skipping onboarding does not bypass max loss limits.
+- Skipping onboarding does not bypass kill switch.
+- Feature popups are educational only.
+- Live trading still requires proper arming flow.
+- AI auto-test still requires live test mode and risk limits.
+
+10. Mobile Design
+
+Make onboarding mobile-first:
+
+- large readable text
+- clear buttons
+- swipe or next-step navigation
+- progress bar
+- no tiny controls
+- no overflowing modals
+- dark mode compatible
+- accessible color contrast
+
+11. Final Testing
+
+After implementation, test:
+
+- first-time user sees onboarding automatically
+- user can complete onboarding
+- user can skip onboarding
+- skipped onboarding does not unlock unsafe trading
+- returning user does not see onboarding again
+- Help / Tour can replay onboarding
+- new feature popup appears once
+- popup acknowledgment is saved
+- “Remind Me Later” works
+- admin reset works
+- mobile layout works
+- no page crashes if onboarding API fails
+
+Deliverable:
+A complete automatic onboarding system plus versioned new-system popups, fully connected to the dashboard and live testing app.

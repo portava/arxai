@@ -1,0 +1,311 @@
+Go through the entire ARX AI app and perform a full navigation/menu consolidation audit.
+
+The goal is to reduce clutter by merging similar features, reducing unnecessary menu items, and organizing related pages into clean tabbed sections. Do not remove features. Do not rebuild the app. Do not redesign the full UI yet. This phase is only for structure, organization, navigation cleanup, and clutter reduction.
+
+MAIN GOAL
+
+The app currently has too many separate pages, menu items, repeated sections, and similar tools spread across different areas. Consolidate similar features into fewer, clearer destinations using tabs, collapsible sections, and grouped panels.
+
+The app should feel cleaner and easier to navigate before the next UI polish pass.
+
+IMPORTANT RULES
+
+* Do not delete active features.
+* Do not break existing routes, backend logic, permissions, admin gates, Ruby, Scanner, live trading controls, MT5 bridge, agent governance, scalp engine, or risk systems.
+* If a feature is active, preserve it and move it under the correct grouped section.
+* If a feature is dormant, duplicated, unused, or unclear, flag it in the cleanup report instead of deleting it unless it is obviously dead/test-only code.
+* Keep admin-only features hidden from normal users.
+* Do not expose backend names, route names, raw function names, schema names, or developer wording to users.
+* The goal is less clutter, not fewer capabilities.
+
+PHASE 1 — FULL APP NAVIGATION AUDIT
+
+Inspect every app page, route, sidebar item, bottom menu item, header button, floating menu, drawer item, admin page, user page, scanner page, Ruby panel, trade panel, settings page, and dashboard section.
+
+Create a map of all current visible navigation items and group them into logical categories.
+
+Identify:
+
+* duplicate pages
+* similar tools that should be tabs under one page
+* menu items that belong together
+* pages that are too long and should become tabbed sections
+* features that appear in multiple places unnecessarily
+* user-facing items that should be admin-only
+* admin-only items that accidentally show to normal users
+* labels that are unclear or too technical
+* orphaned pages/routes with no useful navigation purpose
+* dormant UI sections that take space but do not help users
+* repeated alerts, repeated instructions, and repeated explanatory blocks
+
+PHASE 2 — CONSOLIDATE SIMILAR MENU ITEMS
+
+Merge similar features into fewer primary menu destinations.
+
+Recommended structure:
+
+1. Dashboard
+    Use for the user’s main account overview:
+
+* account summary
+* active positions overview
+* market status overview
+* recent activity
+* Ruby quick insight
+* alerts summary
+
+2. Markets
+    Merge all market discovery tools here using tabs:
+
+* Focus Scan
+* Broad Scan
+* Flame Scalp
+* Watchlist
+* Selected Market Explanation
+* Market History / News Context
+
+Do not make each of these separate main menu items if they can live as tabs under Markets.
+
+3. Trade
+    Merge trade action tools here using tabs:
+
+* One-Click Scalping
+* Manual Trade Ticket
+* Pending Orders
+* Active Positions
+* Close / Modify Trade
+* Stop Loss / Take Profit Editor
+* Trade History
+
+Trade execution controls should stay clear, but not scattered.
+
+4. Ruby
+    Use one main Ruby area instead of multiple scattered assistant panels:
+
+* Ruby Chat
+* Market Explanation
+* Trade Reasoning
+* Voice Mode
+* Saved Chats / Memory
+* Ruby Settings if needed
+
+Ruby can still appear contextually across the app, but the main Ruby destination should be clean and unified.
+
+5. Risk
+    Merge risk-related tools here:
+
+* Risk Score
+* Reward-to-Risk
+* Stop Loss Logic
+* Take Profit Logic
+* Exposure
+* Account Protection
+* Warnings / Caution Flags
+
+6. Intelligence
+    Merge AI agent ecosystem tools here:
+
+* Agent Scoring
+* Agent Lifecycle
+* Governance Court
+* Learning Camp
+* Agent Factory
+* Household Report
+* Governance Trace
+
+For normal users, only show plain-language AI confidence/reasoning if appropriate. Full agent controls must remain admin/OWNER only.
+
+7. Admin
+    Admin-only destination for:
+
+* user management
+* invite codes
+* role permissions
+* live trading permissions
+* broker/master switch controls
+* owner live test cycle
+* kill switches
+* MT5 / Deriv bridge status
+* EA download link
+* execution logs
+* governance/admin traces
+* system QA
+* environment status
+
+Normal users must not see this.
+
+8. Settings
+    Use for:
+
+* profile settings
+* account settings
+* notification settings
+* connection settings
+* display/preferences
+* security
+
+PHASE 3 — USE TABS INSTEAD OF LONG SCROLLING PAGES
+
+For any page that currently has long vertical scrolling with multiple unrelated blocks, convert it into tabs or collapsible grouped sections.
+
+Examples:
+
+Markets page tabs:
+
+* Focus
+* Broad
+* Scalp
+* Watchlist
+* Explain
+
+Trade page tabs:
+
+* New Trade
+* Positions
+* Pending
+* Modify
+* History
+
+Admin page tabs:
+
+* Users
+* Permissions
+* Live Controls
+* Bridge
+* QA
+* Logs
+
+Intelligence page tabs:
+
+* Agents
+* Governance
+* Learning Camp
+* Factory
+* Reports
+
+Risk page tabs:
+
+* Risk Score
+* R:R
+* SL/TP
+* Exposure
+* Warnings
+
+Do not overload one page with everything visible at once.
+
+PHASE 4 — CLEAN LABELS
+
+Replace confusing labels with simple user-facing names.
+
+Examples:
+
+* “Advanced Scan” should be “Broad Scan” if that is already the chosen direction.
+* “Agent Governance Layer” can be “AI Governance” for admin.
+* “Lifecycle State” can be “Agent Status” in UI.
+* “Execution Envelope” can be “Live Trade Safety Status” for admin.
+* “EA” can be “MT5 EA Download” where needed.
+* Avoid raw variable names or code-like wording.
+
+Keep technical details available only in admin logs where necessary.
+
+PHASE 5 — ROLE-BASED VISIBILITY CHECK
+
+After consolidation, verify menu visibility by role.
+
+Normal trader user should only see user-safe sections:
+
+* Dashboard
+* Markets
+* Trade
+* Ruby
+* Risk
+* Settings
+
+Investor/view-only user should only see investor-safe sections:
+
+* Dashboard
+* Funds
+* Allocation Preferences
+* Reports
+* Settings
+
+Admin/OWNER should see:
+
+* all user tools
+* Admin
+* Intelligence
+* system controls
+* live test controls
+* governance traces
+* bridge status
+
+No normal user should see:
+
+* backend status
+* secrets/env references
+* admin controls
+* owner live test cycle
+* unrestricted live toggles
+* execution logs
+* raw agent internals
+* developer function names
+
+PHASE 6 — PRESERVE FUNCTIONALITY
+
+After moving/merging navigation items, verify all linked features still work.
+
+Test:
+
+* Dashboard loads correctly.
+* Markets opens and each tab works.
+* Focus Scan still works.
+* Broad Scan still works.
+* Flame Scalp still works.
+* Selected market explanation still works.
+* Ruby chat still works.
+* Ruby contextual explanations still work.
+* Trade ticket still works.
+* Active positions still display.
+* Pending orders still display.
+* SL/TP editor still works.
+* Risk/reward still works.
+* Admin-only pages remain gated.
+* Intelligence/governance pages remain admin-only.
+* Investor view-only login does not expose trader/admin controls.
+* Bottom nav has no gaps or floating issues.
+* Sidebar/menu list is shorter and grouped.
+* No page becomes unreachable.
+* No route breaks.
+* No duplicate/conflicting menu labels remain.
+
+PHASE 7 — DELIVER A CLEANUP REPORT
+
+When finished, provide a concise report showing:
+
+* which menu items were merged
+* which pages became tabs
+* which duplicate areas were removed or hidden
+* which items were moved under Admin
+* which items were moved under Markets
+* which items were moved under Trade
+* which items were moved under Intelligence
+* which dormant or suspicious UI items were flagged
+* what QA was run
+* what passed
+* what still needs manual UI polish later
+
+COMPLETION STANDARD
+
+Do not mark complete until:
+
+* the menu list is visibly shorter
+* similar features are grouped
+* tab structure is working
+* normal users see less clutter
+* admin/OWNER still has full control access
+* no feature is deleted accidentally
+* no important page is unreachable
+* role-based visibility is correct
+* all validation and app checks pass
+
+This is a navigation and structure cleanup pass only. Leave detailed visual polish, colors, spacing, animations, and final UI styling for my next manual UI cleanup phase.

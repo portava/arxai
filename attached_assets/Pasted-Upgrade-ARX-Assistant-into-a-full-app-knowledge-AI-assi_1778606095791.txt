@@ -1,0 +1,242 @@
+Upgrade ARX Assistant into a full app-knowledge AI assistant with complete knowledge of the entire ARX AI trading app.
+
+Current problem:
+The assistant says “No help topics for this page yet.” That is unacceptable. The assistant should be able to answer any question about the app, any page, any button, any badge, any error, any safety lock, any route, and any workflow.
+
+Important:
+This is not a trading-signal chatbot. It should explain the ARX AI app, app status, safety systems, permissions, MT5 bridge, broker connection, simulator, paper sessions, risk controls, replay, coach, data, and navigation. It must not give financial advice or recommend live trading.
+
+Main goal:
+Create a complete “ARX App Brain” that powers the assistant across the entire app.
+
+Build requirements:
+
+1. Find the real ARX Assistant component currently rendering in the live app.
+   - Search for ARX Assistant, Help Center, help topics, assistant, floating, widget, feedback, ask, app help, page help, support.
+   - Do not assume the old component is the right one.
+   - Trace the actual component visible in the screenshot.
+
+2. Remove the “No help topics for this page yet” dead-end.
+   - The assistant should never return an empty page response.
+   - If a page has no specific topics, it should still answer from the global app knowledge base.
+   - Fallback order should be:
+     a. Current page knowledge
+     b. Related feature knowledge
+     c. Global ARX app knowledge
+     d. Safe “I don’t have that documented yet” response with a prompt to log/add the missing knowledge
+
+3. Create a centralized app knowledge system.
+   Suggested structure:
+   - src/knowledge/arxAppKnowledge.ts
+   - src/knowledge/routeKnowledge.ts
+   - src/knowledge/statusBadgeKnowledge.ts
+   - src/knowledge/safetySystemKnowledge.ts
+   - src/knowledge/mt5Knowledge.ts
+   - src/knowledge/paperTradingKnowledge.ts
+   - src/knowledge/liveTradingKnowledge.ts
+   - src/knowledge/riskKnowledge.ts
+   - src/knowledge/navigationKnowledge.ts
+   - src/knowledge/troubleshootingKnowledge.ts
+   - src/knowledge/permissionsKnowledge.ts
+
+4. The knowledge base must cover:
+   - What ARX AI is
+   - What “Analyze. Risk. eXecute.” means
+   - Cockpit page
+   - Trade page
+   - AI page
+   - Risk page
+   - More menu
+   - Help Center
+   - Emergency Stop
+   - Paper Only mode
+   - Live Trading Disabled
+   - Live Broker Execution Disabled
+   - MT5 Deferred / Simulator Mode
+   - Sim Engine
+   - FX: EURUSD badge
+   - Intents count
+   - Readiness
+   - Coach
+   - Replay
+   - Data
+   - Broker read-only mode
+   - Autopilot blocked
+   - Paper session blockers
+   - Why a user cannot start a paper session
+   - Why live trading is disabled
+   - Why MT5 is deferred
+   - Why a user may be blocked
+   - What the safest next step is
+   - What each navigation item does
+   - What each major button does
+   - What each safety status means
+   - What each permission level means
+   - How the app protects the account
+   - How paper trading differs from simulator mode
+   - How simulator mode differs from broker-connected mode
+   - How the MT5 bridge works at a high level
+   - How heartbeat works
+   - What happens when heartbeat is missing
+   - What happens when broker connection is read-only
+   - What happens when live trading is off
+   - How reports/feedback work
+   - How users should troubleshoot common app issues
+
+5. Create a route-to-knowledge registry.
+   - Every route in App.tsx should have a knowledge entry.
+   - There are 113 page routes according to the last review.
+   - Add coverage validation so every visible route has at least:
+     - page title
+     - purpose
+     - main controls
+     - safety notes
+     - common questions
+     - related routes
+   - Do not remove or rename routes unless already broken.
+
+6. Create an assistant answer engine.
+   It should accept:
+   - user question
+   - current route/path
+   - current visible page title
+   - current safety statuses
+   - current user role
+   - current trading mode
+   - current broker/MT5 status if available
+
+   It should return:
+   - direct answer
+   - short explanation
+   - related app area
+   - suggested next action
+   - safety warning when needed
+   - link/route to the relevant page when possible
+
+7. Make the assistant page-aware.
+   Example:
+   If the user is on Help Center and asks “Why can’t I start a paper session?”
+   The assistant should answer using paper session blockers, readiness checks, simulator state, broker status, and safety locks.
+
+   If the user is on Trade and asks “Why is live trading disabled?”
+   The assistant should explain the current live trading lock, broker execution status, paper-only state, and what must be verified before live execution can ever be enabled.
+
+8. Make the assistant app-wide.
+   The user should be able to ask things like:
+   - What does Paper Only mean?
+   - Why is live trading disabled?
+   - Why is MT5 deferred?
+   - What is simulator mode?
+   - What does 33 intents mean?
+   - What is the safest next step?
+   - Why am I blocked?
+   - What does Emergency Stop do?
+   - How do I connect MT5?
+   - Why is the broker read-only?
+   - What does the AI coach do?
+   - What does replay do?
+   - What does readiness check?
+   - What does the Risk page do?
+   - Where do I find broker settings?
+   - What should I fix first?
+   - What does this badge mean?
+   - What does this button do?
+   - How do I navigate to a feature?
+
+9. Add a search/retrieval layer.
+   - Use exact keyword matching first.
+   - Use synonyms and aliases second.
+   - Use route context third.
+   - Use global knowledge fallback fourth.
+   - Example aliases:
+     “paper session” = paper mode, paper trading, test trade, simulated session
+     “MT5” = MetaTrader, bridge, EA, expert advisor, heartbeat
+     “live trading” = broker execution, real orders, live broker, live execution
+     “blocked” = disabled, locked, unavailable, cannot start, not ready
+     “emergency stop” = kill switch, stop trading, freeze execution, safety lock
+
+10. If an OpenAI/API key exists in secrets, use it only after grounding the answer in the ARX knowledge base.
+    - The AI must answer from app knowledge first.
+    - It must not hallucinate app features.
+    - If no AI key exists, build a deterministic local answer system using the knowledge base and search matching.
+    - The app must still work without an AI key.
+
+11. Add a missing-knowledge logger.
+    When the assistant cannot confidently answer:
+    - log the question
+    - log the current route
+    - log missing topic
+    - show a useful fallback answer
+    - allow future admin/dev review
+    This helps the app knowledge base improve over time.
+
+12. Add role-aware answers.
+    - Normal users get simple user-facing explanations.
+    - Tester/Owner/Admin roles can see deeper diagnostic explanations.
+    - Never trust client-sent role headers.
+    - Role must come from secure server-side session/auth context only.
+
+13. Add safety boundaries.
+    The assistant can explain:
+    - app features
+    - app status
+    - blockers
+    - setup steps
+    - troubleshooting
+    - risk controls
+    - paper/sim/live mode differences
+
+    The assistant must not:
+    - recommend live trades
+    - tell the user what to buy or sell
+    - bypass safety locks
+    - reveal secrets/API keys
+    - fake broker readiness
+    - claim live trading is safe when safety checks are not passed
+
+14. Fix the floating assistant UI while doing this.
+    The assistant panel is still covering content and sitting too low.
+    - It should float above the bottom nav on mobile.
+    - It should not block the tabs/buttons underneath.
+    - Collapsed button should be small and floating.
+    - Expanded panel should open upward.
+    - Parent overlay should use pointer-events-none.
+    - Actual assistant button/card should use pointer-events-auto.
+    - Mobile bottom offset should respect safe area and bottom nav:
+      bottom: calc(env(safe-area-inset-bottom) + 96px)
+    - Desktop should be bottom-right, not full width.
+
+15. Add assistant UI improvements.
+    - Show current page context at the top.
+    - Add quick question chips based on current route.
+    - Add “Ask anything about ARX AI…” input.
+    - Add “Open related page” link when relevant.
+    - Add “Why am I blocked?” global safety diagnostic shortcut.
+    - Add “Explain current status badges” shortcut.
+    - Add “What should I do next?” shortcut.
+
+16. Add tests/verification.
+    Verify:
+    - Assistant never shows “No help topics for this page yet.”
+    - Every route has knowledge coverage.
+    - Every major status badge has an explanation.
+    - Assistant can answer common app questions.
+    - Mobile assistant does not block bottom navigation.
+    - Desktop assistant does not block sidebar/menu.
+    - Emergency Stop remains separate and visible.
+    - No trading execution behavior was changed.
+    - No MT5 bridge logic was changed.
+    - No routes were removed.
+
+17. After implementation, report back with:
+    - Actual assistant component/file found
+    - Files changed
+    - How many routes now have knowledge coverage
+    - How many help topics were added
+    - How fallback answers work
+    - Whether OpenAI/API mode or local deterministic mode is being used
+    - Confirmation that the assistant can answer app-wide questions
+    - Confirmation that the floating UI no longer blocks navigation
+    - Any remaining gaps or missing knowledge areas
+
+Do not change trading execution logic, MT5 bridge logic, risk rules, or route structure unless required only to expose accurate assistant explanations.

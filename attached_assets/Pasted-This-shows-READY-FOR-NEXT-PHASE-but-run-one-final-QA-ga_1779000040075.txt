@@ -1,0 +1,134 @@
+This shows READY FOR NEXT PHASE, but run one final QA gate on the per-user isolation fix before moving on.
+
+Paste this:
+
+Inspect the most recent P0 per-user backend isolation fix before continuing.
+Do NOT build new features yet.
+Do NOT unlock live trading.
+Do NOT enable auto-close execution.
+Do NOT enable shared MT5 routing.
+Do NOT weaken safety envelope, command queue, MT5, paper-only, ALERT_ONLY, user ownership, risk, attribution, or activityStatus gates.
+Do NOT remove auth requirements.
+Do NOT trust frontend-supplied userId for ownership.
+Your job is to audit the per-user isolation work, fix only confirmed P0/P1 issues, rerun checks, and produce a clear QA report.
+Verify these exact items:
+1. Roadmap note resolved honestly
+- Confirm the old user-facing note saying “per-browser UI gate / real per-user isolation is on roadmap” is removed or replaced.
+- Confirm docs/TODO_PER_USER_ISOLATION.md is marked resolved only if backend isolation is actually implemented and verified.
+- Confirm any remaining localStorage feature flag is only a progressive-disclosure UI layer and cannot unlock user data, trading, AI context, or backend access.
+2. Backend-authenticated user source of truth
+Confirm all user-owned routes derive userId only from authenticated backend session:
+- req.authUser.id
+- server session
+- verified auth middleware
+Confirm no user-owned route trusts:
+- frontend body userId
+- query userId
+- route param userId
+- localStorage identity
+- mock user
+- beta tester user
+- demo user
+- browser-only identity
+3. Protected user-owned data
+Verify backend ownership filters exist for:
+- ledgers
+- portfolio
+- trades
+- orders
+- pending orders
+- SL/TP edits
+- manual close requests
+- audit trail
+- AI assistant context
+- AI portfolio tools
+- AI bridge/reconciliation tools
+- activity ping
+- protective auto-close settings
+- notifications
+- risk settings
+- command queue
+- reconciliation
+- shared MT5 virtual account records
+Every read/write must filter by authenticated userId.
+4. Update/delete protection
+Confirm every update/delete uses both:
+- record id
+- authenticated userId
+Wrong-owner attempts must return 403 or 404.
+Unauthenticated requests must return 401.
+5. AI assistant isolation
+Confirm AI can only access the logged-in user’s:
+- ledger
+- trades/orders
+- portfolio/risk settings
+- activity status
+- protective auto-close settings
+- command queue summaries
+- scoped bridge/reconciliation summaries
+AI must not access, summarize, infer, or leak another user’s data.
+6. Command queue and shared MT5 attribution
+Confirm:
+- Command queue requires authenticated userId.
+- Command queue records cannot cross users.
+- Future MT5 command paths require userId, virtualSubAccountId, tradeId/orderId, and auditId.
+- Missing attribution blocks command routing.
+- Shared MT5 routing remains BLOCKED.
+7. Two-user isolation tests
+Create/verify tests using User A and User B:
+- User A cannot read User B ledger.
+- User A cannot read User B trades.
+- User A cannot edit User B SL/TP.
+- User A cannot close User B trade.
+- User A cannot view User B audit logs.
+- User A cannot access User B AI portfolio context.
+- User A cannot access User B command queue records.
+- User A cannot access User B protective auto-close settings.
+- User A cannot modify User B risk settings.
+- Unauthenticated requests return 401.
+- Wrong-owner requests return 403 or 404.
+- Frontend does not render protected user data before auth is verified.
+8. Safety regression
+Confirm all remain true:
+- Live trading = BLOCKED
+- Auto-close = ALERT_ONLY
+- Shared MT5 routing = BLOCKED
+- MT5 commands = force-BLOCKED
+- Command execution = disabled
+- Safety envelope still allows read-only AI Q&A
+- UNKNOWN activity hard-blocks auto-close
+- No fake balance, P&L, bridge status, scanner data, news, current events, or TP targets
+Run:
+1. Typecheck
+2. Full guard suite
+3. Stop-limit/order-type QA
+4. Frontend build/runtime load check
+5. Browser smoke test
+6. Auth required tests
+7. Two-user isolation tests
+8. Wrong-owner read/write tests
+9. AI per-user context tests
+10. Command queue ownership tests
+11. Audit trail ownership tests
+12. Protective auto-close ownership tests
+13. Ledger/trade/portfolio ownership tests
+14. Safety-envelope regression tests
+If anything fails:
+- Fix only confirmed P0/P1 issues.
+- Do not redesign unrelated UI.
+- Do not touch unrelated pages.
+- Rerun all checks after fixes.
+End with a report showing:
+- Files inspected
+- Files changed, if any
+- Endpoints verified
+- Tables/queries verified
+- Tests run and pass/fail results
+- Whether TODO_PER_USER_ISOLATION is fully resolved
+- Whether the UI note was removed/replaced
+- Whether frontend state matches backend-authenticated state
+- Confirmation live trading remains BLOCKED
+- Confirmation auto-close remains ALERT_ONLY
+- Confirmation shared MT5 routing remains BLOCKED
+- Confirmation MT5 commands remain force-BLOCKED
+- Final answer: READY FOR NEXT PHASE or NOT READY, with reasons.

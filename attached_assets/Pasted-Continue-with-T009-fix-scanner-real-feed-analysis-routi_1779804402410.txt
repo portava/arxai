@@ -1,0 +1,230 @@
+Continue with T009: fix scanner real-feed analysis routing for synthetic/volatility markets and remove simulator/demo leakage from live scanner trade setup.
+
+Current completed state:
+- T003 complete: unified live/account-mode resolver.
+- T004 complete: /my-account allocation shell.
+- T005 complete: alerts/notifications.
+- T006 complete: mode-scope filters.
+- T007 complete: crash hardening.
+- T008 complete: admin/operator unrestricted trade ticket limits.
+- typecheck green.
+- ci:guards 23/23 PASS.
+- test:admin-unrestricted-risk 13/13 PASS.
+- test:crash-hardening PASS.
+- test:account-mode 59/59 PASS.
+- test:mode-scope 29/29 PASS.
+- test:live-phaseB 20/20 PASS.
+- test:demo-arming 18/18 PASS.
+- test:demo-verify 13/13 PASS.
+- arx_live_commands count remains 0.
+- no live trades placed.
+- no operator phrases typed.
+- no safety gates weakened.
+
+Now fix the scanner issue from screenshots.
+
+Current bugs:
+1. Scanner says “Synthetic-index feed connected” but also says scanner cards use simulator analysis pipeline.
+2. Scanner shows “Symbol not available in simulator” even when real synthetic feed is connected.
+3. Synthetic/volatility markets should use Deriv/MT5/Market Data Router feed, not simulator, in LIVE_SHARED mode.
+4. Scanner trade modal still shows DEMO badge/copy in live mode.
+5. Scanner setup card can show live shared and demo/paper mixed states at the same time.
+6. Scanner historical check shows insufficient data even when real feed/history should be available.
+7. Scanner confidence/scoring should be based on real feed quality, not simulator availability.
+8. Recent scanner trades/commands must be mode-aware.
+
+Do not place trades.
+Do not insert arx_live_commands.
+Do not type operator phrases.
+Do not recommend lot size.
+Do not fake candles, prices, signals, scores, confidence, news, history, or feed status.
+Do not weaken safety gates.
+Do not broaden the narrow env parser.
+Do not expose backend constants, provider errors, route names, table names, raw booleans, or debug fields to normal users.
+
+Create checkpoint first:
+checkpoint: t009-scanner-real-feed-analysis-routing
+
+Task 1 — Trace scanner pipeline:
+Trace the full scanner path:
+- scan universe
+- symbol search/selection
+- market data routeQuote / routeCandles
+- synthetic/volatility provider routing
+- historical check
+- confidence scoring
+- bias/scanner card generation
+- Ruby summary
+- news risk check
+- trade setup modal
+- Buy/Sell buttons
+- Live Intent
+- recent scanner trades
+
+Find exactly where LIVE_SHARED synthetic/volatility symbols still route through simulator analysis.
+
+Task 2 — Fix scanner data source routing:
+In LIVE_SHARED mode:
+1. Synthetic/volatility symbols must use the unified Market Data Router.
+2. Prefer MT5 broker feed if the connected broker provides the symbol.
+3. Use Deriv active_symbols/ticks/ticks_history if Deriv feed is the active synthetic provider.
+4. Do not use simulator analysis for live synthetic symbols.
+5. Simulator should only be used in explicit PAPER or DEMO mode.
+6. TwelveData should not be the first route for Deriv synthetic/volatility symbols.
+7. If live ticks are connected but historical candles are missing, show the real missing-data reason.
+8. Do not mark the setup as low confidence only because simulator does not support the symbol.
+
+Task 3 — Fix synthetic aliases:
+Verify scanner supports aliases and exact symbols for:
+- Volatility 10
+- V10
+- Volatility 10 1s
+- V10 1s
+- Volatility 25
+- V25
+- Volatility 25 1s
+- V25 1s
+- Volatility 50
+- V50
+- Volatility 50 1s
+- V50 1s
+- Volatility 75
+- V75
+- Volatility 75 1s
+- V75 1s
+- Volatility 100
+- V100
+- Volatility 100 1s
+- V100 1s
+
+Map aliases using active provider symbols, not guessed labels.
+
+Task 4 — Fix scanner card copy:
+Remove misleading live-mode copy:
+- “Scanner cards continue to use the simulator analysis pipeline”
+- “Symbol not available in simulator”
+- “Demo trading enabled”
+- “Test in demo first”
+- “Simulator only”
+- demo/paper badges in LIVE_SHARED scanner flow
+
+Use clean LIVE_SHARED wording:
+- “Live synthetic feed connected”
+- “Scanner analysis using live feed”
+- “Historical candles connected”
+- “Live ticks connected; waiting for enough candle history”
+- “Trade review uses live shared validation”
+- “No live order is sent until you confirm and server checks pass”
+
+Task 5 — Fix scanner confidence and historical check:
+Scanner confidence must be based on:
+- live tick availability
+- candle/history availability
+- candle freshness
+- spread/volatility
+- multi-timeframe data availability
+- risk/reward inputs
+- news/event data availability when relevant
+
+Historical check should:
+1. Use real candles from the Market Data Router.
+2. Identify which windows are available/unavailable.
+3. Not say “0 of 5 comparisons” if provider has usable data.
+4. Not use simulator unavailability as a blocker.
+5. Show a clean reason if historical data is genuinely unavailable.
+
+Task 6 — Fix scanner trade setup modal:
+In LIVE_SHARED mode:
+- remove DEMO badge
+- show LIVE_SHARED mode badge only
+- use current user allocation/risk profile
+- use admin/operator unrestricted profile where applicable
+- stop-loss optional/required according to actual risk caps
+- no safe-default cap warning for unrestricted operator
+- no typed phrase language
+- no simulator copy
+- Review button should validate against real live shared rules without placing a trade
+
+Task 7 — Fix Buy/Sell and Live Intent:
+In LIVE_SHARED mode:
+1. Buy/Sell opens live shared trade review/ticket.
+2. It must not create demo commands.
+3. It must not create paper trades.
+4. It must not insert arx_live_commands during QA.
+5. It must use live shared validation and user/account allocation state.
+6. If blocked, show clean reason:
+   - allocation required
+   - symbol not allowed
+   - stop loss required
+   - account frozen
+   - bridge unavailable
+   - risk cap exceeded
+7. No raw backend gate names in normal UI.
+
+Task 8 — Fix recent scanner trades:
+Make recent scanner trades mode-aware:
+- LIVE_SHARED: “Live scanner actions” or “No live scanner actions yet”
+- DEMO: demo scanner trades
+- PAPER: paper scanner trades
+- TEST rows hidden from normal users
+
+Task 9 — Ruby scanner explanation:
+Ruby’s scanner summary must use the same scanner data source:
+- live feed for LIVE_SHARED
+- demo feed for DEMO
+- paper/sim feed for PAPER
+- no raw provider payloads
+- no simulator explanation when live feed is active
+- concise explanation only
+
+Task 10 — Regression tests:
+Add tests proving:
+1. LIVE_SHARED V25 1s scanner does not use simulator pipeline when real feed is connected.
+2. LIVE_SHARED V75/V25/V100 aliases route through Market Data Router.
+3. “Symbol not available in simulator” does not appear in LIVE_SHARED when feed exists.
+4. Scanner trade modal does not show DEMO badge in LIVE_SHARED.
+5. Buy/Sell in LIVE_SHARED does not create demo/paper commands.
+6. Recent scanner trades are mode-scoped.
+7. Ruby scanner explanation uses same feed source as scanner.
+8. Historical check uses routed candles and reports missing data honestly.
+9. arx_live_commands count remains unchanged during tests.
+
+Task 11 — QA:
+Run:
+- typecheck
+- build if available
+- ci:guards
+- test:account-mode
+- test:mode-scope
+- test:alert-notification-contract
+- test:crash-hardening
+- test:admin-unrestricted-risk
+- test:live-phaseB
+- test:demo-arming
+- test:demo-verify
+- allocation runtime QA
+- new scanner real-feed routing tests
+- seeded LIVE_SHARED scanner E2E if available
+- arx_live_commands count before/after
+
+Verify in actual UI:
+1. Market Scanner in LIVE_SHARED does not show simulator pipeline message.
+2. V25 1s / V75 scanner uses real feed path.
+3. Scanner modal does not show DEMO while live shared is active.
+4. Historical check uses real routed data or clean missing-data reason.
+5. Buy/Sell opens review without creating demo/paper rows.
+6. Recent scanner trades are mode-aware.
+7. No live trade is placed.
+8. arx_live_commands remains 0.
+9. No operator phrases typed.
+10. No safety gates weakened.
+
+Final report only:
+- where simulator pipeline was still used
+- files/routes changed
+- feed routing fixed
+- scanner UI copy fixed
+- tests added
+- QA results
+- arx_live_commands count
+- remaining issues only if they require credentials/manual browser action

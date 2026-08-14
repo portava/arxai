@@ -1,0 +1,339 @@
+Check first, then add or upgrade ARX AI Market News + World Event Intelligence.
+
+SCOPE LOCK:
+Only work on:
+1. News/event data services.
+2. Economic calendar/news feed integrations.
+3. Public social/post monitoring where provider access already exists or can be safely configured.
+4. Scanner news-risk integration.
+5. Ruby/AI news intelligence context.
+6. Trade ticket news-risk precheck.
+7. Admin/source configuration and clean status display if needed.
+
+Do not:
+- Enable live trading.
+- Place trades.
+- Change MT5 execution permissions.
+- Change kill switches.
+- Change admin approval rules.
+- Change trade execution logic.
+- Change login/auth.
+- Redesign unrelated pages.
+- Scrape platforms illegally or bypass API limits.
+- Show fake news as real.
+
+GOAL:
+ARX AI scanner and Ruby should constantly monitor market-moving news, economic events, world leader statements, central bank decisions, geopolitical developments, and global economic conditions that could affect trades.
+
+The AI should use this information when:
+- ranking scanner results
+- explaining a market
+- deciding whether a setup is safe to watch
+- warning users before opening BUY/SELL trade tickets
+- answering trading questions
+- identifying when news risk makes a trade dangerous
+- spotting markets worth watching because of breaking catalysts
+
+PHASE 1 — INSPECT FIRST
+Before building anything, inspect current app for existing:
+- news service
+- economic calendar service
+- scanner news-risk logic
+- Ruby market context builder
+- Finnhub integration
+- NewsAPI/Benzinga/Alpha Vantage/Trading Economics/FRED integration
+- RSS feed readers
+- X/Twitter API integration
+- central bank calendar feeds
+- market event database/cache
+- existing endpoints for news/calendar/alerts
+- current scanner scoring pipeline
+- current Ruby prompt/context pipeline
+
+Do not create duplicate systems if one already exists.
+Upgrade existing systems first.
+
+PHASE 2 — MARKET NEWS INTELLIGENCE SERVICE
+Create or upgrade a normalized MarketNewsIntelligenceService.
+
+It should ingest/normalize:
+- economic calendar events
+- CPI / inflation data
+- jobs reports
+- unemployment data
+- interest-rate decisions
+- central bank speeches
+- Fed / ECB / BOJ / BOE decisions
+- GDP data
+- retail sales
+- PMI
+- bond yields if provider supports it
+- oil/energy news
+- commodity news
+- crypto regulatory news
+- stock market earnings/news if relevant
+- geopolitical conflict/escalation news
+- trade tariffs/sanctions
+- world leader statements
+- government policy decisions
+- major public posts from configured official accounts or monitored leaders
+
+Social/public post monitoring:
+- Use official APIs only if configured, such as X API.
+- Do not bypass platform rules.
+- Allow a configurable watchlist of official/public accounts, such as major world leaders, central banks, treasury/finance ministries, economic agencies, and high-impact figures.
+- Include Donald Trump/public world leader posts only through lawful/available provider feeds or official API access.
+- If social feed access is not configured, show “social feed not configured” cleanly and rely on news providers that quote/report those posts.
+
+PHASE 3 — DATA MODEL
+Normalize each news/event item with:
+- id
+- source/provider
+- title
+- summary
+- url/source reference if available
+- publishedAt
+- detectedAt
+- country/region
+- related symbols
+- related asset classes: forex, metals, indices, crypto, stocks, synthetic if applicable
+- importance: low / medium / high / critical
+- sentiment: bullish / bearish / mixed / unknown
+- event type:
+  economic_data
+  central_bank
+  world_leader_statement
+  government_policy
+  geopolitical
+  commodity
+  crypto_regulation
+  earnings
+  market_structure
+  breaking_news
+- affected currencies/assets
+- confidence score
+- freshness status
+- duplicate/cluster id
+- clean user-facing explanation
+
+Do not expose raw provider payloads to users.
+
+PHASE 4 — NEWS RISK SCORING
+Create or upgrade a NewsRiskEngine.
+
+For each symbol/market, calculate:
+- current news risk: none / low / medium / high / critical
+- directional news bias: bullish / bearish / mixed / unclear
+- affected currency/asset side
+- time sensitivity
+- source confidence
+- volatility risk
+- event proximity risk
+- conflict between technical setup and news
+- whether to watch, avoid, or wait
+
+Examples:
+- EURUSD: USD bullish if Fed surprise hawkish.
+- XAUUSD: risk high if inflation/Fed/yield news active.
+- BTCUSD: risk high if regulatory or ETF/liquidity news hits.
+- US indices: risk high around CPI/FOMC/jobs/earnings shocks.
+- Oil-related assets: risk high around OPEC/geopolitical conflict.
+
+PHASE 5 — SCANNER INTEGRATION
+Upgrade Market Scanner so news intelligence affects market ranking.
+
+Scanner should include:
+- News Risk
+- Fresh Catalyst
+- Economic Event Nearby
+- World Leader / Policy Risk
+- Central Bank Risk
+- Geopolitical Risk
+- News Bias
+- Watch / Avoid / Wait recommendation
+
+Scanner ranking should consider:
+- current technical setup
+- historical/backtest results
+- volatility
+- spread/market conditions
+- economic calendar
+- fresh news catalysts
+- sentiment/news bias
+- risk of sudden reversal due to news
+
+If a setup looks good technically but news risk is high, scanner should clearly warn:
+“Technical setup is strong, but news risk is high. Wait for confirmation.”
+
+PHASE 6 — RUBY / AI INTEGRATION
+Ruby must use news intelligence in all trading-related answers.
+
+When user asks:
+- “What should I trade?”
+- “Should I buy or sell?”
+- “Analyze EURUSD”
+- “Why is gold moving?”
+- “Is this a fakeout?”
+- “Should I close?”
+- “What markets should I watch?”
+- “Check scanner”
+- “What’s risky right now?”
+
+Ruby should receive a structured MarketNewsDecisionPack with:
+- latest relevant news
+- economic calendar events
+- world leader/public policy statements if available
+- central bank events
+- geopolitical risk
+- affected symbols/assets
+- news sentiment/bias
+- event freshness
+- confidence/source quality
+- historical/backtest context
+- current technical context
+- unavailable data warnings
+
+Ruby should explain clearly:
+- what news matters
+- why it matters
+- which asset/currency it affects
+- whether it supports or conflicts with the technical setup
+- whether to watch, wait, avoid, or proceed carefully
+
+Ruby must not hallucinate news.
+If news feed is unavailable:
+“News feed is unavailable right now, so I’m relying on chart/history/scanner data only.”
+
+PHASE 7 — TRADE TICKET NEWS CHECK
+Before BUY/SELL trade confirmation, add a compact News Risk Check panel.
+
+Show:
+- News Risk: none / low / medium / high / critical
+- Relevant event/news headline
+- Affected asset/currency
+- Bias: bullish / bearish / mixed / unclear
+- Timing: now / upcoming / recently released
+- Ruby warning summary
+- Source freshness
+- “No major news detected” if true
+- “News feed unavailable” if provider missing
+
+This should inform the user but not override existing risk rules unless existing rules already block news events.
+
+PHASE 8 — ALERTS / WATCH MODE
+Add or upgrade alerts so ARX AI can flag:
+- breaking market-moving news
+- high-impact economic releases
+- world leader/policy comments
+- central bank headlines
+- sudden sentiment shifts
+- symbol-specific catalyst risk
+
+Notifications should be clean:
+- “High-impact USD news detected. EURUSD volatility risk increased.”
+- “Gold may react to Fed/yield headlines.”
+- “BTC news risk elevated from regulatory headlines.”
+
+Do not spam users.
+Use throttling and deduplication.
+
+PHASE 9 — BACKEND ENDPOINTS
+Reuse existing endpoints if available.
+If missing, add minimal read-only endpoints such as:
+- GET /api/news/status
+- GET /api/news/latest
+- GET /api/news/market-impact
+- GET /api/calendar/economic-events
+- POST /api/news/impact-analysis
+- POST /api/scanner/news-adjusted-results
+- POST /api/ruby/market-news-context
+
+Endpoint rules:
+- read-only
+- permission checked
+- rate limited
+- cached
+- clean error responses
+- no secrets exposed
+- no raw stack traces
+- no trade execution
+
+PHASE 10 — DATA SOURCES / CONFIGURATION
+Use env-based provider keys only.
+Do not hardcode keys.
+
+Supported source priority:
+1. Existing configured providers.
+2. Economic calendar provider already in app.
+3. Market news provider already in app.
+4. RSS/public official feeds if allowed.
+5. X/Twitter official API only if configured.
+6. Clean unavailable state if no provider exists.
+
+Add admin-only source status:
+- configured
+- missing key
+- rate limited
+- stale
+- online
+- offline
+
+Regular users should only see clean states, not provider internals.
+
+PHASE 11 — PERFORMANCE / SAFETY
+Because news can be heavy:
+- cache articles/events
+- cluster duplicates
+- deduplicate headlines
+- avoid repeated LLM calls for the same news
+- use scheduled polling where safe
+- respect provider rate limits
+- avoid blocking scanner if news provider is down
+- mark stale news clearly
+- store timestamps
+
+PHASE 12 — UI REQUIREMENTS
+Add compact UI:
+Scanner:
+- News Risk chip
+- Catalyst chip
+- Bias chip
+- “Why news matters” expandable section
+
+Ruby:
+- Historical Context
+- News Context
+- Current Technical Read
+- Risk Summary
+
+Trade Ticket:
+- Historical Check
+- News Risk Check
+- Final Risk Confirmation
+
+Alerts:
+- Market-moving news watchlist
+
+Keep it clean.
+No giant news walls by default.
+No raw provider text dumps.
+No internal names.
+
+PHASE 13 — ACCEPTANCE CHECKLIST
+Do not finish until:
+1. Existing news/calendar/social/feed systems are inspected first.
+2. No duplicate conflicting news system is created.
+3. Scanner uses news intelligence when available.
+4. Ruby uses news intelligence for trading questions.
+5. Trade ticket shows news risk before confirmation.
+6. News data is sourced from real providers only.
+7. Social/public post monitoring uses official/configured APIs only.
+8. If news/social data is unavailable, app shows clean unavailable state.
+9. News impact is connected to symbols/assets.
+10. Scanner ranking is adjusted by news risk.
+11. Alerts/watch mode can flag market-moving news.
+12. Data is cached/deduplicated/rate-limited.
+13. No secrets/raw errors/provider keys are exposed.
+14. No live trades are placed.
+15. No execution permissions, kill switches, or admin approvals are changed.
+16. App builds.

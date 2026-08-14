@@ -1,0 +1,1265 @@
+Build the integrated ARX Ruby Execution + Internal Handshake System upgrade.
+
+This combines the last two requirements:
+
+1. Do not rebuild the app. This is an upgrade to the existing ARX AI system.
+2. Make every major layer talk to each other through an internal handshake/check-in system.
+3. Upgrade Ruby so when AI-Assisted Trading is ON, Ruby can execute direct user trading commands through the existing live bridge path without extra confirmation, as long as the command is inside approved settings and all execution sanity checks pass.
+4. Ruby must be able to open trades, close trades, monitor trades, modify SL/TP, move SL to break-even, watch setups, and enter/exit based on user-commanded conditions.
+5. Preserve user isolation: owner/admin can manage true master exposure; regular users can only manage their attributed positions; investors remain view-only.
+
+This is not a rebuild.
+Do not rewrite the app.
+Do not replace existing scanner, Ruby, Smart Chart, trade modal, live bridge, investor portal, admin dashboard, role system, or permissions.
+Do not create disconnected duplicate systems.
+Do not create a second live execution path.
+Do not add Paper Trading, simulator, mock, fake, sandbox, or test-trading language.
+Do not expose backend route names, table names, raw JSON, stack traces, internal enum names, or developer wording to users.
+Do not change the proven live execution path.
+Do not place new live trades as part of the build unless I explicitly authorize a live test later.
+
+The goal:
+Ruby should stop acting like a passive chatbot when AI-Assisted Trading is ON. Ruby should become an authorized live trading assistant that can act on user commands, while the backend still performs fast internal sanity checks so the app does not fire invalid, stale, duplicate, or unsafe orders.
+
+====================================================
+PART 1 — NON-REBUILD RULE
+====================================================
+
+Strict implementation rules:
+
+- Inspect what already exists first.
+- Reuse existing routes, services, hooks, components, database models, bridge commands, scanner flows, Ruby flows, and permission systems.
+- Upgrade missing pieces only.
+- Do not remove working functionality.
+- Do not duplicate existing services.
+- Do not create a parallel scanner, Ruby engine, bridge path, trade modal, or investor portal.
+- Do not hide broken wiring behind new UI.
+- Do not hardcode fake data to make screens look finished.
+- Do not weaken regular-user or investor isolation.
+- Do not break live bridge status, open positions, retcodes, trade modal, scanner, Ruby chat, Smart Chart, admin dashboard, or investor portal.
+
+This is an integration upgrade.
+
+Every new feature must plug into the existing ARX AI system.
+
+====================================================
+PART 2 — SYSTEM-WIDE WIRING AUDIT
+====================================================
+
+Before building, audit current wiring across the app.
+
+Audit these layers:
+
+1. Auth / Role Layer
+- admin
+- trader/user
+- investor
+- owner/admin permissions
+- regular user restrictions
+- investor view-only restrictions
+- route guards
+- API permission checks
+- Andraie.co@gmail.com trader-only split if already implemented
+- separate admin login/config
+
+2. Market Data Layer
+- live price
+- bid/ask
+- spread
+- candles/OHLC
+- historical data
+- symbol directory
+- arx_symbol_specs
+- tick value
+- tick size
+- point
+- digits
+- contract size
+- min/max lot
+- lot step
+- trade mode
+- market session
+- freshness timestamps
+
+3. Scanner Layer
+- Focus Scan
+- Broad Scan
+- Ruby Scalp Signals
+- Ruby Scalp Builder
+- signal lifecycle
+- signal freshness
+- scanner result ranking
+- scanner cache
+- selected symbol state
+
+4. Ruby Intelligence Layer
+- Ruby chat prompt
+- Ruby command parsing
+- Ruby scanner explanation
+- Ruby trade analysis
+- Ruby market explanation
+- Ruby trade monitoring response
+- Ruby voice/text state
+- Ruby reason chain
+- bad wording such as paper-only/sandbox/mock/read-only
+
+5. Smart Chart Layer
+- selected symbol sync
+- chart data
+- overlays
+- Ruby zones
+- news/event overlay
+- execution cost overlay
+- trade health overlay
+
+6. News / Economic Layer
+- economic calendar
+- high-impact events
+- headlines
+- market impact mapping
+- affected symbols/currencies
+- event timestamps
+- news freshness
+- news severity
+
+7. Broker / Bridge Layer
+- EA heartbeat
+- bridge readiness
+- broker account mirror
+- balance/equity
+- margin/free margin
+- open position sync
+- manual master positions
+- ARX-attributed positions
+- mt5_commands-created positions
+- command/result mapping
+- retcodes
+- fill price
+- slippage
+- spread at entry
+- position visibility
+- freshness
+
+8. Risk / Execution Preview Layer
+- lot validation
+- SL/TP validation
+- margin check
+- reward-to-risk
+- spread cost
+- slippage estimate
+- starting drawdown estimate
+- break-even distance
+- order type recommendation
+- trade survivability
+- account impact
+
+9. Trade Modal / Order Layer
+- selected symbol wiring
+- direction wiring
+- order type
+- lot size
+- SL/TP
+- Ruby explanation
+- live readiness checks
+- confirm live trade
+- retcode/result display
+
+10. Open Trade Management Layer
+- current positions
+- TP progress
+- SL distance
+- trade health
+- break-even suggestion
+- partial close guidance if supported
+- invalidation monitoring
+- close warning
+
+11. Investor / Fund Book Layer
+- investor ledger
+- strategy pools
+- NAV/unit accounting
+- broker mirror overlay
+- 30-day deposit lock
+- available vs locked balance
+- fees
+- 60/40 internal waterfall admin-only
+- weekly investor explanation
+- statements
+- discrepancy/reconciliation
+
+12. Admin Layer
+- admin dashboard
+- user management
+- investor management
+- bridge controls
+- kill switches
+- Ruby quality dashboard
+- discrepancy center
+- audit logs
+- settings/tuning controls
+
+Deliver audit results:
+- what is wired correctly
+- what is partially wired
+- what is disconnected
+- what is duplicated
+- what is stale or unused
+- what needs repair
+- what must not be touched
+
+====================================================
+PART 3 — INTERNAL ARX HANDSHAKE SYSTEM
+====================================================
+
+Build a shared internal handshake/check-in system.
+
+Suggested names:
+- arxHandshakeService
+- systemHandshakeService
+- arxSystemHealthService
+- arxLayerCoordinator
+- arxSignalReadinessService
+
+Use existing project naming style.
+
+Purpose:
+Every major layer should know whether required connected systems are available, fresh, valid, and aligned before producing user-facing analysis, trade previews, execution commands, investor values, weekly reports, or admin decisions.
+
+Ruby should not give an actionable signal unless scanner data, chart data, symbol specs, broker state, news context, execution conditions, user/account permissions, and risk logic have checked in successfully.
+
+Trade preview should not open as executable unless signal state, symbol specs, account state, execution cost, slippage, SL/TP validation, bridge readiness, and permissions have checked in successfully.
+
+Investor values should not publish as fresh unless investor ledger, NAV engine, broker mirror, pool allocation, lock status, fee logic, and reconciliation status have checked in successfully.
+
+Handshake output should include:
+
+{
+  handshakeId,
+  contextType,
+  contextId,
+  requestedBy,
+  timestamp,
+  overallStatus,
+  layersChecked,
+  blockers,
+  warnings,
+  freshness,
+  permissions,
+  recommendations,
+  safeToProceed,
+  userFacingMessage,
+  adminDetails
+}
+
+overallStatus:
+- READY
+- READY_WITH_WARNINGS
+- WAITING_FOR_DATA
+- STALE
+- BLOCKED
+- DEGRADED
+- ERROR
+
+Layer check status:
+- PASS
+- WARN
+- FAIL
+- SKIPPED
+- NOT_AVAILABLE
+
+Each layer check should include:
+- layerName
+- status
+- lastUpdated
+- freshnessAgeSeconds
+- required
+- reason
+- userFacingMessage
+- adminDetails
+
+====================================================
+PART 4 — REQUIRED HANDSHAKE TYPES
+====================================================
+
+Implement at least these handshake types:
+
+1. Scanner Signal Handshake
+Used before Ruby presents a scanner signal as actionable.
+
+Must check:
+- live price freshness
+- candle data freshness
+- symbol specs available
+- selected symbol valid
+- scanner result available
+- signal lifecycle state
+- late/do-not-chase status
+- news risk
+- spread/slippage conditions
+- execution cost viability
+- risk/reward viability
+- Ruby explanation readiness
+- chart overlay sync
+- user permissions if trade action is shown
+- bridge readiness if Build Trade is shown
+
+2. Smart Chart Overlay Handshake
+Used before chart overlays are drawn.
+
+Must check:
+- chart data loaded
+- selected symbol matches scanner symbol
+- Ruby signal exists
+- levels/zones available
+- news events mapped to symbol
+- execution cost data available if layer enabled
+- trade health data available if open position exists
+- overlay timestamps/freshness
+
+3. Trade Preview Handshake
+Used before opening Build Trade / trade modal from Ruby, scanner, or chart.
+
+Must check:
+- signal not stale
+- signal not late unless user is only reviewing
+- symbol specs available
+- bid/ask fresh
+- spread acceptable or warning handled
+- slippage estimate available
+- lot size valid
+- SL/TP valid
+- margin sufficient
+- account live-enabled if live
+- user allowed to trade
+- bridge ready
+- kill switch off
+- no critical discrepancy
+- no conflicting open trade warning unacknowledged if applicable
+
+4. Ruby Execution Handshake
+Used before Ruby executes any user-commanded open/close/modify/watch-enter/watch-close action.
+
+Must check:
+- authenticated user
+- user role allowed
+- Ruby Execution Authority
+- AI-Assisted Trading ON when required
+- requested action allowed by user settings
+- account live-enabled
+- live bridge connected and writable
+- kill switch OFF
+- symbol valid/tradeable for open
+- position ticket valid for close/modify
+- lot valid
+- margin sufficient
+- spread/slippage acceptable or warning allowed
+- SL/TP valid if required
+- no duplicate command pending
+- command idempotency key exists
+- data fresh
+- no critical discrepancy
+- route uses existing live execution path
+
+5. Live Trade Health Handshake
+Used after a trade is open.
+
+Must check:
+- position exists in broker/EA position sync
+- position freshness
+- selected symbol matches
+- TP/SL known
+- current price fresh
+- Ruby original signal available if trade came from Ruby
+- trade health engine active
+- retcode/fill data stored
+- actual slippage vs estimate if available
+
+6. Investor Value Handshake
+Used before displaying investor balance/current value.
+
+Must check:
+- investor ledger scoped to authenticated investor
+- investor holdings loaded
+- current NAV available
+- broker mirror overlay available if applicable
+- pool assignments valid
+- locked funds calculated
+- available withdrawal calculated
+- fees applied
+- reconciliation passed or status shown
+- no critical discrepancy
+- investor cannot see other investor data
+- ARX internal waterfall hidden
+
+7. Weekly Investor Report Handshake
+Used before publishing weekly account story/report.
+
+Must check:
+- weekly NAV close completed
+- broker sync fresh/reconciled
+- investor ledger reconciled
+- P/L calculation completed
+- fees calculated
+- locked deposit status included
+- economic/news attribution available or marked unavailable
+- no stale data
+- no critical discrepancy
+- report visible only to correct investor
+- ARX internal waterfall excluded
+
+8. Admin Fund Control Handshake
+Used before admin approves deposits, withdrawals, waterfall distributions, adjustments, freezes, or statement/report corrections.
+
+Must check:
+- admin permission
+- audit logging available
+- affected investor/pool data loaded
+- reconciliation status
+- lock/freeze status
+- required reason/note captured
+- action does not violate policy
+
+9. Ruby Explanation Handshake
+Used before Ruby answers scanner/trade questions.
+
+Must check:
+- market data context
+- scanner context
+- chart context
+- news/economic context
+- symbol-specific playbook
+- execution/risk context if trade-related
+- user role context
+- no internal wording leakage
+- explanation includes required fields
+
+====================================================
+PART 5 — LAYER READINESS CONTRACT
+====================================================
+
+Every major layer should expose a lightweight readiness/check method.
+
+Examples:
+- marketData.checkReadiness(symbol)
+- scanner.checkSignalReadiness(symbol)
+- ruby.checkExplanationReadiness(context)
+- chart.checkOverlayReadiness(symbol)
+- news.checkMarketImpact(symbol)
+- broker.checkBridgeReadiness()
+- risk.checkTradePreviewReadiness(setup)
+- tradeModal.checkPrefillReadiness(setup)
+- investorFund.checkValueReadiness(investorId)
+- admin.checkActionReadiness(action)
+
+Do not force all code into one huge file.
+Use a shared coordinator that calls existing services.
+
+The handshake should not slow the app.
+Cache results where safe.
+Use freshness timestamps.
+Do not re-fetch everything unnecessarily if valid data already exists.
+
+====================================================
+PART 6 — CROSS-LAYER EVENT BUS / CHECK-IN SYSTEM
+====================================================
+
+If the app already has an event bus/state system, reuse it.
+If not, create a lightweight internal check-in/event system.
+
+Purpose:
+When a key layer updates, connected layers know.
+
+Events:
+- MARKET_PRICE_UPDATED
+- CANDLE_DATA_UPDATED
+- SYMBOL_SPECS_UPDATED
+- SCANNER_SIGNAL_UPDATED
+- RUBY_EXPLANATION_UPDATED
+- CHART_OVERLAY_UPDATED
+- NEWS_EVENT_UPDATED
+- BROKER_HEARTBEAT_UPDATED
+- POSITION_SYNC_UPDATED
+- TRADE_RESULT_UPDATED
+- INVESTOR_NAV_UPDATED
+- INVESTOR_LEDGER_UPDATED
+- DISCREPANCY_OPENED
+- DISCREPANCY_RESOLVED
+- USER_ROLE_UPDATED
+- RUBY_COMMAND_CREATED
+- RUBY_COMMAND_SENT
+- RUBY_COMMAND_RESULT
+- TRADE_HEALTH_UPDATED
+
+Examples:
+When market price updates:
+- scanner refreshes relevant signal
+- chart overlay updates
+- execution cost preview recalculates
+- open trade health recalculates
+
+When news event updates:
+- chart event overlay updates
+- scanner news risk updates
+- Ruby explanation updates
+- signal stage may downgrade
+
+When position sync updates:
+- open trades update
+- trade health updates
+- investor broker mirror overlay updates
+- discrepancy center checks
+
+When investor NAV updates:
+- investor dashboard updates
+- weekly report readiness updates
+- withdrawal availability recalculates
+
+When Ruby command result updates:
+- Ruby chat status updates
+- trade modal/retcode display updates
+- open positions refresh
+- trade health monitor updates
+- outcome learning records update
+
+====================================================
+PART 7 — CROSS-LAYER CONSISTENCY RULES
+====================================================
+
+Enforce consistency:
+
+1. Selected symbol consistency
+Scanner selected symbol, Smart Chart selected symbol, Ruby explanation, and trade modal symbol must match unless user intentionally changes it.
+
+2. Signal consistency
+Ruby explanation must refer to the same signal, price, direction, level, and stage shown on chart.
+
+3. Chart consistency
+Chart levels must match Ruby text:
+- entry zone
+- watch zone
+- late zone
+- invalidation
+- TP/SL
+
+4. Trade preview consistency
+Trade modal prefill must match current Ruby setup:
+- symbol
+- direction
+- lot
+- order type
+- entry
+- SL
+- TP
+- explanation
+- risk estimate
+- execution cost
+
+5. Live position consistency
+Ruby monitor, Cockpit, open positions, broker mirror, and retcode/result mapping must reference the same broker ticket/position when managing a trade.
+
+6. Investor consistency
+Investor dashboard value must match:
+- investor units
+- current NAV
+- locked/unlocked status
+- fees
+- reconciliation status
+
+7. Admin consistency
+Admin fund control values must reconcile with investor-facing values but include admin-only internal layers.
+
+If inconsistency is detected:
+- create handshake warning or discrepancy
+- block sensitive action if financial/execution-critical
+- show clean message to user/admin
+
+====================================================
+PART 8 — HANDSHAKE SHOULD NOT BLOCK EVERYTHING
+====================================================
+
+Use blocking only when necessary.
+
+Blocking examples:
+- stale trade signal used for live trade
+- missing symbol specs for lot/slippage calculation
+- invalid SL/TP
+- insufficient margin
+- investor data mismatch
+- critical discrepancy
+- user lacks permission
+- bridge not ready for live trade
+- kill switch active
+- locked funds withdrawal attempt
+- duplicate Ruby execution command pending
+- missing broker ticket for close/modify
+
+Warning examples:
+- news risk high
+- spread elevated
+- explanation partial
+- economic driver unknown
+- chart overlay missing non-critical layer
+- confidence mixed
+- broker sync delayed but investor value clearly marked under review
+- slippage estimate based on spread/volatility because fill history is unavailable
+
+Degraded mode:
+If news is unavailable, Ruby can still analyze technicals but must say:
+“No confirmed news driver available from current data.”
+
+If slippage history unavailable, Ruby can estimate from spread/volatility and say:
+“Slippage estimate is based on current spread and volatility because recent execution history is unavailable.”
+
+====================================================
+PART 9 — HANDSHAKE USER-FACING STATES
+====================================================
+
+The handshake should produce clean user-facing states.
+
+Scanner:
+If scanner data is fresh but news risk is high:
+“Setup forming, but news risk is high. Ruby is watching zones, not recommending entry yet.”
+
+If price signal is late:
+“Late — do not chase. Price moved too far from Ruby’s entry zone.”
+
+If market data is stale:
+“Waiting for fresh price before Ruby updates this signal.”
+
+Smart Chart:
+If news event is mapped:
+“USD CPI in 12 minutes — high impact for Gold/EURUSD/US30.”
+
+Trade Preview:
+If SL/TP invalid:
+“Ruby needs valid stop loss and take profit levels before this trade can be reviewed.”
+
+If bridge not ready:
+“Live bridge is not ready. Ruby can analyze but cannot prepare live execution.”
+
+Ruby Execution:
+If AI-Assisted is ON and ready:
+“AI-Assisted Trading is ON. Sending the command now.”
+
+If blocked:
+“I can’t send this yet because the live bridge is not writable.”
+
+Investor:
+If reconciliation passed:
+“Portfolio Status: Fresh.”
+
+If broker sync stale:
+“Portfolio update delayed. Values may change after broker sync completes.”
+
+Admin:
+If discrepancy blocks payout:
+“Critical discrepancy detected. Withdrawals and weekly report publishing are paused until resolved.”
+
+====================================================
+PART 10 — HANDSHAKE LOGGING AND ADMIN VISIBILITY
+====================================================
+
+Log handshake results for important actions:
+- scanner actionable signal
+- Build Trade clicked
+- trade modal opened
+- Ruby command created
+- Ruby command sent
+- live trade submitted
+- chart alert shown
+- trade monitor trigger fired
+- investor value displayed
+- weekly report published
+- deposit/withdrawal approved
+- profit waterfall approved
+- admin adjustment made
+
+Admin should have a System Handshake Monitor showing:
+- recent handshakes
+- pass/warn/fail counts
+- most common blockers
+- stale layers
+- disconnected services
+- data freshness problems
+- duplicate command prevention
+- user-facing impact
+- admin-only details
+
+Do not show raw internal logs to normal users.
+Admin-only can see technical details.
+
+====================================================
+PART 11 — EXECUTION MODES
+====================================================
+
+Implement or upgrade execution authority modes:
+
+1. Manual Trading
+- Ruby can advise.
+- User must use manual trade controls/confirmation.
+
+2. AI-Assisted Trading
+- Ruby can execute direct user-commanded trade actions without extra confirmation if the action is inside approved permissions.
+- Ruby can open, close, modify, monitor, and manage trades from chat/scanner/chart commands.
+- Ruby does not independently trade unless instructed by the user or operating under a user-commanded watch condition.
+
+3. AI Auto Trading
+- Ruby may independently find, open, manage, and close trades based on approved strategy rules.
+- This is separate from AI-Assisted Trading and must not be enabled accidentally.
+
+For this build, focus on AI-Assisted Trading.
+
+Do not call this “bypassing all gates” in UI or code.
+AI-Assisted Trading bypasses extra user confirmation prompts, not backend execution sanity checks.
+
+====================================================
+PART 12 — AI-ASSISTED PERMISSION SETTINGS
+====================================================
+
+Add or upgrade per-user/per-account settings:
+
+RubyExecutionAuthority:
+- OFF
+- ADVISE_ONLY
+- AI_ASSISTED
+- AI_AUTO
+
+AI-Assisted permission toggles:
+- allowRubyOpenTrades
+- allowRubyCloseTrades
+- allowRubyModifySLTP
+- allowRubyMoveToBreakEven
+- allowRubyPartialClose if supported
+- allowRubyMonitorTrades
+- allowRubyWatchAndEnter
+- allowRubyWatchAndClose
+- allowRubyScalpFromScanner
+- requireExtraConfirmation
+- maxRubyLotPerTrade
+- maxRubyOpenPositions
+- maxRubyDailyTrades if configured
+- allowedSymbols if configured
+- allowedAssetClasses if configured
+
+If requireExtraConfirmation is OFF and AI_ASSISTED is ON, Ruby should not ask for another confirmation for allowed user-commanded actions.
+
+For owner/admin testing, allow these settings to be controlled from admin/user settings.
+
+For investor role:
+Do not show these controls.
+Investors remain view-only.
+
+====================================================
+PART 13 — RUBY COMMAND ROUTER
+====================================================
+
+Build or upgrade Ruby Command Router.
+
+Ruby must parse direct trading commands from chat, scanner, and chart.
+
+Command types:
+- OPEN_TRADE
+- CLOSE_TRADE
+- MODIFY_SLTP
+- MOVE_SL_TO_BREAKEVEN
+- PARTIAL_CLOSE
+- MONITOR_TRADE
+- WATCH_AND_ENTER
+- WATCH_AND_CLOSE
+- SCALP_BEST_SETUP
+- CANCEL_PENDING_RUBY_ACTION
+- STATUS_CHECK
+
+Command examples:
+- “buy V75 0.01”
+- “sell Gold with tight risk”
+- “close my V75 trade”
+- “close all Gold positions”
+- “set TP to ____”
+- “set SL to ____”
+- “move stop to break-even”
+- “monitor this trade and close if it breaks structure”
+- “watch V75 and enter if Ruby gets a clean sell”
+- “find the best scalp with $15 risk”
+- “cancel that watch order”
+
+The router must:
+1. Identify intent.
+2. Identify symbol/position if applicable.
+3. Identify action.
+4. Identify lot/amount/risk if supplied.
+5. Ask only for missing critical info if required.
+6. Run Ruby Execution Handshake.
+7. Route to existing live command path.
+8. Store command/result.
+9. Report clean user-facing status.
+
+Do not create a second live execution path.
+Use the existing proven live command/bridge path.
+
+====================================================
+PART 14 — USER-FACING AI-ASSISTED BEHAVIOR
+====================================================
+
+When AI-Assisted Trading is ON, Ruby should respond like an execution assistant.
+
+Examples:
+
+User:
+“Ruby, close my V75 sell if it breaks structure.”
+
+Ruby:
+“AI-Assisted Trading is ON. I found your V75 Sell. I’m monitoring the invalidation zone. If price breaks and holds above 4628, I’ll send the close command.”
+
+User:
+“Ruby, close this trade now.”
+
+Ruby:
+“AI-Assisted Trading is ON. I found the open position and the live bridge is writable. Sending close command now.”
+
+User:
+“Ruby, buy Gold 0.02 lot and set proper TP/SL.”
+
+Ruby:
+“AI-Assisted Trading is ON. I’m checking Gold specs, spread, margin, slippage, and valid SL/TP levels. If valid, I’ll send the order through the live bridge.”
+
+If blocked, Ruby must explain exact user-safe reason:
+- “AI-Assisted Trading is OFF.”
+- “Live bridge is not writable right now.”
+- “I cannot find a valid open position ticket.”
+- “The symbol is not tradeable right now.”
+- “The requested lot size is outside broker limits.”
+- “Spread/slippage is too high for the requested scalp.”
+- “The kill switch is active.”
+- “Your account is not live-enabled.”
+- “A matching Ruby command is already pending.”
+
+Do not use:
+- paper-only
+- sandbox
+- simulated
+- mock
+- backend says
+- arx_live_positions
+- mt5_commands
+- route names
+- database names
+- read-only paper mode
+- “I can’t auto-manage” as a blanket response
+
+====================================================
+PART 15 — LIVE POSITION SOURCE HIERARCHY
+====================================================
+
+When Ruby is asked to monitor, close, or modify current trades, she must find positions using the correct hierarchy.
+
+For owner/admin:
+- ARX-attributed open positions
+- real master broker positions from broker position mirror / live position source
+- mt5_commands-created positions
+- manual master positions
+- broker ticket / mt5_position_ticket mapping
+- stale/missing position sync handling
+
+For regular users:
+- their own ARX-attributed positions only
+- no manual master positions
+- no other user exposure
+- no master full exposure
+
+For investors:
+- no trading controls
+- investor portal remains view-only for execution
+
+Ruby must not simply say “I don’t see trades” unless all relevant sources were checked.
+
+If missing:
+Explain cleanly:
+- “No synced broker position is currently available.”
+- “Position sync is stale.”
+- “A broker position may exist but is not mapped yet.”
+- “This position is owner/admin-only.”
+- “I need a fresh position sync before I can manage this.”
+
+====================================================
+PART 16 — MONITOR AND MANAGE TRADES
+====================================================
+
+When user says:
+- “Monitor my trade.”
+- “Close when necessary.”
+- “Minimum risk.”
+- “Set proper TP.”
+- “Watch and close if it breaks.”
+- “Manage this trade.”
+
+Ruby should create a Trade Management Plan.
+
+Plan includes:
+- symbol
+- direction
+- lot
+- entry
+- current price
+- current P/L
+- spread
+- SL
+- TP
+- recommended emergency SL
+- recommended TP1
+- recommended main TP
+- invalidation level
+- close trigger
+- break-even trigger
+- partial close trigger if supported
+- news/event risk
+- trade health
+- slippage estimate for close/modify
+- account impact
+
+Trade health statuses:
+- Healthy
+- Still Valid but Slow
+- Weakening
+- Danger
+- Invalidated
+- Close Recommended
+- Break-Even Recommended
+- Partial Recommended
+- TP Progress
+
+If AI-Assisted Trading is ON and user gave permission:
+Ruby can execute the close/modify command when the trigger happens.
+
+Flow:
+1. Find position.
+2. Run Live Trade Health Handshake.
+3. Build management plan.
+4. Store watch/management instruction.
+5. Monitor position sync/price updates.
+6. Close/modify if trigger hits and AI-Assisted permission allows.
+7. Prevent duplicate trigger firing.
+8. Report action and broker result.
+
+====================================================
+PART 17 — WATCH AND ENTER
+====================================================
+
+If user says:
+- “Watch this setup and enter when ready.”
+- “Enter if the sell confirms.”
+- “Scalp best setup with $15 risk.”
+- “Find the best scalp and take it when Ruby gets confirmation.”
+
+Ruby should:
+1. Create watch instruction.
+2. Define setup conditions.
+3. Define entry zone/confirmation.
+4. Define invalidation.
+5. Define lot/risk based on user instruction.
+6. Monitor scanner/chart/price/news/spread.
+7. Enter only when condition is met and AI-Assisted Trading is ON.
+8. Skip if setup becomes late, invalid, stale, or execution cost is poor.
+9. Report entry result.
+
+Ruby must not enter if:
+- setup is late
+- signal expired
+- data stale
+- spread/slippage too high
+- news danger violates settings
+- symbol invalid
+- bridge not writable
+- margin insufficient
+- AI-Assisted permission is off
+- duplicate command pending
+
+====================================================
+PART 18 — COMMAND IDEMPOTENCY AND DUPLICATE PREVENTION
+====================================================
+
+Ruby command execution must prevent duplicate orders.
+
+Every Ruby command should create:
+- command id
+- user id
+- account id
+- symbol
+- action type
+- requested params
+- source: RUBY_CHAT / SCANNER / SMART_CHART / TRADE_MONITOR
+- idempotency key
+- status
+- createdAt
+- sentAt
+- completedAt
+- broker result
+- retcode
+- ticket if available
+- error if any
+
+If same command is repeated accidentally:
+- do not duplicate unless user clearly requests another trade
+- show “A matching Ruby command is already pending.”
+
+For watch/monitor triggers:
+- each trigger should fire once unless configured otherwise
+- prevent repeated close/open loops
+
+====================================================
+PART 19 — RUBY RESPONSE STANDARD
+====================================================
+
+Ruby should sound like a live trading assistant.
+
+When executing:
+“AI-Assisted Trading is ON. I’m sending the close command now.”
+
+When monitoring:
+“I found your V75 Sell. I’ll monitor the invalidation level and close if the structure breaks.”
+
+When blocked:
+“I can’t send this yet because the live bridge is not writable.”
+
+When action completes:
+“Close command completed. Broker result: filled/rejected with reason. Final P/L: ____.”
+
+When no position found:
+“I checked the live position sources available to your role and do not see a synced open position yet. Position sync may be stale or the broker ticket may not be mapped.”
+
+Never use:
+- paper-only
+- sandbox
+- simulated
+- mock
+- backend table names
+- route names
+- database names
+- internal enum names
+- stack traces
+- “I can’t auto-manage” as a blanket response
+
+====================================================
+PART 20 — UI SETTINGS AND STATUS BADGES
+====================================================
+
+Add or upgrade settings page/admin controls for:
+
+Ruby Execution Authority:
+- Off
+- Advise Only
+- AI-Assisted
+- AI Auto
+
+AI-Assisted toggles:
+- Ruby can open trades from chat
+- Ruby can close trades from chat
+- Ruby can modify SL/TP
+- Ruby can move SL to break-even
+- Ruby can monitor and close on invalidation
+- Ruby can watch and enter on confirmation
+- Ruby can execute scanner scalp commands
+- Extra confirmation required ON/OFF
+
+Show status badge where relevant:
+- “AI-Assisted Trading: ON”
+- “Ruby Execution: Enabled”
+- “Extra Confirmation: OFF”
+- “Ruby can monitor and manage trades”
+- “Ruby can watch and enter on confirmation”
+
+For investor role:
+Show none of these controls.
+
+====================================================
+PART 21 — ADMIN VISIBILITY AND CONTROLS
+====================================================
+
+Admin should be able to see:
+- Ruby command history
+- pending Ruby commands
+- active Ruby watch instructions
+- monitor-and-close instructions
+- watch-and-enter instructions
+- failed commands
+- blocked commands
+- duplicate-prevented commands
+- command handshakes
+- bridge readiness at command time
+- user/account permission at command time
+- broker result / retcode
+- ticket if available
+- Ruby action source
+
+Admin should be able to:
+- cancel pending Ruby watch/monitor command
+- pause Ruby execution for a user
+- disable AI-Assisted for a user
+- review command outcome
+- audit dangerous or blocked actions
+
+All admin actions require audit logs.
+
+====================================================
+PART 22 — QA TESTING REQUIREMENTS
+====================================================
+
+Run full QA before passing.
+
+Backend tests:
+
+1. Handshake service
+- produces READY
+- produces READY_WITH_WARNINGS
+- produces BLOCKED
+- produces STALE
+- returns user-facing message
+- returns admin-only details separately
+
+2. Scanner Signal Handshake
+- passes when all required data fresh
+- warns when news risk high
+- blocks stale signal used for trade
+- blocks missing symbol specs
+- blocks late signal used for Build Trade
+
+3. Smart Chart Handshake
+- overlays draw only when symbol/chart/signal align
+- news marker shows for relevant symbol
+- stale overlay warning works
+
+4. Trade Preview Handshake
+- blocks missing SL/TP if required
+- blocks invalid lot
+- blocks stale price
+- blocks bridge not ready
+- blocks user without permission
+- warns spread/slippage elevated
+
+5. Ruby Execution Handshake
+- AI-Assisted OFF blocks execution
+- AI-Assisted ON allows allowed command
+- disallowed action blocks
+- bridge not writable blocks
+- kill switch active blocks
+- duplicate command blocks
+- stale data blocks
+- missing ticket blocks close/modify
+- regular user cannot manage master-only position
+- investor cannot execute anything
+
+6. Ruby Command Router
+- parses open trade command
+- parses close trade command
+- parses modify SL/TP command
+- parses monitor-and-close command
+- parses watch-and-enter command
+- asks only for missing critical info
+- routes through existing live command path
+
+7. Command idempotency
+- repeated same command does not duplicate order
+- watch trigger fires once
+- monitor close trigger fires once
+
+8. Live position source hierarchy
+- owner/admin can see/manage master manual position
+- regular user sees only attributed position
+- investor sees no trading controls
+- ticket mismatch gives clean explanation
+- stale position sync gives clean explanation
+
+9. Investor Value Handshake
+- investor sees only own data
+- blocks or under-review when reconciliation critical
+- excludes ARX internal waterfall
+- excludes other investor data
+- locked funds excluded from withdrawable
+
+10. Weekly Report Handshake
+- blocks publishing if broker sync stale
+- blocks if discrepancy critical
+- excludes ARX internal waterfall
+- includes investor-only data
+
+Frontend tests:
+- scanner shows handshake states cleanly
+- chart overlay syncs with Ruby text
+- trade modal shows blocker/warning messages
+- Ruby chat shows AI-Assisted status
+- Ruby command status updates after send/result
+- investor dashboard shows fresh/under-review correctly
+- admin monitor shows handshake failures
+- no normal user sees backend internals
+- mobile layout remains clean
+
+Regression tests:
+- scanner still works
+- Ruby chat still works
+- manual voice recording still works
+- Smart Chart still works
+- trade modal still works
+- live bridge status still works
+- retcode display still works
+- open positions visibility still works
+- investor portal remains view-only
+- admin dashboard still works
+- no live execution path changed
+- no Paper Trading/simulator/mock/fake fallback added
+
+====================================================
+PART 23 — FINAL DELIVERY PROOF REQUIRED
+====================================================
+
+Report back with:
+
+1. Files changed
+2. Existing systems reused
+3. Confirmation app was not rebuilt
+4. Confirmation no duplicate/parallel systems created
+5. Handshake service/module proof
+6. Handshake types implemented
+7. Layer readiness methods added
+8. Event/check-in system proof
+9. Scanner handshake proof
+10. Smart Chart handshake proof
+11. Trade Preview handshake proof
+12. Ruby Execution handshake proof
+13. Ruby Explanation handshake proof
+14. Investor Value handshake proof
+15. Weekly Report handshake proof
+16. Admin Fund Control handshake proof
+17. Ruby Command Router proof
+18. AI-Assisted settings proof
+19. Ruby open trade command proof
+20. Ruby close trade command proof
+21. Ruby modify SL/TP command proof
+22. Ruby monitor-and-close proof
+23. Ruby watch-and-enter proof
+24. Duplicate prevention proof
+25. Owner/admin master position management proof
+26. Regular user isolation proof
+27. Investor no-trade proof
+28. System Handshake Monitor proof if completed
+29. Cross-layer consistency proof
+30. Permission/security proof
+31. Clean Ruby wording proof
+32. Performance timing proof
+33. Mobile UI proof
+34. Confirmation no live execution path changed
+35. Confirmation no investor/trader/user sees internal admin-only details
+36. Confirmation no Paper Trading/simulator/mock/sandbox wording added
+37. Known limitations or deferred items
+
+Final rule:
+Do not report complete unless the upgrade is integrated across the system.
+
+This is not a rebuild.
+This is not a disconnected feature.
+Every major layer should check in with the others.
+Every function should know whether its required connected systems are fresh, valid, and aligned.
+
+When AI-Assisted Trading is ON and the user gives Ruby a direct trading command, Ruby should execute through the existing live bridge path without extra confirmation if the command is inside approved settings and all execution sanity checks pass.
+
+Ruby should not be a passive chatbot in AI-Assisted mode.
+Ruby should be an authorized live trading assistant.

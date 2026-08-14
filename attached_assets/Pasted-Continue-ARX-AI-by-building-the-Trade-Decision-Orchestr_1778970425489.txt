@@ -1,0 +1,355 @@
+Continue ARX AI by building the Trade Decision Orchestrator.
+
+Do not rebuild blindly. Inspect the current:
+- Market Context Engine
+- Smart Exit Plan Engine
+- Live Trade Intelligence snapshots
+- real-time trade monitor worker
+- Sniper Exit Watchlist
+- trade alert engine
+- Open Trades UI
+- Trade Detail page
+- close review modal
+- partial close review
+- move stop review
+- AI assistant context builder
+- MT5 command queue
+- user-owned MT5 routing
+- shared-master routing
+- admin trading controls
+- audit timeline
+
+Goal:
+Create one central Trade Decision Orchestrator that combines all trade intelligence into one clear recommendation for each open trade.
+
+The system should answer:
+- Should the user hold?
+- Should the user watch closely?
+- Should the user protect profit?
+- Should the user review a partial close?
+- Should the user review a full close?
+- Should the user move stop loss?
+- Should the user trail stop?
+- Is the trade still valid?
+- Is the trade weakening?
+- Is close urgency rising?
+- Is the trade too risky to keep holding?
+
+Important:
+Do not auto-close trades.
+Do not auto-open trades.
+Do not silently move stop loss.
+Do not bypass backend guards.
+Do not guarantee profit.
+Do not claim certainty.
+All demo/live execution actions require user confirmation.
+All live actions require explicit confirmation.
+
+PART 1 — Decision Orchestrator Service
+
+Create a service that combines:
+
+1. Open trade state
+- symbol
+- side
+- lot size
+- entry
+- current price
+- SL
+- TP
+- unrealized P&L
+- pips/points
+- trade age
+- account type
+- routing mode
+
+2. Market Context
+- continuation score
+- pullback score
+- retracement score
+- reversal risk
+- fakeout risk
+- liquidity sweep risk
+- chop risk
+- trend alignment
+- key support/resistance
+- invalidation level
+- continuation level
+- data quality
+
+3. Smart Exit Plan
+- protect-profit level
+- conservative exit level
+- aggressive exit level
+- invalidation level
+- continuation confirmation level
+- trade efficiency score
+- close urgency score
+- time warning
+- recommended action
+
+4. Sniper Alert State
+- active alerts
+- prior alerts
+- severity
+- cooldown
+- ignored alerts
+- alert escalation
+
+5. User Preferences
+- trading style
+- alert sensitivity
+- preferred hold time
+- conservative/balanced/aggressive exit style
+- profit giveback tolerance
+- partial close preference
+- move stop preference
+
+Output one decision object:
+
+trade_decision:
+- trade_id
+- user_id
+- decision_label
+- decision_action
+- confidence_score
+- urgency_score
+- risk_score
+- reason_summary
+- main_reason
+- supporting_reasons
+- invalidation_level
+- protect_profit_level
+- continuation_level
+- suggested_button
+- requires_confirmation
+- data_quality
+- created_at
+
+Decision labels:
+- Hold
+- Hold but monitor
+- Healthy pullback
+- Continuation still valid
+- Protect profit
+- Review partial close
+- Review full close
+- Move stop review
+- Trail stop review
+- Exit risk rising
+- Trade invalidation near
+- Trade invalidated
+- No clear decision
+- Data insufficient
+
+Decision actions:
+- HOLD
+- WATCH_CLOSELY
+- SET_ALERT
+- REVIEW_MOVE_STOP
+- REVIEW_TRAIL_STOP
+- REVIEW_PARTIAL_CLOSE
+- REVIEW_FULL_CLOSE
+- WAIT_FOR_CONFIRMATION
+- NO_ACTION_DATA_INSUFFICIENT
+
+PART 2 — Decision Rules
+
+Create clear rule logic.
+
+Examples:
+
+If trade is profitable and profit giveback is high:
+- decision_label: Protect profit
+- action: REVIEW_MOVE_STOP or REVIEW_PARTIAL_CLOSE
+
+If reversal risk is high and price breaks invalidation level:
+- decision_label: Trade invalidated
+- action: REVIEW_FULL_CLOSE
+
+If continuation score is high and pullback is healthy:
+- decision_label: Healthy pullback
+- action: HOLD or WATCH_CLOSELY
+
+If fakeout risk rises after breakout failure:
+- decision_label: Exit risk rising
+- action: REVIEW_PARTIAL_CLOSE or REVIEW_FULL_CLOSE
+
+If trade is near TP and momentum is weakening:
+- decision_label: Protect profit
+- action: REVIEW_PARTIAL_CLOSE or REVIEW_FULL_CLOSE
+
+If data is stale:
+- decision_label: Data insufficient
+- action: NO_ACTION_DATA_INSUFFICIENT
+
+Do not use hardcoded fake market assumptions. Use only available data.
+
+PART 3 — Decision UI
+
+Update Open Trades cards to show:
+
+- current decision label
+- confidence score
+- urgency score
+- main reason
+- suggested action button
+- data quality
+- last updated time
+
+Example:
+“Protect Profit — profit has given back 38% from peak while reversal risk is rising.”
+
+Buttons:
+- Ask AI Why
+- Set Alert
+- Review Close
+- Review Partial Close
+- Review Move Stop
+- Hold and Monitor
+
+Every execution-related button must open a review modal first.
+
+PART 4 — Trade Detail Decision Panel
+
+Add a “Decision Panel” to the Trade Detail page.
+
+Show:
+- current decision
+- confidence
+- urgency
+- risk
+- market structure reason
+- exit plan reason
+- profit protection reason
+- data quality
+- what would change the decision
+- timeline of decision changes
+
+PART 5 — AI Decision Explanation
+
+Update AI so users can ask:
+
+- Why are you telling me to hold?
+- Why should I close?
+- Why is this trade invalidated?
+- Why is this a healthy pullback?
+- Why is this a fakeout risk?
+- Why are you saying protect profit?
+- What changed since the last alert?
+- What would make you change your mind?
+- What is the safest action right now?
+- What is the aggressive action right now?
+
+AI response format:
+1. Current decision
+2. Main reason
+3. Supporting evidence
+4. What would confirm continuation
+5. What would invalidate the trade
+6. Suggested review action
+7. Data quality warning
+
+AI must say:
+- “Based on available data”
+- “This appears to be”
+- “This is not guaranteed”
+- “Execution requires your confirmation”
+
+PART 6 — Alert Escalation
+
+Connect decisions to alerts.
+
+Alert when:
+- decision changes from Hold to Watch Closely
+- decision changes to Protect Profit
+- decision changes to Review Close
+- decision changes to Trade Invalidated
+- urgency score jumps significantly
+- confidence score drops
+- data quality becomes stale
+- ignored alert becomes more severe
+
+Avoid spam:
+- no duplicate alert for same decision/reason within cooldown
+- escalate only when severity increases or decision changes
+
+PART 7 — Database/API
+
+Add table:
+
+trade_decisions:
+- id
+- user_id
+- trade_id
+- decision_label
+- decision_action
+- confidence_score
+- urgency_score
+- risk_score
+- reason_summary
+- main_reason
+- supporting_reasons
+- invalidation_level
+- protect_profit_level
+- continuation_level
+- suggested_button
+- requires_confirmation
+- data_quality
+- created_at
+
+Add endpoints:
+- GET /api/trades/:id/decision
+- POST /api/trades/:id/decision/recalculate
+- GET /api/trade-decisions/active
+- POST /api/trades/:id/decision/ask-ai
+
+PART 8 — Audit Timeline
+
+Add timeline entries for:
+- decision created
+- decision changed
+- urgency increased
+- user asked AI why
+- user reviewed action
+- user ignored action
+- user confirmed close
+- user confirmed partial close
+- user moved stop
+- trade closed after decision
+
+PART 9 — Tests
+
+Add tests for:
+1. Decision created for user’s own open trade.
+2. User cannot access another user’s decision.
+3. Shared-master user only sees attributed trade decisions.
+4. Profitable trade with high giveback triggers Protect Profit.
+5. Broken invalidation level triggers Review Close.
+6. Healthy pullback triggers Hold/Watch Closely.
+7. Missing data returns Data Insufficient.
+8. Stale MT5 data is disclosed.
+9. Decision change creates alert.
+10. Duplicate decision alerts are suppressed.
+11. Review Close opens modal, not instant execution.
+12. Live close requires explicit confirmation.
+13. Emergency Stop blocks execution actions.
+14. Suspended user cannot close or modify.
+15. AI explains decision without guaranteeing outcome.
+16. AI does not invent market data.
+17. Audit timeline records decision changes.
+18. Mobile Decision Panel works.
+19. No secrets are exposed.
+
+Final report:
+Return:
+- PASS or FAIL
+- Trade Decision Orchestrator status
+- decision rules status
+- Open Trades decision UI status
+- Trade Detail Decision Panel status
+- AI decision explanation status
+- alert escalation status
+- audit timeline status
+- tests passed
+- remaining blockers

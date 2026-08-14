@@ -1,0 +1,608 @@
+Run the final Build II verification lock-test.
+
+Do not start Build JJ.
+Do not add new features unless a Build II test fails and must be fixed.
+Do not enable live trading.
+Do not modify MT5 live execution.
+Do not modify canPlaceTrades.
+Do not recommend live trading.
+Do not change Build AA, BB, CC, DD, EE, FF, GG, or HH logic except to fix Build II read-only/integration issues.
+
+Build II goal:
+Create a Trader Coach + Playbook Generator that reads system data from AA-HH and turns it into daily coaching, weekly improvement plans, session checklists, repeated mistake correction, and living playbook entries.
+
+Verify Build II only.
+
+1. Typecheck/build health
+
+Run all relevant commands:
+- typecheck
+- build
+- API server validation
+- frontend build validation
+- database/schema validation if available
+
+Show exact commands run and whether each passed.
+
+2. Trader Coach service proof
+
+Confirm the Trader Coach service exists.
+
+Show exact files/functions for:
+- traderCoachService
+- coachReportGenerator
+- dailyCoachGenerator
+- weeklyPlanGenerator
+- sessionPrepGenerator
+- postSessionReviewGenerator
+- playbookGenerator
+- traderCoachRoutes
+- traderCoachLogs
+- frontend Trader Coach page
+- frontend Playbook page
+- frontend Daily Prep panel
+- frontend Weekly Plan panel
+
+Confirm the service returns this structure:
+
+{
+  coach_report_id,
+  generated_at,
+  mode: "PAPER_ONLY",
+  liveTradingStatus: "DISABLED",
+  reportType,
+  traderStatus,
+  performanceSummary,
+  topStrengths,
+  topWeaknesses,
+  repeatedMistakes,
+  activeRiskFlags,
+  currentFocusAreas,
+  nextBestActions,
+  preSessionChecklist,
+  postSessionReviewQuestions,
+  playbookUpdates,
+  warnings,
+  coachingSummary,
+  generatedBy: "SYSTEM_TRADER_COACH"
+}
+
+3. Database verification
+
+Confirm these tables exist:
+
+trader_coach_reports
+trading_playbook_entries
+weekly_improvement_plans
+trader_coach_logs
+
+Confirm trader_coach_reports includes:
+id,
+coach_report_id,
+report_type,
+mode,
+live_trading_status,
+readiness_score,
+readiness_grade,
+readiness_level,
+governor_status,
+performance_summary,
+top_strengths,
+top_weaknesses,
+repeated_mistakes,
+active_risk_flags,
+current_focus_areas,
+next_best_actions,
+pre_session_checklist,
+post_session_review_questions,
+playbook_updates,
+warnings,
+coaching_summary,
+generated_by,
+created_at.
+
+Confirm trading_playbook_entries includes:
+id,
+playbook_entry_id,
+title,
+status,
+symbol,
+timeframe,
+setup_name,
+action_bias,
+conditions_required,
+entry_rules,
+risk_rules,
+invalidation_rules,
+market_data_requirements,
+sniper_entry_requirements,
+mistake_warnings,
+confidence_level,
+sample_size,
+win_rate,
+avg_pnl,
+edge_score,
+source,
+created_at,
+updated_at.
+
+Confirm weekly_improvement_plans includes:
+id,
+week_start,
+week_end,
+main_goal,
+focus_areas,
+rules_to_practice,
+mistakes_to_reduce,
+setups_to_study,
+setups_to_avoid,
+paper_trading_targets,
+progress_metrics,
+review_questions,
+success_criteria,
+warnings,
+created_at,
+updated_at.
+
+Confirm trader_coach_logs includes:
+id,
+coach_report_id,
+event_type,
+severity,
+message,
+details,
+created_at.
+
+4. Data source proof
+
+Show exactly where Build II reads from:
+
+- trade_decision_logs
+- paper_trades
+- paper_execution_logs
+- BB auto-debrief / post-trade debrief tables
+- learning_events
+- strategy_edges
+- mistake_patterns
+- market data logs
+- autopilot_cycles
+- autopilot_cycle_logs
+- performance_daily_snapshots
+- performance_symbol_snapshots
+- ai_performance_snapshots
+- risk_governor_evaluations
+- risk_governor_events
+
+Confirm missing sources return safe coaching output instead of crashing.
+
+5. Endpoint verification
+
+Run and show raw output for:
+
+GET /api/trader-coach/status
+
+POST /api/trader-coach/generate
+
+GET /api/trader-coach/daily
+
+GET /api/trader-coach/weekly
+
+GET /api/trader-coach/session-prep
+
+GET /api/trader-coach/post-session-review
+
+GET /api/trader-coach/playbook
+
+POST /api/trader-coach/playbook/generate
+
+GET /api/trader-coach/playbook/:id
+
+POST /api/trader-coach/demo
+
+GET /api/trader-coach/logs?limit=50
+
+6. Daily coach proof
+
+Run the daily coach endpoint.
+
+Confirm it returns:
+- today’s Risk Governor status
+- readiness score/grade
+- paper trading allowed or paused
+- live trading disabled
+- current focus areas
+- setups to watch
+- setups to avoid
+- repeated mistake to avoid
+- pre-session checklist
+- daily paper loss reminder
+- cooldown reminder if active
+- next best actions
+
+Show raw JSON output.
+
+7. Weekly plan proof
+
+Run the weekly coach endpoint.
+
+Confirm it returns:
+
+{
+  week_start,
+  week_end,
+  mainGoal,
+  focusAreas,
+  rulesToPractice,
+  mistakesToReduce,
+  setupsToStudy,
+  setupsToAvoid,
+  paperTradingTargets,
+  progressMetrics,
+  reviewQuestions,
+  successCriteria,
+  warnings
+}
+
+Confirm it does not recommend live trading.
+
+Show raw JSON output.
+
+8. Session prep checklist proof
+
+Run session prep endpoint.
+
+Confirm checklist includes:
+- Risk Governor status checked
+- Daily loss limit not hit
+- No cooldown active
+- Market data quality acceptable
+- Spread acceptable
+- No same-symbol conflict
+- Trade window must be GOOD
+- Sniper score must pass
+- Decision confidence must meet threshold
+- Risk score must stay below max
+- Stop loss and take profit required
+- Live trading disabled
+- Paper mode only
+
+Show raw JSON output.
+
+9. Post-session review proof
+
+Run post-session review endpoint.
+
+Confirm review questions include:
+- Did I follow the AI decision?
+- Did I obey the Risk Governor?
+- Did I take trades during bad data/spread?
+- Did I overtrade?
+- Did I respect cooldowns?
+- Did the setup match the playbook?
+- What mistake repeated?
+- What should the system learn from this?
+- What rule should be added or changed?
+
+Show raw JSON output.
+
+10. Playbook generator proof
+
+Run playbook generation.
+
+Confirm each playbook entry includes:
+
+{
+  playbook_entry_id,
+  title,
+  status,
+  symbol,
+  timeframe,
+  setupName,
+  actionBias,
+  conditionsRequired,
+  entryRules,
+  riskRules,
+  invalidationRules,
+  marketDataRequirements,
+  sniperEntryRequirements,
+  mistakeWarnings,
+  confidenceLevel,
+  sampleSize,
+  winRate,
+  avgPnl,
+  edgeScore,
+  lastUpdated,
+  source: "SYSTEM_GENERATED"
+}
+
+Confirm:
+- small sample size creates WATCHLIST, not fake ACTIVE confidence
+- strong sample size can create ACTIVE
+- losing setups become REVIEW or AVOID
+- repeated mistake patterns become mistakeWarnings
+- live trading is never recommended
+
+Show raw JSON output.
+
+11. Playbook idempotency proof
+
+Run playbook generation twice.
+
+Confirm:
+- duplicate entries are not created
+- existing entries are updated
+- same symbol/timeframe/setup/action combination does not duplicate
+- logs show created/updated counts
+
+Show raw output from both runs.
+
+12. Empty database proof
+
+Test with empty or missing coaching data.
+
+Confirm:
+- coach returns safe beginner guidance
+- readiness is NOT_READY or EARLY_TESTING
+- liveTradingStatus is DISABLED
+- nextBestActions recommend paper practice, data collection, and review
+- no endpoint crashes
+- no live trading recommendation appears
+
+Show raw JSON output.
+
+13. Small sample size proof
+
+Simulate low trade sample size.
+
+Confirm:
+- coach says sample size is limited
+- confidence level remains LOW
+- playbook entries are WATCHLIST or REVIEW
+- nextBestActions recommend more paper trades and debriefs
+- no exaggerated claims are made
+
+Show raw JSON output.
+
+14. Repeated mistake coaching proof
+
+Simulate repeated mistake pattern.
+
+Confirm:
+- repeated mistake appears in repeatedMistakes
+- coach creates specific correction advice
+- pre-session checklist includes guardrail
+- playbook entry includes mistakeWarnings
+- weekly plan includes mistakesToReduce
+
+Show raw JSON output.
+
+15. Winning setup playbook proof
+
+Simulate a winning setup with enough supporting data.
+
+Confirm:
+- setup becomes WATCHLIST or ACTIVE depending on sample size
+- conditionsRequired are specific
+- entryRules are specific
+- riskRules are specific
+- marketDataRequirements are included
+- confidenceLevel matches sample size and edge quality
+
+Show raw JSON output.
+
+16. Losing setup playbook proof
+
+Simulate a losing setup.
+
+Confirm:
+- setup becomes REVIEW or AVOID
+- failure pattern is explained
+- mistakeWarnings are included
+- riskRules or invalidationRules are updated
+- coach does not recommend repeating it blindly
+
+Show raw JSON output.
+
+17. Risk Governor locked coaching proof
+
+Simulate HH Risk Governor LOCKED or WATCH_ONLY.
+
+Confirm:
+- coach recommends pause/watch-only
+- paperTradingAllowed is false
+- autopilotAllowed is false
+- liveTradingAllowed is false
+- currentFocusAreas prioritize review, risk control, and debriefs
+- no trade execution advice is given
+
+Show raw JSON output.
+
+18. GG integration proof
+
+Confirm Build II reads GG performance snapshots.
+
+Show coach output using:
+- daily P&L
+- 30d win rate
+- best/worst symbol
+- decision quality
+- repeated mistakes
+- learning improvement trend
+
+Show raw JSON output.
+
+19. HH integration proof
+
+Confirm Build II reads HH Risk Governor output.
+
+Show coach output using:
+- readinessScore
+- readinessGrade
+- readinessLevel
+- governorStatus
+- hard blocks
+- soft warnings
+- allowedActions
+
+Show raw JSON output.
+
+20. CC integration proof
+
+Confirm Build II reads CC strategy edges and mistake patterns.
+
+Show coach output using:
+- strongest edge
+- weakest edge
+- edgeScore
+- learningConfidence
+- repeated mistake tags
+- recommended guardrails
+
+Show raw JSON output.
+
+21. BB debrief integration proof
+
+Confirm Build II reads BB debriefs.
+
+Show coach output using:
+- lessons
+- what worked
+- what failed
+- mistake tags
+- improvement notes
+- did_follow_decision
+
+Show raw JSON output.
+
+22. Frontend route proof
+
+Confirm frontend pages/routes are accessible for:
+- Trader Coach page
+- Playbook page
+- Daily Prep panel
+- Weekly Plan panel
+
+Confirm UI:
+- is mobile friendly
+- shows paper-only badge
+- shows live trading disabled badge
+- does not include live execution buttons
+- does not recommend live trading
+- keeps content clear and readable
+
+23. Safety language proof
+
+Confirm all coaching output:
+- avoids promising profits
+- avoids recommending live trading
+- reminds user this is paper/simulation mode
+- states sample size limitations when relevant
+- uses practical improvement language
+- does not claim guaranteed winning trades
+
+24. Logs proof
+
+Show trader coach logs proving every coach generation records:
+- generation started
+- data sources read
+- missing data sources
+- governor status read
+- performance data read
+- mistake patterns read
+- playbook updates created/updated
+- warnings generated
+- report stored
+- generation completed
+
+Show sample trader_coach_logs records.
+
+25. Live-trade isolation proof
+
+Search Build II files and confirm they do NOT call:
+
+executeTrade,
+execute-trade,
+mt5,
+MT5,
+livePosition,
+live order,
+setCanPlaceTrades,
+live broker execution,
+broker.placeOrder,
+real order placement,
+or anything that can place real trades.
+
+Confirm Build II does NOT modify:
+- safetyCore.canPlaceTrades
+- live broker permissions
+- MT5 live execution
+- Build AA safety rules
+- Build EE paper-only execution rules
+- Build FF paper-only autopilot rules
+- Build HH liveTradingAllowed rules
+
+Confirm Build II always reports:
+liveTradingStatus: "DISABLED"
+liveTradingAllowed: false
+
+26. Existing behavior compatibility
+
+Confirm these still work:
+- Build AA trade decision orchestrator
+- Build BB auto-debrief
+- Build CC learning engine
+- Build DD market data layer
+- Build EE paper execution engine
+- Build FF paper autopilot loop
+- Build GG trading calendar and command center
+- Build HH risk governor
+- manual debrief
+- manual paper close
+- analytics
+- decision logs
+- learning logs
+- market data logs
+- paper execution logs
+- autopilot logs
+- performance endpoints
+- risk governor endpoints
+- existing frontend routes
+
+Required final response format:
+
+1. Verification passed or failed
+2. Commands/tests run
+3. Files changed
+4. New files created
+5. Database proof
+6. Trader Coach service proof
+7. Data source proof
+8. Raw status output
+9. Raw generate output
+10. Raw daily coach output
+11. Raw weekly plan output
+12. Raw session prep output
+13. Raw post-session review output
+14. Raw playbook output
+15. Raw playbook generation output
+16. Playbook idempotency proof
+17. Empty-state proof
+18. Small sample size proof
+19. Repeated mistake coaching proof
+20. Winning setup playbook proof
+21. Losing setup playbook proof
+22. Risk Governor locked coaching proof
+23. GG integration proof
+24. HH integration proof
+25. CC integration proof
+26. BB debrief integration proof
+27. Frontend route proof
+28. Safety language proof
+29. Sample trader_coach_reports record
+30. Sample trading_playbook_entries record
+31. Sample weekly_improvement_plans record
+32. Sample trader_coach_logs record
+33. Live-trade isolation proof
+34. Any fixes made during verification
+35. Final Build II score out of 10
+36. Whether it is safe to proceed to Build JJ

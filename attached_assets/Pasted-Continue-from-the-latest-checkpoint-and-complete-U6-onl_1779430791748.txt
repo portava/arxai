@@ -1,0 +1,57 @@
+Continue from the latest checkpoint and complete U6 only: cross-page mobile polish + logged-in e2e smoke sweep.
+
+Before editing:
+- Inspect the current codebase and latest checkpoint.
+- Confirm ARX_LIVE_BROKER_EXECUTION_ENABLED is unset/cleared and Gate 1 is back to default-deny/off. If it is still set to true, stop and report before changing UI.
+- Confirm no live trades are placed during this work. Use read-only probes only.
+
+U6 scope:
+1. Mobile polish pass
+   - Fix mobile layout issues across the main user pages.
+   - Confirm bottom nav has no gap underneath on iPhone/mobile safe areas.
+   - Confirm MobileBottomNav AI button opens /ai-command-center.
+   - Confirm Market Scanner is easy to find and treated as a primary tool.
+   - Fold the deferred SymbolExplorer horizontal-chip redesign into this pass.
+   - Symbol groups should be mobile-friendly, collapsible/searchable where already supported, and not overwhelming.
+   - Keep features; clean layout only.
+
+2. Cross-page smoke/e2e checks
+   Test or manually verify the smallest practical flow available in this repo:
+   - login page loads correctly
+   - request access works or fails gracefully
+   - invite code flow works or fails gracefully
+   - forgot password works or fails gracefully
+   - dashboard loads cleanly on mobile
+   - /ai-command-center opens and all 4 tabs work: Chat, Market Read, Commands, Memory
+   - scanner search works
+   - symbol focus changes correctly
+   - Ruby explanation panel appears for selected market
+   - Ruby typing/thinking animation appears while responding
+   - one-click/trade buttons do not bypass confirmations
+   - blocked live/shared-master states show plain-language reasons
+   - normal user UI does not expose internal function names, raw guard names, evaluator names, backend route names, stack traces, or developer-only identifiers
+
+3. SymbolExplorer mobile redesign
+   - Convert the deferred SymbolExplorer category experience into a clean horizontal chip/segment style if compatible with the active scanner implementation.
+   - Reuse active symbolRegistry/scanner logic if wired.
+   - Do not create duplicate scanner systems.
+   - If old SymbolExplorer files are unused, either safely remove them or keep only if they are actively imported and useful.
+   - Avoid dead duplicate UI files.
+
+Safety rules:
+- Do not introduce server-side broker credentials.
+- Do not place live trades.
+- Do not weaken live/shared-master safeguards.
+- Do not weaken placeLiveOrderGuarded.
+- Do not weaken Phase B default-deny behavior.
+- Do not remove admin approval, typed confirmation phrase, precondition checks, EA live execution checks, symbol allowlist checks, or per-user isolation.
+- Do not update docs to normalize unsafe config drift.
+
+Verification:
+- Run typecheck/build/lint if available.
+- Run available guard/Phase B tests if available.
+- Run available mobile/e2e/smoke tests if available.
+- Fix only failures caused by this work.
+- Checkpoint and summarize what passed, what was fixed, and what remains.
+
+Do not start T006 final QA yet. U6 only.

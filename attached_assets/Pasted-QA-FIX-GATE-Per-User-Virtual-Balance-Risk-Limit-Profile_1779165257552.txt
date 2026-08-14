@@ -1,0 +1,41 @@
+QA/FIX GATE — Per-User Virtual Balance + Risk Limit Profiles
+
+Inspect the per-user virtual balance, buying power, and risk profile work from the previous pass.
+
+Do not rebuild unrelated systems. Reuse current code and only repair missing or broken pieces.
+
+Verify:
+
+1. Each user has a private account shell.
+2. Normal users only see their own balance, equity, P/L, risk, trades, and account status.
+3. Normal users do not see the full shared master account balance.
+4. User A cannot see User B balance, equity, P/L, risk profile, allocation, trades, or notifications.
+5. Shared master mode calculates user balance/equity from that user’s own ledger entries only.
+6. Realized P/L updates personal balance correctly.
+7. Unrealized P/L updates personal equity correctly.
+8. Two users trading the same symbol still have separate P/L and risk calculations.
+9. Admin can assign and adjust a user’s capital allocation.
+10. Admin can pause/resume a user’s trading access.
+11. Admin can set max lot size, max open trades, max daily loss, max exposure per symbol, and allowed symbols.
+12. Trades are blocked when there is no assigned allocation.
+13. Trades are blocked when max lot size is exceeded.
+14. Trades are blocked when max open trades is exceeded.
+15. Trades are blocked when daily loss limit is reached.
+16. Trades are blocked when account is paused/restricted.
+17. Trades are blocked when the symbol is not allowed.
+18. Ruby only references the current user’s private account data.
+19. Ruby does not reveal shared master global balance, other users, or admin-only data.
+20. P/L calendar uses only the current user’s personal trade data.
+21. Uncertain or unmapped master executions are marked NEEDS_REVIEW and excluded from normal user balance calculations.
+22. Admin receives visibility into NEEDS_REVIEW allocation issues.
+23. No secrets are exposed in UI, logs, routes, or responses.
+24. No live trade is fired during QA.
+
+Return:
+- PASS/FAIL table
+- files inspected
+- tests run
+- issues found
+- fixes applied
+- remaining risks
+- confirmation that no live trade was fired

@@ -1,0 +1,1027 @@
+Build Ruby Scalp Signals as a fully integrated scanner intelligence system for ARX AI.
+
+This is not a separate toy feature. This must become part of the real scanner flow.
+
+Important:
+Before building anything new, inspect the current scanner, Ruby chat, market picker, symbol directory, trade modal, live bridge readiness checks, order builder, risk calculation, and current Ruby analysis pipeline.
+
+Do not duplicate existing systems if they already exist.
+Upgrade what exists.
+Build only what is missing.
+Do not remove current scanner features.
+Do not break Focus Scan, Broad Scan, Ruby explanations, market picker, symbol search, live trade modal, bridge readiness checks, kill switches, admin/user role checks, or existing live order flow.
+
+Active product modes:
+- DEMO
+- LIVE
+
+Do not add Paper Trading.
+Do not add simulated trading terminology.
+Do not add mock trading terminology.
+Do not add fake trade fallbacks.
+Do not add sandbox trade wording in the active app flow.
+
+Feature name:
+Ruby Scalp Signals
+
+Main goal:
+Ruby should automatically detect, rank, explain, and help build scalp trade opportunities inside both Focus Scan and Broad Scan.
+
+The scanner should not only show general market analysis. It should also answer:
+1. Is there a scalp opportunity here right now?
+2. Is it ready, forming, late, invalid, or not clean?
+3. What target profit is realistic?
+4. What lot size fits the user’s target and risk amount?
+5. What market gives the cleanest scalp right now?
+6. Should the user enter, wait, or avoid?
+7. Can Ruby build the trade with lot, entry, stop loss, and take profit?
+
+====================================================
+PART 1 — AUDIT CURRENT SYSTEM FIRST
+====================================================
+
+Before coding, inspect and document the current implementation for:
+
+1. Scanner pages/components
+- Focus Scan UI
+- Broad Scan UI
+- scanner result cards
+- scanner refresh logic
+- scanner symbol picker
+- market group filters
+- selected symbol state
+- scanner API endpoints
+- scanner data models
+- scanner scoring logic
+
+2. Ruby analysis system
+- Ruby market explanation logic
+- Ruby prompt creation
+- Ruby response display
+- Ruby typing/thinking indicator
+- Ruby voice/text response separation
+- places where Ruby exposes backend/internal wording
+- existing market analysis providers
+
+3. Symbol directory
+- arx_symbol_specs usage
+- symbol fetch endpoint
+- whether scanner uses live symbols or hardcoded fallback
+- lot step, min lot, max lot, digits, point, contract size, trade mode, spread
+
+4. Trade modal/order builder
+- selected symbol wiring
+- buy/sell wiring
+- lot size input
+- SL/TP input
+- TP/SL validation
+- entry type support:
+  - market buy
+  - market sell
+  - buy limit
+  - sell limit
+  - buy stop
+  - sell stop
+  - buy stop limit
+  - sell stop limit
+- live bridge readiness checks
+- live order queue path
+- EA mailbox/command path
+- current retcode display from Phase 8
+
+5. Existing risk logic
+- account balance/equity
+- free margin
+- margin requirements
+- risk/reward calculation
+- stop loss distance
+- take profit distance
+- symbol pip/point value logic
+- spread/slippage considerations
+
+Deliver an audit summary before final completion:
+- what already existed
+- what was reused
+- what was missing
+- what was changed
+- what files were touched
+
+====================================================
+PART 2 — CORE FEATURE STRUCTURE
+====================================================
+
+Add Ruby Scalp Signals in three connected layers:
+
+A. Focus Scan Scalp Signal
+B. Broad Scan Scalp Ranking
+C. Ruby Scalp Builder
+
+These must share the same scoring/risk engine so the app does not give conflicting answers.
+
+Do not build three disconnected systems.
+
+Create or upgrade a shared service/module for scalp evaluation, for example:
+
+- scalpSignalService
+- scalpOpportunityEngine
+- rubyScalpEngine
+- scannerScalpService
+
+Use the existing project naming style.
+
+The shared scalp engine must accept:
+- selected symbol or symbol list
+- live price data
+- spread
+- symbol specs
+- account equity/balance/free margin
+- current scanner technical data
+- market structure data
+- volatility data
+- support/resistance zones if available
+- current trend/momentum data
+- recent candle behavior if available
+- news/calendar risk if available
+- user target profit if provided
+- user amount willing to use/risk if provided
+- selected scalp mode if provided
+- preferred markets if provided
+- selected time window if provided
+
+The shared scalp engine must return a normalized object that the UI, Ruby, and trade modal can all use.
+
+Example normalized scalp result shape:
+
+{
+  symbol: "Volatility 75 Index",
+  displayName: "Volatility 75 Index",
+  assetClass: "Synthetic/Volatility",
+  direction: "SELL",
+  scalpType: "Sniper Scalp",
+  status: "READY",
+  qualityScore: 84,
+  confidenceLabel: "Strong",
+  entryType: "MARKET_SELL",
+  entryZone: {
+    from: 4602,
+    to: 4608
+  },
+  currentPrice: 4605,
+  takeProfit: {
+    quick: 4592,
+    main: 4580,
+    stretch: 4568
+  },
+  stopLoss: 4628,
+  invalidationPrice: 4628,
+  suggestedLot: 0.001,
+  minLot: 0.001,
+  maxLot: 10,
+  lotStep: 0.001,
+  targetProfitAmount: 20,
+  estimatedProfitMainTP: 20,
+  estimatedRiskAmount: 6.5,
+  rewardToRisk: 3.07,
+  spreadRisk: "MEDIUM",
+  slippageRisk: "LOW",
+  newsRisk: "LOW",
+  timingStatus: "VALID_NOW",
+  validForSeconds: 240,
+  chaseWarning: "Do not chase below 4592. Price has already moved too far toward TP.",
+  plainEnglishReason: "Price is rejecting the upper zone, short-term momentum is weakening, and the nearest support gives enough room for a fast sell scalp.",
+  riskWarning: "This scalp is invalid if price breaks and holds above 4628.",
+  userAction: "READY_TO_REVIEW",
+  canBuildTrade: true,
+  noTradeReason: null
+}
+
+If no clean scalp exists, return:
+
+{
+  status: "NO_CLEAN_SCALP",
+  qualityScore: 0,
+  userAction: "WAIT",
+  canBuildTrade: false,
+  noTradeReason: "Spread is too wide and price is already late. Wait for a pullback into the entry zone."
+}
+
+====================================================
+PART 3 — SCALP STATUS LABELS
+====================================================
+
+Every scalp result must use clear status labels:
+
+READY
+- Clean setup is available now.
+- Entry is not late.
+- Spread is acceptable.
+- TP is reachable.
+- SL has logical invalidation.
+- Risk/reward is acceptable.
+
+FORMING
+- Setup is close but not ready.
+- User should wait for entry zone, breakout, retest, candle close, or confirmation.
+
+WAIT_FOR_ENTRY
+- Direction is valid but current price is not ideal.
+- Ruby should show the exact zone to wait for.
+
+LATE
+- Price already moved too far toward TP.
+- Warn user not to chase.
+
+INVALID
+- Setup broke structure.
+- Do not recommend entry.
+
+NO_CLEAN_SCALP
+- No reasonable scalp exists right now.
+
+SPREAD_TOO_WIDE
+- Spread makes the scalp unattractive or dangerous.
+
+NEWS_DANGER
+- News/current event risk is too high for clean scalp entry.
+
+MARKET_CLOSED
+- Symbol cannot be traded right now.
+
+SYMBOL_NOT_TRADEABLE
+- Broker or symbol trade mode prevents trading.
+
+INSUFFICIENT_MARGIN
+- User amount/free margin cannot support recommended trade.
+
+====================================================
+PART 4 — FOCUS SCAN REQUIREMENTS
+====================================================
+
+In Focus Scan, add a scalp opportunity section/card for the currently selected symbol.
+
+Suggested UI title:
+Ruby Scalp Signal
+
+The Focus Scan scalp card must show:
+
+- selected market
+- scalp status
+- direction
+- scalp type
+- quality score
+- target potential
+- estimated risk
+- suggested lot size
+- entry zone
+- current price
+- take profit zone
+- stop loss zone
+- invalidation zone
+- validity timer
+- chase warning if late
+- Ruby plain-English explanation
+- “Build Scalp Trade” button if trade is valid
+- “Watch This Setup” button if forming/waiting
+- “Avoid / No Clean Scalp” message if invalid
+
+Example Focus Scan UI:
+
+Ruby Scalp Signal
+V75 Sell Scalp — READY
+Quality: 84/100
+Suggested lot: 0.001
+Target potential: $12–$25
+Estimated risk: $6.50
+Entry zone: 4602–4608
+TP zone: 4580
+SL zone: 4628
+Valid for: 3m 40s
+
+Ruby says:
+Price is rejecting the upper zone and short-term momentum is fading. This sell scalp is only valid while price stays below 4628. Do not chase if price drops below 4592 before entry.
+
+Buttons:
+- Build Scalp Trade
+- Watch Setup
+- Ask Ruby
+
+Behavior:
+- When selected symbol changes, the scalp card must update.
+- When scanner refreshes, the scalp card must update.
+- If symbol specs are missing, show a clean warning and do not generate a fake lot size.
+- If current price is stale, show “Waiting for fresh price” and do not recommend entry.
+- If market is closed or trade-disabled, show that clearly.
+
+Do not expose:
+- route names
+- database table names
+- backend errors
+- JSON
+- stack traces
+- internal code terms
+
+====================================================
+PART 5 — BROAD SCAN REQUIREMENTS
+====================================================
+
+In Broad Scan, add a section:
+
+Top Ruby Scalp Opportunities
+
+This section must rank scalp setups across all available scan symbols.
+
+Broad Scan should evaluate every eligible symbol using the shared scalp engine.
+
+Show at least:
+- Best Scalp
+- Safer Scalp
+- Fastest Scalp
+
+If enough valid setups exist, show Top 3 to Top 5.
+
+Each Broad Scan scalp row/card must show:
+
+- rank
+- market
+- asset class/group
+- direction
+- scalp status
+- scalp type
+- quality score
+- target potential
+- estimated risk
+- suggested lot
+- entry zone
+- TP zone
+- SL zone
+- validity timer
+- spread risk
+- chase warning
+- short Ruby reason
+
+Example:
+
+#1 Best Scalp
+V75 Sell — READY
+Quality: 86/100
+Target: $12–$25
+Risk: ~$6.50
+Lot: 0.001
+Entry: 4602–4608
+TP: 4580
+SL: 4628
+Valid: 4m
+
+Ruby says:
+Clean rejection from resistance with enough room to the downside. Do not chase below 4592.
+
+Clicking a Broad Scan scalp result must:
+- set the scanner focus symbol
+- open or navigate to Focus Scan for that symbol
+- carry over the scalp result into the Focus Scan card
+- allow Build Scalp Trade from there
+
+Broad Scan filters:
+Add scalp-related filter controls without cluttering the UI.
+
+Filters should include:
+- All scalp signals
+- Ready only
+- Forming
+- Avoid / no clean scalp
+- Highest quality
+- Lowest risk
+- Fastest opportunity
+- Asset class filter if already available
+
+Do not make the page long and messy.
+Use collapsible sections/tabs if needed.
+
+====================================================
+PART 6 — RUBY SCALP BUILDER
+====================================================
+
+Add a Ruby Scalp Builder panel in the scanner.
+
+This is where the user enters:
+
+- Target profit amount
+- Amount willing to use/risk
+- Scalp mode
+- Preferred market group
+- Time window
+
+Suggested fields:
+
+Target profit:
+$____
+
+Amount I’m willing to use/risk:
+$____
+
+Scalp mode:
+- Sniper
+- Safer
+- Fast
+- Momentum
+- Reversal
+- Any
+
+Preferred markets:
+- All
+- Forex
+- Gold/metals
+- Indices
+- Crypto
+- Synthetic/Volatility
+- Broker-specific
+
+Time window:
+- Now
+- Next 5 minutes
+- Next 15 minutes
+- Next 1 hour
+
+Button:
+Find Best Scalp
+
+Important:
+The user can enter “I want to make $20 and I’m going in with $15.”
+Ruby must translate that into:
+- targetProfitAmount = 20
+- riskBudgetOrAmountToUse = 15
+
+Ruby must then find the best scalp that fits those constraints.
+
+Ruby must not force a trade.
+
+Ruby must first do a Target Reality Check.
+
+Target Reality Check categories:
+- REALISTIC
+- AGGRESSIVE_BUT_POSSIBLE
+- TOO_RISKY
+- NOT_AVAILABLE_RIGHT_NOW
+
+Example Ruby response:
+“You want to make $20 using $15. That is aggressive, so I’m only looking for high-quality scalps where the stop is tight, the spread is acceptable, and the market has enough movement. I will not force a setup if the clean risk is not there.”
+
+The builder result must return:
+- recommended market
+- direction
+- entry type
+- suggested lot
+- entry price/zone
+- TP1
+- main TP
+- optional runner TP
+- SL
+- estimated profit
+- estimated risk
+- reward-to-risk
+- margin estimate if available
+- confidence/quality score
+- chase warning
+- plain-English reason
+- no-trade reason if no setup exists
+
+If no valid scalp:
+Show:
+“No clean scalp right now for your target and risk amount. Best action: wait.”
+
+Then show:
+- best symbol to watch
+- entry zone to wait for
+- what would make the setup valid
+- optional “Watch Setup” button
+
+====================================================
+PART 7 — SCALP MODE LOGIC
+====================================================
+
+Implement scalp modes with different scoring weights.
+
+Sniper Scalp:
+- highest entry quality
+- waits for clean zone
+- must have strong invalidation
+- avoids late entries
+- lower number of signals
+
+Safer Scalp:
+- prioritizes lower risk
+- tighter drawdown
+- better spread
+- lower volatility danger
+- may suggest smaller profit target
+
+Fast Scalp:
+- prioritizes immediate movement
+- valid for short timer
+- more sensitive to momentum
+- stronger chase warnings
+
+Momentum Scalp:
+- trend continuation
+- breakout/retest
+- moving with current pressure
+
+Reversal Scalp:
+- rejection zones
+- overextended move
+- divergence/reversal candle if available
+- must require clear invalidation
+
+Any:
+- engine chooses best setup based on current market
+
+====================================================
+PART 8 — LOT SIZE / TP / SL GENERATION
+====================================================
+
+Ruby must generate lot size, TP, and SL using real symbol specs and account constraints.
+
+Lot size must consider:
+- user target profit
+- user risk/use amount
+- account balance
+- account equity
+- free margin
+- symbol contract size
+- tick value if available
+- point size
+- digits
+- min lot
+- max lot
+- lot step
+- broker stop distance if available
+- spread
+- TP distance
+- SL distance
+- estimated margin
+- volatility
+
+Never produce a lot size outside min/max/step.
+
+If calculated lot is below min lot:
+- explain that the target cannot be cleanly achieved with that amount on that symbol
+- either suggest a different symbol or a lower target
+
+If calculated lot exceeds max lot or margin:
+- reduce lot or reject setup
+- show clean explanation
+
+TP must be based on:
+- user target profit
+- nearby support/resistance
+- current volatility
+- realistic scalp movement
+- spread cost
+- current price and direction
+
+SL must be based on:
+- market structure invalidation
+- not directly at entry
+- spread buffer
+- recent swing high/low
+- volatility buffer
+- broker minimum stop distance
+
+SL must not be random.
+SL must not be so tight that normal spread/noise instantly hits it.
+
+Reward-to-risk must be calculated and displayed.
+
+If reward-to-risk is poor, Ruby should reject or label the setup as aggressive.
+
+====================================================
+PART 9 — SCALP WATCH MODE
+====================================================
+
+Add Scalp Watch Mode.
+
+If a scalp is not ready but is forming, user can click:
+
+Watch Setup
+
+Behavior:
+Ruby watches the symbol/setup and alerts when:
+- entry zone is reached
+- setup becomes READY
+- setup becomes LATE
+- setup becomes INVALID
+- spread becomes too wide
+- news danger appears
+- validity expires
+
+Watch Mode should not place trades automatically.
+Watch Mode only alerts and prepares the trade preview.
+
+Watch Mode alert example:
+“Ruby Scalp Alert: V75 Sell is now ready. Entry zone reached. Valid for about 2 minutes. Suggested lot 0.001, TP 4580, SL 4628.”
+
+Scalp watch records should include:
+- user id
+- symbol
+- direction
+- setup type
+- target profit
+- risk amount
+- entry zone
+- TP
+- SL
+- expiry
+- current status
+
+Keep watch mode efficient.
+Do not create memory leaks or endless polling loops.
+Respect app performance.
+
+====================================================
+PART 10 — TRADE MODAL INTEGRATION
+====================================================
+
+When the user clicks Build Scalp Trade:
+
+Open the existing trade modal with prefilled values:
+- symbol
+- direction
+- order type
+- suggested lot size
+- entry price if pending order
+- TP
+- SL
+- target profit estimate
+- risk estimate
+- Ruby explanation
+- scalp quality score
+- validity status
+
+Do not bypass existing live readiness checks.
+Do not bypass owner/admin approval checks.
+Do not bypass kill switches.
+Do not bypass bridge readiness checks.
+Do not bypass account live-enabled checks.
+Do not bypass broker/symbol validation.
+
+The user must still confirm the live trade.
+
+Button wording:
+Confirm Live Trade
+
+Do not use a slow two-step Review -> Final Confirm flow for owner/admin manual LIVE testing if the app has already been changed to faster Confirm behavior.
+Respect the current app’s latest live confirmation flow.
+
+Before submit:
+- revalidate price freshness
+- revalidate symbol trade mode
+- revalidate spread
+- revalidate margin
+- revalidate lot step
+- revalidate SL/TP rules
+- revalidate setup is not expired
+- revalidate entry is not late
+
+If the setup expired:
+Show:
+“This scalp setup expired. Ruby needs to refresh it before placing the trade.”
+
+====================================================
+PART 11 — RUBY EXPLANATION QUALITY
+====================================================
+
+Ruby’s scalp explanation must be plain English plus useful technical reasoning.
+
+Ruby should explain:
+- why this market
+- why buy/sell
+- why this lot size
+- why this TP
+- why this SL
+- what invalidates the trade
+- whether the user is late
+- what to watch after entry
+- whether to wait instead
+
+Do not let Ruby give overwhelming raw data.
+Do not expose backend/internal names.
+Do not show route names, function names, stack traces, API names, JSON payloads, database table names, or developer-only labels to normal users.
+
+Good Ruby explanation example:
+“This is a fast sell scalp because price is rejecting the upper zone and short-term momentum is fading. The take-profit is placed before the next support area so the trade does not need a huge move to work. The stop is above the rejection zone with a spread buffer. If price breaks above that zone, the scalp idea is no longer clean.”
+
+Bad Ruby explanation:
+“scannerScalpService returned status READY from /api/scanner/scalp with payload confidenceScore 0.84.”
+
+====================================================
+PART 12 — POST-TRADE SCALP REVIEW
+====================================================
+
+After a scalp trade closes, Ruby should be able to review it.
+
+Track:
+- symbol
+- direction
+- lot
+- entry
+- exit
+- TP
+- SL
+- result amount
+- hold time
+- max favorable movement if available
+- max adverse movement if available
+- whether user closed early
+- whether TP/SL hit
+- Ruby scalp quality at entry
+- reason for win/loss
+
+Ruby post-trade review example:
+“Result: +$18.40. Held for 3 minutes 12 seconds. This was a good scalp because price respected the rejection zone and hit the main TP area. Entry was slightly late, but risk stayed controlled.”
+
+For loss:
+“Result: -$5.80. Price broke the scalp invalidation zone, so closing was correct. Holding longer would have increased risk.”
+
+This can be minimal in this phase if full trade-history metrics are not already available, but create the structure so it can be expanded.
+
+====================================================
+PART 13 — DATA MODEL / API REQUIREMENTS
+====================================================
+
+Use existing data models if available.
+If new tables or fields are needed, add migrations safely.
+
+Possible records:
+- scalp_signals
+- scalp_watchlist
+- scalp_trade_reviews
+- scanner_scalp_snapshots
+
+Do not create unnecessary tables if existing scanner/trade tables can store this cleanly.
+
+API endpoints may include:
+- GET/POST scanner scalp evaluation
+- POST Ruby scalp builder request
+- POST watch scalp setup
+- GET active scalp watches
+- POST update scalp watch status
+- GET scalp result for selected symbol
+
+But keep the API clean and consistent with existing backend architecture.
+
+Backend must enforce:
+- authenticated user
+- account context
+- role context where needed
+- symbol validity
+- symbol specs
+- safe error handling
+- no raw internal errors to normal users
+
+====================================================
+PART 14 — PERFORMANCE REQUIREMENTS
+====================================================
+
+This app must be fast.
+
+Performance targets:
+- Focus Scan scalp card update: under 500ms after scanner data is available
+- Broad Scan scalp ranking render: under 1.5 seconds after scan data is available
+- Symbol selection to scalp update: under 700ms
+- Scalp Builder result: under 2.5 seconds when market data is available
+- Trade modal prefill: under 500ms
+- No long UI freeze with 600 symbols
+- No repeated full-page reloads
+- No heavy loops on every render
+- No uncontrolled polling loops
+- No memory leaks
+
+Use:
+- memoization where needed
+- lazy rendering
+- virtualization for long symbol lists if needed
+- debounce search input
+- cache symbol specs
+- reuse scanner data instead of refetching unnecessarily
+- throttle watch mode updates
+
+Log timing for:
+- scalp engine evaluation
+- focus scalp render
+- broad scan ranking
+- scalp builder request
+- trade modal prefill
+
+====================================================
+PART 15 — MOBILE UI REQUIREMENTS
+====================================================
+
+The app is used heavily on mobile.
+
+Mobile must be clean:
+- no huge wall of text
+- no horizontal overflow
+- no hidden buttons
+- no bottom menu gap
+- no floating panel blocking navigation
+- scalp card collapsible
+- details expandable
+- main recommendation visible quickly
+- buttons large enough to tap
+- scanner page remains readable
+- Broad Scan rankings do not create clutter
+
+Use compact card sections:
+- Summary
+- Setup
+- Risk
+- Ruby Reason
+- Actions
+
+====================================================
+PART 16 — EDGE CASES
+====================================================
+
+Handle these cases clearly:
+
+1. Missing symbol specs
+“Ruby needs live symbol specs before building a scalp for this market.”
+
+2. Stale price
+“Waiting for fresh price before recommending a scalp.”
+
+3. Spread too wide
+“Spread is too wide for a clean scalp right now.”
+
+4. Market closed
+“This market is not tradeable right now.”
+
+5. Trade disabled
+“Broker currently does not allow trading on this symbol.”
+
+6. Lot below minimum
+“Your target/risk amount is too small for this symbol’s minimum lot. Ruby can find another market or lower the target.”
+
+7. Margin too low
+“Not enough free margin for this scalp.”
+
+8. TP unrealistic
+“The target requires too much movement for a scalp right now.”
+
+9. SL too tight
+“The stop would sit inside normal market noise/spread, so this scalp is not clean.”
+
+10. Late entry
+“Do not chase. Price already moved too far toward target.”
+
+11. No clean scalp
+“No clean scalp right now. Best action: wait.”
+
+12. News danger
+“High-impact news risk makes this scalp unsafe right now.”
+
+13. Bridge not ready
+“Live bridge is not ready. Ruby can analyze but cannot prepare a live trade.”
+
+14. Kill switch active
+“Live trading is paused.”
+
+15. User not live-enabled
+“Live trading is not enabled for this account.”
+
+====================================================
+PART 17 — TESTING REQUIREMENTS
+====================================================
+
+You must ensure the system works before passing the work.
+
+Do not mark complete just because code compiles.
+Do not pass incomplete work.
+Do not say done unless the feature works end-to-end.
+
+Run full QA:
+
+A. Backend tests
+- scalp engine returns READY for a valid mock/known market scenario
+- returns NO_CLEAN_SCALP when spread is too wide
+- returns LATE when price has already moved too far
+- returns MARKET_CLOSED when symbol trade mode is closed
+- lot size respects min lot, max lot, and lot step
+- TP/SL are generated correctly for buy and sell
+- target reality check works
+- no raw backend errors are exposed
+
+B. Frontend tests
+- Focus Scan scalp card appears
+- Focus Scan updates when selected symbol changes
+- Broad Scan scalp ranking appears
+- filters work
+- scalp details expand/collapse
+- Build Scalp Trade opens trade modal
+- trade modal prefilled correctly
+- mobile layout is clean
+- typed Ruby chat still works
+- Ruby does not expose backend/internal text
+
+C. Integration tests
+- select at least 20 symbols across groups:
+  - forex major
+  - forex minor
+  - gold/metals
+  - indices
+  - crypto
+  - synthetic/volatility if available
+  - broker-specific symbols
+- confirm scalp status is generated or cleanly rejected
+- confirm no crash with 600 symbols
+- confirm Broad Scan ranking does not lag badly
+- confirm selected Broad Scan scalp opens Focus Scan correctly
+- confirm Build Scalp Trade respects live readiness and existing safeguards
+
+D. Live flow dry-run without placing a live order unless explicitly required
+- Prepare live trade modal from scalp result
+- Validate symbol, lot, TP, SL, margin, bridge readiness
+- Stop before final Confirm unless I explicitly ask to place a live trade
+- Do not create paper/simulated fallback
+
+E. Regression tests
+Make sure these still work:
+- normal scanner
+- Focus Scan
+- Broad Scan
+- symbol search
+- market picker
+- Ruby chat
+- Ruby typing indicator
+- manual voice recording only
+- trade modal
+- live bridge status
+- admin/user role checks
+- kill switch display
+- retcode display
+- mobile bottom nav
+
+====================================================
+PART 18 — QA/FIX GATE
+====================================================
+
+After building, run this QA/fix gate before reporting completion:
+
+Inspect your own work from end to end.
+
+Reuse the current codebase.
+Do not rebuild unrelated systems.
+Find anything missing, broken, slow, duplicated, dead, or disconnected from this Ruby Scalp Signals implementation.
+
+Specifically verify:
+- Focus Scan scalp card actually receives real scanner/symbol data
+- Broad Scan actually ranks real symbols
+- Ruby Scalp Builder actually uses target profit and risk/use amount
+- lot size is not fake/hardcoded
+- TP and SL are not fake/hardcoded
+- scalp status labels are correct
+- trade modal prefill works
+- expired setups cannot be submitted
+- user-facing text is clean
+- no Paper Trading terminology exists
+- no raw backend/internal names are visible to normal users
+- no app performance regression
+- no mobile layout break
+- no scanner crash with the full 600-symbol directory
+
+If anything fails, fix it before passing the work.
+
+Do not pass the task with known broken parts.
+Do not leave TODO placeholders in active user-facing flows.
+Do not leave dummy scalp data in production code.
+Do not fake proof.
+
+====================================================
+PART 19 — FINAL DELIVERY PROOF REQUIRED
+====================================================
+
+When complete, report back with:
+
+1. Files changed
+2. What already existed and was reused
+3. What was newly built
+4. How Focus Scan scalp signals work
+5. How Broad Scan scalp rankings work
+6. How Ruby Scalp Builder works
+7. How lot size is calculated
+8. How TP/SL are generated
+9. How “no clean scalp” works
+10. How Scalp Watch Mode works, if completed in this phase
+11. How Build Scalp Trade connects to the existing trade modal
+12. Backend tests run and results
+13. Frontend tests run and results
+14. 20-symbol scanner test proof
+15. Performance timing results
+16. Mobile QA result
+17. Confirmation that no Paper Trading or simulated trade fallback was added
+18. Confirmation that normal scanner/Ruby/trade modal/live bridge flows still work
+19. Any known limitations that remain
+
+Final rule:
+The system must work before you pass the work.
+If it does not work, keep fixing it and report the exact blocker instead of saying complete.

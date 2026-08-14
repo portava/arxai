@@ -1,0 +1,194 @@
+Do not build a new Phase 14 system yet.
+
+First perform a full audit of the existing ARX AI assistant implementation, then adjust only what is missing or broken. Do not duplicate existing systems, routes, prompts, tools, context builders, market-data stubs, safety envelopes, or UI components.
+
+PHASE 14A GOAL:
+Inspect the current assistant architecture first, identify what already exists, compare it against the desired ARX AI knowledge/tool intelligence upgrade, then make minimal safe adjustments to improve the current system.
+
+Step 1 — Audit existing assistant system
+
+Search the codebase for everything related to:
+- ARX AI Assistant
+- chat assistant
+- AI chat widget
+- voice mode
+- streaming/SSE
+- gpt-audio / Realtime / OpenAI
+- assistant prompt/system instructions
+- assistant tools/function calling
+- app knowledge/context
+- MT5 bridge status
+- paper-only/liveLocked safety
+- market data provider stubs
+- trade journal
+- calendar
+- risk manager
+- prop firm mode
+- user sessions
+- per-user isolation
+- assistant UI behavior
+- assistant API routes/endpoints
+
+Create an internal inventory before changing anything.
+
+For each existing item, identify:
+- File path
+- Function/component/route name
+- What it currently does
+- Whether it is active or dead/unused code
+- Whether frontend and backend are actually connected
+- Whether it respects per-user isolation
+- Whether it respects paper-only/liveLocked safety
+- Whether it exposes any secret risk
+- Whether it returns fake/demo data
+- Whether it is reusable for Phase 14
+
+Step 2 — Compare against desired Phase 14
+
+Create a gap map with these categories:
+
+A. Already exists and works
+B. Exists but incomplete
+C. Exists but disconnected from UI/backend
+D. Exists but unsafe or inaccurate
+E. Missing completely
+F. Duplicate/conflicting implementation
+
+Check specifically for:
+- Knowledge registry
+- Assistant context builder
+- Page-aware assistant context
+- Tool/function router
+- Read-only assistant tools
+- MT5 bridge status tool
+- Paper safety status tool
+- Market data provider status tool
+- Trade journal summary tool
+- Calendar summary tool
+- Risk settings summary tool
+- Prop firm status tool
+- User session summary tool
+- Voice status tool
+- App feature overview tool
+- Secret filtering
+- Per-user data isolation
+- Fresh-user honesty
+- No fake data behavior
+- No live trade execution
+- No profit guarantee behavior
+
+Step 3 — Adjustment rules
+
+Only after the audit, make minimal adjustments.
+
+Rules:
+1. Do not rebuild the assistant from scratch.
+2. Do not create duplicate tools if similar tools already exist.
+3. Do not rename working routes/components unless absolutely necessary.
+4. Do not change global UI design.
+5. Do not weaken paper-only/liveLocked safety.
+6. Do not expose MT5_BRIDGE_TOKEN, SESSION_SECRET, apiKeyHash, password hashes, API keys, bridge credentials, or hidden secrets.
+7. Do not add fake market data, fake balances, fake trades, fake heartbeat, or fake user history.
+8. Do not enable live trade execution.
+9. Do not use ts-ignore, any, skipLibCheck, or temporary suppression to hide errors.
+10. If a feature already exists, improve/wire the existing one instead of replacing it.
+
+Step 4 — Make the existing assistant smarter
+
+Based on the audit, adjust the current assistant so it can safely answer:
+
+- “What is ARX AI?”
+- “What page am I on?”
+- “Explain this page to me.”
+- “Is my MT5 bridge connected?”
+- “Do I have live market data?”
+- “Can you place a live trade?”
+- “Why does my app say paper-only?”
+- “Do I have any trades yet?”
+- “What is my risk status?”
+- “What is prop firm mode?”
+- “Can you guarantee this trade will win?”
+
+The assistant should answer based on existing app state, not made-up data.
+
+Fresh-user behavior must be honest:
+- “No trades recorded yet”
+- “MT5 bridge not connected”
+- “Market data provider not connected”
+- “Paper-only safety mode active”
+- “No journal entries yet”
+- “No calendar performance history yet”
+
+Step 5 — Tool and context adjustment
+
+If existing assistant tools/context already exist, repair or extend them.
+
+If missing, add only the minimum needed read-only tools:
+- getAppFeatureOverview
+- getCurrentPageContext
+- getMT5BridgeStatus
+- getPaperSafetyStatus
+- getMarketDataProviderStatus
+- getTradeJournalSummary
+- getTradeCalendarSummary
+- getRiskSettingsSummary
+- getPropFirmModeStatus
+- getUserSessionSummary
+- getAssistantVoiceStatus
+- getAvailableAppActions
+
+Every tool must:
+- Be read-only
+- Enforce per-user isolation
+- Return safety envelope
+- Never expose secrets
+- Never fabricate live data
+- Never place trades
+
+Step 6 — QA after adjustments
+
+After making changes, run:
+
+- Typecheck
+- Build
+- Lint if available
+- Existing assistant tests if available
+- Manual endpoint/UI verification if tests do not exist
+
+Test fresh-user flow:
+register/login → open assistant → ask about ARX AI → ask current page → ask MT5 bridge → ask live market data → ask trades/journal/calendar → ask if it can place a live trade.
+
+Expected:
+- No fake user data
+- No fake market data
+- No fake bridge status
+- No exposed secrets
+- No live trade execution
+- No profit guarantees
+- Assistant remains app-aware and risk-aware
+- paper-only/liveLocked remains active
+
+Step 7 — Final report
+
+Give me a Phase 14A Audit + Adjustment Report with:
+
+1. Existing assistant files found
+2. Existing backend routes found
+3. Existing frontend components found
+4. Existing assistant tools found
+5. Existing context/prompt system found
+6. What was already working
+7. What was incomplete
+8. What was disconnected
+9. What was unsafe or inaccurate, if anything
+10. What you adjusted
+11. Files changed
+12. Tests run
+13. Typecheck/build result
+14. Fresh-user test results
+15. Current voice mode status
+16. Current market data status
+17. Current MT5 bridge status behavior
+18. Confirmation all safety guards remain green
+
+Do not proceed to any new feature after this. Stop after the audit, adjustments, and report.

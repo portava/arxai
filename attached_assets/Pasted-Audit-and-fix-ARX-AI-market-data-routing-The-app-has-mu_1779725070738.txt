@@ -1,0 +1,162 @@
+Audit and fix ARX AI market data routing. The app has multiple APIs attached, but it appears to only read market data from TwelveData. Volatility / synthetic indices are also unavailable and the app keeps saying “no feed.”
+
+Important:
+Do NOT remove existing APIs.
+Do NOT hardcode TwelveData as the only feed.
+Do NOT show “no feed” unless every valid configured provider for that symbol truly fails.
+Do NOT fake market prices or fake live feeds.
+
+Current problems:
+1. ARX appears to only read from TwelveData even though multiple APIs are configured.
+2. Volatility / synthetic markets are not available in the app.
+3. The app keeps saying “no feed,” even when another provider or MT5 may have the data.
+4. The UI may be showing provider failure instead of true symbol/feed unavailability.
+5. The app should use the correct provider for the correct market type.
+
+Before changing code:
+1. Search the entire codebase for:
+   - TwelveData
+   - twelvedata
+   - market data
+   - marketDataProvider
+   - feed provider
+   - data router
+   - quote
+   - candles
+   - websocket
+   - symbol mapper
+   - Deriv
+   - synthetic
+   - volatility
+   - V75
+   - VIX
+   - MT5 quotes
+   - scanner data source
+   - Ruby market data source
+   - chart data source
+   - “no feed”
+2. Identify every API/provider currently attached in env/config.
+3. Identify which providers are actually used in code.
+4. Identify which providers are configured but never called.
+5. Identify where TwelveData is being forced as the default.
+6. Identify whether MT5 live quotes are available and whether the app is ignoring them.
+
+Required architecture:
+Create or repair one unified Market Data Router.
+
+The router should choose the correct feed source by market type:
+
+A. MT5-connected tradable symbols:
+- If the symbol is available from the connected MT5 broker/account, MT5 should be the primary live quote source.
+- Use MT5/EA bridge quotes for tradable broker symbols when available.
+- This ensures the price shown in ARX matches what can actually be traded.
+
+B. Deriv synthetic/volatility markets:
+- Volatility 10, 25, 50, 75, 100
+- Volatility 10 (1s), 25 (1s), 50 (1s), 75 (1s), 100 (1s)
+- Boom/Crash if supported later
+- Step Index if supported later
+- These should route to Deriv/MT5 broker feed, not TwelveData.
+- If Deriv API/WebSocket is configured, connect the Deriv feed properly.
+- If the connected MT5 broker provides these symbols, map them from MT5 symbols instead.
+
+C. Forex/crypto/stocks/indices:
+- Use TwelveData only where TwelveData is the correct provider.
+- Use other configured providers when better suited.
+- Add fallback provider logic instead of failing immediately.
+
+D. News/economic/event data:
+- Route through the relevant attached news/economic APIs, not TwelveData candles.
+
+Provider priority:
+1. For tradable symbols: connected broker/MT5 feed first.
+2. For Deriv synthetic/volatility symbols: Deriv or broker MT5 feed.
+3. For normal market symbols: best configured provider by asset type.
+4. Fallback providers if primary fails.
+5. Only show “no feed” if all valid providers fail or symbol is unsupported.
+
+Volatility symbol support:
+Add proper symbol aliases and mapping for common user inputs:
+- volatility 75
+- v75
+- volatility 75 index
+- volatility 75 1s
+- v75 1s
+- volatility 25
+- volatility 25 1s
+- v25
+- v25 1s
+- volatility 100
+- volatility 100 1s
+- v100
+- v100 1s
+- volatility 50
+- volatility 50 1s
+- v50
+- v50 1s
+- volatility 10
+- volatility 10 1s
+- v10
+- v10 1s
+
+Map these aliases to the exact broker/Deriv/MT5 symbol names used in the connected account. Do not guess blindly. Pull symbol lists from MT5 or Deriv where possible.
+
+Fix “no feed” behavior:
+1. Replace single-provider failure with multi-provider fallback.
+2. Show clean user-facing messages:
+   - “Connecting to feed…”
+   - “Feed available”
+   - “Broker feed unavailable”
+   - “Trying backup feed…”
+   - “Symbol not supported by connected broker”
+   - “No live feed available for this symbol”
+3. Do not show “no feed” just because TwelveData failed.
+4. Do not show raw provider errors to normal users.
+5. Admin diagnostics may show which provider failed and why.
+
+Scanner/Ruby/chart requirements:
+The same Market Data Router must power:
+- scanner
+- live chart
+- Ruby market explanations
+- trade ticket price
+- watchlist
+- market search
+- volatility/synthetic market pages
+
+Ruby should not make trading decisions from TwelveData alone if the actual trade is placed through MT5/Deriv. Ruby should use the broker/MT5 feed for tradable symbols whenever available.
+
+Admin diagnostics:
+Add an admin-only provider health panel showing:
+- configured providers
+- which providers have API keys
+- which providers are actively used
+- last successful quote/candle time
+- failed provider reason
+- selected provider per symbol
+- fallback chain used
+- whether MT5 quote feed is active
+- whether Deriv synthetic feed is active
+
+Normal users should not see API names, backend names, raw errors, provider IDs, or debug logs.
+
+Acceptance tests:
+1. Search EURUSD. Confirm ARX uses the correct live tradable feed if MT5 provides it.
+2. Search BTCUSD. Confirm ARX routes to the correct provider and does not only force TwelveData.
+3. Search Volatility 75.
+4. Search V75.
+5. Search Volatility 75 1s.
+6. Search V25 1s.
+7. Confirm volatility/synthetic symbols do not incorrectly rely only on TwelveData.
+8. Confirm app only says “no feed” after all valid providers fail.
+9. Confirm the scanner can see volatility markets if the connected broker/Deriv feed supports them.
+10. Confirm Ruby can explain volatility markets using the correct live feed.
+11. Confirm chart and trade ticket prices match the tradable broker/MT5 price where applicable.
+12. Confirm admin diagnostics show provider routing.
+13. Confirm normal users see clean market status only.
+14. Confirm no existing TwelveData forex/crypto/stock functionality is broken.
+15. Confirm no fake price/feed is created.
+
+After fixing:
+Run full QA on market search, scanner, live chart, Ruby explanations, volatility symbols, MT5 broker feed, Deriv feed if configured, TwelveData fallback, and mobile UI.
+Repair anything broken before stopping.

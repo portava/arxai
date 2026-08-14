@@ -1,0 +1,59 @@
+Go to the next PART 16 audit pass.
+
+Pass 3 is accepted as the Deriv/MT5 balance sync and admin allocation truth audit. Lock these findings into the final fix ledger:
+
+1. Preserve the good allocation foundations:
+   - Master balance/equity/free margin/margin/open P/L must continue coming from real MT5/EA snapshots.
+   - Available funds should keep using strict real-balance logic: min(mt5Balance, mt5Equity) - totalAllocated.
+   - Normal users must continue receiving masterMt5: null.
+   - Manual MT5 / Unassigned exposure must remain visible to owner/admin only.
+   - Phantom/orphan/reconciled positions must remain excluded from allocation totals.
+   - Admin allocation must continue refusing mutations when the master snapshot is stale, missing, paused, or not pinned.
+
+2. Add display-freshness unification to the fix ledger:
+   - Pool freshness, live bridge badge freshness, and admin allocation heartbeat freshness currently use inconsistent thresholds.
+   - Same snapshot age can appear Fresh in one place and Stale in another.
+   - Create one shared display-freshness contract later.
+   - Do not weaken the stricter live-dispatch heartbeat gate.
+
+3. Add Refresh truth to the fix ledger:
+   - Current “Refresh” rereads the latest DB snapshot instead of forcing a fresh EA/MT5 pull.
+   - Either rename/label it honestly as “show latest received snapshot” with age, or wire a true on-demand EA snapshot request later.
+   - Do not imply broker pull if it is only DB reread.
+
+4. Eleanor/Ruby note:
+   - Pass 3 still references rubyContext.ts.
+   - Lock this into the Eleanor rename debt.
+   - The context behavior may be correct, but the name must become Eleanor-facing and centralized.
+
+Now continue with the next priority pass.
+
+Recommended next pass: Scanner + chart trading truth.
+
+Audit only. No code changes. No tasks yet.
+
+Focus on:
+
+1. Scanner page load and render order.
+2. Whether Scanner waits on Eleanor/Ruby before rendering.
+3. Whether Scanner waits on all scan results before chart appears.
+4. Scanner chart candle source and long-history loading.
+5. Why candle history still appears limited or falls off.
+6. Scanner Focus and Broad Scan action wiring.
+7. Every Scanner BUY/SELL button path.
+8. Whether Scanner still routes anything through demo/paper endpoints.
+9. Scanner false approval warnings for owner/admin.
+10. Scanner live/shared MT5 chips and clutter.
+11. Chart trading buttons and whether each is truly wired.
+12. Pending orders, close, partial close, reverse, break-even, SL/TP move, drag lines.
+13. Whether unwired chart functions are hidden/disabled honestly.
+14. Whether chart overlays show only logged-in user trades unless owner/admin is in admin view.
+15. Whether master/manual MT5 positions leak to normal users.
+16. Whether chart action failure rolls back after MT5 rejection.
+17. Whether Eleanor can explain Scanner and chart statuses accurately.
+
+The output should answer:
+
+“Are Scanner and chart trading real live-actionable workstations, or do they still contain demo/paper paths, visual-only buttons, slow rendering, stale candles, false warnings, or unwired trade-management controls?”
+
+Include file-level proof, routes, endpoints, components, data sources, state transitions, UI behavior, privacy checks, and exact risk classification.

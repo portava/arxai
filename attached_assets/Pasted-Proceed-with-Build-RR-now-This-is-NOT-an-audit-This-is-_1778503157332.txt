@@ -1,0 +1,513 @@
+Proceed with Build RR now.
+
+This is NOT an audit.
+This is NOT a planning report.
+Implement the code changes.
+
+Build RR = Guided Onboarding + Smart Help System.
+
+Goal:
+Create a guided onboarding and smart help layer that teaches the user how to safely use the paper-only trading app from the Trading Cockpit.
+
+The app should guide the user through:
+
+1. Understanding PAPER_ONLY mode
+2. Understanding LIVE TRADING DISABLED
+3. Running readiness checks
+4. Running paper-session preflight
+5. Starting a paper session
+6. Reading Risk Governor status
+7. Understanding critical alerts
+8. Monitoring paper trades
+9. Reading coach guidance
+10. Ending a session and reviewing the report
+11. Using Replay Simulator and Strategy Lab safely
+12. Importing data safely
+13. Understanding why actions are blocked
+
+Important:
+Build RR must NOT place trades.
+Build RR must NOT enable live trading.
+Build RR must NOT call MT5 live execution.
+Build RR must NOT modify canPlaceTrades.
+Build RR must NOT expose API secrets.
+Build RR must NOT recommend live trading.
+Build RR is onboarding, guided education, help text, user guidance, and safe workflow explanation only.
+
+Current system:
+- AA = trade decision orchestrator
+- BB = auto-debrief
+- CC = learning feedback engine
+- DD = read-only market data
+- EE = paper execution engine
+- FF = paper autopilot
+- GG = trading calendar + AI command center
+- HH = risk governor
+- II = trader coach + playbook
+- JJ = replay simulator + strategy lab
+- KK = data import + broker read-only connector
+- LL = notification center
+- MM = system health/admin/audit
+- NN = security/roles/permissions
+- OO = readiness gate
+- PP = paper session manager
+- QQ = unified trading cockpit
+- RR = guided onboarding + smart help system
+
+Core requirement:
+Create a guided onboarding system that helps the user safely operate the paper-only trading workflow without needing developer knowledge.
+
+Build RR tasks:
+
+1. Inspect existing frontend and workflow
+
+Review:
+- Trading Cockpit
+- Paper Sessions
+- Readiness Gate
+- Risk Governor
+- Notifications
+- Coach
+- Playbook
+- Replay Simulator
+- Strategy Lab
+- Data Import
+- Broker Read-Only
+- System Health
+- Security
+- navigation/menu
+
+Do not duplicate pages.
+Add guided help and onboarding on top of existing QQ cockpit workflow.
+
+2. Create onboarding state service
+
+Create a service that tracks onboarding progress:
+
+{
+  onboarding_id,
+  user_id,
+  status: "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED" | "SKIPPED",
+  current_step,
+  completed_steps,
+  skipped_steps,
+  last_seen_at,
+  paper_only_acknowledged,
+  live_disabled_acknowledged,
+  risk_disclaimer_acknowledged,
+  walkthrough_completed,
+  created_at,
+  updated_at
+}
+
+3. Create onboarding steps
+
+Default steps:
+
+1. Welcome to Paper Mode
+2. Confirm Live Trading Is Disabled
+3. Understand the Safety Header
+4. Run Readiness Check
+5. Run Paper Session Preflight
+6. Start a Paper Session
+7. Read the Risk Governor
+8. Review Critical Alerts
+9. Monitor Paper Trades
+10. Read Coach Guidance
+11. End Session and Review Report
+12. Try Replay Simulator
+13. Try Strategy Lab
+14. Import Data Safely
+15. Review System Health
+16. Complete Onboarding
+
+Each step should include:
+{
+  step_id,
+  title,
+  description,
+  page_route,
+  target_component,
+  action_type: "READ" | "CLICK" | "CONFIRM" | "COMPLETE_ACTION",
+  required,
+  completion_condition,
+  help_text,
+  safety_note
+}
+
+4. Add smart help explanations
+
+Create a Smart Help service that explains system states in plain English.
+
+It should answer:
+
+- Why can’t I start a paper session?
+- Why did the Risk Governor pause me?
+- Why is autopilot blocked?
+- Why did paper execution reject a trade?
+- Why did AA return HOLD?
+- Why is market data degraded?
+- Why is broker read-only?
+- Why does the app say live trading is disabled?
+- What should I do next?
+- What is the safest next step?
+
+Return:
+
+{
+  help_id,
+  topic,
+  status,
+  plainEnglishExplanation,
+  reasonCodes,
+  recommendedNextActions,
+  relatedPages,
+  safetyReminder,
+  generatedAt
+}
+
+5. Add contextual help cards
+
+Add help cards to major pages:
+
+Trading Cockpit:
+- “What this page does”
+- “How to start safely”
+- “Why a start button may be disabled”
+
+Paper Sessions:
+- “What is a paper session?”
+- “Why preflight matters”
+- “What session limits mean”
+
+Risk Governor:
+- “What PAPER_ALLOWED means”
+- “What PAPER_PAUSED means”
+- “What WATCH_ONLY means”
+- “What LOCKED means”
+
+Readiness Gate:
+- “What PASS means”
+- “What PASS_WITH_WARNINGS means”
+- “What BLOCKED means”
+
+Coach:
+- “How to use coaching”
+- “Why sample size matters”
+- “Why this is not profit prediction”
+
+Replay:
+- “Replay is simulation only”
+- “Replay results are not proof of future profits”
+
+Data Import:
+- “Imported data is historical”
+- “Imported data is not live market data”
+
+Broker Read-Only:
+- “Read-only means no execution”
+- “Why account IDs are masked”
+
+6. Add guided tour UI
+
+Create frontend components:
+
+- Onboarding modal
+- Step-by-step guided tour
+- Progress tracker
+- “Next step” card
+- “Explain this” help button
+- Safety acknowledgement cards
+- Page-specific help drawer
+- Blocked-action explanation drawer
+
+7. Add safety acknowledgements
+
+Require user acknowledgement for:
+
+- This app is paper-only.
+- Live trading is disabled.
+- Replay results are simulation only.
+- Paper results do not guarantee live results.
+- Broker connection is read-only.
+- The app does not provide financial guarantees.
+
+Acknowledgements should be stored, but must not unlock live trading.
+
+8. Add “Why am I blocked?” flow
+
+If the user cannot start a paper session, run autopilot, or execute paper trades, show:
+
+{
+  blockedAction,
+  blockingSystems: [],
+  highestSeverity,
+  plainEnglishReasons: [],
+  technicalReasons: [],
+  recommendedFixes: [],
+  safeNextStep,
+  links
+}
+
+Examples:
+- “You cannot start because the Readiness Gate is BLOCKED.”
+- “You cannot start because there is an unacknowledged CRITICAL alert.”
+- “Autopilot is paused by the Risk Governor.”
+- “Paper execution requires an active paper session.”
+- “Broker is read-only. Live trading is disabled.”
+
+9. Add database tables if needed
+
+Additive only.
+
+Create:
+
+user_onboarding_progress:
+- id
+- onboarding_id
+- user_id
+- status
+- current_step
+- completed_steps jsonb
+- skipped_steps jsonb
+- paper_only_acknowledged
+- live_disabled_acknowledged
+- risk_disclaimer_acknowledged
+- replay_simulation_acknowledged
+- broker_readonly_acknowledged
+- walkthrough_completed
+- last_seen_at
+- created_at
+- updated_at
+
+onboarding_events:
+- id
+- onboarding_id
+- event_type
+- step_id
+- severity
+- message
+- details jsonb
+- created_at
+
+help_content_items:
+- id
+- help_key
+- title
+- category
+- page_route
+- content
+- safety_note
+- related_build
+- created_at
+- updated_at
+
+blocked_action_explanations:
+- id
+- explanation_id
+- user_id
+- blocked_action
+- blocking_systems jsonb
+- highest_severity
+- plain_english_reasons jsonb
+- technical_reasons jsonb
+- recommended_fixes jsonb
+- safe_next_step
+- links jsonb
+- created_at
+
+10. Add endpoints or scripts
+
+Create endpoints or equivalent scripts:
+
+GET /api/onboarding/status
+POST /api/onboarding/start
+POST /api/onboarding/complete-step
+POST /api/onboarding/skip-step
+POST /api/onboarding/complete
+POST /api/onboarding/reset
+GET /api/onboarding/steps
+POST /api/onboarding/acknowledge
+POST /api/onboarding/demo
+
+GET /api/help/topics
+GET /api/help/topic/:key
+POST /api/help/explain
+POST /api/help/why-blocked
+GET /api/help/page?route=/trading-cockpit
+POST /api/help/demo
+
+11. Integrate with QQ Trading Cockpit
+
+The Trading Cockpit should show:
+- onboarding progress
+- next onboarding step
+- help button
+- “why am I blocked?” button
+- safety acknowledgements if missing
+- contextual page help
+- beginner-friendly next action
+
+Do not clutter the cockpit.
+Keep details collapsible.
+
+12. Integrate with PP Session Manager
+
+When preflight or start is blocked, PP should provide data to RR’s “why blocked” explanation.
+
+RR should explain:
+- what blocked the action
+- which system blocked it
+- what the user should do next
+- whether this is a safety lock, alert, readiness issue, or session rule
+
+13. Integrate with LL Notifications
+
+LL should notify:
+- onboarding started
+- onboarding completed
+- safety acknowledgement completed
+- blocked action explanation generated if severe
+- critical help item viewed if needed
+
+14. Integrate with MM Audit
+
+MM should audit:
+- onboarding started
+- onboarding completed
+- safety acknowledgements
+- blocked-action explanation generated
+- help export if any
+
+15. Integrate with NN Security
+
+NN should protect onboarding/help actions where needed.
+
+Rules:
+- help reading can be broad/safe
+- modifying onboarding state requires user/session permission
+- acknowledgements require authenticated user if auth exists
+- no secrets exposed
+
+16. Frontend pages/components
+
+Add or update:
+
+A. Onboarding page
+Show:
+- welcome
+- progress
+- steps
+- safety acknowledgements
+- continue button
+- skip option if allowed
+
+B. Help Center page
+Show:
+- topics
+- categories
+- search
+- safety notes
+- related pages
+
+C. Help Drawer
+Accessible from cockpit and major pages.
+
+D. Why Blocked drawer
+Shows plain-English explanation and next safe action.
+
+E. Onboarding progress widget
+Small widget in Trading Cockpit.
+
+17. Required test scenarios
+
+A. New user sees onboarding prompt.
+B. User can start onboarding.
+C. User can complete steps.
+D. User can skip optional steps.
+E. Required safety acknowledgements are stored.
+F. Completion marks onboarding complete.
+G. Reset onboarding works.
+H. Help topics load.
+I. Page-specific help loads.
+J. “Why blocked” explains readiness blocked.
+K. “Why blocked” explains Risk Governor paused.
+L. “Why blocked” explains critical alert.
+M. “Why blocked” explains no active paper session.
+N. “Why blocked” explains broker read-only/live disabled.
+O. Cockpit shows onboarding next step.
+P. Help drawer works on mobile.
+Q. No secrets are exposed.
+R. No live trading controls exist.
+S. Existing AA-QQ systems still work.
+
+18. Safety rules
+
+Hard rules:
+- RR cannot place trades.
+- RR cannot enable live trading.
+- RR cannot set canPlaceTrades true.
+- RR cannot call broker order functions.
+- RR cannot call MT5 live execution.
+- RR cannot expose secrets.
+- RR cannot recommend live trading.
+- RR cannot treat acknowledgements as permission for live trading.
+- RR must always explain live trading is disabled.
+
+19. Preserve existing behavior
+
+Do not break:
+- AA through QQ services
+- QQ cockpit
+- PP paper sessions
+- LL notifications
+- MM audit
+- NN security
+- frontend routes
+- backend safety rules
+
+Acceptance criteria:
+- Onboarding system exists.
+- Smart Help system exists.
+- Why-blocked explanations exist.
+- Help Center exists.
+- Cockpit shows next onboarding/help state.
+- Safety acknowledgements are stored.
+- Help output is plain-English and safe.
+- No live trading is enabled or recommended.
+- No secrets are exposed.
+- App typechecks/builds.
+- Raw outputs and frontend proof show it works.
+
+After implementation, show:
+
+1. Files changed
+2. New files created
+3. Database changes
+4. Frontend routes/components added
+5. Where RR integrates with QQ cockpit
+6. Where RR integrates with PP blocked actions
+7. Where RR integrates with LL notifications
+8. Where RR integrates with MM audit
+9. Where RR integrates with NN security
+10. Raw output from /api/onboarding/status
+11. Raw output from /api/onboarding/start
+12. Raw output from complete-step
+13. Raw output from acknowledge
+14. Raw output from /api/onboarding/steps
+15. Raw output from /api/help/topics
+16. Raw output from /api/help/explain
+17. Raw output from /api/help/why-blocked
+18. New-user onboarding proof
+19. Safety acknowledgement proof
+20. Why-blocked readiness proof
+21. Why-blocked Risk Governor proof
+22. Why-blocked critical alert proof
+23. Why-blocked no active session proof
+24. Help Center/frontend proof
+25. Mobile drawer proof
+26. Secret redaction proof
+27. Live-trade isolation proof
+28. Any errors or warnings
+29. Whether Build RR is fully complete or partially complete
+30. Final Build RR score out of 10

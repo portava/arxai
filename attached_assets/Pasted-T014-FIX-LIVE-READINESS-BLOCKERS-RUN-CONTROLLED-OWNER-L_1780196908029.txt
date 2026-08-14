@@ -1,0 +1,260 @@
+T014 — FIX LIVE READINESS BLOCKERS + RUN CONTROLLED OWNER LIVE MICRO-TRADE
+
+Continue from T013.
+
+T013 proved the controlled LIVE micro-trade path was reached, but the trade was correctly blocked before execution by two real gates:
+
+1. LIVE_BLOCKED:USER_ALLOCATION_EXHAUSTED
+2. ea_account_type = FAIL because the master bridge account was not recognized as LIVE/REAL.
+
+This is now a live-readiness configuration/wiring repair task.
+
+Important product direction:
+ARX AI is LIVE-first for owner/admin operation.
+Do not switch this task to Demo.
+Do not use Paper Trading.
+Do not use fake execution.
+Do not use simulated trade data.
+Do not fabricate a successful live trade.
+Do not force a trade through failed gates.
+
+This is not a rebuild.
+Do not redesign the app.
+Do not duplicate the trading system.
+Do not reset live broker execution config.
+Do not weaken backend permissions, ownership checks, kill switch, freeze checks, live approval, allocation checks, or MT5 confirmation rules.
+
+Primary goals:
+
+1. Fix the owner/admin LIVE allocation blocker.
+2. Fix the EA/account-type recognition blocker.
+3. Verify every live-readiness gate honestly.
+4. Run one controlled owner/admin LIVE micro-trade only after all gates pass.
+5. Confirm the live trade opens, appears in ARX, appears in the ledger/chart, then closes immediately.
+6. Do not run more than one live micro-trade.
+
+PART 1 — Diagnose the allocation blocker
+
+Current blocker:
+LIVE_BLOCKED:USER_ALLOCATION_EXHAUSTED
+Message: available allocation is 0.
+
+Required work:
+
+1. Identify the active owner/admin live-test user.
+2. Check whether the intended owner/admin account is andraie.co@gmail.com or the current authenticated owner/admin user.
+3. Inspect the user allocation records.
+4. Inspect the shared/master bridge allocation model.
+5. Inspect the admin allocation controls.
+6. Determine why available allocation is 0.
+7. Confirm whether broker/master balance is being read correctly.
+8. Confirm whether ARX virtual allocation ledger is separate from broker balance.
+9. Confirm whether allocation was never created, created for the wrong user, frozen, exhausted, or not synced.
+
+Fix:
+
+1. Do not bypass allocation.
+2. Do not hardcode a fake balance.
+3. Do not remove the allocation gate.
+4. Repair the existing allocation record or allocation calculation.
+5. If the owner/admin account has no allocation, create or update the live allocation using the existing admin allocation system.
+6. Allocation should reflect the intended live-test budget available to the owner/admin account.
+7. Do not allocate funds to normal users.
+8. Do not expose master account balance to normal users.
+9. After repair, verify the owner/admin live-test user shows available allocation greater than 0.
+10. Admin/runtime health should clearly show:
+
+* owner/admin live allocation
+* available allocation
+* used allocation
+* frozen status
+* whether allocation gate passes
+
+Acceptance:
+USER_ALLOCATION_EXHAUSTED must clear only because the owner/admin has a real valid allocation in ARX, not because the gate was bypassed.
+
+PART 2 — Diagnose the EA/account-type blocker
+
+Current blocker:
+ea_account_type = FAIL
+Reason: master bridge account not recognized as LIVE/REAL.
+
+Required work:
+
+1. Inspect the MT5 bridge account-type payload.
+2. Inspect EA v1.29 heartbeat/account metadata.
+3. Inspect how ARX parses account type.
+4. Inspect accepted values for LIVE/REAL recognition.
+5. Identify whether the broker/EA returns:
+    * LIVE
+    * REAL
+    * real
+    * live
+    * production
+    * broker-specific account type string
+    * numeric account trade mode
+    * missing/null value
+6. Determine whether the account is actually not live, or whether ARX parser fails to recognize the live account value.
+7. Do not spoof account type.
+8. Do not force ea_account_type to pass with a hardcoded override.
+9. Do not change live broker execution config.
+10. Do not bypass account-type validation.
+
+Fix:
+
+1. If the connected MT5 account is truly LIVE/REAL and ARX parser is too narrow, update the parser to recognize the broker/EA’s real live-account value.
+2. If the EA is not sending account type, update bridge/EA payload handling so account type is available.
+3. If the connected account is not actually LIVE/REAL, stop and report the exact reason.
+4. If MT5 exposes numeric trade mode, map the official numeric mode to ARX account type safely.
+5. Update admin/runtime diagnostics to show a clean admin-only account-type status:
+    * recognized account type
+    * raw value only if safe and admin-only
+    * pass/fail
+    * reason if failed
+6. Normal users must not see raw account internals.
+
+Acceptance:
+ea_account_type must pass only when the bridge/EA proves the connected account is LIVE/REAL.
+
+PART 3 — Verify all live-readiness gates
+
+Before any trade attempt, run and report every gate:
+
+1. Owner/admin session confirmed.
+2. Account is LIVE-enabled.
+3. LIVE broker execution master switch ON.
+4. MT5 bridge connected.
+5. EA heartbeat healthy.
+6. EA account type recognized as LIVE/REAL.
+7. Kill switch inactive.
+8. Account not frozen.
+9. Owner/admin allocation available.
+10. Symbol allowed.
+11. Market open.
+12. Spread acceptable if configured.
+13. Lot size valid.
+14. Max live lot respected.
+15. Read-only mode OFF.
+16. EnableLiveExecution ON.
+17. Trade ownership ledger ready.
+18. Backend authorization passes.
+19. Scanner/chart ready to show the trade.
+20. arx_live_commands baseline count recorded before test.
+
+Do not continue to live execution unless all required gates pass.
+
+PART 4 — Controlled owner/admin LIVE micro-trade
+
+Only after all gates pass, run one controlled LIVE micro-trade.
+
+Rules:
+
+1. Use the approved owner/admin account only.
+2. Use the configured live-test symbol if present.
+3. If no configured symbol exists, use EURUSD only if it is allowed and market is open.
+4. Use the smallest broker-allowed lot size, expected 0.01 if valid.
+5. Do not let Ruby choose direction.
+6. Do not use strategy/signal logic.
+7. This is a wiring test only.
+8. Use the configured live-test direction if present.
+9. If no direction is configured, require owner/admin selection in the UI.
+10. Press the real Confirm button once.
+11. Confirm pending state appears immediately.
+12. Confirm backend request fires.
+13. Confirm MT5 ticket/order is returned.
+14. Confirm ARX ledger records the trade.
+15. Confirm Scanner/chart shows the trade only for the authorized owner/admin.
+16. Confirm Ruby can explain the opened trade in plain English without exposing internals.
+17. Close the trade immediately.
+18. Confirm MT5 close result.
+19. Confirm ARX ledger marks the trade closed.
+20. Confirm Scanner/chart removes or marks the trade closed.
+21. Record ticket/order ID, symbol, lot, direction, open time, close time, and P/L.
+22. Confirm arx_live_commands changed only by expected open/close commands.
+23. Do not run a second trade.
+
+If any gate fails:
+
+1. Do not place the trade.
+2. Do not switch to Demo.
+3. Do not use Paper.
+4. Do not fake success.
+5. Report the exact failed gate and exact fix needed.
+
+PART 5 — UI and admin diagnostics
+
+Update the admin/runtime diagnostics so owner/admin can clearly see:
+
+1. live broker master switch
+2. kill switch
+3. bridge heartbeat
+4. EA heartbeat
+5. EA account type
+6. terminal connected
+7. read-only mode
+8. EnableLiveExecution
+9. max live lot
+10. current approved owner/admin live-test user
+11. allocation available
+12. account frozen status
+13. symbol allowed status
+14. final live-readiness verdict
+15. exact reason if blocked
+
+Normal users should see only clean user-facing status, not raw internals.
+
+PART 6 — Tests
+
+Run:
+
+1. pnpm run health:workflows
+2. typecheck
+3. ci:guards
+4. live-readiness gate test
+5. allocation gate test
+6. EA account-type parser test
+7. live single-confirm test
+8. Scanner smoke test
+9. admin diagnostics smoke test
+10. route containment test
+
+PART 7 — Final report required
+
+Final report must include:
+
+1. allocation blocker root cause
+2. allocation fix applied
+3. owner/admin available allocation after fix
+4. EA account-type blocker root cause
+5. EA/account parser or bridge fix applied
+6. final live-readiness gate table
+7. arx_live_commands before count
+8. whether controlled live micro-trade ran
+9. if trade ran:
+    * ticket/order ID
+    * symbol
+    * lot
+    * direction
+    * open time
+    * close time
+    * P/L
+    * ARX ledger verification
+    * Scanner/chart verification
+    * Ruby explanation verification
+    * arx_live_commands after count
+10. if trade did not run:
+
+* exact gate that blocked it
+* exact remaining fix needed
+
+11. confirmation no Demo/Paper fallback used
+12. confirmation no fake execution used
+13. confirmation no safety gate was bypassed
+14. confirmation no normal user gained live access
+15. health:workflows result
+16. typecheck result
+17. ci:guards result
+18. remaining risks
+
+Completion standard:
+T014 is complete only when the two real live-readiness blockers are either fixed and one controlled owner/admin LIVE micro-trade opens/closes successfully, or the system provides a precise remaining blocker that cannot be fixed without external MT5/broker/operator action.
