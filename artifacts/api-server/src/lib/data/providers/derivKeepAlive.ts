@@ -1,6 +1,7 @@
 import { logger } from "../../logger.js";
 import { getDerivWsClient } from "./derivWsClient.js";
 import { DERIV_SYNTHETIC_SYMBOLS } from "./derivProvider.js";
+import { startDerivFormingBridge } from "../chart/derivFormingBridge.js";
 import { mapWithConcurrency } from "../../marketScanner.js";
 
 const KEEP_ALIVE_INTERVAL_MS = 20_000;
@@ -49,6 +50,15 @@ async function runKeepAliveCycle(): Promise<void> {
 export function startDerivKeepAlive(): void {
   if (started) return;
   started = true;
+  // Feed the chart's forming-bar composer from the SAME tick stream this keeps
+  // alive, so a Deriv-fed chart's tip advances on real ticks instead of waiting
+  // a whole interval for the next closed candle (Theme C3.1). Display-only;
+  // idempotent; failure here must never stop the keep-alive itself.
+  try {
+    startDerivFormingBridge();
+  } catch (err) {
+    logger.warn({ err: String(err) }, "Deriv forming-bar bridge start failed (non-fatal)");
+  }
   void runKeepAliveCycle();
   const timer = setInterval(() => {
     void runKeepAliveCycle();
