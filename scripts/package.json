@@ -214,6 +214,7 @@
     "test:live-cycle-close-guard": "tsx ./src/liveTestCycleCloseGuardIntegrationTest.ts",
     "test:ci-inprocess": "tsx ./src/ci/runInProcessCiTests.ts",
     "test:cooldown-race-db": "tsx ./src/ci/run-cooldown-race-db.ts",
+    "test:live-dispatch-race-db": "tsx ./src/ci/run-live-dispatch-race-db.ts",
     "correct:missing-close-fill-pnl": "tsx ./src/correctMissingCloseFillPricePnl.ts",
     "maintenance:prod": "tsx ./src/runProductionMaintenance.ts",
     "backfill:legacy-unknown-pnl": "tsx ./src/backfillLegacyUnknownPnl.ts",
