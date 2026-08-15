@@ -937,6 +937,21 @@ export function ARXNativeChart({
                 <Clock className="h-3 w-3" /> {formatMarketClosedLabel(marketFrozen.lastBrokerTimeMs)}
               </Badge>
             )}
+            {/* Theme C3.5 — an honestly-labelled stalled stream. A chart whose
+                tick-stream has stopped delivering must SAY so; the failure mode
+                being fixed is precisely a frozen chart that still looked live.
+                Suppressed when the market is legitimately closed, because that
+                already explains the silence and is the more specific verdict. */}
+            {streamWatchdog.stalled && !marketFrozen && (
+              <Badge
+                variant="outline"
+                className="flex items-center gap-1 border-amber-500/50 bg-amber-500/10 text-[10px] text-amber-200"
+                data-testid="arx-native-stream-reconnecting"
+                title="The live tick stream stopped delivering and is being reopened. Prices shown are the last received — they are not updating right now."
+              >
+                <RefreshCw className="h-3 w-3 animate-spin" /> Reconnecting — prices delayed
+              </Badge>
+            )}
             {hasCandles && (
               <ChartHistoryBadge
                 loading={deepHistory.loading}
