@@ -72,9 +72,14 @@ describe("E1 — no pepper value is committed", () => {
   });
 
   it("the old committed value appears in no tracked file", () => {
-    // The specific hex string that was committed. Checked by value, not just by
+    // The specific hex string that was committed. Checked by VALUE, not just by
     // variable name, so it cannot reappear under a different key.
-    const leaked = "059ad89d5f55acb0b80009cecb41376a60ddb60a86bb99d0efbe5a1f84a7bfe0";
+    //
+    // Assembled from halves at runtime on purpose: written as one literal, this
+    // file would itself be a tracked file containing the leaked secret, and the
+    // check would fail on its own source (it did, once).
+    const leaked =
+      "059ad89d5f55acb0b8" + "0009cecb41376a60ddb60a86bb99d0efbe5a1f84a7bfe0";
     let matches: string[] = [];
     try {
       const out = execFileSync("git", ["grep", "-l", leaked, "--", "."], {
