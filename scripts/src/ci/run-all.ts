@@ -15,6 +15,7 @@ import { checkLiveBrokerExecutionDefaults } from "./check-live-broker-execution-
 import { checkMasterLiveBridgeBinding } from "./check-master-live-bridge-binding.js";
 import { checkMasterLiveUserApprovalRequired } from "./check-master-live-user-access.js";
 import { checkOneClickConcurrency } from "./check-one-click-concurrency.js";
+import { checkLiveDispatchCas } from "./check-live-dispatch-cas.js";
 import { checkOneClickArmRoutesThroughGate } from "./check-one-click-arm-routes-through-gate.js";
 import { checkScannerSelectedMarket } from "./check-scanner-selected-market.js";
 import { checkPerUserIsolationMeRoutes } from "./perUserIsolationMeRoutes.js";
@@ -80,6 +81,7 @@ const checks: Array<() => CheckResult> = [
   checkMasterLiveBridgeBinding,
   checkMasterLiveUserApprovalRequired,
   checkOneClickConcurrency,
+  checkLiveDispatchCas,
   checkOneClickArmRoutesThroughGate,
   checkScannerSelectedMarket,
   checkPerUserIsolationMeRoutes,
