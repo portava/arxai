@@ -134,7 +134,8 @@ const TESTS: TestCase[] = [
   { q: "What is the journal?", route: "/journal" },
   { q: "What is a post-trade debrief?", route: "/post-trade-debriefs" },
   { q: "What is the performance scorecard?", route: "/performance-scorecard" },
-  { q: "What is backtesting?", route: "/backtest" },
+  // Testing Lab owns backtesting; /backtest is only a redirect shell.
+  { q: "What is backtesting?", route: "/testing-lab" },
 
   // ── Permissions / feedback ──────────────────────────────────────────
   { q: "What do permission levels mean?", route: "/roles-permissions" },
