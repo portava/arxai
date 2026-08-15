@@ -22,10 +22,14 @@
 //     freshness layer reads the tick age and downgrades the tip to stale.
 //
 // PRICE BASIS
-//   We fold the tick BID, matching the mt5_broker closed-candle basis (BID), so
-//   the synthesized tip sits on the same basis as the closed bars beneath it
-//   (no half-spread seam). The composer is therefore scoped at append time to
-//   the mt5_broker source only.
+//   Each tick folds on the basis its own provider publishes, and the tip is
+//   appended beneath closed bars from that SAME provider, so the tip never sits
+//   on a different basis than the bars under it (no half-spread seam):
+//     - mt5_broker → tick BID under BID closed candles
+//     - Deriv WS   → tick quote under Deriv closed candles
+//   The composer itself is provider-agnostic; sourcing is wired per provider
+//   (EA ingest, derivFormingBridge) and the append gate asks only whether a real
+//   current-interval tick exists.
 
 import { EventEmitter } from "node:events";
 import { CHART_TIMEFRAMES, timeframeMs, type ChartTimeframe } from "./timeframes.js";

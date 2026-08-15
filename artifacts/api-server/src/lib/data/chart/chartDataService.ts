@@ -257,16 +257,27 @@ async function buildChartFeed(
   const lastCandleTime = lastCandle ? lastCandle.closeTime : null;
   const lastTickTime = derivSymbolStatus?.lastTickAt ?? null;
 
-  // ── Forming tip (Task #496, opt-in, mt5_broker BID feed only) ─────────
+  // ── Forming tip (Task #496, opt-in, any live provider) ────────────────
   // Fold the live-tick forming bar onto the newest bar for the DISPLAY surface.
   // The closed bars above remain the truth basis (truthResult/chartTruthScore
   // were already computed); the tip only changes what is rendered + how
   // freshness reads. The authoritative closed CANDLE that lands one interval
   // later naturally supersedes the tip (its openMs moves past the tip → ignore),
   // so there is never an orphan duplicate.
+  //
+  // PROVIDER SCOPE (Theme C3.2): the append gate is deliberately NOT keyed on
+  // the winning candle source. It used to require `source === "mt5_broker"`,
+  // which froze every Deriv-fed chart between closed candles — up to a full
+  // interval of no motion on a perfectly healthy feed. The question that
+  // actually matters is "is there a REAL tick for this symbol's current
+  // interval", and getFormingBar already answers exactly that: a symbol with no
+  // folded ticks returns null and gets no tip. Basis stays coherent because the
+  // tip is folded from the same provider's stream that serves the closed bars
+  // beneath it (broker BID under broker candles, Deriv quotes under Deriv
+  // candles).
   let formingTipPresent = false;
   let formingTickAgeMs: number | null = null;
-  if (includeFormingTip && source === "mt5_broker" && lastCandle) {
+  if (includeFormingTip && lastCandle) {
     const forming = getFormingBar(symbol, timeframe, now);
     if (forming) {
       const tipOpenMs = forming.openMs;
