@@ -14,6 +14,7 @@
     "seed": "tsx src/seed/index.ts"
   },
   "dependencies": {
+    "@workspace/features": "workspace:*",
     "drizzle-orm": "catalog:",
     "drizzle-zod": "^0.8.3",
     "pg": "^8.20.0",

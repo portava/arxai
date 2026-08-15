@@ -687,6 +687,9 @@ importers:
 
   lib/db:
     dependencies:
+      '@workspace/features':
+        specifier: workspace:*
+        version: link:../features
       drizzle-orm:
         specifier: 'catalog:'
         version: 0.45.2(@types/pg@8.18.0)(pg@8.20.0)
@@ -718,6 +721,16 @@ importers:
       zod:
         specifier: 'catalog:'
         version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.3.5
+
+  lib/features:
+    dependencies:
+      '@workspace/markets':
+        specifier: workspace:*
+        version: link:../markets
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
@@ -790,6 +803,9 @@ importers:
       '@workspace/domain':
         specifier: workspace:*
         version: link:../lib/domain
+      '@workspace/features':
+        specifier: workspace:*
+        version: link:../lib/features
       '@workspace/markets':
         specifier: workspace:*
         version: link:../lib/markets
