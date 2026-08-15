@@ -211,6 +211,7 @@
     "test:operator-diag-gating": "tsx ./src/operatorDiagnosticsGatingTest.ts",
     "test:realized-pnl-guard": "tsx ./src/realizedPnlGuardTest.ts",
     "test:intelligence-honesty": "tsx ./src/intelligenceHonestyTest.ts",
+    "test:provenance-envelope": "tsx ./src/provenanceEnvelopeTest.ts",
     "test:live-close-evidence": "tsx ./src/liveCloseEvidenceTest.ts",
     "test:live-cycle-close-guard": "tsx ./src/liveTestCycleCloseGuardIntegrationTest.ts",
     "test:ci-inprocess": "tsx ./src/ci/runInProcessCiTests.ts",
