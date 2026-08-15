@@ -9511,40 +9511,6 @@ export const GetEconomicCalendarResponse = zod.array(
 );
 
 /**
- * @summary News risk evaluation for a symbol
- */
-export const GetNewsRiskQueryParams = zod.object({
-  symbol: zod.coerce.string(),
-});
-
-export const GetNewsRiskResponse = zod.object({
-  symbol: zod.string(),
-  riskLevel: zod.enum(["none", "low", "medium", "high"]),
-  blockTrading: zod.boolean(),
-  minutesUntilEvent: zod.number().nullish(),
-  affectedSymbols: zod.array(zod.string()),
-  reason: zod.string(),
-  upcomingEvent: zod
-    .union([
-      zod.object({
-        id: zod.string(),
-        title: zod.string(),
-        country: zod.string(),
-        currency: zod.string(),
-        impact: zod.enum(["low", "medium", "high"]),
-        actual: zod.string().nullish(),
-        forecast: zod.string().nullish(),
-        previous: zod.string().nullish(),
-        eventTime: zod.string(),
-        affectedMarkets: zod.array(zod.string()),
-        source: zod.string(),
-      }),
-      zod.null(),
-    ])
-    .optional(),
-});
-
-/**
  * @summary Live upcoming events from the configured real economic-calendar
 provider (Trading Economics). Returns provider metadata + a
 window-filtered array of enriched events. `connected` is false when no

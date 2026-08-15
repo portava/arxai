@@ -407,7 +407,6 @@ import type {
   GetMultiTimeframeHistoryParams,
   GetMyRubyOutcomesParams,
   GetMyRubyReviewsParams,
-  GetNewsRiskParams,
   GetPaperAccounts200,
   GetPaperHistory200,
   GetPaperHistoryParams,
@@ -597,7 +596,6 @@ import type {
   MyRubyOutcomesResp,
   MyRubyReviewsResp,
   NewsIntelligencePack,
-  NewsRisk,
   NewsRiskReport,
   OkResp,
   PaperAccount,
@@ -11782,100 +11780,6 @@ export function useGetEconomicCalendar<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetEconomicCalendarQueryOptions(params, options);
-
-  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
-    queryKey: QueryKey;
-  };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-/**
- * @summary News risk evaluation for a symbol
- */
-export const getGetNewsRiskUrl = (params: GetNewsRiskParams) => {
-  const normalizedParams = new URLSearchParams();
-
-  Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? "null" : value.toString());
-    }
-  });
-
-  const stringifiedParams = normalizedParams.toString();
-
-  return stringifiedParams.length > 0
-    ? `/api/news/risk?${stringifiedParams}`
-    : `/api/news/risk`;
-};
-
-export const getNewsRisk = async (
-  params: GetNewsRiskParams,
-  options?: RequestInit,
-): Promise<NewsRisk> => {
-  return customFetch<NewsRisk>(getGetNewsRiskUrl(params), {
-    ...options,
-    method: "GET",
-  });
-};
-
-export const getGetNewsRiskQueryKey = (params?: GetNewsRiskParams) => {
-  return [`/api/news/risk`, ...(params ? [params] : [])] as const;
-};
-
-export const getGetNewsRiskQueryOptions = <
-  TData = Awaited<ReturnType<typeof getNewsRisk>>,
-  TError = ErrorType<unknown>,
->(
-  params: GetNewsRiskParams,
-  options?: {
-    query?: UseQueryOptions<
-      Awaited<ReturnType<typeof getNewsRisk>>,
-      TError,
-      TData
-    >;
-    request?: SecondParameter<typeof customFetch>;
-  },
-) => {
-  const { query: queryOptions, request: requestOptions } = options ?? {};
-
-  const queryKey = queryOptions?.queryKey ?? getGetNewsRiskQueryKey(params);
-
-  const queryFn: QueryFunction<Awaited<ReturnType<typeof getNewsRisk>>> = ({
-    signal,
-  }) => getNewsRisk(params, { signal, ...requestOptions });
-
-  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof getNewsRisk>>,
-    TError,
-    TData
-  > & { queryKey: QueryKey };
-};
-
-export type GetNewsRiskQueryResult = NonNullable<
-  Awaited<ReturnType<typeof getNewsRisk>>
->;
-export type GetNewsRiskQueryError = ErrorType<unknown>;
-
-/**
- * @summary News risk evaluation for a symbol
- */
-
-export function useGetNewsRisk<
-  TData = Awaited<ReturnType<typeof getNewsRisk>>,
-  TError = ErrorType<unknown>,
->(
-  params: GetNewsRiskParams,
-  options?: {
-    query?: UseQueryOptions<
-      Awaited<ReturnType<typeof getNewsRisk>>,
-      TError,
-      TData
-    >;
-    request?: SecondParameter<typeof customFetch>;
-  },
-): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetNewsRiskQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

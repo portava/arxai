@@ -15807,10 +15807,6 @@ export type GetEconomicCalendarParams = {
   days?: number;
 };
 
-export type GetNewsRiskParams = {
-  symbol: string;
-};
-
 export type GetLiveCalendarEventsParams = {
   /**
    * Optional ARX symbol to scope the window (e.g. EURUSD). When omitted all events are returned.

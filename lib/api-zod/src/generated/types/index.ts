@@ -839,7 +839,6 @@ export * from "./getMissionReport404";
 export * from "./getMultiTimeframeHistoryParams";
 export * from "./getMyRubyOutcomesParams";
 export * from "./getMyRubyReviewsParams";
-export * from "./getNewsRiskParams";
 export * from "./getPaperAccounts200";
 export * from "./getPaperHistory200";
 export * from "./getPaperHistoryParams";

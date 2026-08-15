@@ -1,15 +1,24 @@
 import { Router } from "express";
-import { GetEconomicCalendarQueryParams, GetNewsRiskQueryParams } from "@workspace/api-zod";
+import { GetEconomicCalendarQueryParams } from "@workspace/api-zod";
 import { getMockEvents } from "../lib/news/calendar/economicEvents.js";
 import {
   getEconomicCalendarResult,
   isEconomicCalendarProviderSelected,
 } from "../lib/news/calendar/economicCalendarService.js";
 import { toMockShapeEvents } from "../lib/news/calendar/calendarAdapters.js";
-import { scoreNewsRisk } from "../lib/news/calendar/newsRiskScorer.js";
 
 const router = Router();
 
+// NOTE (Theme G-CUT): the sweep listed BOTH legacy /news routes as "no frontend
+// consumer". That is true of /news/risk, which is deleted here — but NOT of
+// /news/calendar, which backs two live surfaces via useGetEconomicCalendar:
+// the Economic Calendar page (pages/calendar.tsx) and the cockpit's critical
+// events card (CockpitCards.tsx). Theme H5 also names the Economic Calendar as
+// the calendar surface to KEEP, so cutting this route would have broken the
+// very page the consolidation preserves. It stays.
+//
+// Its remaining mock fallback (the `else` branch below) is fixed separately on
+// the Theme A branch, which makes this route honest-or-empty unconditionally.
 router.get("/news/calendar", async (req, res) => {
   try {
     const q = GetEconomicCalendarQueryParams.parse({
@@ -35,16 +44,6 @@ router.get("/news/calendar", async (req, res) => {
   } catch (err) {
     req.log.error(err);
     res.status(400).json({ error: "Invalid calendar request" });
-  }
-});
-
-router.get("/news/risk", async (req, res) => {
-  try {
-    const q = GetNewsRiskQueryParams.parse({ symbol: req.query["symbol"] });
-    res.json(scoreNewsRisk(q.symbol));
-  } catch (err) {
-    req.log.error(err);
-    res.status(400).json({ error: "Invalid news risk request" });
   }
 });
 

@@ -3187,25 +3187,6 @@ paths:
                 items:
                   $ref: "#/components/schemas/EconomicEvent"
 
-  /news/risk:
-    get:
-      operationId: getNewsRisk
-      tags: [news]
-      summary: News risk evaluation for a symbol
-      parameters:
-        - name: symbol
-          in: query
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: News risk
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/NewsRisk"
-
   /economic-calendar/events:
     get:
       operationId: getLiveCalendarEvents
