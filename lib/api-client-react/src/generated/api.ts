@@ -370,13 +370,8 @@ import type {
   GetLiveCalendarEventsParams,
   GetMarketCandlesParams,
   GetMarketHeat401,
-  GetMarketHeatCountries401,
-  GetMarketHeatCountriesParams,
   GetMarketHeatDiagnostics401,
   GetMarketHeatParams,
-  GetMarketHeatSymbol400,
-  GetMarketHeatSymbol401,
-  GetMarketHeatSymbolParams,
   GetMarketQuoteParams,
   GetMeChartAnnotationsParams,
   GetMeChartDecisionReceiptsParams,
@@ -523,10 +518,8 @@ import type {
   ManageMissionTradeExit409,
   ManageMissionTradeExit422,
   MarketBrainResult,
-  MarketHeatCountriesResponse,
   MarketHeatDiagnostics,
   MarketHeatResponse,
-  MarketHeatSymbolResponse,
   MarketQuote,
   MarketTimingRead,
   MarketTruthResponse,
@@ -42373,110 +42366,6 @@ export function useGetMarketHeat<
 }
 
 /**
- * @summary Honest per-country heat verdicts
- */
-export const getGetMarketHeatCountriesUrl = (
-  params?: GetMarketHeatCountriesParams,
-) => {
-  const normalizedParams = new URLSearchParams();
-
-  Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? "null" : value.toString());
-    }
-  });
-
-  const stringifiedParams = normalizedParams.toString();
-
-  return stringifiedParams.length > 0
-    ? `/api/market-heat/countries?${stringifiedParams}`
-    : `/api/market-heat/countries`;
-};
-
-export const getMarketHeatCountries = async (
-  params?: GetMarketHeatCountriesParams,
-  options?: RequestInit,
-): Promise<MarketHeatCountriesResponse> => {
-  return customFetch<MarketHeatCountriesResponse>(
-    getGetMarketHeatCountriesUrl(params),
-    {
-      ...options,
-      method: "GET",
-    },
-  );
-};
-
-export const getGetMarketHeatCountriesQueryKey = (
-  params?: GetMarketHeatCountriesParams,
-) => {
-  return [`/api/market-heat/countries`, ...(params ? [params] : [])] as const;
-};
-
-export const getGetMarketHeatCountriesQueryOptions = <
-  TData = Awaited<ReturnType<typeof getMarketHeatCountries>>,
-  TError = ErrorType<GetMarketHeatCountries401>,
->(
-  params?: GetMarketHeatCountriesParams,
-  options?: {
-    query?: UseQueryOptions<
-      Awaited<ReturnType<typeof getMarketHeatCountries>>,
-      TError,
-      TData
-    >;
-    request?: SecondParameter<typeof customFetch>;
-  },
-) => {
-  const { query: queryOptions, request: requestOptions } = options ?? {};
-
-  const queryKey =
-    queryOptions?.queryKey ?? getGetMarketHeatCountriesQueryKey(params);
-
-  const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof getMarketHeatCountries>>
-  > = ({ signal }) =>
-    getMarketHeatCountries(params, { signal, ...requestOptions });
-
-  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof getMarketHeatCountries>>,
-    TError,
-    TData
-  > & { queryKey: QueryKey };
-};
-
-export type GetMarketHeatCountriesQueryResult = NonNullable<
-  Awaited<ReturnType<typeof getMarketHeatCountries>>
->;
-export type GetMarketHeatCountriesQueryError =
-  ErrorType<GetMarketHeatCountries401>;
-
-/**
- * @summary Honest per-country heat verdicts
- */
-
-export function useGetMarketHeatCountries<
-  TData = Awaited<ReturnType<typeof getMarketHeatCountries>>,
-  TError = ErrorType<GetMarketHeatCountries401>,
->(
-  params?: GetMarketHeatCountriesParams,
-  options?: {
-    query?: UseQueryOptions<
-      Awaited<ReturnType<typeof getMarketHeatCountries>>,
-      TError,
-      TData
-    >;
-    request?: SecondParameter<typeof customFetch>;
-  },
-): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetMarketHeatCountriesQueryOptions(params, options);
-
-  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
-    queryKey: QueryKey;
-  };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-/**
  * Reports per-provider configured/connected, last fetch, last error, record count, freshness, and coverage. API-key presence is reported as a boolean only — the key value is never returned.
 
  * @summary Per-provider heat diagnostics (redacted key presence only)
@@ -42547,128 +42436,6 @@ export function useGetMarketHeatDiagnostics<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetMarketHeatDiagnosticsQueryOptions(options);
-
-  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
-    queryKey: QueryKey;
-  };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-/**
- * @summary Honest heat verdict for a single symbol
- */
-export const getGetMarketHeatSymbolUrl = (
-  symbol: string,
-  params?: GetMarketHeatSymbolParams,
-) => {
-  const normalizedParams = new URLSearchParams();
-
-  Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? "null" : value.toString());
-    }
-  });
-
-  const stringifiedParams = normalizedParams.toString();
-
-  return stringifiedParams.length > 0
-    ? `/api/market-heat/symbol/${symbol}?${stringifiedParams}`
-    : `/api/market-heat/symbol/${symbol}`;
-};
-
-export const getMarketHeatSymbol = async (
-  symbol: string,
-  params?: GetMarketHeatSymbolParams,
-  options?: RequestInit,
-): Promise<MarketHeatSymbolResponse> => {
-  return customFetch<MarketHeatSymbolResponse>(
-    getGetMarketHeatSymbolUrl(symbol, params),
-    {
-      ...options,
-      method: "GET",
-    },
-  );
-};
-
-export const getGetMarketHeatSymbolQueryKey = (
-  symbol: string,
-  params?: GetMarketHeatSymbolParams,
-) => {
-  return [
-    `/api/market-heat/symbol/${symbol}`,
-    ...(params ? [params] : []),
-  ] as const;
-};
-
-export const getGetMarketHeatSymbolQueryOptions = <
-  TData = Awaited<ReturnType<typeof getMarketHeatSymbol>>,
-  TError = ErrorType<GetMarketHeatSymbol400 | GetMarketHeatSymbol401>,
->(
-  symbol: string,
-  params?: GetMarketHeatSymbolParams,
-  options?: {
-    query?: UseQueryOptions<
-      Awaited<ReturnType<typeof getMarketHeatSymbol>>,
-      TError,
-      TData
-    >;
-    request?: SecondParameter<typeof customFetch>;
-  },
-) => {
-  const { query: queryOptions, request: requestOptions } = options ?? {};
-
-  const queryKey =
-    queryOptions?.queryKey ?? getGetMarketHeatSymbolQueryKey(symbol, params);
-
-  const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof getMarketHeatSymbol>>
-  > = ({ signal }) =>
-    getMarketHeatSymbol(symbol, params, { signal, ...requestOptions });
-
-  return {
-    queryKey,
-    queryFn,
-    enabled: !!symbol,
-    ...queryOptions,
-  } as UseQueryOptions<
-    Awaited<ReturnType<typeof getMarketHeatSymbol>>,
-    TError,
-    TData
-  > & { queryKey: QueryKey };
-};
-
-export type GetMarketHeatSymbolQueryResult = NonNullable<
-  Awaited<ReturnType<typeof getMarketHeatSymbol>>
->;
-export type GetMarketHeatSymbolQueryError = ErrorType<
-  GetMarketHeatSymbol400 | GetMarketHeatSymbol401
->;
-
-/**
- * @summary Honest heat verdict for a single symbol
- */
-
-export function useGetMarketHeatSymbol<
-  TData = Awaited<ReturnType<typeof getMarketHeatSymbol>>,
-  TError = ErrorType<GetMarketHeatSymbol400 | GetMarketHeatSymbol401>,
->(
-  symbol: string,
-  params?: GetMarketHeatSymbolParams,
-  options?: {
-    query?: UseQueryOptions<
-      Awaited<ReturnType<typeof getMarketHeatSymbol>>,
-      TError,
-      TData
-    >;
-    request?: SecondParameter<typeof customFetch>;
-  },
-): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetMarketHeatSymbolQueryOptions(
-    symbol,
-    params,
-    options,
-  );
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

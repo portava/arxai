@@ -77,38 +77,6 @@ router.get("/market-heat", async (req, res, next) => {
   }
 });
 
-// ── GET /market-heat/countries ───────────────────────────────────────────────
-router.get("/market-heat/countries", async (req, res, next) => {
-  try {
-    const userId = req.authUser?.id ?? 0;
-    if (!userId) {
-      res.status(401).json({ error: "Authentication required" });
-      return;
-    }
-    const tfParse = timeframeSchema.safeParse(req.query["timeframe"] ?? "M15");
-    const timeframe = tfParse.success ? tfParse.data : "M15";
-    const symbols = listParam(req.query["symbols"]);
-    const countries = listParam(req.query["countries"]);
-    const session = sessionParam(req.query["session"]);
-    const bundle = await buildMarketHeat({
-      timeframe,
-      includeNews: true,
-      includeCalendar: true,
-      symbols,
-      countries,
-      session,
-    });
-    res.json({
-      generatedAt: bundle.generatedAt,
-      countries: bundle.countries,
-      providerStatus: bundle.providerStatus,
-    });
-  } catch (err) {
-    logger.error({ err }, "marketHeat: countries failed");
-    next(err);
-  }
-});
-
 // ── GET /market-heat/diagnostics ─────────────────────────────────────────────
 router.get("/market-heat/diagnostics", async (req, res, next) => {
   try {
@@ -121,31 +89,6 @@ router.get("/market-heat/diagnostics", async (req, res, next) => {
     res.json(diag);
   } catch (err) {
     logger.error({ err }, "marketHeat: diagnostics failed");
-    next(err);
-  }
-});
-
-// ── GET /market-heat/symbol/:symbol ──────────────────────────────────────────
-router.get("/market-heat/symbol/:symbol", async (req, res, next) => {
-  try {
-    const userId = req.authUser?.id ?? 0;
-    if (!userId) {
-      res.status(401).json({ error: "Authentication required" });
-      return;
-    }
-    const symbolParse = symbolSchema.safeParse(req.params["symbol"]);
-    if (!symbolParse.success) {
-      res.status(400).json({ error: "Invalid symbol" });
-      return;
-    }
-    const tfParse = timeframeSchema.safeParse(req.query["timeframe"] ?? "M15");
-    const timeframe = tfParse.success ? tfParse.data : "M15";
-
-    // Focus-Lock backstop: buildSymbolHeat returns the honest blocked envelope
-    // (isApprovedMarket:false, no data fetched) for an unapproved symbol.
-    res.json(await buildSymbolHeat(symbolParse.data, timeframe));
-  } catch (err) {
-    logger.error({ err }, "marketHeat: symbol failed");
     next(err);
   }
 });
