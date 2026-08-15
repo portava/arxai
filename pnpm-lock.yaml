@@ -770,6 +770,12 @@ importers:
         specifier: 'catalog:'
         version: 25.3.5
 
+  lib/money:
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.3.5
+
   lib/risk:
     devDependencies:
       '@types/node':
@@ -787,6 +793,9 @@ importers:
       '@workspace/markets':
         specifier: workspace:*
         version: link:../lib/markets
+      '@workspace/money':
+        specifier: workspace:*
+        version: link:../lib/money
       '@workspace/risk':
         specifier: workspace:*
         version: link:../lib/risk

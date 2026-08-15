@@ -22,6 +22,9 @@
       "path": "./lib/risk"
     },
     {
+      "path": "./lib/money"
+    },
+    {
       "path": "./lib/integrations-openai-ai-server"
     },
     {
