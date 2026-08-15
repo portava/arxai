@@ -19,6 +19,9 @@
       "path": "./lib/markets"
     },
     {
+      "path": "./lib/risk"
+    },
+    {
       "path": "./lib/integrations-openai-ai-server"
     },
     {

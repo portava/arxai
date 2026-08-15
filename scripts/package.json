@@ -214,6 +214,7 @@
     "test:provenance-envelope": "tsx ./src/provenanceEnvelopeTest.ts",
     "test:no-fabrication": "tsx ./src/ci/check-no-fabrication.test.ts",
     "test:market-model": "tsx ./src/marketModelTest.ts",
+    "test:objective-sizing": "tsx ./src/objectiveSizingTest.ts",
     "test:live-close-evidence": "tsx ./src/liveCloseEvidenceTest.ts",
     "test:live-cycle-close-guard": "tsx ./src/liveTestCycleCloseGuardIntegrationTest.ts",
     "test:ci-inprocess": "tsx ./src/ci/runInProcessCiTests.ts",
@@ -286,6 +287,7 @@
     "@workspace/db": "workspace:*",
     "@workspace/domain": "workspace:*",
     "drizzle-orm": "catalog:",
-    "@workspace/markets": "workspace:*"
+    "@workspace/markets": "workspace:*",
+    "@workspace/risk": "workspace:*"
   }
 }

@@ -770,6 +770,12 @@ importers:
         specifier: 'catalog:'
         version: 25.3.5
 
+  lib/risk:
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.3.5
+
   scripts:
     dependencies:
       '@workspace/db':
@@ -781,6 +787,9 @@ importers:
       '@workspace/markets':
         specifier: workspace:*
         version: link:../lib/markets
+      '@workspace/risk':
+        specifier: workspace:*
+        version: link:../lib/risk
       drizzle-orm:
         specifier: 'catalog:'
         version: 0.45.2(@types/pg@8.18.0)(pg@8.20.0)
