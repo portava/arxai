@@ -10960,21 +10960,12 @@ export interface ForexPairIntelligenceItem {
   riskNote: string;
 }
 
-export type ForexIntelligenceResponseRiskSentiment =
-  (typeof ForexIntelligenceResponseRiskSentiment)[keyof typeof ForexIntelligenceResponseRiskSentiment];
-
-export const ForexIntelligenceResponseRiskSentiment = {
-  "Risk-On": "Risk-On",
-  "Risk-Off": "Risk-Off",
-  Neutral: "Neutral",
-} as const;
-
 export interface ForexIntelligenceResponse {
+  providerConnected: boolean;
+  safetyNote: string;
   session: string;
-  riskSentiment: ForexIntelligenceResponseRiskSentiment;
   currencies: CurrencyStrengthItem[];
   pairs: ForexPairIntelligenceItem[];
-  sessionNotes: string;
 }
 
 export type IndexIntelligenceItemBias =
@@ -11049,42 +11040,11 @@ export interface IndexIntelligenceItem {
   riskFactors: string[];
 }
 
-export type IndicesIntelligenceResponseDollarStrength =
-  (typeof IndicesIntelligenceResponseDollarStrength)[keyof typeof IndicesIntelligenceResponseDollarStrength];
-
-export const IndicesIntelligenceResponseDollarStrength = {
-  Weak: "Weak",
-  Moderate: "Moderate",
-  Strong: "Strong",
-} as const;
-
-export type IndicesIntelligenceResponseRiskSentiment =
-  (typeof IndicesIntelligenceResponseRiskSentiment)[keyof typeof IndicesIntelligenceResponseRiskSentiment];
-
-export const IndicesIntelligenceResponseRiskSentiment = {
-  "Risk-On": "Risk-On",
-  "Risk-Off": "Risk-Off",
-  Neutral: "Neutral",
-} as const;
-
-export type IndicesIntelligenceResponseFedExpectation =
-  (typeof IndicesIntelligenceResponseFedExpectation)[keyof typeof IndicesIntelligenceResponseFedExpectation];
-
-export const IndicesIntelligenceResponseFedExpectation = {
-  Hawkish: "Hawkish",
-  Neutral: "Neutral",
-  Dovish: "Dovish",
-} as const;
-
 export interface IndicesIntelligenceResponse {
+  providerConnected: boolean;
+  safetyNote: string;
   session: string;
-  dollarStrength: IndicesIntelligenceResponseDollarStrength;
-  riskSentiment: IndicesIntelligenceResponseRiskSentiment;
-  fedExpectation: IndicesIntelligenceResponseFedExpectation;
-  bondYield10Y: number;
-  vixEstimate: number;
   indices: IndexIntelligenceItem[];
-  marketSummary: string;
 }
 
 export interface SyntheticSymbolItem {
@@ -11100,6 +11060,8 @@ export interface SyntheticSymbolItem {
 }
 
 export interface SyntheticAnalysisResponse {
+  providerConnected: boolean;
+  safetyNote: string;
   symbols: SyntheticSymbolItem[];
 }
 

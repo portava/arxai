@@ -19943,17 +19943,24 @@ components:
 
     ForexIntelligenceResponse:
       type: object
-      required: [session, riskSentiment, currencies, pairs, sessionNotes]
+      # P0-4 — honest not-connected contract. No FX macro provider is wired, so
+      # currency strength, risk regime, pair bias and confidence are WITHHELD
+      # rather than estimated. The fabricated scalars that used to live here
+      # (riskSentiment from a Math.random coin flip, strengths from a jittered
+      # hardcoded table) are removed from the contract so they cannot quietly
+      # return and still validate. `session` is retained: it is derived from the
+      # UTC clock, so it is a fact, not a market reading.
+      required: [providerConnected, safetyNote, session, currencies, pairs]
       properties:
+        providerConnected: { type: boolean }
+        safetyNote: { type: string }
         session: { type: string }
-        riskSentiment: { type: string, enum: [Risk-On, Risk-Off, Neutral] }
         currencies:
           type: array
           items: { $ref: "#/components/schemas/CurrencyStrengthItem" }
         pairs:
           type: array
           items: { $ref: "#/components/schemas/ForexPairIntelligenceItem" }
-        sessionNotes: { type: string }
 
     IndexIntelligenceItem:
       type: object
@@ -19980,18 +19987,20 @@ components:
 
     IndicesIntelligenceResponse:
       type: object
-      required: [session, dollarStrength, riskSentiment, fedExpectation, bondYield10Y, vixEstimate, indices, marketSummary]
+      # P0-4 — honest not-connected contract. No equity-index provider is wired,
+      # so index levels, VIX, bond yields, macro readings, bias and confidence
+      # are WITHHELD rather than estimated. The fabricated scalars removed here
+      # (vixEstimate from `14 + Math.random()*8`, bondYield10Y from
+      # `4.45 + (Math.random()-0.5)*0.3`, hardcoded dollarStrength /
+      # fedExpectation) cannot return without a contract change.
+      required: [providerConnected, safetyNote, session, indices]
       properties:
+        providerConnected: { type: boolean }
+        safetyNote: { type: string }
         session: { type: string }
-        dollarStrength: { type: string, enum: [Weak, Moderate, Strong] }
-        riskSentiment: { type: string, enum: [Risk-On, Risk-Off, Neutral] }
-        fedExpectation: { type: string, enum: [Hawkish, Neutral, Dovish] }
-        bondYield10Y: { type: number }
-        vixEstimate: { type: number }
         indices:
           type: array
           items: { $ref: "#/components/schemas/IndexIntelligenceItem" }
-        marketSummary: { type: string }
 
     SyntheticSymbolItem:
       type: object
@@ -20009,8 +20018,14 @@ components:
 
     SyntheticAnalysisResponse:
       type: object
-      required: [symbols]
+      # P0-4 — honest not-connected contract. No synthetic-analytics provider is
+      # wired, so ATR / trend / volatility readings — and the recommended lot
+      # size that used to be derived from them — are WITHHELD rather than served
+      # from a hardcoded table presented as live analysis.
+      required: [providerConnected, safetyNote, symbols]
       properties:
+        providerConnected: { type: boolean }
+        safetyNote: { type: string }
         symbols:
           type: array
           items: { $ref: "#/components/schemas/SyntheticSymbolItem" }

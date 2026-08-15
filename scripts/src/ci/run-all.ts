@@ -58,6 +58,7 @@ import { checkLiveAiHarnessHonesty } from "./check-live-ai-harness-honesty.js";
 import { checkBacktestNoLiveExecution } from "./check-backtest-no-live-execution.js";
 import { checkMissionNoDirectExecution } from "./check-mission-no-direct-execution.js";
 import { checkScannerVerdictImportBoundary } from "./check-scanner-verdict-import-boundary.js";
+import { checkNoFabrication } from "./check-no-fabrication.js";
 // NOTE: `check-no-user-facing-paper-only.ts` exists as a future guard but
 // is intentionally NOT registered yet — it finds 65 pre-existing UI
 // strings (login.tsx, onboarding.tsx, my-paper-trades.tsx, etc.) that are
@@ -122,6 +123,7 @@ const checks: Array<() => CheckResult> = [
   checkBacktestNoLiveExecution,
   checkMissionNoDirectExecution,
   checkScannerVerdictImportBoundary,
+  checkNoFabrication,
 ];
 
 let failed = 0;
