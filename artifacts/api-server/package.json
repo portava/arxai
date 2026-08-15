@@ -84,6 +84,7 @@
     "test:mission-phase9-route": "node --import tsx --test --test-force-exit src/routes/__qa__/missionPhase9Route.test.ts",
     "test:testing-lab-smoke": "node --import tsx --test --test-force-exit src/routes/__qa__/testingLabMissionSmoke.test.ts",
     "test:gold": "node --import tsx --test-isolation=none --test --test-force-exit src/lib/__qa__/goldStrategyMode.test.ts",
+    "test:register-no-enumeration": "node --import tsx --test --test-force-exit src/routes/__qa__/registerNoEnumeration.test.ts",
     "test:invite-pause-resume-guard": "node --import tsx --test --test-force-exit src/lib/__qa__/invitePauseResumeGuard.test.ts",
     "test:registration-key-pepper": "node --import tsx --test --test-force-exit src/lib/__qa__/registrationKeyPepper.test.ts",
     "test:market-heat-geography": "node --import tsx --test --test-force-exit src/lib/heat/__qa__/symbolGeography.test.ts",

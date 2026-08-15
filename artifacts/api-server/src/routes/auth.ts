@@ -397,11 +397,21 @@ router.post("/auth/register", async (req, res) => {
     return;
   }
   const email = parsed.data.email.trim().toLowerCase();
-  const existing = await db.select().from(usersTable).where(eq(usersTable.email, email)).limit(1);
-  if (existing.length > 0) {
-    res.status(409).json({ error: "EMAIL_TAKEN", message: "An account with that email already exists." });
-    return;
-  }
+  // E3 — the invite gate runs BEFORE the email-exists check.
+  //
+  // The 409 EMAIL_TAKEN used to be answered first, to any unauthenticated
+  // caller, which made this endpoint an account-enumeration oracle: submit an
+  // address and the status code alone told you whether that person has an
+  // account here. With the gate first, a caller without a valid registration
+  // key gets INVITE_REQUIRED (or the key-specific error) for every address, and
+  // learns nothing about which ones exist.
+  //
+  // SCOPE, stated honestly: this closes the oracle only while
+  // ARX_BETA_INVITE_REQUIRED is ON. With the gate off there is no key to
+  // present, so a distinguishable EMAIL_TAKEN is unavoidable on a registration
+  // endpoint that must tell a legitimate user their address is taken. Uniform
+  // responses there would need a different flow (e.g. always-202 plus an email
+  // confirmation), which is a product change, not a patch.
   // Registration Key Shield (ARX_BETA_INVITE_REQUIRED=true). When off, behaviour is unchanged.
   // Accepts both: new registrationKey (ARX-XXXX-XXXX-XXXX format, peppered) and legacy inviteCode.
   // The effective code is whichever is provided (registrationKey takes precedence).
@@ -437,6 +447,12 @@ router.post("/auth/register", async (req, res) => {
       return;
     }
     gatedInviteRow = v.invite;
+  }
+  // Only a caller who has already cleared the invite gate can learn this.
+  const existing = await db.select().from(usersTable).where(eq(usersTable.email, email)).limit(1);
+  if (existing.length > 0) {
+    res.status(409).json({ error: "EMAIL_TAKEN", message: "An account with that email already exists." });
+    return;
   }
   let passwordHash: string;
   try {
