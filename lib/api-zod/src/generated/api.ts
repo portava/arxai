@@ -12403,8 +12403,9 @@ export const DeleteJournalEntryResponse = zod.object({
  * @summary Forex macro scoring and currency strength
  */
 export const GetForexIntelligenceResponse = zod.object({
+  providerConnected: zod.boolean(),
+  safetyNote: zod.string(),
   session: zod.string(),
-  riskSentiment: zod.enum(["Risk-On", "Risk-Off", "Neutral"]),
   currencies: zod.array(
     zod.object({
       currency: zod.string(),
@@ -12431,19 +12432,15 @@ export const GetForexIntelligenceResponse = zod.object({
       riskNote: zod.string(),
     }),
   ),
-  sessionNotes: zod.string(),
 });
 
 /**
  * @summary Global indices macro analysis
  */
 export const GetIndicesIntelligenceResponse = zod.object({
+  providerConnected: zod.boolean(),
+  safetyNote: zod.string(),
   session: zod.string(),
-  dollarStrength: zod.enum(["Weak", "Moderate", "Strong"]),
-  riskSentiment: zod.enum(["Risk-On", "Risk-Off", "Neutral"]),
-  fedExpectation: zod.enum(["Hawkish", "Neutral", "Dovish"]),
-  bondYield10Y: zod.number(),
-  vixEstimate: zod.number(),
   indices: zod.array(
     zod.object({
       symbol: zod.string(),
@@ -12462,13 +12459,14 @@ export const GetIndicesIntelligenceResponse = zod.object({
       riskFactors: zod.array(zod.string()),
     }),
   ),
-  marketSummary: zod.string(),
 });
 
 /**
  * @summary Synthetic volatility indices analysis
  */
 export const GetSyntheticAnalysisResponse = zod.object({
+  providerConnected: zod.boolean(),
+  safetyNote: zod.string(),
   symbols: zod.array(
     zod.object({
       symbol: zod.string(),

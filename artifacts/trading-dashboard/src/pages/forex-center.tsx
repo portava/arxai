@@ -1,188 +1,91 @@
-import { useQuery } from "@tanstack/react-query";
-import { getGetForexIntelligenceQueryKey } from "@workspace/api-client-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
+import { Card, CardContent } from "@/components/ui/card";
+import { AlertTriangle, PlugZap } from "lucide-react";
 
-function fetchForexIntelligence() {
-  return fetch("/api/forex/intelligence").then((r) => r.json());
-}
+// Feature Truth Audit (P0-4) — this page has NO backend FX macro provider. It
+// previously rendered an auto-refreshing (30s) currency-strength meter and pair
+// table whose numbers were fabricated in `lib/forexIntelligence.ts`:
+//   - each currency's "strength" (0-100, drawn as a filled bar) was a hardcoded
+//     base table plus `(Math.random() - 0.5) * 6`
+//   - the "Risk Sentiment" regime was a coin flip during the New York session:
+//     `Math.random() > 0.5 ? "Risk-On" : "Neutral"`
+//   - every pair's macro bias, technical bias and CONFIDENCE percentage was
+//     derived from those invented strengths
+// Because the page refreshed on a timer, the fake strengths visibly moved like
+// a live feed and a trader had no way to tell them from real data.
+//
+// That grid was removed: ARX never displays fabricated signals. This follows
+// the same resolution `pages/stocks-center.tsx` already uses — an honest
+// not-connected state, NOT a "SIMULATED" badge on invented numbers. The static
+// notes below are clearly labelled editorial context, not live analysis.
 
-function BiasChip({ bias }: { bias: string }) {
-  return (
-    <Badge className={cn("text-xs font-bold", bias === "Bullish" ? "bg-success text-foreground" : bias === "Bearish" ? "bg-danger text-foreground" : "bg-secondary text-foreground")}>
-      {bias}
-    </Badge>
-  );
-}
-
-function RateBadge({ rate }: { rate: string }) {
-  return (
-    <Badge variant="outline" className={cn("text-xs", rate === "Hawkish" ? "border-success text-success" : rate === "Dovish" ? "border-danger text-danger" : "border-border text-txt-secondary")}>
-      {rate}
-    </Badge>
-  );
-}
-
-function StrengthBar({ value, bias }: { value: number; bias: string }) {
-  const color = bias === "Bullish" ? "bg-success" : bias === "Bearish" ? "bg-danger" : "bg-warning";
-  return (
-    <div className="w-full bg-secondary rounded-full h-2">
-      <div className={cn("h-2 rounded-full transition-all", color)} style={{ width: `${value}%` }} />
-    </div>
-  );
-}
-
-function SentimentBadge({ s }: { s: string }) {
-  return (
-    <Badge className={cn("text-xs font-semibold", s === "Risk-On" ? "bg-success text-foreground" : s === "Risk-Off" ? "bg-danger text-foreground" : "bg-secondary text-txt-secondary")}>
-      {s}
-    </Badge>
-  );
-}
+const CURRENCY_NOTES: Record<string, { centralBank: string; note: string }> = {
+  USD: { centralBank: "Federal Reserve", note: "World reserve currency; typically bid in risk-off conditions." },
+  EUR: { centralBank: "European Central Bank", note: "Most-traded pair leg against USD; sensitive to euro-area growth and energy." },
+  GBP: { centralBank: "Bank of England", note: "Historically higher realised volatility than EUR against USD." },
+  JPY: { centralBank: "Bank of Japan", note: "Traditional funding currency; often bid in risk-off episodes." },
+  CHF: { centralBank: "Swiss National Bank", note: "Safe-haven characteristics; SNB has intervened historically." },
+  AUD: { centralBank: "Reserve Bank of Australia", note: "Commodity- and China-growth linked; risk-sensitive." },
+  NZD: { centralBank: "Reserve Bank of New Zealand", note: "Commodity-linked and risk-sensitive; thinner liquidity than AUD." },
+  CAD: { centralBank: "Bank of Canada", note: "Correlated with crude oil and US growth." },
+};
 
 export default function ForexCenter() {
-  const { data, isLoading } = useQuery({
-    queryKey: getGetForexIntelligenceQueryKey(),
-    queryFn: fetchForexIntelligence,
-    refetchInterval: 30000,
-  });
-
-  if (isLoading || !data) {
-    return (
-      <div className="flex items-center justify-center h-64 text-txt-secondary">
-        <div className="text-center space-y-2">
-          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
-          <div>Loading Forex Intelligence...</div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex flex-col gap-1">
         <h1 className="text-2xl font-bold text-foreground">Forex Center</h1>
-        <p className="text-txt-secondary text-sm">Macro intelligence, currency strength, and pair bias for major forex markets</p>
+        <p className="text-txt-secondary text-sm">
+          FX workspace — no FX macro data provider is connected yet
+        </p>
       </div>
 
-      {/* Session + Risk Banner */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <Card className="bg-card border-border">
-          <CardContent className="p-4">
-            <div className="text-xs text-txt-muted mb-1">Active Session</div>
-            <div className="text-foreground font-bold text-lg">{data.session}</div>
-          </CardContent>
-        </Card>
-        <Card className="bg-card border-border">
-          <CardContent className="p-4">
-            <div className="text-xs text-txt-muted mb-1">Risk Sentiment</div>
-            <SentimentBadge s={data.riskSentiment} />
-          </CardContent>
-        </Card>
-        <Card className="bg-card border-border sm:col-span-1">
-          <CardContent className="p-4">
-            <div className="text-xs text-txt-muted mb-1">Session Notes</div>
-            <div className="text-txt-secondary text-xs leading-relaxed">{data.sessionNotes}</div>
-          </CardContent>
-        </Card>
+      <div
+        role="note"
+        aria-label="No FX macro data provider"
+        data-testid="banner-forex-no-provider"
+        className="flex gap-3 rounded-md border border-warning/50 bg-warning/30 p-3"
+      >
+        <AlertTriangle className="text-warning shrink-0 mt-0.5" size={18} />
+        <div className="text-sm">
+          <div className="font-semibold text-warning">No FX macro data provider connected</div>
+          <div className="text-warning/80 text-xs mt-0.5">
+            ARX has no live currency-strength or macro feed configured, so currency strength, pair
+            bias and confidence are not shown. This page stays empty rather than display placeholder
+            data. The currency notes below are static editorial context, not live analysis.
+          </div>
+        </div>
       </div>
 
-      {/* Currency Strength Meter */}
-      <Card className="bg-card border-border">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-foreground text-base">Currency Strength Meter</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {data.currencies?.map((c: any) => (
-              <div key={c.currency} className="space-y-2 p-3 rounded-lg bg-secondary">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-foreground font-bold text-sm">{c.currency}</div>
-                    <div className="text-txt-muted text-xs">{c.centralBank}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-foreground font-bold text-lg">{Math.round(c.strength)}</div>
-                    <BiasChip bias={c.bias} />
-                  </div>
-                </div>
-                <StrengthBar value={c.strength} bias={c.bias} />
-                <div className="flex gap-1 flex-wrap">
-                  <RateBadge rate={c.rateExpectation} />
-                  <Badge variant="outline" className="text-xs border-border text-txt-secondary">{c.inflationPressure} Inflation</Badge>
-                </div>
-                <div className="text-txt-secondary text-xs leading-relaxed">{c.notes}</div>
-              </div>
-            ))}
+      {/* Honest empty state — replaces the removed fabricated strength meter + pair table. */}
+      <Card className="bg-card border-border" data-testid="forex-empty-state">
+        <CardContent className="py-12 text-center space-y-2">
+          <PlugZap className="mx-auto text-txt-muted" size="36" />
+          <div className="text-foreground font-semibold">FX macro intelligence unavailable</div>
+          <div className="text-txt-secondary text-sm max-w-md mx-auto">
+            No backend FX macro provider is connected. Currency strength, rate differentials, pair
+            bias and confidence cannot be shown honestly, so nothing is displayed. Live FX prices and
+            signals remain fully wired on the Scanner, which uses real broker data.
           </div>
         </CardContent>
       </Card>
 
-      {/* Pair Intelligence */}
-      <Card className="bg-card border-border">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-foreground text-base">Pair Intelligence</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-txt-muted text-xs border-b border-border">
-                  <th className="text-left py-2 pr-4">Pair</th>
-                  <th className="text-left py-2 pr-4">Base Str</th>
-                  <th className="text-left py-2 pr-4">Quote Str</th>
-                  <th className="text-left py-2 pr-4">Rate Differential</th>
-                  <th className="text-left py-2 pr-4">Macro Bias</th>
-                  <th className="text-left py-2 pr-4">Technical</th>
-                  <th className="text-left py-2 pr-4">Combined</th>
-                  <th className="text-left py-2">Confidence</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.pairs?.map((p: any) => (
-                  <tr key={p.symbol} className="border-b border-border hover:bg-secondary transition-colors">
-                    <td className="py-2 pr-4 font-bold text-foreground">{p.symbol}</td>
-                    <td className="py-2 pr-4">
-                      <div className="flex items-center gap-1">
-                        <div className="w-10 bg-secondary rounded h-1.5">
-                          <div className="h-1.5 rounded bg-primary" style={{ width: `${p.baseStrength}%` }} />
-                        </div>
-                        <span className="text-txt-secondary text-xs">{Math.round(p.baseStrength)}</span>
-                      </div>
-                    </td>
-                    <td className="py-2 pr-4">
-                      <div className="flex items-center gap-1">
-                        <div className="w-10 bg-secondary rounded h-1.5">
-                          <div className="h-1.5 rounded bg-ruby" style={{ width: `${p.quoteStrength}%` }} />
-                        </div>
-                        <span className="text-txt-secondary text-xs">{Math.round(p.quoteStrength)}</span>
-                      </div>
-                    </td>
-                    <td className="py-2 pr-4 text-txt-secondary text-xs">{p.rateDifferential}</td>
-                    <td className="py-2 pr-4"><BiasChip bias={p.macroBias} /></td>
-                    <td className="py-2 pr-4"><BiasChip bias={p.technicalBias} /></td>
-                    <td className="py-2 pr-4">
-                      <span className={cn("font-bold text-xs", p.combinedBias === "Bullish" ? "text-success" : p.combinedBias === "Bearish" ? "text-danger" : "text-txt-secondary")}>
-                        {p.combinedBias}
-                      </span>
-                    </td>
-                    <td className="py-2">
-                      <div className="flex items-center gap-1">
-                        <div className="w-12 bg-secondary rounded h-1.5">
-                          <div className="h-1.5 rounded bg-primary" style={{ width: `${p.confidence}%` }} />
-                        </div>
-                        <span className="text-txt-secondary text-xs">{Math.round(p.confidence)}%</span>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Static currency notes — clearly labeled, not live data. */}
+      <div>
+        <div className="text-xs uppercase tracking-wide text-txt-muted mb-2">
+          Static currency notes (editorial — not live data)
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {Object.entries(CURRENCY_NOTES).map(([code, t]) => (
+            <Card key={code} className="bg-card border-border">
+              <CardContent className="p-4">
+                <div className="font-bold text-foreground text-sm mb-0.5">{code}</div>
+                <div className="text-xs text-txt-muted mb-1">{t.centralBank}</div>
+                <div className="text-xs text-txt-secondary">{t.note}</div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

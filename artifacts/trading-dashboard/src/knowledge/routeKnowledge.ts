@@ -126,10 +126,17 @@ export const ROUTE_KNOWLEDGE: RouteKnowledge[] = [
   { route: "/broker-reconciliation", title: "Broker Reconciliation", purpose: "Reconciles ARX's view of trades with the broker's." },
 
   // ── Centers (markets/forex/indices/etc.) ───────────────────────────────
-  { route: "/forex-center", title: "FX Center", purpose: "FX-focused workspace." },
-  { route: "/indices-center", title: "Indices Center", purpose: "Indices-focused workspace." },
-  { route: "/stocks-center", title: "Stocks Center", purpose: "Stocks workspace (where supported)." },
-  { route: "/synthetic-center", title: "Synthetics Center", purpose: "Deriv synthetic indices workspace." },
+  // P0-4 — these four centers have NO market-data provider wired. They render
+  // an honest not-connected state (no levels, no bias, no confidence, no ATR).
+  // Ruby reads these descriptions, so they must say so plainly: previously the
+  // pages served Math.random()-derived numbers and Ruby described the pages as
+  // live workspaces, which made the assistant the last surface still implying
+  // fabricated data was real. Point users at the Scanner, which uses real
+  // broker data.
+  { route: "/forex-center", title: "FX Center", purpose: "FX workspace. NO live FX macro provider is connected: currency strength, pair bias and confidence are NOT shown here. Use the Scanner for real FX prices and signals.", safety: "Shows an honest not-connected state. ARX never displays fabricated market data, so no estimated values appear on this page.", related: ["/scanner", "/market-scanner"] },
+  { route: "/indices-center", title: "Indices Center", purpose: "Indices workspace. NO live index market-data provider is connected: index levels, VIX, bond yields, bias and confidence are NOT shown here.", safety: "Shows an honest not-connected state. ARX never displays fabricated market data, so no estimated values appear on this page.", related: ["/scanner"] },
+  { route: "/stocks-center", title: "Stocks Center", purpose: "Stocks workspace. NO stock-data provider is connected: prices, directions and signals are NOT shown here.", safety: "Shows an honest not-connected state. ARX never displays fabricated signals.", related: ["/scanner"] },
+  { route: "/synthetic-center", title: "Synthetics Center", purpose: "Deriv synthetics workspace. NO synthetic analytics provider is connected: ATR, trend, volatility state and recommended lot size are NOT shown here. Synthetics remain tradable on the Scanner, which uses real broker data.", safety: "Shows an honest not-connected state. ARX never displays fabricated market data or a position size derived from one.", related: ["/scanner"] },
 
   // ── Watch / Alerts / Notifications ─────────────────────────────────────
   { route: "/watchlists", title: "Watchlists", purpose: "Create and manage symbol watchlists." },
