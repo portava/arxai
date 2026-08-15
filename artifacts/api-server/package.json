@@ -94,6 +94,7 @@
     "test:fred-calendar": "node --import tsx --test --test-force-exit src/lib/news/calendar/__qa__/fredCalendar.test.ts",
     "test:economic-calendar-route": "node --import tsx --test --test-force-exit src/routes/__qa__/economicCalendarRoute.test.ts",
     "test:ruby-news-risk-honesty": "node --import tsx --test --test-force-exit src/lib/assistant/__qa__/rubyNewsRiskHonesty.test.ts",
+    "test:news-risk-fabrication": "node --import tsx --test --test-force-exit src/lib/news/__qa__/newsRiskFabrication.test.ts",
     "test:scanner-enrichment-concurrency": "node --import tsx --test --test-force-exit src/lib/__qa__/scannerEnrichmentConcurrency.test.ts",
     "test:scanner-scanonce-concurrency": "node --import tsx --experimental-test-module-mocks --test --test-force-exit src/lib/__qa__/scannerScanOnceConcurrency.test.ts",
     "test:scanner-outage-injection": "node --import tsx --test --test-force-exit src/lib/__qa__/devScannerOutage.test.ts",
