@@ -31,6 +31,7 @@
     "test:news-risk-honesty": "vitest run src/components/news/NewsRiskCard.honesty.test.tsx",
     "test:chart-tick-stream": "vitest run src/components/charts/ARXNativeChart.tick-stream.test.tsx",
     "test:chart-trendline-overlay-render": "vitest run src/components/charts/ARXNativeChart.trendline-overlay.test.tsx",
+    "test:coming-soon-affordances": "vitest run src/pages/comingSoonAffordances.test.ts",
     "test:market-health-page": "vitest run src/pages/market-health.page.test.tsx",
     "test:news-risk-page": "vitest run src/pages/news-risk.page.test.tsx",
     "test:chart-structure-lines": "vitest run src/lib/chart-engine/structureLines.test.ts",
