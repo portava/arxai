@@ -5,7 +5,7 @@
 import { Link } from "wouter";
 import {
   Crosshair, Send, Layers, ListChecks, Wrench, ShieldCheck, Activity,
-  ChevronRight, ArrowRight, GitBranch,
+  ChevronRight, ArrowRight, GitBranch, AlertTriangle, Loader2,
 } from "lucide-react";
 import { CockpitCard, Pill, ActionButton, SectionLink } from "@/components/dashboard/cockpit/primitives";
 import { cn } from "@/lib/utils";
@@ -64,10 +64,53 @@ export function TradeHero({
 }
 
 /* ── 3 · Positions tab ──────────────────────────────────────────────── */
-export function PositionsPanel({ positions }: { positions: Array<{ id: string | number; symbol: string; side: string; lotSize: number; entry?: number; pnl?: number | null; stopLoss?: number | null; takeProfit?: number | null; status?: string }> }) {
+/**
+ * P0-3 — the same "flat on a failed fetch" illusion as OpenLivePositions.
+ *
+ * The caller (`pages/trade-command-room.tsx`) previously passed
+ * `positionsQ.data?.rows ?? []`, which collapses a failed or in-flight read to
+ * an empty array. This panel then rendered "No open positions" — telling a
+ * trader they are flat when ARX simply could not answer. `isLoading` and
+ * `isError` are now explicit inputs and are resolved BEFORE the empty state,
+ * so "No open positions" can only render on a confirmed successful read.
+ */
+export function PositionsPanel({ positions, isLoading = false, isError = false, onRetry }: {
+  positions: Array<{ id: string | number; symbol: string; side: string; lotSize: number; entry?: number; pnl?: number | null; stopLoss?: number | null; takeProfit?: number | null; status?: string }>;
+  isLoading?: boolean;
+  isError?: boolean;
+  onRetry?: () => void;
+}) {
   return (
     <CockpitCard title="Positions" subtitle="Live MT5-confirmed positions." icon={<Layers className="h-[18px] w-[18px]" />} accent="blue" data-testid="positions-tab">
-      {positions.length === 0 ? (
+      {isLoading ? (
+        <div className="flex items-center justify-center gap-2 py-6 text-sm text-txt-muted" data-testid="positions-loading">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading positions…
+        </div>
+      ) : isError ? (
+        <div
+          className="flex flex-col items-center gap-2 rounded border border-warning/40 bg-warning/10 px-3 py-5 text-center"
+          role="alert"
+          data-testid="positions-error"
+        >
+          <div className="flex items-center gap-2 text-sm font-semibold text-warning">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            Couldn&apos;t load live positions — retrying. Do not assume you are flat.
+          </div>
+          <p className="text-xs text-warning/80">
+            Your broker may still hold open positions. Check MT5 directly before placing or closing anything.
+          </p>
+          {onRetry && (
+            <button
+              type="button"
+              onClick={onRetry}
+              data-testid="btn-retry-positions"
+              className="inline-flex h-9 items-center justify-center rounded-xl border border-border bg-transparent px-3 text-sm font-semibold text-txt-secondary transition-colors hover:bg-secondary/50 hover:text-foreground"
+            >
+              Retry
+            </button>
+          )}
+        </div>
+      ) : positions.length === 0 ? (
         <div className="py-6 text-center">
           <p className="text-sm font-medium text-foreground">No open positions</p>
           <p className="text-xs text-txt-muted">Live MT5-confirmed positions will appear here once opened.</p>

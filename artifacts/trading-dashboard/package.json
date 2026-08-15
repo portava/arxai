@@ -17,6 +17,7 @@
     "test:mission-planner": "vitest run src/pages/profit-missions.test.tsx src/pages/profitMissionPlanner.test.ts",
     "test:mission-performance": "vitest run src/components/missions/MissionPerformanceView.test.tsx",
     "test:live-test-cycle-nudge": "vitest run src/components/live/ControlledLiveTestButton.test.tsx",
+    "test:live-positions-error-state": "vitest run src/components/live/OpenLivePositions.errorState.test.tsx src/components/dashboard/trade/TradePanels.positionsError.test.tsx",
     "test:one-click-consent": "vitest run src/components/mt5/OneClickToggleCard.consent.test.tsx src/components/mt5/OneClickToggleCard.honest-reason.test.tsx src/pages/admin/one-click-controls.revoke.test.tsx",
     "test:admin-hub-routes": "vitest run src/pages/admin/admin-hub.routes.test.ts",
     "test:investor-weekly-story": "vitest run src/pages/investor.weeklyStory.test.tsx",
