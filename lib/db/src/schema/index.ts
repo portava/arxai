@@ -452,3 +452,13 @@ export * from "./adminCockpit";
 // content-addressed lineage so a decision can be RE-DERIVED, not just re-read.
 // APPEND-ONLY and inert — never gates, sizes, or places a trade.
 export * from "./eventLog";
+
+// ── Session 2 Phase 8 — discovery pipeline + FDR ledger. Four APPEND-ONLY
+// tables whose prereg_hash + monotonic created_tx are the anti-fabrication
+// spine: a hypothesis and its full parameter set are inserted BEFORE any metric
+// exists, so a hypothesis invented after its results carries a higher created_tx
+// than the trials that supposedly tested it — a contradiction visible in the
+// table rather than a matter of trust. INERT: the terminal output is a
+// CANDIDATE, written at DATA/WALK_FORWARD with liveAllowed=false; nothing here
+// can reach live without the existing human SHADOW + ADMIN stages.
+export * from "./discoveryPipeline";
