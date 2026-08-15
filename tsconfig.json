@@ -28,6 +28,9 @@
       "path": "./lib/features"
     },
     {
+      "path": "./lib/validation"
+    },
+    {
       "path": "./lib/integrations-openai-ai-server"
     },
     {

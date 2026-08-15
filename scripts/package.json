@@ -218,6 +218,7 @@
     "test:money-truth": "tsx ./src/moneyTruthTest.ts",
     "test:black-box-features": "tsx ./src/blackBoxFeaturesTest.ts",
     "test:event-log-db": "tsx ./src/eventLogDbTest.ts",
+    "test:validation-factory": "tsx ./src/validationFactoryTest.ts",
     "test:live-close-evidence": "tsx ./src/liveCloseEvidenceTest.ts",
     "test:live-cycle-close-guard": "tsx ./src/liveTestCycleCloseGuardIntegrationTest.ts",
     "test:ci-inprocess": "tsx ./src/ci/runInProcessCiTests.ts",
@@ -293,6 +294,7 @@
     "@workspace/markets": "workspace:*",
     "@workspace/risk": "workspace:*",
     "@workspace/money": "workspace:*",
-    "@workspace/features": "workspace:*"
+    "@workspace/features": "workspace:*",
+    "@workspace/validation": "workspace:*"
   }
 }
