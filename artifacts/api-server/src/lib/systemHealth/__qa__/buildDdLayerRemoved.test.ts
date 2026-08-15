@@ -84,9 +84,14 @@ describe("G-CUT — nothing is left probing the deleted endpoints", () => {
     assert.ok(!/["']\/api\/market-data\/health["']/.test(sweep));
   });
 
-  it("systemFullHealth no longer lists the deleted health route", () => {
-    const full = read("artifacts/api-server/src/routes/systemFullHealth.ts");
-    assert.ok(!/["']\/api\/market-data\/health["']/.test(full));
+  it("systemFullHealth cannot probe it either (that route was cut too)", () => {
+    // systemFullHealth listed /api/market-data/health among its probe targets.
+    // It has since been deleted outright as a SIMULATOR-world report, so the
+    // stale probe target went with it.
+    assert.equal(
+      existsSync(resolve(ROOT, "artifacts/api-server/src/routes/systemFullHealth.ts")),
+      false,
+    );
   });
 });
 

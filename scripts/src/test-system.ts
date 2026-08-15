@@ -35,13 +35,13 @@ async function check(name: string, fn: () => Promise<void>) {
 }
 
 async function run() {
-  // 1. Full app route smoke
-  await check("01 route smoke (full-health)", async () => {
-    const r = await get("/api/system/full-health");
+  // 1. Full app route smoke.
+  // Was /api/system/full-health, which reported the SIMULATOR world and has
+  // been deleted (Theme G-CUT). /api/healthz is the real liveness surface.
+  await check("01 route smoke", async () => {
+    const r = await get("/api/healthz");
     if (!r.ok) throw new Error(`status ${r.status}`);
-    const finalState = (r.json as { finalState?: Record<string, boolean> })?.finalState;
-    if (!finalState?.FULL_TESTER_ACCESS_ACTIVE) throw new Error("tester access lost");
-    pass("01 route smoke (full-health)", `routes=${(r.json as { routes?: { total?: number } })?.routes?.total}`);
+    pass("01 route smoke");
   });
 
   // 2. Onboarding
@@ -201,23 +201,15 @@ async function run() {
     if (!r.ok) throw new Error(`status ${r.status}`); pass("26 audit vault");
   });
 
-  // 27. Kill switch UI present (full-health says so)
-  await check("27 kill switch UI present", async () => {
-    const r = await get("/api/system/full-health");
-    const safety = (r.json as { safety?: { killSwitchUiPresent?: boolean } })?.safety;
-    if (!safety?.killSwitchUiPresent) throw new Error("kill switch UI missing");
-    pass("27 kill switch UI present");
-  });
+  // 27. REMOVED with /api/system/full-health (Theme G-CUT). The check read a
+  // `killSwitchUiPresent` boolean off a SIMULATOR-world report, so it asserted
+  // that report's self-description rather than the real UI. Rebuilding it
+  // against the real health console is an open item for the owner.
 
-  // 28. MT5 deferred honesty
-  await check("28 MT5 deferred honesty", async () => {
-    const r = await get("/api/system/full-health");
-    const j = r.json as { mt5Deferred?: boolean; realBrokerExecutionAvailable?: boolean; safety?: { mt5HonestyOk?: boolean } };
-    if (!j.mt5Deferred) throw new Error("mt5Deferred is false");
-    if (j.realBrokerExecutionAvailable) throw new Error("real broker execution claimed available");
-    if (!j.safety?.mt5HonestyOk) throw new Error("mt5 honesty flag false");
-    defer("28 MT5 deferred honesty (real broker)", "Deferred until MT5 bridge is connected — honesty checks pass.");
-  });
+  // 28. REMOVED with /api/system/full-health (Theme G-CUT). It asserted
+  // mt5Deferred / realBrokerExecutionAvailable / mt5HonestyOk off the same
+  // SIMULATOR-world report. /api/mt5/status is the real source if this
+  // coverage is rebuilt — flagged for the owner rather than silently dropped.
 
   // ── OWNER TESTER ACCESS + SECURITY HARDENING ────────────────────────────
   await check("29 auth session loads (default OWNER in dev)", async () => {

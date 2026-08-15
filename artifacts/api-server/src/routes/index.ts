@@ -401,8 +401,6 @@ import shadowModeRouter from "./shadowMode.js";
 router.use(shadowModeRouter);
 
 // Full System Stabilization aggregator.
-import systemFullHealthRouter from "./systemFullHealth.js";
-router.use(systemFullHealthRouter);
 
 // Owner / Tester auth + session.
 import authRouter from "./auth.js";
