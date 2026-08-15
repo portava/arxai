@@ -239,8 +239,17 @@ export async function run(): Promise<CiTestResultLike> {
     //    endpoint uses; the endpoint itself reads wall-clock time so age can't be
     //    forced over HTTP) ─────────────────────────────────────────────────────
     __resetMt5ProviderStore();
-    const t0 = Date.now();
+    // `t0` is read AFTER the push, never before. The store stamps the series with
+    // its own `Date.now()` at push time, and freshness is
+    // `now - updatedAt <= CANDLE_TTL_MS`. Reading `t0` first meant the aged probe
+    // below (`t0 + CANDLE_TTL_MS + 1`) only exceeded the TTL when the push landed
+    // in the SAME MILLISECOND as `t0` — reliably true when this file runs alone,
+    // and false whenever the scheduler put >=1ms between the two, which is what
+    // the full `pnpm run ci` lane does under load. Anchoring after the push makes
+    // `t0 >= updatedAt`, so the probe is past the TTL by construction rather than
+    // by luck.
     updateCandlesFromMT5(SYM_LIVE, bars([2.10, 2.11]), "M5");
+    const t0 = Date.now();
 
     const freshNow = getMt5AllSeriesStatus(t0 + 1000);
     const freshEntry = freshNow.find((s) => s.symbol === SYM_LIVE && s.timeframe === "M5");
