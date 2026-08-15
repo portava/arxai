@@ -6,7 +6,11 @@ export interface TradeOutcomeInput {
   entry: number;
   stopLoss: number;
   takeProfit: number;
-  exit: number;
+  // NOTE: there is deliberately no `exit` field. It used to exist, was never
+  // read by this function, and both call sites filled it by GUESSING —
+  // "a winner closed at TP, a loser closed at SL". The `trades` table carries
+  // no close-price column, so there is no real exit price to substitute; the
+  // honest move is to make the guess unrepresentable (Theme A3).
   profitLoss: number;
   session?: string;
   marketCondition?: string;
@@ -36,8 +40,8 @@ export const MISTAKE_TAGS = [
   "poor risk reward",
   "low confidence trade",
   "ignored trend",
-  "late entry",
-  "early exit",
+  // "late entry" / "early exit" were removed with the inverted hold-time rules
+  // below — the vocabulary must not advertise a tag nothing can emit.
   "overtrading",
   "revenge trade risk",
   "abnormal volatility",
@@ -87,9 +91,18 @@ export function analyzeTradeOutcome(t: TradeOutcomeInput): TradeOutcomeResult {
   if (t.technicalBias && t.macroBias && t.technicalBias !== t.macroBias) mistakeTags.push("ignored trend");
   if (t.technicalBias === t.macroBias && t.technicalBias) successTags.push("trend aligned");
 
-  // Hold time hints
-  if ((t.holdTimeMinutes ?? 0) > 0 && (t.holdTimeMinutes ?? 0) < 3 && outcome === "loss") mistakeTags.push("late entry");
-  if (outcome === "win" && (t.holdTimeMinutes ?? 0) > 0 && (t.holdTimeMinutes ?? 0) < 5) mistakeTags.push("early exit");
+  // Hold time: no tag is inferred from duration alone.
+  //
+  // Two rules used to live here and both drew the wrong conclusion:
+  //   <3-min LOSS → "late entry"  — a fast loss says the entry was wrong or the
+  //                                 stop was tight; it says nothing about being
+  //                                 late, and the same hold time on a winner was
+  //                                 read as a virtue.
+  //   <5-min WIN  → "early exit"  — a fast win is the normal shape of a trade
+  //                                 that reached its target; calling it a
+  //                                 mistake penalises the intended outcome.
+  // Distinguishing either case needs the real close price and the excursion
+  // path, neither of which this input carries.
 
   // Strategy hints
   if (t.strategy === "Break of Structure" && outcome === "win") successTags.push("clean break of structure");
