@@ -20,6 +20,12 @@ import {
 } from "@workspace/db/schema";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { logger } from "../logger.js";
+import {
+  computeRealizedAmount,
+  resolveContractSize,
+  resolveQuoteToAccountFx,
+} from "./contractSize.js";
+import { getAccountCurrency } from "../live/accountCurrency.js";
 
 export interface VirtualPnlSyncResult {
   ok: boolean;
@@ -49,6 +55,12 @@ export interface VirtualPnlSyncResult {
  *   - lotSize missing or 0
  *   - virtualAccountId missing or no matching virtual_trading_accounts row
  *     for (id, userId)
+ *   - P0-2: no trustworthy contract size for the symbol
+ *     (reason "pending_contract_size") or no derivable profit→account FX
+ *     factor (reason "pending_fx_conversion"). Both bail BEFORE the
+ *     realizedAppliedAt CAS, so the row stays unclaimed and is retried once
+ *     the EA reports the symbol spec — rather than being permanently marked
+ *     applied with a mis-scaled or zero figure.
  *
  * Side effects when applied:
  *   - shared_trade_attribution.pnl = realized
@@ -83,17 +95,56 @@ export async function applyRealizedPnlToVirtualAccount(
   }
 
   // Realized PnL on the closed slice. Direction-aware, NEVER fabricated.
-  // contractSize is intentionally omitted — virtual accounts track price
-  // delta * lot, identical to how livePositions.realizedProfitLoss is
-  // computed in executionReconciler.ts. Future broker-aware contract size
-  // can layer in here without breaking the idempotency contract.
+  //
+  // P0-2 — contract size is REQUIRED, not "intentionally omitted". Without it
+  // this computed price-delta x lot, so a 1.00-lot 100-pip EURUSD close booked
+  // $0.01 instead of $1,000 — understated 100,000x. That number is written to
+  // virtual_trading_accounts.virtualPnl, which drives the investor USD equity
+  // readout AND the allocation-blown risk cap (virtualPnl <= -virtualBalance).
+  // Understated that far, the cap could never trip for FX: a trader could blow
+  // the whole allocation with the CLOSE-ONLY brake never engaging.
   const direction = attribution.side === "BUY" ? 1 : attribution.side === "SELL" ? -1 : 0;
   if (direction === 0) {
     return { ok: true, applied: false, reason: "unknown_side", ...baseResult };
   }
-  const realized = Number(
-    ((attribution.closePrice - attribution.entryPrice) * direction * attribution.lotSize).toFixed(8),
-  );
+
+  const sizing = await resolveContractSize(attribution.userId, attribution.symbol);
+  if (sizing.contractSize == null) {
+    // No trustworthy per-lot size for this instrument. Bail BEFORE the
+    // idempotency CAS so the row stays unclaimed and is retried once the EA
+    // reports the symbol spec. Booking a mis-scaled figure — or claiming the
+    // row with a zero — would be permanent and invisible.
+    logger.warn({
+      attributionId: attribution.id, symbol: attribution.symbol, reason: sizing.reason,
+    }, "virtual_pnl_pending_contract_size");
+    return { ok: true, applied: false, reason: "pending_contract_size", ...baseResult };
+  }
+
+  const accountCurrency = await getAccountCurrency(attribution.userId);
+  const fx = resolveQuoteToAccountFx({
+    symbol: attribution.symbol,
+    profitCurrency: sizing.profitCurrency,
+    accountCurrency,
+    closePrice: attribution.closePrice,
+  });
+  if (fx.factor == null) {
+    // P/L is in a currency we cannot convert without inventing a cross rate.
+    // Same treatment: leave the row unclaimed rather than book a wrong amount.
+    logger.warn({
+      attributionId: attribution.id, symbol: attribution.symbol,
+      profitCurrency: sizing.profitCurrency, accountCurrency, reason: fx.reason,
+    }, "virtual_pnl_pending_fx_conversion");
+    return { ok: true, applied: false, reason: "pending_fx_conversion", ...baseResult };
+  }
+
+  const realized = computeRealizedAmount({
+    entryPrice: attribution.entryPrice,
+    closePrice: attribution.closePrice,
+    direction,
+    lots: attribution.lotSize,
+    contractSize: sizing.contractSize,
+    quoteToAccountFx: fx.factor,
+  });
 
   // CAS the idempotency flag first. If the row was already applied by a
   // concurrent caller (race), the update affects 0 rows and we bail.
