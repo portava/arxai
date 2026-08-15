@@ -46,7 +46,9 @@ const API_HEALTH_TARGETS = [
   "/api/shadow-mode/status", "/api/shadow-mode/dashboard-cards", "/api/forward-testing/status",
   "/api/strategy-tournament/leaderboard", "/api/confidence-calibration",
   "/api/strategy-promotion", "/api/ai-readiness-score", "/api/shadow-journal",
-  "/api/mt5/status", "/api/market-data/health", "/api/audit/health",
+  // /api/market-data/health was removed with the unconsumed Build-DD read
+  // layer; probing a deleted route would report a false 404 degradation.
+  "/api/mt5/status", "/api/audit/health",
 ];
 
 router.get("/system/full-health", requireAdmin, async (_req, res) => {
