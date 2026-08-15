@@ -31,6 +31,7 @@ import { useChartDeepHistory } from "@/lib/useChartDeepHistory";
 import { ChartHistoryBadge } from "@/components/charts/ChartHistoryBadge";
 import { FeedConfidenceBadge } from "@/components/charts/FeedConfidenceBadge";
 import { formatMarketClosedLabel } from "@/components/charts/marketFrozenFormat";
+import { useTickStreamWatchdog } from "@/components/charts/useTickStreamWatchdog";
 import { feedConfidence } from "@/lib/feed-confidence";
 import { resolveDisplayStatus, isLivePriceDisplay } from "@/lib/chart-display-status";
 import { useScannerTruth } from "@/hooks/useScannerTruth";
@@ -106,6 +107,7 @@ const TIMEFRAMES: { id: ArxTimeframe; label: string }[] = [
 
 const TF_KEY = "arx.nativeChart.timeframe";
 const DEFAULT_TF: ArxTimeframe = "M15";
+
 
 function loadTimeframe(): ArxTimeframe {
   if (typeof window === "undefined") return DEFAULT_TF;
@@ -349,6 +351,15 @@ export function ARXNativeChart({
     null,
   );
 
+  // ── Tick-stream watchdog (Theme C3.4) ───────────────────────────────────
+  // A dropped SSE stream used to be invisible: `es.onerror` was a no-op, and a
+  // connection that dies without an error event (proxy timeout, sleeping tab,
+  // network change) produces NO error at all — it simply stops delivering, so
+  // the chart sat frozen indefinitely while still presenting as live. The hook
+  // owns silence detection and the reconnect signal; see its own file for the
+  // detection rationale and timings.
+  const streamWatchdog = useTickStreamWatchdog();
+
   // Chart Brain v2 (Task 1) — centralized Chart Intelligence State. This is a
   // SEPARATE, non-blocking fetch from the candle query above: candles render
   // from `query` regardless of this one, and any error here is contained to
@@ -552,7 +563,11 @@ export function ARXNativeChart({
     } catch {
       return; // EventSource unavailable — the 8s poll still keeps the tip fresh.
     }
+    streamWatchdog.noteStreamOpened();
     es.onmessage = (ev) => {
+      // Any frame — tip, feed_status, or heartbeat — proves the stream is alive.
+      // Recorded before parsing so even an unrecognised frame counts as liveness.
+      streamWatchdog.noteFrame();
       let msg: {
         type?: string;
         frozen?: boolean;
@@ -611,13 +626,20 @@ export function ARXNativeChart({
       newestBarSecRef.current = tipSec;
     };
     es.onerror = () => {
-      // The browser auto-reconnects an EventSource; nothing to do. The poll
-      // remains the reconciliation backstop while the stream is down.
+      // The browser retries an EventSource on its own, but only for errors it
+      // actually surfaces — and it never recovers a connection that stays "open"
+      // while silently delivering nothing. Record the state so the UI is honest;
+      // the watchdog owns the reconnect for both cases.
+      streamWatchdog.noteError();
     };
+
     return () => {
       es?.close();
     };
-  }, [resolvedSymbol, timeframe]);
+    // The watchdog's callbacks are stable; `epoch` is the reconnect signal and
+    // this effect's cleanup closes the dead stream before the replacement opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resolvedSymbol, timeframe, streamWatchdog.epoch]);
 
   // ── Deep-history scroll-back wiring. Register a stable handler with the engine
   //    that fires when the user pans near the oldest loaded bar; it asks the
