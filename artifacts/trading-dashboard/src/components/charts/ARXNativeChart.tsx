@@ -334,13 +334,11 @@ export function ARXNativeChart({
   const isLivePriceAffordance = isLivePriceDisplay(
     resolveDisplayStatus(data?.feedStatus ?? null, hasCandles),
   );
-  // Mirror the live verdict into a ref so the SSE tick handler (a stable
-  // closure bound per symbol/timeframe) always reads the CURRENT affordance
-  // without re-subscribing. A non-live feed must never tick a fake bar.
-  const liveAffordanceRef = useRef(isLivePriceAffordance);
-  useEffect(() => {
-    liveAffordanceRef.current = isLivePriceAffordance;
-  }, [isLivePriceAffordance]);
+  // NOTE (Theme C3.3): this verdict is NOT mirrored into a ref for the SSE tick
+  // handler any more. It describes the CLOSED-candle feed and is sticky, so
+  // using it to gate live frames froze charts whose ticks were flowing fine.
+  // Each frame carries its own server-computed `frozen` marker instead. This
+  // value still drives the last-price affordance through setFeedState below.
 
   // Market-frozen / closed-market indicator (display/telemetry only). Driven by
   // the tick-stream `feed_status` event, whose verdict is derived from the
@@ -524,10 +522,21 @@ export function ARXNativeChart({
   //    the authoritative closed bar that replaces the synthesized tip.
   //
   //    HONESTY (matches the Scanner gates exactly): apply a tip ONLY when the
-  //    stream reports it is NOT frozen, the feed is genuinely LIVE (shared
-  //    live-price affordance), and the tip time is >= the newest bar. A
-  //    silent/stale/out-of-order stream can never keep a fake bar ticking. The
-  //    payload is pure OHLC display telemetry — no execution path is touched.
+  //    stream reports THAT FRAME is not frozen and the tip time is >= the newest
+  //    bar. A silent/stale/out-of-order stream can never keep a fake bar
+  //    ticking. The payload is pure OHLC display telemetry — no execution path
+  //    is touched.
+  //
+  //    Theme C3.3: the extra `isLivePriceAffordance` gate that used to sit here
+  //    was removed. It is a verdict about the CLOSED-candle feed and it is
+  //    sticky — a feed graded stale/delayed once suppressed every subsequent
+  //    tick, so a chart whose ticks were flowing normally sat visibly frozen.
+  //    Each frame already carries its own `frozen` flag, computed server-side
+  //    from the REAL age of the tick behind it, which is both stricter (it goes
+  //    true the moment ticks actually stop) and more current than the sticky
+  //    grade. The Scanner has always gated this way; the two now agree. The
+  //    live-price affordance still governs the last-price label and dashed
+  //    "Last" line via setFeedState — that is unchanged.
   useEffect(() => {
     // Clear the closed-market badge whenever the stream key changes — the prior
     // symbol/timeframe's verdict is no longer relevant, and a new stream with no
@@ -568,9 +577,8 @@ export function ARXNativeChart({
       }
       const adapter = adapterRef.current;
       if (!adapter?.updateActiveCandle) return;
-      // Gate on the SAME live-price affordance the chart already obeys: a frozen,
-      // delayed or composite feed must never tick a synthesized bar.
-      if (!liveAffordanceRef.current) return;
+      // Gate on THIS frame's own freshness marker (server-computed from the real
+      // tick age), exactly like the Scanner — not on the sticky closed-feed grade.
       if (msg.type !== "forming_bar" || msg.frozen || !msg.bar) return;
       // Task #496 latency addendum: measure ingest→browser latency in dev from
       // the ingest-accept wall clock the server stamped on the tip.
