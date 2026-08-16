@@ -47,7 +47,9 @@ function scanFn(): string {
 
 describe("C1 — the scanner reads the unified router", () => {
   it("imports routeCandles", () => {
-    assert.ok(/import \{ routeCandles \} from "\.\.\/data\/marketDataRouter\.js"/.test(scanner));
+    assert.ok(
+      /import\s*\{[^}]*\brouteCandles\b[^}]*\}\s*from\s*"\.\.\/data\/marketDataRouter\.js"/.test(scanner),
+    );
   });
 
   it("fetches candles through the router", () => {
