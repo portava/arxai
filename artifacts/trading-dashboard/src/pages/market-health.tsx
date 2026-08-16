@@ -1,20 +1,46 @@
-import { useEffect, useState, useCallback } from "react";
+// Market Health — rebuilt on the live candle router.
+//
+// WHAT THIS PAGE USED TO SHOW
+//   A composite "TRADEABLE" / "CAUTION" verdict from `/api/market/health`,
+//   which is built entirely out of `marketSimulator.quote()` behind
+//   `ACTIVE_PROVIDER = "SIMULATOR"` and a hardcoded
+//   `MT5_BRIDGE_CONNECTED = false`. Every number on it — bid/ask, spread bps,
+//   ATR, volatility ratio, session state, news events — was simulated, and the
+//   page rendered a tradeability verdict from those simulated numbers to real
+//   traders.
+//
+// WHAT IT SHOWS NOW
+//   The SAME feed truth every other surface uses, via `useScannerTruth`, which
+//   composes the one honest market query (GET /api/chart/candles) and resolves
+//   it through the shared `resolveScannerTruth` contract. Scanner, chart,
+//   Ruby reads and this page therefore cannot disagree about whether a feed is
+//   live — there is one evaluator, not two.
+//
+//   The already-real "Market Data Provider" card (GET /api/me/market-data/status)
+//   and its refresh action are kept unchanged: those were never simulated.
+//
+// WHAT WAS DROPPED, AND WHY
+//   - Spread-bps / ATR / volatility-ratio / session cards: simulator-only, with
+//     no live-router equivalent to rebuild them from. Showing nothing beats
+//     showing invented values.
+//   - The news-risk block: it read the same simulator. News risk now has its
+//     own page on the real DB-backed pipeline; this page links there instead of
+//     keeping a second, worse copy.
+//   - The "MT5 bridge deferred" badge: it rendered a hardcoded constant.
+//     `brokerFeedActive` below is derived from the real active candle source.
+//
+// Read-only: no trades, no mutation beyond the explicit provider refresh.
+
+import { useCallback, useEffect, useState } from "react";
+import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Activity, RefreshCw } from "lucide-react";
-import { humanizeReason } from "@/lib/friendlyLabels";
 
-type Health = {
-  symbol: string; timeframe: string; labels: string[];
-  quote: { bid: number; ask: number; spread: number; isStale: boolean; provider: string; timestamp: string };
-  spread: { spreadBps: number; label: string };
-  volatility: { atr: number; ratio: number; label: string };
-  session: { sessionLabel: string; activeSessions: string[] };
-  news: { blocking: boolean; blockReason: string | null; events: Array<{ event: { eventName: string; impact: string }; minutesUntil: number }> };
-  mt5BridgeConnected: boolean;
-};
+import { useScannerTruth } from "@/hooks/useScannerTruth";
+import { FeedConfidenceBadge } from "@/components/charts/FeedConfidenceBadge";
 
 // Phase: Market Data Freshness — backend-driven provider status shape
 // returned by GET /api/me/market-data/status. Surfaced as a separate
@@ -34,7 +60,6 @@ type MarketDataStatus = {
   unavailableReason: string | null;
   features: { quotes: boolean; news: boolean; snapshots: boolean; economicCalendar: boolean; candles: boolean; currentEvents?: boolean };
   setupHint: string | null;
-  // Cleanup phase E — discrete rate-limit field.
   rateLimitStatus?: {
     limited: boolean;
     retryAfterMs: number | null;
@@ -43,25 +68,25 @@ type MarketDataStatus = {
   };
 };
 
-const LABEL_COLOR: Record<string, string> = {
-  TRADEABLE: "bg-emerald-500 text-white",
-  CAUTION: "bg-amber-500/70 text-white",
-  HIGH_SPREAD: "bg-rose-500/80 text-white",
-  HIGH_VOLATILITY: "bg-amber-500/80 text-white",
-  LOW_LIQUIDITY: "bg-zinc-500/80 text-white",
-  NEWS_RISK: "bg-rose-500/80 text-white",
-  DATA_STALE: "bg-rose-500/80 text-white",
-  MT5_DEFERRED: "bg-purple-500/80 text-white",
-};
-
 function freshnessBadgeColor(state: MarketDataStatus["freshnessState"]): string {
   switch (state) {
-    case "FRESH": return "bg-emerald-500 text-white";
+    case "FRESH": return "bg-emerald-500/80 text-white";
     case "STALE": return "bg-rose-500/80 text-white";
     case "ERROR": return "bg-rose-600 text-white";
     case "NEVER_FETCHED": return "bg-amber-500/70 text-white";
     case "UNAVAILABLE": return "bg-zinc-500/80 text-white";
     default: return "bg-zinc-500/80 text-white";
+  }
+}
+
+/** Tone for a resolved data verdict. Only "Live" reads as good. */
+function verdictColor(verdict: string): string {
+  switch (verdict) {
+    case "Live": return "bg-emerald-500/20 text-emerald-400";
+    case "Delayed": return "bg-amber-500/20 text-amber-400";
+    case "Stale": return "bg-rose-500/20 text-rose-400";
+    case "Historical only": return "bg-zinc-500/20 text-zinc-300";
+    default: return "bg-rose-500/20 text-rose-400";
   }
 }
 
@@ -74,20 +99,31 @@ function ageString(iso: string | null): string {
   return `${Math.round(ms / 3_600_000)}h ago`;
 }
 
+function msAge(ms: number | null): string {
+  if (ms == null || !Number.isFinite(ms) || ms < 0) return "unknown";
+  if (ms < 60_000) return `${Math.round(ms / 1000)}s`;
+  if (ms < 3_600_000) return `${Math.round(ms / 60_000)}m`;
+  return `${Math.round(ms / 3_600_000)}h`;
+}
+
+function Row({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex justify-between gap-2">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-mono">{value}</span>
+    </div>
+  );
+}
+
 export default function MarketHealthPage() {
   const [symbol, setSymbol] = useState("EURUSD");
   const [tf, setTf] = useState("M15");
-  const [h, setH] = useState<Health | null>(null);
   const [mds, setMds] = useState<MarketDataStatus | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
 
-  const loadHealth = useCallback(async () => {
-    try {
-      const r = await fetch(`/api/market/health?symbol=${symbol}&timeframe=${tf}`).then((x) => x.json());
-      setH(r);
-    } catch { /* keep last */ }
-  }, [symbol, tf]);
+  // The ONE honest feed source — the same hook the scanner and chart consume.
+  const { truth, feedStatus, isLoading, isError, refetch } = useScannerTruth(symbol, tf);
 
   const loadStatus = useCallback(async () => {
     try {
@@ -97,12 +133,6 @@ export default function MarketHealthPage() {
       setMds(j.status as MarketDataStatus);
     } catch { /* keep last */ }
   }, []);
-
-  useEffect(() => {
-    void loadHealth();
-    const id = setInterval(loadHealth, 5000);
-    return () => clearInterval(id);
-  }, [loadHealth]);
 
   useEffect(() => {
     void loadStatus();
@@ -126,6 +156,7 @@ export default function MarketHealthPage() {
         setRefreshMessage(`Refreshed — ${okCount} live probe(s) succeeded.`);
       }
       if (j.status) setMds(j.status as MarketDataStatus);
+      refetch();
     } catch (e) {
       setRefreshMessage(`Refresh error: ${(e as Error).message}`);
     } finally {
@@ -134,15 +165,17 @@ export default function MarketHealthPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-testid="page-market-health">
       <div className="flex items-center gap-3 flex-wrap">
         <Activity className="h-6 w-6 text-primary" />
         <div className="flex-1">
           <h1 className="text-2xl font-bold">Market Health</h1>
-          <p className="text-sm text-muted-foreground">Composite spread + volatility + session + news + data freshness.</p>
+          <p className="text-sm text-muted-foreground">
+            Live feed truth for one symbol — the same verdict the scanner and chart use.
+          </p>
         </div>
-        <Input value={symbol} onChange={(e) => setSymbol(e.target.value.toUpperCase())} className="w-32" />
-        <Input value={tf} onChange={(e) => setTf(e.target.value)} className="w-20" />
+        <Input value={symbol} onChange={(e) => setSymbol(e.target.value.toUpperCase())} className="w-32" aria-label="Symbol" />
+        <Input value={tf} onChange={(e) => setTf(e.target.value.toUpperCase())} className="w-20" aria-label="Timeframe" />
         <Button size="sm" variant="outline" onClick={onRefresh} disabled={refreshing} className="gap-1.5">
           <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
           {refreshing ? "Refreshing…" : "Refresh provider"}
@@ -203,53 +236,97 @@ export default function MarketHealthPage() {
         </CardContent>
       </Card>
 
-      {!h ? <p className="text-sm text-muted-foreground">Loading…</p> : (
-        <>
-          <Card><CardHeader><CardTitle className="text-base">{h.symbol} {h.timeframe}</CardTitle></CardHeader>
-            <CardContent className="flex flex-wrap gap-1">
-              {h.labels.map((l) => <Badge key={l} className={LABEL_COLOR[l] ?? ""}>{l}</Badge>)}
-            </CardContent></Card>
+      {isError && (
+        <Card className="border-rose-500/40">
+          <CardContent className="py-3 text-sm text-rose-300">
+            Feed truth could not be read for {symbol}. Nothing is shown rather than a guessed verdict.
+          </CardContent>
+        </Card>
+      )}
 
-          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-            <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Quote</CardTitle></CardHeader>
+      {isLoading && !truth && <p className="text-sm text-muted-foreground">Loading feed truth…</p>}
+
+      {truth && (
+        <>
+          <Card data-testid="card-feed-verdict">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex flex-wrap items-center gap-2">
+                <span>{truth.symbolDisplay} {truth.timeframe}</span>
+                <Badge className={verdictColor(truth.strip.data.verdict)} data-testid="badge-data-verdict">
+                  {truth.strip.data.verdict}
+                </Badge>
+                <FeedConfidenceBadge feedStatus={feedStatus} />
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-xs">
+              <p className="text-muted-foreground">{truth.strip.data.detail}</p>
+              <div className="flex flex-wrap gap-2">
+                <Badge variant="outline" className="text-[10px]">
+                  {truth.brokerFeedActive ? "Broker feed active" : "Not your broker's bars"}
+                </Badge>
+                <Badge variant="outline" className="text-[10px]">
+                  {truth.isLivePrice ? "Live price" : "No live price"}
+                </Badge>
+                <Badge variant="outline" className="text-[10px]">
+                  {truth.actionable ? "Valid for entry" : "Not valid for entry"}
+                </Badge>
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="grid gap-3 md:grid-cols-3">
+            <Card data-testid="card-quote-truth">
+              <CardHeader className="pb-2"><CardTitle className="text-sm">Quote</CardTitle></CardHeader>
               <CardContent className="text-xs space-y-1">
-                <div className="flex justify-between"><span className="text-muted-foreground">Provider</span><Badge variant="outline" className="text-[10px]">{h.quote.provider}</Badge></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Bid / Ask</span><span className="font-mono">{h.quote.bid} / {h.quote.ask}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Spread</span><span className="font-mono">{h.quote.spread}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Stale</span><span>{h.quote.isStale ? "yes" : "no"}</span></div>
-              </CardContent></Card>
-            <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Spread monitor</CardTitle></CardHeader>
+                <Row label="Source" value={truth.quote.sourceLabel} />
+                <Row label="Bid / Ask" value={`${truth.quote.bid ?? "—"} / ${truth.quote.ask ?? "—"}`} />
+                <Row label="Age" value={msAge(truth.quote.ageMs)} />
+                <Row label="Status" value={truth.quote.status} />
+                <p className="text-muted-foreground">{truth.quote.reason}</p>
+              </CardContent>
+            </Card>
+
+            <Card data-testid="card-candle-truth">
+              <CardHeader className="pb-2"><CardTitle className="text-sm">Candles</CardTitle></CardHeader>
               <CardContent className="text-xs space-y-1">
-                <div className="flex justify-between"><span className="text-muted-foreground">bps</span><span className="font-mono">{h.spread.spreadBps}</span></div>
-                <Badge className={h.spread.label === "SPREAD_ACCEPTABLE" ? "bg-emerald-500/20 text-emerald-400" : "bg-rose-500/20 text-rose-400"}>{h.spread.label}</Badge>
-              </CardContent></Card>
-            <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Volatility</CardTitle></CardHeader>
+                <Row label="Source" value={truth.candles.sourceLabel} />
+                <Row label="Bars" value={`${truth.candles.count} / ${truth.candles.requestedCount}`} />
+                <Row label="Min required" value={truth.candles.minRequired} />
+                <Row label="Newest age" value={msAge(truth.candles.ageMs)} />
+                <Row label="Status" value={truth.candles.status} />
+                <p className="text-muted-foreground">{truth.candles.reason}</p>
+              </CardContent>
+            </Card>
+
+            <Card data-testid="card-consistency-truth">
+              <CardHeader className="pb-2"><CardTitle className="text-sm">Quote vs candle</CardTitle></CardHeader>
               <CardContent className="text-xs space-y-1">
-                <div className="flex justify-between"><span className="text-muted-foreground">ATR</span><span className="font-mono">{h.volatility.atr}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Ratio</span><span className="font-mono">{h.volatility.ratio}</span></div>
-                <Badge variant="outline">{h.volatility.label}</Badge>
-              </CardContent></Card>
-            <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Session</CardTitle></CardHeader>
-              <CardContent className="text-xs space-y-1">
-                <Badge variant="outline">{h.session.sessionLabel}</Badge>
-                <p className="text-muted-foreground">{h.session.activeSessions.join(", ") || "none"}</p>
-              </CardContent></Card>
+                <Row
+                  label="Price delta"
+                  value={truth.consistency.quoteCandlePriceDelta ?? "—"}
+                />
+                <Row
+                  label="Delta %"
+                  value={
+                    truth.consistency.quoteCandlePriceDeltaPct != null
+                      ? `${truth.consistency.quoteCandlePriceDeltaPct.toFixed(3)}%`
+                      : "—"
+                  }
+                />
+                <Row label="Status" value={truth.consistency.status} />
+                <p className="text-muted-foreground">{truth.consistency.reason}</p>
+              </CardContent>
+            </Card>
           </div>
 
-          <Card><CardHeader className="pb-2"><CardTitle className="text-sm">News risk</CardTitle></CardHeader>
-            <CardContent className="text-xs space-y-2">
-              {h.news.blocking && <Badge className="bg-rose-500/20 text-rose-400">Blocked — {humanizeReason(h.news.blockReason)}</Badge>}
-              {h.news.events.length === 0
-                ? <p className="text-muted-foreground">No upcoming events.</p>
-                : <ul className="space-y-1">{h.news.events.map((e, i) => (
-                    <li key={i} className="flex justify-between border-b py-1">
-                      <span>{e.event.eventName}</span>
-                      <Badge variant="outline" className="text-[10px]">{e.event.impact}</Badge>
-                      <span className="text-muted-foreground">{Math.round(e.minutesUntil)}m</span>
-                    </li>))}</ul>}
-            </CardContent></Card>
-
-          {!h.mt5BridgeConnected && <Badge className="bg-purple-500/20 text-purple-400">MT5 bridge deferred — quotes are not broker-executable</Badge>}
+          <Card>
+            <CardContent className="py-3 text-xs text-muted-foreground">
+              Spread, volatility and session panels were removed with the simulator that fed
+              them — the live router exposes no equivalent, and invented numbers are worse
+              than none. News risk has its own page on the real economic-calendar pipeline:{" "}
+              <Link href="/news-risk" className="underline">News Risk</Link>.
+            </CardContent>
+          </Card>
         </>
       )}
     </div>
