@@ -151,7 +151,10 @@ router.post("/admin/beta/invites/:id/pause", async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) { res.status(400).json({ error: "INVALID_ID" }); return; }
   const row = await pauseInvite(id);
-  if (!row) { res.status(404).json({ error: "NOT_FOUND" }); return; }
+  // Only an ACCEPTED invite may be paused (see pauseInvite). A bare NOT_FOUND
+  // would hide that the row exists but is REVOKED/EXPIRED/PENDING, which is the
+  // exact case an admin needs to see.
+  if (!row) { res.status(404).json({ error: "NOT_FOUND_OR_NOT_ACCEPTED" }); return; }
   await safeAudit(req, "beta_invite_paused", { inviteId: id, adminId: admin.id });
   res.json({ invite: toPublicInvite(row) });
 });

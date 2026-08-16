@@ -11,6 +11,7 @@ import { checkLiveTradingReadinessLock } from "./check-live-trading-readiness-lo
 import { checkEmergencyKillSwitch } from "./check-emergency-kill-switch.js";
 import { checkLiveOrderRiskLimits } from "./check-live-order-risk-limits.js";
 import { checkSecurityRoleHeader } from "./check-security-role-header.js";
+import { checkNoCommittedPepper } from "./check-no-committed-pepper.js";
 import { checkLiveBrokerExecutionDefaults } from "./check-live-broker-execution-defaults.js";
 import { checkMasterLiveBridgeBinding } from "./check-master-live-bridge-binding.js";
 import { checkMasterLiveUserApprovalRequired } from "./check-master-live-user-access.js";
@@ -78,6 +79,7 @@ const checks: Array<() => CheckResult> = [
   checkEmergencyKillSwitch,
   checkLiveOrderRiskLimits,
   checkSecurityRoleHeader,
+  checkNoCommittedPepper,
   checkLiveBrokerExecutionDefaults,
   checkMasterLiveBridgeBinding,
   checkMasterLiveUserApprovalRequired,
