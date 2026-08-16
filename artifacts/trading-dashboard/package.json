@@ -33,6 +33,7 @@
     "test:chart-stream-watchdog": "vitest run src/components/charts/useTickStreamWatchdog.test.ts",
     "test:chart-stall-badge": "vitest run src/components/charts/ARXNativeChart.stall-badge.test.tsx",
     "test:chart-trendline-overlay-render": "vitest run src/components/charts/ARXNativeChart.trendline-overlay.test.tsx",
+    "test:scalp-ticket-fidelity": "vitest run src/components/scanner/scalpTicketFidelity.test.ts",
     "test:chart-structure-lines": "vitest run src/lib/chart-engine/structureLines.test.ts",
     "test:live-account-snapshot": "vitest run src/hooks/useLiveAccountSnapshot.test.ts",
     "test:live-bridge-refresh": "vitest run src/hooks/useLiveBridgeRefresh.test.ts",

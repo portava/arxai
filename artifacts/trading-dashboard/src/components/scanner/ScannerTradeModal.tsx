@@ -21,6 +21,14 @@ import { NewsRiskCheckPanel } from "@/components/trading/NewsRiskCheckPanel";
 import { useAssistantName } from "@/lib/assistant-name";
 import { Zap } from "lucide-react";
 
+/**
+ * Conservative fallback lot, used ONLY when the producing engine supplied no
+ * size — i.e. it deliberately refused to compute one. It is never a substitute
+ * for a real computed lot; seeding the ticket unconditionally with it is what
+ * made the executed size diverge from the displayed one (Theme D1).
+ */
+const DEFAULT_LOT = 0.02;
+
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground pt-1">
@@ -109,7 +117,11 @@ export function ScannerTradeModal({
 }) {
   const { name } = useAssistantName();
   const [orderType, setOrderType] = useState<OrderType>(defaultSide === "BUY" ? "BUY_MARKET" : "SELL_MARKET");
-  const [lotSize, setLotSize] = useState<number>(0.02);
+  // Seed from the engine's computed risk-based lot so the executed size equals
+  // the displayed one. DEFAULT_LOT is only a fallback for when the engine
+  // refused to size (null) — it must never override a real computed lot
+  // (Theme D1).
+  const [lotSize, setLotSize] = useState<number>(signal.suggestedLot ?? DEFAULT_LOT);
   const [currentPrice, setCurrentPrice] = useState<string>(signal.entry != null ? String(signal.entry) : "");
   const [entryPrice, setEntryPrice] = useState<string>(signal.entry != null ? String(signal.entry) : "");
   const [stopTriggerPrice, setStopTriggerPrice] = useState<string>("");
@@ -249,7 +261,7 @@ export function ScannerTradeModal({
   useEffect(() => {
     if (!open) return;
     setOrderType(defaultSide === "BUY" ? "BUY_MARKET" : "SELL_MARKET");
-    setLotSize(0.02);
+    setLotSize(signal.suggestedLot ?? DEFAULT_LOT);
     setCurrentPrice(signal.entry != null ? String(signal.entry) : "");
     setEntryPrice(signal.entry != null ? String(signal.entry) : "");
     setStopTriggerPrice("");

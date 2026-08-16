@@ -98,14 +98,54 @@ const LOT_STEP = 0.01;
 // FX standard lot ONLY when BOTH halves of the symbol are real ISO-4217 fiat
 // codes. Anything else still refuses to size (honest NO_CONTRACT_SPEC block)
 // rather than inventing a number.
-async function valuePerUnitPerLotFor(userId: number | null, symbol: string): Promise<number | null> {
+//
+// D2 — the value must be contractSize × QUOTE→ACCOUNT FX, not contractSize
+// alone. computeRiskAwareLot divides an account-currency risk budget by
+// `stopDistance × valuePerUnitPerLot`; the stop distance is measured in QUOTE
+// currency, so without the conversion the two sides of that division are in
+// different units and every non-account-quote pair is mis-sized. (USDJPY on a
+// USD account: the factor is 1/price, so the omission made riskPerLot ~150×
+// too large and the lot ~150× too small.)
+//
+// This is the entry-side analogue of the P0-2 close-side bug and deliberately
+// reuses the SAME helper that fix introduced, so the two sides cannot drift.
+// The header above always claimed "contractSize × quote-conv"; the conversion
+// was documented but never applied.
+type EntryValuePerLot =
+  | { ok: true; value: number }
+  | { ok: false; blockReason: "NO_CONTRACT_SPEC" | "NO_QUOTE_FX" };
+
+async function valuePerUnitPerLotFor(
+  userId: number | null,
+  symbol: string,
+  entryPrice: number,
+): Promise<EntryValuePerLot> {
   if (userId == null) {
-    // No user context → no broker spec to consult. Fall back to the strict
-    // classifier only, never the loose one.
-    return isForexPair(symbol) ? FX_STANDARD_LOT_UNITS : null;
+    // No user context → no broker spec and no account currency to consult.
+    // Fall back to the strict classifier only, never the loose one. A fiat pair
+    // sized here is assumed account-quoted; anything else refuses.
+    return isForexPair(symbol)
+      ? { ok: true, value: FX_STANDARD_LOT_UNITS }
+      : { ok: false, blockReason: "NO_CONTRACT_SPEC" };
   }
+
   const sizing = await resolveContractSize(userId, symbol);
-  return sizing.contractSize;
+  if (sizing.contractSize == null) return { ok: false, blockReason: "NO_CONTRACT_SPEC" };
+
+  const accountCurrency = await getAccountCurrency(userId);
+  const fx = resolveQuoteToAccountFx({
+    symbol,
+    profitCurrency: sizing.profitCurrency,
+    accountCurrency,
+    // The entry price plays the role the close price plays on the realized
+    // side: it is the rate at which an INVERSE_QUOTE factor is 1/price.
+    closePrice: entryPrice,
+  });
+  // Honest refusal. Falling back to a factor of 1 would silently assume the
+  // quote currency IS the account currency — exactly the mis-sizing being fixed.
+  if (fx.factor == null) return { ok: false, blockReason: "NO_QUOTE_FX" };
+
+  return { ok: true, value: sizing.contractSize * fx.factor };
 }
 
 function entryPriceFromThesis(thesis: { entryZone: { from: number; to: number } | null }): number | null {
@@ -267,10 +307,11 @@ export async function executeAgentDecision(
     return { status: "BLOCKED", blockReason: "NO_ENTRY_PRICE", action: "BLOCK" };
   }
 
-  const valuePerUnitPerLot = await valuePerUnitPerLotFor(executingUserId, decision.symbol);
-  if (valuePerUnitPerLot == null) {
-    return { status: "BLOCKED", blockReason: "NO_CONTRACT_SPEC", action: "BLOCK" };
+  const valuePerLot = await valuePerUnitPerLotFor(executingUserId, decision.symbol, entryPrice);
+  if (!valuePerLot.ok) {
+    return { status: "BLOCKED", blockReason: valuePerLot.blockReason, action: "BLOCK" };
   }
+  const valuePerUnitPerLot = valuePerLot.value;
 
   const availableFunds = input.ledger?.availableFunds ?? 0;
   const riskBudgetUsd = (availableFunds * settings.riskPerTradePct) / 100;
