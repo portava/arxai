@@ -85,6 +85,7 @@
     "test:testing-lab-smoke": "node --import tsx --test --test-force-exit src/routes/__qa__/testingLabMissionSmoke.test.ts",
     "test:gold": "node --import tsx --test-isolation=none --test --test-force-exit src/lib/__qa__/goldStrategyMode.test.ts",
     "test:honest-confidence": "node --import tsx --test --test-force-exit src/lib/__qa__/honestConfidence.test.ts",
+    "test:source-unification": "node --import tsx --test --test-force-exit src/lib/__qa__/sourceUnification.test.ts",
     "test:market-heat-geography": "node --import tsx --test --test-force-exit src/lib/heat/__qa__/symbolGeography.test.ts",
     "test:market-heat-verdict": "node --import tsx --test --test-force-exit src/lib/heat/__qa__/heatVerdict.test.ts",
     "test:market-heat-news-honesty": "node --import tsx --test --test-force-exit src/lib/heat/__qa__/newsHonestyResolver.test.ts",
