@@ -7,7 +7,7 @@
 // Order placement is unaffected: this only ranks candidates for the assistant.
 
 import { getMarketProvider, getMarketStatus, type Candle } from "./marketProvider.js";
-import { routeCandles } from "../data/marketDataRouter.js";
+import { routeCandles, routeQuote } from "../data/marketDataRouter.js";
 import type { Candle as RouterCandle } from "../data/types.js";
 
 const LIVE_TIMEFRAMES = ["M15", "H1"] as const;
@@ -293,7 +293,10 @@ export async function scoreLiveCandidates(symbols: readonly string[], limit = 10
         }
         const cr = { candles: routed.candles.map(toScannerCandle) };
         withData++;
-        const q = await p.getLiveQuote(sym).catch(() => null);
+        const rq = await routeQuote(sym).catch(() => null);
+        const q = rq?.ok && rq.quote
+          ? { price: rq.quote.last ?? null, bid: rq.quote.bid ?? null, ask: rq.quote.ask ?? null }
+          : null;
         const scored = scoreCandles(sym, tf, cr.candles, {
           bid: q?.bid ?? null,
           ask: q?.ask ?? null,
