@@ -151,3 +151,30 @@ describe("E1 — rotation actually changes the hashes", () => {
     assert.notEqual(peppered, plain);
   });
 });
+
+describe("E1 — legacy invite issuance refuses without the pepper", () => {
+  // validateInviteForRegistration / acceptInviteTx already refuse every code
+  // with PEPPER_MISSING when the pepper is absent, so issuing a legacy invite
+  // in that state would hand out a credential that can never be redeemed.
+  // Pin that POST /admin/beta/invites checks the pepper BEFORE createInvite,
+  // mirroring the registration-key generator's 503 refusal.
+  it("the /admin/beta/invites handler gates on isRegistrationKeyPepperConfigured before createInvite", () => {
+    const src = readFileSync(
+      resolve(ROOT, "artifacts/api-server/src/routes/adminBetaControl.ts"),
+      "utf8",
+    );
+    const handlerStart = src.indexOf('router.post("/admin/beta/invites"');
+    assert.ok(handlerStart >= 0, "legacy invite creation route must exist");
+    const issueCall = src.indexOf("await createInvite(", handlerStart);
+    assert.ok(issueCall > handlerStart, "handler must call createInvite");
+    const handlerBody = src.slice(handlerStart, issueCall);
+    assert.ok(
+      handlerBody.includes("isRegistrationKeyPepperConfigured()"),
+      "pepper check must run before createInvite in the legacy invite route",
+    );
+    assert.ok(
+      handlerBody.includes('"PEPPER_MISSING"'),
+      "the refusal must surface the explicit PEPPER_MISSING error",
+    );
+  });
+});

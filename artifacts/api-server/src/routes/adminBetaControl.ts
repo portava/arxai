@@ -122,6 +122,17 @@ router.post("/admin/beta/invites", async (req, res) => {
   if (!["DEMO_TESTER", "PERSONAL_MT5", "SHARED_MASTER_REVIEW"].includes(accountMode)) {
     res.status(400).json({ error: "INVALID_ACCOUNT_MODE" }); return;
   }
+  // Fail closed BEFORE issuing: validation (validateInviteForRegistration /
+  // acceptInviteTx) refuses every code with PEPPER_MISSING when the pepper is
+  // absent, so issuing here would hand out a credential that can never be
+  // redeemed. Mirror the registration-key generator's refusal instead.
+  if (!isRegistrationKeyPepperConfigured()) {
+    res.status(503).json({
+      error: "PEPPER_MISSING",
+      message: "REGISTRATION_KEY_PEPPER is not configured. Set this environment variable to enable invite creation.",
+    });
+    return;
+  }
   const result = await createInvite({ email, accountMode, invitedByUserId: admin.id, notes });
   if (!result.ok) {
     await safeAudit(req, "beta_invite_blocked", { email, reason: result.error, activeCount: result.activeCount, adminId: admin.id });
