@@ -52,7 +52,9 @@ export async function generateSelfReview(
         entry: trade.entryPrice,
         stopLoss: trade.stopLoss,
         takeProfit: trade.takeProfit,
-        exit: trade.status === "CLOSED_WIN" ? trade.takeProfit : trade.stopLoss,
+        // No `exit` is passed: this used to assume a winner closed at TP and a
+        // loser at SL. The trades table has no close-price column, so the exit
+        // was pure invention — and the analyzer never read it (Theme A3).
         profitLoss: trade.pnl,
         session: row.session ?? undefined,
         newsRisk: row.newsNearby ? "high" : "none",
