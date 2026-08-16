@@ -676,8 +676,18 @@ export function ScannerTradeModal({
                 <div className="flex justify-between"><span className="text-txt-secondary">Estimated risk (price units)</span><span className="font-mono">{validation.riskPx != null ? validation.riskPx.toFixed(5) : "—"}</span></div>
                 <div className="flex justify-between"><span className="text-txt-secondary">Estimated reward (price units)</span><span className="font-mono">{validation.rewardPx != null ? validation.rewardPx.toFixed(5) : "—"}</span></div>
                 <div className="flex justify-between"><span className="text-txt-secondary">Risk / Reward</span><span className="font-mono">{validation.rr != null ? validation.rr.toFixed(2) : "—"}</span></div>
+                {/* Theme B — this is a hand-weighted heuristic sum, not a
+                    calibrated probability. It is NOT rendered with a "%": an
+                    "82%" reads as "82 out of 100 of these work out", which is a
+                    claim nothing here has measured. Shown as a bounded score
+                    with its scale stated instead. */}
                 {signal.confidenceScore != null && (
-                  <div className="flex justify-between pt-1 border-t border-border"><span className="text-txt-secondary">Scanner confidence</span><span className="font-mono">{Math.round(signal.confidenceScore)}%</span></div>
+                  <div className="flex justify-between pt-1 border-t border-border">
+                    <span className="text-txt-secondary" title="Hand-weighted signal strength, not a calibrated win probability.">
+                      Scanner signal strength
+                    </span>
+                    <span className="font-mono">{Math.round(signal.confidenceScore)} / 100</span>
+                  </div>
                 )}
               </div>
 
