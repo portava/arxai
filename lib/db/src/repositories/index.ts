@@ -6,7 +6,6 @@ export { tradePlansRepo } from "./tradePlansRepo";
 export { aiDecisionLogRepo } from "./aiDecisionLogRepo";
 export { tradeManagementRepo } from "./tradeManagementRepo";
 export { learningInsightsRepo } from "./learningInsightsRepo";
-export { entrySniperRepo } from "./entrySniperRepo";
 export { userSettingsRepo } from "./userSettingsRepo";
 export * as betaInvitesRepo from "./betaInvites";
 export * as joinRequestsRepo from "./joinRequests";

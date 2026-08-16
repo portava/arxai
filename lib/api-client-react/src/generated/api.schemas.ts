@@ -15807,10 +15807,6 @@ export type GetEconomicCalendarParams = {
   days?: number;
 };
 
-export type GetNewsRiskParams = {
-  symbol: string;
-};
-
 export type GetLiveCalendarEventsParams = {
   /**
    * Optional ARX symbol to scope the window (e.g. EURUSD). When omitted all events are returned.
@@ -17803,75 +17799,7 @@ export type GetMarketHeat401 = {
   error: string;
 };
 
-export type GetMarketHeatCountriesParams = {
-  timeframe?: GetMarketHeatCountriesTimeframe;
-  /**
-   * Restrict the heat universe to markets active in this trading session.
-   */
-  session?: GetMarketHeatCountriesSession;
-  /**
-   * Comma-separated ARX symbols to restrict the heat universe to.
-   */
-  symbols?: string;
-  /**
-   * Comma-separated country keys to restrict the returned country verdicts to.
-   */
-  countries?: string;
-};
-
-export type GetMarketHeatCountriesTimeframe =
-  (typeof GetMarketHeatCountriesTimeframe)[keyof typeof GetMarketHeatCountriesTimeframe];
-
-export const GetMarketHeatCountriesTimeframe = {
-  M1: "M1",
-  M5: "M5",
-  M15: "M15",
-  M30: "M30",
-  H1: "H1",
-  H4: "H4",
-  D1: "D1",
-} as const;
-
-export type GetMarketHeatCountriesSession =
-  (typeof GetMarketHeatCountriesSession)[keyof typeof GetMarketHeatCountriesSession];
-
-export const GetMarketHeatCountriesSession = {
-  sydney: "sydney",
-  tokyo: "tokyo",
-  london: "london",
-  newyork: "newyork",
-} as const;
-
-export type GetMarketHeatCountries401 = {
-  error: string;
-};
-
 export type GetMarketHeatDiagnostics401 = {
-  error: string;
-};
-
-export type GetMarketHeatSymbolParams = {
-  timeframe?: GetMarketHeatSymbolTimeframe;
-};
-
-export type GetMarketHeatSymbolTimeframe =
-  (typeof GetMarketHeatSymbolTimeframe)[keyof typeof GetMarketHeatSymbolTimeframe];
-
-export const GetMarketHeatSymbolTimeframe = {
-  M1: "M1",
-  M5: "M5",
-  M15: "M15",
-  M30: "M30",
-  H1: "H1",
-  H4: "H4",
-  D1: "D1",
-} as const;
-
-export type GetMarketHeatSymbol400 = {
-  error: string;
-};
-
-export type GetMarketHeatSymbol401 = {
   error: string;
 };
 

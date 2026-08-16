@@ -19,7 +19,6 @@ export * from "./symbols";
 export * from "./tradePlans";
 export * from "./tradeManagementEvents";
 export * from "./learningInsights";
-export * from "./entrySniperResults";
 export * from "./mt5Connection";
 export * from "./aiDecisionLog";
 

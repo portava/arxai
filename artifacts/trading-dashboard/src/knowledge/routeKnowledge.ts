@@ -88,8 +88,14 @@ export const ROUTE_KNOWLEDGE: RouteKnowledge[] = [
   { route: "/market-replay", title: "Market Replay", purpose: "Bar-by-bar replay of recorded sessions." },
   { route: "/shadow-mode", title: "Shadow Mode", purpose: "Strategy runs and journals what it WOULD do — no orders sent.", related: ["/shadow-journal"] },
   { route: "/shadow-journal", title: "Shadow Journal", purpose: "Journal of shadow-mode hypothetical trades." },
-  { route: "/backtest", title: "Backtest", purpose: "Upload candle CSV, run a backtest, see equity curve." },
-  { route: "/testing-lab", title: "Testing Lab", purpose: "Unified workspace to backtest, forward-test, compare historical vs live results, and review strategy history.", related: ["/shadow-mode", "/backtest"] },
+  // /backtest is a redirect to Testing Lab, kept only so existing links and
+  // bookmarks resolve. Its old description ("Upload candle CSV, run a
+  // backtest") advertised a page that no longer exists — and that page was
+  // itself the fabrication being removed: it read the uploaded CSV into state,
+  // ignored it, and submitted Math.random() candles instead. Describing it
+  // accurately keeps the assistant from sending anyone to upload a CSV.
+  { route: "/backtest", title: "Backtest (moved)", purpose: "Redirects to Testing Lab, which owns backtesting.", related: ["/testing-lab"] },
+  { route: "/testing-lab", title: "Testing Lab", purpose: "Unified workspace to backtest, forward-test, compare historical vs live results, and review strategy history.", related: ["/shadow-mode"] },
 
   // ── Strategy ───────────────────────────────────────────────────────────
   { route: "/strategy-settings", title: "Strategy Settings", purpose: "Toggle the 5 modular strategies and their parameters." },

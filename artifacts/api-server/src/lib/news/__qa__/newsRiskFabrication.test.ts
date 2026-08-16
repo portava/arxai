@@ -133,13 +133,20 @@ describe("A1 — no provider configured yields an honest unavailable read", () =
 });
 
 describe("A1 — consuming surfaces route through the resolver", () => {
-  it("GET /news/risk does not call scoreNewsRisk with a bare symbol", () => {
+  it("legacy GET /news/risk stays deleted rather than fabricating (Theme G-CUT)", () => {
+    // Theme A first made this route honest via resolveNewsRiskForSymbol; Theme
+    // G-CUT then removed it outright (zero consumers — nothing calls
+    // getNewsRisk). Either state is honest; a mock-fed scoreNewsRisk route is
+    // not. Pin the current end-state: route gone, no bare-symbol scoring.
     const src = read("routes/news.ts");
     assert.ok(
-      !/scoreNewsRisk\(\s*q\.symbol\s*\)/.test(src),
-      "routes/news.ts must resolve real events, not rely on a fabricated default",
+      !/router\.get\(\s*["']\/news\/risk["']/.test(src),
+      "the legacy /news/risk route must stay deleted (Theme G-CUT)",
     );
-    assert.ok(/resolveNewsRiskForSymbol/.test(src), "routes/news.ts must use the resolver");
+    assert.ok(
+      !/scoreNewsRisk\(\s*q\.symbol\s*\)/.test(src),
+      "routes/news.ts must never score risk from a fabricated default",
+    );
   });
 
   it("the watchlist badge does not call scoreNewsRisk with a bare symbol", () => {

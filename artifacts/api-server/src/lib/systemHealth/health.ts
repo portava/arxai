@@ -19,6 +19,7 @@ import { desc, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { auditEvent } from "./audit.js";
 import { patchConfig, getConfig } from "./config.js";
+import { marketDataHealthCheck } from "../marketData/marketDataService.js";
 
 export type SubsystemBuild = "AA"|"BB"|"CC"|"DD"|"EE"|"FF"|"GG"|"HH"|"II"|"JJ"|"KK"|"LL";
 export type SubsystemStatus = "OK" | "DEGRADED" | "UNAVAILABLE" | "UNSAFE";
@@ -162,12 +163,34 @@ async function probeCC(): Promise<SubsystemReport> {
   return { status: "DEGRADED", notes: ["learning endpoints/tables not reachable"] };
 }
 async function probeDD(): Promise<SubsystemReport> {
-  const r = await probeEndpoint("/api/market-data/health");
-  if (r.ok) return { status: "OK", notes: ["market data health ok — read-only"], paperOnly: true, liveTradingAllowed: false };
-  const r2 = await probeEndpoint("/api/data/symbols");
-  return r2.ok
-    ? { status: "OK", notes: ["market data symbols reachable — read-only"], paperOnly: true, liveTradingAllowed: false }
-    : { status: "DEGRADED", notes: ["market data endpoints not reachable"] };
+  // Calls the market-data service DIRECTLY rather than probing an HTTP
+  // endpoint. This used to hit /api/market-data/health with a fallback to
+  // /api/data/symbols; the former was deleted with the unconsumed Build-DD
+  // route layer and the latter never existed, so an HTTP probe here would have
+  // reported the subsystem DEGRADED while it was in fact healthy.
+  //
+  // In-process is also strictly better than what it replaced: same service, no
+  // network hop, no 2.5s timeout, and no dependency on the probe being able to
+  // reach an unauthenticated endpoint.
+  try {
+    const health = await marketDataHealthCheck();
+    const notes = [
+      `market data active provider: ${health.active.name} (${health.active.source}) — read-only`,
+    ];
+    // Honest degradation: serving from the synthetic fallback is NOT full
+    // health, and must not be reported as OK.
+    if (!health.realProvider.ok) {
+      return {
+        status: "DEGRADED",
+        notes: [...notes, `real provider unavailable: ${health.realProvider.detail}`],
+        paperOnly: true,
+        liveTradingAllowed: false,
+      };
+    }
+    return { status: "OK", notes, paperOnly: true, liveTradingAllowed: false };
+  } catch (err) {
+    return { status: "DEGRADED", notes: [`market data health check failed: ${String(err).slice(0, 120)}`] };
+  }
 }
 async function probeEE(): Promise<SubsystemReport> {
   const r = await probeEndpoint("/api/paper-execution/status");

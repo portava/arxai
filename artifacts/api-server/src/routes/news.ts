@@ -1,11 +1,17 @@
 import { Router } from "express";
-import { GetEconomicCalendarQueryParams, GetNewsRiskQueryParams } from "@workspace/api-zod";
+import { GetEconomicCalendarQueryParams } from "@workspace/api-zod";
 import { getEconomicCalendarResult } from "../lib/news/calendar/economicCalendarService.js";
 import { toMockShapeEvents } from "../lib/news/calendar/calendarAdapters.js";
-import { resolveNewsRiskForSymbol } from "../lib/news/calendar/newsRiskResolver.js";
 
 const router = Router();
 
+// NOTE (Theme G-CUT): the sweep listed BOTH legacy /news routes as "no frontend
+// consumer". That is true of /news/risk, which is deleted here — but NOT of
+// /news/calendar, which backs two live surfaces via useGetEconomicCalendar:
+// the Economic Calendar page (pages/calendar.tsx) and the cockpit's critical
+// events card (CockpitCards.tsx). Theme H5 also names the Economic Calendar as
+// the calendar surface to KEEP, so cutting this route would have broken the
+// very page the consolidation preserves. It stays.
 router.get("/news/calendar", async (req, res) => {
   try {
     const q = GetEconomicCalendarQueryParams.parse({
@@ -27,18 +33,6 @@ router.get("/news/calendar", async (req, res) => {
   } catch (err) {
     req.log.error(err);
     res.status(400).json({ error: "Invalid calendar request" });
-  }
-});
-
-router.get("/news/risk", async (req, res) => {
-  try {
-    const q = GetNewsRiskQueryParams.parse({ symbol: req.query["symbol"] });
-    // Real events or an honest unavailable read — never a verdict from invented
-    // events (Theme A1).
-    res.json(await resolveNewsRiskForSymbol(q.symbol));
-  } catch (err) {
-    req.log.error(err);
-    res.status(400).json({ error: "Invalid news risk request" });
   }
 });
 
