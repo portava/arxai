@@ -130,6 +130,8 @@
     "test:chart-candle-shape": "node --import tsx --test src/lib/data/chart/__qa__/candleResponseShape.test.ts",
     "test:session-profile": "node --import tsx --test --test-force-exit src/lib/data/chart/__qa__/sessionProfile.test.ts",
     "test:session-aware-chart-feed": "node --import tsx --test --test-force-exit src/lib/data/chart/__qa__/sessionAwareChartFeed.test.ts",
+    "test:forming-tip-source-gate": "node --import tsx --test --test-force-exit src/lib/data/chart/__qa__/formingTipSourceGate.test.ts",
+    "test:deriv-forming-bridge": "node --import tsx --test --test-force-exit src/lib/data/chart/__qa__/derivFormingBridge.test.ts",
     "test:forming-bar": "node --import tsx --test --test-force-exit src/lib/data/chart/__qa__/formingBar.test.ts",
     "test:forming-tick-latency": "node --import tsx --test --test-force-exit src/lib/data/chart/__qa__/formingTickStreamLatency.test.ts",
     "test:timing-heat": "node --import tsx --test src/brain/timing/__qa__/heatEngine.test.ts",

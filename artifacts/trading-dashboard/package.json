@@ -30,6 +30,8 @@
     "test:scanner-feed-badge": "vitest run src/components/scanner/ScannerChartFeedBadge.test.tsx",
     "test:news-risk-honesty": "vitest run src/components/news/NewsRiskCard.honesty.test.tsx",
     "test:chart-tick-stream": "vitest run src/components/charts/ARXNativeChart.tick-stream.test.tsx",
+    "test:chart-stream-watchdog": "vitest run src/components/charts/useTickStreamWatchdog.test.ts",
+    "test:chart-stall-badge": "vitest run src/components/charts/ARXNativeChart.stall-badge.test.tsx",
     "test:chart-trendline-overlay-render": "vitest run src/components/charts/ARXNativeChart.trendline-overlay.test.tsx",
     "test:chart-structure-lines": "vitest run src/lib/chart-engine/structureLines.test.ts",
     "test:live-account-snapshot": "vitest run src/hooks/useLiveAccountSnapshot.test.ts",
