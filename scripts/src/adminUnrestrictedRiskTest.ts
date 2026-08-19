@@ -50,14 +50,13 @@ function record(name: string, ok: boolean, detail: string): void {
   console.log(`${ok ? "PASS" : "FAIL"}  ${name}  ${detail}`);
 }
 
-async function ensureTemplate(name: string, createdBy: number): Promise<number> {
+async function ensureTemplate(name: string): Promise<number> {
   const existing = await db.select({ id: riskTemplatesTable.id })
     .from(riskTemplatesTable).where(eq(riskTemplatesTable.name, name)).limit(1);
   if (existing[0]) return existing[0].id;
   const ins = await db.insert(riskTemplatesTable).values({
     name,
     description: "auto-created by adminUnrestrictedRiskTest",
-    createdBy,
   } as typeof riskTemplatesTable.$inferInsert).returning({ id: riskTemplatesTable.id });
   return ins[0].id;
 }
@@ -135,8 +134,8 @@ async function main(): Promise<void> {
   const ownerId = await ensureUser("OWNER", "owner");
   const adminId = await ensureUser("ADMIN", "admin");
   const userId  = await ensureUser("USER",  "user");
-  const sharedTplId = await ensureTemplate(RISK_PROFILE_NAMES.APPROVED_SHARED_BRIDGE_DEFAULT, ownerId);
-  const unrestrictedTplId = await ensureTemplate(RISK_PROFILE_NAMES.OWNER_UNRESTRICTED_LIVE, ownerId);
+  const sharedTplId = await ensureTemplate(RISK_PROFILE_NAMES.APPROVED_SHARED_BRIDGE_DEFAULT);
+  const unrestrictedTplId = await ensureTemplate(RISK_PROFILE_NAMES.OWNER_UNRESTRICTED_LIVE);
 
   // ── Case 1: OWNER role, no template → auto unrestricted.
   await clearAccess(ownerId);
