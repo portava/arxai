@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { PageShell, SectionHeader } from "@/components/ss/PageShell";
 import { StatusPill } from "@/components/ss/StatusPill";
 import { LoadingState, EmptyState, BlockedState, ErrorState } from "@/components/ss/States";
+import { AdminDiagnosticsGate } from "@/components/admin/AdminDiagnosticsGate";
 
 type Snapshot = {
   connector_id: string; provider: string; mode: string; connected: boolean;
@@ -15,7 +16,7 @@ type Snapshot = {
   dataQuality: { status: string; latencyMs: number; warnings: string[]; errors: string[] };
 };
 
-export default function BrokerReadOnlyPage() {
+function BrokerReadOnlyContent() {
   const [snap, setSnap] = useState<Snapshot | null>(null);
   const [safety, setSafety] = useState<{ safe: boolean; brokerModeEnv: string; reason: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -25,7 +26,9 @@ export default function BrokerReadOnlyPage() {
   async function loadStatus() {
     setLoading(true); setErr("");
     try {
-      const r = await fetch("/api/broker-readonly/status").then(r => r.json());
+      const response = await fetch("/api/broker-readonly/status", { credentials: "include" });
+      if (!response.ok) throw new Error(response.status === 401 ? "Sign in required." : "Status unavailable.");
+      const r = await response.json();
       setSafety(r.status?.safety ?? null);
     } catch (e) { setErr(`Failed to load broker status: ${String(e)}`); }
     finally { setLoading(false); }
@@ -33,7 +36,9 @@ export default function BrokerReadOnlyPage() {
   async function runDemo() {
     setBusy(true); setErr("");
     try {
-      const r = await fetch("/api/broker-readonly/demo", { method: "POST" }).then(r => r.json());
+      const response = await fetch("/api/broker-readonly/demo", { method: "POST", credentials: "include" });
+      if (!response.ok) throw new Error(response.status === 401 ? "Sign in required." : "Snapshot unavailable.");
+      const r = await response.json();
       setSnap(r.snapshot ?? null);
     } catch (e) { setErr(`Demo snapshot failed: ${String(e)}`); }
     finally { setBusy(false); }
@@ -156,5 +161,16 @@ export default function BrokerReadOnlyPage() {
         </div>
       )}
     </PageShell>
+  );
+}
+
+export default function BrokerReadOnlyPage() {
+  return (
+    <AdminDiagnosticsGate
+      pageTitle="Broker (READ ONLY)"
+      pageDescription="Broker read-only diagnostics"
+    >
+      <BrokerReadOnlyContent />
+    </AdminDiagnosticsGate>
   );
 }

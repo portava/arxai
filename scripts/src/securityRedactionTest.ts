@@ -46,6 +46,8 @@ console.log("redactForAudit — secret coverage:");
     password: "hunter2hunter2",
     sessionSecret: "sess_aaaaaaaaaa",
     accountNumber: "1234567890",
+    accountIdMasked: "98••••••10",
+    providerError: "request failed with token sk_live_PROVIDERSECRET123",
     note: "connect via postgres://user:pass@host:5432/db key sk_live_ZZZZZZZZZZZZ now",
     safe: "EURUSD",
     nested: { brokerSecret: "verysecretbroker", lots: 0.01 },
@@ -64,6 +66,8 @@ console.log("redactForAudit — secret coverage:");
   check("embedded connection string redacted", !flat.includes("postgres://user:pass@host"));
   check("embedded stripe key redacted", !flat.includes("sk_live_ZZZZZZZZZZZZ"));
   check("account number masked (no raw)", !flat.includes("1234567890"));
+  check("masked account identifier stays redacted", !flat.includes("98••••••10"));
+  check("provider error secret redacted", !flat.includes("sk_live_PROVIDERSECRET123"));
   check("account number tail preserved", flat.includes("7890"));
   check("non-secret value preserved", flat.includes("EURUSD"));
   check("non-secret numeric preserved", redacted != null && JSON.stringify(redacted).includes("0.01"));

@@ -196,6 +196,10 @@ export const INTEGRATION_LANE_TESTS: readonly IntegrationLaneTest[] = [
   // rejected without partial write, and user A's custom name never leaks to user
   // B. Imports @workspace/db via the router, so it lives in the integration lane.
   { pkg: "@workspace/api-server", script: "test:assistant-settings-route" },
+  // Broker read-only ownership boundary. Boots the real route with two genuine
+  // sessions, seeds owner A/B plus legacy ownerless rows, and proves list/status/
+  // create isolation together with account/provider-error redaction.
+  { pkg: "@workspace/api-server", script: "test:broker-readonly-route" },
   // Task #660 — Profit Mission Phase 1 route per-user isolation + no-secret-leak
   // proof. Boots the REAL profitMissions router on loopback, seeds two real users
   // with genuine sessions, and proves anonymous 401s, a feed-gated estimate-
