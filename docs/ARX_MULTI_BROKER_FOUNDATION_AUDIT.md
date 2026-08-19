@@ -1,6 +1,6 @@
 # ARX Multi-Broker Foundation Audit
 
-**Status:** Review required — read-only audit; no implementation authorized  
+**Status:** Approved for Phase 0A only — no connection or execution implementation authorized
 **Scope:** Maps `attached_assets/ARX_AI_MULTI_BROKER_IMPLEMENTATION_1787155023264.md` to the current ARX TypeScript, Drizzle, Express, React, and MT5 architecture.  
 **Audit result:** ARX has a reusable **MT5-specific read-only and default-deny execution foundation**, but does **not** yet have a tenant-scoped multi-broker connection hub. Phase 0 must begin with compatibility contracts and safety guards, not an adapter, credential flow, or execution path.
 
@@ -29,6 +29,23 @@ Approve only the following after review:
 3. contract/source-scan tests that pin the MT5 and Phase B boundaries.
 
 Do **not** approve any venue OAuth/API key intake, outbound broker network calls, account connection state changes, quote/candle ingestion, demo orders, or live routing in this task's successor until the corresponding prior slice and red tests are accepted.
+
+### Recorded approval decision
+
+**Decision date:** 2026-08-19
+**Approval authority:** Authorized project stakeholder through the approved Phase 0A task directive
+**Decision:** Approved to begin **Phase 0A — Compatibility contracts and containment** only.
+
+The approved dependency order is:
+
+1. define pure, no-I/O TypeScript compatibility types and a read-only adapter contract;
+2. add an MT5 compatibility projection that reads the existing per-user MT5 authority directly;
+3. add containment/source guards that preserve the Phase B, instant-trade, demo, and MT5-mailbox boundaries; and
+4. add a typed unavailable-venue catalog that remains disabled and never falls back to mock/demo data.
+
+This approval is deliberately limited to the Phase 0A goal and evidence in [§6](#6-smallest-safe-dependency-order). It does **not** approve credentials or OAuth/API-key intake, network calls, broker onboarding, account connection-state changes, quote/candle ingestion, metadata schema, new routes, demo orders, live routing, or any change to the MT5 bridge, demo lane, approval state, live flags, Phase B gate order, or global controls.
+
+Advancement beyond Phase 0A requires its specified pure/contract evidence and a separate recorded approval for the next phase. Existing MT5 safeguards remain authoritative and unchanged.
 
 ## 2. Current architecture inventory
 
