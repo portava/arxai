@@ -6,6 +6,7 @@ export * as market from "./market";
 export * as marketHeat from "./market-heat";
 export * as ai from "./ai";
 export * as broker from "./broker";
+export * as brokerHub from "./broker-hub";
 export * as risk from "./risk";
 export * as state from "./state";
 export * as events from "./events";
