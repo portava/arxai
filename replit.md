@@ -48,7 +48,7 @@ runtime-gated live broker execution (default-deny).
 - `lib/db/src/schema/` — Database tables (Drizzle ORM)
 - `artifacts/api-server/src/routes/` — Express route handlers
   (`mt5.ts`, `mt5Live.ts`, `meLive.ts`, `meAssistant.ts`, …)
-- `artifacts/api-server/src/lib/strategyEngine.ts` — All 5 trading strategies
+- `artifacts/api-server/src/lib/strategyEngine.ts` — All 7 trading strategies
 - `artifacts/api-server/src/lib/mt5/` — Demo arming, dispatch gate, command queue, consumer
 - `artifacts/api-server/src/lib/live/liveCommandPipeline.ts` — Phase B dispatch pipeline
 - `artifacts/trading-dashboard/src/` — React frontend

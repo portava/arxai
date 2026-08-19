@@ -8,9 +8,11 @@ Last refreshed alongside `ARX_AI_LAUNCH_CANDIDATE_0.1`. Items below are
 - **EA-side `ReadOnlyMode` defaults to `true`.** Until the operator
   flips it in MT5 → EA Inputs, every live/demo dispatch returns
   `REJECTED_READ_ONLY_MODE_ACTIVE`. Safe default.
-- **`ARX_LIVE_BROKER_EXECUTION_ENABLED` is unset in dev and prod.**
-  Live broker dispatch will never PASS the master-switch gate until an
-  operator explicitly sets it. Demo path is unaffected.
+- **`ARX_LIVE_BROKER_EXECUTION_ENABLED` defaults to unset/false in code.**
+  In THIS environment it is intentionally set `"true"` for controlled
+  owner/admin live testing (see `replit.md`) — that satisfies gate #1 of 18
+  only; dispatch still requires the DB arm flag, all 18 gates, and per-user
+  approval. Demo path is unaffected.
 - **Scanner returns empty with `safetyNote` when `TWELVEDATA_API_KEY`
   is unset.** Live data is never substituted by simulator data.
 - **Auto-close is `ALERT_ONLY`.** The system never closes a position

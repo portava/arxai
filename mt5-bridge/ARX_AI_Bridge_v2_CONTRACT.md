@@ -7,11 +7,15 @@ field-by-field from the existing domain contract
 domain `validateBridgeV2Message()` is the *consumer*. Every payload the EA emits
 MUST pass that validator on first contact.
 
-> **Producer-only task.** This document + the EA are Task #396. The two NEW
-> egress endpoints it depends on (remote-config pull, command poll) are listed
-> under **Backend gap** below and are built in the follow-on backend task. Until
-> they exist the EA degrades safely (no config ⇒ stays locked; no commands ⇒
-> idle producer).
+> **Producer-only task.** This document + the EA are Task #396. The two egress
+> endpoints it depends on (remote-config pull, command poll) LANDED in the
+> follow-on backend task: `GET /api/bridge/v2/config` and
+> `GET /api/bridge/v2/commands` are live in
+> `artifacts/api-server/src/routes/bridgeV2.ts` backed by
+> `src/lib/bridgeV2/egress.ts`. The command channel is a pure read-projection
+> (state-flip on poll + the result loop remain deferred to the live-cycle
+> task). If either endpoint is unreachable the EA still degrades safely
+> (no config ⇒ stays locked; no commands ⇒ idle producer).
 
 ---
 
@@ -271,7 +275,7 @@ is `EXECUTED` only with a real broker ticket.
 
 ## 4. Egress: remote-config pull + whitelisted commands
 
-### Remote-config manifest (Backend gap — `GET /api/bridge/v2/config`)
+### Remote-config manifest (`GET /api/bridge/v2/config` — LIVE, routes/bridgeV2.ts)
 Response (kernel parses defensively; missing/empty ⇒ stays locked):
 ```jsonc
 {
@@ -284,7 +288,7 @@ Response (kernel parses defensively; missing/empty ⇒ stays locked):
 On a higher `configVersion` the EA applies it (tightening only — see §5) and
 emits a `CONFIG_ACK { appliedConfigVersion }`.
 
-### Command poll (Backend gap — `GET /api/bridge/v2/commands`)
+### Command poll (`GET /api/bridge/v2/commands` — LIVE, routes/bridgeV2.ts; state-flip + result loop deferred to the live-cycle task)
 Returns the user's pending v2 commands. Each command carries at least:
 ```jsonc
 { "arxCommandId": "cmd-123", "action": "OPEN_MARKET", "symbol": "EURUSD",

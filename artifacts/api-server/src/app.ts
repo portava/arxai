@@ -31,7 +31,18 @@ app.use((req, _res, next) => {
   next();
 });
 
-app.use(cookieParser(process.env["SESSION_SECRET"] ?? "dev-fallback-secret-do-not-use-in-prod"));
+// SESSION_SECRET signs every arx_user_session cookie. In production a missing
+// value must be fatal (like PORT in index.ts) — falling back to a literal that
+// is published in the repo would let anyone forge signed session cookies. The
+// dev fallback survives only outside production so local/test workflows keep
+// working without secrets provisioned.
+const sessionSecret = process.env["SESSION_SECRET"];
+if (!sessionSecret && String(process.env["NODE_ENV"] ?? "").toLowerCase() === "production") {
+  throw new Error(
+    "SESSION_SECRET must be set in production — refusing to sign session cookies with the known dev fallback.",
+  );
+}
+app.use(cookieParser(sessionSecret ?? "dev-fallback-secret-do-not-use-in-prod"));
 // Per-user identity: attaches req.authUser when the arx_user_session cookie
 // is valid. Routes that require auth wrap themselves with `requireUser`;
 // public routes simply check `req.authUser` if they want to personalize.
@@ -61,7 +72,25 @@ app.use(
     },
   }),
 );
-app.use(cors());
+// CORS posture: the dashboard calls the API same-origin (relative /api base),
+// and the MT5 EA uses WebRequest (no browser, CORS not involved), so production
+// needs NO cross-origin surface by default. A wildcard `cors()` in production
+// invites credential-bearing cross-site calls. Behavior:
+//   - production: CORS headers only for origins explicitly listed in
+//     ARX_CORS_ALLOWED_ORIGINS (comma-separated); unset ⇒ no CORS at all.
+//   - dev/test: permissive (unchanged) so local cross-port workflows keep working.
+const corsAllowlist = (process.env["ARX_CORS_ALLOWED_ORIGINS"] ?? "")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+if (String(process.env["NODE_ENV"] ?? "").toLowerCase() === "production") {
+  if (corsAllowlist.length > 0) {
+    app.use(cors({ origin: corsAllowlist, credentials: true }));
+  }
+  // No allowlist ⇒ same-origin only: mount no CORS middleware.
+} else {
+  app.use(cors());
+}
 // ── EA bridge body parsing ──────────────────────────────────────────────────
 // EA-facing bridge POSTs carry arrays that blow past the default 100kb JSON
 // ceiling and were failing with 413 (entity.too.large):

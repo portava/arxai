@@ -11,13 +11,16 @@
 //     and stay fail-closed when the token env is unset)
 //   - app version + release info (used by the splash page before login)
 //
-// Once Phase 3 lands `requireUser` + per-user `where(userId = ...)` on every
-// route, this gate becomes belt-and-braces. It is intentionally written as
-// an allowlist (deny-by-default) so a forgotten route fails closed.
+// Phase 3 of the per-user isolation refactor LANDED (closed May 17, 2026 —
+// see docs/TODO_PER_USER_ISOLATION.md): `requireUser` is wired on every
+// private route file and per-user reads/writes are scoped by
+// `eq(<table>.userId, req.authUser.id)` at the query layer. This gate is now
+// belt-and-braces, kept deliberately as an allowlist (deny-by-default) so a
+// forgotten future route fails closed rather than open.
 //
-// IMPORTANT: this gate does NOT replace per-user query scoping. A logged-in
-// User A can still see User B's data on routes that do not yet filter by
-// req.authUser.id. That is Phase 3 work.
+// IMPORTANT: this gate still does NOT replace per-user query scoping — any
+// NEW route must scope its queries by req.authUser.id; the CI guard
+// scripts/src/ci checks (perUserIsolationMeRoutes) enforce the /me surface.
 
 import type { Request, Response, NextFunction } from "express";
 
