@@ -1,150 +1,117 @@
-import { useQuery } from "@tanstack/react-query";
-import { getGetIndicesIntelligenceQueryKey } from "@workspace/api-client-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
+import { Card, CardContent } from "@/components/ui/card";
+import { AlertTriangle, PlugZap } from "lucide-react";
 
-function fetchIndicesIntelligence() {
-  return fetch("/api/indices/intelligence").then((r) => r.json());
-}
+// Feature Truth Audit (P0-4) — this page has NO backend index-data provider.
+// It previously rendered an auto-refreshing (30s) macro dashboard and per-index
+// grid whose numbers were fabricated in `lib/indicesIntelligence.ts`:
+//   - "VIX Estimate"      = 14 + Math.random() * 8
+//   - "10Y Bond Yield"    = 4.45 + (Math.random() - 0.5) * 0.3
+//   - per-index Confidence = ... + Math.random() * 10
+//   - each index's current level = a hardcoded 2024-era level jittered by
+//     (Math.random() - 0.5) * level * 0.002
+//   - "Dollar Strength" / "Fed Expectation" = hardcoded constants
+// Because the page refreshed on a timer, those invented numbers visibly moved
+// like a live feed and a trader had no way to tell them from real data.
+//
+// That grid was removed: ARX never displays fabricated signals. This follows
+// the same resolution `pages/stocks-center.tsx` already uses — an honest
+// not-connected state, NOT a "SIMULATED" badge on invented numbers. The static
+// notes below are clearly labelled editorial context, not live analysis.
 
-function BiasChip({ bias }: { bias: string }) {
-  return (
-    <span className={cn("inline-block px-2 py-0.5 rounded-full text-xs font-bold", bias === "Bullish" ? "bg-success text-success" : bias === "Bearish" ? "bg-danger text-danger" : "bg-secondary text-foreground")}>
-      {bias}
-    </span>
-  );
-}
-
-function VixBadge({ vixState }: { vixState: string }) {
-  const cls = vixState === "Low" ? "border-success text-success" : vixState === "Moderate" ? "border-warning text-warning" : vixState === "High" ? "border-warning text-warning" : "border-danger text-danger animate-pulse";
-  return <Badge variant="outline" className={cn("text-xs", cls)}>VIX: {vixState}</Badge>;
-}
+const INDEX_NOTES: Record<string, { region: string; drivers: string; risks: string }> = {
+  "US30 · Dow Jones Industrial Average": {
+    region: "United States",
+    drivers: "Price-weighted, industrials- and financials-heavy; sensitive to rate expectations",
+    risks: "Concentration in a few high-priced constituents",
+  },
+  "NAS100 · NASDAQ 100": {
+    region: "United States",
+    drivers: "Mega-cap technology; long-duration, so rate-sensitive",
+    risks: "Single-name concentration, valuation compression on rate moves",
+  },
+  "SPX500 · S&P 500": {
+    region: "United States",
+    drivers: "Broad large-cap benchmark; earnings breadth and rate path",
+    risks: "Top-heavy index weights, macro shocks",
+  },
+  "GER40 · DAX 40": {
+    region: "Germany",
+    drivers: "Export-heavy industrials; EUR strength and energy input costs matter",
+    risks: "Energy prices, China demand, ECB policy",
+  },
+  "UK100 · FTSE 100": {
+    region: "United Kingdom",
+    drivers: "Commodity and financial weightings; large overseas revenue share",
+    risks: "GBP swings, commodity cycles",
+  },
+  "JP225 · Nikkei 225": {
+    region: "Japan",
+    drivers: "Exporter-heavy; JPY weakness historically supportive",
+    risks: "BoJ policy shifts, JPY intervention, China demand",
+  },
+};
 
 export default function IndicesCenter() {
-  const { data, isLoading } = useQuery({
-    queryKey: getGetIndicesIntelligenceQueryKey(),
-    queryFn: fetchIndicesIntelligence,
-    refetchInterval: 30000,
-  });
-
-  if (isLoading || !data) {
-    return (
-      <div className="flex items-center justify-center h-64 text-txt-secondary">
-        <div className="text-center space-y-2">
-          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
-          <div>Loading Indices Intelligence...</div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-1">
         <h1 className="text-2xl font-bold text-foreground">Indices Center</h1>
-        <p className="text-txt-secondary text-sm">Macro intelligence for global equity indices — US30, NAS100, SPX500, GER40, UK100, JP225</p>
+        <p className="text-txt-secondary text-sm">
+          Indices workspace — no index market-data provider is connected yet
+        </p>
       </div>
 
-      {/* Macro Dashboard */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[
-          { label: "Session", value: data.session },
-          { label: "Dollar Strength", value: data.dollarStrength, cls: data.dollarStrength === "Strong" ? "text-success" : data.dollarStrength === "Weak" ? "text-danger" : "text-warning" },
-          { label: "Risk Sentiment", value: data.riskSentiment, cls: data.riskSentiment === "Risk-On" ? "text-success" : data.riskSentiment === "Risk-Off" ? "text-danger" : "text-warning" },
-          { label: "Fed Expectation", value: data.fedExpectation, cls: data.fedExpectation === "Dovish" ? "text-success" : data.fedExpectation === "Hawkish" ? "text-danger" : "text-warning" },
-        ].map((item) => (
-          <Card key={item.label} className="bg-card border-border">
-            <CardContent className="p-4">
-              <div className="text-xs text-txt-muted mb-1">{item.label}</div>
-              <div className={cn("font-bold text-base", item.cls ?? "text-foreground")}>{item.value}</div>
-            </CardContent>
-          </Card>
-        ))}
-        <Card className="bg-card border-border">
-          <CardContent className="p-4">
-            <div className="text-xs text-txt-muted mb-1">10Y Bond Yield</div>
-            <div className="font-bold text-base text-foreground">{data.bondYield10Y}%</div>
-          </CardContent>
-        </Card>
-        <Card className="bg-card border-border">
-          <CardContent className="p-4">
-            <div className="text-xs text-txt-muted mb-1">VIX Estimate</div>
-            <div className={cn("font-bold text-base", data.vixEstimate < 15 ? "text-success" : data.vixEstimate < 22 ? "text-warning" : "text-danger")}>
-              {data.vixEstimate}
-            </div>
-          </CardContent>
-        </Card>
+      <div
+        role="note"
+        aria-label="No index data provider"
+        data-testid="banner-indices-no-provider"
+        className="flex gap-3 rounded-md border border-warning/50 bg-warning/30 p-3"
+      >
+        <AlertTriangle className="text-warning shrink-0 mt-0.5" size={18} />
+        <div className="text-sm">
+          <div className="font-semibold text-warning">No index data provider connected</div>
+          <div className="text-warning/80 text-xs mt-0.5">
+            ARX has no live equity-index feed configured, so index levels, VIX, bond yields, bias and
+            confidence are not shown. This page stays empty rather than display placeholder data. The
+            index notes below are static editorial context, not live analysis.
+          </div>
+        </div>
       </div>
 
-      {/* Market Summary */}
-      <Card className="bg-card border-border border-l-4 border-l-primary">
-        <CardContent className="p-4">
-          <div className="text-xs text-txt-muted mb-1">Market Summary</div>
-          <div className="text-foreground text-sm">{data.marketSummary}</div>
+      {/* Honest empty state — replaces the removed fabricated macro + index grid. */}
+      <Card className="bg-card border-border" data-testid="indices-empty-state">
+        <CardContent className="py-12 text-center space-y-2">
+          <PlugZap className="mx-auto text-txt-muted" size="36" />
+          <div className="text-foreground font-semibold">Index intelligence unavailable</div>
+          <div className="text-txt-secondary text-sm max-w-md mx-auto">
+            No backend index market-data provider is connected. Index levels, macro readings,
+            direction and confidence cannot be shown honestly, so nothing is displayed. Forex and
+            synthetic markets remain fully wired on the Scanner, which uses real broker data.
+          </div>
         </CardContent>
       </Card>
 
-      {/* Indices Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {data.indices?.map((idx: any) => (
-          <Card key={idx.symbol} className={cn("bg-card border-border border-l-4", idx.bias === "Bullish" ? "border-l-success" : idx.bias === "Bearish" ? "border-l-danger" : "border-l-border")}>
-            <CardHeader className="pb-2">
-              <div className="flex items-start justify-between">
-                <div>
-                  <CardTitle className="text-foreground text-base">{idx.symbol}</CardTitle>
-                  <div className="text-txt-secondary text-xs">{idx.name}</div>
-                  <div className="text-txt-muted text-xs">{idx.region}</div>
+      {/* Static index notes — clearly labeled, not live data. */}
+      <div>
+        <div className="text-xs uppercase tracking-wide text-txt-muted mb-2">
+          Static index notes (editorial — not live data)
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {Object.entries(INDEX_NOTES).map(([name, t]) => (
+            <Card key={name} className="bg-card border-border">
+              <CardContent className="p-4">
+                <div className="font-bold text-foreground text-sm mb-1">{name}</div>
+                <div className="text-xs text-txt-muted mb-0.5">{t.region}</div>
+                <div className="text-xs text-txt-secondary mb-0.5">
+                  <span className="text-txt-muted">Structure:</span> {t.drivers}
                 </div>
-                <div className="text-right space-y-1">
-                  <BiasChip bias={idx.bias} />
-                  <div className="text-xs text-txt-secondary">Confidence {idx.confidence}%</div>
+                <div className="text-xs text-danger">
+                  <span className="text-txt-muted">Risk:</span> {t.risks}
                 </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="text-foreground font-bold text-xl">{idx.currentLevel?.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
-
-              <div className="flex flex-wrap gap-1.5">
-                <VixBadge vixState={idx.vixState} />
-                <Badge variant="outline" className={cn("text-xs", idx.riskSentiment === "Risk-On" ? "border-success text-success" : idx.riskSentiment === "Risk-Off" ? "border-danger text-danger" : "border-border text-txt-secondary")}>
-                  {idx.riskSentiment}
-                </Badge>
-                <Badge variant="outline" className={cn("text-xs", idx.bondYieldBias === "Rising" ? "border-danger text-danger" : idx.bondYieldBias === "Falling" ? "border-success text-success" : "border-border text-txt-secondary")}>
-                  Yields {idx.bondYieldBias}
-                </Badge>
-                <Badge variant="outline" className="text-xs border-border text-txt-secondary">Fed: {idx.fedSentiment}</Badge>
-              </div>
-
-              <div>
-                <div className="text-xs text-txt-muted mb-1 font-medium">Key Drivers</div>
-                <ul className="space-y-0.5">
-                  {idx.keyDrivers?.map((d: string) => (
-                    <li key={d} className="text-xs text-txt-secondary flex items-center gap-1">
-                      <span className="text-success">•</span> {d}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              <div>
-                <div className="text-xs text-txt-muted mb-1 font-medium">Risk Factors</div>
-                <ul className="space-y-0.5">
-                  {idx.riskFactors?.map((r: string) => (
-                    <li key={r} className="text-xs text-txt-secondary flex items-center gap-1">
-                      <span className="text-danger">⚠</span> {r}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              <div className="pt-1">
-                <div className="text-xs text-txt-muted mb-1">Market Condition</div>
-                <Badge variant="secondary" className="text-xs">{idx.marketCondition}</Badge>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       </div>
     </div>
   );

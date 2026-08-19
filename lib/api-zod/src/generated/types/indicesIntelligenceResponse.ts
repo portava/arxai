@@ -6,17 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { IndexIntelligenceItem } from "./indexIntelligenceItem";
-import type { IndicesIntelligenceResponseDollarStrength } from "./indicesIntelligenceResponseDollarStrength";
-import type { IndicesIntelligenceResponseFedExpectation } from "./indicesIntelligenceResponseFedExpectation";
-import type { IndicesIntelligenceResponseRiskSentiment } from "./indicesIntelligenceResponseRiskSentiment";
 
 export interface IndicesIntelligenceResponse {
+  providerConnected: boolean;
+  safetyNote: string;
   session: string;
-  dollarStrength: IndicesIntelligenceResponseDollarStrength;
-  riskSentiment: IndicesIntelligenceResponseRiskSentiment;
-  fedExpectation: IndicesIntelligenceResponseFedExpectation;
-  bondYield10Y: number;
-  vixEstimate: number;
   indices: IndexIntelligenceItem[];
-  marketSummary: string;
 }

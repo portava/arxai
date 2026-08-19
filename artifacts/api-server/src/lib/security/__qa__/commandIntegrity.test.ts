@@ -245,7 +245,17 @@ test("every stamped sourcePage literal is in the route allowlist", () => {
   // `runEmergencyClose(scope, "ADMIN_ORPHAN_CLOSE")` (may span multiple lines).
   // Any NEW wrapper that forwards a literal source into createLiveDraft/
   // createLiveOpsDraft must be added here so the allowlist can't drift behind it.
-  const RUN_EMERGENCY_RE = /runEmergencyClose\s*\([\s\S]*?,\s*"([A-Z0-9_]+)"\s*,?\s*\)/g;
+  //
+  // The source literal is the SECOND positional argument. It must be matched
+  // regardless of what follows it, because callers may pass further arguments
+  // after it — `runEmergencyClose(scope, "ADMIN_EMERGENCY_CLOSE", { killSwitchBypass })`
+  // is the operator emergency-close path. An earlier form of this pattern
+  // anchored on `"..."` being the LAST argument (`\s*,?\s*\)`), so it silently
+  // stopped matching that call once the options argument was added — which is
+  // exactly what the known-source sentinel below exists to catch. Terminate on
+  // `,` OR `)` instead, and bound the lazy span so a non-matching call can't
+  // scan the rest of the file and latch onto an unrelated literal.
+  const RUN_EMERGENCY_RE = /runEmergencyClose\s*\([\s\S]{0,400}?,\s*"([A-Z0-9_]+)"\s*[,)]/g;
   const walk = (dir: string): void => {
     for (const entry of readdirSync(dir)) {
       if (entry === "__qa__" || entry === "node_modules") continue;

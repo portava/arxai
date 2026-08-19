@@ -38,6 +38,13 @@ import { logger } from "../logger.js";
 import { executeInstant } from "../live/instantTrade.js";
 import { routeQuote } from "../data/marketDataRouter.js";
 import { computeRealizedPnlUsd, isRealizedPnlIngestible } from "../live/realizedPnl.js";
+import {
+  FX_STANDARD_LOT_UNITS,
+  isForexPair,
+  resolveContractSize,
+  resolveQuoteToAccountFx,
+} from "../mt5/contractSize.js";
+import { getAccountCurrency } from "../live/accountCurrency.js";
 import { evaluateAgentExecution } from "./executionGate.js";
 import { assertAgentNotKilled } from "./killSwitchGate.js";
 import { writeSelfTradeAudit } from "./audit.js";
@@ -78,11 +85,67 @@ export interface ExecuteAgentDecisionInput {
 const LOT_MIN = 0.01;
 const LOT_STEP = 0.01;
 
-// FX 6-letter pairs use the 100_000 contract size that realizedPnl.ts assumes.
-// Anything else has no trusted per-lot contract spec → we refuse to size rather
-// than invent one (honest NO_CONTRACT_SPEC block).
-function valuePerUnitPerLotFor(symbol: string): number | null {
-  return /^[A-Z]{6}$/.test(symbol) ? 100_000 : null;
+// Per-lot contract size used to size the agent's position from its risk budget.
+//
+// P0-2 — this used `/^[A-Z]{6}$/.test(symbol) ? 100_000 : null`, which is the
+// exact loose classifier the strict one exists to replace. Six capital letters
+// does NOT mean "spot forex": XAUUSD (gold, contract size 100), XAGUSD (silver,
+// 5,000) and BTCUSD (crypto, typically 1) all match it and were sized as if
+// they were 100,000-unit FX lots — over-sizing a gold position 1,000x relative
+// to the intended risk budget.
+//
+// Now: broker truth (arx_symbol_specs.contractSize) first, and the 100,000-unit
+// FX standard lot ONLY when BOTH halves of the symbol are real ISO-4217 fiat
+// codes. Anything else still refuses to size (honest NO_CONTRACT_SPEC block)
+// rather than inventing a number.
+//
+// D2 — the value must be contractSize × QUOTE→ACCOUNT FX, not contractSize
+// alone. computeRiskAwareLot divides an account-currency risk budget by
+// `stopDistance × valuePerUnitPerLot`; the stop distance is measured in QUOTE
+// currency, so without the conversion the two sides of that division are in
+// different units and every non-account-quote pair is mis-sized. (USDJPY on a
+// USD account: the factor is 1/price, so the omission made riskPerLot ~150×
+// too large and the lot ~150× too small.)
+//
+// This is the entry-side analogue of the P0-2 close-side bug and deliberately
+// reuses the SAME helper that fix introduced, so the two sides cannot drift.
+// The header above always claimed "contractSize × quote-conv"; the conversion
+// was documented but never applied.
+type EntryValuePerLot =
+  | { ok: true; value: number }
+  | { ok: false; blockReason: "NO_CONTRACT_SPEC" | "NO_QUOTE_FX" };
+
+async function valuePerUnitPerLotFor(
+  userId: number | null,
+  symbol: string,
+  entryPrice: number,
+): Promise<EntryValuePerLot> {
+  if (userId == null) {
+    // No user context → no broker spec and no account currency to consult.
+    // Fall back to the strict classifier only, never the loose one. A fiat pair
+    // sized here is assumed account-quoted; anything else refuses.
+    return isForexPair(symbol)
+      ? { ok: true, value: FX_STANDARD_LOT_UNITS }
+      : { ok: false, blockReason: "NO_CONTRACT_SPEC" };
+  }
+
+  const sizing = await resolveContractSize(userId, symbol);
+  if (sizing.contractSize == null) return { ok: false, blockReason: "NO_CONTRACT_SPEC" };
+
+  const accountCurrency = await getAccountCurrency(userId);
+  const fx = resolveQuoteToAccountFx({
+    symbol,
+    profitCurrency: sizing.profitCurrency,
+    accountCurrency,
+    // The entry price plays the role the close price plays on the realized
+    // side: it is the rate at which an INVERSE_QUOTE factor is 1/price.
+    closePrice: entryPrice,
+  });
+  // Honest refusal. Falling back to a factor of 1 would silently assume the
+  // quote currency IS the account currency — exactly the mis-sizing being fixed.
+  if (fx.factor == null) return { ok: false, blockReason: "NO_QUOTE_FX" };
+
+  return { ok: true, value: sizing.contractSize * fx.factor };
 }
 
 function entryPriceFromThesis(thesis: { entryZone: { from: number; to: number } | null }): number | null {
@@ -244,10 +307,11 @@ export async function executeAgentDecision(
     return { status: "BLOCKED", blockReason: "NO_ENTRY_PRICE", action: "BLOCK" };
   }
 
-  const valuePerUnitPerLot = valuePerUnitPerLotFor(decision.symbol);
-  if (valuePerUnitPerLot == null) {
-    return { status: "BLOCKED", blockReason: "NO_CONTRACT_SPEC", action: "BLOCK" };
+  const valuePerLot = await valuePerUnitPerLotFor(executingUserId, decision.symbol, entryPrice);
+  if (!valuePerLot.ok) {
+    return { status: "BLOCKED", blockReason: valuePerLot.blockReason, action: "BLOCK" };
   }
+  const valuePerUnitPerLot = valuePerLot.value;
 
   const availableFunds = input.ledger?.availableFunds ?? 0;
   const riskBudgetUsd = (availableFunds * settings.riskPerTradePct) / 100;
@@ -472,11 +536,26 @@ export async function reconcileAgentExecutions(agentId: number): Promise<Reconci
         closeCmd.fillPrice != null;
       if (!closedOk) continue;
 
+      // P0-2 — size the close from broker truth for THIS user's symbol spec.
+      // The close command carries the authoritative dispatching user.
+      const pnlUserId = closeCmd.userId ?? e.executingUserId;
+      const sizing = pnlUserId != null
+        ? await resolveContractSize(pnlUserId, e.symbol)
+        : { contractSize: null, profitCurrency: null, source: null, reason: null } as const;
+      const accountCurrency = pnlUserId != null ? await getAccountCurrency(pnlUserId) : "USD";
+      const fx = resolveQuoteToAccountFx({
+        symbol: e.symbol,
+        profitCurrency: sizing.profitCurrency,
+        accountCurrency,
+        closePrice: closeCmd.fillPrice ?? 0,
+      });
       const pnl = computeRealizedPnlUsd({
         side: e.side as "BUY" | "SELL",
         requestedVolume: e.intendedVolume,
         openFillPrice: e.fillPrice,
         closeFillPrice: closeCmd.fillPrice,
+        contractSize: sizing.contractSize,
+        quoteToAccountFx: fx.factor,
       });
       await db
         .update(selfTradeAgentExecutionsTable)

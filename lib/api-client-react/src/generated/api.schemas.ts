@@ -10960,21 +10960,12 @@ export interface ForexPairIntelligenceItem {
   riskNote: string;
 }
 
-export type ForexIntelligenceResponseRiskSentiment =
-  (typeof ForexIntelligenceResponseRiskSentiment)[keyof typeof ForexIntelligenceResponseRiskSentiment];
-
-export const ForexIntelligenceResponseRiskSentiment = {
-  "Risk-On": "Risk-On",
-  "Risk-Off": "Risk-Off",
-  Neutral: "Neutral",
-} as const;
-
 export interface ForexIntelligenceResponse {
+  providerConnected: boolean;
+  safetyNote: string;
   session: string;
-  riskSentiment: ForexIntelligenceResponseRiskSentiment;
   currencies: CurrencyStrengthItem[];
   pairs: ForexPairIntelligenceItem[];
-  sessionNotes: string;
 }
 
 export type IndexIntelligenceItemBias =
@@ -11049,42 +11040,11 @@ export interface IndexIntelligenceItem {
   riskFactors: string[];
 }
 
-export type IndicesIntelligenceResponseDollarStrength =
-  (typeof IndicesIntelligenceResponseDollarStrength)[keyof typeof IndicesIntelligenceResponseDollarStrength];
-
-export const IndicesIntelligenceResponseDollarStrength = {
-  Weak: "Weak",
-  Moderate: "Moderate",
-  Strong: "Strong",
-} as const;
-
-export type IndicesIntelligenceResponseRiskSentiment =
-  (typeof IndicesIntelligenceResponseRiskSentiment)[keyof typeof IndicesIntelligenceResponseRiskSentiment];
-
-export const IndicesIntelligenceResponseRiskSentiment = {
-  "Risk-On": "Risk-On",
-  "Risk-Off": "Risk-Off",
-  Neutral: "Neutral",
-} as const;
-
-export type IndicesIntelligenceResponseFedExpectation =
-  (typeof IndicesIntelligenceResponseFedExpectation)[keyof typeof IndicesIntelligenceResponseFedExpectation];
-
-export const IndicesIntelligenceResponseFedExpectation = {
-  Hawkish: "Hawkish",
-  Neutral: "Neutral",
-  Dovish: "Dovish",
-} as const;
-
 export interface IndicesIntelligenceResponse {
+  providerConnected: boolean;
+  safetyNote: string;
   session: string;
-  dollarStrength: IndicesIntelligenceResponseDollarStrength;
-  riskSentiment: IndicesIntelligenceResponseRiskSentiment;
-  fedExpectation: IndicesIntelligenceResponseFedExpectation;
-  bondYield10Y: number;
-  vixEstimate: number;
   indices: IndexIntelligenceItem[];
-  marketSummary: string;
 }
 
 export interface SyntheticSymbolItem {
@@ -11100,6 +11060,8 @@ export interface SyntheticSymbolItem {
 }
 
 export interface SyntheticAnalysisResponse {
+  providerConnected: boolean;
+  safetyNote: string;
   symbols: SyntheticSymbolItem[];
 }
 
@@ -15845,10 +15807,6 @@ export type GetEconomicCalendarParams = {
   days?: number;
 };
 
-export type GetNewsRiskParams = {
-  symbol: string;
-};
-
 export type GetLiveCalendarEventsParams = {
   /**
    * Optional ARX symbol to scope the window (e.g. EURUSD). When omitted all events are returned.
@@ -17841,75 +17799,7 @@ export type GetMarketHeat401 = {
   error: string;
 };
 
-export type GetMarketHeatCountriesParams = {
-  timeframe?: GetMarketHeatCountriesTimeframe;
-  /**
-   * Restrict the heat universe to markets active in this trading session.
-   */
-  session?: GetMarketHeatCountriesSession;
-  /**
-   * Comma-separated ARX symbols to restrict the heat universe to.
-   */
-  symbols?: string;
-  /**
-   * Comma-separated country keys to restrict the returned country verdicts to.
-   */
-  countries?: string;
-};
-
-export type GetMarketHeatCountriesTimeframe =
-  (typeof GetMarketHeatCountriesTimeframe)[keyof typeof GetMarketHeatCountriesTimeframe];
-
-export const GetMarketHeatCountriesTimeframe = {
-  M1: "M1",
-  M5: "M5",
-  M15: "M15",
-  M30: "M30",
-  H1: "H1",
-  H4: "H4",
-  D1: "D1",
-} as const;
-
-export type GetMarketHeatCountriesSession =
-  (typeof GetMarketHeatCountriesSession)[keyof typeof GetMarketHeatCountriesSession];
-
-export const GetMarketHeatCountriesSession = {
-  sydney: "sydney",
-  tokyo: "tokyo",
-  london: "london",
-  newyork: "newyork",
-} as const;
-
-export type GetMarketHeatCountries401 = {
-  error: string;
-};
-
 export type GetMarketHeatDiagnostics401 = {
-  error: string;
-};
-
-export type GetMarketHeatSymbolParams = {
-  timeframe?: GetMarketHeatSymbolTimeframe;
-};
-
-export type GetMarketHeatSymbolTimeframe =
-  (typeof GetMarketHeatSymbolTimeframe)[keyof typeof GetMarketHeatSymbolTimeframe];
-
-export const GetMarketHeatSymbolTimeframe = {
-  M1: "M1",
-  M5: "M5",
-  M15: "M15",
-  M30: "M30",
-  H1: "H1",
-  H4: "H4",
-  D1: "D1",
-} as const;
-
-export type GetMarketHeatSymbol400 = {
-  error: string;
-};
-
-export type GetMarketHeatSymbol401 = {
   error: string;
 };
 

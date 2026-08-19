@@ -13,7 +13,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
 import {
-  Activity, Sparkles, Download, MessageCircle, ShieldCheck, ShieldAlert,
+  Activity, Sparkles, MessageCircle, ShieldCheck, ShieldAlert,
   TrendingUp, TrendingDown, Search, RefreshCcw, Globe, Clock, Zap,
   ChevronRight, AlertTriangle, Loader2, X as XIcon, BellRing, Plus, Flame,
 } from "lucide-react";
@@ -215,9 +215,6 @@ export default function MyTradesPage() {
           <button onClick={() => setOpenModal(true)} className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary/90">
             <Plus className="h-4 w-4" /> Open Trade
           </button>
-          <span title="Export coming soon" className="inline-flex cursor-not-allowed items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-txt-muted opacity-70">
-            <Download className="h-4 w-4" /> Export
-          </span>
         </div>
       </div>
 
@@ -532,13 +529,8 @@ export default function MyTradesPage() {
           <div className="flex items-center gap-2"><Zap className="h-4 w-4 text-primary" /><h3 className="text-sm font-semibold">Quick Actions</h3></div>
           <div className="mt-3 grid grid-cols-2 gap-2">
             <button onClick={() => void load()} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-xs font-medium text-primary"><RefreshCcw className="h-3.5 w-3.5" /> Refresh</button>
-            <ActionGhost label="Protect All" />
-            <ActionGhost label="Move All to BE" />
-            <ActionGhost label="Close Winners" />
-            <ActionGhost label="Close Losers" tone="danger" />
-            <ActionGhost label="Close All" tone="danger" />
           </div>
-          <p className="mt-2 text-[11px] text-txt-muted">Bulk actions are coming soon. Close a position individually from its row.</p>
+          <p className="mt-2 text-[11px] text-txt-muted">Close a position individually from its row.</p>
         </div>
       </div>
 
@@ -575,14 +567,6 @@ function Stat({ dot, label, value }: { dot: string; label: string; value: number
 }
 function Tag({ label, tone }: { label: string; tone: string }) {
   return <span className={cn("rounded-lg border bg-background/40 px-2 py-0.5 text-[11px]", tone)}>{label}</span>;
-}
-function ActionGhost({ label, tone }: { label: string; tone?: "danger" }) {
-  return (
-    <span title="Coming soon" className={cn("inline-flex cursor-not-allowed items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs opacity-60",
-      tone === "danger" ? "border-danger/30 text-danger" : "border-border text-txt-muted")}>
-      {label}
-    </span>
-  );
 }
 function EmptyPositions({ onTrade, onScanner }: { onTrade: () => void; onScanner: () => void }) {
   const { name } = useAssistantName();

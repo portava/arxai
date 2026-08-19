@@ -3187,25 +3187,6 @@ paths:
                 items:
                   $ref: "#/components/schemas/EconomicEvent"
 
-  /news/risk:
-    get:
-      operationId: getNewsRisk
-      tags: [news]
-      summary: News risk evaluation for a symbol
-      parameters:
-        - name: symbol
-          in: query
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: News risk
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/NewsRisk"
-
   /economic-calendar/events:
     get:
       operationId: getLiveCalendarEvents
@@ -10518,43 +10499,6 @@ paths:
             application/json:
               schema: { type: object, required: [error], properties: { error: { type: string } } }
 
-  /market-heat/countries:
-    get:
-      operationId: getMarketHeatCountries
-      tags: [news]
-      summary: Honest per-country heat verdicts
-      parameters:
-        - in: query
-          name: timeframe
-          required: false
-          schema: { type: string, enum: [M1, M5, M15, M30, H1, H4, D1], default: M15 }
-        - in: query
-          name: session
-          required: false
-          description: Restrict the heat universe to markets active in this trading session.
-          schema: { type: string, enum: [sydney, tokyo, london, newyork] }
-        - in: query
-          name: symbols
-          required: false
-          description: Comma-separated ARX symbols to restrict the heat universe to.
-          schema: { type: string }
-        - in: query
-          name: countries
-          required: false
-          description: Comma-separated country keys to restrict the returned country verdicts to.
-          schema: { type: string }
-      responses:
-        "200":
-          description: Country heat verdicts
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/MarketHeatCountriesResponse" }
-        "401":
-          description: Authentication required
-          content:
-            application/json:
-              schema: { type: object, required: [error], properties: { error: { type: string } } }
-
   /market-heat/diagnostics:
     get:
       operationId: getMarketHeatDiagnostics
@@ -10576,41 +10520,6 @@ paths:
             application/json:
               schema: { type: object, required: [error], properties: { error: { type: string } } }
 
-  /market-heat/symbol/{symbol}:
-    get:
-      operationId: getMarketHeatSymbol
-      tags: [news]
-      summary: Honest heat verdict for a single symbol
-      parameters:
-        - in: path
-          name: symbol
-          required: true
-          schema: { type: string, minLength: 1, maxLength: 64 }
-        - in: query
-          name: timeframe
-          required: false
-          schema: { type: string, enum: [M1, M5, M15, M30, H1, H4, D1], default: M15 }
-      responses:
-        "200":
-          description: Symbol heat verdict (or blocked envelope for unapproved symbols)
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/MarketHeatSymbolResponse" }
-        "400":
-          description: Invalid symbol
-          content:
-            application/json:
-              schema: { type: object, required: [error], properties: { error: { type: string } } }
-        "401":
-          description: Authentication required
-          content:
-            application/json:
-              schema: { type: object, required: [error], properties: { error: { type: string } } }
-
-  # ── Claude Backend Fix Agent (Task #705) — ADMIN-ONLY, ADVISORY / DIAGNOSTIC.
-  # Diagnoses backend errors and proposes DRY-RUN patches. Never an execution
-  # path: never places/approves a trade, mutates bridge state, overrides a risk
-  # gate or kill switch, or marks anything broker-confirmed.
   /admin/ai/fix-agent/health:
     get:
       operationId: adminFixAgentHealth
@@ -19943,17 +19852,24 @@ components:
 
     ForexIntelligenceResponse:
       type: object
-      required: [session, riskSentiment, currencies, pairs, sessionNotes]
+      # P0-4 — honest not-connected contract. No FX macro provider is wired, so
+      # currency strength, risk regime, pair bias and confidence are WITHHELD
+      # rather than estimated. The fabricated scalars that used to live here
+      # (riskSentiment from a Math.random coin flip, strengths from a jittered
+      # hardcoded table) are removed from the contract so they cannot quietly
+      # return and still validate. `session` is retained: it is derived from the
+      # UTC clock, so it is a fact, not a market reading.
+      required: [providerConnected, safetyNote, session, currencies, pairs]
       properties:
+        providerConnected: { type: boolean }
+        safetyNote: { type: string }
         session: { type: string }
-        riskSentiment: { type: string, enum: [Risk-On, Risk-Off, Neutral] }
         currencies:
           type: array
           items: { $ref: "#/components/schemas/CurrencyStrengthItem" }
         pairs:
           type: array
           items: { $ref: "#/components/schemas/ForexPairIntelligenceItem" }
-        sessionNotes: { type: string }
 
     IndexIntelligenceItem:
       type: object
@@ -19980,18 +19896,20 @@ components:
 
     IndicesIntelligenceResponse:
       type: object
-      required: [session, dollarStrength, riskSentiment, fedExpectation, bondYield10Y, vixEstimate, indices, marketSummary]
+      # P0-4 — honest not-connected contract. No equity-index provider is wired,
+      # so index levels, VIX, bond yields, macro readings, bias and confidence
+      # are WITHHELD rather than estimated. The fabricated scalars removed here
+      # (vixEstimate from `14 + Math.random()*8`, bondYield10Y from
+      # `4.45 + (Math.random()-0.5)*0.3`, hardcoded dollarStrength /
+      # fedExpectation) cannot return without a contract change.
+      required: [providerConnected, safetyNote, session, indices]
       properties:
+        providerConnected: { type: boolean }
+        safetyNote: { type: string }
         session: { type: string }
-        dollarStrength: { type: string, enum: [Weak, Moderate, Strong] }
-        riskSentiment: { type: string, enum: [Risk-On, Risk-Off, Neutral] }
-        fedExpectation: { type: string, enum: [Hawkish, Neutral, Dovish] }
-        bondYield10Y: { type: number }
-        vixEstimate: { type: number }
         indices:
           type: array
           items: { $ref: "#/components/schemas/IndexIntelligenceItem" }
-        marketSummary: { type: string }
 
     SyntheticSymbolItem:
       type: object
@@ -20009,8 +19927,14 @@ components:
 
     SyntheticAnalysisResponse:
       type: object
-      required: [symbols]
+      # P0-4 — honest not-connected contract. No synthetic-analytics provider is
+      # wired, so ATR / trend / volatility readings — and the recommended lot
+      # size that used to be derived from them — are WITHHELD rather than served
+      # from a hardcoded table presented as live analysis.
+      required: [providerConnected, safetyNote, symbols]
       properties:
+        providerConnected: { type: boolean }
+        safetyNote: { type: string }
         symbols:
           type: array
           items: { $ref: "#/components/schemas/SyntheticSymbolItem" }

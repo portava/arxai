@@ -687,6 +687,9 @@ importers:
 
   lib/db:
     dependencies:
+      '@workspace/features':
+        specifier: workspace:*
+        version: link:../features
       drizzle-orm:
         specifier: 'catalog:'
         version: 0.45.2(@types/pg@8.18.0)(pg@8.20.0)
@@ -713,11 +716,27 @@ importers:
         specifier: 'catalog:'
         version: 4.21.0
 
+  lib/discovery:
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.3.5
+
   lib/domain:
     dependencies:
       zod:
         specifier: 'catalog:'
         version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.3.5
+
+  lib/features:
+    dependencies:
+      '@workspace/markets':
+        specifier: workspace:*
+        version: link:../markets
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
@@ -770,17 +789,54 @@ importers:
         specifier: 'catalog:'
         version: 25.3.5
 
+  lib/money:
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.3.5
+
+  lib/risk:
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.3.5
+
+  lib/validation:
+    dependencies:
+      '@workspace/markets':
+        specifier: workspace:*
+        version: link:../markets
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.3.5
+
   scripts:
     dependencies:
       '@workspace/db':
         specifier: workspace:*
         version: link:../lib/db
+      '@workspace/discovery':
+        specifier: workspace:*
+        version: link:../lib/discovery
       '@workspace/domain':
         specifier: workspace:*
         version: link:../lib/domain
+      '@workspace/features':
+        specifier: workspace:*
+        version: link:../lib/features
       '@workspace/markets':
         specifier: workspace:*
         version: link:../lib/markets
+      '@workspace/money':
+        specifier: workspace:*
+        version: link:../lib/money
+      '@workspace/risk':
+        specifier: workspace:*
+        version: link:../lib/risk
+      '@workspace/validation':
+        specifier: workspace:*
+        version: link:../lib/validation
       drizzle-orm:
         specifier: 'catalog:'
         version: 0.45.2(@types/pg@8.18.0)(pg@8.20.0)

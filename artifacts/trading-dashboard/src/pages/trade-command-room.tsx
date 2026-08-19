@@ -186,7 +186,18 @@ export default function TradeCommandRoom() {
     takeProfit: r.takeProfit ?? null,
     status: r.stale ? "stale" : undefined,
   }));
-  const positionsTab = <PositionsPanel positions={positionRows} />;
+  // P0-3 — pass the read state through. `data?.rows ?? []` alone collapses a
+  // failed or in-flight fetch into an empty array, which the panel would have
+  // rendered as "No open positions" — telling a trader they are flat when ARX
+  // could not answer.
+  const positionsTab = (
+    <PositionsPanel
+      positions={positionRows}
+      isLoading={positionsQ.isLoading}
+      isError={positionsQ.isError}
+      onRetry={() => void positionsQ.refetch()}
+    />
+  );
 
   const ordersTab = (
     <OrdersPanel opps={opps} intentCount={intentCount} picked={picked} onPick={(o) => pickAndAnalyze(o as Opp)} />

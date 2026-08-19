@@ -17,6 +17,7 @@
     "test:mission-planner": "vitest run src/pages/profit-missions.test.tsx src/pages/profitMissionPlanner.test.ts",
     "test:mission-performance": "vitest run src/components/missions/MissionPerformanceView.test.tsx",
     "test:live-test-cycle-nudge": "vitest run src/components/live/ControlledLiveTestButton.test.tsx",
+    "test:live-positions-error-state": "vitest run src/components/live/OpenLivePositions.errorState.test.tsx src/components/dashboard/trade/TradePanels.positionsError.test.tsx",
     "test:one-click-consent": "vitest run src/components/mt5/OneClickToggleCard.consent.test.tsx src/components/mt5/OneClickToggleCard.honest-reason.test.tsx src/pages/admin/one-click-controls.revoke.test.tsx",
     "test:admin-hub-routes": "vitest run src/pages/admin/admin-hub.routes.test.ts",
     "test:investor-weekly-story": "vitest run src/pages/investor.weeklyStory.test.tsx",
@@ -29,7 +30,15 @@
     "test:scanner-feed-badge": "vitest run src/components/scanner/ScannerChartFeedBadge.test.tsx",
     "test:news-risk-honesty": "vitest run src/components/news/NewsRiskCard.honesty.test.tsx",
     "test:chart-tick-stream": "vitest run src/components/charts/ARXNativeChart.tick-stream.test.tsx",
+    "test:chart-stream-watchdog": "vitest run src/components/charts/useTickStreamWatchdog.test.ts",
+    "test:chart-stall-badge": "vitest run src/components/charts/ARXNativeChart.stall-badge.test.tsx",
     "test:chart-trendline-overlay-render": "vitest run src/components/charts/ARXNativeChart.trendline-overlay.test.tsx",
+    "test:nav-access-tier": "vitest run src/components/layout/navAccessTier.test.ts",
+    "test:backtest-route-honesty": "vitest run src/knowledge/backtestRouteHonesty.test.ts",
+    "test:coming-soon-affordances": "vitest run src/pages/comingSoonAffordances.test.ts",
+    "test:market-health-page": "vitest run src/pages/market-health.page.test.tsx",
+    "test:news-risk-page": "vitest run src/pages/news-risk.page.test.tsx",
+    "test:scalp-ticket-fidelity": "vitest run src/components/scanner/scalpTicketFidelity.test.ts",
     "test:chart-structure-lines": "vitest run src/lib/chart-engine/structureLines.test.ts",
     "test:live-account-snapshot": "vitest run src/hooks/useLiveAccountSnapshot.test.ts",
     "test:live-bridge-refresh": "vitest run src/hooks/useLiveBridgeRefresh.test.ts",
@@ -43,7 +52,8 @@
     "test:scanner-truth": "vitest run src/lib/scannerTruth.test.ts src/lib/scannerTruthRegression.test.ts src/components/live/TradeHealthPanel.test.tsx src/components/scanner/BroadScanOpportunityMap.test.tsx src/components/scanner/SelectedMarketPanel.test.tsx src/pages/market-scanner.empty-state.test.tsx src/components/scanner/ScannerHeaderSummary.action-timeframe.test.tsx src/components/scanner/RubyChartRead.test.tsx",
     "test:admin-cockpit": "vitest run src/pages/admin/cockpit.render.test.tsx src/pages/admin/cockpit.pattern-sync-containment.test.ts src/components/admin/cockpit/cockpitShared.interaction.test.tsx",
     "test:testing-lab": "vitest run src/components/testing-lab/TestingLab.test.tsx src/components/testing-lab/ChartPanels.test.tsx",
-    "test:live-ai-harness": "vitest run src/pages/live-ai-auto-test.honesty.test.tsx"
+    "test:live-ai-harness": "vitest run src/pages/live-ai-auto-test.honesty.test.tsx",
+    "test:mission-honest-labelling": "vitest run src/pages/profit-missions.honest-labelling.test.ts"
   },
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",

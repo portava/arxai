@@ -88,8 +88,14 @@ export const ROUTE_KNOWLEDGE: RouteKnowledge[] = [
   { route: "/market-replay", title: "Market Replay", purpose: "Bar-by-bar replay of recorded sessions." },
   { route: "/shadow-mode", title: "Shadow Mode", purpose: "Strategy runs and journals what it WOULD do — no orders sent.", related: ["/shadow-journal"] },
   { route: "/shadow-journal", title: "Shadow Journal", purpose: "Journal of shadow-mode hypothetical trades." },
-  { route: "/backtest", title: "Backtest", purpose: "Upload candle CSV, run a backtest, see equity curve." },
-  { route: "/testing-lab", title: "Testing Lab", purpose: "Unified workspace to backtest, forward-test, compare historical vs live results, and review strategy history.", related: ["/shadow-mode", "/backtest"] },
+  // /backtest is a redirect to Testing Lab, kept only so existing links and
+  // bookmarks resolve. Its old description ("Upload candle CSV, run a
+  // backtest") advertised a page that no longer exists — and that page was
+  // itself the fabrication being removed: it read the uploaded CSV into state,
+  // ignored it, and submitted Math.random() candles instead. Describing it
+  // accurately keeps the assistant from sending anyone to upload a CSV.
+  { route: "/backtest", title: "Backtest (moved)", purpose: "Redirects to Testing Lab, which owns backtesting.", related: ["/testing-lab"] },
+  { route: "/testing-lab", title: "Testing Lab", purpose: "Unified workspace to backtest, forward-test, compare historical vs live results, and review strategy history.", related: ["/shadow-mode"] },
 
   // ── Strategy ───────────────────────────────────────────────────────────
   { route: "/strategy-settings", title: "Strategy Settings", purpose: "Toggle the 5 modular strategies and their parameters." },
@@ -126,10 +132,17 @@ export const ROUTE_KNOWLEDGE: RouteKnowledge[] = [
   { route: "/broker-reconciliation", title: "Broker Reconciliation", purpose: "Reconciles ARX's view of trades with the broker's." },
 
   // ── Centers (markets/forex/indices/etc.) ───────────────────────────────
-  { route: "/forex-center", title: "FX Center", purpose: "FX-focused workspace." },
-  { route: "/indices-center", title: "Indices Center", purpose: "Indices-focused workspace." },
-  { route: "/stocks-center", title: "Stocks Center", purpose: "Stocks workspace (where supported)." },
-  { route: "/synthetic-center", title: "Synthetics Center", purpose: "Deriv synthetic indices workspace." },
+  // P0-4 — these four centers have NO market-data provider wired. They render
+  // an honest not-connected state (no levels, no bias, no confidence, no ATR).
+  // Ruby reads these descriptions, so they must say so plainly: previously the
+  // pages served Math.random()-derived numbers and Ruby described the pages as
+  // live workspaces, which made the assistant the last surface still implying
+  // fabricated data was real. Point users at the Scanner, which uses real
+  // broker data.
+  { route: "/forex-center", title: "FX Center", purpose: "FX workspace. NO live FX macro provider is connected: currency strength, pair bias and confidence are NOT shown here. Use the Scanner for real FX prices and signals.", safety: "Shows an honest not-connected state. ARX never displays fabricated market data, so no estimated values appear on this page.", related: ["/scanner", "/market-scanner"] },
+  { route: "/indices-center", title: "Indices Center", purpose: "Indices workspace. NO live index market-data provider is connected: index levels, VIX, bond yields, bias and confidence are NOT shown here.", safety: "Shows an honest not-connected state. ARX never displays fabricated market data, so no estimated values appear on this page.", related: ["/scanner"] },
+  { route: "/stocks-center", title: "Stocks Center", purpose: "Stocks workspace. NO stock-data provider is connected: prices, directions and signals are NOT shown here.", safety: "Shows an honest not-connected state. ARX never displays fabricated signals.", related: ["/scanner"] },
+  { route: "/synthetic-center", title: "Synthetics Center", purpose: "Deriv synthetics workspace. NO synthetic analytics provider is connected: ATR, trend, volatility state and recommended lot size are NOT shown here. Synthetics remain tradable on the Scanner, which uses real broker data.", safety: "Shows an honest not-connected state. ARX never displays fabricated market data or a position size derived from one.", related: ["/scanner"] },
 
   // ── Watch / Alerts / Notifications ─────────────────────────────────────
   { route: "/watchlists", title: "Watchlists", purpose: "Create and manage symbol watchlists." },

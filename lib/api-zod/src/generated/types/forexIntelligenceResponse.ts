@@ -6,13 +6,12 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { CurrencyStrengthItem } from "./currencyStrengthItem";
-import type { ForexIntelligenceResponseRiskSentiment } from "./forexIntelligenceResponseRiskSentiment";
 import type { ForexPairIntelligenceItem } from "./forexPairIntelligenceItem";
 
 export interface ForexIntelligenceResponse {
+  providerConnected: boolean;
+  safetyNote: string;
   session: string;
-  riskSentiment: ForexIntelligenceResponseRiskSentiment;
   currencies: CurrencyStrengthItem[];
   pairs: ForexPairIntelligenceItem[];
-  sessionNotes: string;
 }

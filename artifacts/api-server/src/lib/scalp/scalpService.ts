@@ -402,9 +402,15 @@ async function buildRankInputs(
   ]);
   const decoratedList = (decorated.length ? decorated : opps) as DecoratedOpportunity[];
 
-  const [specs, personalities] = await Promise.all([
+  // C2 — Broad/Builder fetch a REAL live quote per symbol, exactly as Focus
+  // does via currentPriceFor(). They used to pass `o.entry` as `currentPrice`,
+  // which made the two values identical, so `movedToward` was always ~0 and
+  // every late/chase gate silently evaluated to "not late" — the one gate whose
+  // whole job is to catch a stale pick could not fire on these surfaces.
+  const [specs, personalities, livePrices] = await Promise.all([
     Promise.all(decoratedList.map((o) => loadSpecInput(userId, o.symbol))),
     Promise.all(decoratedList.map((o) => loadSymbolPersonality(userId, o.symbol))),
+    Promise.all(decoratedList.map((o) => currentPriceFor(o.symbol))),
   ]);
 
   return decoratedList.map((o, i) => {
@@ -413,7 +419,10 @@ async function buildRankInputs(
       symbol: o.symbol,
       base: {
         symbol: o.symbol,
-        currentPrice: o.entry,
+        // A real quote, or an honest null. Deliberately NOT falling back to
+        // `o.entry`: that is what produced the fake "price hasn't moved" read.
+        // The engine already refuses to build a trade on a null price.
+        currentPrice: livePrices[i] ?? null,
         spec: specs[i]!,
         scanner: oppToScannerInput(o),
         account,

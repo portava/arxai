@@ -191,8 +191,14 @@ async function main(): Promise<void> {
   const EXPECTED_DERIV_IDS: Record<string, string> = {
     V10: "R_10", V25: "R_25", V50: "R_50", V75: "R_75", V100: "R_100",
     V10_1S: "1HZ10V", V25_1S: "1HZ25V", V50_1S: "1HZ50V", V75_1S: "1HZ75V", V100_1S: "1HZ100V",
-    BOOM500: "BOOM500", BOOM1000: "BOOM1000",
-    CRASH500: "CRASH500", CRASH1000: "CRASH1000",
+    // NOTE: the 300-variants carry Deriv's "N" suffix (BOOM300N / CRASH300N)
+    // while the 500/1000 variants do not. Pinned independently here from
+    // Deriv's published WS symbol naming — corroborated by the MT5 alias
+    // tables in lib/domain/src/market/arxFocusMarkets.ts and
+    // lib/markets/src/universe.ts, NOT copied from the provider table under
+    // test (artifacts/api-server/src/lib/data/providers/derivProvider.ts).
+    BOOM300: "BOOM300N", BOOM500: "BOOM500", BOOM1000: "BOOM1000",
+    CRASH300: "CRASH300N", CRASH500: "CRASH500", CRASH1000: "CRASH1000",
     STEP: "stpRNG",
     JUMP10: "JD10", JUMP25: "JD25", JUMP50: "JD50", JUMP75: "JD75", JUMP100: "JD100",
   };
