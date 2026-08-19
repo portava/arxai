@@ -19,21 +19,6 @@
       "path": "./lib/markets"
     },
     {
-      "path": "./lib/risk"
-    },
-    {
-      "path": "./lib/money"
-    },
-    {
-      "path": "./lib/features"
-    },
-    {
-      "path": "./lib/validation"
-    },
-    {
-      "path": "./lib/discovery"
-    },
-    {
       "path": "./lib/integrations-openai-ai-server"
     },
     {

@@ -8,7 +8,5 @@
 import type { SyntheticSymbolItem } from "./syntheticSymbolItem";
 
 export interface SyntheticAnalysisResponse {
-  providerConnected: boolean;
-  safetyNote: string;
   symbols: SyntheticSymbolItem[];
 }

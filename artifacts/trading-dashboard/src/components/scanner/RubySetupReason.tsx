@@ -21,14 +21,6 @@ export type SignalContext = {
   stopLoss?: number;
   takeProfit?: number;
   statusBadge?: string;
-  /**
-   * Risk-based lot the producing engine computed from broker truth, or null
-   * when it deliberately refused to size (insufficient margin, flame kill,
-   * risk below the minimum lot). Consumers must treat null as "no size
-   * computed" and fall back to their own conservative default — never invent
-   * one (Theme D1).
-   */
-  suggestedLot?: number | null;
 };
 
 export type SetupReason = {

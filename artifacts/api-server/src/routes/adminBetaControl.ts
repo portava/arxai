@@ -122,17 +122,6 @@ router.post("/admin/beta/invites", async (req, res) => {
   if (!["DEMO_TESTER", "PERSONAL_MT5", "SHARED_MASTER_REVIEW"].includes(accountMode)) {
     res.status(400).json({ error: "INVALID_ACCOUNT_MODE" }); return;
   }
-  // Fail closed BEFORE issuing: validation (validateInviteForRegistration /
-  // acceptInviteTx) refuses every code with PEPPER_MISSING when the pepper is
-  // absent, so issuing here would hand out a credential that can never be
-  // redeemed. Mirror the registration-key generator's refusal instead.
-  if (!isRegistrationKeyPepperConfigured()) {
-    res.status(503).json({
-      error: "PEPPER_MISSING",
-      message: "REGISTRATION_KEY_PEPPER is not configured. Set this environment variable to enable invite creation.",
-    });
-    return;
-  }
   const result = await createInvite({ email, accountMode, invitedByUserId: admin.id, notes });
   if (!result.ok) {
     await safeAudit(req, "beta_invite_blocked", { email, reason: result.error, activeCount: result.activeCount, adminId: admin.id });
@@ -162,10 +151,7 @@ router.post("/admin/beta/invites/:id/pause", async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) { res.status(400).json({ error: "INVALID_ID" }); return; }
   const row = await pauseInvite(id);
-  // Only an ACCEPTED invite may be paused (see pauseInvite). A bare NOT_FOUND
-  // would hide that the row exists but is REVOKED/EXPIRED/PENDING, which is the
-  // exact case an admin needs to see.
-  if (!row) { res.status(404).json({ error: "NOT_FOUND_OR_NOT_ACCEPTED" }); return; }
+  if (!row) { res.status(404).json({ error: "NOT_FOUND" }); return; }
   await safeAudit(req, "beta_invite_paused", { inviteId: id, adminId: admin.id });
   res.json({ invite: toPublicInvite(row) });
 });

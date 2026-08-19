@@ -39,8 +39,6 @@ import {
 } from "./liveCommandPipeline.js";
 import { getMyArming } from "./liveArming.js";
 import { computeRealizedPnlUsd } from "./realizedPnl.js";
-import { resolveContractSize, resolveQuoteToAccountFx } from "../mt5/contractSize.js";
-import { getAccountCurrency } from "./accountCurrency.js";
 import { resolveLiveCloseConfirmation, hasCloseErrorReason } from "./closeConfirmation.js";
 import { liveBrokerExecutionEnabled, resolveLiveBrokerExecutionEnabledAsync } from "./phaseBConfig.js";
 import { logger } from "../logger.js";
@@ -614,26 +612,11 @@ export async function advanceCycle(args: { userId: number; cycleId: string }): P
         // (the broker really did open and close the position) but
         // realisedPlUsd stays null and pnlStatus/dataQualityFlag flag
         // the row so no ledger / aggregate / learning input ingests it.
-        // P0-2 — size the close from broker truth. When the symbol spec or the
-        // profit→account FX factor is unavailable, computeRealizedPnlUsd
-        // returns UNKNOWN and realizedPlUsd stays null; the cycle is still
-        // COMPLETED (the broker really did open and close), it just carries an
-        // honest data-quality flag instead of a mis-scaled dollar figure.
-        const sizing = await resolveContractSize(args.userId, row.symbol);
-        const accountCurrency = await getAccountCurrency(args.userId);
-        const fx = resolveQuoteToAccountFx({
-          symbol: row.symbol,
-          profitCurrency: sizing.profitCurrency,
-          accountCurrency,
-          closePrice: typeof closeFill === "number" ? closeFill : 0,
-        });
         const pnl = computeRealizedPnlUsd({
           side: row.side as "BUY" | "SELL",
           requestedVolume: Number(row.requestedVolume),
           openFillPrice: openFill,
           closeFillPrice: closeFill,
-          contractSize: sizing.contractSize,
-          quoteToAccountFx: fx.factor,
         });
         update.realizedPlUsd = pnl.realizedPlUsd;
         update.pnlStatus = pnl.pnlStatus;

@@ -76,7 +76,7 @@ export interface ReadinessSnapshot {
 const STEP_TEMPLATE: ReadonlyArray<{ id: string; title: string; expected: string }> = [
   { id: "01-dashboard", title: "Open dashboard", expected: "Dashboard loads, owner banner + MT5-deferred banner visible." },
   { id: "02-mt5-deferred", title: "Confirm MT5 deferred", expected: "broker/status reports appMode=PAPER_ONLY, liveTradingStatus=DISABLED, mt5Connected=false." },
-  { id: "03-simulator", title: "Confirm simulator active", expected: "Admin Diagnostics reports the simulator active and MT5 deferred." },
+  { id: "03-simulator", title: "Confirm simulator active", expected: "system/full-health reports simulatorActive=true and mt5Deferred=true." },
   { id: "04-live-chart", title: "Confirm live chart active", expected: "/api/market/candles returns candles for the selected symbol." },
   { id: "05-scanner", title: "Run market scanner", expected: "scanner returns at least one signal across configured symbols." },
   { id: "06-top-opportunity", title: "Review top opportunity", expected: "Top opportunity card shows confidence, opportunity, sniper, grade scores." },

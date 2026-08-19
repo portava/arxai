@@ -122,11 +122,7 @@ export function PreTradeChecklistModal({ open, intent, onClose, onConfirmed }: P
               <Row label="Market" value={confirmation.marketCondition} />
               <Row label="Permission" value={confirmation.permissionStatus} />
               <Row label="Broker" value={confirmation.brokerConnected ? "Connected" : "Disconnected"} />
-              {/* Theme B — an uncalibrated heuristic, never a probability. The
-                  "%" made it read as a win likelihood; it is a bounded score. */}
-              {typeof confirmation.aiConfidence === "number" && (
-                <Row label="AI signal strength (not a probability)" value={`${confirmation.aiConfidence.toFixed(0)} / 100`} />
-              )}
+              {typeof confirmation.aiConfidence === "number" && <Row label="AI Confidence" value={`${confirmation.aiConfidence.toFixed(0)}%`} />}
               {typeof confirmation.fitScore === "number" && <Row label="Fit Score" value={confirmation.fitScore.toFixed(0)} />}
             </div>
 

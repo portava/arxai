@@ -22,37 +22,15 @@
 //     freshness layer reads the tick age and downgrades the tip to stale.
 //
 // PRICE BASIS
-//   Each tick folds on the basis its own provider publishes, and the tip is
-//   appended beneath closed bars from that SAME provider, so the tip never sits
-//   on a different basis than the bars under it (no half-spread seam):
-//     - mt5_broker → tick BID under BID closed candles
-//     - Deriv WS   → tick quote under Deriv closed candles
-//   The composer itself is provider-agnostic; sourcing is wired per provider
-//   (EA ingest, derivFormingBridge) and the append gate asks only whether a real
-//   current-interval tick exists.
+//   We fold the tick BID, matching the mt5_broker closed-candle basis (BID), so
+//   the synthesized tip sits on the same basis as the closed bars beneath it
+//   (no half-spread seam). The composer is therefore scoped at append time to
+//   the mt5_broker source only.
 
 import { EventEmitter } from "node:events";
 import { CHART_TIMEFRAMES, timeframeMs, type ChartTimeframe } from "./timeframes.js";
 import { normalizeSymbolKey } from "../providers/mt5Provider.js";
-import { resolveDerivSymbol } from "../providers/derivProvider.js";
 import { MARKET_FROZEN_BROKER_STALE_MS, MARKET_FROZEN_WALL_FRESH_MS } from "../freshness.js";
-
-/**
- * The store key for a symbol, collapsing provider aliases onto ONE bucket.
- *
- * A Deriv synthetic is addressed several ways across the app — the ARX code
- * ("V75"), the Deriv WS id ("R_75") and the display name ("Volatility 75
- * Index"). The tick folds in under whichever name the provider reports while
- * the chart reads under whichever name the client requested, so a plain
- * uppercase key would file them in different buckets and the chart would find
- * no tip. Resolving to the canonical ARX code first makes fold and read meet.
- * Non-synthetic symbols are unaffected (plain normalized key).
- */
-function formingKey(symbol: string): string {
-  const raw = normalizeSymbolKey(symbol);
-  if (!raw) return "";
-  return resolveDerivSymbol(raw)?.symbol ?? raw;
-}
 
 /** A single synthesized forming bar for one (symbol, timeframe) bucket. */
 export interface FormingBarState {
@@ -151,7 +129,7 @@ export function foldFormingTick(
   nowWallMs: number = Date.now(),
 ): void {
   if (!Number.isFinite(bid) || bid <= 0) return;
-  const symbolKey = formingKey(symbol);
+  const symbolKey = normalizeSymbolKey(symbol);
   if (!symbolKey) return;
   const bucketTime = brokerTimeMs != null && Number.isFinite(brokerTimeMs) ? brokerTimeMs : nowWallMs;
 
@@ -206,7 +184,7 @@ export function getFormingBar(
   timeframe: ChartTimeframe,
   nowWallMs: number = Date.now(),
 ): FormingBarSnapshot | null {
-  const symbolKey = formingKey(symbol);
+  const symbolKey = normalizeSymbolKey(symbol);
   if (!symbolKey) return null;
   const state = store.get(stateKey(symbolKey, timeframe));
   if (!state) return null;
@@ -265,7 +243,7 @@ export function getFeedFreshness(
   symbol: string,
   nowWallMs: number = Date.now(),
 ): MarketFreshness | null {
-  const symbolKey = formingKey(symbol);
+  const symbolKey = normalizeSymbolKey(symbol);
   if (!symbolKey) return null;
   const last = lastTickBySymbol.get(symbolKey);
   if (!last) return null;

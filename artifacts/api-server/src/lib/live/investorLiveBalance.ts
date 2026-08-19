@@ -35,9 +35,8 @@ import {
   userSlotAllocationTable,
   virtualTradingAccountsTable,
   mt5ConnectionTable,
-  sharedTradeAttributionTable,
 } from "@workspace/db/schema";
-import { and, eq, isNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import {
   buildLiveAccountSnapshot,
   type LiveAccountSnapshot,
@@ -109,13 +108,6 @@ export interface InvestorLiveBalanceSnapshot {
   /** The underlying live account snapshot (null for non-live modes) so callers
    *  that already need it don't recompute. */
   liveAccountSnapshot: LiveAccountSnapshot | null;
-  /**
-   * P0-2 — count of CLOSED trades whose realized P/L is not yet in the ledger
-   * because their contract size / FX conversion is unresolved. > 0 means
-   * `realizedPnL` and `liveEquity` are INCOMPLETE (never fabricated, but not
-   * final) and the accompanying warning is present.
-   */
-  realizedPnLPendingCount?: number;
 }
 
 /**
@@ -136,8 +128,6 @@ export interface InvestorLiveBalanceWire {
   availableBalance: number;
   openTradeCount: number;
   freshness: InvestorBalanceFreshness;
-  /** P0-2 — > 0 means realizedPnL / liveEquity are incomplete (see warnings). */
-  realizedPnLPendingCount: number;
 }
 
 /** Project the full canonical snapshot down to the shared wire block. */
@@ -155,7 +145,6 @@ export function toInvestorLiveBalanceWire(
     availableBalance: inv.availableBalance,
     openTradeCount: inv.openTradeCount,
     freshness: inv.freshness,
-    realizedPnLPendingCount: inv.realizedPnLPendingCount ?? 0,
   };
 }
 
@@ -310,21 +299,7 @@ export interface InvestorBalanceParts {
   allocatedBalance: number;
   reservedRisk: number;
   realizedPnL: number;
-  /**
-   * P0-2 — number of CLOSED trades whose realized P/L is not yet in the
-   * ledger because the instrument's contract size / FX conversion could not
-   * be established (see lib/mt5/contractSize.ts). While this is > 0,
-   * `realizedPnL` — and therefore `liveEquity` — is INCOMPLETE. It is not a
-   * wrong number, but it is not the whole number, and the UI must say so
-   * rather than present it as final.
-   */
-  realizedPnLPendingCount: number;
 }
-
-/** Copy for an equity figure that is missing one or more closed trades. */
-export const REALIZED_PNL_PENDING_SIZING_NOTE =
-  "Realized P/L pending correct sizing — one or more closed trades are awaiting their broker " +
-  "contract specification, so this balance is incomplete. No estimated value is shown in their place.";
 
 export async function fetchInvestorBalanceParts(
   userId: number,
@@ -351,25 +326,7 @@ export async function fetchInvestorBalanceParts(
     vtaRows.reduce((s, r) => s + Number(r.virtualPnl ?? 0), 0),
   );
 
-  // P0-2 — closed trades still awaiting correct sizing are deliberately NOT in
-  // virtualPnl (virtualPnlSync bails before its idempotency CAS rather than
-  // booking a mis-scaled figure). Count them so the caller can label the
-  // equity as incomplete instead of presenting a partial total as final.
-  const pendingRows = await db
-    .select({ id: sharedTradeAttributionTable.id })
-    .from(sharedTradeAttributionTable)
-    .where(and(
-      eq(sharedTradeAttributionTable.userId, userId),
-      eq(sharedTradeAttributionTable.status, "closed"),
-      isNull(sharedTradeAttributionTable.realizedAppliedAt),
-    ));
-
-  return {
-    allocatedBalance,
-    reservedRisk,
-    realizedPnL,
-    realizedPnLPendingCount: pendingRows.length,
-  };
+  return { allocatedBalance, reservedRisk, realizedPnL };
 }
 
 export async function buildInvestorLiveBalanceSnapshot(
@@ -383,7 +340,7 @@ export async function buildInvestorLiveBalanceSnapshot(
   const accountMode: AccountMode = scope.currentAccountMode;
   const { includeLive } = resolveLivePositionVisibility(scope.currentAccountMode);
 
-  const { allocatedBalance, reservedRisk, realizedPnL, realizedPnLPendingCount } =
+  const { allocatedBalance, reservedRisk, realizedPnL } =
     await fetchInvestorBalanceParts(userId);
 
   // Live floating P/L — only when the user is genuinely in LIVE_SHARED mode.
@@ -426,7 +383,7 @@ export async function buildInvestorLiveBalanceSnapshot(
     });
   }
 
-  const snapshot = composeInvestorBalance({
+  return composeInvestorBalance({
     userId,
     accountMode,
     allocatedBalance,
@@ -435,16 +392,4 @@ export async function buildInvestorLiveBalanceSnapshot(
     liveSnapshot,
     now,
   });
-
-  // P0-2 — an equity figure missing one or more closed trades must say so.
-  // The number shown is not wrong, but it is not final, and a trader reading
-  // it as final is exactly the failure this surfaces.
-  if (realizedPnLPendingCount > 0) {
-    return {
-      ...snapshot,
-      realizedPnLPendingCount,
-      warnings: [...snapshot.warnings, REALIZED_PNL_PENDING_SIZING_NOTE],
-    };
-  }
-  return { ...snapshot, realizedPnLPendingCount: 0 };
 }

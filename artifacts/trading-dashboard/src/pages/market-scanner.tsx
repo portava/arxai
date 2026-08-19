@@ -151,29 +151,17 @@ async function api(path: string, init?: RequestInit) {
   return body;
 }
 
-/**
- * Timeframe the scalp engine actually reads on. Mirrors SCALP_TIMEFRAME in
- * api-server/src/lib/scalp/scalpServiceInputs.ts — kept as a named constant so
- * the ticket's stamp is obviously tied to the engine rather than a loose
- * literal that can drift out of sync again.
- */
-const SCALP_TICKET_TIMEFRAME = "M5";
-
 // Convert a shared-engine ScalpResult into the SignalContext the existing
 // gated trade ticket consumes. This carries the scalp's symbol/direction/
-// entry/SL/main-TP/suggested-lot into the SAME ScannerTradeModal used
-// everywhere else — no new trade path, every server safety gate re-runs on
-// submit.
-export function scalpResultToSignal(r: ScalpResult) {
+// entry/SL/main-TP into the SAME ScannerTradeModal used everywhere else —
+// no new trade path, every server safety gate re-runs on submit.
+function scalpResultToSignal(r: ScalpResult) {
   const entry = r.entryZone
     ? (r.entryZone.from + r.entryZone.to) / 2
     : (r.currentPrice ?? undefined);
   return {
     symbol: r.symbol,
-    // The engine reads and reasons on M5 (SCALP_TIMEFRAME). This used to stamp
-    // "M1", so the journal, attribution and review all recorded a timeframe the
-    // setup was never evaluated on (Theme D1).
-    timeframe: SCALP_TICKET_TIMEFRAME,
+    timeframe: "M1",
     recommendedAction: r.direction ?? "BUY",
     bias: r.direction ?? "NEUTRAL",
     confidenceScore: r.qualityScore,
@@ -183,15 +171,6 @@ export function scalpResultToSignal(r: ScalpResult) {
     entry,
     stopLoss: r.stopLoss ?? undefined,
     takeProfit: r.takeProfit.main ?? undefined,
-    // The engine's real risk-based size, computed from broker truth
-    // (tickValue/tickSize, clamped to min/max/step). Dropping it meant the
-    // modal fell back to a hardcoded 0.02 and the size actually sent to the
-    // broker bore no relation to the sizing shown to the user.
-    //
-    // null is meaningful and passed through as null: the engine deliberately
-    // refuses to size on insufficient margin, a flame kill, or below-min-lot
-    // risk, and that refusal must not become a fabricated number.
-    suggestedLot: r.suggestedLot ?? null,
   };
 }
 

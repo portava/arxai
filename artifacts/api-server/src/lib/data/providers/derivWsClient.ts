@@ -39,9 +39,6 @@ export interface DerivTick {
   quote: number;
 }
 
-/** Observer notified for every live tick that lands on the socket. */
-export type DerivTickListener = (tick: DerivTick) => void;
-
 interface PendingRequest {
   resolve: (msg: Record<string, unknown>) => void;
   reject: (err: Error) => void;
@@ -57,10 +54,6 @@ class DerivWsClient {
   private nextReqId = 1;
   private pending = new Map<number, PendingRequest>();
   private lastTickBySymbol = new Map<string, DerivTick>();
-  // Observers notified per accepted tick. Used by the forming-bar bridge so a
-  // Deriv-fed chart's tip advances on real ticks exactly like a broker-fed one.
-  // Best-effort and advisory: a throwing listener never breaks tick handling.
-  private tickListeners = new Set<DerivTickListener>();
   private subscribedSymbols = new Set<string>();
   private subscriptionIdBySymbol = new Map<string, string>();
   private reconnectCount = 0;
@@ -111,24 +104,6 @@ class DerivWsClient {
   }
   /** Cached tick lookup by Deriv id (no subscribe). */
   getCachedTickByDerivId(derivId: string): DerivTick | null { return this.lastTickBySymbol.get(derivId) ?? null; }
-
-  /** Subscribe to every accepted live tick. Returns an unsubscribe function. */
-  onTick(listener: DerivTickListener): () => void {
-    this.tickListeners.add(listener);
-    return () => { this.tickListeners.delete(listener); };
-  }
-
-  /** Notify observers. Advisory only — a throwing listener is swallowed so it
-   *  can never break tick caching or the socket read loop. */
-  private emitTick(tick: DerivTick): void {
-    for (const listener of this.tickListeners) {
-      try {
-        listener(tick);
-      } catch {
-        // Ignore — display/telemetry observers must not affect the feed.
-      }
-    }
-  }
 
   /** Detect which API mode to use based on env vars. */
   static detectMode(): "new" | "legacy" | "none" {
@@ -389,12 +364,10 @@ class DerivWsClient {
     const tick = msg.tick as Record<string, unknown> | undefined;
     if (tick && typeof tick.symbol === "string" && typeof tick.quote === "number" && typeof tick.epoch === "number") {
       const sym = tick.symbol as string;
-      const accepted: DerivTick = { symbol: sym, epoch: tick.epoch as number, quote: tick.quote as number };
-      this.lastTickBySymbol.set(sym, accepted);
+      this.lastTickBySymbol.set(sym, { symbol: sym, epoch: tick.epoch as number, quote: tick.quote as number });
       this.lastTickAt = Date.now();
       const subId = (msg.subscription as Record<string, unknown> | undefined)?.id;
       if (typeof subId === "string") this.subscriptionIdBySymbol.set(sym, subId);
-      this.emitTick(accepted);
     }
 
     // Correlated response.

@@ -41,7 +41,6 @@ import {
   updateUserSettings,
 } from "../lib/live/liveCommandPipeline.js";
 import { liveBrokerExecutionEnabled } from "../lib/live/phaseBConfig.js";
-import { ARX_LOCK_NS, withTxAdvisoryLock } from "../lib/concurrency/advisoryLock.js";
 import {
   isSnapshotReliable,
   classifyRow,
@@ -81,45 +80,6 @@ const SAFETY_ENVELOPE = {
 };
 function envelope() {
   return { ...SAFETY_ENVELOPE, liveBrokerExecutionEnabled: liveBrokerExecutionEnabled() };
-}
-
-/**
- * P0-1 — serialize ONE user's in-flight live submissions.
- *
- * `dispatchLiveCommand` reads the command row, runs all 18 Phase B gates, and
- * only then writes SENT_TO_MT5_LIVE. Two concurrent requests from the same
- * user (double-tap, retried fetch, two tabs, Ruby racing a manual click) both
- * enter that window. The compare-and-set inside the pipeline is the
- * authoritative stop — this lock is the outer layer that keeps the two
- * requests from overlapping at all, matching what
- * `instantTrade.ts` and `/me/one-click/submit-live` already do.
- *
- * Non-blocking (`pg_try_advisory_xact_lock`): a caller that cannot take the
- * lock immediately gets the precise `USER_SUBMIT_LOCKED` reason rather than
- * hanging on a queue. Returns `null` when the lock was refused AND the 409 has
- * already been written, so callers return immediately.
- *
- * NOTE: these route handlers are HTTP entrypoints and are never invoked from
- * inside another USER_SUBMIT lock scope, so this cannot self-deadlock. The
- * lock is per-user (keyB = userId): one trader's submission never blocks
- * another's.
- */
-async function withUserSubmitLock<T>(
-  userId: number,
-  res: Response,
-  fn: () => Promise<T>,
-): Promise<{ ran: true; value: T } | { ran: false }> {
-  const lock = await withTxAdvisoryLock(ARX_LOCK_NS.USER_SUBMIT, userId, async () => fn());
-  if (!lock.acquired) {
-    res.status(409).json({
-      ok: false,
-      error: "USER_SUBMIT_LOCKED",
-      detail: "Another live submission for your account is still in flight. Wait for it to finish.",
-      ...envelope(),
-    });
-    return { ran: false };
-  }
-  return { ran: true, value: lock.value };
 }
 
 // ── Arming ─────────────────────────────────────────────────────────────────
@@ -254,13 +214,11 @@ router.post("/me/live/commands/:commandId/confirm", requireUser, async (req, res
 router.post("/me/live/commands/:commandId/dispatch", requireUser, async (req, res) => {
   const userId = uid(req);
   if (!userId) { res.status(401).json({ error: "AUTH_REQUIRED" }); return; }
-  const locked = await withUserSubmitLock(userId, res, () =>
-    dispatchLiveCommand({ userId, commandId: String(req.params.commandId ?? "") }));
-  if (!locked.ran) return;
+  const result = await dispatchLiveCommand({ userId, commandId: String(req.params.commandId ?? "") });
   // Phase B: result.ok may be true (PASS path → SENT_TO_MT5_LIVE) or false
   // (BLOCKED with the exact failing gate reason). Surface 200 either way so
   // the UI renders the full state-machine outcome including LIVE_BLOCKED.
-  res.status(200).json({ ...locked.value, ...envelope() });
+  res.status(200).json({ ...result, ...envelope() });
 });
 
 router.post("/me/live/commands/:commandId/cancel", requireUser, async (req, res) => {
@@ -436,21 +394,12 @@ router.post("/me/live/positions/:ticket/close", requireUser, async (req, res) =>
     req.log.warn({ action: "SAFETY_GATE_BLOCKED", userId, ticket, stage: "draft", reason: (draft as { error?: string }).error ?? null }, "trade.close.blocked");
     res.status(409).json({ ...draft, ...envelope() }); return;
   }
-  // P0-1 — confirm + dispatch run inside ONE per-user lock scope so a second
-  // close request for the same ticket cannot interleave between them.
-  const locked = await withUserSubmitLock(userId, res, async () => {
-    const conf = await confirmLiveCommand({ userId, commandId: draft.command.commandId });
-    if (!conf.ok) return { stage: "confirm" as const, result: conf };
-    const d = await dispatchLiveCommand({ userId, commandId: draft.command.commandId });
-    return { stage: "dispatch" as const, result: d };
-  });
-  if (!locked.ran) return;
-  if (locked.value.stage === "confirm") {
-    const conf = locked.value.result;
+  const conf = await confirmLiveCommand({ userId, commandId: draft.command.commandId });
+  if (!conf.ok) {
     req.log.warn({ action: "SAFETY_GATE_BLOCKED", userId, ticket, stage: "confirm", reason: (conf as { error?: string }).error ?? null }, "trade.close.blocked");
     res.status(409).json({ ...conf, ...envelope() }); return;
   }
-  const disp = locked.value.result;
+  const disp = await dispatchLiveCommand({ userId, commandId: draft.command.commandId });
   if ((disp as { ok?: boolean }).ok === false) {
     req.log.warn({ action: "SAFETY_GATE_BLOCKED", userId, ticket, stage: "dispatch", reason: (disp as { primaryReason?: string }).primaryReason ?? null }, "trade.close.blocked");
   } else {
@@ -479,39 +428,31 @@ router.post("/me/live/positions/close-all", requireUser, async (req, res) => {
       isNull(arxLivePositionsTable.closedAt),
     ));
   req.log.info({ action: "CLOSE_ALL_REQUESTED", userId, openCount: open.length }, "trade.close-all.requested");
-  // P0-1 — the WHOLE sweep runs in one per-user lock scope. Locking each
-  // iteration instead would let a concurrent single-ticket close slot in
-  // between two tickets of this sweep and double-close one of them.
-  const locked = await withUserSubmitLock(userId, res, async () => {
-    const results: Array<{ ticket: string; ok: boolean; reason?: string }> = [];
-    for (const pos of open) {
-      const ticket = pos.brokerTicket ?? "";
-      if (!ticket) {
-        results.push({ ticket: String(pos.id), ok: false, reason: "NO_BROKER_TICKET" });
-        continue;
-      }
-      const draft = await createLiveOpsDraft({
-        userId, commandType: "CLOSE_LIVE_POSITION",
-        brokerTicket: ticket, symbol: pos.symbol, side: pos.side as "BUY" | "SELL",
-        volume: Number(pos.volume), sourcePage: "LIVE_POSITIONS_CLOSE_ALL",
-      });
-      if (!draft.ok) {
-        results.push({ ticket, ok: false, reason: (draft as { reason?: string }).reason });
-        continue;
-      }
-      const conf = await confirmLiveCommand({ userId, commandId: draft.command.commandId });
-      if (!conf.ok) {
-        results.push({ ticket, ok: false, reason: (conf as { reason?: string }).reason });
-        continue;
-      }
-      const disp = await dispatchLiveCommand({ userId, commandId: draft.command.commandId });
-      const ok = (disp as { ok?: boolean }).ok === true;
-      results.push({ ticket, ok, reason: ok ? undefined : ((disp as { primaryReason?: string; reason?: string }).primaryReason ?? (disp as { reason?: string }).reason) });
+  const results: Array<{ ticket: string; ok: boolean; reason?: string }> = [];
+  for (const pos of open) {
+    const ticket = pos.brokerTicket ?? "";
+    if (!ticket) {
+      results.push({ ticket: String(pos.id), ok: false, reason: "NO_BROKER_TICKET" });
+      continue;
     }
-    return results;
-  });
-  if (!locked.ran) return;
-  const results = locked.value;
+    const draft = await createLiveOpsDraft({
+      userId, commandType: "CLOSE_LIVE_POSITION",
+      brokerTicket: ticket, symbol: pos.symbol, side: pos.side as "BUY" | "SELL",
+      volume: Number(pos.volume), sourcePage: "LIVE_POSITIONS_CLOSE_ALL",
+    });
+    if (!draft.ok) {
+      results.push({ ticket, ok: false, reason: (draft as { reason?: string }).reason });
+      continue;
+    }
+    const conf = await confirmLiveCommand({ userId, commandId: draft.command.commandId });
+    if (!conf.ok) {
+      results.push({ ticket, ok: false, reason: (conf as { reason?: string }).reason });
+      continue;
+    }
+    const disp = await dispatchLiveCommand({ userId, commandId: draft.command.commandId });
+    const ok = (disp as { ok?: boolean }).ok === true;
+    results.push({ ticket, ok, reason: ok ? undefined : ((disp as { primaryReason?: string; reason?: string }).primaryReason ?? (disp as { reason?: string }).reason) });
+  }
   const closed = results.filter((r) => r.ok).length;
   req.log.info({ action: "CLOSE_ALL_COMPLETED", userId, total: results.length, closed }, "trade.close-all.completed");
   res.json({ ok: true, total: results.length, closed, results, ...envelope() });
@@ -544,20 +485,12 @@ router.post("/me/live/positions/:ticket/modify", requireUser, async (req, res) =
     req.log.warn({ action: "SAFETY_GATE_BLOCKED", userId, ticket, stage: "draft", reason: (draft as { error?: string }).error ?? null }, "trade.modify.blocked");
     res.status(409).json({ ...draft, ...envelope() }); return;
   }
-  // P0-1 — confirm + dispatch share ONE per-user lock scope.
-  const locked = await withUserSubmitLock(userId, res, async () => {
-    const conf = await confirmLiveCommand({ userId, commandId: draft.command.commandId });
-    if (!conf.ok) return { stage: "confirm" as const, result: conf };
-    const d = await dispatchLiveCommand({ userId, commandId: draft.command.commandId });
-    return { stage: "dispatch" as const, result: d };
-  });
-  if (!locked.ran) return;
-  if (locked.value.stage === "confirm") {
-    const conf = locked.value.result;
+  const conf = await confirmLiveCommand({ userId, commandId: draft.command.commandId });
+  if (!conf.ok) {
     req.log.warn({ action: "SAFETY_GATE_BLOCKED", userId, ticket, stage: "confirm", reason: (conf as { error?: string }).error ?? null }, "trade.modify.blocked");
     res.status(409).json({ ...conf, ...envelope() }); return;
   }
-  const disp = locked.value.result;
+  const disp = await dispatchLiveCommand({ userId, commandId: draft.command.commandId });
   if ((disp as { ok?: boolean }).ok === false) {
     req.log.warn({ action: "SAFETY_GATE_BLOCKED", userId, ticket, stage: "dispatch", reason: (disp as { primaryReason?: string }).primaryReason ?? null }, "trade.modify.blocked");
   } else {
@@ -606,20 +539,10 @@ router.post("/me/live/controlled-test-trigger", requireUser, async (req, res) =>
     ip,
   });
   if (!draft.ok) { res.status(409).json({ ...draft, ...envelope() }); return; }
-  // P0-1 — confirm + dispatch share ONE per-user lock scope. This endpoint
-  // sends real live money; a double-submitted controlled test must not be able
-  // to interleave two dispatches of the same command.
-  const locked = await withUserSubmitLock(userId, res, async () => {
-    const conf = await confirmLiveCommand({ userId, commandId: draft.command.commandId });
-    if (!conf.ok) return { stage: "confirm" as const, result: conf };
-    const d = await dispatchLiveCommand({ userId, commandId: draft.command.commandId });
-    return { stage: "dispatch" as const, result: d };
-  });
-  if (!locked.ran) return;
-  if (locked.value.stage === "confirm") {
-    res.status(409).json({ ...locked.value.result, ...envelope() }); return;
-  }
-  res.json({ ...locked.value.result, commandId: draft.command.commandId, ...envelope() });
+  const conf = await confirmLiveCommand({ userId, commandId: draft.command.commandId });
+  if (!conf.ok) { res.status(409).json({ ...conf, ...envelope() }); return; }
+  const disp = await dispatchLiveCommand({ userId, commandId: draft.command.commandId });
+  res.json({ ...disp, commandId: draft.command.commandId, ...envelope() });
 });
 
 // ── Command status poll (for live test result display) ─────────────────────

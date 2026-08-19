@@ -15,7 +15,6 @@ import { Router, type Request, type Response } from "express";
 import { and, eq, isNull, isNotNull, ne, or, sql } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
 import { openLiveExposureCondition } from "../lib/live/livePositionExposure.js";
-import { isForexPair } from "../lib/mt5/contractSize.js";
 import {
   db,
   arxLivePositionsTable,
@@ -61,11 +60,16 @@ function estimateMarginUsd(volume: number, price: number, leverage: number): num
 // A loose /^[A-Z]{6}/ test would mis-classify metals (XAUUSD, XAGUSD), crypto
 // (BTCUSD) and other CFDs as forex and re-fabricate a 100k-notional margin for
 // them — exactly what this guard exists to prevent.
-//
-// P0-2 — the classifier and its FIAT_CODES allowlist used to be inlined here.
-// Realized-P/L sizing needs exactly the same rule, so it now lives in
-// `lib/mt5/contractSize.ts` as the single definition and is imported here.
-// Two copies would drift, and a drifted copy re-introduces the mis-sizing.
+const FIAT_CODES = new Set([
+  "USD", "EUR", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF", "SEK", "NOK", "DKK",
+  "SGD", "HKD", "ZAR", "MXN", "PLN", "TRY", "CZK", "HUF", "CNH", "CNY", "RUB",
+  "INR", "THB", "ILS", "KRW",
+]);
+function isForexPair(symbol: string): boolean {
+  const m = /^([A-Z]{3})([A-Z]{3})([._-][A-Z0-9]+)?$/.exec(symbol.trim().toUpperCase());
+  if (!m) return false;
+  return FIAT_CODES.has(m[1]) && FIAT_CODES.has(m[2]);
+}
 
 router.get("/me/live/slot-summary", requireUser, async (req, res) => {
   const userId = uid(req);

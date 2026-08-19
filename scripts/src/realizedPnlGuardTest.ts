@@ -17,7 +17,6 @@ import {
   isValidFillPrice,
   PNL_DATA_QUALITY_MISSING_CLOSE_FILL,
 } from "../../artifacts/api-server/src/lib/live/realizedPnl.js";
-import { FX_STANDARD_LOT_UNITS } from "../../artifacts/api-server/src/lib/mt5/contractSize.js";
 import { isEntrypoint, type CiTestResultLike } from "./ci/inProcessAppHarness.js";
 
 export async function run(): Promise<CiTestResultLike> {
@@ -49,8 +48,6 @@ console.log("\nFixture 1 — close fillPrice missing (undefined)");
   const r = computeRealizedPnlUsd({
     side: "BUY", requestedVolume: 0.01,
     openFillPrice: 1.05000, closeFillPrice: undefined,
-    // EURUSD standard lot on a USD account: 100,000 units, quote ccy == account ccy.
-    contractSize: FX_STANDARD_LOT_UNITS, quoteToAccountFx: 1,
   });
   assert(r.pnlStatus === "UNKNOWN", `pnlStatus is UNKNOWN (got ${r.pnlStatus})`);
   assert(r.realizedPlUsd === null, "realizedPlUsd is null");
@@ -64,8 +61,6 @@ console.log("\nFixture 2 — close fillPrice = 0");
   const r = computeRealizedPnlUsd({
     side: "SELL", requestedVolume: 0.01,
     openFillPrice: 1.05000, closeFillPrice: 0,
-    // EURUSD standard lot on a USD account: 100,000 units, quote ccy == account ccy.
-    contractSize: FX_STANDARD_LOT_UNITS, quoteToAccountFx: 1,
   });
   assert(r.pnlStatus === "UNKNOWN", `pnlStatus is UNKNOWN (got ${r.pnlStatus})`);
   assert(r.realizedPlUsd === null, "realizedPlUsd is null");
@@ -79,8 +74,6 @@ console.log("\nFixture 2b — close fillPrice = NaN");
   const r = computeRealizedPnlUsd({
     side: "BUY", requestedVolume: 0.01,
     openFillPrice: 1.05000, closeFillPrice: NaN,
-    // EURUSD standard lot on a USD account: 100,000 units, quote ccy == account ccy.
-    contractSize: FX_STANDARD_LOT_UNITS, quoteToAccountFx: 1,
   });
   assert(r.pnlStatus === "UNKNOWN", `pnlStatus is UNKNOWN (got ${r.pnlStatus})`);
   assert(r.realizedPlUsd === null, "realizedPlUsd is null");
@@ -92,8 +85,6 @@ console.log("\nFixture 2c — close fillPrice = null");
   const r = computeRealizedPnlUsd({
     side: "BUY", requestedVolume: 0.01,
     openFillPrice: 1.05000, closeFillPrice: null,
-    // EURUSD standard lot on a USD account: 100,000 units, quote ccy == account ccy.
-    contractSize: FX_STANDARD_LOT_UNITS, quoteToAccountFx: 1,
   });
   assert(r.pnlStatus === "UNKNOWN", "pnlStatus is UNKNOWN");
   assert(r.realizedPlUsd === null, "realizedPlUsd is null");
@@ -106,8 +97,6 @@ console.log("\nFixture 3 — valid fillPrice, BUY profit");
   const r = computeRealizedPnlUsd({
     side: "BUY", requestedVolume: 0.01,
     openFillPrice: 1.05000, closeFillPrice: 1.05100,
-    // EURUSD standard lot on a USD account: 100,000 units, quote ccy == account ccy.
-    contractSize: FX_STANDARD_LOT_UNITS, quoteToAccountFx: 1,
   });
   assert(r.pnlStatus === "COMPUTED", `pnlStatus is COMPUTED (got ${r.pnlStatus})`);
   assert(r.realizedPlUsd === 1.00, `realizedPlUsd = 1.00 (got ${r.realizedPlUsd})`);
@@ -122,8 +111,6 @@ console.log("\nFixture 3b — valid fillPrice, SELL profit");
   const r = computeRealizedPnlUsd({
     side: "SELL", requestedVolume: 0.01,
     openFillPrice: 1.05100, closeFillPrice: 1.05000,
-    // EURUSD standard lot on a USD account: 100,000 units, quote ccy == account ccy.
-    contractSize: FX_STANDARD_LOT_UNITS, quoteToAccountFx: 1,
   });
   assert(r.pnlStatus === "COMPUTED", "pnlStatus is COMPUTED");
   assert(r.realizedPlUsd === 1.00, `realizedPlUsd = 1.00 (got ${r.realizedPlUsd})`);
@@ -134,8 +121,6 @@ console.log("\nFixture 3c — valid fillPrice, BUY loss");
   const r = computeRealizedPnlUsd({
     side: "BUY", requestedVolume: 0.01,
     openFillPrice: 1.05100, closeFillPrice: 1.05000,
-    // EURUSD standard lot on a USD account: 100,000 units, quote ccy == account ccy.
-    contractSize: FX_STANDARD_LOT_UNITS, quoteToAccountFx: 1,
   });
   assert(r.pnlStatus === "COMPUTED", "pnlStatus is COMPUTED");
   assert(r.realizedPlUsd === -1.00, `realizedPlUsd = -1.00 (got ${r.realizedPlUsd})`);
@@ -146,8 +131,6 @@ console.log("\nFixture 4 — open fillPrice missing");
   const r = computeRealizedPnlUsd({
     side: "BUY", requestedVolume: 0.01,
     openFillPrice: null, closeFillPrice: 1.05000,
-    // EURUSD standard lot on a USD account: 100,000 units, quote ccy == account ccy.
-    contractSize: FX_STANDARD_LOT_UNITS, quoteToAccountFx: 1,
   });
   assert(r.pnlStatus === "UNKNOWN", "pnlStatus is UNKNOWN");
   assert(r.realizedPlUsd === null, "realizedPlUsd is null");
@@ -162,8 +145,6 @@ console.log("\nFixture 5 — proving the previously-buggy 1163.59 scenario stays
   const r = computeRealizedPnlUsd({
     side: "BUY", requestedVolume: 0.01,
     openFillPrice: 1.16359, closeFillPrice: 0,
-    // EURUSD standard lot on a USD account: 100,000 units, quote ccy == account ccy.
-    contractSize: FX_STANDARD_LOT_UNITS, quoteToAccountFx: 1,
   });
   assert(r.realizedPlUsd === null, "fake -1163.59-style P/L is suppressed");
   assert(r.pnlStatus === "UNKNOWN", "pnlStatus is UNKNOWN");

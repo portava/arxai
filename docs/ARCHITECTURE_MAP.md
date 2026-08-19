@@ -82,6 +82,7 @@ scripts/               Workspace utility scripts
 | `trade_plans` | `tradePlans.ts` | trades | Pre-execution intent |
 | `trade_management_events` | `tradeManagementEvents.ts` | tradeMgmt | Append-only |
 | `learning_insights` | `learningInsights.ts` | learning | Aggregations |
+| `entry_sniper_results` | `entrySniperResults.ts` | strategy | Append-only |
 | `ai_decision_log` | `aiDecisionLog.ts` | decisionIntel | Append-only |
 | **`audit_events`** | `auditEvents.ts` | **vault** | **🔒 APPEND-ONLY (CI-enforced)** |
 | **`vault_events`** | `safetyCore.ts` | **vault** | **🔒 APPEND-ONLY (CI-enforced)** |

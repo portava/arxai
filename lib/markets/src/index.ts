@@ -23,31 +23,3 @@ export {
   getUserVisibleMarkets,
 } from "./visibility.js";
 export type { VisibleMarketsOptions } from "./visibility.js";
-
-// ── Market model: trading calendar + expected move ──────────────────────────
-// Additive and standalone. Both modules are pure arithmetic over instants and
-// numbers the caller supplies: no I/O, no clock reads, and nothing imported
-// from the dispatch/gate path. They answer "when is it open" and "how far is it
-// likely to move" — they cannot place, size, or authorise a trade.
-export {
-  getTradingCalendar,
-  venueOf,
-  isSyntheticInstrument,
-  wallClockMinutes,
-  FX_WEEK_OPEN_MS,
-  FX_WEEK_CLOSE_MS,
-} from "./calendar.js";
-export type { TradingCalendar, Venue, SessionName } from "./calendar.js";
-export {
-  synthSigma1min,
-  synthVolIndex,
-  varOverHorizon,
-  sigmaOverHorizon,
-  expectedRange,
-  expectedNet,
-  band,
-  annualiseFromMinute,
-  RANGE_COEFF,
-  NET_COEFF,
-  MINUTES_PER_YEAR,
-} from "./expectedMove.js";

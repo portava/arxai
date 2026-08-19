@@ -103,6 +103,7 @@ import { adminRubyExecutionRouter } from "./adminRubyExecution";
 import adminAiFixAgentRouter from "./adminAiFixAgent.js";
 import tradeDecisionRouter from "./tradeDecision";
 import autoDebriefRouter from "./autoDebrief";
+import marketDataRouter from "./marketData";
 import paperExecutionRouter from "./paperExecution";
 import paperAutopilotRouter from "./paperAutopilot";
 import performanceCommandCenterRouter from "./performanceCommandCenter";
@@ -338,6 +339,7 @@ router.use(adminRubyExecutionRouter);
 router.use(adminAiFixAgentRouter);
 router.use(tradeDecisionRouter);
 router.use(autoDebriefRouter);
+router.use(marketDataRouter);
 router.use(paperExecutionRouter);
 router.use(paperAutopilotRouter);
 router.use(performanceCommandCenterRouter);
@@ -401,6 +403,8 @@ import shadowModeRouter from "./shadowMode.js";
 router.use(shadowModeRouter);
 
 // Full System Stabilization aggregator.
+import systemFullHealthRouter from "./systemFullHealth.js";
+router.use(systemFullHealthRouter);
 
 // Owner / Tester auth + session.
 import authRouter from "./auth.js";

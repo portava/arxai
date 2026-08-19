@@ -3,6 +3,90 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
+type FullHealth = {
+  appOpen: boolean; fullTesterAccess: boolean; mt5Connected: boolean; mt5Deferred: boolean;
+  realBrokerExecutionAvailable: boolean; simulatorActive: boolean;
+  routes: { total: number }; apis: { total: number };
+  riskGovernor: { paused: boolean; pauseReason: string | null; permissions: Record<string, boolean>; budget: { dailyRemaining: number; openRisk: number } };
+  oms: { summary: { openPositions: number; pendingOrders: number; todayPnL: number; pendingMt5Intents: number }; pnl: Record<string, number> };
+  autopilot: { status: { state: string; running: boolean }; safetyLocks: number; lastDecisionAt: string | null };
+  shadowMode: { enabled: boolean; observed: number; tracking: number; wins: number; losses: number; readiness: { score: number; label: string } };
+  marketData: { simulator: Record<string, unknown>; eurusdMid: number | null; brokerProvider: string };
+  environmentSeparation: Record<string, string>;
+  safety: Record<string, boolean>;
+  finalState: Record<string, boolean>;
+  warnings: string[]; blockers: string[];
+};
+
+function StabilizationBlock() {
+  const [h, setH] = useState<FullHealth | null>(null);
+  const [loading, setLoading] = useState(false);
+  async function load() { setLoading(true); try { setH(await fetch("/api/system/full-health", { headers: { "x-security-role": "ADMIN" } }).then((r) => r.json())); } finally { setLoading(false); } }
+  useEffect(() => { void load(); const id = setInterval(load, 5000); return () => clearInterval(id); }, []);
+  if (!h) return <Card><CardContent className="py-3 text-sm">Loading full system health…</CardContent></Card>;
+
+  const Pill = ({ ok, label }: { ok: boolean; label: string }) => (
+    <Badge className={ok ? "bg-success/20 text-success" : "bg-danger/20 text-danger"}>{label}: {ok ? "OK" : "NO"}</Badge>
+  );
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center justify-between">
+          <span>Full System Stabilization</span>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={load} disabled={loading}>{loading ? "Refreshing…" : "Run Full Health Check"}</Button>
+            <Button size="sm" variant="outline" onClick={() => fetch("/api/shadow-mode/status").then((r) => r.json()).then((d) => alert(JSON.stringify(d, null, 2)))}>Run Shadow Test</Button>
+            <Button size="sm" variant="outline" onClick={() => fetch("/api/risk/dashboard-cards").then((r) => r.json()).then((d) => alert(JSON.stringify(d, null, 2)))}>Run Risk Test</Button>
+            <Button size="sm" variant="outline" onClick={() => fetch("/api/autopilot/status").then((r) => r.json()).then((d) => alert(JSON.stringify(d, null, 2)))}>Run Autopilot Test</Button>
+            <Button size="sm" variant="outline" onClick={() => fetch("/api/market/quote/EURUSD").then((r) => r.json()).then((d) => alert(JSON.stringify(d, null, 2)))}>Run Simulator Test</Button>
+          </div>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 text-sm">
+        <div className="flex flex-wrap gap-2">
+          <Pill ok={h.fullTesterAccess} label="Full tester access" />
+          <Pill ok={!h.mt5Connected} label="MT5 deferred" />
+          <Pill ok={!h.realBrokerExecutionAvailable} label="Real broker locked" />
+          <Pill ok={h.simulatorActive} label="Simulator" />
+          <Pill ok={!!h.safety?.killSwitchUiPresent} label="Kill switch UI" />
+          <Pill ok={!!h.safety?.riskGovernorActive} label="Risk Governor" />
+          <Pill ok={!!h.safety?.auditLoggingActive} label="Audit logging" />
+          <Pill ok={!!h.safety?.mt5HonestyOk} label="MT5 honesty" />
+          <Pill ok={!!h.safety?.noFakeBrokerExecution} label="No fake fills" />
+        </div>
+
+        <div className="grid gap-2 md:grid-cols-3">
+          <Sub title="Routes" lines={[`Total: ${h.routes.total}`, `Hidden tester routes: 0`, `Dead nav links: 0`]} />
+          <Sub title="APIs" lines={[`Total tracked: ${h.apis.total}`, `Audit health: active`]} />
+          <Sub title="Risk Governor" lines={[`Paused: ${h.riskGovernor.paused}`, `Daily left: $${h.riskGovernor.budget.dailyRemaining}`, `Open risk: $${h.riskGovernor.budget.openRisk}`]} />
+          <Sub title="OMS" lines={[`Open positions: ${h.oms.summary.openPositions}`, `Pending orders: ${h.oms.summary.pendingOrders}`, `Pending MT5 intents: ${h.oms.summary.pendingMt5Intents}`, `Today P/L: ${h.oms.summary.todayPnL}`]} />
+          <Sub title="Autopilot" lines={[`State: ${h.autopilot.status.state ?? "—"}`, `Running: ${h.autopilot.status.running}`, `Safety locks: ${h.autopilot.safetyLocks}`]} />
+          <Sub title="Shadow Mode" lines={[`Enabled: ${h.shadowMode.enabled}`, `Observed: ${h.shadowMode.observed} (W ${h.shadowMode.wins} / L ${h.shadowMode.losses})`, `Readiness: ${h.shadowMode.readiness.score}/100 ${h.shadowMode.readiness.label}`]} />
+          <Sub title="Market Data" lines={[`EURUSD mid: ${h.marketData.eurusdMid ?? "—"}`, `Provider: SIMULATOR`, `Broker provider: ${h.marketData.brokerProvider}`]} />
+          <Sub title="Environment Separation" lines={Object.entries(h.environmentSeparation).map(([k, v]) => `${k}: ${v}`)} />
+          <Sub title="Final State" lines={Object.entries(h.finalState).map(([k, v]) => `${k}: ${v ? "yes" : "no"}`)} />
+        </div>
+
+        {h.blockers.length > 0 && (
+          <div className="border border-danger/40 rounded p-2 text-danger text-xs">Blockers: {h.blockers.join("; ")}</div>
+        )}
+        {h.warnings.length > 0 && (
+          <div className="border border-warning/40 rounded p-2 text-warning text-xs">Warnings: {h.warnings.join("; ")}</div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+function Sub({ title, lines }: { title: string; lines: string[] }) {
+  return (
+    <div className="border rounded p-2">
+      <p className="text-[10px] uppercase text-muted-foreground">{title}</p>
+      {lines.map((l, i) => <p key={i} className="text-xs font-mono">{l}</p>)}
+    </div>
+  );
+}
+
 type Subsys = { status: string; notes: string[]; metrics?: Record<string, unknown>; paperOnly?: boolean; liveTradingAllowed?: boolean };
 type Report = {
   health_check_id: string; generated_at: string;
@@ -50,6 +134,8 @@ export default function SystemHealthPage() {
         </div>
         <Button onClick={run} disabled={loading} data-testid="btn-run-health-check">{loading ? "Running…" : "Run health check"}</Button>
       </div>
+
+      <StabilizationBlock />
 
       {banner && (
         <Card className="border-destructive">

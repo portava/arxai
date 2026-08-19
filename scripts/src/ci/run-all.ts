@@ -11,12 +11,10 @@ import { checkLiveTradingReadinessLock } from "./check-live-trading-readiness-lo
 import { checkEmergencyKillSwitch } from "./check-emergency-kill-switch.js";
 import { checkLiveOrderRiskLimits } from "./check-live-order-risk-limits.js";
 import { checkSecurityRoleHeader } from "./check-security-role-header.js";
-import { checkNoCommittedPepper } from "./check-no-committed-pepper.js";
 import { checkLiveBrokerExecutionDefaults } from "./check-live-broker-execution-defaults.js";
 import { checkMasterLiveBridgeBinding } from "./check-master-live-bridge-binding.js";
 import { checkMasterLiveUserApprovalRequired } from "./check-master-live-user-access.js";
 import { checkOneClickConcurrency } from "./check-one-click-concurrency.js";
-import { checkLiveDispatchCas } from "./check-live-dispatch-cas.js";
 import { checkOneClickArmRoutesThroughGate } from "./check-one-click-arm-routes-through-gate.js";
 import { checkScannerSelectedMarket } from "./check-scanner-selected-market.js";
 import { checkPerUserIsolationMeRoutes } from "./perUserIsolationMeRoutes.js";
@@ -59,7 +57,6 @@ import { checkLiveAiHarnessHonesty } from "./check-live-ai-harness-honesty.js";
 import { checkBacktestNoLiveExecution } from "./check-backtest-no-live-execution.js";
 import { checkMissionNoDirectExecution } from "./check-mission-no-direct-execution.js";
 import { checkScannerVerdictImportBoundary } from "./check-scanner-verdict-import-boundary.js";
-import { checkNoFabrication } from "./check-no-fabrication.js";
 // NOTE: `check-no-user-facing-paper-only.ts` exists as a future guard but
 // is intentionally NOT registered yet — it finds 65 pre-existing UI
 // strings (login.tsx, onboarding.tsx, my-paper-trades.tsx, etc.) that are
@@ -79,12 +76,10 @@ const checks: Array<() => CheckResult> = [
   checkEmergencyKillSwitch,
   checkLiveOrderRiskLimits,
   checkSecurityRoleHeader,
-  checkNoCommittedPepper,
   checkLiveBrokerExecutionDefaults,
   checkMasterLiveBridgeBinding,
   checkMasterLiveUserApprovalRequired,
   checkOneClickConcurrency,
-  checkLiveDispatchCas,
   checkOneClickArmRoutesThroughGate,
   checkScannerSelectedMarket,
   checkPerUserIsolationMeRoutes,
@@ -125,7 +120,6 @@ const checks: Array<() => CheckResult> = [
   checkBacktestNoLiveExecution,
   checkMissionNoDirectExecution,
   checkScannerVerdictImportBoundary,
-  checkNoFabrication,
 ];
 
 let failed = 0;

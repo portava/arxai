@@ -21,14 +21,6 @@ import { NewsRiskCheckPanel } from "@/components/trading/NewsRiskCheckPanel";
 import { useAssistantName } from "@/lib/assistant-name";
 import { Zap } from "lucide-react";
 
-/**
- * Conservative fallback lot, used ONLY when the producing engine supplied no
- * size — i.e. it deliberately refused to compute one. It is never a substitute
- * for a real computed lot; seeding the ticket unconditionally with it is what
- * made the executed size diverge from the displayed one (Theme D1).
- */
-const DEFAULT_LOT = 0.02;
-
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground pt-1">
@@ -117,11 +109,7 @@ export function ScannerTradeModal({
 }) {
   const { name } = useAssistantName();
   const [orderType, setOrderType] = useState<OrderType>(defaultSide === "BUY" ? "BUY_MARKET" : "SELL_MARKET");
-  // Seed from the engine's computed risk-based lot so the executed size equals
-  // the displayed one. DEFAULT_LOT is only a fallback for when the engine
-  // refused to size (null) — it must never override a real computed lot
-  // (Theme D1).
-  const [lotSize, setLotSize] = useState<number>(signal.suggestedLot ?? DEFAULT_LOT);
+  const [lotSize, setLotSize] = useState<number>(0.02);
   const [currentPrice, setCurrentPrice] = useState<string>(signal.entry != null ? String(signal.entry) : "");
   const [entryPrice, setEntryPrice] = useState<string>(signal.entry != null ? String(signal.entry) : "");
   const [stopTriggerPrice, setStopTriggerPrice] = useState<string>("");
@@ -261,7 +249,7 @@ export function ScannerTradeModal({
   useEffect(() => {
     if (!open) return;
     setOrderType(defaultSide === "BUY" ? "BUY_MARKET" : "SELL_MARKET");
-    setLotSize(signal.suggestedLot ?? DEFAULT_LOT);
+    setLotSize(0.02);
     setCurrentPrice(signal.entry != null ? String(signal.entry) : "");
     setEntryPrice(signal.entry != null ? String(signal.entry) : "");
     setStopTriggerPrice("");
@@ -688,18 +676,8 @@ export function ScannerTradeModal({
                 <div className="flex justify-between"><span className="text-txt-secondary">Estimated risk (price units)</span><span className="font-mono">{validation.riskPx != null ? validation.riskPx.toFixed(5) : "—"}</span></div>
                 <div className="flex justify-between"><span className="text-txt-secondary">Estimated reward (price units)</span><span className="font-mono">{validation.rewardPx != null ? validation.rewardPx.toFixed(5) : "—"}</span></div>
                 <div className="flex justify-between"><span className="text-txt-secondary">Risk / Reward</span><span className="font-mono">{validation.rr != null ? validation.rr.toFixed(2) : "—"}</span></div>
-                {/* Theme B — this is a hand-weighted heuristic sum, not a
-                    calibrated probability. It is NOT rendered with a "%": an
-                    "82%" reads as "82 out of 100 of these work out", which is a
-                    claim nothing here has measured. Shown as a bounded score
-                    with its scale stated instead. */}
                 {signal.confidenceScore != null && (
-                  <div className="flex justify-between pt-1 border-t border-border">
-                    <span className="text-txt-secondary" title="Hand-weighted signal strength, not a calibrated win probability.">
-                      Scanner signal strength
-                    </span>
-                    <span className="font-mono">{Math.round(signal.confidenceScore)} / 100</span>
-                  </div>
+                  <div className="flex justify-between pt-1 border-t border-border"><span className="text-txt-secondary">Scanner confidence</span><span className="font-mono">{Math.round(signal.confidenceScore)}%</span></div>
                 )}
               </div>
 

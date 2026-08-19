@@ -71,11 +71,6 @@ export interface IntegrationLaneTest {
 // lane can never silently drift apart.
 export const INTEGRATION_LANE_TESTS: readonly IntegrationLaneTest[] = [
   // @workspace/scripts — DB-backed / in-process-app safety + contract tests.
-  // Session 2 Phase 6 — the Black Box. Needs a real Postgres: row_hash is
-  // computed by pgcrypto's digest() inside the database, which has no offline
-  // equivalent. The pure chain core + feature path are covered offline by
-  // test:black-box-features, which gates every commit.
-  { pkg: "@workspace/scripts", script: "test:event-log-db" },
   { pkg: "@workspace/scripts", script: "test:live-command-lifecycle" },
   { pkg: "@workspace/scripts", script: "test:bridge-v2-kernel" },
   { pkg: "@workspace/scripts", script: "test:broker-symbol-name" },

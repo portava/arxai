@@ -7,20 +7,9 @@
 // Order placement is unaffected: this only ranks candidates for the assistant.
 
 import { getMarketProvider, getMarketStatus, type Candle } from "./marketProvider.js";
-import { routeCandles, routeQuote } from "../data/marketDataRouter.js";
-import type { Candle as RouterCandle } from "../data/types.js";
 
 const LIVE_TIMEFRAMES = ["M15", "H1"] as const;
 const MIN_CANDLES = 10;
-
-/**
- * Router candle → scanner candle. Field renames only; no value is derived,
- * rescaled or invented. `volume` is optional on the router shape and becomes 0
- * here, which is what the scorer already treats as "no volume information".
- */
-function toScannerCandle(c: RouterCandle): Candle {
-  return { t: c.time, o: c.open, h: c.high, l: c.low, c: c.close, v: c.volume ?? 0 };
-}
 
 function clamp(n: number, lo = 0, hi = 100): number {
   if (!Number.isFinite(n)) return lo;
@@ -280,23 +269,13 @@ export async function scoreLiveCandidates(symbols: readonly string[], limit = 10
     for (const tf of LIVE_TIMEFRAMES) {
       attempted++;
       try {
-        // C1 — candles come from the UNIFIED router (mt5_broker-first), the
-        // same source the chart and trade path read. This used to call the
-        // external provider adapter directly, so the scanner could rank a
-        // setup and quote an entry/SL/TP computed from a DIFFERENT feed than
-        // the one the user then saw on the chart and traded against. Same
-        // symbol, same moment, two answers.
-        const routed = await routeCandles(sym, tf, 30);
-        if (!routed.ok || routed.candles.length < MIN_CANDLES) {
-          if (warnings.length < 6) warnings.push(`${sym} ${tf}: ${routed.userMessage}`);
+        const cr = await p.getCandles(sym, tf, 30);
+        if (!cr.connected || cr.candles.length < MIN_CANDLES) {
+          if (cr.notes && warnings.length < 6) warnings.push(`${sym} ${tf}: ${cr.notes}`);
           continue;
         }
-        const cr = { candles: routed.candles.map(toScannerCandle) };
         withData++;
-        const rq = await routeQuote(sym).catch(() => null);
-        const q = rq?.ok && rq.quote
-          ? { price: rq.quote.last ?? null, bid: rq.quote.bid ?? null, ask: rq.quote.ask ?? null }
-          : null;
+        const q = await p.getLiveQuote(sym).catch(() => null);
         const scored = scoreCandles(sym, tf, cr.candles, {
           bid: q?.bid ?? null,
           ask: q?.ask ?? null,

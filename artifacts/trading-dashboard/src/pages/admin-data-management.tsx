@@ -1,7 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+
+type FH = {
+  oms: { summary: { openPositions: number; pendingOrders: number; pendingMt5Intents: number; todayPnL: number } };
+  shadowMode: { observed: number; tracking: number };
+  autopilot: { lastDecisionAt: string | null };
+};
 
 const EXPORTS = [
   { kind: "Full system report", url: "/api/export/full-system-report", file: "full-system-report.json" },
@@ -15,8 +21,13 @@ const EXPORTS = [
 ];
 
 export default function AdminDataManagement() {
+  const [fh, setFh] = useState<FH | null>(null);
   const [confirmText, setConfirmText] = useState("");
   const [resetMsg, setResetMsg] = useState<string>("");
+  useEffect(() => {
+    void fetch("/api/system/full-health", { headers: { "x-security-role": "ADMIN" } }).then((r) => r.json()).then(setFh);
+  }, []);
+
   async function download(url: string, file: string) {
     const r = await fetch(url, { credentials: "include" });
     const blob = await r.blob();
@@ -39,6 +50,20 @@ export default function AdminDataManagement() {
         <h1 className="text-2xl font-bold">Data Management</h1>
         <p className="text-sm text-muted-foreground">Backup, export, and (carefully) reset test data. MT5 and future-broker records are never cleared from this page.</p>
       </div>
+
+      <Card>
+        <CardHeader><CardTitle>Storage status</CardTitle></CardHeader>
+        <CardContent className="grid gap-2 md:grid-cols-4 text-sm">
+          <Cell label="Open positions" value={fh?.oms.summary.openPositions ?? "—"} />
+          <Cell label="Pending orders" value={fh?.oms.summary.pendingOrders ?? "—"} />
+          <Cell label="Pending MT5 intents" value={fh?.oms.summary.pendingMt5Intents ?? "—"} />
+          <Cell label="Today P/L" value={fh?.oms.summary.todayPnL ?? "—"} />
+          <Cell label="Shadow observed" value={fh?.shadowMode.observed ?? "—"} />
+          <Cell label="Shadow tracking" value={fh?.shadowMode.tracking ?? "—"} />
+          <Cell label="Last AI decision" value={fh?.autopilot.lastDecisionAt ?? "—"} />
+          <Cell label="DB" value="connected (Postgres)" />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader><CardTitle>Exports</CardTitle></CardHeader>
@@ -75,4 +100,7 @@ export default function AdminDataManagement() {
       </Card>
     </div>
   );
+}
+function Cell({ label, value }: { label: string; value: string | number }) {
+  return <div className="rounded border p-2"><p className="text-[10px] uppercase text-muted-foreground">{label}</p><p className="text-sm font-mono">{value}</p></div>;
 }

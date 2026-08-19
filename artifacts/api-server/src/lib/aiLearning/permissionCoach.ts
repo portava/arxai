@@ -10,9 +10,8 @@ export interface PermissionExplanation {
  * Turns a structured PermissionVerdict into plain-language coach copy.
  * Pure function — no I/O, deterministic on input.
  *
- * Covers the *pre-trade* explanation surface. (It used to be described as the
- * counterpart to aiCoach.ts, which explained *closed* trades; that module was
- * dead code that fabricated the exit price as TP/SL and has been deleted.)
+ * Integrates with existing aiCoach.ts (which explains *closed* trades) by
+ * covering the *pre-trade* explanation surface.
  */
 export function explainPermission(verdict: PermissionVerdict): PermissionExplanation {
   // LOCKED — pick the most actionable blocker as the headline.

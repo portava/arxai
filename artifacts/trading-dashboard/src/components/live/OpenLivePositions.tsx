@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { AlertTriangle, Briefcase, Loader2, X, XCircle } from "lucide-react";
+import { Briefcase, X, XCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { structureRejection } from "@/lib/structuredRejection";
 import { executeInstantTrade } from "@/lib/instantTradeRouter";
@@ -33,20 +33,8 @@ export function OpenLivePositions() {
   const { toast } = useToast();
   const q = useQuery<{ items: LivePos[]; count: number; note?: string; snapshotWarning?: string | null; notLiveReason?: string | null }>({
     queryKey: ["live", "positions"],
-    // P0-3 — a non-OK response MUST throw. This was previously
-    // `.then((r) => r.json())` with NO r.ok check: a 500/502/401 error body has
-    // no `items`, collapsed to [], and the card rendered "No open live
-    // positions". A trader reads that as "I am flat" and may open a fresh
-    // position on top of real, still-open broker exposure — or skip closing one
-    // that is running against them. A failed read must never look like an
-    // answer.
-    queryFn: async () => {
-      const r = await fetch(`${BASE}/api/me/live/positions`, { credentials: "include" });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      return r.json();
-    },
+    queryFn: () => fetch(`${BASE}/api/me/live/positions`, { credentials: "include" }).then((r) => r.json()),
     refetchInterval: 6_000,
-    retry: 2,
   });
 
   // One-tap reduce-only close. Routed through the Global Instant Trade
@@ -113,9 +101,7 @@ export function OpenLivePositions() {
         <div>
           <CardTitle className="flex items-center gap-2">
             <Briefcase className="h-5 w-5 text-red-400" /> Live Positions
-            <span className="text-xs text-muted-foreground font-normal">
-              {q.isLoading || q.isError ? "(count unavailable)" : `(${open.length} open)`}
-            </span>
+            <span className="text-xs text-muted-foreground font-normal">({open.length} open)</span>
           </CardTitle>
           <CardDescription>
             Real-broker positions only. Separate from your demo positions.
@@ -140,37 +126,7 @@ export function OpenLivePositions() {
             {q.data.snapshotWarning}
           </div>
         )}
-        {/* P0-3 — loading and error are resolved BEFORE the empty state, so
-            "No open live positions" can only ever render on a confirmed 200.
-            An unanswered or failed read is never presented as "you are flat". */}
-        {q.isLoading ? (
-          <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground" data-testid="live-positions-loading">
-            <Loader2 className="h-4 w-4 animate-spin" /> Loading live positions…
-          </div>
-        ) : q.isError ? (
-          <div
-            className="flex flex-col items-center gap-2 rounded border border-amber-500/40 bg-amber-500/10 px-3 py-4 text-center"
-            role="alert"
-            data-testid="live-positions-error"
-          >
-            <div className="flex items-center gap-2 text-sm font-semibold text-amber-200">
-              <AlertTriangle className="h-4 w-4 shrink-0" />
-              Couldn&apos;t load live positions — retrying. Do not assume you are flat.
-            </div>
-            <div className="text-xs text-amber-200/80">
-              Your broker may still hold open positions. Check MT5 directly before placing or closing anything.
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => void q.refetch()}
-              disabled={q.isFetching}
-              data-testid="btn-retry-live-positions"
-            >
-              {q.isFetching ? "Retrying…" : "Retry"}
-            </Button>
-          </div>
-        ) : open.length === 0 ? (
+        {open.length === 0 ? (
           notLiveMode ? (
             <div className="text-sm text-muted-foreground py-4 text-center" data-testid="live-positions-not-live">
               <div>You are not currently in live trading mode.</div>

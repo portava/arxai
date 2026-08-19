@@ -691,31 +691,10 @@ export function daysUntilExpiry(expiresAt: Date, now: Date = new Date()): number
   return Math.floor(ms / (24 * 60 * 60 * 1000));
 }
 
-/**
- * Pause an ACCEPTED invite.
- *
- * The status guard is load-bearing, not defensive tidiness. This used to match
- * on `id` alone, which let ANY row be flipped to PAUSED — and since
- * `resumeInvite` unconditionally restores PAUSED → ACCEPTED, an admin could
- * resurrect a dead key with two ordinary-looking clicks:
- *
- *     REVOKED --pause--> PAUSED --resume--> ACCEPTED     (same for EXPIRED)
- *
- * The audit trail read as a routine pause/resume rather than as an un-revoke.
- * Restricting the entry point to ACCEPTED makes {ACCEPTED, PAUSED} a closed
- * cycle: nothing dead can get in, so nothing dead can come back out.
- *
- * PENDING is deliberately excluded too — resuming an unaccepted invite would
- * mark it ACCEPTED, granting access nobody ever claimed. Use revokeInvite to
- * withdraw an unaccepted invite.
- *
- * Returns null when the row does not exist OR is not ACCEPTED; the caller
- * reports those together as NOT_FOUND_OR_NOT_ACCEPTED.
- */
 export async function pauseInvite(id: number): Promise<BetaInviteRow | null> {
   const rows = await db.update(betaInvitesTable)
     .set({ status: "PAUSED", pausedAt: new Date(), resumedAt: null, updatedAt: new Date() })
-    .where(and(eq(betaInvitesTable.id, id), eq(betaInvitesTable.status, "ACCEPTED")))
+    .where(eq(betaInvitesTable.id, id))
     .returning();
   return rows[0] ?? null;
 }

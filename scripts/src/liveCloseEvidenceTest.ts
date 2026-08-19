@@ -29,7 +29,6 @@ import {
   isRealizedPnlIngestible,
   PNL_DATA_QUALITY_MISSING_CLOSE_FILL,
 } from "../../artifacts/api-server/src/lib/live/realizedPnl.js";
-import { FX_STANDARD_LOT_UNITS } from "../../artifacts/api-server/src/lib/mt5/contractSize.js";
 import { isEntrypoint, type CiTestResultLike } from "./ci/inProcessAppHarness.js";
 
 export async function run(): Promise<CiTestResultLike> {
@@ -157,8 +156,6 @@ export async function run(): Promise<CiTestResultLike> {
     const r = computeRealizedPnlUsd({
       side: "BUY", requestedVolume: 0.01,
       openFillPrice: 1.05000, closeFillPrice: undefined,
-      // EURUSD standard lot on a USD account: 100,000 units, quote ccy == account ccy.
-      contractSize: FX_STANDARD_LOT_UNITS, quoteToAccountFx: 1,
     });
     assert(r.pnlStatus === "UNKNOWN", `pnlStatus=UNKNOWN (got ${r.pnlStatus})`);
     assert(r.realizedPlUsd === null, "realizedPlUsd is null (never zero-filled)");
@@ -172,8 +169,6 @@ export async function run(): Promise<CiTestResultLike> {
     const r = computeRealizedPnlUsd({
       side: "SELL", requestedVolume: 0.01,
       openFillPrice: 1.05000, closeFillPrice: 0,
-      // EURUSD standard lot on a USD account: 100,000 units, quote ccy == account ccy.
-      contractSize: FX_STANDARD_LOT_UNITS, quoteToAccountFx: 1,
     });
     assert(r.pnlStatus === "UNKNOWN", `pnlStatus=UNKNOWN (got ${r.pnlStatus})`);
     assert(r.realizedPlUsd === null, "realizedPlUsd is null (0 is never a fill)");
@@ -186,8 +181,6 @@ export async function run(): Promise<CiTestResultLike> {
     const r = computeRealizedPnlUsd({
       side: "BUY", requestedVolume: 0.01,
       openFillPrice: 1.05000, closeFillPrice: 1.05100,
-      // EURUSD standard lot on a USD account: 100,000 units, quote ccy == account ccy.
-      contractSize: FX_STANDARD_LOT_UNITS, quoteToAccountFx: 1,
     });
     assert(r.pnlStatus === "COMPUTED", `pnlStatus=COMPUTED (got ${r.pnlStatus})`);
     assert(r.realizedPlUsd === 1.00, `realizedPlUsd=1.00 (got ${r.realizedPlUsd})`);

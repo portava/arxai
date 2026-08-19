@@ -31,7 +31,6 @@ import { useChartDeepHistory } from "@/lib/useChartDeepHistory";
 import { ChartHistoryBadge } from "@/components/charts/ChartHistoryBadge";
 import { FeedConfidenceBadge } from "@/components/charts/FeedConfidenceBadge";
 import { formatMarketClosedLabel } from "@/components/charts/marketFrozenFormat";
-import { useTickStreamWatchdog } from "@/components/charts/useTickStreamWatchdog";
 import { feedConfidence } from "@/lib/feed-confidence";
 import { resolveDisplayStatus, isLivePriceDisplay } from "@/lib/chart-display-status";
 import { useScannerTruth } from "@/hooks/useScannerTruth";
@@ -107,7 +106,6 @@ const TIMEFRAMES: { id: ArxTimeframe; label: string }[] = [
 
 const TF_KEY = "arx.nativeChart.timeframe";
 const DEFAULT_TF: ArxTimeframe = "M15";
-
 
 function loadTimeframe(): ArxTimeframe {
   if (typeof window === "undefined") return DEFAULT_TF;
@@ -336,11 +334,13 @@ export function ARXNativeChart({
   const isLivePriceAffordance = isLivePriceDisplay(
     resolveDisplayStatus(data?.feedStatus ?? null, hasCandles),
   );
-  // NOTE (Theme C3.3): this verdict is NOT mirrored into a ref for the SSE tick
-  // handler any more. It describes the CLOSED-candle feed and is sticky, so
-  // using it to gate live frames froze charts whose ticks were flowing fine.
-  // Each frame carries its own server-computed `frozen` marker instead. This
-  // value still drives the last-price affordance through setFeedState below.
+  // Mirror the live verdict into a ref so the SSE tick handler (a stable
+  // closure bound per symbol/timeframe) always reads the CURRENT affordance
+  // without re-subscribing. A non-live feed must never tick a fake bar.
+  const liveAffordanceRef = useRef(isLivePriceAffordance);
+  useEffect(() => {
+    liveAffordanceRef.current = isLivePriceAffordance;
+  }, [isLivePriceAffordance]);
 
   // Market-frozen / closed-market indicator (display/telemetry only). Driven by
   // the tick-stream `feed_status` event, whose verdict is derived from the
@@ -350,15 +350,6 @@ export function ARXNativeChart({
   const [marketFrozen, setMarketFrozen] = useState<{ lastBrokerTimeMs: number | null } | null>(
     null,
   );
-
-  // ── Tick-stream watchdog (Theme C3.4) ───────────────────────────────────
-  // A dropped SSE stream used to be invisible: `es.onerror` was a no-op, and a
-  // connection that dies without an error event (proxy timeout, sleeping tab,
-  // network change) produces NO error at all — it simply stops delivering, so
-  // the chart sat frozen indefinitely while still presenting as live. The hook
-  // owns silence detection and the reconnect signal; see its own file for the
-  // detection rationale and timings.
-  const streamWatchdog = useTickStreamWatchdog();
 
   // Chart Brain v2 (Task 1) — centralized Chart Intelligence State. This is a
   // SEPARATE, non-blocking fetch from the candle query above: candles render
@@ -533,21 +524,10 @@ export function ARXNativeChart({
   //    the authoritative closed bar that replaces the synthesized tip.
   //
   //    HONESTY (matches the Scanner gates exactly): apply a tip ONLY when the
-  //    stream reports THAT FRAME is not frozen and the tip time is >= the newest
-  //    bar. A silent/stale/out-of-order stream can never keep a fake bar
-  //    ticking. The payload is pure OHLC display telemetry — no execution path
-  //    is touched.
-  //
-  //    Theme C3.3: the extra `isLivePriceAffordance` gate that used to sit here
-  //    was removed. It is a verdict about the CLOSED-candle feed and it is
-  //    sticky — a feed graded stale/delayed once suppressed every subsequent
-  //    tick, so a chart whose ticks were flowing normally sat visibly frozen.
-  //    Each frame already carries its own `frozen` flag, computed server-side
-  //    from the REAL age of the tick behind it, which is both stricter (it goes
-  //    true the moment ticks actually stop) and more current than the sticky
-  //    grade. The Scanner has always gated this way; the two now agree. The
-  //    live-price affordance still governs the last-price label and dashed
-  //    "Last" line via setFeedState — that is unchanged.
+  //    stream reports it is NOT frozen, the feed is genuinely LIVE (shared
+  //    live-price affordance), and the tip time is >= the newest bar. A
+  //    silent/stale/out-of-order stream can never keep a fake bar ticking. The
+  //    payload is pure OHLC display telemetry — no execution path is touched.
   useEffect(() => {
     // Clear the closed-market badge whenever the stream key changes — the prior
     // symbol/timeframe's verdict is no longer relevant, and a new stream with no
@@ -563,11 +543,7 @@ export function ARXNativeChart({
     } catch {
       return; // EventSource unavailable — the 8s poll still keeps the tip fresh.
     }
-    streamWatchdog.noteStreamOpened();
     es.onmessage = (ev) => {
-      // Any frame — tip, feed_status, or heartbeat — proves the stream is alive.
-      // Recorded before parsing so even an unrecognised frame counts as liveness.
-      streamWatchdog.noteFrame();
       let msg: {
         type?: string;
         frozen?: boolean;
@@ -592,8 +568,9 @@ export function ARXNativeChart({
       }
       const adapter = adapterRef.current;
       if (!adapter?.updateActiveCandle) return;
-      // Gate on THIS frame's own freshness marker (server-computed from the real
-      // tick age), exactly like the Scanner — not on the sticky closed-feed grade.
+      // Gate on the SAME live-price affordance the chart already obeys: a frozen,
+      // delayed or composite feed must never tick a synthesized bar.
+      if (!liveAffordanceRef.current) return;
       if (msg.type !== "forming_bar" || msg.frozen || !msg.bar) return;
       // Task #496 latency addendum: measure ingest→browser latency in dev from
       // the ingest-accept wall clock the server stamped on the tip.
@@ -626,20 +603,13 @@ export function ARXNativeChart({
       newestBarSecRef.current = tipSec;
     };
     es.onerror = () => {
-      // The browser retries an EventSource on its own, but only for errors it
-      // actually surfaces — and it never recovers a connection that stays "open"
-      // while silently delivering nothing. Record the state so the UI is honest;
-      // the watchdog owns the reconnect for both cases.
-      streamWatchdog.noteError();
+      // The browser auto-reconnects an EventSource; nothing to do. The poll
+      // remains the reconciliation backstop while the stream is down.
     };
-
     return () => {
       es?.close();
     };
-    // The watchdog's callbacks are stable; `epoch` is the reconnect signal and
-    // this effect's cleanup closes the dead stream before the replacement opens.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resolvedSymbol, timeframe, streamWatchdog.epoch]);
+  }, [resolvedSymbol, timeframe]);
 
   // ── Deep-history scroll-back wiring. Register a stable handler with the engine
   //    that fires when the user pans near the oldest loaded bar; it asks the
@@ -935,21 +905,6 @@ export function ARXNativeChart({
                 title="The broker is replaying its last quote — the market is closed (derived from real tick broker-time staleness, not a calendar)."
               >
                 <Clock className="h-3 w-3" /> {formatMarketClosedLabel(marketFrozen.lastBrokerTimeMs)}
-              </Badge>
-            )}
-            {/* Theme C3.5 — an honestly-labelled stalled stream. A chart whose
-                tick-stream has stopped delivering must SAY so; the failure mode
-                being fixed is precisely a frozen chart that still looked live.
-                Suppressed when the market is legitimately closed, because that
-                already explains the silence and is the more specific verdict. */}
-            {streamWatchdog.stalled && !marketFrozen && (
-              <Badge
-                variant="outline"
-                className="flex items-center gap-1 border-amber-500/50 bg-amber-500/10 text-[10px] text-amber-200"
-                data-testid="arx-native-stream-reconnecting"
-                title="The live tick stream stopped delivering and is being reopened. Prices shown are the last received — they are not updating right now."
-              >
-                <RefreshCw className="h-3 w-3 animate-spin" /> Reconnecting — prices delayed
               </Badge>
             )}
             {hasCandles && (

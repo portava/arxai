@@ -211,47 +211,12 @@ test("deriveNewsRisk: disconnected provider never surfaces headlines or counts",
   assert.deepEqual(r.topHeadlines, []);
 });
 
-// ── upcoming events honesty (real-or-empty, in EITHER environment) ───────────
-//
-// This assertion used to hardcode "this env: calendar disconnected", which only
-// held on a runner with no `ECONOMIC_CALENDAR_PROVIDER` / `FRED_API_KEY`. On a
-// runner that HAS those secrets the provider genuinely connects and the test
-// failed for being wrong about its environment, not because anything fabricated
-// an event.
-//
-// The invariant that actually matters is real-or-empty, and it is the same
-// invariant in both environments: events may be non-empty ONLY when the
-// provider is connected, and `status: "live"` may be claimed ONLY when it is
-// connected. Asserting it as a biconditional keeps the honesty lock (a
-// disconnected provider still can never surface a single event) while making
-// the test independent of which secrets the runner happens to hold.
+// ── upcoming events honesty (this env: calendar disconnected) ────────────────
 
-test("readCalendarProvider: events are real-or-empty — never fabricated while disconnected", async () => {
+test("readCalendarProvider: disconnected calendar yields zero events (never fabricated)", async () => {
   const read = await readCalendarProvider("GLOBAL", Date.parse("2026-06-19T00:00:00.000Z"));
-
-  // "live" is claimable if and only if the provider is actually connected.
-  assert.equal(read.source.status === "live", read.connected);
-
-  if (!read.connected) {
-    // The original assertion, unchanged, on the disconnected path.
-    assert.deepEqual(read.events, []);
-    assert.equal(read.eventCount, 0);
-    return;
-  }
-
-  // Connected: every surfaced event must be a real, fully-attributed record —
-  // no filler rows, no placeholder titles, no invented timestamps.
-  assert.equal(read.configured, true);
-  assert.ok(read.events.length <= 12, "connected read caps the surfaced window at 12");
-  assert.ok(read.eventCount >= read.events.length, "eventCount cannot undercount surfaced events");
-  for (const e of read.events) {
-    assert.equal(typeof e.id, "string");
-    assert.ok(e.id.length > 0, "event carries a real id");
-    assert.ok(e.title.length > 0, "event carries a real title");
-    assert.ok(["high", "medium", "low"].includes(e.impact), `event impact is a real level: ${e.impact}`);
-    assert.ok(Number.isFinite(Date.parse(e.timeUtc)), `event carries a parseable time: ${e.timeUtc}`);
-  }
-  // Ascending by event time — the mapping sorts, it does not shuffle.
-  const times = read.events.map((e) => Date.parse(e.timeUtc));
-  assert.deepEqual(times, times.slice().sort((a, b) => a - b), "events stay time-ordered");
+  assert.equal(read.connected, false);
+  assert.deepEqual(read.events, []);
+  assert.equal(read.eventCount, 0);
+  assert.equal(read.source.status === "live", false);
 });

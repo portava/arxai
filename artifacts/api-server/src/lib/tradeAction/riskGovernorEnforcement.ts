@@ -29,11 +29,9 @@ import {
   livePositionsTable,
   tradesTable,
   virtualTradingAccountsTable,
-  sharedTradeAttributionTable,
 } from "@workspace/db/schema";
-import { and, desc, eq, gte, isNull, ne, sql } from "drizzle-orm";
+import { and, desc, eq, gte, ne, sql } from "drizzle-orm";
 import { logRiskEvent } from "../../routes/meRiskGovernor.js";
-import { isAllocationBlown } from "../live/allocationBlown.js";
 
 // ── Action classification ───────────────────────────────────────────────────
 const OPENS_NEW_RISK = new Set(["OPEN"]);
@@ -332,44 +330,10 @@ export async function enforceRiskGovernor(input: RiskEnforcementInput): Promise<
       }
       // Allocation cap: if virtualBalance is set and virtualPnl already
       // exceeds the negative of it (i.e. blown the allocation), block.
-      //
-      // P0-2 — this predicate was never wrong; its INPUT was. Realized P/L was
-      // booked without contract size, so a EURUSD loss that really cost $1,000
-      // was recorded as $0.01 and this check was asked `-0.01 <= -1000`. It
-      // could not trip for FX no matter how much the trader actually lost.
-      // See lib/mt5/contractSize.ts.
-      if (isAllocationBlown({ virtualBalance: v.virtualBalance, virtualPnl: v.virtualPnl })) {
+      if (v.virtualBalance > 0 && v.virtualPnl <= -v.virtualBalance) {
         return blockAndLog(userId, "rg_shared_allocation_blown",
           "Your virtual allocation has been exhausted. CLOSE-ONLY until reset.",
           { virtualBalance: v.virtualBalance, virtualPnl: v.virtualPnl }, input.actionId, input.previewMode);
-      }
-      // P0-2 fail-safe — the cap is only meaningful if virtualPnl reflects
-      // EVERY closed trade. `applyRealizedPnlToVirtualAccount` deliberately
-      // leaves a closed attribution unapplied when the instrument's contract
-      // size or FX conversion cannot be established, rather than booking a
-      // mis-scaled figure. While any such row is outstanding the true realized
-      // loss is UNKNOWN and could already exceed the allocation, so we fail
-      // the cap CLOSED for new risk. This branch is already scoped to
-      // OPENS_NEW_RISK, so closing out stays available.
-      try {
-        const pending = await db.select({ id: sharedTradeAttributionTable.id })
-          .from(sharedTradeAttributionTable)
-          .where(and(
-            eq(sharedTradeAttributionTable.userId, userId),
-            eq(sharedTradeAttributionTable.virtualAccountId, virtualAccountId),
-            eq(sharedTradeAttributionTable.status, "closed"),
-            isNull(sharedTradeAttributionTable.realizedAppliedAt),
-          )).limit(1);
-        if (pending.length > 0) {
-          return blockAndLog(userId, "rg_realized_pnl_pending_sizing",
-            "Some closed trades are still awaiting correct P/L sizing, so your remaining allocation " +
-            "cannot be verified. New trades are paused; you can still close positions.",
-            { virtualAccountId }, input.actionId, input.previewMode);
-        }
-      } catch (e) {
-        return blockAndLog(userId, "rg_realized_pnl_check_unavailable",
-          "Your realized P/L could not be verified. Trade blocked for safety.",
-          { error: (e as Error).message }, input.actionId, input.previewMode);
       }
       // Soft check: per-trade lot vs virtualBalance proxy. Reject if a
       // single new trade would put margin used > virtualBalance (uses

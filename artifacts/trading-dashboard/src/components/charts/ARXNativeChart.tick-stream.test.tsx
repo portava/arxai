@@ -355,50 +355,8 @@ describe("ARXNativeChart live tick-stream wiring (Task #508)", () => {
     expect(adapterSpies.updateActiveCandle).not.toHaveBeenCalled();
   });
 
-  // Theme C3.3 — this test previously asserted the opposite: that a non-LIVE
-  // closed-feed grade suppressed EVERY tip. That gate is what froze the chart.
-  // `isLivePriceAffordance` is a verdict about the CLOSED-candle feed and it is
-  // sticky, so a feed graded stale once (e.g. a Deriv-fed symbol whose closed
-  // bars trail) killed every subsequent frame even while ticks flowed normally.
-  //
-  // The honest gate is the one each frame carries: `frozen`, computed
-  // server-side from the REAL age of the tick behind it. It is stricter (true
-  // the moment ticks actually stop) and current rather than sticky. The Scanner
-  // has always gated this way; the two surfaces now agree.
-  it("applies a FRESH tip even when the closed-feed grade is not LIVE (the frame's own marker rules)", () => {
-    // Feed reports stale closed bars → live-price affordance OFF …
-    currentCandleResponse = makeResponse({
-      ...liveFeedStatus(),
-      isLive: false,
-      stale: true,
-      quality: "stale",
-      aiUsable: false,
-      message: "stale",
-    } as unknown as ChartFeedStatus);
-
-    renderChart();
-    const stream = openedStreams[0]!;
-
-    act(() => {
-      // … but THIS frame is not frozen: a real, recent tick is behind it.
-      stream.emit(
-        formingBarEvent({
-          openTimeMs: NEWEST_OPEN_MS,
-          open: 1.102,
-          high: 1.104,
-          low: 1.101,
-          close: 1.1039,
-        }),
-      );
-    });
-
-    expect(adapterSpies.updateActiveCandle).toHaveBeenCalledTimes(1);
-    expect(adapterSpies.updateActiveCandle).toHaveBeenCalledWith(
-      expect.objectContaining({ time: NEWEST_OPEN_SEC, close: 1.1039 }),
-    );
-  });
-
-  it("still rejects a FROZEN tip when the closed-feed grade is not LIVE (no fake motion)", () => {
+  it("rejects ALL tips when the feed is not LIVE (honesty gate), even if well-formed", () => {
+    // Same valid event, but the feed reports stale → live-price affordance OFF.
     currentCandleResponse = makeResponse({
       ...liveFeedStatus(),
       isLive: false,
@@ -419,29 +377,11 @@ describe("ARXNativeChart live tick-stream wiring (Task #508)", () => {
           high: 1.104,
           low: 1.101,
           close: 1.1039,
-          frozen: true,
         }),
       );
     });
 
     expect(adapterSpies.updateActiveCandle).not.toHaveBeenCalled();
-  });
-
-  it("still suppresses the live-price affordance on a non-LIVE feed", () => {
-    currentCandleResponse = makeResponse({
-      ...liveFeedStatus(),
-      isLive: false,
-      stale: true,
-      quality: "stale",
-      aiUsable: false,
-      message: "stale",
-    } as unknown as ChartFeedStatus);
-
-    renderChart();
-
-    // The closed-feed grade still governs the last-price label / dashed "Last"
-    // line — only the tick gate moved off it.
-    expect(adapterSpies.setFeedState).toHaveBeenCalledWith({ livePriceAffordance: false });
   });
 
   it("ignores malformed / wrong-type events without ticking the bar", () => {

@@ -546,25 +546,18 @@ export function readFlame(args: FlameReadArgs): FlameReadCore {
   const blind = candles.length < MIN_FLAME_CANDLES;
 
   if (blind) {
-    // Honest NONE, identical to the sibling blindFlameRead(); NO status downgrade.
-    //
-    // This branch previously reported entryTiming "ACCEPTABLE" and graded a
-    // runway from `args.point * 50` — a CONSTANT standing in for ATR, i.e. an
-    // invented volatility measurement. With no candle window there is no
-    // observed volatility and no basis for a timing verdict, so both are the
-    // honest floor: NO_ENTRY and runway NONE. The divergence mattered because
-    // finalizeScalpVerdict counts ACCEPTABLE as good timing and could promote a
-    // blind read to POSSIBLE/STRONG.
+    // Geometry-only labels; flame fields honest NONE; NO status downgrade.
+    const runway = runwayFor(args.lateFraction, args.mainTpDist, args.spreadPrice, args.point * 50);
     const read: ScalpFlameRead = {
-      scalpStatus: "NOT_A_SCALP",
-      readDirection: "NO_SCALP",
+      scalpStatus: "WEAK",
+      readDirection: "WAIT",
       scalpScore: 0,
       flameStage: "NONE",
       flameAgeCandles: 0,
       freshness: "ACTIVE",
-      entryTiming: "NO_ENTRY",
+      entryTiming: "ACCEPTABLE",
       chaseRisk: "LOW",
-      runway: "NONE",
+      runway,
       executionQuality: execQ,
       htfContext: "UNKNOWN",
       setupType: "NO_SCALP",
@@ -727,11 +720,8 @@ export function finalizeScalpVerdict(
       scalpStatus: "NOT_A_SCALP",
       readDirection: "NO_SCALP",
       scalpScore: 0,
-      // A finished/no-scalp read carries no actionable timing. This used to
-      // preserve a blind read's own timing, which was the carrier that let the
-      // inline blind branch's "ACCEPTABLE" survive to the surface; blind reads
-      // are NO_ENTRY at the source now, so there is nothing to preserve.
-      entryTiming: "NO_ENTRY",
+      // A finished/no-scalp read carries no actionable timing.
+      entryTiming: read.flameStage === "NONE" && read.blind ? read.entryTiming : "NO_ENTRY",
     };
   }
 

@@ -24,26 +24,7 @@ export type TradeReviewInput = {
 export type TradeReviewOutput = {
   setupGrade: Grade; entryGrade: Grade; exitGrade: Grade;
   riskGrade: Grade; disciplineGrade: Grade; overallGrade: Grade;
-  overallScore: number;
-  /**
-   * NOT a probability and NOT a measure of how right the review is.
-   *
-   * It is `40 + 6 × (number of non-null inputs)`, clamped to 0..100 — i.e. a
-   * rescaled COUNT of how much data the review had to work with. A trade with
-   * every field filled in scores 100 whether the review's conclusions are
-   * right or wrong. Callers must not present it as a win likelihood; see
-   * `calibrated` below and prefer `inputDataPoints`, which says the same thing
-   * without the misleading name.
-   */
-  aiConfidence: number;
-  /** The raw count behind aiConfidence — the honest form of the same fact. */
-  inputDataPoints: number;
-  /**
-   * Explicit marker required by Theme B: every uncalibrated heuristic leaving
-   * this engine says so in the payload. Nothing here is calibrated against
-   * realized outcomes, so this is `false` — a literal, not a computed value.
-   */
-  calibrated: false;
+  overallScore: number; aiConfidence: number;
   strengths: string[]; weaknesses: string[]; mistakeTags: string[];
   riskNotes: string; entryNotes: string; exitNotes: string; disciplineNotes: string;
   improvementPlan: string[]; nextTradeFocus: string;
@@ -110,10 +91,7 @@ export function reviewTrade(inp: TradeReviewInput): TradeReviewOutput {
   setup = clamp(setup); risk = clamp(risk); entry = clamp(entry); exit = clamp(exit); discipline = clamp(discipline);
   const overall = clamp(Math.round((setup + risk + entry + exit + discipline) / 5));
 
-  // INPUT COMPLETENESS — not confidence. This counts how many of the ten
-  // inputs were supplied and rescales that count to 0..100. It measures the
-  // data, not the review. Named `aiConfidence` for back-compat with stored
-  // rows; `inputDataPoints` carries the same fact honestly.
+  // Confidence: how much input data we had
   const dataPoints = [t.plannedEntryPrice, t.entryPrice, t.exitPrice, t.stopLoss, t.takeProfit, t.riskAmount, t.strategyTag, t.reasonForEntry, t.reasonForExit, inp.journalNotes].filter((x) => x != null && x !== "").length;
   const aiConfidence = clamp(40 + dataPoints * 6);
 
@@ -124,10 +102,7 @@ export function reviewTrade(inp: TradeReviewInput): TradeReviewOutput {
     riskGrade: letterFromScore(risk),
     disciplineGrade: letterFromScore(discipline),
     overallGrade: letterFromScore(overall),
-    overallScore: overall,
-    aiConfidence,
-    inputDataPoints: dataPoints,
-    calibrated: false,
+    overallScore: overall, aiConfidence,
     strengths, weaknesses,
     mistakeTags: Array.from(mistakeTags),
     riskNotes: `Score ${risk}/100. ${rr != null ? `RR ${rr}.` : "No RR computable."} ${t.stopLoss == null ? "No stop loss." : ""}`.trim(),

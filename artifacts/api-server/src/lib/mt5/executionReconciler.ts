@@ -30,12 +30,6 @@ import type { ActionType } from "../tradeAction/types.js";
 import { logger } from "../logger.js";
 import { recordUnattributedMasterTrade } from "./unattributedMasterTrades.js";
 import { applyRealizedPnlToVirtualAccount } from "./virtualPnlSync.js";
-import {
-  computeRealizedAmount,
-  resolveContractSize,
-  resolveQuoteToAccountFx,
-} from "./contractSize.js";
-import { getAccountCurrency } from "../live/accountCurrency.js";
 import { sharedMasterAccountsTable } from "@workspace/db/schema";
 
 export type ExecutionResultStatus =
@@ -313,40 +307,13 @@ export async function reconcileExecutionResult(input: {
           ? Number((openLot - closedLot).toFixed(8))
           : null;
         // Realized P&L on the closed slice. NEVER fabricated — only set when
-        // both entry and exit prices are real numbers AND the instrument's
-        // per-lot contract size and profit→account FX factor are established.
-        //
-        // P0-2 — this previously computed price-delta x lot with NO contract
-        // size, so a 1.00-lot 100-pip EURUSD close recorded $0.01 instead of
-        // $1,000. When sizing cannot be established we leave realized null
-        // (the row keeps its prior realizedProfitLoss) rather than write a
-        // plausible wrong dollar figure into live_positions.
-        let realized: number | null = null;
-        if (lp?.entryPrice != null && result.fillPrice != null && closedLot != null) {
-          const sizing = await resolveContractSize(command.userId, lp.symbol);
-          const accountCurrency = await getAccountCurrency(command.userId);
-          const fx = resolveQuoteToAccountFx({
-            symbol: lp.symbol,
-            profitCurrency: sizing.profitCurrency,
-            accountCurrency,
-            closePrice: result.fillPrice,
-          });
-          if (sizing.contractSize != null && fx.factor != null) {
-            realized = computeRealizedAmount({
-              entryPrice: lp.entryPrice,
-              closePrice: result.fillPrice,
-              direction: lp.direction === "BUY" ? 1 : -1,
-              lots: closedLot,
-              contractSize: sizing.contractSize,
-              quoteToAccountFx: fx.factor,
-            });
-          } else {
-            logger.warn({
-              livePositionId: lp.id, symbol: lp.symbol,
-              contractSizeReason: sizing.reason, fxReason: fx.reason,
-            }, "realized_pnl_withheld_pending_sizing");
-          }
-        }
+        // both entry and exit prices are real numbers.
+        const realized =
+          lp?.entryPrice != null && result.fillPrice != null && closedLot != null
+            ? (lp.direction === "BUY"
+                ? (result.fillPrice - lp.entryPrice) * closedLot
+                : (lp.entryPrice - result.fillPrice) * closedLot)
+            : null;
         if (isPartial && lp) {
           await db.update(livePositionsTable).set({
             lotSize: remaining!,

@@ -90,16 +90,6 @@ import { getEffectiveTradingGovernance } from "../governance/effectiveGovernance
 import { getSymbolTradability } from "../data/symbolTradability.js";
 import { recomputeMasterPool, loadMasterPool, getUserAllocationView, resolveActiveMasterConnectionId } from "./masterBridgePool.js";
 import { resolveAllocationGate } from "./allocationGate.js";
-import {
-  claimLiveCommandForConfirm,
-  claimLiveCommandForDispatch,
-  LIVE_CONFIRM_RACE_LOST,
-  LIVE_DISPATCH_RACE_LOST,
-} from "./liveCommandCas.js";
-
-// Re-exported so the route layer and the CI guard have one import site for the
-// typed race refusals. See liveCommandCas.ts for why the CAS exists.
-export { LIVE_CONFIRM_RACE_LOST, LIVE_DISPATCH_RACE_LOST };
 
 const ALLOWED_TRANSITIONS: Record<ArxLiveCommandStatus, ArxLiveCommandStatus[]> = {
   LIVE_DRAFT: ["LIVE_CONFIRMATION_REQUIRED", "LIVE_CANCELLED", "LIVE_BLOCKED"],
@@ -1180,25 +1170,10 @@ export async function confirmLiveCommand(args: { userId: number; commandId: stri
     return { ok: false as const, reason: "BAD_STATE" as const, currentStatus: row.status };
   }
   assertCanTransition(row.status as ArxLiveCommandStatus, "LIVE_APPROVED");
-  // P0-1 — compare-and-set, not a bare id match. The status check above is a
-  // READ; without a status predicate on the WRITE, two concurrent confirms of
-  // the same draft both pass that read and both "succeed", producing two
-  // LIVE_APPROVED transitions (and two audit rows) for one command. A null
-  // return means a concurrent confirmer already claimed it.
-  const updated = await claimLiveCommandForConfirm(args.commandId, {
-    status: "LIVE_APPROVED",
-    confirmedAt: new Date(),
-  });
-  if (!updated) {
-    const [current] = await db.select({ status: arxLiveCommandsTable.status })
-      .from(arxLiveCommandsTable)
-      .where(eq(arxLiveCommandsTable.commandId, args.commandId)).limit(1);
-    return {
-      ok: false as const,
-      reason: LIVE_CONFIRM_RACE_LOST,
-      currentStatus: (current?.status ?? row.status) as ArxLiveCommandStatus,
-    };
-  }
+  const [updated] = await db.update(arxLiveCommandsTable)
+    .set({ status: "LIVE_APPROVED", confirmedAt: new Date() })
+    .where(eq(arxLiveCommandsTable.commandId, args.commandId))
+    .returning();
   await audit({
     eventType: "LIVE_CONFIRMED", userId: args.userId, symbol: row.symbol,
     message: `Live command confirmed: ${args.commandId}`,
@@ -2122,22 +2097,7 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   const dispatchNow = new Date();
   const expiresAt = computeLiveExpiry(dispatchNow, LIVE_COMMAND_TTL_SECONDS);
   try {
-    // ── P0-1 — DOUBLE-SEND CAS (money) ──────────────────────────────────────
-    // Everything above is a READ-then-evaluate: `loadOwned` read the row,
-    // saw LIVE_APPROVED, and all 18 gates then passed. Every one of those
-    // gates is a property of the user / bridge / symbol — NONE of them asks
-    // "has this command already been sent". So two concurrent dispatches of
-    // the same approved command both reach this line.
-    //
-    // Matching on commandId ALONE here made both succeed, and each caller
-    // then mirrored an order into the mt5_commands mailbox the EA polls —
-    // the broker executed the same trade TWICE, with no error surfaced.
-    // The arx_live_commands_idem_active_uq index cannot catch it: that
-    // constrains INSERTs of distinct rows, and this UPDATEs one row twice.
-    //
-    // The status predicate is the fix. Of N concurrent statements exactly
-    // one matches a LIVE_APPROVED row; the rest match zero and get null.
-    const sent = await claimLiveCommandForDispatch(args.commandId, {
+    const [sent] = await db.update(arxLiveCommandsTable).set({
       status: "SENT_TO_MT5_LIVE",
       sentToMt5At: dispatchNow,
       serverTimestamp: dispatchNow,
@@ -2148,42 +2108,7 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
       accountLogin: bridge!.accountNumber,
       brokerServer: bridge!.brokerName,
       dispatchGateSnapshot: snapshot as unknown as Record<string, unknown>,
-    });
-    if (!sent) {
-      // LOST THE RACE. A concurrent dispatcher already claimed this command.
-      // Refuse fail-CLOSED: return BEFORE the EA mailbox mirror below so this
-      // caller cannot put a second order in front of the broker. Release the
-      // exposure reservation we took, or the master account stays attributed
-      // lots for an order this caller never sent.
-      if (reservationId != null) {
-        try {
-          const { releaseReservation } = await import("../concurrency/exposureReservation.js");
-          await releaseReservation(reservationId);
-        } catch { /* audit-only failure */ }
-      }
-      const [current] = await db.select({ status: arxLiveCommandsTable.status })
-        .from(arxLiveCommandsTable)
-        .where(eq(arxLiveCommandsTable.commandId, args.commandId)).limit(1);
-      await audit({
-        eventType: "LIVE_DISPATCH_BLOCKED", severity: "HIGH",
-        userId: args.userId, symbol: row.symbol,
-        message: `Live dispatch refused — concurrent dispatch already claimed the command: ${args.commandId}`,
-        metadata: { commandId: args.commandId, currentStatus: current?.status ?? null, reason: LIVE_DISPATCH_RACE_LOST },
-      });
-      logger.warn({
-        [PHASE_B_LIVE_LOG_PREFIX]: true,
-        event: "LIVE_DISPATCH_RACE_LOST",
-        commandId: args.commandId, userId: args.userId,
-        currentStatus: current?.status ?? null,
-      }, "Phase B dispatch lost the CAS race — no EA order mirrored (double-send prevented)");
-      return {
-        ok: false as const,
-        reason: LIVE_DISPATCH_RACE_LOST,
-        currentStatus: (current?.status ?? null) as ArxLiveCommandStatus | null,
-        command: null,
-        gate: phaseBGate,
-      };
-    }
+    }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
     await audit({
       eventType: "LIVE_DISPATCH_SENT", severity: "CRITICAL",
       userId: args.userId, symbol: row.symbol,

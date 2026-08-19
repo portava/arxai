@@ -1,73 +1,141 @@
-// FX Center backend — honest not-connected state.
-//
-// FEATURE TRUTH AUDIT (P0-4). This module previously fabricated market data and
-// served it, unlabeled, to an auto-refreshing page:
-//
-//   - `computeStrength()` added `(Math.random() - 0.5) * 6` to a hardcoded
-//     BASE_STRENGTH table and published the result as a live currency-strength
-//     score (rendered as a filled strength bar and a 0-100 number);
-//   - `getRiskSentiment()` returned a coin flip — `Math.random() > 0.5 ?
-//     "Risk-On" : "Neutral"` — during the New York session;
-//   - the pair table derived macro bias, technical bias and a CONFIDENCE
-//     percentage from those invented strengths.
-//
-// A trader cannot tell fabricated numbers from real ones, and the page
-// refreshed every 30s, so the fake strengths visibly "moved" like a live feed.
-// ARX has one rule here and `pages/stocks-center.tsx` already follows it:
-// **ARX never displays fabricated signals.** The resolution is an honest
-// not-connected state, NOT a "SIMULATED" badge on invented numbers.
-//
-// No FX macro / currency-strength provider is wired. Until one is, these
-// endpoints report `providerConnected: false` with empty data and a
-// `safetyNote`. Nothing here invents a number.
-//
-// `session` is retained deliberately: it is derived from the UTC clock, not
-// from market data, so it is a fact rather than a fabrication.
+// Forex Intelligence Module — macro scoring, currency strength, session analysis
+import { detectSession } from "./strategyEngine.js";
 
-/** The active FX session, derived purely from the UTC clock (not market data). */
-export type ForexSession = "Sydney" | "Tokyo" | "London" | "New York" | "Late New York";
+export interface CurrencyData {
+  currency: string;
+  strength: number; // 0–100
+  bias: "Bullish" | "Bearish" | "Neutral";
+  centralBank: string;
+  rateExpectation: "Hawkish" | "Neutral" | "Dovish";
+  inflationPressure: "High" | "Moderate" | "Low";
+  notes: string;
+}
+
+export interface ForexPairIntelligence {
+  symbol: string;
+  baseCurrency: string;
+  quoteCurrency: string;
+  baseStrength: number;
+  quoteStrength: number;
+  rateDifferential: string;
+  macroBias: "Bullish" | "Bearish" | "Neutral";
+  technicalBias: "Bullish" | "Bearish" | "Neutral";
+  combinedBias: "Bullish" | "Bearish" | "Neutral";
+  confidence: number;
+  riskNote: string;
+}
 
 export interface ForexIntelligenceResult {
-  /** False until a real FX macro provider is configured. Never true today. */
-  providerConnected: false;
-  /** User-safe explanation of why the data set is empty. */
-  safetyNote: string;
-  /** Clock-derived session label — a fact, not a market-data reading. */
-  session: ForexSession;
-  /** Always empty while no provider is connected. Never partially populated. */
-  currencies: [];
-  /** Always empty while no provider is connected. Never partially populated. */
-  pairs: [];
+  session: string;
+  riskSentiment: "Risk-On" | "Risk-Off" | "Neutral";
+  currencies: CurrencyData[];
+  pairs: ForexPairIntelligence[];
+  sessionNotes: string;
 }
 
-export const FOREX_PROVIDER_NOT_CONNECTED_NOTE =
-  "No live FX macro or currency-strength provider is connected. ARX does not display " +
-  "fabricated market data, so currency strength, pair bias and confidence are withheld " +
-  "rather than estimated.";
+// Mock macro data (updated periodically in production via central bank feeds)
+const CURRENCY_MACRO: Record<string, Omit<CurrencyData, "strength">> = {
+  USD: { currency: "USD", bias: "Bullish", centralBank: "Federal Reserve", rateExpectation: "Hawkish", inflationPressure: "Moderate", notes: "Strong jobs data, Fed holding rates high. Dollar well-bid." },
+  EUR: { currency: "EUR", bias: "Bearish", centralBank: "ECB", rateExpectation: "Dovish", inflationPressure: "Moderate", notes: "ECB cutting rates, weak German growth drag on Euro." },
+  GBP: { currency: "GBP", bias: "Neutral", centralBank: "Bank of England", rateExpectation: "Neutral", inflationPressure: "High", notes: "BoE cautious, sticky services inflation keeping rates elevated." },
+  JPY: { currency: "JPY", bias: "Bearish", centralBank: "Bank of Japan", rateExpectation: "Dovish", inflationPressure: "Low", notes: "BoJ ultra-loose, JPY under pressure vs USD. Watch BoJ intervention risk." },
+  CHF: { currency: "CHF", bias: "Neutral", centralBank: "Swiss National Bank", rateExpectation: "Dovish", inflationPressure: "Low", notes: "SNB cutting rates. CHF safe-haven demand on risk-off events." },
+  AUD: { currency: "AUD", bias: "Neutral", centralBank: "Reserve Bank of Australia", rateExpectation: "Neutral", inflationPressure: "Moderate", notes: "RBA holding, commodity prices mixed. AUD sensitive to China data." },
+  NZD: { currency: "NZD", bias: "Bearish", centralBank: "Reserve Bank of NZ", rateExpectation: "Dovish", inflationPressure: "Moderate", notes: "RBNZ shifting dovish, weaker dairy prices weigh on NZD." },
+  CAD: { currency: "CAD", bias: "Neutral", centralBank: "Bank of Canada", rateExpectation: "Dovish", inflationPressure: "Low", notes: "BoC cutting, oil prices uncertain. CAD tracks crude oil and USD." },
+};
 
-/** UTC-clock session label. Deterministic; no market data involved. */
-export function detectForexSession(now: Date = new Date()): ForexSession {
-  const hour = now.getUTCHours();
-  if (hour >= 22 || hour < 1) return "Sydney";
-  if (hour < 8) return "Tokyo";
-  if (hour < 13) return "London";
-  if (hour < 17) return "New York";
-  return "Late New York";
+// Base strength scores from macro fundamentals (updated with slight randomization for demo)
+const BASE_STRENGTH: Record<string, number> = {
+  USD: 72, EUR: 38, GBP: 55, JPY: 30, CHF: 52, AUD: 50, NZD: 42, CAD: 48,
+};
+
+function computeStrength(currency: string, riskSentiment: "Risk-On" | "Risk-Off" | "Neutral"): number {
+  let base = BASE_STRENGTH[currency] ?? 50;
+  // Risk sentiment adjustments
+  if (riskSentiment === "Risk-Off") {
+    if (currency === "USD" || currency === "CHF" || currency === "JPY") base += 5;
+    if (currency === "AUD" || currency === "NZD") base -= 5;
+  } else if (riskSentiment === "Risk-On") {
+    if (currency === "AUD" || currency === "NZD" || currency === "CAD") base += 5;
+    if (currency === "JPY" || currency === "CHF") base -= 3;
+  }
+  // Small demo randomization (±3 points)
+  base += (Math.random() - 0.5) * 6;
+  return Math.max(0, Math.min(100, Math.round(base)));
 }
 
-/**
- * FX intelligence. Returns the honest not-connected state.
- *
- * INVARIANT: this function contains no randomness and no hardcoded market
- * levels, biases, strengths or confidence values. It must never be changed to
- * emit an estimated market number — wire a real provider instead.
- */
+function getRiskSentiment(): "Risk-On" | "Risk-Off" | "Neutral" {
+  const hour = new Date().getUTCHours();
+  // Simulate sentiment based on session
+  if (hour >= 8 && hour < 13) return "Neutral"; // London — wait and see
+  if (hour >= 13 && hour < 17) return Math.random() > 0.5 ? "Risk-On" : "Neutral"; // NY — varies
+  if (hour >= 0 && hour < 8) return "Risk-Off"; // Asia — risk-off bias
+  return "Neutral";
+}
+
+function getMacroBias(base: string, quote: string, strengths: Record<string, number>): "Bullish" | "Bearish" | "Neutral" {
+  const diff = (strengths[base] ?? 50) - (strengths[quote] ?? 50);
+  if (diff > 12) return "Bullish";
+  if (diff < -12) return "Bearish";
+  return "Neutral";
+}
+
+const PAIRS: Array<{ symbol: string; base: string; quote: string }> = [
+  { symbol: "EURUSD", base: "EUR", quote: "USD" },
+  { symbol: "GBPUSD", base: "GBP", quote: "USD" },
+  { symbol: "USDJPY", base: "USD", quote: "JPY" },
+  { symbol: "USDCHF", base: "USD", quote: "CHF" },
+  { symbol: "USDCAD", base: "USD", quote: "CAD" },
+  { symbol: "AUDUSD", base: "AUD", quote: "USD" },
+  { symbol: "NZDUSD", base: "NZD", quote: "USD" },
+  { symbol: "EURJPY", base: "EUR", quote: "JPY" },
+  { symbol: "GBPJPY", base: "GBP", quote: "JPY" },
+  { symbol: "EURGBP", base: "EUR", quote: "GBP" },
+  { symbol: "AUDJPY", base: "AUD", quote: "JPY" },
+  { symbol: "CADJPY", base: "CAD", quote: "JPY" },
+];
+
+const SESSION_NOTES: Record<string, string> = {
+  "Asia": "Asia session active. JPY, AUD, NZD pairs most liquid. Watch Tokyo fix (04:55 UTC) for JPY moves.",
+  "London": "London session open. EUR, GBP pairs peak liquidity. Highest forex volume window of the day.",
+  "London/NY Overlap": "London/NY overlap — peak global liquidity. All major pairs active. Highest volatility window.",
+  "New York": "New York session active. USD pairs dominant. Watch US economic releases at 12:30-14:00 UTC.",
+  "Closed": "Interbank market thin. Low liquidity, wider spreads. Avoid new positions.",
+};
+
 export function getForexIntelligence(): ForexIntelligenceResult {
-  return {
-    providerConnected: false,
-    safetyNote: FOREX_PROVIDER_NOT_CONNECTED_NOTE,
-    session: detectForexSession(),
-    currencies: [],
-    pairs: [],
-  };
+  const session = detectSession();
+  const riskSentiment = getRiskSentiment();
+  const strengths: Record<string, number> = {};
+  const currencies: CurrencyData[] = [];
+
+  for (const [currency, macro] of Object.entries(CURRENCY_MACRO)) {
+    const strength = computeStrength(currency, riskSentiment);
+    strengths[currency] = strength;
+    currencies.push({ ...macro, strength });
+  }
+
+  // Sort by strength desc
+  currencies.sort((a, b) => b.strength - a.strength);
+
+  const pairs: ForexPairIntelligence[] = PAIRS.map(({ symbol, base, quote }) => {
+    const baseStrength = strengths[base] ?? 50;
+    const quoteStrength = strengths[quote] ?? 50;
+    const diff = baseStrength - quoteStrength;
+    const macroBias = getMacroBias(base, quote, strengths);
+    // Mock technical bias based on base macro
+    const macroObj = CURRENCY_MACRO[base];
+    const technicalBias: "Bullish" | "Bearish" | "Neutral" = macroObj?.bias ?? "Neutral";
+    const combinedBias: "Bullish" | "Bearish" | "Neutral" =
+      macroBias === technicalBias ? macroBias :
+      (macroBias !== "Neutral" ? macroBias : technicalBias);
+    const confidence = Math.min(90, 50 + Math.abs(diff));
+    const baseMacro = CURRENCY_MACRO[base];
+    const quoteMacro = CURRENCY_MACRO[quote];
+    const rateDifferential = `${base} ${baseMacro?.rateExpectation ?? "Neutral"} vs ${quote} ${quoteMacro?.rateExpectation ?? "Neutral"}`;
+    return { symbol, baseCurrency: base, quoteCurrency: quote, baseStrength, quoteStrength, rateDifferential, macroBias, technicalBias, combinedBias, confidence, riskNote: macroObj?.notes ?? "" };
+  });
+
+  return { session, riskSentiment, currencies, pairs, sessionNotes: SESSION_NOTES[session] ?? "" };
 }

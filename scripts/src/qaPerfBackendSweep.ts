@@ -102,10 +102,10 @@ const PROBES: Probe[] = [
   // Live-shared read-only (NO /execute — that would dispatch)
   { method: "GET", path: "/api/trades/live-shared/commands?limit=10", group: "live",   budgetMs: 500 },
   { method: "GET", path: "/api/trades/live-shared/attributions",   group: "live",      budgetMs: 500 },
-  // Market data. The /api/market-data/* Build-DD read layer was deleted (no
-  // consumers, superseded by the live router), so the sweep measures the
-  // endpoints traders actually hit instead.
-  { method: "GET", path: "/api/chart/candles?symbol=EURUSD&timeframe=H1&limit=50", group: "market", budgetMs: 1500 },
+  // Market data
+  { method: "GET", path: "/api/market-data/quote?symbol=EURUSD",   group: "market",    budgetMs: 1500 },
+  { method: "GET", path: "/api/market-data/candles?symbol=EURUSD&timeframe=H1&limit=50", group: "market", budgetMs: 1500 },
+  { method: "GET", path: "/api/market-data/health",                group: "market",    budgetMs: 300 },
   { method: "GET", path: "/api/me/opportunity-map?marketGroup=forex", group: "market",  budgetMs: 600 },
   // Admin
   { method: "GET", path: "/api/admin/deriv-status",                group: "admin",     budgetMs: 800, optional: true },

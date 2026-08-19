@@ -5,16 +5,12 @@ import { and, eq, inArray } from "drizzle-orm";
 import { resolveArxMarket, isApprovedArxMarket, arxFocusApprovedEnvelope } from "@workspace/domain/market";
 import { runStrategyScan } from "../lib/strategyEngine.js";
 import { getMarketData } from "../lib/data/dataManager.js";
-import { newsRiskFrom, resolveNewsRiskEvents } from "../lib/news/calendar/newsRiskResolver.js";
+import { scoreNewsRisk } from "../lib/news/calendar/newsRiskScorer.js";
 import { requireUser } from "../lib/auth/middleware.js";
 
 const router = Router();
 
 async function enrichItems(items: typeof watchlistItemsTable.$inferSelect[]) {
-  // Resolve the REAL calendar once per batch so every row's newsRisk badge sits
-  // on one consistent snapshot. With no provider configured this yields an
-  // honest unavailable read rather than a fabricated event set (Theme A1).
-  const calendar = await resolveNewsRiskEvents();
   return Promise.all(items.map(async (it) => {
     let signal: string | null = null;
     let confidence: number | null = null;
@@ -27,7 +23,7 @@ async function enrichItems(items: typeof watchlistItemsTable.$inferSelect[]) {
       confidence = sig.confidence;
       trend = sig.direction === "BUY" ? "up" : sig.direction === "SELL" ? "down" : "neutral";
     } catch { /* swallow */ }
-    const news = newsRiskFrom(it.symbol, calendar);
+    const news = scoreNewsRisk(it.symbol);
     // Approved → carry the shared extended approved envelope per item. Additive
     // (nested key) — existing consumers of the item shape are unaffected. Items
     // reaching enrichItems are already approved (callers filter), so resolution
@@ -44,10 +40,6 @@ async function enrichItems(items: typeof watchlistItemsTable.$inferSelect[]) {
       trend,
       spread: null,
       newsRisk: news.riskLevel,
-      // Additive honesty marker: false ⇒ no calendar provider, so "none" means
-      // UNKNOWN rather than clear. Existing consumers of `newsRisk` are
-      // unaffected; new ones must not render "clear" on a false read.
-      newsRiskAvailable: news.calendarAvailable,
       ...(focusMarket ? { arxFocus: arxFocusApprovedEnvelope(focusMarket) } : {}),
     };
   }));

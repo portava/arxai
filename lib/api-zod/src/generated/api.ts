@@ -9511,6 +9511,40 @@ export const GetEconomicCalendarResponse = zod.array(
 );
 
 /**
+ * @summary News risk evaluation for a symbol
+ */
+export const GetNewsRiskQueryParams = zod.object({
+  symbol: zod.coerce.string(),
+});
+
+export const GetNewsRiskResponse = zod.object({
+  symbol: zod.string(),
+  riskLevel: zod.enum(["none", "low", "medium", "high"]),
+  blockTrading: zod.boolean(),
+  minutesUntilEvent: zod.number().nullish(),
+  affectedSymbols: zod.array(zod.string()),
+  reason: zod.string(),
+  upcomingEvent: zod
+    .union([
+      zod.object({
+        id: zod.string(),
+        title: zod.string(),
+        country: zod.string(),
+        currency: zod.string(),
+        impact: zod.enum(["low", "medium", "high"]),
+        actual: zod.string().nullish(),
+        forecast: zod.string().nullish(),
+        previous: zod.string().nullish(),
+        eventTime: zod.string(),
+        affectedMarkets: zod.array(zod.string()),
+        source: zod.string(),
+      }),
+      zod.null(),
+    ])
+    .optional(),
+});
+
+/**
  * @summary Live upcoming events from the configured real economic-calendar
 provider (Trading Economics). Returns provider metadata + a
 window-filtered array of enriched events. `connected` is false when no
@@ -12369,9 +12403,8 @@ export const DeleteJournalEntryResponse = zod.object({
  * @summary Forex macro scoring and currency strength
  */
 export const GetForexIntelligenceResponse = zod.object({
-  providerConnected: zod.boolean(),
-  safetyNote: zod.string(),
   session: zod.string(),
+  riskSentiment: zod.enum(["Risk-On", "Risk-Off", "Neutral"]),
   currencies: zod.array(
     zod.object({
       currency: zod.string(),
@@ -12398,15 +12431,19 @@ export const GetForexIntelligenceResponse = zod.object({
       riskNote: zod.string(),
     }),
   ),
+  sessionNotes: zod.string(),
 });
 
 /**
  * @summary Global indices macro analysis
  */
 export const GetIndicesIntelligenceResponse = zod.object({
-  providerConnected: zod.boolean(),
-  safetyNote: zod.string(),
   session: zod.string(),
+  dollarStrength: zod.enum(["Weak", "Moderate", "Strong"]),
+  riskSentiment: zod.enum(["Risk-On", "Risk-Off", "Neutral"]),
+  fedExpectation: zod.enum(["Hawkish", "Neutral", "Dovish"]),
+  bondYield10Y: zod.number(),
+  vixEstimate: zod.number(),
   indices: zod.array(
     zod.object({
       symbol: zod.string(),
@@ -12425,14 +12462,13 @@ export const GetIndicesIntelligenceResponse = zod.object({
       riskFactors: zod.array(zod.string()),
     }),
   ),
+  marketSummary: zod.string(),
 });
 
 /**
  * @summary Synthetic volatility indices analysis
  */
 export const GetSyntheticAnalysisResponse = zod.object({
-  providerConnected: zod.boolean(),
-  safetyNote: zod.string(),
   symbols: zod.array(
     zod.object({
       symbol: zod.string(),
@@ -25377,6 +25413,197 @@ export const GetMarketHeatResponse = zod.object({
 });
 
 /**
+ * @summary Honest per-country heat verdicts
+ */
+export const getMarketHeatCountriesQueryTimeframeDefault = `M15`;
+
+export const GetMarketHeatCountriesQueryParams = zod.object({
+  timeframe: zod
+    .enum(["M1", "M5", "M15", "M30", "H1", "H4", "D1"])
+    .default(getMarketHeatCountriesQueryTimeframeDefault),
+  session: zod
+    .enum(["sydney", "tokyo", "london", "newyork"])
+    .optional()
+    .describe(
+      "Restrict the heat universe to markets active in this trading session.",
+    ),
+  symbols: zod.coerce
+    .string()
+    .optional()
+    .describe("Comma-separated ARX symbols to restrict the heat universe to."),
+  countries: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Comma-separated country keys to restrict the returned country verdicts to.",
+    ),
+});
+
+export const GetMarketHeatCountriesResponse = zod.object({
+  generatedAt: zod.string(),
+  countries: zod.array(
+    zod
+      .object({
+        id: zod.string(),
+        scope: zod.enum([
+          "global",
+          "country",
+          "currency",
+          "symbol",
+          "synthetic",
+        ]),
+        key: zod.string(),
+        displayName: zod.string(),
+        heatScore: zod.number().describe("-100..+100"),
+        direction: zod.enum(["bullish", "bearish", "neutral", "unavailable"]),
+        intensity: zod.enum([
+          "extreme",
+          "high",
+          "moderate",
+          "low",
+          "calm",
+          "unavailable",
+        ]),
+        sourceStatus: zod.enum([
+          "confirmed",
+          "price_only",
+          "delayed",
+          "stale",
+          "provider_missing",
+          "unavailable",
+        ]),
+        priceSource: zod
+          .object({
+            kind: zod.enum(["price", "news", "calendar"]),
+            name: zod.string(),
+            status: zod.enum([
+              "live",
+              "delayed",
+              "stale",
+              "missing",
+              "unavailable",
+              "error",
+            ]),
+            configured: zod.boolean(),
+            connected: zod.boolean(),
+            updatedAt: zod.string().nullish(),
+            recordCount: zod.number(),
+            note: zod.string().nullish(),
+          })
+          .describe("One data source's liveness for a heat verdict."),
+        newsSource: zod
+          .object({
+            kind: zod.enum(["price", "news", "calendar"]),
+            name: zod.string(),
+            status: zod.enum([
+              "live",
+              "delayed",
+              "stale",
+              "missing",
+              "unavailable",
+              "error",
+            ]),
+            configured: zod.boolean(),
+            connected: zod.boolean(),
+            updatedAt: zod.string().nullish(),
+            recordCount: zod.number(),
+            note: zod.string().nullish(),
+          })
+          .describe("One data source's liveness for a heat verdict."),
+        calendarSource: zod
+          .object({
+            kind: zod.enum(["price", "news", "calendar"]),
+            name: zod.string(),
+            status: zod.enum([
+              "live",
+              "delayed",
+              "stale",
+              "missing",
+              "unavailable",
+              "error",
+            ]),
+            configured: zod.boolean(),
+            connected: zod.boolean(),
+            updatedAt: zod.string().nullish(),
+            recordCount: zod.number(),
+            note: zod.string().nullish(),
+          })
+          .describe("One data source's liveness for a heat verdict."),
+        priceUpdatedAt: zod.string().nullish(),
+        newsUpdatedAt: zod.string().nullish(),
+        calendarUpdatedAt: zod.string().nullish(),
+        confidence: zod.enum(["high", "medium", "low", "none"]),
+        reason: zod.string(),
+        affectedSymbols: zod.array(zod.string()),
+        warnings: zod.array(zod.string()),
+        advisoryOnly: zod.literal(true),
+      })
+      .describe(
+        "Honesty-aware heat verdict for a country, currency, symbol, synthetic, or the global aggregate. Decision-support only — `advisoryOnly` is always true and no field here is read by any execution gate.\n",
+      ),
+  ),
+  providerStatus: zod.object({
+    price: zod
+      .object({
+        kind: zod.enum(["price", "news", "calendar"]),
+        name: zod.string(),
+        status: zod.enum([
+          "live",
+          "delayed",
+          "stale",
+          "missing",
+          "unavailable",
+          "error",
+        ]),
+        configured: zod.boolean(),
+        connected: zod.boolean(),
+        updatedAt: zod.string().nullish(),
+        recordCount: zod.number(),
+        note: zod.string().nullish(),
+      })
+      .describe("One data source's liveness for a heat verdict."),
+    news: zod
+      .object({
+        kind: zod.enum(["price", "news", "calendar"]),
+        name: zod.string(),
+        status: zod.enum([
+          "live",
+          "delayed",
+          "stale",
+          "missing",
+          "unavailable",
+          "error",
+        ]),
+        configured: zod.boolean(),
+        connected: zod.boolean(),
+        updatedAt: zod.string().nullish(),
+        recordCount: zod.number(),
+        note: zod.string().nullish(),
+      })
+      .describe("One data source's liveness for a heat verdict."),
+    calendar: zod
+      .object({
+        kind: zod.enum(["price", "news", "calendar"]),
+        name: zod.string(),
+        status: zod.enum([
+          "live",
+          "delayed",
+          "stale",
+          "missing",
+          "unavailable",
+          "error",
+        ]),
+        configured: zod.boolean(),
+        connected: zod.boolean(),
+        updatedAt: zod.string().nullish(),
+        recordCount: zod.number(),
+        note: zod.string().nullish(),
+      })
+      .describe("One data source's liveness for a heat verdict."),
+  }),
+});
+
+/**
  * Reports per-provider configured/connected, last fetch, last error, record count, freshness, and coverage. API-key presence is reported as a boolean only — the key value is never returned.
 
  * @summary Per-provider heat diagnostics (redacted key presence only)
@@ -25411,6 +25638,412 @@ export const GetMarketHeatDiagnosticsResponse = zod.object({
     synthetics: zod.number(),
   }),
 });
+
+/**
+ * @summary Honest heat verdict for a single symbol
+ */
+export const getMarketHeatSymbolPathSymbolMax = 64;
+
+export const GetMarketHeatSymbolParams = zod.object({
+  symbol: zod.coerce.string().min(1).max(getMarketHeatSymbolPathSymbolMax),
+});
+
+export const getMarketHeatSymbolQueryTimeframeDefault = `M15`;
+
+export const GetMarketHeatSymbolQueryParams = zod.object({
+  timeframe: zod
+    .enum(["M1", "M5", "M15", "M30", "H1", "H4", "D1"])
+    .default(getMarketHeatSymbolQueryTimeframeDefault),
+});
+
+export const GetMarketHeatSymbolResponse = zod
+  .object({
+    generatedAt: zod.string(),
+    symbol: zod.string(),
+    isApprovedMarket: zod.boolean(),
+    blockedReason: zod.string().nullish(),
+    verdict: zod
+      .object({
+        id: zod.string(),
+        scope: zod.enum([
+          "global",
+          "country",
+          "currency",
+          "symbol",
+          "synthetic",
+        ]),
+        key: zod.string(),
+        displayName: zod.string(),
+        heatScore: zod.number().describe("-100..+100"),
+        direction: zod.enum(["bullish", "bearish", "neutral", "unavailable"]),
+        intensity: zod.enum([
+          "extreme",
+          "high",
+          "moderate",
+          "low",
+          "calm",
+          "unavailable",
+        ]),
+        sourceStatus: zod.enum([
+          "confirmed",
+          "price_only",
+          "delayed",
+          "stale",
+          "provider_missing",
+          "unavailable",
+        ]),
+        priceSource: zod
+          .object({
+            kind: zod.enum(["price", "news", "calendar"]),
+            name: zod.string(),
+            status: zod.enum([
+              "live",
+              "delayed",
+              "stale",
+              "missing",
+              "unavailable",
+              "error",
+            ]),
+            configured: zod.boolean(),
+            connected: zod.boolean(),
+            updatedAt: zod.string().nullish(),
+            recordCount: zod.number(),
+            note: zod.string().nullish(),
+          })
+          .describe("One data source's liveness for a heat verdict."),
+        newsSource: zod
+          .object({
+            kind: zod.enum(["price", "news", "calendar"]),
+            name: zod.string(),
+            status: zod.enum([
+              "live",
+              "delayed",
+              "stale",
+              "missing",
+              "unavailable",
+              "error",
+            ]),
+            configured: zod.boolean(),
+            connected: zod.boolean(),
+            updatedAt: zod.string().nullish(),
+            recordCount: zod.number(),
+            note: zod.string().nullish(),
+          })
+          .describe("One data source's liveness for a heat verdict."),
+        calendarSource: zod
+          .object({
+            kind: zod.enum(["price", "news", "calendar"]),
+            name: zod.string(),
+            status: zod.enum([
+              "live",
+              "delayed",
+              "stale",
+              "missing",
+              "unavailable",
+              "error",
+            ]),
+            configured: zod.boolean(),
+            connected: zod.boolean(),
+            updatedAt: zod.string().nullish(),
+            recordCount: zod.number(),
+            note: zod.string().nullish(),
+          })
+          .describe("One data source's liveness for a heat verdict."),
+        priceUpdatedAt: zod.string().nullish(),
+        newsUpdatedAt: zod.string().nullish(),
+        calendarUpdatedAt: zod.string().nullish(),
+        confidence: zod.enum(["high", "medium", "low", "none"]),
+        reason: zod.string(),
+        affectedSymbols: zod.array(zod.string()),
+        warnings: zod.array(zod.string()),
+        advisoryOnly: zod.literal(true),
+      })
+      .optional()
+      .describe(
+        "Honesty-aware heat verdict for a country, currency, symbol, synthetic, or the global aggregate. Decision-support only — `advisoryOnly` is always true and no field here is read by any execution gate.\n",
+      ),
+    countries: zod
+      .array(
+        zod
+          .object({
+            id: zod.string(),
+            scope: zod.enum([
+              "global",
+              "country",
+              "currency",
+              "symbol",
+              "synthetic",
+            ]),
+            key: zod.string(),
+            displayName: zod.string(),
+            heatScore: zod.number().describe("-100..+100"),
+            direction: zod.enum([
+              "bullish",
+              "bearish",
+              "neutral",
+              "unavailable",
+            ]),
+            intensity: zod.enum([
+              "extreme",
+              "high",
+              "moderate",
+              "low",
+              "calm",
+              "unavailable",
+            ]),
+            sourceStatus: zod.enum([
+              "confirmed",
+              "price_only",
+              "delayed",
+              "stale",
+              "provider_missing",
+              "unavailable",
+            ]),
+            priceSource: zod
+              .object({
+                kind: zod.enum(["price", "news", "calendar"]),
+                name: zod.string(),
+                status: zod.enum([
+                  "live",
+                  "delayed",
+                  "stale",
+                  "missing",
+                  "unavailable",
+                  "error",
+                ]),
+                configured: zod.boolean(),
+                connected: zod.boolean(),
+                updatedAt: zod.string().nullish(),
+                recordCount: zod.number(),
+                note: zod.string().nullish(),
+              })
+              .describe("One data source's liveness for a heat verdict."),
+            newsSource: zod
+              .object({
+                kind: zod.enum(["price", "news", "calendar"]),
+                name: zod.string(),
+                status: zod.enum([
+                  "live",
+                  "delayed",
+                  "stale",
+                  "missing",
+                  "unavailable",
+                  "error",
+                ]),
+                configured: zod.boolean(),
+                connected: zod.boolean(),
+                updatedAt: zod.string().nullish(),
+                recordCount: zod.number(),
+                note: zod.string().nullish(),
+              })
+              .describe("One data source's liveness for a heat verdict."),
+            calendarSource: zod
+              .object({
+                kind: zod.enum(["price", "news", "calendar"]),
+                name: zod.string(),
+                status: zod.enum([
+                  "live",
+                  "delayed",
+                  "stale",
+                  "missing",
+                  "unavailable",
+                  "error",
+                ]),
+                configured: zod.boolean(),
+                connected: zod.boolean(),
+                updatedAt: zod.string().nullish(),
+                recordCount: zod.number(),
+                note: zod.string().nullish(),
+              })
+              .describe("One data source's liveness for a heat verdict."),
+            priceUpdatedAt: zod.string().nullish(),
+            newsUpdatedAt: zod.string().nullish(),
+            calendarUpdatedAt: zod.string().nullish(),
+            confidence: zod.enum(["high", "medium", "low", "none"]),
+            reason: zod.string(),
+            affectedSymbols: zod.array(zod.string()),
+            warnings: zod.array(zod.string()),
+            advisoryOnly: zod.literal(true),
+          })
+          .describe(
+            "Honesty-aware heat verdict for a country, currency, symbol, synthetic, or the global aggregate. Decision-support only — `advisoryOnly` is always true and no field here is read by any execution gate.\n",
+          ),
+      )
+      .optional(),
+    currencies: zod
+      .array(
+        zod
+          .object({
+            id: zod.string(),
+            scope: zod.enum([
+              "global",
+              "country",
+              "currency",
+              "symbol",
+              "synthetic",
+            ]),
+            key: zod.string(),
+            displayName: zod.string(),
+            heatScore: zod.number().describe("-100..+100"),
+            direction: zod.enum([
+              "bullish",
+              "bearish",
+              "neutral",
+              "unavailable",
+            ]),
+            intensity: zod.enum([
+              "extreme",
+              "high",
+              "moderate",
+              "low",
+              "calm",
+              "unavailable",
+            ]),
+            sourceStatus: zod.enum([
+              "confirmed",
+              "price_only",
+              "delayed",
+              "stale",
+              "provider_missing",
+              "unavailable",
+            ]),
+            priceSource: zod
+              .object({
+                kind: zod.enum(["price", "news", "calendar"]),
+                name: zod.string(),
+                status: zod.enum([
+                  "live",
+                  "delayed",
+                  "stale",
+                  "missing",
+                  "unavailable",
+                  "error",
+                ]),
+                configured: zod.boolean(),
+                connected: zod.boolean(),
+                updatedAt: zod.string().nullish(),
+                recordCount: zod.number(),
+                note: zod.string().nullish(),
+              })
+              .describe("One data source's liveness for a heat verdict."),
+            newsSource: zod
+              .object({
+                kind: zod.enum(["price", "news", "calendar"]),
+                name: zod.string(),
+                status: zod.enum([
+                  "live",
+                  "delayed",
+                  "stale",
+                  "missing",
+                  "unavailable",
+                  "error",
+                ]),
+                configured: zod.boolean(),
+                connected: zod.boolean(),
+                updatedAt: zod.string().nullish(),
+                recordCount: zod.number(),
+                note: zod.string().nullish(),
+              })
+              .describe("One data source's liveness for a heat verdict."),
+            calendarSource: zod
+              .object({
+                kind: zod.enum(["price", "news", "calendar"]),
+                name: zod.string(),
+                status: zod.enum([
+                  "live",
+                  "delayed",
+                  "stale",
+                  "missing",
+                  "unavailable",
+                  "error",
+                ]),
+                configured: zod.boolean(),
+                connected: zod.boolean(),
+                updatedAt: zod.string().nullish(),
+                recordCount: zod.number(),
+                note: zod.string().nullish(),
+              })
+              .describe("One data source's liveness for a heat verdict."),
+            priceUpdatedAt: zod.string().nullish(),
+            newsUpdatedAt: zod.string().nullish(),
+            calendarUpdatedAt: zod.string().nullish(),
+            confidence: zod.enum(["high", "medium", "low", "none"]),
+            reason: zod.string(),
+            affectedSymbols: zod.array(zod.string()),
+            warnings: zod.array(zod.string()),
+            advisoryOnly: zod.literal(true),
+          })
+          .describe(
+            "Honesty-aware heat verdict for a country, currency, symbol, synthetic, or the global aggregate. Decision-support only — `advisoryOnly` is always true and no field here is read by any execution gate.\n",
+          ),
+      )
+      .optional(),
+    newsRisk: zod.string().nullish(),
+    providerStatus: zod
+      .object({
+        price: zod
+          .object({
+            kind: zod.enum(["price", "news", "calendar"]),
+            name: zod.string(),
+            status: zod.enum([
+              "live",
+              "delayed",
+              "stale",
+              "missing",
+              "unavailable",
+              "error",
+            ]),
+            configured: zod.boolean(),
+            connected: zod.boolean(),
+            updatedAt: zod.string().nullish(),
+            recordCount: zod.number(),
+            note: zod.string().nullish(),
+          })
+          .describe("One data source's liveness for a heat verdict."),
+        news: zod
+          .object({
+            kind: zod.enum(["price", "news", "calendar"]),
+            name: zod.string(),
+            status: zod.enum([
+              "live",
+              "delayed",
+              "stale",
+              "missing",
+              "unavailable",
+              "error",
+            ]),
+            configured: zod.boolean(),
+            connected: zod.boolean(),
+            updatedAt: zod.string().nullish(),
+            recordCount: zod.number(),
+            note: zod.string().nullish(),
+          })
+          .describe("One data source's liveness for a heat verdict."),
+        calendar: zod
+          .object({
+            kind: zod.enum(["price", "news", "calendar"]),
+            name: zod.string(),
+            status: zod.enum([
+              "live",
+              "delayed",
+              "stale",
+              "missing",
+              "unavailable",
+              "error",
+            ]),
+            configured: zod.boolean(),
+            connected: zod.boolean(),
+            updatedAt: zod.string().nullish(),
+            recordCount: zod.number(),
+            note: zod.string().nullish(),
+          })
+          .describe("One data source's liveness for a heat verdict."),
+      })
+      .optional(),
+  })
+  .describe(
+    "Symbol heat verdict with affected countries\/currencies. For an unapproved symbol, `isApprovedMarket` is false and `verdict` is omitted (Focus-Lock blocked envelope).\n",
+  );
 
 /**
  * @summary Fix Agent availability + config (admin only)

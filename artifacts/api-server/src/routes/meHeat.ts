@@ -323,4 +323,40 @@ router.get("/me/heat/replay", requireUser, async (req, res): Promise<void> => {
   }
 });
 
+// ── GET /me/heat/snapshots/recent ────────────────────────────────────────────
+// Returns the most recent snapshot per symbol (for the overview dashboard).
+// Max 12 symbols, last 2 hours only.
+
+router.get("/me/heat/snapshots/recent", requireUser, async (req, res): Promise<void> => {
+  try {
+    const since = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    const rows = await db.select({
+      id: heatSnapshots.id,
+      symbol: heatSnapshots.symbol,
+      heatScore: heatSnapshots.heatScore,
+      timingGrade: heatSnapshots.timingGrade,
+      heatState: heatSnapshots.heatState,
+      entryPermission: heatSnapshots.entryPermission,
+      bestAction: heatSnapshots.bestAction,
+      moveStage: heatSnapshots.moveStage,
+      generatedAt: heatSnapshots.generatedAt,
+    }).from(heatSnapshots)
+      .where(gte(heatSnapshots.generatedAt, since))
+      .orderBy(desc(heatSnapshots.generatedAt))
+      .limit(100);
+
+    // Dedupe by symbol — keep most recent per symbol
+    const bySymbol: Record<string, typeof rows[number]> = {};
+    for (const r of rows) {
+      if (!bySymbol[r.symbol]) bySymbol[r.symbol] = r;
+    }
+    const recent = Object.values(bySymbol).slice(0, 12);
+
+    res.json({ snapshots: recent, count: recent.length });
+  } catch (err) {
+    logger.error({ err }, "meHeat: snapshots/recent failed");
+    res.status(500).json({ error: "Failed to load recent snapshots" });
+  }
+});
+
 export default router;
