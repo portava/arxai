@@ -10,8 +10,8 @@ export function RecommendedReplayDrillCard({ drill, feedback }: { drill: string;
       <div className="mt-2 rounded border border-sky-800 bg-slate-950/40 p-2">
         <div className="mb-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-300">Recommended drill</div>
         <p className="text-xs text-slate-100">{drill}</p>
-        <Link href="/replay-lab" className="mt-1.5 inline-block text-[11px] text-sky-400 underline hover:text-sky-300">
-          Open Replay Lab →
+        <Link href="/replay-simulator" className="mt-1.5 inline-block text-[11px] text-sky-400 underline hover:text-sky-300">
+          Open Replay Simulator →
         </Link>
       </div>
     </div>

@@ -6,7 +6,7 @@ import { mapV150Enumeration, type V150EnumEntry } from "../lib/mt5/symbolDirecto
 import { ingestEaCapabilities } from "../lib/mt5/eaCapabilityMapping.js";
 import { requireUser } from "../lib/auth/middleware.js";
 import { hashBridgeToken } from "./meMt5Connections.js";
-import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import {
   Mt5HeartbeatBody,
   QueueMt5CommandBody,
@@ -127,46 +127,6 @@ async function auditBridge(
   } catch (err) {
     req.log.warn({ err, eventType }, "Bridge audit write failed (non-fatal)");
   }
-}
-
-// Shared-secret authentication for MT5 EA bridge endpoints. The EA must send
-// the configured token in the `X-MT5-Bridge-Token` header. If the env var is
-// unset, bridge endpoints reject all requests so the bridge cannot be exploited
-// by an unauthenticated caller.
-function requireBridgeToken(req: Request, res: Response, next: NextFunction) {
-  const expected = process.env["MT5_BRIDGE_TOKEN"];
-  if (!expected) {
-    bridgeDiag.lastRejectedHeartbeatAt = new Date();
-    bridgeDiag.lastRejectReason = "MT5_BRIDGE_TOKEN_NOT_CONFIGURED";
-    bridgeDiag.lastRejectRemoteIp = shortIp(req);
-    bridgeDiag.rejectedCount += 1;
-    void auditBridge("BRIDGE_HEARTBEAT_REJECTED", "WARNING", "DENIED", req, { reason: bridgeDiag.lastRejectReason });
-    req.log.warn({ path: req.path, ip: shortIp(req) }, "MT5 bridge request rejected: token not configured");
-    res.status(503).json({ error: "MT5 bridge disabled: MT5_BRIDGE_TOKEN not configured." });
-    return;
-  }
-  const provided = req.header("X-MT5-Bridge-Token");
-  if (!provided) {
-    bridgeDiag.lastRejectedHeartbeatAt = new Date();
-    bridgeDiag.lastRejectReason = "MISSING_TOKEN_HEADER";
-    bridgeDiag.lastRejectRemoteIp = shortIp(req);
-    bridgeDiag.rejectedCount += 1;
-    void auditBridge("BRIDGE_HEARTBEAT_REJECTED", "WARNING", "DENIED", req, { reason: bridgeDiag.lastRejectReason });
-    req.log.warn({ path: req.path, ip: shortIp(req), ua: req.headers["user-agent"] }, "MT5 bridge request rejected: missing X-MT5-Bridge-Token header");
-    res.status(401).json({ error: "Invalid MT5 bridge token." });
-    return;
-  }
-  if (provided !== expected) {
-    bridgeDiag.lastRejectedHeartbeatAt = new Date();
-    bridgeDiag.lastRejectReason = "TOKEN_MISMATCH";
-    bridgeDiag.lastRejectRemoteIp = shortIp(req);
-    bridgeDiag.rejectedCount += 1;
-    void auditBridge("BRIDGE_HEARTBEAT_REJECTED", "WARNING", "DENIED", req, { reason: bridgeDiag.lastRejectReason });
-    req.log.warn({ path: req.path, ip: shortIp(req), ua: req.headers["user-agent"] }, "MT5 bridge request rejected: token mismatch (value not logged)");
-    res.status(401).json({ error: "Invalid MT5 bridge token." });
-    return;
-  }
-  next();
 }
 
 async function loadOrCreateState() {
@@ -713,7 +673,6 @@ router.get("/mt5/bridge-diagnostics", async (req, res) => {
         SYSTEM_TOKEN_ON_PERSONAL_ENDPOINT: "EA is sending the server-wide MT5_BRIDGE_TOKEN env value to a per-user endpoint (/api/mt5/commands or /api/mt5/command-result). Replace it with your PER-USER bridge token.",
         TOKEN_NO_USER_MATCH: "EA token does not hash to any active mt5_connection row. Issue a new per-user token from the MT5 setup page.",
         MISSING_TOKEN_HEADER: "EA is reaching the server but not sending X-MT5-Bridge-Token header. Update the EA build.",
-        MT5_BRIDGE_TOKEN_NOT_CONFIGURED: "Server-side env var is missing. Add it in Replit Secrets.",
         INVALID_HEARTBEAT_BODY: "EA is reaching the server with a valid token but the JSON body is malformed.",
       },
     },
@@ -803,10 +762,16 @@ router.get("/mt5/bridge-ops-monitor", requireUser, async (req, res) => {
 
 // Phase 28-MT5-VPS — Operator setup checklist. Read-only. Returns the 14
 // onboarding items (manual + derived live state). Never returns secrets;
-// only the BOOLEAN of whether MT5_BRIDGE_TOKEN is configured. Records a
-// BRIDGE_CHECKLIST_VIEWED audit event on every fetch.
+// only the BOOLEAN of whether an active per-user bridge token exists. Records
+// a BRIDGE_CHECKLIST_VIEWED audit event on every fetch.
 router.get("/mt5/setup-checklist", async (req, res) => {
-  const tokenConfigured = !!process.env["MT5_BRIDGE_TOKEN"];
+  // EA auth is per-user only (bridgeAuthPerUserOnly), so "token configured"
+  // means at least one non-revoked per-user bridge token exists — NOT the
+  // server-wide MT5_BRIDGE_TOKEN env value, which every EA endpoint rejects.
+  const activeTokenRows = await db.select({ id: mt5ConnectionTable.id }).from(mt5ConnectionTable)
+    .where(and(isNotNull(mt5ConnectionTable.apiKeyHash), isNull(mt5ConnectionTable.tokenRevokedAt)))
+    .limit(1);
+  const tokenConfigured = !!activeTokenRows[0];
   const state = await loadOrCreateState();
   const lastHb = state.lastHeartbeatAt ?? bridgeDiag.lastAcceptedHeartbeatAt;
   const ageSec = lastHb ? Math.floor((Date.now() - new Date(lastHb).getTime()) / 1000) : null;
@@ -827,10 +792,12 @@ router.get("/mt5/setup-checklist", async (req, res) => {
     { id: "webrequest_allowed", label: "WebRequest URL allowed (Tools → Options → Expert Advisors)", derivable: false, state: "manual" },
     {
       id: "bridge_token_configured",
-      label: "Bridge token configured in Replit Secrets",
+      label: "Per-user bridge token issued (MT5 Setup page)",
       derivable: true,
       state: tokenConfigured ? "ok" : "missing",
-      detail: tokenConfigured ? "MT5_BRIDGE_TOKEN is set." : "Add MT5_BRIDGE_TOKEN in Replit Secrets.",
+      detail: tokenConfigured
+        ? "An active per-user bridge token exists."
+        : "Create a connection on the MT5 Setup page (POST /api/me/mt5-connections). The response shows the per-user X-MT5-Bridge-Token exactly once — paste it into the EA's BridgeToken input. The server-wide MT5_BRIDGE_TOKEN env value is rejected on every EA endpoint.",
     },
     { id: "read_only_mode", label: "ReadOnlyMode = true", derivable: true, state: "ok", detail: "Enforced server-side; cannot be disabled from the EA." },
     { id: "allow_order_execution_false", label: "AllowOrderExecution = false", derivable: true, state: "ok", detail: "Broker placement layer not implemented; all commands forced to BLOCKED." },

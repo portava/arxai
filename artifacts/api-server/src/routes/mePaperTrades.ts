@@ -313,7 +313,7 @@ router.post("/me/paper-trades/:id/open", requireUser, async (req, res): Promise<
       updatedAt: new Date(),
     }).where(and(eq(paperTradesTable.id, id), eq(paperTradesTable.userId, userId))).returning();
     fireNotify(userId,
-      { notificationType: "paper_trade_opened", severity: "info", title: `Paper trade opened: ${t.symbol}`, message: `${t.side.toUpperCase()} ${t.lotSize} @ ${body.entryPrice}`, source: "trade", entityType: "paper_trade", entityId: id, actionLabel: "View trade", actionTarget: "/paper-trading" },
+      { notificationType: "paper_trade_opened", severity: "info", title: `Paper trade opened: ${t.symbol}`, message: `${t.side.toUpperCase()} ${t.lotSize} @ ${body.entryPrice}`, source: "trade", entityType: "paper_trade", entityId: id, actionLabel: "View trade", actionTarget: "/my-trades" },
       { eventType: "paper_trade_opened", title: `Paper trade opened: ${t.symbol}`, description: `${t.side.toUpperCase()} ${t.lotSize} @ ${body.entryPrice}`, source: "trade", entityType: "paper_trade", entityId: id }
     );
     res.json(serialize(updated[0]!));
@@ -413,7 +413,7 @@ router.post("/me/paper-trades/:id/close", requireUser, async (req, res): Promise
       }
     } catch (e) { req.log.warn({ err: String(e) }, "playbook auto-tag on close failed"); }
     fireNotify(userId,
-      { notificationType: "paper_trade_closed", severity: pnl >= 0 ? "info" : "warning", title: `Paper trade closed: ${t.symbol}`, message: `P&L ${pnl.toFixed(2)}${pnlPercent != null ? ` (${pnlPercent}%)` : ""}`, source: "trade", entityType: "paper_trade", entityId: id, actionLabel: "Open journal", actionTarget: "/paper-trading" },
+      { notificationType: "paper_trade_closed", severity: pnl >= 0 ? "info" : "warning", title: `Paper trade closed: ${t.symbol}`, message: `P&L ${pnl.toFixed(2)}${pnlPercent != null ? ` (${pnlPercent}%)` : ""}`, source: "trade", entityType: "paper_trade", entityId: id, actionLabel: "Open journal", actionTarget: "/journal" },
       { eventType: "paper_trade_closed", title: `Paper trade closed: ${t.symbol}`, description: `P&L ${pnl.toFixed(2)}`, source: "trade", entityType: "paper_trade", entityId: id, metadata: { pnl, pnlPercent } }
     );
     res.json(serialize(updated[0]!));

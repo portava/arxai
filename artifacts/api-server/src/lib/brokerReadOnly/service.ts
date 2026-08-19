@@ -62,6 +62,10 @@ export interface ConnectorSnapshot {
   openPositions: ReadOnlyPosition[];
   latestQuotes: ReadOnlyQuote[];
   dataQuality: DataQualityRO;
+  // Set by placeholder providers (e.g. DEMO_PLACEHOLDER) so no consumer can
+  // mistake their output for a real broker connection.
+  providerState?: string;
+  safetyNote?: string;
   liveTradingAllowed: false;
   canPlaceLiveTrade: false;
   generatedAt: string;
@@ -95,30 +99,27 @@ async function logRO(connectorId: string, eventType: string, severity: Severity,
 type Provider = (connectorId: string) => Promise<{
   connected: boolean; account: ReadOnlyAccount | null; symbols: ReadOnlySymbol[];
   openPositions: ReadOnlyPosition[]; latestQuotes: ReadOnlyQuote[]; dataQuality: DataQualityRO;
+  providerState?: string; safetyNote?: string;
 }>;
 
-const demoProvider: Provider = async () => {
-  const now = new Date().toISOString();
-  return {
-    connected: true,
-    account: {
-      accountIdMasked: maskAccountId("9876543210"),
-      currency: "USD", balance: 10000, equity: 10245.50, margin: 0, freeMargin: 10245.50,
-      leverage: 500, serverTime: now,
-    },
-    symbols: [
-      { symbol: "Volatility 75 Index", description: "Synthetic V75", digits: 4, pipSize: 0.0001, minLot: 0.01, maxLot: 100 },
-      { symbol: "Volatility 100 Index", description: "Synthetic V100", digits: 4, pipSize: 0.0001, minLot: 0.01, maxLot: 100 },
-      { symbol: "Volatility 25 Index", description: "Synthetic V25", digits: 4, pipSize: 0.0001, minLot: 0.01, maxLot: 100 },
-    ],
-    openPositions: [],
-    latestQuotes: [
-      { symbol: "Volatility 75 Index", bid: 1023.45, ask: 1023.55, spread: 0.10, ts: now },
-      { symbol: "Volatility 100 Index", bid: 2105.10, ask: 2105.30, spread: 0.20, ts: now },
-    ],
-    dataQuality: { status: "GOOD", latencyMs: 12, warnings: [], errors: [] },
-  };
-};
+// The default provider is a PLACEHOLDER, not a broker. It must never report
+// connected=true or fabricate account/symbol/quote figures (it used to invent
+// a connected $10k account with GOOD data quality, which consumers like AACI
+// then had to special-case-distrust).
+const demoProvider: Provider = async () => ({
+  connected: false,
+  account: null,
+  symbols: [],
+  openPositions: [],
+  latestQuotes: [],
+  dataQuality: {
+    status: "MISSING", latencyMs: 0,
+    warnings: ["DEMO_PLACEHOLDER provider — no broker adapter is connected. No account, symbol, or quote data is available."],
+    errors: [],
+  },
+  providerState: "DEMO_PLACEHOLDER",
+  safetyNote: "Placeholder provider: connected=false and all data empty until a real read-only adapter is configured. Nothing here is a real account figure.",
+});
 
 const mt5StubProvider: Provider = async () => ({
   connected: false, account: null, symbols: [], openPositions: [], latestQuotes: [],
@@ -173,6 +174,7 @@ export async function buildSnapshot(opts: ConnectorOptions = {}): Promise<{ snap
     account: result.account, symbols: result.symbols, openPositions: result.openPositions, latestQuotes: result.latestQuotes,
     dataQuality: result.dataQuality, liveTradingAllowed: false, canPlaceLiveTrade: false,
     generatedAt: new Date().toISOString(),
+    ...(result.providerState ? { providerState: result.providerState, safetyNote: result.safetyNote } : {}),
   };
 
   if (opts.persist) {

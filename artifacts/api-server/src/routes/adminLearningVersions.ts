@@ -61,10 +61,12 @@ async function computeGates(versionId: string): Promise<{
   const dataQualityScore = Math.min(100, surfaceableEdges * 5); // 20+ edges = 100
   const dataValidated = dataQualityScore >= VERSION_GATES.MIN_DATA_QUALITY;
 
-  // 2. Walk-forward — use shadow mode historical win rate as proxy
+  // 2. Walk-forward — use shadow mode historical win rate as proxy.
+  // Newest-first (id tiebreak) so the slice below is genuinely the most recent half.
   const shadowRows = await db.select()
     .from(shadowPredictionsTable)
-    .where(sql`${shadowPredictionsTable.status} IN ('SHADOW_WIN', 'SHADOW_LOSS')`);
+    .where(sql`${shadowPredictionsTable.status} IN ('SHADOW_WIN', 'SHADOW_LOSS')`)
+    .orderBy(desc(shadowPredictionsTable.createdAt), desc(shadowPredictionsTable.id));
 
   const shadowSampleSize = shadowRows.length;
   let shadowAccuracy: number | null = null;

@@ -26,7 +26,7 @@ export const WALKTHROUGHS: Walkthrough[] = [
     intro: "ARX is a paper-first AI trading command center: Analyze the market, manage Risk, eXecute trades only when every safety gate is green.",
     steps: [
       { title: "Read the brand", body: "ARX = Analyze · Risk · eXecute. Every screen reflects one of those three." },
-      { title: "Open the Cockpit", body: "Your dashboard with account state and signals.", route: "/dashboard" },
+      { title: "Open the Cockpit", body: "Your dashboard with account state and signals.", route: "/" },
       { title: "Tour the Help Center", body: "All app docs live here.", route: "/help" },
     ],
     completion: "You can describe ARX in one sentence and find any page from the sidebar or More menu.",
@@ -200,7 +200,7 @@ export const WALKTHROUGHS: Walkthrough[] = [
     title: "Show me around ARX",
     intro: "Quick guided tour of the major ARX surfaces — one area at a time. Nothing on this tour can place a trade or change live state.",
     steps: [
-      { title: "Cockpit", body: "Your overview: balance, P&L, win rate, drawdown, latest signals.", route: "/dashboard" },
+      { title: "Cockpit", body: "Your overview: balance, P&L, win rate, drawdown, latest signals.", route: "/" },
       { title: "Trade", body: "Trade Command Room — manual ticket and positions. Demo-only.", route: "/trade-command-room" },
       { title: "AI", body: "AI Command Center — coach, mentor, and analytics.", route: "/ai-command-center" },
       { title: "Risk", body: "Risk Command Center — caps, governor rules, kill-switch access.", route: "/risk-command-center" },

@@ -177,6 +177,39 @@ export function findGhostClosedPositionIds(
     .map((r) => r.id);
 }
 
+// Global emergency-kill-switch pre-gate. POST /api/admin/trading/emergency-kill
+// engages global_trading_settings.emergency_kill_switch; dispatch consumes it
+// via this reason literal BEFORE the 18-gate evaluator, in BOTH routing modes.
+export const EMERGENCY_KILL_SWITCH_BLOCK_REASON =
+  "LIVE_BLOCKED:EMERGENCY_KILL_SWITCH_ENGAGED" as const;
+
+/**
+ * PURE decision for the emergency-kill-switch pre-gate (no I/O — extracted so
+ * the contract is unit-testable offline, like the CAS/TTL helpers above).
+ * TRUE = refuse the dispatch.
+ *
+ * - Fail-closed: a missing/unreadable settings value counts as ENGAGED
+ *   (`!== false`), matching the column default (emergency_kill_switch NOT NULL
+ *   DEFAULT true), the FAIL_CLOSED safety envelope, and
+ *   buildApprovedTraderLiveState's `settingsRow?.emergencyKillSwitch !== false`.
+ * - The ONLY exemption is the Task #743 Cluster D admin-emergency-close marker
+ *   (integrity-hashed, CLOSE_LIVE_POSITION only) — the same narrow relaxation
+ *   gate #5 grants — so an operator can still flatten exposure while the
+ *   platform is halted. OPEN / MODIFY / un-stamped CLOSE never qualify.
+ */
+export function emergencyKillSwitchBlocksDispatch(args: {
+  emergencyKillSwitch: boolean | null | undefined;
+  commandType: string;
+  hasKillSwitchCloseBypassMarker: boolean;
+}): boolean {
+  const engaged = args.emergencyKillSwitch !== false;
+  if (!engaged) return false;
+  return !killSwitchCloseBypassApplies({
+    commandType: args.commandType,
+    hasBypassMarker: args.hasKillSwitchCloseBypassMarker,
+  });
+}
+
 async function audit(args: {
   eventType: string; userId: number; message: string;
   symbol?: string; severity?: string; metadata?: Record<string, unknown>;
@@ -743,8 +776,12 @@ async function preflight(input: LiveDraftInput): Promise<LiveDraftRefusal | { ok
             detail: `Stop ${input.stopLoss} is ${Math.round(distPct * 100)}% away from current price ${ref.toFixed(5)} on ${input.symbol} — looks like a pip/price typo.` };
         }
       }
-    } catch {
+    } catch (err) {
       // Quote unavailable; defer to the 16-gate + MT5 broker rejection.
+      logger.warn(
+        { err, userId: input.userId, symbol: input.symbol, commandType: input.commandType },
+        "live-preflight: stop-loss sanity quote fetch failed (non-gating — SL sanity check skipped)",
+      );
     }
   }
 
@@ -771,7 +808,13 @@ async function preflight(input: LiveDraftInput): Promise<LiveDraftRefusal | { ok
           const q = await getMarketProvider().getLiveQuote(input.symbol);
           bid = q.bid ?? q.price ?? null;
           ask = q.ask ?? q.price ?? null;
-        } catch { /* no quote — stops/freeze legs skip, spec legs still enforce */ }
+        } catch (err) {
+          // no quote — stops/freeze legs skip, spec legs still enforce
+          logger.warn(
+            { err, userId: input.userId, symbol: input.symbol, commandType: input.commandType },
+            "live-preflight: broker-rule guard quote fetch failed (stops/freeze legs skipped)",
+          );
+        }
         const guard = evaluatePreTradeBrokerGuard({
           side: input.side,
           volume: input.requestedVolume,
@@ -797,9 +840,13 @@ async function preflight(input: LiveDraftInput): Promise<LiveDraftRefusal | { ok
           };
         }
       }
-    } catch {
+    } catch (err) {
       // Resolver failure must never block a trade that would otherwise pass;
       // defer to the EA guard + MT5 broker rejection.
+      logger.warn(
+        { err, userId: input.userId, symbol: input.symbol, commandType: input.commandType },
+        "live-preflight: broker symbol-spec resolver failed (non-gating — broker-rule guard skipped)",
+      );
     }
   }
 
@@ -1392,6 +1439,58 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   // Assemble Phase B inputs from live sources at this exact moment.
   const settings = await getOrCreateUserSettings(args.userId);
   const env = await getEnvelope(args.userId);
+
+  // ── EMERGENCY KILL SWITCH PRE-GATE (global halt) ───────────────────────
+  // Refuses dispatch while global_trading_settings.emergency_kill_switch is
+  // engaged. Runs BEFORE the 18-gate evaluator in BOTH routing modes: the
+  // evaluator's `globalLiveEnabled` input does NOT fold the kill switch in
+  // (getEnvelope computes it from platformMode + liveEnabled alone), so
+  // without this pre-gate a USER_OWNED_MT5 dispatch passes all 18 gates
+  // during a platform-wide halt. Additive only — never replaces or weakens
+  // any downstream gate. Fail-closed: on a missing/unreadable settings row
+  // the envelope reports emergencyKillSwitch=true (FAIL_CLOSED). The ONLY
+  // exemption is the Task #743 Cluster D admin-emergency-close CLOSE marker
+  // (already verified by the command-integrity pre-gate above), mirroring
+  // the narrow gate-#5 relaxation so an operator can still flatten exposure
+  // while the platform is halted.
+  {
+    const hasKillSwitchCloseBypassMarker =
+      row.payload != null
+      && typeof row.payload === "object"
+      && (row.payload as { killSwitchCloseBypass?: unknown }).killSwitchCloseBypass != null;
+    if (emergencyKillSwitchBlocksDispatch({
+      emergencyKillSwitch: env.emergencyKillSwitch,
+      commandType: row.commandType,
+      hasKillSwitchCloseBypassMarker,
+    })) {
+      const reason = EMERGENCY_KILL_SWITCH_BLOCK_REASON;
+      const [blocked] = await db.update(arxLiveCommandsTable).set({
+        status: "LIVE_BLOCKED",
+        rejectionReason: reason,
+        rejectedAt: new Date(),
+        dispatchGateSnapshot: {
+          decision: "BLOCKED",
+          primaryReason: reason,
+          blockReasons: [reason, "BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED"],
+          emergencyKillSwitchGate: true,
+          at: new Date().toISOString(),
+        } as unknown as Record<string, unknown>,
+      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      await audit({
+        eventType: "EMERGENCY_KILL_SWITCH_BLOCKED", severity: "HIGH",
+        userId: args.userId, symbol: row.symbol,
+        message: `Live dispatch BLOCKED by emergency kill switch: ${reason}`,
+        metadata: { commandId: args.commandId, commandType: row.commandType },
+      });
+      logger.warn({
+        [PHASE_B_LIVE_LOG_PREFIX]: true,
+        event: "EMERGENCY_KILL_SWITCH_BLOCKED",
+        commandId: args.commandId, userId: args.userId, primaryReason: reason,
+      }, "Emergency kill switch blocked live dispatch");
+      return { ok: false as const, reason: "LIVE_BLOCKED" as const,
+        primaryReason: reason, blockReasons: [reason], command: blocked };
+    }
+  }
 
   // Phase 22V Part 3 — per-user TP requirement is sourced from
   // user_master_live_access (default true on approved-shared-bridge users).

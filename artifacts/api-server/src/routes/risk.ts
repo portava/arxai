@@ -160,7 +160,9 @@ router.get("/risk/audit", requireUser, async (req, res) => {
   try {
     const query = RiskAuditQuery.parse(req.query);
     const settings = await getOrCreateRiskSettings(req.authUser!.id);
-    // Use a placeholder account balance (1000 USD) — in production this comes from MT5 sync
+    // Placeholder account balance (1000 USD) — no MT5 sync feeds this yet.
+    // balanceSource below marks the figure so no consumer can mistake it for
+    // a real account balance.
     const accountBalance = 1000;
     const audit = await computeRiskAudit(accountBalance, {
       riskPerTradePct:       settings.riskPerTradePct,
@@ -178,7 +180,7 @@ router.get("/risk/audit", requireUser, async (req, res) => {
       forexBlockEvents:    settings.forexBlockEvents,
       vol75ExtraConfidence: settings.vol75ExtraConfidence,
     });
-    return res.json(audit);
+    return res.json({ ...audit, balanceSource: "PLACEHOLDER_1000" });
   } catch (err) {
     req.log.error(err);
     return res.status(500).json({ error: "Failed to compute risk audit" });

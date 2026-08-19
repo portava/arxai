@@ -254,7 +254,7 @@ async function emitDerivedAlerts(userId: number, intel: ReturnType<typeof buildI
   if (intel.risk.lastBlocked && (Date.now() - new Date(intel.risk.lastBlocked.createdAt).getTime()) / 60_000 < 60) {
     await upsertAlertOnce(userId, { alertType: "risk_block", severity: "critical",
       title: "Risk Governor blocked a trade", message: intel.risk.lastBlocked.reason,
-      source: "risk", actionLabel: "Review", actionTarget: "/my-paper-trades" });
+      source: "risk", actionLabel: "Review", actionTarget: "/my-trades" });
   }
   if (intel.risk.cooldown.active) {
     await upsertAlertOnce(userId, { alertType: "cooldown_started", severity: "info",
@@ -263,7 +263,7 @@ async function emitDerivedAlerts(userId: number, intel: ReturnType<typeof buildI
   if (intel.playbooks.total === 0 && (intel.performance.closedPaperTrades > 0 || intel.performance.openPaperTrades > 0)) {
     await upsertAlertOnce(userId, { alertType: "playbook_missing", severity: "info",
       title: "No playbook yet", message: "Trades without a playbook are harder to learn from.",
-      source: "playbook", actionLabel: "Create playbook", actionTarget: "/my-paper-trades" });
+      source: "playbook", actionLabel: "Create playbook", actionTarget: "/playbook" });
   }
 }
 

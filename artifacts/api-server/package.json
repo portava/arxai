@@ -28,6 +28,7 @@
     "test:position-truth": "node --import tsx --test --test-force-exit src/lib/live/__qa__/positionTruthContract.test.ts",
     "test:live-activation-gate": "node --import tsx --test --test-force-exit src/lib/live/__qa__/liveExecutionActivationGate.test.ts",
     "test:allocation-gate": "node --import tsx --test --test-force-exit src/lib/live/__qa__/allocationGate.test.ts",
+    "test:emergency-kill-switch-gate": "node --import tsx --test --test-force-exit src/lib/live/__qa__/emergencyKillSwitchPreGate.test.ts",
     "test:advisory-truth-gate": "node --import tsx --test --test-force-exit src/lib/live/__qa__/advisoryTruthGate.integration.test.ts",
     "test:scalp-engine": "node --import tsx --test src/lib/scalp/__qa__/scalpEngine.test.ts",
     "test:scalp-manage": "node --import tsx --test src/lib/scalp/__qa__/scalpManage.test.ts",

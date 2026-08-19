@@ -4,7 +4,7 @@
 // Forbidden admin actions return REJECTED with CRITICAL audit. liveTradingStatus
 // is always DISABLED. mode is always PAPER_ONLY.
 
-import { Router } from "express";
+import { Router, type Request, type Response } from "express";
 import { runHealthCheck, runSubsystemCheck, listHealthChecks, exportHealthReport, type SubsystemBuild } from "../lib/systemHealth/health.js";
 import { listAudit, getAuditById, exportAudit, seedAuditDemo, auditEvent } from "../lib/systemHealth/audit.js";
 import { getConfig } from "../lib/systemHealth/config.js";
@@ -21,6 +21,19 @@ function envelope(body: Record<string, unknown>) {
     disclaimer: TAG,
     ...body,
   };
+}
+
+// ─── Admin gate — same canonical per-user-cookie pattern used by
+// adminAuditCenter.ts. Reads role from the per-user authUser session populated
+// by requireAuthOrPublic. Never reads x-security-role directly.
+function requireAdmin(req: Request, res: Response): "ADMIN" | "OWNER" | null {
+  const u = (req as Request & { authUser?: { role?: string } }).authUser;
+  const role = String(u?.role ?? "").toUpperCase();
+  if (role !== "ADMIN" && role !== "OWNER") {
+    res.status(403).json(envelope({ error: "ADMIN_OR_OWNER_REQUIRED" }));
+    return null;
+  }
+  return role as "ADMIN" | "OWNER";
 }
 
 // ── System Health ───────────────────────────────────────────────────────────
@@ -104,7 +117,8 @@ router.post("/audit/export", async (req, res) => {
   } catch (err) { res.status(500).json(envelope({ error: "audit export failed", detail: String(err).slice(0, 200) })); }
 });
 
-router.post("/audit/demo", async (_req, res) => {
+router.post("/audit/demo", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
   try { res.json(envelope({ demo: true, ids: await seedAuditDemo() })); }
   catch (err) { res.status(500).json(envelope({ error: "audit demo failed", detail: String(err).slice(0, 200) })); }
 });

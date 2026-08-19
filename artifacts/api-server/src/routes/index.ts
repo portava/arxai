@@ -421,11 +421,11 @@ router.use(dailyTestingRouter);
 
 // Per-user Trading Readiness (14-status engine).
 import userReadinessRouter from "./userReadiness.js";
-router.use("/api", userReadinessRouter);
+router.use(userReadinessRouter);
 
 // Opportunity Radar / AI Scanner Brain (read-only ranking + watchlist prefs).
 import opportunityRadarRouter from "./opportunityRadar.js";
-router.use("/api", opportunityRadarRouter);
+router.use(opportunityRadarRouter);
 
 // P0-1 — Per-user Shared Account read API (/api/me/shared-account/*).
 import meSharedAccountRouter from "./meSharedAccount.js";
@@ -596,5 +596,11 @@ router.use(adminSecurityRouter);
 // on revoke). User arm/disarm endpoints live in meOneClickRouter above.
 import adminOneClickRouter from "./adminOneClick.js";
 router.use(adminOneClickRouter);
+
+// Learning Model Versions — gate-checked global-learning version registry.
+// ADMIN/OWNER approve/rollback; liveAllowed only when all validation gates
+// pass AND admin explicitly approves. Includes user-facing version status.
+import adminLearningVersionsRouter from "./adminLearningVersions.js";
+router.use(adminLearningVersionsRouter);
 
 export default router;

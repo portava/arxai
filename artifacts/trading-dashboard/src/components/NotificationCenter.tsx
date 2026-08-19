@@ -1,6 +1,7 @@
 // Phase 10G — Notification Center (bell + panel + filters).
 // Polls /api/me/notifications. Mark-as-read / dismiss / read-all. Honors empty state.
 import { useState } from "react";
+import { Link } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Bell, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -80,7 +81,7 @@ export function NotificationCenter() {
                   <div className="font-medium text-sm mt-1 truncate">{n.title}</div>
                   {n.message && <div className="text-xs text-zinc-400 mt-1">{n.message}</div>}
                   {n.actionLabel && n.actionTarget && (
-                    <a href={n.actionTarget} className="inline-block mt-1 text-xs text-blue-400 hover:underline">{n.actionLabel} →</a>
+                    <Link href={n.actionTarget} className="inline-block mt-1 text-xs text-blue-400 hover:underline">{n.actionLabel} →</Link>
                   )}
                 </div>
                 <div className="flex flex-col gap-1">

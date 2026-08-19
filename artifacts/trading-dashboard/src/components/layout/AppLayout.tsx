@@ -133,7 +133,9 @@ const buildNavGroups = (name: string): NavGroup[] => [
       { href: "/live-trading",        label: "Live Trading",   icon: Zap },
       { href: "/ai-command-center",   label: `${name} (AI)`,      icon: Brain },
       { href: "/my-trades",           label: "Open Trades",    icon: Briefcase },
-      { href: "/positions",           label: "Positions",      icon: Briefcase },
+      // Simulator OMS surface — every mutation in routes/oms.ts is
+      // requireAdmin. The per-user trade surface is Open Trades above.
+      { href: "/positions",           label: "Positions",      icon: Briefcase, adminOnly: true },
       { href: "/risk-command-center", label: "Risk",           icon: Shield },
       { href: "/profit-missions",     label: "Profit Mission", icon: Flag },
       { href: "/alerts",              label: "Alerts",         icon: Bell },
@@ -146,11 +148,13 @@ const buildNavGroups = (name: string): NavGroup[] => [
     items: [
       { href: "/live-chart",        label: "Live Market Chart", icon: Activity },
       { href: "/watchlists",        label: "Watchlist",         icon: Eye },
-      { href: "/orders",            label: "Manual Ticket",     icon: ListChecks },
+      // Manual Ticket + News Risk back onto requireAdmin-only mutations
+      // (oms.ts order routes, marketDataLayer.ts news-risk event CRUD).
+      { href: "/orders",            label: "Manual Ticket",     icon: ListChecks, adminOnly: true },
       { href: "/mt5-setup",         label: "MT5 Setup",         icon: Plug },
       { href: "/market-heat-map",   label: "Market Heat Map",   icon: Thermometer },
       { href: "/economic-calendar", label: "Economic Calendar", icon: CalendarIcon },
-      { href: "/news-risk",         label: "News Risk",         icon: Bell },
+      { href: "/news-risk",         label: "News Risk",         icon: Bell, adminOnly: true },
     ],
   },
   {
@@ -202,11 +206,11 @@ const buildNavGroups = (name: string): NavGroup[] => [
       { href: "/trade-grader",             label: "Trade Review",           icon: Award },
       { href: "/market-health",            label: "Market Bias",            icon: LineChart },
       { href: "/strategy-lab",             label: "Strategy Lab",           icon: FlaskConical },
-      { href: "/autopilot-control-center", label: "Autopilot",              icon: Bot },
+      { href: "/autopilot-control-center", label: "Autopilot",              icon: Bot, adminOnly: true },
       { href: "/shadow-mode",              label: "Shadow Mode",            icon: Eye, adminOnly: true  },
       { href: "/shadow-journal",           label: "Shadow Journal",         icon: NotebookPen, adminOnly: true },
       { href: "/testing-lab",              label: "Testing Lab",            icon: FlaskConical },
-      { href: "/market-replay",            label: "Market Replay",          icon: FlaskConical },
+      { href: "/market-replay",            label: "Market Replay",          icon: FlaskConical, adminOnly: true },
       { href: "/strategy-tournament",      label: "Strategy Tournament",    icon: Swords, adminOnly: true  },
       { href: "/strategy-promotion",       label: "Strategy Promotion",     icon: TrendingUp, adminOnly: true  },
       { href: "/confidence-calibration",   label: "Confidence Calibration", icon: Gauge, adminOnly: true  },

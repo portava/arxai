@@ -22,15 +22,17 @@ export interface RouteKnowledge {
 /* eslint-disable max-len */
 export const ROUTE_KNOWLEDGE: RouteKnowledge[] = [
   // ── Main / Cockpit ──────────────────────────────────────────────────────
-  { route: "/", title: "Cockpit", purpose: "Main dashboard: balance, P&L, win rate, drawdown, open trades, fresh signals.", controls: ["Symbol selector", "Status badges", "Quick actions"], questions: ["What is ARX AI?", "What do these badges mean?"], related: ["/dashboard", "/help"] },
-  { route: "/dashboard", title: "Dashboard", purpose: "Alternate Cockpit view with the full account summary.", related: ["/", "/portfolio"] },
+  { route: "/", title: "Cockpit", purpose: "Main dashboard: balance, P&L, win rate, drawdown, open trades, fresh signals.", controls: ["Symbol selector", "Status badges", "Quick actions"], questions: ["What is ARX AI?", "What do these badges mean?"], related: ["/portfolio", "/help"] },
+  // /dashboard removed — never declared in App.tsx (the dashboard lives at "/"),
+  // so registering it sent walkthroughs and related-chips to a 404.
   // /trading-cockpit and /trading-command-center removed (Phase 3 — both backed
   // by the paper-only TradingCockpit page).
   { route: "/trade-command-room", title: "Trade Command Room", purpose: "Focused execution room: ticket + queue + risk readout.", related: ["/manual-trade-ticket"] },
   { route: "/brain", title: "ARX Brain", purpose: "Deep-dive into the AI's reasoning state.", related: ["/ai-decisions"] },
 
   // ── Markets / Charts / Scanner ─────────────────────────────────────────
-  { route: "/live-market", title: "Live Market", purpose: "Realtime market view with live signals and quotes.", related: ["/charts", "/scanner"] },
+  // /live-market removed — never declared in App.tsx. The realtime market view
+  // is /live-chart (single symbol) and /market-scanner (ranked signals).
   { route: "/live-chart", title: "Live Chart", purpose: "Single-symbol live chart with overlays.", related: ["/charts"] },
   { route: "/charts", title: "Charts", purpose: "Multi-chart workspace with annotation tools.", related: ["/live-chart"] },
   { route: "/market-scanner", title: "Market Scanner", purpose: "Scans configured symbols and ranks signals by confidence.", controls: ["Strategy filter", "Min confidence"], related: ["/scanner", "/strategy-settings"] },
@@ -64,13 +66,15 @@ export const ROUTE_KNOWLEDGE: RouteKnowledge[] = [
   { route: "/playbook", title: "Playbook", purpose: "Your saved setups and the rules for each.", related: ["/trade-plan-builder"] },
 
   // ── Positions / Orders / History ───────────────────────────────────────
-  { route: "/open-trades", title: "Open Trades", purpose: "All currently open positions across demo/sim/live." },
+  // /open-trades and /trade-history removed — never declared in App.tsx. Both
+  // live on /my-trades (open positions + full history in one blotter).
+  { route: "/my-trades", title: "My Trades", purpose: "All your trades in one blotter: currently open positions plus full historical trades with filters.", related: ["/positions", "/orders", "/journal"] },
+  { route: "/my-trades/*", title: "Trade Detail", purpose: "Detail view of a single trade: fills, P&L, risk, and journal notes.", related: ["/my-trades"] },
   { route: "/positions", title: "Positions", purpose: "Position blotter with size, P&L, and exposure." },
   { route: "/positions/*", title: "Positions", purpose: "Demo/Live filtered position views." },
   { route: "/orders", title: "Orders", purpose: "Order blotter: pending, filled, rejected." },
   { route: "/orders/*", title: "Orders", purpose: "Demo/Live filtered order views." },
   { route: "/live-trades", title: "Live Trades", purpose: "Read-only view of trades on the connected MT5 account.", safety: "Read-only. Cannot modify or close from here." },
-  { route: "/trade-history", title: "Trade History", purpose: "All historical trades with filters." },
   { route: "/trade-logs", title: "Trade Logs", purpose: "Raw trade-level logs with strategy attribution." },
   { route: "/trade-grader", title: "Trade Grader", purpose: "Grades each trade A–F against rules and behavior." },
 

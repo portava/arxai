@@ -4,8 +4,11 @@ import {
   getGetBotSettingsQueryKey,
   getGetRiskSettingsQueryKey,
   getGetMeAssistantSettingsQueryKey,
+  useGetRiskSettings,
+  useUpdateRiskSettings,
   useUpdateMeAssistantSettings,
   useChangeMyPassword,
+  type RiskSettingsUpdate,
 } from "@workspace/api-client-react";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -15,6 +18,7 @@ import { PageTabs, type PageTab } from "@/components/ui/PageTabs";
 import { cn } from "@/lib/utils";
 import { useTradingMode } from "@/hooks/useTradingMode";
 import { useProductRole } from "@/hooks/useProductRole";
+import { useToast } from "@/hooks/use-toast";
 import { OneClickToggleCard } from "@/components/mt5/OneClickToggleCard";
 import {
   useAssistantName,
@@ -41,6 +45,17 @@ const ALL_STRATEGIES = [
 ];
 
 const DEFAULT_ENABLED_STRATEGIES = ["trend_continuation", "break_of_structure", "liquidity_sweep", "volatility_expansion"];
+
+// Numeric per-user risk fields editable on the Risk tab. Keys must match the
+// /api/risk/settings schema (RiskSettingsUpdate).
+const RISK_FIELDS: { key: keyof RiskSettingsUpdate & ("riskPerTradePct" | "maxDailyLossPct" | "maxWeeklyLossPct" | "maxLotSize" | "maxOpenTrades" | "minConfidenceScore"); label: string }[] = [
+  { key: "riskPerTradePct", label: "Risk Per Trade (%)" },
+  { key: "maxDailyLossPct", label: "Max Daily Loss (%)" },
+  { key: "maxWeeklyLossPct", label: "Max Weekly Loss (%)" },
+  { key: "maxLotSize", label: "Max Lot Size" },
+  { key: "maxOpenTrades", label: "Max Open Trades" },
+  { key: "minConfidenceScore", label: "Min Confidence (%)" },
+];
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -357,6 +372,7 @@ export default function SettingsPage() {
   const qc = useQueryClient();
   const mode = useTradingMode();
   const { isInvestor } = useProductRole();
+  const { toast } = useToast();
   const [saved, setSaved] = useState(false);
 
   const { data: botSettings } = useQuery({
@@ -371,10 +387,8 @@ export default function SettingsPage() {
   const newsFilter: boolean = botSettings?.newsFilter ?? true;
   const sessionFilter: boolean = botSettings?.sessionFilter ?? true;
 
-  const { data: riskSettings } = useQuery({
-    queryKey: getGetRiskSettingsQueryKey(),
-    queryFn: () => fetch("/api/risk-settings").then((r) => r.json()),
-    enabled: !isInvestor,
+  const { data: riskSettings } = useGetRiskSettings({
+    query: { queryKey: getGetRiskSettingsQueryKey(), enabled: !isInvestor },
   });
 
   const updateBot = useMutation({
@@ -382,9 +396,11 @@ export default function SettingsPage() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: getGetBotSettingsQueryKey() }); },
   });
 
-  const updateRisk = useMutation({
-    mutationFn: (body: object) => fetch("/api/risk-settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json()),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: getGetRiskSettingsQueryKey() }); setSaved(true); setTimeout(() => setSaved(false), 2000); },
+  const updateRisk = useUpdateRiskSettings({
+    mutation: {
+      onSuccess: () => { qc.invalidateQueries({ queryKey: getGetRiskSettingsQueryKey() }); setSaved(true); setTimeout(() => setSaved(false), 2000); },
+      onError: () => toast({ title: "Save failed", description: "Risk settings were not saved.", variant: "destructive" }),
+    },
   });
 
   function toggleStrategy(id: string) {
@@ -560,17 +576,10 @@ export default function SettingsPage() {
         <Section title="Risk Parameters">
           {riskSettings && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {[
-                { key: "maxDailyLoss", label: "Max Daily Loss ($)", type: "number" },
-                { key: "maxDrawdown", label: "Max Drawdown (%)", type: "number" },
-                { key: "defaultLotSize", label: "Default Lot Size", type: "number" },
-                { key: "maxOpenTrades", label: "Max Open Trades", type: "number" },
-                { key: "riskPerTrade", label: "Risk Per Trade (%)", type: "number" },
-                { key: "minConfidence", label: "Min Confidence (%)", type: "number" },
-              ].map(({ key, label, type }) => (
+              {RISK_FIELDS.map(({ key, label }) => (
                 <div key={key}>
                   <label className="text-xs text-txt-secondary mb-1 block">{label}</label>
-                  <Input type={type} defaultValue={riskSettings[key]} step="0.01" className="bg-secondary border-border text-foreground" onBlur={(e) => updateRisk.mutate({ ...riskSettings, [key]: parseFloat(e.target.value) })} />
+                  <Input type="number" defaultValue={riskSettings[key]} step="0.01" className="bg-secondary border-border text-foreground" onBlur={(e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) updateRisk.mutate({ data: { [key]: v } as RiskSettingsUpdate }); }} />
                 </div>
               ))}
             </div>

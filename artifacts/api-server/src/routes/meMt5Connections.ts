@@ -28,6 +28,15 @@ function generateToken(): { raw: string; hash: string; last4: string } {
   return { raw, hash, last4 };
 }
 
+// Broker account logins never leave the API raw — mask to the last 4 digits
+// (same policy as brokerReadOnly/service.ts maskAccountId; short values are
+// fully masked so nothing is revealed).
+function maskAccountNumber(acct: string | null): string | null {
+  if (!acct) return acct;
+  if (acct.length <= 4) return "*".repeat(acct.length);
+  return `****${acct.slice(-4)}`;
+}
+
 function deriveStatus(row: typeof mt5ConnectionTable.$inferSelect): string {
   if (row.tokenRevokedAt) return "revoked";
   if (!row.lastHeartbeat) return "waiting";
@@ -59,7 +68,7 @@ function serialize(row: typeof mt5ConnectionTable.$inferSelect, opts: { rawToken
     status,
     broker: row.brokerName,
     server: row.serverName,
-    account: row.accountNumber,
+    account: maskAccountNumber(row.accountNumber),
     accountCurrency: row.accountCurrency,
     balance: row.accountBalance,
     equity: row.accountEquity,
@@ -163,7 +172,7 @@ router.get("/me/mt5-connections/:id/status", requireUser, async (req, res): Prom
     status: deriveStatus(r),
     lastHeartbeatAt: r.lastHeartbeat?.toISOString() ?? null,
     heartbeatAgeSeconds: r.lastHeartbeat ? Math.floor((Date.now() - new Date(r.lastHeartbeat).getTime()) / 1000) : null,
-    account: r.accountNumber,
+    account: maskAccountNumber(r.accountNumber),
     broker: r.brokerName,
     balance: r.accountBalance,
     equity: r.accountEquity,
@@ -278,7 +287,7 @@ router.get("/me/mt5-status", requireUser, async (req, res) => {
     connectionId: r.id,
     connectionName: r.connectionName,
     status: deriveStatus(r),
-    account: r.accountNumber,
+    account: maskAccountNumber(r.accountNumber),
     broker: r.brokerName,
     server: r.serverName,
     balance: r.accountBalance,

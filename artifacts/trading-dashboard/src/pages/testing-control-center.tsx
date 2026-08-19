@@ -51,10 +51,9 @@ const AVAILABLE_NOW: Omit<CheckRow, "status">[] = [
   {
     id: "onboarding",
     label: "Onboarding test",
-    describe: "Loads onboarding state — page must render without 5xx.",
+    describe: "Loads onboarding status — endpoint must respond 200.",
     run: async () => {
-      const r = await jget("/api/onboarding/state");
-      if (r.status === 404) return { pass: true, detail: "No onboarding endpoint (page-only flow) — OK" };
+      const r = await jget("/api/onboarding/status");
       return { pass: r.ok, detail: `HTTP ${r.status}` };
     },
   },
@@ -86,8 +85,8 @@ const AVAILABLE_NOW: Omit<CheckRow, "status">[] = [
     describe: "Confirms demo autopilot + AI mentor endpoints respond.",
     run: async () => {
       const a = await jget("/api/paper-autopilot/status");
-      const m = await jget("/api/ai-mentor/state");
-      const pass = (a.ok || a.status === 404) && (m.ok || m.status === 404);
+      const m = await jget("/api/mentor/sessions/latest");
+      const pass = a.ok && m.ok;
       return { pass, detail: `autopilot HTTP ${a.status}, mentor HTTP ${m.status}` };
     },
   },

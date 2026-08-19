@@ -106,6 +106,29 @@ describe("H — the assistant does not call admin data 'yours'", () => {
   });
 });
 
+// Same defect class, second batch: simulator/operator surfaces whose backing
+// mutations are requireAdmin were still visible to approved non-admin traders.
+// Each tuple pins the nav tier AND a representative server-side admin gate so
+// neither can silently drift apart again.
+const SIM_OPERATOR_GATED: Array<[href: string, routeFile: string, gate: RegExp]> = [
+  ["/positions",                "artifacts/api-server/src/routes/oms.ts",             /router\.post\("\/oms\/positions\/:id\/close",\s*requireAdmin/],
+  ["/orders",                   "artifacts/api-server/src/routes/oms.ts",             /router\.post\("\/orders\/create",\s*requireAdmin/],
+  ["/news-risk",                "artifacts/api-server/src/routes/marketDataLayer.ts", /router\.post\("\/news-risk\/events",\s*requireAdmin/],
+  ["/autopilot-control-center", "artifacts/api-server/src/routes/autopilot.ts",       /router\.post\("\/autopilot\/start",\s*requireAdmin/],
+  ["/market-replay",            "artifacts/api-server/src/routes/aiBrain.ts",         /router\.post\("\/market-replay\/start",\s*requireAdmin/],
+];
+
+describe("H — simulator/operator surfaces are adminOnly in the nav", () => {
+  for (const [href, routeFile, gate] of SIM_OPERATOR_GATED) {
+    it(`${href} is marked adminOnly and its backend mutation is requireAdmin`, () => {
+      const e = entry(href);
+      expect(e, `${href} must still have a nav entry`).not.toBeNull();
+      expect(e!).toMatch(/adminOnly:\s*true/);
+      expect(read(routeFile)).toMatch(gate);
+    });
+  }
+});
+
 describe("H — authorization was NOT loosened to fix a menu bug", () => {
   it("no shadow route was opened to non-admins", () => {
     // Every read in this module must still be admin-gated.

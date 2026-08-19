@@ -9,6 +9,7 @@ import {
 import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import crypto from "node:crypto";
 import { scrubString } from "../security/redact.js";
+import { logger } from "../logger.js";
 
 // (L) Build L extends ALERT_TYPES additively. Existing types kept for
 // back-compat with mt5.ts and tradeManagement.ts. New types map to the spec
@@ -225,7 +226,21 @@ export async function clearAlerts(): Promise<number> {
 
 void isNull;
 
-// Placeholder delivery hooks (no-ops) — reserved for email / SMS / push.
-async function sendEmailAlert(_alert: Alert): Promise<void> {}
-async function sendSMSAlert(_alert: Alert): Promise<void> {}
-async function sendPushNotification(_alert: Alert): Promise<void> {}
+// Delivery hooks. NO email / SMS / push provider is wired — each hook must say
+// so (warn + delivered:false) instead of resolving silently as if the alert
+// left the app. In-app delivery (the alerts table + NotificationCenter) is the
+// only real channel today.
+interface AlertDeliveryResult {
+  channel: "email" | "sms" | "push";
+  delivered: false;
+  reason: "DELIVERY_CHANNEL_NOT_CONFIGURED";
+}
+
+function undelivered(channel: AlertDeliveryResult["channel"], alert: Alert): AlertDeliveryResult {
+  logger.warn({ channel, alertId: alert.id, alertType: alert.type }, "alert delivery channel not configured — alert NOT sent");
+  return { channel, delivered: false, reason: "DELIVERY_CHANNEL_NOT_CONFIGURED" };
+}
+
+async function sendEmailAlert(alert: Alert): Promise<AlertDeliveryResult> { return undelivered("email", alert); }
+async function sendSMSAlert(alert: Alert): Promise<AlertDeliveryResult> { return undelivered("sms", alert); }
+async function sendPushNotification(alert: Alert): Promise<AlertDeliveryResult> { return undelivered("push", alert); }

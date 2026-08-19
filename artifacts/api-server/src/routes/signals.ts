@@ -1,34 +1,10 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { signalsTable, botSettingsTable, riskSettingsTable } from "@workspace/db";
-import { desc, eq } from "drizzle-orm";
-import { GetSignalsQueryParams, GetSignalsResponse, RunScanResponse, GetLatestSignalsResponse } from "@workspace/api-zod";
-import { runStrategyScan, generateSyntheticCandles } from "../lib/strategyEngine";
+import { signalsTable } from "@workspace/db";
+import { desc } from "drizzle-orm";
+import { GetSignalsQueryParams, GetSignalsResponse, GetLatestSignalsResponse } from "@workspace/api-zod";
 
 const router = Router();
-
-const SYMBOLS = ["Volatility 75 Index", "Volatility 75 1s Index", "Volatility 25 1s Index"];
-
-async function scanAllSymbols(minConfidence: number) {
-  const results = [];
-  for (const symbol of SYMBOLS) {
-    const candles = generateSyntheticCandles(symbol, 250);
-    const signal = runStrategyScan(symbol, candles, minConfidence);
-    const inserted = await db.insert(signalsTable).values({
-      symbol: signal.symbol,
-      direction: signal.direction,
-      confidence: signal.confidence,
-      entryPrice: signal.entryPrice,
-      stopLoss: signal.stopLoss,
-      takeProfit: signal.takeProfit,
-      strategy: signal.strategy,
-      reason: signal.reason,
-      riskWarning: signal.riskWarning,
-    }).returning();
-    results.push(inserted[0]);
-  }
-  return results;
-}
 
 // GET /signals
 router.get("/signals", async (req, res) => {
@@ -52,28 +28,12 @@ router.get("/signals", async (req, res) => {
 });
 
 // POST /signals/scan
-router.post("/signals/scan", async (req, res) => {
-  try {
-    const riskRows = await db.select().from(riskSettingsTable).limit(1);
-    const minConfidence = riskRows[0]?.minConfidenceScore ?? 65;
-
-    const results = await scanAllSymbols(minConfidence);
-
-    // Update lastScanAt
-    const botRows = await db.select().from(botSettingsTable).limit(1);
-    if (botRows[0]) {
-      await db.update(botSettingsTable).set({ lastScanAt: new Date() }).where(eq(botSettingsTable.id, botRows[0].id));
-    }
-
-    const data = RunScanResponse.parse(results.map((r) => ({
-      ...r,
-      createdAt: r.createdAt?.toISOString() ?? new Date().toISOString(),
-    })));
-    res.json(data);
-  } catch (err) {
-    req.log.error(err);
-    res.status(500).json({ error: "Failed to run scan" });
-  }
+// The old scan built candles with generateSyntheticCandles (a Math.random walk
+// with upward drift) and PERSISTED the results to signalsTable as if real —
+// tradeDecision.ts then read them back as a cross-check. No signal engine is
+// connected to this route, so it refuses honestly and writes no rows.
+router.post("/signals/scan", (_req, res) => {
+  res.json({ available: false, reason: "SIGNAL_ENGINE_NOT_CONNECTED", signals: [] });
 });
 
 // GET /signals/latest
@@ -98,5 +58,4 @@ router.get("/signals/latest", async (req, res) => {
   }
 });
 
-export { scanAllSymbols };
 export default router;
