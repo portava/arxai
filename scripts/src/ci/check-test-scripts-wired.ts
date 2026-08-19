@@ -142,6 +142,9 @@ const MANUAL_ONLY = new Set<string>([
   // MT5 projection boundary test uses an injected reader and performs no DB IO.
   // It stays targeted because broker-hub has its own required phase-entry lane.
   "@workspace/api-server::test:broker-hub-mt5-projection",
+  // Pure projection/feature-flag proof; the schema constraints are release-gated
+  // separately by test:broker-hub-metadata-db in ci:integration.
+  "@workspace/api-server::test:broker-hub-metadata",
   "@workspace/scripts::test:registration-key-expiry-sweep",
   "@workspace/scripts::test:cached-read-e2e",
   "@workspace/scripts::test:chart-symbol-propagation",

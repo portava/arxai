@@ -1,6 +1,6 @@
 # ARX Multi-Broker Foundation Audit
 
-**Status:** Approved for Phase 0A only — no connection or execution implementation authorized
+**Status:** Phase 0B approved for disabled, tenant-owned metadata only — no credential, connection, or execution implementation authorized
 **Scope:** Maps `attached_assets/ARX_AI_MULTI_BROKER_IMPLEMENTATION_1787155023264.md` to the current ARX TypeScript, Drizzle, Express, React, and MT5 architecture.  
 **Audit result:** ARX has a reusable **MT5-specific read-only and default-deny execution foundation**, but does **not** yet have a tenant-scoped multi-broker connection hub. Phase 0 must begin with compatibility contracts and safety guards, not an adapter, credential flow, or execution path.
 
@@ -46,6 +46,17 @@ The approved dependency order is:
 This approval is deliberately limited to the Phase 0A goal and evidence in [§6](#6-smallest-safe-dependency-order). It does **not** approve credentials or OAuth/API-key intake, network calls, broker onboarding, account connection-state changes, quote/candle ingestion, metadata schema, new routes, demo orders, live routing, or any change to the MT5 bridge, demo lane, approval state, live flags, Phase B gate order, or global controls.
 
 Advancement beyond Phase 0A requires its specified pure/contract evidence and a separate recorded approval for the next phase. Existing MT5 safeguards remain authoritative and unchanged.
+
+### Recorded Phase 0B approval decision
+
+**Decision date:** 2026-08-19
+**Approval authority:** Authorized project stakeholder through the approved Phase 0B task directive
+**Decision:** Approved only the additive, tenant-owned connection/account/instrument/discovery metadata and credential-boundary design described in Phase 0B.
+
+This approval does not authorize a credential reference, secret/ciphertext/OAuth
+storage, provider authentication, outbound broker call, connection-state
+mutation, public connection-management route, market-data ingestion, demo/live
+order, automation, or change to existing MT5 bridge/snapshot/Phase B behavior.
 
 ## 2. Current architecture inventory
 

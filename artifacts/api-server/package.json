@@ -70,6 +70,7 @@
     "test:fix-agent-safety": "node --import tsx --experimental-test-module-mocks --test --test-force-exit src/lib/ai/__qa__/fixAgentSafety.test.ts",
     "test:anthropic-api-key-provider": "node --import tsx --experimental-test-module-mocks --test --test-force-exit src/lib/ai/__qa__/anthropicApiKeyProvider.test.ts",
     "test:broker-hub-mt5-projection": "node --import tsx --test --test-force-exit src/lib/brokerHub/__qa__/mt5ReadOnlyAdapter.test.ts",
+    "test:broker-hub-metadata": "node --import tsx --test --test-force-exit src/lib/brokerHub/__qa__/mt5MetadataProjection.test.ts",
     "test:fix-agent-route": "node --import tsx --experimental-test-module-mocks --test --test-force-exit src/routes/__qa__/adminFixAgentRoute.test.ts",
     "test:cluster-d-route": "node --import tsx --test --test-force-exit src/routes/__qa__/clusterDRoute.test.ts",
     "test:trader-tier-route": "node --import tsx --test --test-force-exit src/routes/__qa__/traderTierRoute.test.ts",

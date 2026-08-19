@@ -77,6 +77,10 @@ export const INTEGRATION_LANE_TESTS: readonly IntegrationLaneTest[] = [
   { pkg: "@workspace/scripts", script: "test:live-broker-resolver" },
   { pkg: "@workspace/scripts", script: "test:agent-advisory" },
   { pkg: "@workspace/scripts", script: "test:agent-review-scoring" },
+  // Phase 0B broker-hub metadata: real PostgreSQL composite ownership FKs,
+  // connection/account/symbol uniqueness, default-off fields, no credential
+  // columns, and zero writes to all live/demo/MT5 command tables.
+  { pkg: "@workspace/scripts", script: "test:broker-hub-metadata-db" },
   // Task #721 — registration-key roleGrant → users.role E2E proof. Self-boots
   // the REAL Express app in-process (via app.listen on an ephemeral loopback
   // port), mints real INVESTOR/ADMIN/USER registration keys, registers through

@@ -10,6 +10,8 @@ export type BrokerConnectionStatus =
   | "DISCONNECTED"
   | "CONNECTED"
   | "DEGRADED"
+  | "FROZEN"
+  | "REAUTH_REQUIRED"
   | "STALE"
   | "REVOKED";
 
@@ -156,4 +158,19 @@ export interface BrokerUnavailableCatalogEntry {
   readonly connected: false;
   readonly credentialRequirements: readonly never[];
   readonly capabilities: BrokerReadCapabilities;
+}
+
+/** Phase 0B metadata projection. It is descriptive, read-only, and never a trade permission. */
+export interface BrokerConnectionMetadata {
+  readonly id: string | null;
+  readonly identity: BrokerConnectionIdentity;
+  readonly environment: BrokerEnvironment;
+  readonly status: BrokerConnectionStatus;
+  readonly adapterNativeStatus: string | null;
+  readonly accountRefMasked: string | null;
+  readonly discoveryObservedAt: string | null;
+  readonly metadataEnabled: false;
+  readonly tradingEnabled: false;
+  readonly automationEnabled: false;
+  readonly canPlaceLiveTrade: false;
 }

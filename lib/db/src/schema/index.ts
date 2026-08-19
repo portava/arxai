@@ -443,3 +443,7 @@ export * from "./aiFixAgentRuns";
 // mutation is initiated from the cockpit. ADVISORY / DISPLAY / AUDIT ONLY —
 // never an execution path, never the 18-gate live pipeline, never a fill.
 export * from "./adminCockpit";
+
+// ── Multi-broker Phase 0B — tenant-owned, disabled metadata only ────────────
+// Does not replace MT5 bridge state or permit connection/execution behavior.
+export * from "./brokerHubMetadata";
