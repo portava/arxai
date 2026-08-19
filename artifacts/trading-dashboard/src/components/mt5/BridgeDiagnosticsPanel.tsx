@@ -105,7 +105,8 @@ export function BridgeDiagnosticsPanel() {
           <AlertDescription className="space-y-1 mt-1">
             <div><span className="text-slate-400">Expected server URL:</span> <code className="text-xs">{data.expectedServerBaseUrl}</code></div>
             <div><span className="text-slate-400">Heartbeat endpoint:</span> <code className="text-xs">{data.expectedHeartbeatEndpoint}</code></div>
-            <div><span className="text-slate-400">Required header:</span> <code className="text-xs">{data.expectedHeader}: &lt;your MT5_BRIDGE_TOKEN value&gt;</code></div>
+            <div><span className="text-slate-400">Required header:</span> <code className="text-xs">{data.expectedHeader}: &lt;your per-user bridge token&gt;</code></div>
+            <div className="text-xs text-slate-400">The EA must send the per-user token created on the MT5 Setup page. The legacy <code>MT5_BRIDGE_TOKEN</code> env value is rejected on every EA endpoint.</div>
           </AlertDescription>
         </Alert>
 

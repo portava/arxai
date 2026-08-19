@@ -1205,8 +1205,6 @@ export * from "./mt5StatusAccountType";
 export * from "./mt5StatusExecutionMode";
 export * from "./mt5StatusMode";
 export * from "./mt5StatusPlacementLayer";
-export * from "./mT5WebhookPayload";
-export * from "./mT5WebhookResult";
 export * from "./multiTimeframeGenerateBody";
 export * from "./multiTimeframeHistory";
 export * from "./multiTimeframeReport";

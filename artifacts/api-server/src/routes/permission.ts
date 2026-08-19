@@ -10,7 +10,7 @@ import { z } from "zod/v4";
 import { evaluatePermission, type ActiveLockSummary } from "@workspace/domain/safety-permission";
 import { getStatus } from "../lib/safetyCore.js";
 import { explainPermission } from "../lib/aiLearning/permissionCoach.js";
-import { selectBrokerKind } from "../lib/broker/secrets.js";
+import { selectBrokerKind, userHasActiveBridgeToken } from "../lib/broker/secrets.js";
 import { getBrokerProvider } from "../lib/broker/registry.js";
 import { getOrCreateUserRiskSettings } from "../lib/risk/userRiskSettings.js";
 import { requireUser } from "../lib/auth/middleware.js";
@@ -106,13 +106,17 @@ async function loadActiveLocks() {
 }
 
 export async function gatherInputsAndEvaluate(userId: number) {
-  const [sysStatus, settings, todaysTrades, activeLockRows] = await Promise.all([
+  const [sysStatus, settings, todaysTrades, activeLockRows, brokerCredentialsConfigured] = await Promise.all([
     getStatus(),
     getOrCreateUserRiskSettings(userId),
     db.select().from(tradesTable)
       .where(and(eq(tradesTable.userId, userId), gte(tradesTable.createdAt, startOfTodayUtc())))
       .orderBy(desc(tradesTable.createdAt)),
     loadActiveLocks(),
+    // Per-user bridge tokens are the ONLY valid EA auth (the legacy
+    // MT5_BRIDGE_TOKEN env value is rejected on every EA endpoint), so
+    // "broker credentials configured" = THIS user has an active token.
+    userHasActiveBridgeToken(userId),
   ]);
 
   const activeLocks = activeLockRows.map(rowToActiveLock);
@@ -133,7 +137,6 @@ export async function gatherInputsAndEvaluate(userId: number) {
   }
 
   const liveAllowed = sysStatus.allowedModes.includes("LIVE_TRADING") && !settings.liveLocked;
-  const brokerCredentialsConfigured = Boolean(process.env["MT5_BRIDGE_TOKEN"]);
 
   const verdict = evaluatePermission({
     operationalMode: sysStatus.operationalMode,

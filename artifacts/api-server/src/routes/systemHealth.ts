@@ -78,7 +78,10 @@ router.get("/system-health/config", async (_req, res) => {
   catch (err) { res.status(500).json(envelope({ error: "config failed", detail: String(err).slice(0, 200) })); }
 });
 
-router.post("/system-health/demo", async (_req, res) => {
+router.post("/system-health/demo", async (req, res) => {
+  // Demo seeding writes health-check + audit rows — admin/owner only, same
+  // gate as /audit/demo.
+  if (!requireAdmin(req, res)) return;
   try {
     const report = await runHealthCheck();
     const auditIds = await seedAuditDemo();
@@ -109,10 +112,17 @@ router.get("/audit/logs/:id", async (req, res) => {
 });
 
 router.post("/audit/export", async (req, res) => {
+  // Export dumps the audit trail and logs an ADMIN-actor event — verify the
+  // role instead of asserting it.
+  const role = requireAdmin(req, res);
+  if (!role) return;
   try {
     const limit = Number(req.body?.limit ?? 500);
     const exp = await exportAudit(limit);
-    await auditEvent({ eventType: "AUDIT_EXPORT", severity: "INFO", sourceBuild: "MM", sourceService: "audit", actor: "ADMIN", action: "export-audit", metadata: { count: exp.count } });
+    // AuditActor is a closed enum without "OWNER"; the gate above verified
+    // the role, so actor "ADMIN" is no longer an unverified claim. The exact
+    // verified role is preserved in metadata.
+    await auditEvent({ eventType: "AUDIT_EXPORT", severity: "INFO", sourceBuild: "MM", sourceService: "audit", actor: "ADMIN", action: "export-audit", metadata: { count: exp.count, verifiedRole: role } });
     res.json(envelope({ export: exp }));
   } catch (err) { res.status(500).json(envelope({ error: "audit export failed", detail: String(err).slice(0, 200) })); }
 });
@@ -125,6 +135,9 @@ router.post("/audit/demo", async (req, res) => {
 
 // ── Admin Control ───────────────────────────────────────────────────────────
 router.post("/admin-control/action", async (req, res) => {
+  // performAdminAction audits actor "ADMIN" — verify the role before any
+  // action so that actor claim is never attacker-reachable.
+  if (!requireAdmin(req, res)) return;
   try {
     const r = await performAdminAction({
       action: String(req.body?.action ?? ""),
@@ -146,6 +159,8 @@ router.get("/admin-control/actions", async (req, res) => {
 });
 
 const shortcut = (action: string) => async (req: Parameters<typeof performAdminAction>[0] extends infer _ ? import("express").Request : never, res: import("express").Response) => {
+  // Same gate as /admin-control/action: these shortcuts audit actor "ADMIN".
+  if (!requireAdmin(req, res)) return;
   try {
     const r = await performAdminAction({
       action, reason: req.body?.reason, payload: (req.body?.payload ?? {}) as Record<string, unknown>,
@@ -163,7 +178,10 @@ router.post("/admin-control/generate-notification-digest", shortcut("GENERATE_NO
 router.post("/admin-control/export-health-report",        shortcut("EXPORT_HEALTH_REPORT"));
 router.post("/admin-control/export-audit-report",         shortcut("EXPORT_AUDIT_REPORT"));
 
-router.post("/admin-control/demo", async (_req, res) => {
+router.post("/admin-control/demo", async (req, res) => {
+  // Demo seeding writes admin-action rows — admin/owner only, same gate as
+  // /audit/demo.
+  if (!requireAdmin(req, res)) return;
   try { res.json(envelope({ demo: true, ...(await seedAdminDemo()) })); }
   catch (err) { res.status(500).json(envelope({ error: "demo failed", detail: String(err).slice(0, 200) })); }
 });

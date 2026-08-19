@@ -16,6 +16,7 @@ export * as flags from "./flags";
 export * as ui from "./ui";
 export * as traderDna from "./trader-dna";
 export * as executionGate from "./execution-gate";
+export * as executionState from "./execution-state";
 export * as confidenceGate from "./confidence-gate";
 export * as executionPyramid from "./execution-pyramid";
 export * as aiAgents from "./ai-agents";

@@ -29,7 +29,7 @@ class DerivNotImplementedProvider implements BrokerProvider {
       missingSecrets: describeRequiredSecrets("deriv"),
       notes: [
         "providerState=NOT_IMPLEMENTED. No Deriv adapter is built; no broker data is fabricated.",
-        "Set BROKER_PROVIDER=mt5 (with MT5_BRIDGE_TOKEN) to use the real MT5 bridge, or unset BROKER_PROVIDER for the clearly-labelled mock.",
+        "Set BROKER_PROVIDER=mt5 to use the real MT5 bridge (auth is the per-user X-MT5-Bridge-Token issued from MT5 Setup; the legacy MT5_BRIDGE_TOKEN env value is rejected), or unset BROKER_PROVIDER for the clearly-labelled mock.",
       ],
     };
   }

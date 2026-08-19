@@ -271,10 +271,11 @@ function PerUserBridgeTokenCard() {
               Per-user bridge token — paste into MT5 EA Inputs → BridgeToken
             </CardTitle>
             <CardDescription className="mt-1">
-              Each MT5 EA instance authenticates with its own per-user token.
-              Tokens are visible to you only and are shown exactly once at
-              creation. The system <code>MT5_BRIDGE_TOKEN</code> secret is
-              <em> not</em> displayed here and is never returned to the browser.
+              Each MT5 EA instance authenticates with its own per-user token —
+              this is the <em>only</em> token the EA accepts. Tokens are visible
+              to you only and are shown exactly once at creation. The legacy
+              system <code>MT5_BRIDGE_TOKEN</code> secret is rejected on every
+              EA endpoint and is never returned to the browser.
             </CardDescription>
           </div>
           <Button size="sm" onClick={() => setCreating(true)} data-testid="button-create-per-user-token">
@@ -1699,14 +1700,12 @@ function PlatformMasterBridgeCard() {
 }
 
 export default function MT5SetupWizardPage() {
-  const { toast } = useToast();
   const [secrets, setSecrets] = useState<SecretsStatus | null>(null);
   const [conn, setConn] = useState<ConnectionCheck | null>(null);
   const [bstat, setBstat] = useState<BrokerStatus | null>(null);
   const [acct, setAcct] = useState<BrokerAccount | null>(null);
   const [posCount, setPosCount] = useState<number | null>(null);
   const [ordCount, setOrdCount] = useState<number | null>(null);
-  const [exampleToken, setExampleToken] = useState<string>("");
   const [refreshing, setRefreshing] = useState(false);
 
   async function refreshAll() {
@@ -1728,18 +1727,6 @@ export default function MT5SetupWizardPage() {
     setRefreshing(false);
   }
   useEffect(() => { void refreshAll(); }, []);
-
-  function generateToken() {
-    // Browser-side only. Never sent to server. User must manually paste it.
-    const bytes = new Uint8Array(32);
-    crypto.getRandomValues(bytes);
-    setExampleToken(Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join(""));
-  }
-
-  function copyText(s: string, label: string) {
-    if (!s) return;
-    void navigator.clipboard.writeText(s).then(() => toast({ title: `${label} copied` }));
-  }
 
   const heartbeatWaiting = !conn?.connected;
   const accountWaiting = !conn?.checks?.accountReadable;
@@ -1935,14 +1922,14 @@ export default function MT5SetupWizardPage() {
       {/* STEP 2 — secrets */}
       <Card data-testid="card-step2">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><span className="text-xs bg-primary/20 text-primary rounded-full w-6 h-6 inline-flex items-center justify-center">2</span> <KeyRound className="w-4 h-4" /> Required Replit Secrets</CardTitle>
-          <CardDescription>Set these in Tools → Secrets, then restart the API server workflow.</CardDescription>
+          <CardTitle className="flex items-center gap-2"><span className="text-xs bg-primary/20 text-primary rounded-full w-6 h-6 inline-flex items-center justify-center">2</span> <KeyRound className="w-4 h-4" /> Server Replit Secrets</CardTitle>
+          <CardDescription>Set these in Tools → Secrets, then restart the API server workflow. Your EA bridge token is <strong>not</strong> a Replit Secret — it comes from the Per-user bridge token card above.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="grid gap-2">
             {[
               { k: "BROKER_PROVIDER", v: "mt5", required: true, why: "Selects the real MT5 provider instead of mock." },
-              { k: "MT5_BRIDGE_TOKEN", v: "<your long random token>", required: true, why: "Shared secret between MT5 EA and this app." },
+              { k: "MT5_BRIDGE_TOKEN", v: "(legacy — do not set)", required: false, why: "Retired shared-secret model. Every EA endpoint rejects this env value; the EA authenticates with your per-user token instead." },
               { k: "MT5_ENVIRONMENT", v: "demo", required: false, why: "Informational. Use 'demo' until full read-only verification passes." },
               { k: "MT5_ACCOUNT_ID", v: "<optional>", required: false, why: "Account-id binding for audit trail." },
               { k: "LIVE_TRADING_ALLOWED", v: "false", required: false, why: "This flag alone NEVER enables live trading." },
@@ -1959,36 +1946,31 @@ export default function MT5SetupWizardPage() {
               );
             })}
           </div>
-          {secrets && secrets.missingSecrets.length > 0 && (
-            <div className="text-sm text-warning flex items-center gap-2"><AlertTriangle className="w-4 h-4" /> Missing required secrets: {secrets.missingSecrets.join(", ")}</div>
+          {/* Constraint: /api/broker/secrets-status still reports the legacy
+              MT5_BRIDGE_TOKEN as a required secret, but every EA endpoint
+              rejects that env value (bridgeAuthPerUserOnly hard-denies it).
+              Surfacing it as "missing" would instruct users to set a dead
+              secret, so it is filtered from the warning here. */}
+          {secrets && secrets.missingSecrets.filter((k) => k !== "MT5_BRIDGE_TOKEN").length > 0 && (
+            <div className="text-sm text-warning flex items-center gap-2"><AlertTriangle className="w-4 h-4" /> Missing required secrets: {secrets.missingSecrets.filter((k) => k !== "MT5_BRIDGE_TOKEN").join(", ")}</div>
           )}
         </CardContent>
       </Card>
 
-      {/* STEP 3 — generate token */}
+      {/* STEP 3 — get your per-user token */}
       <Card data-testid="card-step3">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><span className="text-xs bg-primary/20 text-primary rounded-full w-6 h-6 inline-flex items-center justify-center">3</span> Generate a private bridge token</CardTitle>
-          <CardDescription>The example below is generated <strong>only in your browser</strong>. It is never sent to or stored by this server.</CardDescription>
+          <CardTitle className="flex items-center gap-2"><span className="text-xs bg-primary/20 text-primary rounded-full w-6 h-6 inline-flex items-center justify-center">3</span> Get your per-user bridge token</CardTitle>
+          <CardDescription>Tokens are issued by the server and shown <strong>exactly once</strong>. Only a hash is stored — the value can never be retrieved again.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="flex gap-2">
-            <code className="flex-1 px-3 py-2 bg-muted rounded text-sm font-mono break-all" data-testid="text-example-token">
-              {exampleToken || "(click Generate to produce a 64-char hex token)"}
-            </code>
-            <Button size="sm" variant="outline" onClick={() => copyText(exampleToken, "Example token")} disabled={!exampleToken}>
-              <Copy className="w-4 h-4" />
-            </Button>
-            <Button size="sm" onClick={generateToken} data-testid="button-generate-token">
-              Generate Example Token
-            </Button>
-          </div>
           <div className="text-xs text-muted-foreground space-y-1">
-            <p>1. Click <strong>Generate</strong>. A fresh 256-bit hex string appears above.</p>
-            <p>2. Copy it. Paste it into Replit Secret <code>MT5_BRIDGE_TOKEN</code>.</p>
-            <p>3. Paste the <strong>same value</strong> into the EA <code>BridgeToken</code> input.</p>
-            <p>4. Restart the API server workflow so the new secret takes effect.</p>
-            <p className="text-warning pt-1">Never paste the token into chat, screenshots, or git commits. Rotate it if it ever leaks.</p>
+            <p>1. Scroll up to the <strong>Per-user bridge token</strong> card near the top of this page.</p>
+            <p>2. Click <strong>New connection token</strong> and give the connection a name (e.g. your VPS).</p>
+            <p>3. Copy the token when it appears — it is shown exactly once.</p>
+            <p>4. Paste it into the EA <code>BridgeToken</code> input. The EA sends it as the <code>X-MT5-Bridge-Token</code> header.</p>
+            <p className="pt-1">The legacy <code>MT5_BRIDGE_TOKEN</code> Replit Secret is no longer used — the server rejects that value on every EA endpoint.</p>
+            <p className="text-warning pt-1">Never paste the token into chat, screenshots, or git commits. Use <strong>Regenerate</strong> on the connection to rotate it if it ever leaks.</p>
           </div>
         </CardContent>
       </Card>
@@ -2013,7 +1995,7 @@ export default function MT5SetupWizardPage() {
             <li>Tools → Options → Expert Advisors.</li>
             <li>Tick <strong>Allow WebRequest for listed URL</strong>.</li>
             <li>Add your Replit app base URL (e.g. <code>https://your-repl.replit.app</code>).</li>
-            <li>Paste your <code>BridgeToken</code> into the EA inputs.</li>
+            <li>Paste your per-user bridge token (from Step 3) into the EA <code>BridgeToken</code> input.</li>
             <li>Keep <code>ReadOnlyMode = true</code>.</li>
             <li>Keep <code>AllowOrderExecution = false</code>.</li>
             <li>Click OK to start the EA. Confirm the Algo Trading button at the top of MT5 is green.</li>
@@ -2072,14 +2054,14 @@ export default function MT5SetupWizardPage() {
             <li>Algo Trading disabled (button must be green)</li>
             <li>WebRequest URL not allowed in MT5 Options</li>
             <li>Wrong Replit URL in EA inputs</li>
-            <li>Wrong token (HTTP 401 in EA log)</li>
+            <li>Wrong or revoked per-user token (HTTP 401 in EA log)</li>
             <li>MT5 terminal closed / VPS off</li>
           </Trouble>
-          <Trouble title="B. Secrets missing">
-            <li>Add <code>BROKER_PROVIDER=mt5</code></li>
-            <li>Add <code>MT5_BRIDGE_TOKEN</code></li>
-            <li>Add <code>MT5_ENVIRONMENT=demo</code></li>
-            <li>Restart the API server workflow afterwards</li>
+          <Trouble title="B. Config / token missing">
+            <li>Add <code>BROKER_PROVIDER=mt5</code> (Replit Secret)</li>
+            <li>Add <code>MT5_ENVIRONMENT=demo</code> (optional)</li>
+            <li>Create a per-user bridge token in the card above and paste it into the EA</li>
+            <li>Restart the API server workflow after changing Replit Secrets</li>
           </Trouble>
           <Trouble title="C. Account not readable">
             <li>MT5 not logged into broker</li>

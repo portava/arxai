@@ -26,7 +26,7 @@ export const GLOSSARY: GlossaryEntry[] = [
   { id: "g-data", term: "Data", aliases: ["data import", "my data"], definition: "Data import + quality view — load CSV candle data and inspect rows." },
   { id: "g-readiness", term: "Readiness", aliases: ["readiness checklist"], definition: "Aggregate of every gate that must be green before live operation can even be considered." },
   { id: "g-mt5", term: "MT5", aliases: ["metatrader", "metatrader 5"], definition: "MetaTrader 5 — the broker platform ARX optionally talks to via a bridge." },
-  { id: "g-bridge", term: "Bridge", aliases: ["mt5 bridge"], definition: "The connector between ARX and MT5. Off by default; requires the MT5_BRIDGE_TOKEN secret." },
+  { id: "g-bridge", term: "Bridge", aliases: ["mt5 bridge"], definition: "The connector between ARX and MT5. Off by default; each EA authenticates with a per-user bridge token issued on the MT5 Setup page (shown exactly once at creation)." },
   { id: "g-heartbeat", term: "Heartbeat", aliases: ["bridge heartbeat"], definition: "Recent ping from the MT5 EA proving the bridge is alive with the right token." },
   { id: "g-ea", term: "Expert Advisor", aliases: ["ea"], definition: "MT5 script (the EA) that pings the bridge and forwards events. You install it inside MT5 yourself." },
   { id: "g-simulator", term: "Simulator Mode", aliases: ["sim mode"], definition: "Strategy scans run against synthetic candles instead of real market data." },

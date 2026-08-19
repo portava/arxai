@@ -31,8 +31,9 @@ const PUBLIC_EXACT = new Set<string>([
   "/healthz",
   "/health",
   "/version",
-  // MT5 bridge endpoints — gated by X-MT5-Bridge-Token, fail-closed when
-  // MT5_BRIDGE_TOKEN env is unset.
+  // MT5 bridge endpoints — gated by the per-user X-MT5-Bridge-Token inside
+  // each handler (bridgeAuthPerUserOnly); the legacy server-wide env token is
+  // rejected everywhere, so these stay fail-closed with no session present.
   "/mt5/heartbeat",
   "/mt5/commands",
   "/mt5/command-result",

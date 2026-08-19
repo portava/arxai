@@ -6,49 +6,108 @@
 //
 // SAFETY: Pure observation. Never places trades. Never touches MT5.
 // The existing in-memory store remains the source of truth for the
-// running scanner loop — DB is append-only for durability.
+// running scanner loop — DB is append-only for durability. Every write
+// is try/caught to a warning: persistence failure never breaks the loop.
+//
+// HONESTY: shadow decisions are currently generated from marketSimulator
+// (a synthetic random walk), not live market data. Until the real-data
+// swap lands (later R7 step), every scanner-loop row MUST be labeled with
+// SYNTHETIC_SIMULATOR_SOURCE so no consumer mistakes it for market
+// evidence. The `source` param is therefore REQUIRED — there is no
+// "scanner" default that could silently launder synthetic rows.
 
-import { db } from "@workspace/db";
 import { shadowPredictionsTable } from "@workspace/db/schema";
 import { eq, desc, and, sql, gte } from "drizzle-orm";
-import { logger } from "../logger.js";
-import type { ShadowDecision } from "../shadowMode.js";
+import { logger } from "./logger.js";
+import type { ShadowDecision } from "./shadowMode.js";
 
 const log = logger.child({ component: "shadowPersistence" });
+
+// @workspace/db throws at module init when DATABASE_URL is unset. shadowMode
+// (and every route that imports it) must stay importable offline — QA suites
+// import those modules without a database — so the db handle is resolved
+// lazily on first use instead of at import time. (The "/schema" subpath above
+// is pure table definitions and has no such init check.)
+async function getDb() {
+  const mod = await import("@workspace/db");
+  return mod.db;
+}
+
+// Provenance marker for rows whose candles came from the synthetic
+// marketSimulator. Consumers (e.g. learning-version gates) must exclude
+// this source when they require real market evidence.
+export const SYNTHETIC_SIMULATOR_SOURCE = "SYNTHETIC_SIMULATOR" as const;
+
+export type ShadowPersistSource =
+  | "scanner"
+  | "ruby_chat"
+  | typeof SYNTHETIC_SIMULATOR_SOURCE;
+
+type ShadowPredictionInsert = typeof shadowPredictionsTable.$inferInsert;
+
+// ── Pure row shaping (extracted so it is testable offline, no DB) ─────────────
+export function shapeShadowDecisionRow(
+  d: ShadowDecision,
+  source: ShadowPersistSource,
+  userId?: number,
+): ShadowPredictionInsert {
+  return {
+    shadowId:        d.id,
+    source,
+    userId:          userId ?? null,
+    symbol:          d.symbol,
+    timeframe:       d.tf,
+    strategy:        d.strategy,
+    marketCondition: d.marketCondition,
+    sessionLabel:    detectSession(),
+    action:          d.action,
+    entryPrice:      d.entry,
+    stopLoss:        d.sl,
+    takeProfit:      d.tp,
+    confidence:      d.confidence,
+    opportunity:     d.opportunity,
+    sniperScore:     d.sniper,
+    grade:           d.grade,
+    reason:          d.reason,
+    reasonToAvoid:   d.reasonToAvoid,
+    rgApproved:      d.riskGovernor.approved,
+    rgLevel:         d.riskGovernor.level,
+    rgHardBlocks:    JSON.stringify(d.riskGovernor.hardBlocks),
+    predictedAt:     new Date(d.ts),
+    expiresAt:       new Date(d.expiresAt),
+    status:          d.status,
+  };
+}
+
+// Returns null for non-terminal statuses — only resolved outcomes are synced.
+export function shapeShadowOutcomeUpdate(d: ShadowDecision): {
+  status: string; pnlR: number | null; resolvedAt: Date; updatedAt: Date;
+} | null {
+  if (
+    d.status !== "SHADOW_WIN" &&
+    d.status !== "SHADOW_LOSS" &&
+    d.status !== "SHADOW_BREAKEVEN" &&
+    d.status !== "SHADOW_EXPIRED"
+  ) return null;
+  return {
+    status:     d.status,
+    pnlR:       d.pnlR ?? null,
+    resolvedAt: d.outcomeAt ? new Date(d.outcomeAt) : new Date(),
+    updatedAt:  new Date(),
+  };
+}
 
 // ── Write a new shadow decision to DB ────────────────────────────────────────
 export async function persistShadowDecision(
   d: ShadowDecision,
-  source: "scanner" | "ruby_chat" = "scanner",
+  source: ShadowPersistSource,
   userId?: number,
 ): Promise<void> {
   try {
-    await db.insert(shadowPredictionsTable).values({
-      shadowId:       d.id,
-      source,
-      userId:         userId ?? null,
-      symbol:         d.symbol,
-      timeframe:      d.tf,
-      strategy:       d.strategy,
-      marketCondition: d.marketCondition,
-      sessionLabel:   detectSession(),
-      action:         d.action,
-      entryPrice:     d.entry,
-      stopLoss:       d.sl,
-      takeProfit:     d.tp,
-      confidence:     d.confidence,
-      opportunity:    d.opportunity,
-      sniperScore:    d.sniper,
-      grade:          d.grade,
-      reason:         d.reason,
-      reasonToAvoid:  d.reasonToAvoid,
-      rgApproved:     d.riskGovernor.approved,
-      rgLevel:        d.riskGovernor.level,
-      rgHardBlocks:   JSON.stringify(d.riskGovernor.hardBlocks),
-      predictedAt:    new Date(d.ts),
-      expiresAt:      new Date(d.expiresAt),
-      status:         d.status,
-    }).onConflictDoNothing();
+    const db = await getDb();
+    await db.insert(shadowPredictionsTable)
+      .values(shapeShadowDecisionRow(d, source, userId))
+      .onConflictDoNothing();
   } catch (e) {
     log.warn({ err: e, shadowId: d.id }, "shadow_persist_write_failed");
   }
@@ -56,21 +115,13 @@ export async function persistShadowDecision(
 
 // ── Update outcome when shadow decision resolves ──────────────────────────────
 export async function updateShadowOutcome(d: ShadowDecision): Promise<void> {
-  if (
-    d.status !== "SHADOW_WIN" &&
-    d.status !== "SHADOW_LOSS" &&
-    d.status !== "SHADOW_BREAKEVEN" &&
-    d.status !== "SHADOW_EXPIRED"
-  ) return;
+  const update = shapeShadowOutcomeUpdate(d);
+  if (!update) return;
 
   try {
+    const db = await getDb();
     await db.update(shadowPredictionsTable)
-      .set({
-        status:      d.status,
-        pnlR:        d.pnlR ?? null,
-        resolvedAt:  d.outcomeAt ? new Date(d.outcomeAt) : new Date(),
-        updatedAt:   new Date(),
-      })
+      .set(update)
       .where(eq(shadowPredictionsTable.shadowId, d.id));
   } catch (e) {
     log.warn({ err: e, shadowId: d.id }, "shadow_persist_outcome_update_failed");
@@ -92,6 +143,7 @@ export async function persistRubyChatPrediction(opts: {
 }): Promise<string> {
   const shadowId = `rch_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   try {
+    const db = await getDb();
     await db.insert(shadowPredictionsTable).values({
       shadowId,
       source:      "ruby_chat",
@@ -124,7 +176,7 @@ export async function persistRubyChatPrediction(opts: {
 export async function getPersistedPredictions(opts: {
   userId?:   number;
   symbol?:   string;
-  source?:   "scanner" | "ruby_chat";
+  source?:   ShadowPersistSource;
   status?:   string;
   limit?:    number;
   daysBack?: number;
@@ -138,6 +190,7 @@ export async function getPersistedPredictions(opts: {
   if (opts.source) conditions.push(eq(shadowPredictionsTable.source, opts.source));
   if (opts.status) conditions.push(eq(shadowPredictionsTable.status, opts.status));
 
+  const db = await getDb();
   return db.select()
     .from(shadowPredictionsTable)
     .where(and(...conditions))
@@ -149,6 +202,7 @@ export async function getPersistedPredictions(opts: {
 export async function getPersistedConfidenceCalibration(daysBack = 30) {
   const daysAgo = new Date(Date.now() - daysBack * 24 * 60 * 60_000);
 
+  const db = await getDb();
   const rows = await db.select()
     .from(shadowPredictionsTable)
     .where(and(
@@ -202,6 +256,7 @@ export async function getPersistedConfidenceCalibration(daysBack = 30) {
 export async function getSymbolAccuracy(symbol: string, daysBack = 30) {
   const daysAgo = new Date(Date.now() - daysBack * 24 * 60 * 60_000);
 
+  const db = await getDb();
   const rows = await db.select()
     .from(shadowPredictionsTable)
     .where(and(

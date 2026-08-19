@@ -72,7 +72,7 @@ export const WALKTHROUGHS: Walkthrough[] = [
     title: "Connecting MT5 safely",
     intro: "MT5 connects via a small Expert Advisor that talks to the ARX bridge.",
     steps: [
-      { title: "Set the secret", body: "Set MT5_BRIDGE_TOKEN as a platform secret.", warning: "Never paste broker credentials into the app." },
+      { title: "Create your bridge token", body: "On MT5 Setup, create a connection to get your per-user bridge token — it is shown exactly once; paste it into the EA's BridgeToken input.", route: "/mt5-setup", warning: "Never paste broker credentials into the app, and never share your bridge token." },
       { title: "Install the EA", body: "Install the ARX EA from the MT5 Bridge page.", route: "/mt5-bridge" },
       { title: "Wait for heartbeat", body: "Open MT5 Status; the heartbeat must turn green.", route: "/mt5-status" },
       { title: "Confirm read-only first", body: "ARX stays in read-only posture until you explicitly enable execution." },

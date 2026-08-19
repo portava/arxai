@@ -4135,27 +4135,6 @@ export const ExecuteTradeResponse = zod.object({
 });
 
 /**
- * @summary MT5 Expert Advisor / Python bridge webhook
- */
-export const Mt5WebhookBody = zod.object({
-  event: zod.string(),
-  symbol: zod.string(),
-  ticket: zod.number().nullish(),
-  direction: zod.string().nullish(),
-  lot: zod.number().nullish(),
-  price: zod.number().nullish(),
-  sl: zod.number().nullish(),
-  tp: zod.number().nullish(),
-  profit: zod.number().nullish(),
-  eaVersion: zod.string().nullish(),
-});
-
-export const Mt5WebhookResponse = zod.object({
-  received: zod.boolean(),
-  timestamp: zod.string(),
-});
-
-/**
  * @summary Get risk management settings
  */
 export const GetRiskSettingsResponse = zod.object({

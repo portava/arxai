@@ -20,6 +20,7 @@ import {
   refreshMarketProvider,
   getCurrentEventsFromProvider,
 } from "../lib/assistant/marketProvider.js";
+import { userHasActiveBridgeToken } from "../lib/broker/secrets.js";
 import { mapLegacyBridgeMode, applyHeartbeatStaleness, type CanonicalBridgeMode } from "@workspace/domain/safety-contracts/bridgeMode";
 
 const router: Router = Router();
@@ -53,12 +54,19 @@ function noteRefresh(userId: number, at: number): void {
 }
 
 // Cleanup phase A — canonical MT5 bridge mode for the status payload.
-// The MT5 bridge is not wired today (live force-BLOCKED; paper-only by
-// construction), so the canonical mode is OFFLINE. If/when a real
-// heartbeat source is connected, swap this for a real lookup and the
+// The MT5 bridge is not wired to this surface today (live force-BLOCKED;
+// paper-only by construction), so the canonical mode is OFFLINE. If/when a
+// real heartbeat source is connected, swap this for a real lookup and the
 // mapper + staleness rule will produce the correct canonical literal.
-function deriveCanonicalBridgeMode(): { canonical: CanonicalBridgeMode; legacy: string; heartbeatStale: boolean; note: string } {
-  const tokenConfigured = Boolean(process.env.MT5_BRIDGE_TOKEN);
+// "Configured" is derived from THIS user's active per-user bridge token —
+// the legacy MT5_BRIDGE_TOKEN env value is rejected on every EA endpoint and
+// must not drive this diagnostic. Lookup failure degrades to false with an
+// honest note; never fabricated.
+async function deriveCanonicalBridgeMode(userId: number): Promise<{ canonical: CanonicalBridgeMode; legacy: string; heartbeatStale: boolean; note: string }> {
+  let tokenConfigured = false;
+  let lookupFailed = false;
+  try { tokenConfigured = await userHasActiveBridgeToken(userId); }
+  catch { lookupFailed = true; }
   const legacy = tokenConfigured ? "unknown" : "disconnected";
   const heartbeatStale = true; // no real heartbeat source wired
   const canonical = applyHeartbeatStaleness(mapLegacyBridgeMode(legacy), heartbeatStale);
@@ -66,9 +74,11 @@ function deriveCanonicalBridgeMode(): { canonical: CanonicalBridgeMode; legacy: 
     canonical,
     legacy,
     heartbeatStale,
-    note: tokenConfigured
-      ? "MT5_BRIDGE_TOKEN is configured but no real heartbeat is being tracked yet. Defaulting to OFFLINE per the contract."
-      : "MT5 bridge is not configured. Defaulting to OFFLINE.",
+    note: lookupFailed
+      ? "Bridge token state could not be read (lookup failed). Reporting not-configured and defaulting to OFFLINE."
+      : tokenConfigured
+        ? "An active per-user bridge token exists but no real heartbeat is being tracked yet. Defaulting to OFFLINE per the contract."
+        : "No active per-user bridge token for this user. Defaulting to OFFLINE.",
   };
 }
 
@@ -94,7 +104,7 @@ router.get("/me/market-data/status", requireUser, async (req, res) => {
     provider: ce.provider,
     reason: ce.connected ? null : (ce.reason ?? "Current-events channel unavailable."),
   };
-  const bridge = deriveCanonicalBridgeMode();
+  const bridge = await deriveCanonicalBridgeMode(req.authUser!.id);
   req.log?.info(
     {
       event: "market_data_status_read",

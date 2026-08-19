@@ -603,4 +603,9 @@ router.use(adminOneClickRouter);
 import adminLearningVersionsRouter from "./adminLearningVersions.js";
 router.use(adminLearningVersionsRouter);
 
+// Owner Decision Registry (blueprint Phase 0) — append-only rulings ledger.
+// ADMIN/OWNER gated inside the router; no update/delete surface exists.
+import adminOwnerDecisionsRouter from "./adminOwnerDecisions.js";
+router.use(adminOwnerDecisionsRouter);
+
 export default router;

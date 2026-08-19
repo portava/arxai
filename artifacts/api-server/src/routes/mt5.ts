@@ -6,7 +6,7 @@ import { mapV150Enumeration, type V150EnumEntry } from "../lib/mt5/symbolDirecto
 import { ingestEaCapabilities } from "../lib/mt5/eaCapabilityMapping.js";
 import { requireUser } from "../lib/auth/middleware.js";
 import { hashBridgeToken } from "./meMt5Connections.js";
-import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   Mt5HeartbeatBody,
   QueueMt5CommandBody,
@@ -24,6 +24,7 @@ import { getOrCreateUserRiskSettings } from "../lib/risk/userRiskSettings.js";
 import { normaliseCapabilities, ALL_FALSE_CAPABILITIES } from "../lib/mt5/bridgeCapabilities.js";
 import { evaluateClockDrift, normalizeEaEpochToMs } from "@workspace/domain/safety-contracts/clockDrift";
 import { recordSecurityEvent } from "../lib/security/events.js";
+import { anyActiveUserBridgeTokenExists } from "../lib/broker/secrets.js";
 import { readRoleFromRequest } from "../lib/security/middleware.js";
 import { emitLiveAccountChanged } from "../lib/live/liveAccountEventBus.js";
 
@@ -117,7 +118,9 @@ async function auditBridge(
       message: `MT5 bridge: ${eventType}`,
       metadata: {
         ...metadata,
-        bridgeConfigured: !!process.env["MT5_BRIDGE_TOKEN"],
+        // Per-user tokens are the ONLY valid EA auth (env token rejected
+        // everywhere), so "configured" = an active per-user token exists.
+        bridgeConfigured: await anyActiveUserBridgeTokenExists(),
         readOnlyMode: true,
         allowOrderExecution: false,
         allowModification: false,
@@ -245,13 +248,12 @@ export async function bridgeAuthPerUserOnly(req: Request, res: Response, next: N
   next();
 }
 
-// Phase 3C — heartbeat handler. Two acceptable token paths:
-//   (a) System fallback: header equals process.env.MT5_BRIDGE_TOKEN. Treated
-//       as the system/demo bridge — updates global mt5_state only. Never
-//       attributed to a personal user connection.
-//   (b) Per-user: header hashes to a non-revoked mt5_connection.apiKeyHash.
-//       Updates that user's connection row (status -> connected, account
-//       fields, lastHeartbeat). Revoked tokens are rejected with 401.
+// Heartbeat handler. ONE acceptable token path: the header hashes to a
+// non-revoked mt5_connection.apiKeyHash (per-user token from the MT5 Setup
+// page). Updates that user's connection row (status -> connected, account
+// fields, lastHeartbeat). Revoked tokens are rejected with 401. The former
+// Phase 3C "system fallback" path (header equals the server-wide env token)
+// no longer exists.
 // Phase 28-MT5-VPS-fix: the dual-mode `bridgeAuth` middleware that previously
 // accepted EITHER a per-user token OR the system MT5_BRIDGE_TOKEN env value
 // has been removed. All EA-facing endpoints now use `bridgeAuthPerUserOnly`
@@ -542,7 +544,10 @@ router.post("/mt5/heartbeat", bridgeAuthPerUserOnly, async (req, res) => {
 // ── Diagnostic surfaces (read-only, no execution effect) ───────────────────
 
 router.get("/mt5/heartbeat/status", async (_req, res) => {
-  const tokenConfigured = !!process.env["MT5_BRIDGE_TOKEN"];
+  // Per-user tokens are the ONLY valid EA auth (the server-wide env token is
+  // rejected on every EA endpoint), so "token configured" = an active
+  // per-user bridge token exists. Boolean shape preserved for consumers.
+  const tokenConfigured = await anyActiveUserBridgeTokenExists();
   const state = await loadOrCreateState();
   const lastHb = state.lastHeartbeatAt ?? bridgeDiag.lastAcceptedHeartbeatAt;
   const ageSec = lastHb ? Math.floor((Date.now() - new Date(lastHb).getTime()) / 1000) : null;
@@ -577,7 +582,10 @@ router.get("/mt5/heartbeat/status", async (_req, res) => {
 });
 
 router.get("/mt5/bridge-diagnostics", async (req, res) => {
-  const tokenConfigured = !!process.env["MT5_BRIDGE_TOKEN"];
+  // Per-user tokens are the ONLY valid EA auth (the server-wide env token is
+  // rejected on every EA endpoint), so "token configured" = an active
+  // per-user bridge token exists. Boolean shape preserved for consumers.
+  const tokenConfigured = await anyActiveUserBridgeTokenExists();
   const state = await loadOrCreateState();
   const lastHb = state.lastHeartbeatAt ?? bridgeDiag.lastAcceptedHeartbeatAt;
   const ageSec = lastHb ? Math.floor((Date.now() - new Date(lastHb).getTime()) / 1000) : null;
@@ -692,7 +700,10 @@ router.get("/mt5/bridge-diagnostics", async (req, res) => {
 // (avoids SSRF + cookie-forwarding risk via Host/X-Forwarded-Host headers).
 // `requesterRole` controls field-level redaction of operator-only telemetry.
 export async function buildBridgeOpsRollup(requesterRole: "admin" | "user") {
-  const tokenConfigured = !!process.env["MT5_BRIDGE_TOKEN"];
+  // Per-user tokens are the ONLY valid EA auth (the server-wide env token is
+  // rejected on every EA endpoint), so "token configured" = an active
+  // per-user bridge token exists. Boolean shape preserved for consumers.
+  const tokenConfigured = await anyActiveUserBridgeTokenExists();
   const state = await loadOrCreateState();
   const lastHb = state.lastHeartbeatAt ?? bridgeDiag.lastAcceptedHeartbeatAt;
   const ageSec = lastHb ? Math.floor((Date.now() - new Date(lastHb).getTime()) / 1000) : null;
@@ -768,10 +779,7 @@ router.get("/mt5/setup-checklist", async (req, res) => {
   // EA auth is per-user only (bridgeAuthPerUserOnly), so "token configured"
   // means at least one non-revoked per-user bridge token exists — NOT the
   // server-wide MT5_BRIDGE_TOKEN env value, which every EA endpoint rejects.
-  const activeTokenRows = await db.select({ id: mt5ConnectionTable.id }).from(mt5ConnectionTable)
-    .where(and(isNotNull(mt5ConnectionTable.apiKeyHash), isNull(mt5ConnectionTable.tokenRevokedAt)))
-    .limit(1);
-  const tokenConfigured = !!activeTokenRows[0];
+  const tokenConfigured = await anyActiveUserBridgeTokenExists();
   const state = await loadOrCreateState();
   const lastHb = state.lastHeartbeatAt ?? bridgeDiag.lastAcceptedHeartbeatAt;
   const ageSec = lastHb ? Math.floor((Date.now() - new Date(lastHb).getTime()) / 1000) : null;
@@ -1520,7 +1528,9 @@ router.get("/mt5/bridge-info", requireUser, async (req, res) => {
     res.status(403).json({ error: "admin_required" });
     return;
   }
-  const configured = !!process.env["MT5_BRIDGE_TOKEN"];
+  // Per-user tokens are the ONLY valid EA auth (env token rejected
+  // everywhere), so "configured" = an active per-user bridge token exists.
+  const configured = await anyActiveUserBridgeTokenExists();
 
   const proto = (req.headers["x-forwarded-proto"] as string) || req.protocol || "https";
   const host = req.headers["x-forwarded-host"] || req.headers.host;

@@ -62,8 +62,8 @@ const CATALOG: Record<BlockerKind, Omit<Blocker, "kind">> = {
   },
   "mt5-deferred": {
     what: "MT5 bridge is intentionally not connected.",
-    why: "ARX runs entirely on the simulator until you set MT5_BRIDGE_TOKEN and the EA reports a heartbeat.",
-    causedBy: "Missing MT5_BRIDGE_TOKEN secret or no EA heartbeat.",
+    why: "ARX runs entirely on the simulator until you create a per-user bridge token on MT5 Setup and the EA reports a heartbeat.",
+    causedBy: "No active per-user bridge token or no EA heartbeat.",
     protective: true,
     openRoute: { label: "Open MT5 Bridge", route: "/mt5-bridge" },
     doNot: "Don't paste broker credentials anywhere in the app — they're never required by ARX.",
@@ -127,7 +127,7 @@ const CATALOG: Record<BlockerKind, Omit<Blocker, "kind">> = {
   "missing-secrets": {
     what: "A required secret/config value isn't set.",
     why: "Bridge / integration features need explicit secrets you control.",
-    causedBy: "Missing env (e.g. MT5_BRIDGE_TOKEN).",
+    causedBy: "Missing env value (e.g. an integration API key). The MT5 bridge token is not an env secret — it is issued per-user on MT5 Setup.",
     protective: true,
     openRoute: { label: "Open System Health", route: "/system-health" },
     doNot: "Don't hard-code secrets in the app — use the platform secret store.",

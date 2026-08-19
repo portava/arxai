@@ -20,7 +20,7 @@
 //     setup context and do not change the live-vs-partial classification.
 //   - status: "partial" = code exists but a maintainer-side secret OR
 //     external system that the feature requires is NOT guaranteed on
-//     this deployment (e.g. MT5 bridge needs MT5_BRIDGE_TOKEN + EA
+//     this deployment (e.g. MT5 bridge needs a per-user bridge token + EA
 //     registration; market data needs a provider key; push needs VAPID
 //     keys). If you mark partial, name the missing dependency.
 //   - status: "disabled" when intentionally locked (e.g. live order
@@ -161,17 +161,17 @@ export const ARX_FEATURE_REGISTRY: FeatureRegistryEntry[] = [
     featureName: "MT5 Bridge",
     userFacingName: "MT5 connection",
     shortDescription: "Per-user MT5 EA bridge for account/positions sync.",
-    fullDescription: "Bridge endpoints accept heartbeat, command queue polling, and account/positions sync from a Metatrader 5 Expert Advisor. Fail-closed: returns 503 when MT5_BRIDGE_TOKEN is not set server-side. Per-user token authentication required.",
+    fullDescription: "Bridge endpoints accept heartbeat, command queue polling, and account/positions sync from a Metatrader 5 Expert Advisor. Auth is per-user only: every EA endpoint requires the per-user bridge token issued from the MT5 Setup page and rejects the legacy server-wide MT5_BRIDGE_TOKEN env value. Fail-closed: requests without an active per-user token are rejected with 401.",
     route: "/mt5-bridge",
     frontendComponent: "MT5Bridge page (also /mt5-status, /mt5-setup)",
     backendEndpoints: ["/api/mt5/heartbeat", "/api/mt5/commands", "/api/mt5/command-result", "/api/mt5/sync-account", "/api/mt5/sync-positions"],
     requiredAuth: true,
-    requiredSetup: ["MT5_BRIDGE_TOKEN (server secret) — bridge is fail-closed without it. NOTE: this env value is ONLY used for /heartbeat fallback; the EA's BridgeToken input must be the PER-USER token issued from the MT5 setup page, because /api/mt5/commands and /api/mt5/command-result reject the system token.", "Install ARX EA in MT5 and register a per-user bridge connection to get your personal token"],
+    requiredSetup: ["Per-user bridge token issued from the MT5 Setup page (POST /api/me/mt5-connections) — the EA's BridgeToken input must be this personal token. The legacy server-wide MT5_BRIDGE_TOKEN env value is rejected on every EA endpoint, including /heartbeat.", "Install ARX EA in MT5 and register a per-user bridge connection to get your personal token"],
     status: "partial",
     whereToFindIt: "MT5 Bridge page in the main navigation (/mt5-bridge).",
     relatedFeatures: ["mt5_heartbeat", "order_execution_lock", "paper_demo_mode"],
     safetyNotes: "Bridge cannot place real orders from the assistant. Order execution is system-locked separately.",
-    emptyStateBehavior: "If MT5_BRIDGE_TOKEN is unset or no EA has connected, the page shows a not-connected state with setup instructions.",
+    emptyStateBehavior: "If no per-user bridge token has been issued or no EA has connected, the page shows a not-connected state with setup instructions.",
     lastVerifiedAt: REGISTRY_BUILT_AT,
   },
   {
@@ -184,7 +184,7 @@ export const ARX_FEATURE_REGISTRY: FeatureRegistryEntry[] = [
     frontendComponent: "MT5Bridge page (also exposed at /mt5-status)",
     backendEndpoints: ["/api/mt5/heartbeat"],
     requiredAuth: true,
-    requiredSetup: ["MT5_BRIDGE_TOKEN", "Active EA sending heartbeats"],
+    requiredSetup: ["Per-user bridge token issued from the MT5 Setup page", "Active EA sending heartbeats"],
     status: "partial",
     whereToFindIt: "MT5 Bridge page health card and inside ARX AI assistant via 'is the bridge alive?'.",
     relatedFeatures: ["mt5_bridge"],

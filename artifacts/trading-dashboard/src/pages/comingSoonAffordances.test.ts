@@ -8,14 +8,13 @@
 //
 // The work order said "finish or remove". Each was assessed:
 //
-//   Open Trades → Export      REMOVED. The only trades CSV endpoint
-//                             (/api/export/trades.csv) is gated to
+//   Open Trades → Export      FINISHED (prodready/20260819). Implemented as a
+//                             real client-side CSV of the currently filtered
+//                             rows — columns mirror the visible table and no
+//                             backend is involved, because the only trades CSV
+//                             endpoint (/api/export/trades.csv) is gated to
 //                             OWNER/ADMIN/TESTER and exports the OMS position
 //                             list, not the signed-in trader's own trades.
-//                             Wiring the button to it would 403 for a normal
-//                             trader and export the wrong dataset. A
-//                             user-scoped export needs a new endpoint — a
-//                             product decision, not a patch.
 //
 //   Open Trades → Bulk actions REMOVED. Protect All / Move All to BE / Close
 //                             Winners / Close Losers / Close All are all
@@ -24,8 +23,19 @@
 //                             is far outside a cleanup theme and would touch
 //                             the gated trade path.
 //
-//   Alerts → Snooze           REMOVED. No snooze state exists on the alert
-//                             model or its API.
+//   Alerts → Snooze           REMOVED. The only snooze endpoint
+//                             (POST /api/notifications/:id/snooze) targets the
+//                             legacy Notification Center `notifications` table
+//                             (string notificationId), not the
+//                             `user_notifications` rows (numeric id) the
+//                             Alerts page lists — wiring it would 404 on
+//                             every row.
+//
+//   Economic Calendar →       REMOVED (prodready/20260819). The reminder
+//   Event reminders           offset/channel chips were permanent placebos; no
+//                             server endpoint creates or schedules per-user
+//                             calendar reminders. The card now states that
+//                             plainly and links to the real alerts inbox.
 //
 // Individual position close is unaffected — it works and stays, and the page
 // now says so plainly instead of pointing at absent bulk actions.
@@ -55,6 +65,7 @@ function code(rel: string): string {
 
 const myTrades = code("pages/my-trades.tsx");
 const alerts = code("pages/alerts.tsx");
+const econCalendar = code("pages/economic-calendar.tsx");
 
 describe("G-FINISH — Open Trades has no dead affordances", () => {
   it("the disabled Export control is gone", () => {
@@ -98,14 +109,38 @@ describe("G-FINISH — Alerts has no dead affordance", () => {
   });
 });
 
-describe("G-FINISH — nothing was replaced by a fake implementation", () => {
-  it("Open Trades did not gain a client-side export", () => {
-    // Removing is honest; inventing a half-export would not be.
-    expect(myTrades).not.toMatch(/\.csv/);
-    expect(myTrades).not.toMatch(/createObjectURL/);
+describe("G-FINISH — Open Trades export is real, not a placebo", () => {
+  it("exports a client-side CSV of the filtered rows", () => {
+    // The export must be a genuine download built from the rows on screen —
+    // a Blob object URL fed by the `visible` (filtered) list.
+    expect(myTrades).toMatch(/\.csv/);
+    expect(myTrades).toMatch(/createObjectURL/);
+    expect(myTrades).toMatch(/visible\.map/);
+  });
+
+  it("export never fetches from the admin-gated OMS export endpoint", () => {
+    // /api/export/trades.csv is OWNER/ADMIN/TESTER-gated and is the wrong
+    // dataset for a signed-in trader; the client export must not call it.
+    expect(myTrades).not.toMatch(/api\/export\/trades/);
   });
 
   it("Open Trades did not gain a bulk dispatch path", () => {
     expect(myTrades).not.toMatch(/closeAll|bulkClose|protectAll/i);
+  });
+});
+
+describe("G-FINISH — Economic Calendar has no fake reminder toggles", () => {
+  it("the placebo offset chips are gone", () => {
+    for (const chip of ["60m Before", "30m Before", "15m Before", "At Release", "15m After"]) {
+      expect(econCalendar).not.toMatch(new RegExp(chip));
+    }
+  });
+
+  it("no 'coming soon' copy remains", () => {
+    expect(econCalendar).not.toMatch(/coming soon/i);
+  });
+
+  it("the real Manage Alerts link stays", () => {
+    expect(econCalendar).toMatch(/Manage Alerts/);
   });
 });

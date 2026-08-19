@@ -17,6 +17,18 @@
 
 import WebSocket, { type RawData } from "ws";
 
+import { logger } from "../../logger.js";
+// NOTE: circular with derivProvider.ts (which imports this module). Safe only
+// because BOTH sides dereference the other exclusively inside function bodies,
+// never at module-init time — keep it that way.
+import { DERIV_SYNTHETIC_SYMBOLS } from "./derivProvider.js";
+import {
+  parseActiveSymbols,
+  validateKnownMap,
+  type DerivDiscoverySnapshot,
+  type DerivMapValidation,
+} from "./derivSymbolDiscovery.js";
+
 const DEFAULT_WS_URL = "wss://ws.derivws.com/websockets/v3";
 const PING_MS = 30_000;
 const REQUEST_TIMEOUT_MS = 8_000;
@@ -80,6 +92,13 @@ class DerivWsClient {
   private activeSymbolsLoadedAt: number | null = null;
   private activeSymbolsError: string | null = null;
   private lastCandleAt: number | null = null;
+  // Runtime discovery retention (audit G1): the parsed active_symbols payload
+  // itself, not just a count. Survives reconnects — staleness is judged by the
+  // caller via the snapshot timestamp, never by nulling the last-known view.
+  private lastDiscovery: DerivDiscoverySnapshot | null = null;
+  private lastDiscoveryValidation: DerivMapValidation | null = null;
+  // Warn-dedupe: mismatch warnings fire at most once per connect session.
+  private discoveryMismatchWarnedThisConnect = false;
 
   configured(): boolean {
     const id = (process.env.DERIV_APP_ID ?? "").trim();
@@ -100,6 +119,16 @@ class DerivWsClient {
   getActiveSymbolsLoadedAt(): string | null { return this.activeSymbolsLoadedAt ? new Date(this.activeSymbolsLoadedAt).toISOString() : null; }
   getActiveSymbolsError(): string | null { return this.activeSymbolsError; }
   getLastCandleAt(): string | null { return this.lastCandleAt ? new Date(this.lastCandleAt).toISOString() : null; }
+  /** Last retained active_symbols discovery (timestamped), or null when no
+   *  discovery has completed since process start. */
+  getLastDiscovery(): DerivDiscoverySnapshot | null { return this.lastDiscovery; }
+  getLastDiscoveryAgeMs(): number | null {
+    return this.lastDiscovery ? Date.now() - this.lastDiscovery.fetchedAtMs : null;
+  }
+  /** Report-only static-map validation from the last NON-EMPTY discovery.
+   *  Null when discovery has not run or returned an empty payload (an empty
+   *  payload is not evidence the venue lacks our ids). */
+  getLastDiscoveryValidation(): DerivMapValidation | null { return this.lastDiscoveryValidation; }
   /** Returns true when active_symbols has been fetched at least once
    *  since the most recent successful connect/authorize. */
   isActiveSymbolsLoaded(): boolean { return this.activeSymbolsCount != null; }
@@ -173,6 +202,8 @@ class DerivWsClient {
           this.activeSymbolsCount = null;
           this.activeSymbolsLoadedAt = null;
           this.activeSymbolsError = null;
+          // New connect session — mismatch warnings may fire once again.
+          this.discoveryMismatchWarnedThisConnect = false;
           this.startPing();
           // If a token is configured (either mode), authorize and track the response.
           const token = (process.env.DERIV_API_TOKEN ?? "").trim();
@@ -269,6 +300,7 @@ class DerivWsClient {
       const resp = await this.request({ active_symbols: "brief", product_type: "basic" });
       const arr = resp.active_symbols as unknown[] | undefined;
       activeSymbolsCount = Array.isArray(arr) ? arr.length : 0;
+      this.retainDiscovery(arr);
     } catch (err) {
       activeSymbolsError = (err as Error).message.slice(0, 200);
     }
@@ -442,6 +474,45 @@ class DerivWsClient {
     return out;
   }
 
+  /** Retain the parsed `active_symbols` payload (timestamped) and validate
+   *  the static synthetic map against it. Report-only (honesty doctrine):
+   *  mismatches are logged and surfaced for operators — NEVER auto-corrected,
+   *  because a guessed venue id must fail loudly rather than be silently
+   *  rewritten to whatever looks closest. Does not change which symbols
+   *  subscribe or any execution surface. */
+  private retainDiscovery(rawActiveSymbols: unknown): void {
+    const now = Date.now();
+    const symbols = parseActiveSymbols(rawActiveSymbols);
+    this.lastDiscovery = {
+      fetchedAt: new Date(now).toISOString(),
+      fetchedAtMs: now,
+      symbols,
+    };
+    if (symbols.length === 0) {
+      // An empty/unparseable payload is not evidence the venue lacks our ids —
+      // skip validation instead of reporting every static symbol as missing.
+      this.lastDiscoveryValidation = null;
+      return;
+    }
+    const validation = validateKnownMap(symbols, DERIV_SYNTHETIC_SYMBOLS);
+    this.lastDiscoveryValidation = validation;
+    if (this.discoveryMismatchWarnedThisConnect) return;
+    if (validation.missingFromVenue.length === 0 && validation.unknownAtVenue.length === 0) return;
+    this.discoveryMismatchWarnedThisConnect = true;
+    for (const miss of validation.missingFromVenue) {
+      logger.warn(
+        { arxSymbol: miss.arxSymbol, derivId: miss.derivId, displayName: miss.displayName },
+        "Deriv discovery mismatch: static-map id not reported by active_symbols (report-only; id NOT auto-corrected)",
+      );
+    }
+    if (validation.unknownAtVenue.length > 0) {
+      logger.warn(
+        { count: validation.unknownAtVenue.length, derivIds: validation.unknownAtVenue },
+        "Deriv discovery: venue synthetic-index ids absent from the static map (report-only)",
+      );
+    }
+  }
+
   /** Eager warm-up: runs once per successful WS session. Fetches
    *  active_symbols (cached count for diagnostics) and subscribes to a
    *  small set of core synthetic-index tick streams so the in-memory
@@ -450,13 +521,15 @@ class DerivWsClient {
   private async runEagerWarmup(): Promise<void> {
     if (!this.connected) return;
     this.warmupAttemptedAt = Date.now();
-    // 1) active_symbols (brief, basic product) — cache count for diagnostics.
+    // 1) active_symbols (brief, basic product) — cache count for diagnostics
+    //    and retain the parsed payload for runtime-discovery validation.
     try {
       const resp = await this.request({ active_symbols: "brief", product_type: "basic" });
       const arr = resp.active_symbols as unknown[] | undefined;
       this.activeSymbolsCount = Array.isArray(arr) ? arr.length : 0;
       this.activeSymbolsLoadedAt = Date.now();
       this.activeSymbolsError = null;
+      this.retainDiscovery(arr);
     } catch (err) {
       this.activeSymbolsError = (err as Error).message.slice(0, 200);
     }

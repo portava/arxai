@@ -11,7 +11,7 @@ import { Router, type IRouter } from "express";
 import { readRoleFromRequest } from "../lib/security/middleware.js";
 import { z } from "zod/v4";
 import { getBrokerProvider } from "../lib/broker/registry.js";
-import { selectBrokerKind, describeRequiredSecrets, missingRequiredSecrets } from "../lib/broker/secrets.js";
+import { selectBrokerKind, describeRequiredSecrets, missingRequiredSecrets, anyActiveUserBridgeTokenExists } from "../lib/broker/secrets.js";
 import { placeLiveOrderGuarded } from "../lib/liveTrading/guard.js";
 import { randomUUID } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
@@ -159,6 +159,14 @@ router.get("/broker/connection-check", async (_req, res) => {
     let orderCount = 0;
     const errors: string[] = [];
 
+    // Per-user bridge tokens are the ONLY valid EA auth (the legacy
+    // MT5_BRIDGE_TOKEN env value is rejected on every EA endpoint), so
+    // "apiKeyPresent" = an active per-user bridge token exists. Lookup
+    // failure degrades to false with an entry in `errors` — never fabricated.
+    let apiKeyPresent = false;
+    try { apiKeyPresent = await anyActiveUserBridgeTokenExists(); }
+    catch (e) { errors.push(`bridgeToken: ${String((e as Error).message)}`); }
+
     if (status.connected) {
       try {
         const acct = await provider.account();
@@ -181,7 +189,7 @@ router.get("/broker/connection-check", async (_req, res) => {
       environment: status.environment,
       accountIdPresent: !!process.env.MT5_ACCOUNT_ID,
       bridgeUrlPresent: !!process.env.MT5_BRIDGE_URL,
-      apiKeyPresent: !!process.env.MT5_BRIDGE_TOKEN,
+      apiKeyPresent,
       readOnlyReady: status.connected && accountReadable && symbolsReadable,
       liveOrderReady: false,
       missingSecrets: status.missingSecrets.filter(m => m.required && !m.set).map(m => m.key),

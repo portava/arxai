@@ -7,8 +7,8 @@
 // SAFETY:
 // - Read-only. Never places, modifies, or cancels a trade.
 // - Per-user scoped on every query.
-// - Never returns or stores any secret. Returns booleans only for env
-//   gates (e.g. whether MT5_BRIDGE_TOKEN is configured), not values.
+// - Never returns or stores any secret. Returns booleans only for setup
+//   gates (e.g. whether an active per-user bridge token exists), not values.
 // - Envelope shows liveLocked:true so any UI consumer can reflect it.
 
 import { Router } from "express";
@@ -76,42 +76,41 @@ router.get("/me/first-run-readiness", requireUser, async (req, res): Promise<voi
       cta: null,
     };
 
-    // 4. MT5 bridge — optional. WARN if no per-user connection. INFO if system
-    // token absent (expected for paper-only). Never reveal the token value.
+    // 4. MT5 bridge — optional. EA auth is per-user only: every EA endpoint
+    // rejects the legacy server-wide MT5_BRIDGE_TOKEN env value, so readiness
+    // is derived solely from this user's connections + active token state.
+    // apiKeyHash/tokenRevokedAt are read to compute a boolean only — never
+    // returned in the payload.
     const conns = await db.select({
       id: mt5ConnectionTable.id,
       status: mt5ConnectionTable.status,
       lastHeartbeat: mt5ConnectionTable.lastHeartbeat,
+      apiKeyHash: mt5ConnectionTable.apiKeyHash,
+      tokenRevokedAt: mt5ConnectionTable.tokenRevokedAt,
     }).from(mt5ConnectionTable).where(eq(mt5ConnectionTable.userId, userId));
-    const sysTokenConfigured = !!process.env["MT5_BRIDGE_TOKEN"];
+    const hasActiveToken = conns.some((c) => !!c.apiKeyHash && !c.tokenRevokedAt);
     const anyConnected = conns.some((c) => c.status === "connected");
-    // Honest MT5 status: factor in whether the system bridge token is even
-    // configured. Without it, every bridge endpoint is fail-closed (503)
-    // regardless of per-user connection rows. We never return the token
-    // value — only the boolean of its presence.
     let mt5Status: ReadinessStatus;
     let mt5Detail: string;
-    if (!sysTokenConfigured) {
+    if (conns.length === 0) {
       mt5Status = "INFO";
-      mt5Detail = conns.length === 0
-        ? "MT5 bridge is not configured on this server (MT5_BRIDGE_TOKEN unset). Optional for paper trading."
-        : `${conns.length} per-user connection${conns.length === 1 ? "" : "s"} on file, but the server bridge token is not configured — bridge endpoints will fail-closed.`;
-    } else if (conns.length === 0) {
-      mt5Status = "INFO";
-      mt5Detail = "Server bridge is configured. No MT5 connection added yet — optional for paper trading.";
+      mt5Detail = "No MT5 connection added yet — optional for paper trading. Bridge auth is per-user: issue a token from the MT5 Setup page.";
+    } else if (!hasActiveToken) {
+      mt5Status = "WARN";
+      mt5Detail = `${conns.length} connection${conns.length === 1 ? "" : "s"} on file but no active per-user bridge token (revoked or never issued) — reissue one from the MT5 Setup page.`;
     } else if (anyConnected) {
       mt5Status = "PASS";
       mt5Detail = `Connected (${conns.length} connection${conns.length === 1 ? "" : "s"}). Bridge stays read-only; orders still execute on paper.`;
     } else {
       mt5Status = "WARN";
-      mt5Detail = `Configured but not connected (${conns.length} connection${conns.length === 1 ? "" : "s"}). Check the EA and per-user bridge token.`;
+      mt5Detail = `Configured but not connected (${conns.length} connection${conns.length === 1 ? "" : "s"}). Check the EA and its per-user bridge token.`;
     }
     const mt5Item: ReadinessItem = {
       key: "mt5_bridge",
       label: "MT5 bridge",
       status: mt5Status,
       detail: mt5Detail,
-      cta: conns.length === 0 && sysTokenConfigured
+      cta: conns.length === 0
         ? { label: "Add MT5 connection", href: "/mt5" }
         : null,
     };

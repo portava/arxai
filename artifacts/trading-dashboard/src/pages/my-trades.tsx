@@ -6,9 +6,11 @@
 // MyOpenTradesPanel. Closing a position uses the existing, permissioned
 // ConfirmCloseModal — the ONLY close path; the UI never calls MT5 directly and
 // no new execution path is created. Only MT5-confirmed open positions are
-// shown. Every metric is derived from the real cards; actions that have no
-// existing endpoint (Protect All, Move-all-to-BE, Close Winners/Losers/All,
-// partial close, modify SL/TP) are rendered as honest future-ready states.
+// shown. Every metric is derived from the real cards. Bulk execution actions
+// (Protect All, Move-all-to-BE, Close Winners/Losers/All) have no per-user
+// endpoints and are intentionally absent — no placebo controls. Export is a
+// real client-side CSV of the currently filtered rows (no backend involved,
+// no server round-trip, nothing fabricated: cells mirror the visible table).
 
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
@@ -16,6 +18,7 @@ import {
   Activity, Sparkles, MessageCircle, ShieldCheck, ShieldAlert,
   TrendingUp, TrendingDown, Search, RefreshCcw, Globe, Clock, Zap,
   ChevronRight, AlertTriangle, Loader2, X as XIcon, BellRing, Plus, Flame,
+  Download,
 } from "lucide-react";
 import {
   useGetTimingBrainMulti,
@@ -90,6 +93,12 @@ function durationLabel(iso: string | null): string {
   if (m < 60) return `${m}m`;
   const h = Math.floor(m / 60);
   return `${h}h ${m % 60}m`;
+}
+
+// RFC 4180 escaping: quote any cell containing a comma, quote, or newline.
+function csvCell(v: string | number | null | undefined): string {
+  const s = v == null ? "" : String(v);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
 export default function MyTradesPage() {
@@ -186,6 +195,39 @@ export default function MyTradesPage() {
 
   const liveLabel = data?.bannerLabel
     || (data?.tradingMode === "LIVE" ? "Live Shared MT5" : data?.tradingMode === "DEMO" ? "Demo" : data?.tradingMode ?? "Checking");
+
+  // Client-side CSV export of the CURRENTLY FILTERED rows. Columns mirror the
+  // visible table exactly; no backend endpoint exists for a user-scoped trade
+  // export, so nothing is fetched — only data already on screen is written.
+  // Open P/L is left blank while a row is still syncing (the table shows
+  // "syncing…" there, so a number would be fabricated).
+  function exportCsv() {
+    const header = ["Symbol", "Side", "Lots", "Entry", "Current", "Open P/L", "P/L Is Estimate", "SL", "TP", "Duration", "Protection", "Heat Grade"];
+    const rows = visible.map((c) => [
+      c.symbol,
+      c.side,
+      c.lotSize,
+      c.entryPrice,
+      c.currentPrice,
+      c.waitingForSync ? "" : c.unrealizedPnl ?? "",
+      c.waitingForSync ? "" : c.pnlIsEstimate ? "yes" : "no",
+      c.stopLoss,
+      c.takeProfit,
+      durationLabel(c.openedAt),
+      isProtected(c) ? "Protected" : "Unprotected",
+      timingMap.get(c.symbol)?.timingGrade ?? "",
+    ]);
+    const csv = [header, ...rows].map((r) => r.map(csvCell).join(",")).join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `open-trades-${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
 
   // By-symbol exposure (real lots).
   const bySymbol = useMemo(() => {
@@ -349,9 +391,19 @@ export default function MyTradesPage() {
               </button>
             ))}
           </div>
-          <div className="relative w-full sm:w-52">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-txt-muted" />
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search positions…" className="w-full rounded-lg border border-border bg-background/40 pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+          <div className="flex w-full items-center gap-2 sm:w-auto">
+            <div className="relative w-full sm:w-52">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-txt-muted" />
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search positions…" className="w-full rounded-lg border border-border bg-background/40 pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+            </div>
+            <button
+              onClick={exportCsv}
+              disabled={visible.length === 0}
+              title={visible.length === 0 ? "No rows in the current filter to export" : "Download the currently filtered rows as CSV"}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border px-2.5 py-2 text-xs text-foreground hover:border-primary/40 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Download className="h-3.5 w-3.5" /> Export CSV
+            </button>
           </div>
         </div>
 
@@ -529,6 +581,12 @@ export default function MyTradesPage() {
           <div className="flex items-center gap-2"><Zap className="h-4 w-4 text-primary" /><h3 className="text-sm font-semibold">Quick Actions</h3></div>
           <div className="mt-3 grid grid-cols-2 gap-2">
             <button onClick={() => void load()} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-xs font-medium text-primary"><RefreshCcw className="h-3.5 w-3.5" /> Refresh</button>
+            <button
+              onClick={exportCsv}
+              disabled={visible.length === 0}
+              title={visible.length === 0 ? "No rows in the current filter to export" : "Download the currently filtered rows as CSV"}
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-foreground hover:border-primary/40 disabled:cursor-not-allowed disabled:opacity-50"
+            ><Download className="h-3.5 w-3.5" /> Export CSV</button>
           </div>
           <p className="mt-2 text-[11px] text-txt-muted">Close a position individually from its row.</p>
         </div>

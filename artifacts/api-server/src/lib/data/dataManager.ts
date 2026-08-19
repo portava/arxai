@@ -10,11 +10,28 @@
 // Existing callers (`/api/data`, `/api/watchlists`, `/api/multi-timeframe`)
 // keep their function signatures.
 
-import type { Candle, MarketQuote } from "./types.js";
+import type { Candle, MarketQuote, SeriesProvenance } from "./types.js";
 import { routeCandles, routeQuote, getRouterDiagnostics } from "./marketDataRouter.js";
 import { isValidOhlc } from "./chart/candleNormalization.js";
 
-export async function getMarketData(symbol: string, timeframe = "1m", limit = 250): Promise<Candle[]> {
+export interface MarketDataWithProvenance {
+  candles: Candle[];
+  /**
+   * Structured origin of the served series. `null` ONLY when no provider
+   * served (honest empty) — a served series always names its source, and an
+   * empty result never fabricates one. The envelope stays series-level: bars
+   * in `candles` keep the bare legacy `Candle` shape.
+   */
+  provenance: SeriesProvenance | null;
+}
+
+/**
+ * Envelope-preserving accessor (audit-marketdata S1): same OHLC-validated
+ * candle array as `getMarketData`, WITHOUT discarding the router's provenance
+ * envelope. Callers that must know which venue produced the bars (execution
+ * previews, decision surfaces) opt in here.
+ */
+export async function getMarketDataWithProvenance(symbol: string, timeframe = "1m", limit = 250): Promise<MarketDataWithProvenance> {
   const r = await routeCandles(symbol, timeframe, limit);
   // OHLC integrity gate: never hand the raw `routeCandles().candles` reference
   // back to callers/legacy routes. Drop bars that fail the shared candle-truth
@@ -23,7 +40,7 @@ export async function getMarketData(symbol: string, timeframe = "1m", limit = 25
   // — the interval-dependent normalization (gap/staleness, bar-open alignment)
   // lives in `runCandleTruth` and is only safe with a canonical ChartTimeframe,
   // which this legacy accessor does not require of its callers.
-  return r.candles
+  const candles = r.candles
     .filter((c) => isValidOhlc(c))
     .map((c) => ({
       time: c.time,
@@ -33,6 +50,16 @@ export async function getMarketData(symbol: string, timeframe = "1m", limit = 25
       close: c.close,
       volume: c.volume,
     }));
+  return { candles, provenance: r.provenance ?? null };
+}
+
+// Legacy bare-array accessor — signature and returned shape must stay exactly
+// as-is (routes/data, routes/watchlists, routes/multiTimeframe, routes/
+// meAssistant, rubyChartContext, rubyQuality, historicalAnalysis all consume
+// it). It shares the validated array with the envelope-preserving accessor so
+// the two paths can never drift.
+export async function getMarketData(symbol: string, timeframe = "1m", limit = 250): Promise<Candle[]> {
+  return (await getMarketDataWithProvenance(symbol, timeframe, limit)).candles;
 }
 
 export async function getLatestQuote(symbol: string): Promise<MarketQuote> {

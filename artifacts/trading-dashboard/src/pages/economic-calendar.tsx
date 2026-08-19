@@ -743,25 +743,24 @@ export default function EconomicCalendarPage() {
         </div>
       </div>
 
-      {/* Event Alerts */}
+      {/* Event Alerts.
+          Constraint: there is no server endpoint that creates or schedules
+          per-user calendar reminders (meNotifications exposes read/dismiss/
+          preference surfaces only; /api/notifications/* has no user-facing
+          create/schedule route). The previous offset/channel chips here were
+          non-functional placebos, so they were removed rather than faked —
+          this card now states plainly what exists and links to the real
+          alerts inbox. */}
       <div className="rounded-2xl border border-border bg-card p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2"><Bell className="h-4 w-4 text-primary" /><h3 className="text-sm font-semibold">Event Alerts</h3></div>
           <button onClick={() => navigate("/alerts")} className="inline-flex items-center gap-1 text-xs text-primary hover:underline">Manage Alerts <ChevronRight className="h-3 w-3" /></button>
         </div>
-        <p className="mt-2 text-xs text-txt-secondary">Remind me for high-impact events:</p>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {["60m Before","30m Before","15m Before","At Release","15m After"].map((p) => (
-            <span key={p} className="rounded-lg border border-border bg-secondary/40 px-3 py-1.5 text-xs text-txt-secondary" title="Coming soon">{p}</span>
-          ))}
-        </div>
-        <p className="mt-3 text-xs text-txt-secondary">Alert via:</p>
-        <div className="mt-2 flex flex-wrap gap-2">
-          <span className="inline-flex items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs text-primary">In-App</span>
-          <span className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-secondary/40 px-3 py-1.5 text-xs text-txt-muted" title="Coming soon">Push</span>
-          <span className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-secondary/40 px-3 py-1.5 text-xs text-txt-muted" title="Coming soon">{name} Reminder</span>
-          <span className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-secondary/40 px-3 py-1.5 text-xs text-txt-muted" title="Coming soon">Scanner Watchlist</span>
-        </div>
+        <p className="mt-2 text-xs text-txt-secondary">
+          Scheduled event reminders don't exist yet — there is no reminder service to
+          wire this page to, so no reminder controls are shown. Calendar and news
+          alerts that ARX does generate arrive in your alerts inbox.
+        </p>
       </div>
     </div>
   );

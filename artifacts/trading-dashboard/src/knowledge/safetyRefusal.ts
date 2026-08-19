@@ -67,7 +67,7 @@ export const SAFETY_REFUSALS: RefusalRule[] = [
       /\bDATABASE_URL\b/i,
     ],
     reply:
-      "I won't reveal API keys, tokens, secrets, or environment variables. They're managed by the Replit secrets system and never exposed through the assistant. If you need to rotate one, do it from the Replit secrets panel — never paste it into chat.",
+      "I won't reveal API keys, tokens, secrets, or environment variables. Server secrets are managed by the Replit secrets system and never exposed through the assistant. Your per-user MT5 bridge token is shown exactly once at creation and can be rotated with Regenerate on the MT5 Setup page — never paste any of them into chat.",
   },
   {
     id: "refusal:role-escalation",
@@ -97,7 +97,7 @@ export const SAFETY_REFUSALS: RefusalRule[] = [
       /\b(send|place)\b.*\b(real|live)\b.*\b(order|trade)\b/i,
     ],
     reply:
-      "I can't force MT5 to send orders. Live broker execution is gated by the MT5 bridge connection plus the guarded order router — both server-side, both intentional. To progress, follow the documented bridge setup (MT5 Bridge → install EA → set MT5_BRIDGE_TOKEN → wait for heartbeat).",
+      "I can't force MT5 to send orders. Live broker execution is gated by the MT5 bridge connection plus the guarded order router — both server-side, both intentional. To progress, follow the documented bridge setup (MT5 Setup → install EA → create your per-user bridge token → wait for heartbeat).",
   },
 ];
 

@@ -6,8 +6,16 @@
 // read-all/bulk/clear-read all use the existing notification endpoints and
 // invalidate the unread-count badge exactly as before. Categorization,
 // severity ranking, and repeat-grouping are the existing presentational
-// helpers. Every count and row is derived from real notifications; snooze and
-// alert-settings have no endpoint, so they're honest future-ready states.
+// helpers. Every count and row is derived from real notifications.
+//
+// Snooze is intentionally ABSENT. The only snooze endpoint on the server
+// (POST /api/notifications/:id/snooze) operates on the legacy Notification
+// Center `notifications` table keyed by string notificationId — NOT the
+// `user_notifications` rows (numeric serial id) this page lists via
+// /api/me/notifications. Wiring it here would 404 on every row. A real
+// per-user snooze needs a /api/me/notifications/:id/snooze surface plus
+// snooze state on user_notifications (server + schema work, out of scope
+// for this page).
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";

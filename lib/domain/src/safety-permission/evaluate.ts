@@ -113,7 +113,9 @@ export function evaluatePermission(inputs: PermissionInputs): PermissionVerdict 
   }
 
   if (inputs.mt5LinkHealth === "DOWN" && !inputs.brokerCredentialsConfigured) {
-    const m = "MT5 bridge is not configured — live execution requires MT5_BRIDGE_TOKEN.";
+    // EA auth is per-user only — the legacy MT5_BRIDGE_TOKEN env value is
+    // rejected on every EA endpoint, so the fix is issuing a per-user token.
+    const m = "MT5 bridge is not configured — live execution requires an active per-user bridge token issued from the MT5 Setup page.";
     reasons.push({ code: "INFO_BROKER_MISSING", severity: "INFO", message: m });
   }
 

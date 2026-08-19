@@ -20,7 +20,7 @@ export class MockBrokerProvider implements BrokerProvider {
       missingSecrets: [],
       notes: [
         "simulated=true. MockBrokerProvider is in use because BROKER_PROVIDER is not set to a real provider.",
-        "Set BROKER_PROVIDER=mt5 and configure MT5_BRIDGE_TOKEN to use the real MT5 bridge.",
+        "Set BROKER_PROVIDER=mt5 to use the real MT5 bridge (per-user bridge tokens from MT5 Setup; the legacy MT5_BRIDGE_TOKEN env value is rejected).",
         "All account/symbols/positions/orders values are synthetic and must not be treated as real broker data.",
       ],
     };

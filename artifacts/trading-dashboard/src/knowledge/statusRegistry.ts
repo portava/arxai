@@ -68,7 +68,7 @@ export const STATUS_REGISTRY: StatusEntry[] = [
     severity: "info",
     blocks: ["any MT5-mediated action", "live execution"],
     allows: ["everything demo / simulator"],
-    safetyReason: "MT5 stays off until the user sets MT5_BRIDGE_TOKEN and connects the EA.",
+    safetyReason: "MT5 stays off until the user creates a per-user bridge token on MT5 Setup and connects the EA.",
     related: { label: "MT5 Bridge", route: "/mt5-bridge" },
     explanation: "ARX is bridge-ready but not bridge-active. Configure the EA + token to enable connection (still won't auto-trade).",
     safeNextStep: "Open MT5 Bridge to read the setup instructions.",

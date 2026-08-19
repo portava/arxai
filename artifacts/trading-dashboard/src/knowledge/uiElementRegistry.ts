@@ -77,7 +77,7 @@ export const UI_ELEMENTS: UiElement[] = [
     explanation: "MT5 bridge is intentionally not configured.",
     whatItDoes: "Tells you ARX is bridge-ready but not bridge-active.",
     whatItDoesNot: "Does not connect to a broker by itself.",
-    safetyNote: "Bridge stays off until you set MT5_BRIDGE_TOKEN and connect the EA.",
+    safetyNote: "Bridge stays off until you create a per-user bridge token on MT5 Setup and connect the EA.",
     sampleQuestions: ["What does MT5 Deferred mean?", "How do I connect MT5?"],
     safeNextAction: "Open MT5 Bridge to read the connection steps.",
   },
@@ -180,7 +180,7 @@ export const UI_ELEMENTS: UiElement[] = [
     explanation: "No recent heartbeat — bridge is offline or token mismatched.",
     whatItDoes: "Tells you any bridge action will fail until restored.",
     whatItDoesNot: "Does not affect demo / simulator.",
-    disabledReasons: ["EA not running", "wrong MT5_BRIDGE_TOKEN", "network blocked"],
+    disabledReasons: ["EA not running", "wrong or revoked per-user bridge token", "network blocked"],
     safeNextAction: "Open MT5 Bridge and re-check token + EA log.",
   },
 
@@ -357,7 +357,7 @@ export const UI_ELEMENTS: UiElement[] = [
     explanation: "Setup + status for the MT5 bridge.",
     whatItDoes: "Shows bridge config requirements.",
     whatItDoesNot: "Does not connect by itself.",
-    safetyNote: "Bridge stays off until you set MT5_BRIDGE_TOKEN.",
+    safetyNote: "Bridge stays off until you create a per-user bridge token on MT5 Setup.",
     safeNextAction: "Read EA setup steps before configuring.",
   },
   {

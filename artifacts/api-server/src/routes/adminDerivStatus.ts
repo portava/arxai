@@ -39,18 +39,23 @@ function sanitizeError(msg: string | null): string | null {
 router.get("/admin/deriv-status", async (req, res) => {
   if (!requireAdmin(req, res)) return;
   const status = getDerivFeedStatus();
+  // Runtime-discovery visibility (audit G1) — read straight from the client.
+  const client = getDerivWsClient();
+  const discovery = client.getLastDiscovery();
+  const discoveryValidation = client.getLastDiscoveryValidation();
 
   // Friendly blocker reasons for admin
   const blockers: string[] = [];
   if (!status.appIdConfigured)    blockers.push("DERIV_APP_ID not configured in Replit Secrets.");
   if (!status.apiTokenConfigured && status.mode !== "legacy")
     blockers.push("DERIV_API_TOKEN not configured — required for new PAT API mode.");
-  if (status.mode === "new" && !status.accountIdConfigured)
-    blockers.push("DERIV_ACCOUNT_ID may be required if the OTP endpoint uses account routing.");
+  // NOTE: no OTP flow exists — the invented OTP endpoint was removed. PAT auth
+  // happens via the WS `authorize` request; DERIV_ACCOUNT_ID is not consulted
+  // by the current client, so its absence is never reported as a blocker.
   if (status.errorMessage?.includes("Unauthorized"))
-    blockers.push("OTP request unauthorized — check that DERIV_APP_ID and DERIV_API_TOKEN are correct.");
+    blockers.push("Deriv authorize rejected the credentials — check that DERIV_APP_ID and DERIV_API_TOKEN are correct.");
   if (status.errorMessage?.includes("not found"))
-    blockers.push("OTP endpoint not found — Deriv API may have changed.");
+    blockers.push("Deriv reported 'not found' — check DERIV_WS_URL and app id configuration.");
 
   res.json({
     ok:            true,
@@ -82,6 +87,22 @@ router.get("/admin/deriv-status", async (req, res) => {
     warmupAttemptedAt:          status.warmupAttemptedAt,
     warmupCompletedAt:          status.warmupCompletedAt,
     feedReadinessState:         status.feedReadinessState,
+    // Additive: runtime symbol discovery freshness + report-only map diff.
+    // `validation` is null until a non-empty discovery has completed; the
+    // mismatch lists are reported verbatim, never auto-corrected.
+    discovery: {
+      loaded:      discovery != null,
+      fetchedAt:   discovery?.fetchedAt ?? null,
+      ageMs:       client.getLastDiscoveryAgeMs(),
+      symbolCount: discovery ? discovery.symbols.length : null,
+      validation: discoveryValidation
+        ? {
+            matchedCount:     discoveryValidation.matched.length,
+            missingFromVenue: discoveryValidation.missingFromVenue,
+            unknownAtVenue:   discoveryValidation.unknownAtVenue,
+          }
+        : null,
+    },
     message:          status.message,
     blockers,
     setupInstructions: blockers.length > 0 ? [

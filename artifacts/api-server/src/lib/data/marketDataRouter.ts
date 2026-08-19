@@ -39,7 +39,7 @@
 //     `updateCandlesFromMT5` / `updateQuoteFromMT5`, so the slot is a
 //     no-op and the router falls through to the next provider.
 
-import type { Candle, MarketQuote } from "./types.js";
+import type { Candle, MarketQuote, SeriesProvenance } from "./types.js";
 import {
   getDerivCandles,
   getDerivTick,
@@ -84,6 +84,14 @@ export interface MarketCandlesResult {
   userMessage: string;
   /** Detail safe to show admins only (may name providers / configs). */
   adminDetail: string;
+  /**
+   * Structured provenance for the served series. Present exactly when
+   * `ok === true`; absent on an exhausted (honest-empty) result — an empty
+   * result has no producing feed to attribute, and fabricating one is
+   * forbidden. Additive: the legacy `primaryProvider` string label is
+   * unchanged.
+   */
+  provenance?: SeriesProvenance;
 }
 
 export interface MarketQuoteResult {
@@ -95,6 +103,8 @@ export interface MarketQuoteResult {
   attempts: ProviderAttempt[];
   userMessage: string;
   adminDetail: string;
+  /** Same contract as `MarketCandlesResult.provenance`. */
+  provenance?: SeriesProvenance;
 }
 
 // ── Timeframe normalization ──────────────────────────────────────────────
@@ -174,6 +184,46 @@ const CHAIN_BY_CLASS: Record<AssetClass, ProviderId[]> = {
   unknown:   ["mt5_broker", "assistant_real"],
 };
 
+// ── Provenance envelope construction ─────────────────────────────────────
+//
+// Threads the per-result source labeling the adapters already compute into the
+// structured `SeriesProvenance` envelope (audit-marketdata S1). THREADING
+// ONLY: no chain/fallback behavior may change here, and the legacy
+// `primaryProvider` string labels stay byte-identical. Facts the serving
+// layer cannot attribute today (bridge, owner, broker-native symbol) MUST be
+// null — never guessed.
+function makeProvenance(args: {
+  providerId: string;
+  subProviderId?: string | null;
+  brokerCode: SeriesProvenance["brokerCode"];
+  environment?: SeriesProvenance["environment"];
+  delayed: boolean | null;
+  source: SeriesProvenance["source"];
+  sourceId: string;
+}): SeriesProvenance {
+  return {
+    providerId: args.providerId,
+    subProviderId: args.subProviderId ?? null,
+    brokerCode: args.brokerCode,
+    // No serving-layer bridge/account dimension exists yet (in-memory store and
+    // market_candles mirror are keyed symbol|timeframe only — later slice).
+    bridgeConnectionId: null,
+    userId: null,
+    brokerSymbol: null,
+    environment: args.environment ?? "unknown",
+    receivedAt: new Date().toISOString(),
+    delayed: args.delayed,
+    source: args.source,
+    sourceId: args.sourceId,
+  };
+}
+
+/** Stable symbol token for `sourceId` — matches the providers' own key
+ *  normalization (trim + uppercase) so the identifier cannot fork on casing. */
+function sourceSymbolKey(symbol: string): string {
+  return (symbol ?? "").trim().toUpperCase();
+}
+
 // ── Adapters: provider → normalized {Candle[] | MarketQuote} ─────────────
 
 // ── Durable broker-candle store read (Task #470) ─────────────────────────────
@@ -238,7 +288,7 @@ async function readDurableBrokerCandles(
   return { served: read.candles, hasAny: true, count: read.count, stale: false, insufficient: false };
 }
 
-async function tryMt5Candles(symbol: string, timeframe: string, limit: number): Promise<ProviderAttempt & { candles: Candle[] }> {
+async function tryMt5Candles(symbol: string, timeframe: string, limit: number): Promise<ProviderAttempt & { candles: Candle[]; provenance: SeriesProvenance | null }> {
   const t0 = Date.now();
   // 1) LIVE in-memory provider — the freshest pushed bars win when present.
   const connected = await mt5Provider.isConnected();
@@ -247,7 +297,19 @@ async function tryMt5Candles(symbol: string, timeframe: string, limit: number): 
     try {
       const candles = await mt5Provider.getCandles(symbol, timeframe, limit);
       if (candles.length > 0) {
-        return { provider: "mt5_broker", ok: true, reason: null, candleCount: candles.length, ms: Date.now() - t0, candles };
+        return {
+          provider: "mt5_broker", ok: true, reason: null, candleCount: candles.length, ms: Date.now() - t0, candles,
+          // Live branch serves only what a connected EA pushed from the
+          // terminal's own real-time chart series → delayed: false. Bars are
+          // tick aggregates → "DERIVED" under the lib/provenance taxonomy.
+          provenance: makeProvenance({
+            providerId: "mt5_broker",
+            brokerCode: "mt5",
+            delayed: false,
+            source: "DERIVED",
+            sourceId: `mt5_broker:${sourceSymbolKey(symbol)}:${timeframe}`,
+          }),
+        };
       }
     } catch (err) {
       // Capture the precise error, but still try the durable store below before
@@ -261,7 +323,19 @@ async function tryMt5Candles(symbol: string, timeframe: string, limit: number): 
   //    provider. Preferred over fallback providers only when fresh + sufficient.
   const durable = await readDurableBrokerCandles(symbol, timeframe, limit, t0);
   if (durable.served) {
-    return { provider: "mt5_broker", ok: true, reason: null, candleCount: durable.served.length, ms: Date.now() - t0, candles: durable.served };
+    return {
+      provider: "mt5_broker", ok: true, reason: null, candleCount: durable.served.length, ms: Date.now() - t0, candles: durable.served,
+      // The mirror read path does not carry the origin row's entitlement or
+      // bridge facts (keyed symbol|timeframe|source only) → delayed unknown.
+      provenance: makeProvenance({
+        providerId: "mt5_broker",
+        subProviderId: "durable_mirror",
+        brokerCode: "mt5",
+        delayed: null,
+        source: "DERIVED",
+        sourceId: `mt5_broker:${sourceSymbolKey(symbol)}:${timeframe}`,
+      }),
+    };
   }
 
   // 3) Honest no-serve reason (precise for diagnostics/UI).
@@ -281,36 +355,46 @@ async function tryMt5Candles(symbol: string, timeframe: string, limit: number): 
   } else {
     reason = "MT5_BROKER_FEED_NOT_ACTIVE";
   }
-  return { provider: "mt5_broker", ok: false, reason, candleCount: 0, ms: Date.now() - t0, candles: [] };
+  return { provider: "mt5_broker", ok: false, reason, candleCount: 0, ms: Date.now() - t0, candles: [], provenance: null };
 }
 
-async function tryMt5Quote(symbol: string): Promise<ProviderAttempt & { quote: MarketQuote | null }> {
+async function tryMt5Quote(symbol: string): Promise<ProviderAttempt & { quote: MarketQuote | null; provenance: SeriesProvenance | null }> {
   const t0 = Date.now();
   const connected = await mt5Provider.isConnected();
   if (!connected) {
-    return { provider: "mt5_broker", ok: false, reason: "MT5_BROKER_FEED_NOT_ACTIVE", candleCount: 0, ms: Date.now() - t0, quote: null };
+    return { provider: "mt5_broker", ok: false, reason: "MT5_BROKER_FEED_NOT_ACTIVE", candleCount: 0, ms: Date.now() - t0, quote: null, provenance: null };
   }
   try {
     const q = await mt5Provider.getQuote(symbol);
     const hasPrice = (q.bid != null && q.bid > 0) || (q.ask != null && q.ask > 0) || (q.last != null && q.last > 0);
     if (!hasPrice) {
-      return { provider: "mt5_broker", ok: false, reason: "MT5_QUOTES_NOT_PUSHED", candleCount: 0, ms: Date.now() - t0, quote: null };
+      return { provider: "mt5_broker", ok: false, reason: "MT5_QUOTES_NOT_PUSHED", candleCount: 0, ms: Date.now() - t0, quote: null, provenance: null };
     }
-    return { provider: "mt5_broker", ok: true, reason: null, candleCount: 0, ms: Date.now() - t0, quote: q };
+    return {
+      provider: "mt5_broker", ok: true, reason: null, candleCount: 0, ms: Date.now() - t0, quote: q,
+      // A served quote is a fresh reading off the EA's real-time push → LIVE_TICK.
+      provenance: makeProvenance({
+        providerId: "mt5_broker",
+        brokerCode: "mt5",
+        delayed: false,
+        source: "LIVE_TICK",
+        sourceId: `mt5_broker:${sourceSymbolKey(symbol)}`,
+      }),
+    };
   } catch (err) {
-    return { provider: "mt5_broker", ok: false, reason: redact(String((err as Error).message ?? err)), candleCount: 0, ms: Date.now() - t0, quote: null };
+    return { provider: "mt5_broker", ok: false, reason: redact(String((err as Error).message ?? err)), candleCount: 0, ms: Date.now() - t0, quote: null, provenance: null };
   }
 }
 
-async function tryDerivCandles(symbol: string, timeframe: string, limit: number): Promise<ProviderAttempt & { candles: Candle[] }> {
+async function tryDerivCandles(symbol: string, timeframe: string, limit: number): Promise<ProviderAttempt & { candles: Candle[]; provenance: SeriesProvenance | null }> {
   const t0 = Date.now();
   const status = getDerivFeedStatus();
   if (!status.configured) {
-    return { provider: "deriv", ok: false, reason: "DERIV_NOT_CONFIGURED", candleCount: 0, ms: Date.now() - t0, candles: [] };
+    return { provider: "deriv", ok: false, reason: "DERIV_NOT_CONFIGURED", candleCount: 0, ms: Date.now() - t0, candles: [], provenance: null };
   }
   const r = await getDerivCandles(symbol, timeframe, limit);
   if (!r.ok) {
-    return { provider: "deriv", ok: false, reason: r.reason ?? "DERIV_FETCH_FAILED", candleCount: 0, ms: Date.now() - t0, candles: [] };
+    return { provider: "deriv", ok: false, reason: r.reason ?? "DERIV_FETCH_FAILED", candleCount: 0, ms: Date.now() - t0, candles: [], provenance: null };
   }
   // Normalize DerivCandle → lib/data Candle.
   const candles: Candle[] = r.candles.map((c) => ({
@@ -321,37 +405,58 @@ async function tryDerivCandles(symbol: string, timeframe: string, limit: number)
     close: c.close,
     volume: 0,
   }));
-  return { provider: "deriv", ok: true, reason: null, candleCount: candles.length, ms: Date.now() - t0, candles };
+  return {
+    provider: "deriv", ok: true, reason: null, candleCount: candles.length, ms: Date.now() - t0, candles,
+    // Deriv candles come off the live WS subscription (no delayed tier on that
+    // endpoint) → delayed: false. The WS app connection is platform-level, not
+    // account-bound → environment stays "unknown".
+    provenance: makeProvenance({
+      providerId: "deriv",
+      brokerCode: "deriv",
+      delayed: false,
+      source: "DERIVED",
+      sourceId: `deriv:${sourceSymbolKey(symbol)}:${timeframe}`,
+    }),
+  };
 }
 
-async function tryDerivQuote(symbol: string): Promise<ProviderAttempt & { quote: MarketQuote | null }> {
+async function tryDerivQuote(symbol: string): Promise<ProviderAttempt & { quote: MarketQuote | null; provenance: SeriesProvenance | null }> {
   const t0 = Date.now();
   const status = getDerivFeedStatus();
   if (!status.configured) {
-    return { provider: "deriv", ok: false, reason: "DERIV_NOT_CONFIGURED", candleCount: 0, ms: Date.now() - t0, quote: null };
+    return { provider: "deriv", ok: false, reason: "DERIV_NOT_CONFIGURED", candleCount: 0, ms: Date.now() - t0, quote: null, provenance: null };
   }
   const r = await getDerivTick(symbol);
   if (!r.ok || !r.tick) {
-    return { provider: "deriv", ok: false, reason: r.reason ?? "DERIV_NO_TICK", candleCount: 0, ms: Date.now() - t0, quote: null };
+    return { provider: "deriv", ok: false, reason: r.reason ?? "DERIV_NO_TICK", candleCount: 0, ms: Date.now() - t0, quote: null, provenance: null };
   }
   const quote: MarketQuote = {
     symbol,
     last: r.tick.quote,
     timestamp: new Date(r.tick.epoch * 1000).toISOString(),
   };
-  return { provider: "deriv", ok: true, reason: null, candleCount: 0, ms: Date.now() - t0, quote };
+  return {
+    provider: "deriv", ok: true, reason: null, candleCount: 0, ms: Date.now() - t0, quote,
+    provenance: makeProvenance({
+      providerId: "deriv",
+      brokerCode: "deriv",
+      delayed: false,
+      source: "LIVE_TICK",
+      sourceId: `deriv:${sourceSymbolKey(symbol)}`,
+    }),
+  };
 }
 
-async function tryAssistantCandles(symbol: string, timeframe: string, limit: number): Promise<ProviderAttempt & { candles: Candle[] }> {
+async function tryAssistantCandles(symbol: string, timeframe: string, limit: number): Promise<ProviderAttempt & { candles: Candle[]; provenance: SeriesProvenance | null }> {
   const t0 = Date.now();
   const p = getMarketProvider();
   if (!p.connected || !p.features.candles) {
-    return { provider: `assistant_real:${p.name}`, ok: false, reason: p.connected ? "PROVIDER_NO_CANDLE_SUPPORT" : "NO_MARKET_PROVIDER_CONFIGURED", candleCount: 0, ms: Date.now() - t0, candles: [] };
+    return { provider: `assistant_real:${p.name}`, ok: false, reason: p.connected ? "PROVIDER_NO_CANDLE_SUPPORT" : "NO_MARKET_PROVIDER_CONFIGURED", candleCount: 0, ms: Date.now() - t0, candles: [], provenance: null };
   }
   try {
     const r = await p.getCandles(symbol, timeframe, limit);
     if (!r.connected || r.candles.length === 0) {
-      return { provider: `assistant_real:${p.name}`, ok: false, reason: r.notes ?? (r.connected ? "NO_CANDLES_RETURNED" : "PROVIDER_NOT_CONNECTED"), candleCount: 0, ms: Date.now() - t0, candles: [] };
+      return { provider: `assistant_real:${p.name}`, ok: false, reason: r.notes ?? (r.connected ? "NO_CANDLES_RETURNED" : "PROVIDER_NOT_CONNECTED"), candleCount: 0, ms: Date.now() - t0, candles: [], provenance: null };
     }
     // Normalize assistant {t,o,h,l,c,v} → lib/data {time,open,high,low,close,volume}.
     const candles: Candle[] = r.candles.map((c) => ({
@@ -365,22 +470,34 @@ async function tryAssistantCandles(symbol: string, timeframe: string, limit: num
     // Name the ACTUAL winning sub-provider (r.source) — not the composite
     // descriptor — so the feed-confidence chip can truthfully say which
     // third-party source served these bars (e.g. assistant_real:twelve_data).
-    return { provider: `assistant_real:${r.source}`, ok: true, reason: null, candleCount: candles.length, ms: Date.now() - t0, candles };
+    return {
+      provider: `assistant_real:${r.source}`, ok: true, reason: null, candleCount: candles.length, ms: Date.now() - t0, candles,
+      // Third-party feed: the adapter's own freshness verdict is the only
+      // entitlement fact available — anything else stays unknown, not guessed.
+      provenance: makeProvenance({
+        providerId: "assistant_real",
+        subProviderId: r.source,
+        brokerCode: "third_party",
+        delayed: r.freshness === "DELAYED" ? true : r.freshness === "REALTIME" ? false : null,
+        source: "DERIVED",
+        sourceId: `assistant_real:${r.source}:${sourceSymbolKey(symbol)}:${timeframe}`,
+      }),
+    };
   } catch (err) {
-    return { provider: `assistant_real:${p.name}`, ok: false, reason: redact(String((err as Error).message ?? err)), candleCount: 0, ms: Date.now() - t0, candles: [] };
+    return { provider: `assistant_real:${p.name}`, ok: false, reason: redact(String((err as Error).message ?? err)), candleCount: 0, ms: Date.now() - t0, candles: [], provenance: null };
   }
 }
 
-async function tryAssistantQuote(symbol: string): Promise<ProviderAttempt & { quote: MarketQuote | null }> {
+async function tryAssistantQuote(symbol: string): Promise<ProviderAttempt & { quote: MarketQuote | null; provenance: SeriesProvenance | null }> {
   const t0 = Date.now();
   const p = getMarketProvider();
   if (!p.connected || !p.features.quotes) {
-    return { provider: `assistant_real:${p.name}`, ok: false, reason: p.connected ? "PROVIDER_NO_QUOTE_SUPPORT" : "NO_MARKET_PROVIDER_CONFIGURED", candleCount: 0, ms: Date.now() - t0, quote: null };
+    return { provider: `assistant_real:${p.name}`, ok: false, reason: p.connected ? "PROVIDER_NO_QUOTE_SUPPORT" : "NO_MARKET_PROVIDER_CONFIGURED", candleCount: 0, ms: Date.now() - t0, quote: null, provenance: null };
   }
   try {
     const r = await p.getLiveQuote(symbol);
     if (r.freshness === "UNAVAILABLE" || r.freshness === "ERROR" || (r.price == null && r.bid == null && r.ask == null)) {
-      return { provider: `assistant_real:${p.name}`, ok: false, reason: r.freshness === "ERROR" ? "PROVIDER_FETCH_ERROR" : "NO_QUOTE_AVAILABLE", candleCount: 0, ms: Date.now() - t0, quote: null };
+      return { provider: `assistant_real:${p.name}`, ok: false, reason: r.freshness === "ERROR" ? "PROVIDER_FETCH_ERROR" : "NO_QUOTE_AVAILABLE", candleCount: 0, ms: Date.now() - t0, quote: null, provenance: null };
     }
     const quote: MarketQuote = {
       symbol,
@@ -390,9 +507,23 @@ async function tryAssistantQuote(symbol: string): Promise<ProviderAttempt & { qu
       spread: (r.bid != null && r.ask != null) ? r.ask - r.bid : undefined,
       timestamp: r.asOf ?? new Date().toISOString(),
     };
-    return { provider: `assistant_real:${r.source}`, ok: true, reason: null, candleCount: 0, ms: Date.now() - t0, quote };
+    return {
+      provider: `assistant_real:${r.source}`, ok: true, reason: null, candleCount: 0, ms: Date.now() - t0, quote,
+      // The adapter's freshness verdict is threaded, not re-judged: DELAYED /
+      // REALTIME map to the delayed flag, DEMO marks the environment, and a
+      // STALE reading stays a real-but-old observation → "STALE" origin.
+      provenance: makeProvenance({
+        providerId: "assistant_real",
+        subProviderId: r.source,
+        brokerCode: "third_party",
+        environment: r.freshness === "DEMO" ? "demo" : "unknown",
+        delayed: r.freshness === "DELAYED" ? true : r.freshness === "REALTIME" ? false : null,
+        source: r.freshness === "STALE" ? "STALE" : "LIVE_TICK",
+        sourceId: `assistant_real:${r.source}:${sourceSymbolKey(symbol)}`,
+      }),
+    };
   } catch (err) {
-    return { provider: `assistant_real:${p.name}`, ok: false, reason: redact(String((err as Error).message ?? err)), candleCount: 0, ms: Date.now() - t0, quote: null };
+    return { provider: `assistant_real:${p.name}`, ok: false, reason: redact(String((err as Error).message ?? err)), candleCount: 0, ms: Date.now() - t0, quote: null, provenance: null };
   }
 }
 
@@ -408,15 +539,15 @@ export async function routeCandles(symbol: string, timeframe: string, limit: num
     if (id === "mt5_broker") {
       const r = await tryMt5Candles(symbol, tf, limit);
       attempts.push(stripCandles(r));
-      if (r.ok) return success(symbol, assetClass, r.candles, r.provider, attempts);
+      if (r.ok) return success(symbol, assetClass, r.candles, r.provider, attempts, r.provenance);
     } else if (id === "deriv") {
       const r = await tryDerivCandles(symbol, tf, limit);
       attempts.push(stripCandles(r));
-      if (r.ok) return success(symbol, assetClass, r.candles, r.provider, attempts);
+      if (r.ok) return success(symbol, assetClass, r.candles, r.provider, attempts, r.provenance);
     } else if (id === "assistant_real") {
       const r = await tryAssistantCandles(symbol, tf, limit);
       attempts.push(stripCandles(r));
-      if (r.ok) return success(symbol, assetClass, r.candles, r.provider, attempts);
+      if (r.ok) return success(symbol, assetClass, r.candles, r.provider, attempts, r.provenance);
     }
   }
 
@@ -442,15 +573,15 @@ export async function routeQuote(symbol: string): Promise<MarketQuoteResult> {
     if (id === "mt5_broker") {
       const r = await tryMt5Quote(symbol);
       attempts.push(stripQuote(r));
-      if (r.ok && r.quote) return successQuote(symbol, assetClass, r.quote, r.provider, attempts);
+      if (r.ok && r.quote) return successQuote(symbol, assetClass, r.quote, r.provider, attempts, r.provenance);
     } else if (id === "deriv") {
       const r = await tryDerivQuote(symbol);
       attempts.push(stripQuote(r));
-      if (r.ok && r.quote) return successQuote(symbol, assetClass, r.quote, r.provider, attempts);
+      if (r.ok && r.quote) return successQuote(symbol, assetClass, r.quote, r.provider, attempts, r.provenance);
     } else if (id === "assistant_real") {
       const r = await tryAssistantQuote(symbol);
       attempts.push(stripQuote(r));
-      if (r.ok && r.quote) return successQuote(symbol, assetClass, r.quote, r.provider, attempts);
+      if (r.ok && r.quote) return successQuote(symbol, assetClass, r.quote, r.provider, attempts, r.provenance);
     }
   }
 
@@ -538,16 +669,19 @@ export function getRouterDiagnostics(): RouterDiagnostics {
 
 // ── helpers ──────────────────────────────────────────────────────────────
 
-function stripCandles<T extends { candles: Candle[] } & ProviderAttempt>(r: T): ProviderAttempt {
-  const { candles: _candles, ...rest } = r;
+// Attempts are diagnostics that get serialized to admin surfaces — they must
+// carry neither the payload nor the provenance envelope (the envelope belongs
+// to the WINNING result only; a failed attempt has nothing to attribute).
+function stripCandles<T extends { candles: Candle[]; provenance: SeriesProvenance | null } & ProviderAttempt>(r: T): ProviderAttempt {
+  const { candles: _candles, provenance: _provenance, ...rest } = r;
   return rest;
 }
-function stripQuote<T extends { quote: MarketQuote | null } & ProviderAttempt>(r: T): ProviderAttempt {
-  const { quote: _quote, ...rest } = r;
+function stripQuote<T extends { quote: MarketQuote | null; provenance: SeriesProvenance | null } & ProviderAttempt>(r: T): ProviderAttempt {
+  const { quote: _quote, provenance: _provenance, ...rest } = r;
   return rest;
 }
 
-function success(symbol: string, assetClass: AssetClass, candles: Candle[], provider: string, attempts: ProviderAttempt[]): MarketCandlesResult {
+function success(symbol: string, assetClass: AssetClass, candles: Candle[], provider: string, attempts: ProviderAttempt[], provenance: SeriesProvenance | null): MarketCandlesResult {
   return {
     ok: true,
     symbol,
@@ -557,9 +691,12 @@ function success(symbol: string, assetClass: AssetClass, candles: Candle[], prov
     attempts,
     userMessage: "Live feed active",
     adminDetail: `Served by ${provider}; ${candles.length} candles; ${attempts.length} provider(s) tried.`,
+    // Spread keeps the field ABSENT (not `undefined`-valued) when an adapter
+    // produced no envelope, so JSON serializations stay byte-compatible.
+    ...(provenance ? { provenance } : {}),
   };
 }
-function successQuote(symbol: string, assetClass: AssetClass, quote: MarketQuote, provider: string, attempts: ProviderAttempt[]): MarketQuoteResult {
+function successQuote(symbol: string, assetClass: AssetClass, quote: MarketQuote, provider: string, attempts: ProviderAttempt[], provenance: SeriesProvenance | null): MarketQuoteResult {
   return {
     ok: true,
     symbol,
@@ -569,6 +706,7 @@ function successQuote(symbol: string, assetClass: AssetClass, quote: MarketQuote
     attempts,
     userMessage: "Live feed active",
     adminDetail: `Served by ${provider}; ${attempts.length} provider(s) tried.`,
+    ...(provenance ? { provenance } : {}),
   };
 }
 

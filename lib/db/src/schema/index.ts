@@ -461,3 +461,7 @@ export * from "./eventLog";
 // CANDIDATE, written at DATA/WALK_FORWARD with liveAllowed=false; nothing here
 // can reach live without the existing human SHADOW + ADMIN stages.
 export * from "./discoveryPipeline";
+
+// ── Phase 0 (prodready-20260819) — Owner Decision Registry (Blueprint #54).
+// APPEND-ONLY rulings ledger; forward-fix via supersedesId, no UPDATE/DELETE.
+export * from "./ownerDecisions";

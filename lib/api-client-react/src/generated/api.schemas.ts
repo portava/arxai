@@ -8773,32 +8773,6 @@ export interface TradeResult {
   mode: string;
 }
 
-export interface MT5WebhookPayload {
-  event: string;
-  symbol: string;
-  /** @nullable */
-  ticket?: number | null;
-  /** @nullable */
-  direction?: string | null;
-  /** @nullable */
-  lot?: number | null;
-  /** @nullable */
-  price?: number | null;
-  /** @nullable */
-  sl?: number | null;
-  /** @nullable */
-  tp?: number | null;
-  /** @nullable */
-  profit?: number | null;
-  /** @nullable */
-  eaVersion?: string | null;
-}
-
-export interface MT5WebhookResult {
-  received: boolean;
-  timestamp: string;
-}
-
 export interface AssistantSettings {
   /** Resolved assistant display name for this user (default "Eleanor"). */
   displayName: string;

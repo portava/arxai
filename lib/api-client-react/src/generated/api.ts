@@ -511,8 +511,6 @@ import type {
   LivePosition,
   LivePositionList,
   LivePositionSyncResult,
-  MT5WebhookPayload,
-  MT5WebhookResult,
   ManageMissionTradeExit404,
   ManageMissionTradeExit409,
   ManageMissionTradeExit422,
@@ -4811,92 +4809,6 @@ export const useExecuteTrade = <
   TContext
 > => {
   return useMutation(getExecuteTradeMutationOptions(options));
-};
-
-/**
- * @summary MT5 Expert Advisor / Python bridge webhook
- */
-export const getMt5WebhookUrl = () => {
-  return `/api/mt5-webhook`;
-};
-
-export const mt5Webhook = async (
-  mT5WebhookPayload: MT5WebhookPayload,
-  options?: RequestInit,
-): Promise<MT5WebhookResult> => {
-  return customFetch<MT5WebhookResult>(getMt5WebhookUrl(), {
-    ...options,
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(mT5WebhookPayload),
-  });
-};
-
-export const getMt5WebhookMutationOptions = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof mt5Webhook>>,
-    TError,
-    { data: BodyType<MT5WebhookPayload> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof mt5Webhook>>,
-  TError,
-  { data: BodyType<MT5WebhookPayload> },
-  TContext
-> => {
-  const mutationKey = ["mt5Webhook"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof mt5Webhook>>,
-    { data: BodyType<MT5WebhookPayload> }
-  > = (props) => {
-    const { data } = props ?? {};
-
-    return mt5Webhook(data, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type Mt5WebhookMutationResult = NonNullable<
-  Awaited<ReturnType<typeof mt5Webhook>>
->;
-export type Mt5WebhookMutationBody = BodyType<MT5WebhookPayload>;
-export type Mt5WebhookMutationError = ErrorType<unknown>;
-
-/**
- * @summary MT5 Expert Advisor / Python bridge webhook
- */
-export const useMt5Webhook = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof mt5Webhook>>,
-    TError,
-    { data: BodyType<MT5WebhookPayload> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof mt5Webhook>>,
-  TError,
-  { data: BodyType<MT5WebhookPayload> },
-  TContext
-> => {
-  return useMutation(getMt5WebhookMutationOptions(options));
 };
 
 /**
@@ -10499,7 +10411,7 @@ records evidence, never changes execution. ADMIN/OWNER only.
  * @summary Force a fresh evaluation of all handshakes and record evidence
  */
 export const getRefreshAdminHandshakeMonitorUrl = () => {
-  return `/api/admin/handshake-monitor`;
+  return `/api/admin/handshake-monitor/refresh`;
 };
 
 export const refreshAdminHandshakeMonitor = async (

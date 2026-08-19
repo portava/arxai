@@ -139,7 +139,11 @@ packages = ["zip"]
 [userenv]
 
 [userenv.shared]
-VAULT_OVERRIDE_TOKEN = "phase2-test-token"
+# VAULT_OVERRIDE_TOKEN is intentionally NOT set here. It gates the vault
+# override endpoint (routes/system.ts) and must live in Replit Secrets,
+# never in this git-tracked file. The previously committed value is burned
+# (public in git history) and requires rotation. Endpoint fails closed when
+# unset (503 Override endpoint disabled).
 ARX_BETA_INVITE_REQUIRED = "true"
 ARX_LIVE_BROKER_EXECUTION_ENABLED = "true"
 ARX_LEGACY_OWNER_DEMOTE_EMAIL = "andraie.co@gmail.com"

@@ -17,6 +17,12 @@ import { preTradeCheck } from "./riskGovernor2.js";
 import { runStrategyScan, type Candle as EngineCandle } from "./strategyEngine.js";
 import { DEFAULT_SYMBOLS } from "./marketScanner.js";
 import { buildForwardChartSeries, type ForwardChartSeries } from "./shadow/forwardChartSeries.js";
+// shadowPersistence imports this module type-only, so no runtime cycle.
+import {
+  persistShadowDecision,
+  updateShadowOutcome,
+  SYNTHETIC_SIMULATOR_SOURCE,
+} from "./shadowPersistence.js";
 
 function adaptCandles(symbol: string): EngineCandle[] {
   return marketSimulator.candlesFor(symbol, 240).map((c) => ({
@@ -91,7 +97,21 @@ export function createShadowDecision(symbol: string, tf = "M15"): ShadowDecision
   };
   decisions.set(d.id, d);
   totalsObserved++;
+  // Durability is purely additive: the in-memory store stays the source of
+  // truth. Candles come from marketSimulator (synthetic) until the real-data
+  // swap (later R7 step), so the persisted row is labeled
+  // SYNTHETIC_SIMULATOR_SOURCE — it must never read as market evidence.
+  // persistShadowDecision try/catches to a warning internally; the extra
+  // .catch guarantees the floating promise can never break the scanner loop.
+  void persistShadowDecision(d, SYNTHETIC_SIMULATOR_SOURCE).catch(() => {});
   return d;
+}
+
+// Persistence failure must never break the scanner loop (module contract):
+// updateShadowOutcome warns internally; the .catch is belt-and-braces for the
+// floating promise.
+function persistOutcome(d: ShadowDecision): void {
+  void updateShadowOutcome(d).catch(() => {});
 }
 
 function trackOutcomes() {
@@ -102,7 +122,7 @@ function trackOutcomes() {
     if (!q) continue;
     const px = q.mid;
     const r = Math.abs(d.entry - d.sl);
-    if (r === 0) { d.status = "SHADOW_EXPIRED"; d.outcomeAt = new Date(now).toISOString(); continue; }
+    if (r === 0) { d.status = "SHADOW_EXPIRED"; d.outcomeAt = new Date(now).toISOString(); persistOutcome(d); continue; }
     if (d.action === "BUY") {
       if (px <= d.sl) { d.status = "SHADOW_LOSS"; d.pnlR = -1; d.outcomeAt = new Date(now).toISOString(); }
       else if (px >= d.tp) { d.status = "SHADOW_WIN"; d.pnlR = (d.tp - d.entry) / r; d.outcomeAt = new Date(now).toISOString(); }
@@ -116,6 +136,9 @@ function trackOutcomes() {
       else d.status = "SHADOW_EXPIRED";
       d.outcomeAt = new Date(now).toISOString();
     }
+    // Any transition out of SHADOW_TRACKING_OUTCOME above is terminal — sync
+    // the resolved outcome to the durable row (fire-and-forget, never throws).
+    if (d.status !== "SHADOW_TRACKING_OUTCOME") persistOutcome(d);
   }
 }
 

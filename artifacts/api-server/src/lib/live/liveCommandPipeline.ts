@@ -210,6 +210,88 @@ export function emergencyKillSwitchBlocksDispatch(args: {
   });
 }
 
+// R3 slice 1 — weekly-drawdown-ceiling pre-gate. arx_live_user_settings.
+// weekly_drawdown_ceiling_pct was stored + hard-capped (≤10) at write time
+// but read by no gate; dispatch consumes it via this reason literal BEFORE
+// the 18-gate evaluator, next to the daily-loss input assembly.
+export const WEEKLY_DRAWDOWN_BLOCK_REASON =
+  "LIVE_BLOCKED:WEEKLY_DRAWDOWN_CEILING_REACHED" as const;
+
+/**
+ * PURE decision for the weekly-drawdown pre-gate (no I/O — extracted so the
+ * contract is unit-testable offline, like the kill-switch helper above).
+ * TRUE = refuse the dispatch.
+ *
+ * - ENTRY-ONLY: close/modify commands never block here. A user at the weekly
+ *   ceiling must still be able to flatten exposure — same never-trap-money
+ *   rule the allocation-freeze `tradingFrozen` split and the per-user
+ *   exposure gates apply.
+ * - Fail-OPEN only when the ceiling is unset/zero: 0 = no weekly cap,
+ *   matching the `dailyLossLimitUsd = 0` semantics of gate #15.
+ * - Fail-CLOSED on unreadable data mid-check: a set ceiling with a corrupt
+ *   pct, an unresolvable/non-positive reference equity, or a non-finite or
+ *   negative loss figure refuses dispatch — never guesses a number.
+ * - Breach is `loss >= ceiling` (inclusive), mirroring gate #15's
+ *   `realisedDailyLossUsd >= dailyLossLimitUsd`.
+ */
+export function weeklyDrawdownBlocksDispatch(args: {
+  weeklyDrawdownCeilingPct: number | null | undefined;
+  referenceEquityUsd: number | null | undefined;
+  realisedWeeklyLossUsd: number | null | undefined;
+  isEntryCommand: boolean;
+}): boolean {
+  if (!args.isEntryCommand) return false;
+  const pct = args.weeklyDrawdownCeilingPct;
+  if (pct == null || pct === 0) return false;
+  if (!Number.isFinite(pct) || pct < 0) return true;
+  const ref = args.referenceEquityUsd;
+  if (ref == null || !Number.isFinite(ref) || ref <= 0) return true;
+  const loss = args.realisedWeeklyLossUsd;
+  if (loss == null || !Number.isFinite(loss) || loss < 0) return true;
+  return loss >= ref * (pct / 100);
+}
+
+// R3 slice 2 — risk-lock pre-gate. risk_locks rows (cooldown /
+// consecutive-loss / revenge / manual …) were enforced only on the paper
+// permission routes; dispatch consumes them via this prefixed reason
+// (LIVE_BLOCKED:RISK_LOCK_<TYPE>) BEFORE the 18-gate evaluator.
+export const RISK_LOCK_BLOCK_REASON_PREFIX = "LIVE_BLOCKED:RISK_LOCK_" as const;
+
+/**
+ * PURE decision for the risk-lock pre-gate (no I/O — extracted so the
+ * contract is unit-testable offline). Returns the full block-reason literal
+ * for the first blocking lock, or null when nothing blocks.
+ *
+ * - ENTRY-ONLY: close/modify commands always pass — a lock exists to stop
+ *   NEW risk, never to trap open exposure (same entry-vs-ops split the
+ *   allocation-freeze `tradingFrozen` rule uses).
+ * - A lock blocks only while ACTIVE and unexpired: `isActive` true AND
+ *   (`endTime` null = indefinite, or `endTime` still in the future) —
+ *   matching routes/permission.ts `loadActiveLocks`. Released or expired
+ *   rows never block.
+ * - Every active lock TYPE blocks (the table's lock_type is free text; an
+ *   unknown type still refuses — an unrecognised lock must fail closed,
+ *   not silently grant capacity).
+ */
+export function activeRiskLockBlockReason(args: {
+  locks: ReadonlyArray<{
+    lockType: string;
+    isActive: boolean;
+    endTime: Date | string | null;
+  }>;
+  isEntryCommand: boolean;
+  now?: Date;
+}): string | null {
+  if (!args.isEntryCommand) return null;
+  const nowMs = (args.now ?? new Date()).getTime();
+  for (const lock of args.locks) {
+    if (!lock.isActive) continue;
+    if (lock.endTime != null && new Date(lock.endTime).getTime() <= nowMs) continue;
+    return `${RISK_LOCK_BLOCK_REASON_PREFIX}${lock.lockType}`;
+  }
+  return null;
+}
+
 async function audit(args: {
   eventType: string; userId: number; message: string;
   symbol?: string; severity?: string; metadata?: Record<string, unknown>;
@@ -1492,6 +1574,63 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
     }
   }
 
+  // ── RISK-LOCK PRE-GATE (R3 slice 2) ────────────────────────────────────
+  // Gives risk_locks its first live-path teeth: an ACTIVE, unexpired row
+  // refuses ENTRY dispatch with LIVE_BLOCKED:RISK_LOCK_<TYPE>. Runs BEFORE
+  // the 18-gate evaluator in BOTH routing modes; additive only — never
+  // replaces or weakens any downstream gate. CLOSE_LIVE_POSITION /
+  // MODIFY_LIVE_SLTP always pass (entry-vs-ops split mirroring the
+  // allocation-freeze `tradingFrozen` rule — a lock must never trap open
+  // exposure). Row scope: this user's rows PLUS legacy ownerless rows
+  // (user_id IS NULL predates the Phase-2 ownership column; the paper path
+  // in routes/permission.ts applies active locks with no ownership filter,
+  // so the live path must not silently exempt those rows). Active-ness
+  // (isActive + expiry vs end_time) is decided by the pure helper so the
+  // contract is unit-tested in one place.
+  if (row.commandType === "PLACE_LIVE_MARKET_ORDER"
+    || row.commandType === "PLACE_LIVE_PENDING_ORDER") {
+    const { riskLocksTable } = await import("@workspace/db");
+    const lockRows = await db.select({
+      lockType: riskLocksTable.lockType,
+      isActive: riskLocksTable.isActive,
+      endTime: riskLocksTable.endTime,
+    }).from(riskLocksTable).where(and(
+      eq(riskLocksTable.isActive, true),
+      sql`(${riskLocksTable.userId} = ${args.userId} OR ${riskLocksTable.userId} IS NULL)`,
+    ));
+    const lockReason = activeRiskLockBlockReason({
+      locks: lockRows,
+      isEntryCommand: true,
+    });
+    if (lockReason != null) {
+      const [blocked] = await db.update(arxLiveCommandsTable).set({
+        status: "LIVE_BLOCKED",
+        rejectionReason: lockReason,
+        rejectedAt: new Date(),
+        dispatchGateSnapshot: {
+          decision: "BLOCKED",
+          primaryReason: lockReason,
+          blockReasons: [lockReason, "BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED"],
+          riskLockGate: true,
+          at: new Date().toISOString(),
+        } as unknown as Record<string, unknown>,
+      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      await audit({
+        eventType: "RISK_LOCK_BLOCKED", severity: "HIGH",
+        userId: args.userId, symbol: row.symbol,
+        message: `Live dispatch BLOCKED by active risk lock: ${lockReason}`,
+        metadata: { commandId: args.commandId, commandType: row.commandType },
+      });
+      logger.warn({
+        [PHASE_B_LIVE_LOG_PREFIX]: true,
+        event: "RISK_LOCK_BLOCKED",
+        commandId: args.commandId, userId: args.userId, primaryReason: lockReason,
+      }, "Active risk lock blocked live dispatch");
+      return { ok: false as const, reason: "LIVE_BLOCKED" as const,
+        primaryReason: lockReason, blockReasons: [lockReason], command: blocked };
+    }
+  }
+
   // Phase 22V Part 3 — per-user TP requirement is sourced from
   // user_master_live_access (default true on approved-shared-bridge users).
   // Loaded here so the evaluator + audit snapshot stay consistent.
@@ -1859,6 +1998,93 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   const realisedDailyLossUsd =
     Math.abs(Number(openLossRows[0]?.totalNegFloat ?? 0)) +
     Math.abs(Number(closedTodayLossRows[0]?.totalNegRealised ?? 0));
+
+  // ── WEEKLY DRAWDOWN CEILING PRE-GATE (R3 slice 1) ──────────────────────
+  // First reader of arx_live_user_settings.weekly_drawdown_ceiling_pct.
+  // Week-to-date loss is composed EXACTLY like the daily snapshot above —
+  // open negative floating P/L + realised negative P/L on positions closed
+  // inside the window — over a ROLLING 7-day window (spec check #21 asks
+  // for rolling drawdown, not a calendar week), so the daily "close losers
+  // and re-trade" bypass stays closed here too. The ceiling is a
+  // percentage while the daily cap is absolute USD, so no shared pct
+  // reference exists; reference equity is resolved per user:
+  // user_slot_allocation.allocated_funds when a funded slot exists
+  // (SHARED_MASTER_MT5 — the master bridge's equity is the whole pool,
+  // never one user's slice), else the dispatch bridge's heartbeat
+  // account_equity (USER_OWNED_MT5 — the user's own account truth).
+  // T019 — under owner/admin governance mode the settings-tier caps are
+  // replaced by governance (which has no weekly field), mirroring the
+  // dailyLossLimitUsd input swap below, so the pre-gate does not run.
+  // ENTRY-ONLY + fail-open ONLY on unset/zero ceiling + fail-closed on
+  // unresolvable reference/loss — all decided by the pure helper.
+  {
+    const weeklyCeilingPct = useGovernanceDispatch
+      ? 0
+      : Number(settings.weeklyDrawdownCeilingPct ?? 0);
+    if (isEntryRow && weeklyCeilingPct !== 0) {
+      const weekWindowStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const closedWeekLossRows = await db.select({
+        totalNegRealised: sql<number>`COALESCE(SUM(CASE WHEN ${arxLivePositionsTable.floatingPl} < 0 THEN ${arxLivePositionsTable.floatingPl} ELSE 0 END), 0)`,
+      }).from(arxLivePositionsTable).where(and(
+        eq(arxLivePositionsTable.userId, args.userId),
+        sql`${arxLivePositionsTable.closedAt} IS NOT NULL`,
+        sql`${arxLivePositionsTable.closedAt} >= ${weekWindowStart.toISOString()}`,
+      ));
+      const realisedWeeklyLossUsd =
+        Math.abs(Number(openLossRows[0]?.totalNegFloat ?? 0)) +
+        Math.abs(Number(closedWeekLossRows[0]?.totalNegRealised ?? 0));
+      const { userSlotAllocationTable: slotAllocForWeekly } = await import("@workspace/db");
+      const weeklyAllocRows = await db.select({
+        allocatedFunds: slotAllocForWeekly.allocatedFunds,
+      }).from(slotAllocForWeekly)
+        .where(eq(slotAllocForWeekly.userId, args.userId)).limit(1);
+      const allocatedFunds = Number(weeklyAllocRows[0]?.allocatedFunds ?? 0);
+      const bridgeEquity = Number(bridge?.accountEquity ?? 0);
+      const referenceEquityUsd = allocatedFunds > 0
+        ? allocatedFunds
+        : (bridgeEquity > 0 ? bridgeEquity : null);
+      if (weeklyDrawdownBlocksDispatch({
+        weeklyDrawdownCeilingPct: weeklyCeilingPct,
+        referenceEquityUsd,
+        realisedWeeklyLossUsd,
+        isEntryCommand: true,
+      })) {
+        const reason = WEEKLY_DRAWDOWN_BLOCK_REASON;
+        const [blocked] = await db.update(arxLiveCommandsTable).set({
+          status: "LIVE_BLOCKED",
+          rejectionReason: reason,
+          rejectedAt: new Date(),
+          dispatchGateSnapshot: {
+            decision: "BLOCKED",
+            primaryReason: reason,
+            blockReasons: [reason, "BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED"],
+            weeklyDrawdownGate: true,
+            weeklyDrawdownCeilingPct: weeklyCeilingPct,
+            referenceEquityUsd,
+            realisedWeeklyLossUsd,
+            at: new Date().toISOString(),
+          } as unknown as Record<string, unknown>,
+        }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+        await audit({
+          eventType: "WEEKLY_DRAWDOWN_BLOCKED", severity: "HIGH",
+          userId: args.userId, symbol: row.symbol,
+          message: `Live dispatch BLOCKED by weekly drawdown ceiling: ${reason}`,
+          metadata: {
+            commandId: args.commandId, commandType: row.commandType,
+            weeklyDrawdownCeilingPct: weeklyCeilingPct,
+            referenceEquityUsd, realisedWeeklyLossUsd,
+          },
+        });
+        logger.warn({
+          [PHASE_B_LIVE_LOG_PREFIX]: true,
+          event: "WEEKLY_DRAWDOWN_BLOCKED",
+          commandId: args.commandId, userId: args.userId, primaryReason: reason,
+        }, "Weekly drawdown ceiling blocked live dispatch");
+        return { ok: false as const, reason: "LIVE_BLOCKED" as const,
+          primaryReason: reason, blockReasons: [reason], command: blocked };
+      }
+    }
+  }
 
   // ── PER-USER EXPOSURE GATES (run BEFORE the 16-gate Phase B evaluator) ─
   // Standardized audit codes emitted on block:

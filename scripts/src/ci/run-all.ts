@@ -60,6 +60,8 @@ import { checkBacktestNoLiveExecution } from "./check-backtest-no-live-execution
 import { checkMissionNoDirectExecution } from "./check-mission-no-direct-execution.js";
 import { checkScannerVerdictImportBoundary } from "./check-scanner-verdict-import-boundary.js";
 import { checkNoFabrication } from "./check-no-fabrication.js";
+import { checkWorktreeIntegrity } from "./check-worktree-integrity.js";
+import { checkCapitalConstitution } from "./check-capital-constitution.js";
 // NOTE: `check-no-user-facing-paper-only.ts` exists as a future guard but
 // is intentionally NOT registered yet — it finds 65 pre-existing UI
 // strings (login.tsx, onboarding.tsx, my-paper-trades.tsx, etc.) that are
@@ -67,6 +69,9 @@ import { checkNoFabrication } from "./check-no-fabrication.js";
 // demand: `pnpm tsx scripts/src/ci/check-no-user-facing-paper-only.ts`.
 
 const checks: Array<() => CheckResult> = [
+  // Tripwire first: stale-export overwrites and secret literals in .replit
+  // must be reported before anything else scans the tree.
+  checkWorktreeIntegrity,
   checkCanPlaceTrades,
   checkVaultMutations,
   checkNoConsole,
@@ -126,6 +131,7 @@ const checks: Array<() => CheckResult> = [
   checkMissionNoDirectExecution,
   checkScannerVerdictImportBoundary,
   checkNoFabrication,
+  checkCapitalConstitution,
 ];
 
 let failed = 0;
