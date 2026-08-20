@@ -53,7 +53,6 @@ logger.warn({
 // the one-click route already holds USER_SUBMIT(userId) around the whole
 // submit — re-acquiring it from a second pooled connection inside dispatch
 // would self-deadlock into a spurious refusal.
-import { ARX_LOCK_NS } from "./advisoryLock.js";
 // Registry-owned namespace: the single definition lives in ARX_LOCK_NS.
 export const ARX_LOCK_NS_USER_ALLOCATION: number = ARX_LOCK_NS.USER_ALLOCATION;
 
