@@ -6,7 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface MT5WebhookResult {
-  received: boolean;
-  timestamp: string;
-}
+export type BrokerHubInstrumentEvidence = {
+  observedAt: Date;
+  exactBrokerSymbol: string;
+  nativeConnectionRef: string;
+};

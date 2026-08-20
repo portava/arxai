@@ -5,6 +5,165 @@
  * ARX AI — Analyze. Risk. eXecute. — API
  * OpenAPI spec version: 0.1.0
  */
+export interface BrokerHubFlags {
+  metadataEnabled: boolean;
+  tradingEnabled: boolean;
+  automationEnabled: boolean;
+  canPlaceLiveTrade: boolean;
+}
+
+export type BrokerHubConnectionResponseVenue =
+  (typeof BrokerHubConnectionResponseVenue)[keyof typeof BrokerHubConnectionResponseVenue];
+
+export const BrokerHubConnectionResponseVenue = {
+  MT5: "MT5",
+} as const;
+
+export type BrokerHubConnectionResponse = BrokerHubFlags & {
+  venue: BrokerHubConnectionResponseVenue;
+  connectionId: number;
+  status: string;
+  connected: boolean;
+  /** @nullable */
+  nativeStatus: string | null;
+  /** @nullable */
+  observedAt: string | null;
+  /** @nullable */
+  staleSeconds: number | null;
+  reason: string;
+};
+
+export type BrokerHubAccountResponseVenue =
+  (typeof BrokerHubAccountResponseVenue)[keyof typeof BrokerHubAccountResponseVenue];
+
+export const BrokerHubAccountResponseVenue = {
+  MT5: "MT5",
+} as const;
+
+export type BrokerHubAccountResponseEnvironment =
+  (typeof BrokerHubAccountResponseEnvironment)[keyof typeof BrokerHubAccountResponseEnvironment];
+
+export const BrokerHubAccountResponseEnvironment = {
+  UNKNOWN: "UNKNOWN",
+  DEMO: "DEMO",
+  LIVE: "LIVE",
+} as const;
+
+export type BrokerHubAccountResponseSnapshotStatus =
+  (typeof BrokerHubAccountResponseSnapshotStatus)[keyof typeof BrokerHubAccountResponseSnapshotStatus];
+
+export const BrokerHubAccountResponseSnapshotStatus = {
+  FRESH: "FRESH",
+  STALE: "STALE",
+  MISSING: "MISSING",
+} as const;
+
+export type BrokerHubAccountResponse = BrokerHubFlags & {
+  venue: BrokerHubAccountResponseVenue;
+  connectionId: number;
+  /** @nullable */
+  accountRefMasked: string | null;
+  /** @nullable */
+  brokerName: string | null;
+  /** @nullable */
+  serverName: string | null;
+  environment: BrokerHubAccountResponseEnvironment;
+  /** @nullable */
+  currency: string | null;
+  /** @nullable */
+  balance: number | null;
+  /** @nullable */
+  equity: number | null;
+  /** @nullable */
+  margin: number | null;
+  /** @nullable */
+  freeMargin: number | null;
+  /** @nullable */
+  leverage: number | null;
+  /** @nullable */
+  observedAt: string | null;
+  snapshotStatus: BrokerHubAccountResponseSnapshotStatus;
+};
+
+export type BrokerHubInstrumentDiscoveryStatus =
+  (typeof BrokerHubInstrumentDiscoveryStatus)[keyof typeof BrokerHubInstrumentDiscoveryStatus];
+
+export const BrokerHubInstrumentDiscoveryStatus = {
+  FRESH: "FRESH",
+  STALE: "STALE",
+} as const;
+
+export type BrokerHubInstrumentEvidence = {
+  observedAt: string;
+  exactBrokerSymbol: string;
+  nativeConnectionRef: string;
+};
+
+export interface BrokerHubInstrument {
+  symbol: string;
+  /** @nullable */
+  displayName: string | null;
+  exactBrokerSymbol: string;
+  brokerReportsTradeAllowed: boolean;
+  discoveryStatus: BrokerHubInstrumentDiscoveryStatus;
+  /** @nullable */
+  digits: number | null;
+  /** @nullable */
+  point: number | null;
+  /** @nullable */
+  minVolume: number | null;
+  /** @nullable */
+  maxVolume: number | null;
+  /** @nullable */
+  volumeStep: number | null;
+  evidence: BrokerHubInstrumentEvidence;
+}
+
+export type BrokerHubInstrumentsResponseVenue =
+  (typeof BrokerHubInstrumentsResponseVenue)[keyof typeof BrokerHubInstrumentsResponseVenue];
+
+export const BrokerHubInstrumentsResponseVenue = {
+  MT5: "MT5",
+} as const;
+
+export type BrokerHubInstrumentsResponseDiscoveryStatus =
+  (typeof BrokerHubInstrumentsResponseDiscoveryStatus)[keyof typeof BrokerHubInstrumentsResponseDiscoveryStatus];
+
+export const BrokerHubInstrumentsResponseDiscoveryStatus = {
+  AVAILABLE: "AVAILABLE",
+  DISCOVERY_REQUIRED: "DISCOVERY_REQUIRED",
+} as const;
+
+export type BrokerHubInstrumentsResponse = BrokerHubFlags & {
+  venue: BrokerHubInstrumentsResponseVenue;
+  connectionId: number;
+  discoveryStatus: BrokerHubInstrumentsResponseDiscoveryStatus;
+  instruments: BrokerHubInstrument[];
+};
+
+export type BrokerHubCapabilitiesResponseVenue =
+  (typeof BrokerHubCapabilitiesResponseVenue)[keyof typeof BrokerHubCapabilitiesResponseVenue];
+
+export const BrokerHubCapabilitiesResponseVenue = {
+  MT5: "MT5",
+} as const;
+
+export type BrokerHubCapabilitiesResponseCapabilities = {
+  accountSnapshot: boolean;
+  positionSnapshot: boolean;
+  openOrderSnapshot: boolean;
+  instrumentDiscovery: boolean;
+  marketDataSnapshot: boolean;
+};
+
+export type BrokerHubCapabilitiesResponse = BrokerHubFlags & {
+  venue: BrokerHubCapabilitiesResponseVenue;
+  connectionId: number;
+  /** @nullable */
+  observedAt: string | null;
+  capabilities: BrokerHubCapabilitiesResponseCapabilities;
+};
+
 /**
  * Backend area hint.
  */

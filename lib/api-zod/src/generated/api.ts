@@ -26204,3 +26204,149 @@ export const AddAdminCockpitNoteResponse = zod.object({
     createdAt: zod.string(),
   }),
 });
+
+/**
+ * @summary Read the caller-owned broker connection metadata
+ */
+
+export const GetMyBrokerHubConnectionParams = zod.object({
+  connectionId: zod.coerce
+    .number()
+    .min(1)
+    .describe("Owned MT5 bridge connection identifier"),
+});
+
+export const GetMyBrokerHubConnectionResponse = zod
+  .object({
+    metadataEnabled: zod.literal(false),
+    tradingEnabled: zod.literal(false),
+    automationEnabled: zod.literal(false),
+    canPlaceLiveTrade: zod.literal(false),
+  })
+  .and(
+    zod.object({
+      venue: zod.enum(["MT5"]),
+      connectionId: zod.number(),
+      status: zod.string(),
+      connected: zod.boolean(),
+      nativeStatus: zod.string().nullable(),
+      observedAt: zod.coerce.date().nullable(),
+      staleSeconds: zod.number().nullable(),
+      reason: zod.string(),
+    }),
+  );
+
+/**
+ * @summary Read the caller-owned masked broker account snapshot
+ */
+
+export const GetMyBrokerHubAccountParams = zod.object({
+  connectionId: zod.coerce
+    .number()
+    .min(1)
+    .describe("Owned MT5 bridge connection identifier"),
+});
+
+export const GetMyBrokerHubAccountResponse = zod
+  .object({
+    metadataEnabled: zod.literal(false),
+    tradingEnabled: zod.literal(false),
+    automationEnabled: zod.literal(false),
+    canPlaceLiveTrade: zod.literal(false),
+  })
+  .and(
+    zod.object({
+      venue: zod.enum(["MT5"]),
+      connectionId: zod.number(),
+      accountRefMasked: zod.string().nullable(),
+      brokerName: zod.string().nullable(),
+      serverName: zod.string().nullable(),
+      environment: zod.enum(["UNKNOWN", "DEMO", "LIVE"]),
+      currency: zod.string().nullable(),
+      balance: zod.number().nullable(),
+      equity: zod.number().nullable(),
+      margin: zod.number().nullable(),
+      freeMargin: zod.number().nullable(),
+      leverage: zod.number().nullable(),
+      observedAt: zod.coerce.date().nullable(),
+      snapshotStatus: zod.enum(["FRESH", "STALE", "MISSING"]),
+    }),
+  );
+
+/**
+ * @summary Read caller-owned broker read capabilities
+ */
+
+export const GetMyBrokerHubCapabilitiesParams = zod.object({
+  connectionId: zod.coerce
+    .number()
+    .min(1)
+    .describe("Owned MT5 bridge connection identifier"),
+});
+
+export const GetMyBrokerHubCapabilitiesResponse = zod
+  .object({
+    metadataEnabled: zod.literal(false),
+    tradingEnabled: zod.literal(false),
+    automationEnabled: zod.literal(false),
+    canPlaceLiveTrade: zod.literal(false),
+  })
+  .and(
+    zod.object({
+      venue: zod.enum(["MT5"]),
+      connectionId: zod.number(),
+      observedAt: zod.coerce.date().nullable(),
+      capabilities: zod.object({
+        accountSnapshot: zod.boolean(),
+        positionSnapshot: zod.literal(false),
+        openOrderSnapshot: zod.literal(false),
+        instrumentDiscovery: zod.boolean(),
+        marketDataSnapshot: zod.boolean(),
+      }),
+    }),
+  );
+
+/**
+ * @summary Read caller-owned EA-discovered broker instruments
+ */
+
+export const GetMyBrokerHubInstrumentsParams = zod.object({
+  connectionId: zod.coerce
+    .number()
+    .min(1)
+    .describe("Owned MT5 bridge connection identifier"),
+});
+
+export const GetMyBrokerHubInstrumentsResponse = zod
+  .object({
+    metadataEnabled: zod.literal(false),
+    tradingEnabled: zod.literal(false),
+    automationEnabled: zod.literal(false),
+    canPlaceLiveTrade: zod.literal(false),
+  })
+  .and(
+    zod.object({
+      venue: zod.enum(["MT5"]),
+      connectionId: zod.number(),
+      discoveryStatus: zod.enum(["AVAILABLE", "DISCOVERY_REQUIRED"]),
+      instruments: zod.array(
+        zod.object({
+          symbol: zod.string(),
+          displayName: zod.string().nullable(),
+          exactBrokerSymbol: zod.string(),
+          brokerReportsTradeAllowed: zod.boolean(),
+          discoveryStatus: zod.enum(["FRESH", "STALE"]),
+          digits: zod.number().nullable(),
+          point: zod.number().nullable(),
+          minVolume: zod.number().nullable(),
+          maxVolume: zod.number().nullable(),
+          volumeStep: zod.number().nullable(),
+          evidence: zod.object({
+            observedAt: zod.coerce.date(),
+            exactBrokerSymbol: zod.string(),
+            nativeConnectionRef: zod.string(),
+          }),
+        }),
+      ),
+    }),
+  );

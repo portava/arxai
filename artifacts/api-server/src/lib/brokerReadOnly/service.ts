@@ -12,7 +12,8 @@
 
 import { randomUUID } from "node:crypto";
 import { db, brokerReadonlySnapshotsTable, brokerReadonlyLogsTable } from "@workspace/db";
-import { desc } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
+import { redactForAudit, scrub, scrubString } from "../security/redact.js";
 
 export type Severity = "INFO" | "WARN" | "ERROR" | "CRITICAL";
 
@@ -91,8 +92,25 @@ function maskAccountId(id: string): string {
   return `${id.slice(0, 2)}${"•".repeat(Math.max(3, id.length - 4))}${id.slice(-2)}`;
 }
 
-async function logRO(connectorId: string, eventType: string, severity: Severity, message: string, details: Record<string, unknown> = {}) {
-  try { await db.insert(brokerReadonlyLogsTable).values({ connectorId, eventType, severity, message, details }); } catch { /* swallow */ }
+async function logRO(
+  userId: number,
+  connectorId: string,
+  eventType: string,
+  severity: Severity,
+  message: string,
+  details: Record<string, unknown> = {},
+) {
+  const safe = redactForAudit(details);
+  try {
+    await db.insert(brokerReadonlyLogsTable).values({
+      userId,
+      connectorId,
+      eventType,
+      severity,
+      message: scrubString(message),
+      details: { ...safe.redacted, redactionStatus: safe.status },
+    });
+  } catch { /* logging must never expose or interrupt a read-only snapshot */ }
 }
 
 // Provider registry. Each provider produces a read-only snapshot only.
@@ -133,18 +151,35 @@ const derivStubProvider: Provider = async () => ({
 
 const PROVIDERS: Record<string, Provider> = { demo: demoProvider, mt5: mt5StubProvider, deriv: derivStubProvider };
 
-export interface ConnectorOptions { provider?: string; persist?: boolean; }
+export interface ConnectorOptions {
+  // Server-derived authenticated identity. It is deliberately required so
+  // callers cannot create unowned snapshots or logs.
+  userId: number;
+  provider?: string;
+  persist?: boolean;
+}
 
-export async function buildSnapshot(opts: ConnectorOptions = {}): Promise<{ snapshot: ConnectorSnapshot; safety: BrokerSafetyCheck; rejected: boolean; }> {
+function requireOwnerId(userId: number): number {
+  if (!Number.isInteger(userId) || userId <= 0) {
+    throw new Error("AUTHENTICATED_OWNER_REQUIRED");
+  }
+  return userId;
+}
+
+export async function buildSnapshot(opts: ConnectorOptions): Promise<{ snapshot: ConnectorSnapshot; safety: BrokerSafetyCheck; rejected: boolean; }> {
+  const ownerId = requireOwnerId(opts.userId);
   const connectorId = `bcon_${randomUUID()}`;
   const safety = checkBrokerSafety();
-  const provider = (opts.provider ?? process.env.BROKER_PROVIDER ?? "demo").toLowerCase();
+  const requestedProvider = (opts.provider ?? process.env.BROKER_PROVIDER ?? "demo").trim().toLowerCase();
+  // Unknown input must never be reflected into logs/rows/responses where it
+  // could carry a token or other attacker-controlled text.
+  const provider = Object.hasOwn(PROVIDERS, requestedProvider) ? requestedProvider : "demo";
 
-  await logRO(connectorId, "HEALTH_CHECK", safety.safe ? "INFO" : "CRITICAL", safety.reason, { brokerModeEnv: safety.brokerModeEnv });
-  await logRO(connectorId, "PROVIDER_SELECTED", "INFO", `Provider=${provider}`);
+  await logRO(ownerId, connectorId, "HEALTH_CHECK", safety.safe ? "INFO" : "CRITICAL", safety.reason, { brokerModeEnv: safety.brokerModeEnv });
+  await logRO(ownerId, connectorId, "PROVIDER_SELECTED", "INFO", `Provider=${provider}`);
 
   if (!safety.safe) {
-    await logRO(connectorId, "UNSAFE_MODE_REJECTED", "CRITICAL", `Refusing connector: ${safety.reason}`);
+    await logRO(ownerId, connectorId, "UNSAFE_MODE_REJECTED", "CRITICAL", `Refusing connector: ${safety.reason}`);
     const snap: ConnectorSnapshot = {
       connector_id: connectorId, mode: "READ_ONLY", provider, connected: false,
       account: null, symbols: [], openPositions: [], latestQuotes: [],
@@ -157,16 +192,16 @@ export async function buildSnapshot(opts: ConnectorOptions = {}): Promise<{ snap
   const fn = PROVIDERS[provider] ?? demoProvider;
   let result;
   try {
-    result = await fn(connectorId);
-    await logRO(connectorId, "READ_ONLY_VERIFIED", "INFO", "mode=READ_ONLY verified");
-    if (result.account) await logRO(connectorId, "ACCOUNT_MASKED", "INFO", `Masked account ${result.account.accountIdMasked}`);
-    await logRO(connectorId, "SYMBOLS_READ", "INFO", `Read ${result.symbols.length} symbols`);
-    await logRO(connectorId, "POSITIONS_READ", "INFO", `Read ${result.openPositions.length} positions (read-only)`);
-    await logRO(connectorId, "QUOTES_READ", "INFO", `Read ${result.latestQuotes.length} quotes`);
+    result = scrub(await fn(connectorId));
+    await logRO(ownerId, connectorId, "READ_ONLY_VERIFIED", "INFO", "mode=READ_ONLY verified");
+    if (result.account) await logRO(ownerId, connectorId, "ACCOUNT_MASKED", "INFO", "Masked broker account");
+    await logRO(ownerId, connectorId, "SYMBOLS_READ", "INFO", `Read ${result.symbols.length} symbols`);
+    await logRO(ownerId, connectorId, "POSITIONS_READ", "INFO", `Read ${result.openPositions.length} positions (read-only)`);
+    await logRO(ownerId, connectorId, "QUOTES_READ", "INFO", `Read ${result.latestQuotes.length} quotes`);
   } catch (err) {
-    await logRO(connectorId, "PROVIDER_ERROR", "ERROR", `Provider failed: ${String(err).slice(0, 200)}`);
+    await logRO(ownerId, connectorId, "PROVIDER_ERROR", "ERROR", "Provider read failed", { providerError: String(err).slice(0, 200) });
     result = { connected: false, account: null, symbols: [], openPositions: [], latestQuotes: [],
-      dataQuality: { status: "MISSING" as const, latencyMs: 0, warnings: [], errors: [String(err).slice(0, 200)] } };
+      dataQuality: { status: "MISSING" as const, latencyMs: 0, warnings: [], errors: ["Provider read failed."] } };
   }
 
   const snapshot: ConnectorSnapshot = {
@@ -180,38 +215,65 @@ export async function buildSnapshot(opts: ConnectorOptions = {}): Promise<{ snap
   if (opts.persist) {
     const snapshotId = `bsnp_${randomUUID()}`;
     await db.insert(brokerReadonlySnapshotsTable).values({
-      snapshotId, provider, mode: "READ_ONLY", connected: snapshot.connected,
+      userId: ownerId, snapshotId, provider, mode: "READ_ONLY", connected: snapshot.connected,
       accountMasked: snapshot.account ?? {}, symbols: snapshot.symbols,
       openPositions: snapshot.openPositions, latestQuotes: snapshot.latestQuotes,
       dataQuality: snapshot.dataQuality, liveTradingAllowed: false, canPlaceLiveTrade: false,
     });
-    await logRO(connectorId, "SNAPSHOT_CREATED", "INFO", `Snapshot ${snapshotId} persisted`);
+    await logRO(ownerId, connectorId, "SNAPSHOT_CREATED", "INFO", "Snapshot persisted");
     (snapshot as ConnectorSnapshot & { snapshot_id: string }).snapshot_id = snapshotId;
   }
 
   return { snapshot, safety, rejected: false };
 }
 
-export async function listSnapshots(limit = 20) {
-  return db.select().from(brokerReadonlySnapshotsTable).orderBy(desc(brokerReadonlySnapshotsTable.id)).limit(limit);
+export async function listSnapshots(userId: number, limit = 20) {
+  const ownerId = requireOwnerId(userId);
+  return db.select().from(brokerReadonlySnapshotsTable)
+    .where(eq(brokerReadonlySnapshotsTable.userId, ownerId))
+    .orderBy(desc(brokerReadonlySnapshotsTable.id)).limit(limit);
 }
 
-export async function listLogs(limit = 50) {
-  return db.select().from(brokerReadonlyLogsTable).orderBy(desc(brokerReadonlyLogsTable.id)).limit(limit);
+export async function listLogs(userId: number, limit = 50) {
+  const ownerId = requireOwnerId(userId);
+  return db.select().from(brokerReadonlyLogsTable)
+    .where(eq(brokerReadonlyLogsTable.userId, ownerId))
+    .orderBy(desc(brokerReadonlyLogsTable.id)).limit(limit);
 }
 
-// Read-only summary for HH/GG to consume.
-export async function brokerStatusForGovernance() {
-  const safety = checkBrokerSafety();
-  const lastList = await db.select().from(brokerReadonlySnapshotsTable).orderBy(desc(brokerReadonlySnapshotsTable.id)).limit(1);
-  const last = lastList[0] ?? null;
+export async function brokerStatusForUser(userId: number) {
+  const ownerId = requireOwnerId(userId);
+  const [last] = await db.select({
+    createdAt: brokerReadonlySnapshotsTable.createdAt,
+    provider: brokerReadonlySnapshotsTable.provider,
+    connected: brokerReadonlySnapshotsTable.connected,
+  }).from(brokerReadonlySnapshotsTable)
+    .where(eq(brokerReadonlySnapshotsTable.userId, ownerId))
+    .orderBy(desc(brokerReadonlySnapshotsTable.id))
+    .limit(1);
   return {
     mode: "READ_ONLY" as const,
-    safety,
+    safety: checkBrokerSafety(),
     liveTradingAllowed: false as const,
     canPlaceLiveTrade: false as const,
     lastSnapshotAt: last?.createdAt ?? null,
     lastProvider: last?.provider ?? null,
     lastConnected: last?.connected ?? false,
+  };
+}
+
+// Governance is intentionally global-state-only. It MUST NOT inspect a user's
+// private snapshot history, which would make an unrelated user influence a
+// platform decision or expose cross-account metadata.
+export async function brokerStatusForGovernance() {
+  const safety = checkBrokerSafety();
+  return {
+    mode: "READ_ONLY" as const,
+    safety,
+    liveTradingAllowed: false as const,
+    canPlaceLiveTrade: false as const,
+    lastSnapshotAt: null,
+    lastProvider: null,
+    lastConnected: false,
   };
 }

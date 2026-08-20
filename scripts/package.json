@@ -292,7 +292,10 @@
     "test:trustline-alignment-honesty": "tsx ./src/rubyTrustLineAlignmentHonestyTest.ts",
     "test:fundbook-tier-math": "node --import tsx --test ./src/fundbook-tier-math.test.ts",
     "test:fundbook-tier": "tsx ./src/fundBookTierIntegrationTest.ts",
-    "test:economic-calendar": "tsx ./src/tests/economicCalendar.test.ts"
+    "test:economic-calendar": "tsx ./src/tests/economicCalendar.test.ts",
+    "test:broker-hub-no-execution": "tsx ./src/ci/check-broker-hub-no-execution.ts",
+    "test:broker-hub-contracts": "tsx ./src/brokerHubContractsTest.ts && tsx ./src/ci/check-broker-hub-no-execution.test.ts",
+    "test:broker-hub-metadata-db": "tsx ./src/brokerHubMetadataIntegrationTest.ts"
   },
   "devDependencies": {
     "@types/node": "catalog:",

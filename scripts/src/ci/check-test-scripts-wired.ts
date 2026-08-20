@@ -134,6 +134,17 @@ const MANUAL_ONLY = new Set<string>([
   // entry is kept for standalone invocation but the guard itself is already
   // covered automatically by every `ci` run.
   "@workspace/scripts::test:scanner-verdict-import-boundary",
+  // broker-hub-no-execution guard runs inside ci:guards (run-all.ts). The
+  // standalone script is kept for on-demand invocation. The negative-fixture
+  // (test:broker-hub-contracts) is a pure offline test available standalone.
+  "@workspace/scripts::test:broker-hub-no-execution",
+  "@workspace/scripts::test:broker-hub-contracts",
+  // MT5 projection boundary test uses an injected reader and performs no DB IO.
+  // It stays targeted because broker-hub has its own required phase-entry lane.
+  "@workspace/api-server::test:broker-hub-mt5-projection",
+  // Pure projection/feature-flag proof; the schema constraints are release-gated
+  // separately by test:broker-hub-metadata-db in ci:integration.
+  "@workspace/api-server::test:broker-hub-metadata",
   "@workspace/scripts::test:registration-key-expiry-sweep",
   "@workspace/scripts::test:cached-read-e2e",
   "@workspace/scripts::test:chart-symbol-propagation",

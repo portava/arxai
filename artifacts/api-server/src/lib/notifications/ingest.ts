@@ -20,7 +20,7 @@ import {
   mistakePatternsTable,
   tradeDecisionLogsTable,
 } from "@workspace/db";
-import { desc } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { notify, type NotifyResult } from "./service.js";
 import {
   ruleGovernorEvaluation, rulePaperExecution, ruleAutopilot,
@@ -51,7 +51,7 @@ async function fire(
   tally(s, await notify(inp, { idempotent: true }));
 }
 
-export async function ingest(opts: { limitPerSource?: number } = {}) {
+export async function ingest(opts: { limitPerSource?: number; userId?: number } = {}) {
   const lim = opts.limitPerSource ?? 50;
   const stats: IngestStats[] = [];
 
@@ -165,12 +165,21 @@ export async function ingest(opts: { limitPerSource?: number } = {}) {
   // KK broker logs (unsafe mode)
   {
     const s: IngestStats = { source: "KK:broker_readonly_logs", scanned: 0, created: 0, updated: 0, skipped: 0 };
-    const rows = await db.select().from(brokerReadonlyLogsTable).orderBy(desc(brokerReadonlyLogsTable.createdAt)).limit(lim);
+    // Broker diagnostics are private per-user data. A missing owner scopes to
+    // no real user (0), so background/legacy callers fail closed.
+    const brokerOwnerId = opts.userId ?? 0;
+    const rows = await db.select().from(brokerReadonlyLogsTable)
+      .where(eq(brokerReadonlyLogsTable.userId, brokerOwnerId))
+      .orderBy(desc(brokerReadonlyLogsTable.createdAt)).limit(lim);
     for (const r of rows) {
       if (r.eventType === "BROKER_MODE_UNSAFE" || (r.severity === "CRITICAL" && /BROKER_MODE/i.test(r.message))) {
         const det = (r.details as Record<string, unknown>) ?? {};
         const inp = ruleBroker({ event: "UNSAFE_MODE_REJECTED", brokerModeEnv: String(det.brokerModeEnv ?? det.env ?? "unknown") });
-        await fire(s, inp, `KK:brokerlog:${r.id}:${ts(r.createdAt)}`);
+        if (inp) {
+          inp.sourceEventId = `KK:brokerlog:${r.id}:${ts(r.createdAt)}`;
+          inp.dedupeKey = `${inp.dedupeKey}:USER:${brokerOwnerId}`;
+          tally(s, await notify({ ...inp, userId: brokerOwnerId }, { idempotent: true }));
+        }
       }
     }
     stats.push(s);
@@ -179,10 +188,17 @@ export async function ingest(opts: { limitPerSource?: number } = {}) {
   // KK broker snapshots (info)
   {
     const s: IngestStats = { source: "KK:broker_readonly_snapshots", scanned: 0, created: 0, updated: 0, skipped: 0 };
-    const rows = await db.select().from(brokerReadonlySnapshotsTable).orderBy(desc(brokerReadonlySnapshotsTable.createdAt)).limit(lim);
+    const brokerOwnerId = opts.userId ?? 0;
+    const rows = await db.select().from(brokerReadonlySnapshotsTable)
+      .where(eq(brokerReadonlySnapshotsTable.userId, brokerOwnerId))
+      .orderBy(desc(brokerReadonlySnapshotsTable.createdAt)).limit(lim);
     for (const r of rows) {
       const inp = ruleBroker({ event: "SNAPSHOT_CREATED", snapshotId: r.snapshotId });
-      await fire(s, inp, `KK:snapshot:${r.snapshotId}:${ts(r.createdAt)}`);
+      if (inp) {
+        inp.sourceEventId = `KK:snapshot:${r.snapshotId}:${ts(r.createdAt)}`;
+        inp.dedupeKey = `${inp.dedupeKey}:USER:${brokerOwnerId}`;
+        tally(s, await notify({ ...inp, userId: brokerOwnerId }, { idempotent: true }));
+      }
     }
     stats.push(s);
   }
