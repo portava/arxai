@@ -14,6 +14,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { Copy, Lock, Plus, RefreshCw, Send, ShieldAlert, Trash2, X } from "lucide-react";
+import { BrokerMetadataPanel } from "@/components/broker/BrokerMetadataPanel";
 
 type Mt5Conn = {
   id: number;
@@ -307,6 +308,7 @@ export default function MyMt5Page() {
                 <div><span className="text-muted-foreground">Token …{c.tokenLast4 ?? "?"}</span></div>
               </div>
               <div className="text-xs text-muted-foreground">ServerBaseUrl for EA: <code>{baseOrigin}/api</code> · Endpoint: <code>POST /api/mt5/heartbeat</code> · Header: <code>X-MT5-Bridge-Token: &lt;your token&gt;</code></div>
+              <BrokerMetadataPanel conn={c} />
               <div className="flex gap-2 pt-1">
                 <Button size="sm" variant="outline" onClick={() => regenerate(c.id)}><RefreshCw className="h-3 w-3 mr-1" />Regenerate token</Button>
                 <Button size="sm" variant="outline" onClick={() => revoke(c.id)}>Revoke</Button>
