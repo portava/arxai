@@ -31,8 +31,23 @@ export const ARX_LIVE_COMMAND_STATUSES = [
   // Task #28 — a SENT_TO_MT5_LIVE command whose TTL elapsed before the EA
   // executed it (server-side sweep) OR which the EA refused as stale
   // (STALE_COMMAND_REJECTED). Terminal. A LIVE_EXPIRED command is never
-  // re-served and never retried automatically.
+  // re-served and never retried automatically. R2 S1: the sweep may only
+  // stamp LIVE_EXPIRED on a row with NO pickup evidence (arx pickedByEaAt
+  // null AND transport mirror never claimed) — provable non-delivery.
   "LIVE_EXPIRED",
+  // R2 S1 (audit-execution.md G1) — epistemic states. NON-TERMINAL.
+  //
+  // LIVE_UNKNOWN: the command was (or may have been) seen by the EA and no
+  // confirmed broker outcome exists — TTL elapsed after pickup, or the EA
+  // reported a success-looking status with no broker ticket. A real position
+  // may exist at the broker, so the master exposure reservation is HELD, not
+  // released, and duplicate submission stays blocked (idem index below).
+  // Only reconciliation against broker truth may resolve it (R2 S3).
+  "LIVE_UNKNOWN",
+  // LIVE_RECONCILIATION_REQUIRED: an UNKNOWN command that automatic urgent
+  // reconciliation could not resolve after N reliable sweeps — operator /
+  // reconciler attention required before it may reach a terminal state.
+  "LIVE_RECONCILIATION_REQUIRED",
 ] as const;
 export type ArxLiveCommandStatus = (typeof ARX_LIVE_COMMAND_STATUSES)[number];
 
@@ -206,9 +221,12 @@ export const arxLiveCommandsTable = pgTable("arx_live_commands", {
   // in flight to the EA or already filled. Terminal states (REJECTED/FAILED/
   // BLOCKED/CANCELLED/CLOSED) are intentionally NOT covered so the user can
   // retry after a failure with the same key in a new minute bucket.
+  // R2 S1 (audit G1e) — LIVE_UNKNOWN / LIVE_RECONCILIATION_REQUIRED are
+  // covered: an unconfirmed outcome may be standing at the broker, so the
+  // identical order must be refused until reconciliation resolves it.
   idemUq: uniqueIndex("arx_live_commands_idem_active_uq")
     .on(t.userId, t.idempotencyKey)
-    .where(sql`status in ('SENT_TO_MT5_LIVE','LIVE_FILLED')`),
+    .where(sql`status in ('SENT_TO_MT5_LIVE','LIVE_FILLED','LIVE_UNKNOWN','LIVE_RECONCILIATION_REQUIRED')`),
 }));
 
 // Phase B — Live positions. SEPARATE from `live_positions` (Build TT) and

@@ -24,6 +24,7 @@ export * as liveInputs from "./live-inputs";
 export * as agents from "./agents";
 export * as intelligenceV2 from "./intelligence-v2";
 export * as riskGovernor from "./risk-governor";
+export * as riskCorrelation from "./risk-correlation";
 export * as orderExecution from "./order-execution";
 export * as tradeAdvisor from "./trade-advisor";
 export * as retrospective from "./retrospective";

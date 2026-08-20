@@ -30,6 +30,10 @@ import {
 } from "./agentEcosystem/governance.js";
 import type { AdvisoryDirection } from "@workspace/domain/agent-system";
 import { getDerivFeedStatus, hasRecentDerivTickFor } from "./data/providers/derivProvider.js";
+import {
+  resolveScannerRegime,
+  type ScannerRegimeRead,
+} from "./regime/marketRegimeAuthority.js";
 import { routeCandles, routeQuote } from "./data/marketDataRouter.js";
 import { classifySymbol, resolveDerivSymbol } from "./data/marketDataRouter.js";
 import {
@@ -244,6 +248,16 @@ export interface ScannerOpportunity {
    * detected or the detector failed closed. Never an execution gate.
    */
   trendlineImpact?: TrendlineScannerImpact;
+  /**
+   * ONE MARKET-STATE AUTHORITY (R7 step 3) — the hysteresis state machine's
+   * regime read for this symbol/timeframe, computed ONLY from real routed
+   * candles. `regime: "UNKNOWN"` means the window was too shallow (or absent)
+   * to classify honestly — computeFinalRead then WITHHOLDS the actionable
+   * label (downgrade-only, like every other truth cap; it can never raise a
+   * read and never touches an execution gate). Optional so existing fixtures
+   * stay valid; real scans always attach it.
+   */
+  regime?: ScannerRegimeRead;
   /**
    * HTF TREND FVG PULLBACK (Task #675) — display/decision-support CHILD input.
    * Higher-timeframe (4H+1H) trend alignment → 5M pullback through 50 MA/200 EMA
@@ -507,6 +521,19 @@ export function computeFinalRead(
     if (label === "TRADE_WATCH") label = "WAIT_FOR_CONFIRMATION";
     const msg = opp.sufficiency.humanReason;
     if (!reasons.includes(msg)) reasons.push(msg);
+  }
+
+  // 5c. ONE-REGIME-AUTHORITY CAP (R7 step 3). The hysteresis state machine is
+  //     the scanner's single regime source. UNKNOWN means the market state
+  //     could not be classified from real candles — so the scanner WITHHOLDS
+  //     new opportunities for the symbol: the actionable label is downgraded
+  //     and confidence floors to LOW. Downgrade-only, exactly like the caps
+  //     above — a KNOWN regime never raises a read, and this step never
+  //     touches selectable/tradeable or any execution gate.
+  if (opp.regime && opp.regime.regime === "UNKNOWN") {
+    confidence = "LOW";
+    if (label === "TRADE_WATCH") label = "WAIT_FOR_CONFIRMATION";
+    reasons.push("Market regime is UNKNOWN — new opportunities are withheld until the state machine can classify this market from real candles.");
   }
 
   // 6. CHART-CONFIRMATION TRUTH CAP. `chartConfirmed` is true ONLY when the
@@ -1091,6 +1118,13 @@ interface ScanOpts {
 // Try to analyze a symbol/timeframe using real candles routed through the
 // unified Market Data Router. Returns null when the router has no feed —
 // caller decides whether to fall back to the simulator or skip (synthetic).
+// The analysis/pattern/trendline consumers keep their historical 30-bar window
+// (behavior-preserving); the router is asked for a deeper window so the regime
+// state machine can compute an honest EMA-50 slope (REGIME_MIN_CANDLES = 52).
+// A feed that cannot serve the deeper window simply yields regime UNKNOWN.
+const SCAN_ANALYSIS_WINDOW = 30;
+const SCAN_ROUTED_LIMIT = 60;
+
 async function analyzeViaRouter(
   sym: string, tf: string,
 ): Promise<{
@@ -1098,6 +1132,9 @@ async function analyzeViaRouter(
   trailingIntervals: number | null;
   closedCandleCount: number;
   rawCandles: Awaited<ReturnType<typeof routeCandles>>["candles"];
+  /** FULL routed window (regime state machine input); rawCandles stays the
+   *  legacy 30-bar analysis window every existing consumer was tuned on. */
+  regimeCandles: Awaited<ReturnType<typeof routeCandles>>["candles"];
   primaryProvider: string | null;
 } | null> {
   try {
@@ -1109,11 +1146,12 @@ async function analyzeViaRouter(
     let cr!: Awaited<ReturnType<typeof routeCandles>>;
     let qr!: Awaited<ReturnType<typeof routeQuote>>;
     await Promise.all([
-      runWithScannerBudget(async () => { cr = await routeCandles(sym, tf, 30); }),
+      runWithScannerBudget(async () => { cr = await routeCandles(sym, tf, SCAN_ROUTED_LIMIT); }),
       runWithScannerBudget(async () => { qr = await routeQuote(sym); }),
     ]);
     if (!cr.ok || cr.candles.length === 0) return null;
-    const candles = cr.candles.map((c) => ({ o: c.open, h: c.high, l: c.low, c: c.close }));
+    const analysisWindow = cr.candles.slice(-SCAN_ANALYSIS_WINDOW);
+    const candles = analysisWindow.map((c) => ({ o: c.open, h: c.high, l: c.low, c: c.close }));
     const last = candles[candles.length - 1];
     const quote = qr.ok && qr.quote
       ? {
@@ -1136,7 +1174,8 @@ async function analyzeViaRouter(
       analysis,
       trailingIntervals,
       closedCandleCount: cr.candles.length,
-      rawCandles: cr.candles,
+      rawCandles: analysisWindow,
+      regimeCandles: cr.candles,
       primaryProvider: cr.primaryProvider ?? null,
     };
   } catch { return null; }
@@ -1177,6 +1216,12 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
     if (!a) {
       a = analyzeMarketFromCandles(sym, tf, [], { mid: 0, spread: 0 }, "LIVE_FEED");
     }
+    // ── ONE MARKET-STATE AUTHORITY (R7 step 3) ─────────────────────────────
+    // The hysteresis state machine is the scanner's single regime source, fed
+    // ONLY by real routed candles (the full routed window; the legacy 30-bar
+    // analysis window is unchanged for every other consumer). No feed / thin
+    // feed ⇒ UNKNOWN, and computeFinalRead withholds the actionable label.
+    const regime = resolveScannerRegime(sym, tf, routed?.regimeCandles ?? null);
     const opp = opportunityScore(a);
     const entry = (a.entryZone.low + a.entryZone.high) / 2;
     // Phase 22X — distinguish "history loaded but no live tick yet"
@@ -1373,6 +1418,7 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
       disabledReason,
       chartConfirmed,
       sufficiency,
+      regime,
       patternImpact,
       trendlineImpact,
     };

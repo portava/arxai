@@ -28,7 +28,9 @@
 //   LIVE_BLOCKED                → risk_rejected           LOSSY (covers every pre-dispatch gate refusal — integrity, cohort, market backstop — not only risk gates)
 //   LIVE_CANCELLED              → cancelled               lossless
 //   LIVE_CLOSED                 → filled                  LOSSY (position close is a position-level fact; the originating order did fill)
-//   LIVE_EXPIRED                → expired                 LOSSY (TTL sweep terminalizes picked-up rows too — audit G1a; a lost result is indistinguishable from true expiry in this column)
+//   LIVE_EXPIRED                → expired                 LOSSY (conflates the server no-pickup TTL sweep with the EA's own stale refusal; since R2 S1 picked-up rows go to LIVE_UNKNOWN instead)
+//   LIVE_UNKNOWN                → unknown                 lossless (R2 S1: picked-up-then-silent or success-without-ticket; reservation held)
+//   LIVE_RECONCILIATION_REQUIRED→ reconciliation_required  lossless (R2 S1: unresolved UNKNOWN awaiting broker-truth reconciliation)
 //
 // Mapping table — mt5_demo_commands.status (lib/domain/src/safety-contracts/executionMode.ts DemoCommandStatus):
 //   DRAFT                       → created                 lossless
@@ -127,8 +129,11 @@ export const ARX_LIVE_STATUS_MAP: MappingTable = Object.freeze({
   LIVE_EXPIRED: {
     state: "expired",
     lossy: true,
-    note: "TTL sweep terminalizes picked-up rows too (audit G1a); a lost result is indistinguishable from true expiry",
+    note: "conflates the server no-pickup TTL sweep with the EA's own STALE_COMMAND_REJECTED refusal (since R2 S1, picked-up rows go to LIVE_UNKNOWN instead)",
   },
+  // R2 S1 — epistemic states land losslessly on their canonical namesakes.
+  LIVE_UNKNOWN: { state: "unknown", lossy: false },
+  LIVE_RECONCILIATION_REQUIRED: { state: "reconciliation_required", lossy: false },
 } satisfies Record<string, CanonicalStateMapping>);
 
 export function fromArxLiveStatus(s: string): CanonicalStateMapping {

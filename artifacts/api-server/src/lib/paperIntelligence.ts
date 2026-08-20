@@ -9,7 +9,7 @@
 import { db, mt5StateTable } from "@workspace/db";
 import { runStrategyScan, type SignalOutput, type Candle } from "./strategyEngine.js";
 import { calculatePositionSize } from "./positionSizing.js";
-import { generateDeterministicCandles } from "./backtestStrategyRegistry.js";
+import { getMarketDataWithProvenance } from "./data/dataManager.js";
 import { getStatus as getSafetyStatus } from "./safetyCore.js";
 
 // 15s matches the bridge's heartbeat freshness threshold (mt5.ts /
@@ -45,9 +45,55 @@ export interface MT5SnapshotView {
 
 export type IntelligenceDecision =
   | "MT5_DATA_STALE"
+  | "REAL_DATA_UNAVAILABLE"
   | "WAIT"
   | "WATCHLIST_CANDIDATE"
   | "PAPER_TRADEABLE";
+
+/** Minimum real closed bars before this service will score. Below this, the
+ *  strategy scan would run on a window too thin to mean anything. */
+export const MIN_REAL_CANDLES_FOR_PAPER = 30;
+
+/**
+ * Honest skip — returned instead of analyzing fabricated bars (R7 step 1b).
+ * The old path built a seeded PRNG walk (`generateDeterministicCandles`, same
+ * +drift bias as the demo generator) and then SIZED SUGGESTED LOTS AGAINST THE
+ * LIVE MT5 BALANCE from that synthetic signal. Real bars or this skip; never
+ * size against a live balance from synthetic data.
+ */
+export function realDataUnavailableResult(args: {
+  symbol: string;
+  marketType: "forex" | "indices" | "stocks" | "synthetic";
+  mt5: MT5SnapshotView;
+  riskPercent: number;
+  detail: string;
+  generatedAt: string;
+}): PaperIntelligenceResult {
+  const { symbol, marketType, mt5, riskPercent, detail, generatedAt } = args;
+  return {
+    symbol,
+    decision: "REAL_DATA_UNAVAILABLE",
+    mt5,
+    signal: {
+      symbol, marketType, direction: "WAIT", confidence: 0,
+      entryPrice: 0, stopLoss: 0, takeProfit: 0,
+      reason: "No real market data — analysis withheld.",
+      strategy: "REAL_DATA_UNAVAILABLE", riskWarning: "REAL DATA UNAVAILABLE",
+    },
+    confidenceScore: 0,
+    riskScore: 100,
+    riskPercent,
+    suggestedLot: 0,
+    reasoning: [
+      "REAL DATA UNAVAILABLE — refusing to generate a paper decision from synthetic candles.",
+      detail,
+      "ARX never sizes lots against the live account balance from fabricated data. Wire/repair the real feed to re-enable analysis.",
+    ],
+    warnings: ["REAL_DATA_UNAVAILABLE"],
+    paperOnly: true,
+    generatedAt,
+  };
+}
 
 export interface PaperIntelligenceResult {
   symbol: string;
@@ -148,14 +194,31 @@ export async function analyzeSymbolForPaper(
     };
   }
 
-  // ── Build deterministic candles for the analysis (the existing bot
-  //    uses this same generator for its 5-second scan loop). Replace
-  //    with a real feed here when one is wired in — the rest of the
-  //    intelligence pipeline does not change.
-  const nowMs = Date.now();
-  const candles: Candle[] = generateDeterministicCandles({
-    symbol, count: 120, timeframe: "M1", seed: `paper-intel|${symbol}`, baseTimeMs: nowMs - 120 * 60_000,
-  });
+  // ── Real bars only (R7 step 1b). The unified router serves real candles or
+  //    nothing; there is no PRNG substitute. Insufficient real data ⇒ honest
+  //    REAL_DATA_UNAVAILABLE skip — never a synthetic analysis, and never a
+  //    lot suggestion derived from one.
+  let candles: Candle[];
+  let candleSource: string;
+  try {
+    const served = await getMarketDataWithProvenance(symbol, "1m", 120);
+    candles = served.candles.map((c) => ({
+      time: c.time, open: c.open, high: c.high, low: c.low, close: c.close,
+      volume: c.volume ?? 0,
+    }));
+    candleSource = served.provenance?.providerId ?? "router";
+  } catch (err) {
+    return realDataUnavailableResult({
+      symbol, marketType, mt5, riskPercent, generatedAt,
+      detail: `Market-data router failed: ${String(err).slice(0, 160)}`,
+    });
+  }
+  if (candles.length < MIN_REAL_CANDLES_FOR_PAPER) {
+    return realDataUnavailableResult({
+      symbol, marketType, mt5, riskPercent, generatedAt,
+      detail: `Only ${candles.length}/${MIN_REAL_CANDLES_FOR_PAPER} real closed candles available from ${candleSource}.`,
+    });
+  }
   const signal = runStrategyScan(symbol, candles, minConfidence, marketType);
 
   // ── Sizing uses the LIVE MT5 balance from the snapshot (NEVER places).
@@ -188,6 +251,7 @@ export async function analyzeSymbolForPaper(
   }
 
   const reasoning: string[] = [
+    `Candles: ${candles.length} real closed bars via ${candleSource}.`,
     `Strategy: ${signal.strategy}.`,
     `Signal: ${signal.direction} ${symbol} @ ${signal.entryPrice.toFixed(5)} (SL ${signal.stopLoss.toFixed(5)}, TP ${signal.takeProfit.toFixed(5)}).`,
     `Confidence ${signal.confidence}/100. ${signal.reason}`,

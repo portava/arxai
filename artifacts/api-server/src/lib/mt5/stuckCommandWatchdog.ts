@@ -6,6 +6,11 @@
 //   * Never auto-opens/closes trades; only transitions linked action
 //     requests to a terminal state so the UI stops claiming "pending".
 //   * Idempotent: any command already terminal is skipped.
+//   * R2 S1 (audit G1c): a stale mt5_commands row that MIRRORS a Phase B
+//     live command is never stamped 'failed' — no broker verification exists,
+//     so a fabricated failure could contradict a real position. Those rows
+//     go to 'unknown' and the authoritative arx_live_commands row carries the
+//     LIVE_UNKNOWN epistemology (its own 60s sweep + reservation hold).
 
 import { db, mt5CommandsTable, tradeActionRequestsTable, notificationsTable } from "@workspace/db";
 import { and, eq, inArray, lt, isNull, sql, or } from "drizzle-orm";
@@ -17,15 +22,43 @@ const STUCK_TIMEOUT_MS = 5 * 60 * 1000;           // 5 minutes
 const SWEEP_INTERVAL_MS = 30 * 1000;              // every 30s
 const NON_TERMINAL_STATUSES = ["PENDING", "DELIVERED", "claimed", "sent"] as const;
 
+/**
+ * PURE — is this mt5_commands row the transport mirror of a Phase B live
+ * command? The mirror payload is stamped {bridged:"LIVE_PHASE_B",
+ * liveCommandId} by enqueueBridgedMt5Command; anything else (including an
+ * unreadable payload) is NOT treated as a live mirror, so legacy rows keep
+ * the existing watchdog behavior unchanged.
+ */
+export function isLiveBridgeMirrorPayload(payload: unknown): boolean {
+  if (payload == null || typeof payload !== "object" || Array.isArray(payload)) return false;
+  const p = payload as Record<string, unknown>;
+  return p["bridged"] === "LIVE_PHASE_B" && typeof p["liveCommandId"] === "string";
+}
+
+// Watchdog verdict for a live-mirror row: 'unknown', never 'failed'.
+// WHY 'unknown' (a status write) instead of leaving the row non-terminal:
+//   * the EA claim query serves only status='PENDING' rows, so 'unknown'
+//     removes a minutes-old live order from the servable mailbox (defense in
+//     depth next to the EA's own stale rejection);
+//   * staleAt + a non-scanned status stop the 30s sweep from re-marking it;
+//   * POST /mt5/command-result applies the EA result with NO status guard and
+//     the live-bridge forward branch runs regardless of mirror status, so a
+//     late real broker result still lands and still reaches
+//     recordLiveCommandResult (where it is retained as evidence).
+export const LIVE_MIRROR_UNKNOWN_STATUS = "unknown" as const;
+
 export interface WatchdogSweepResult {
   scanned: number;
   marked: number;
+  /** R2 S1 — live-mirror rows routed to 'unknown' instead of 'failed'. */
+  markedUnknown: number;
   errors: number;
 }
 
 export async function sweepStuckCommands(now: Date = new Date()): Promise<WatchdogSweepResult> {
   const cutoff = new Date(now.getTime() - STUCK_TIMEOUT_MS);
   let marked = 0;
+  let markedUnknown = 0;
   let errors = 0;
 
   const stuck = await db.select().from(mt5CommandsTable)
@@ -38,6 +71,32 @@ export async function sweepStuckCommands(now: Date = new Date()): Promise<Watchd
 
   for (const command of stuck) {
     try {
+      // R2 S1 — the mirror of a LIVE command gets NO fabricated failure: no
+      // broker callback means the outcome is UNVERIFIED, and a real position
+      // may exist. Stamp 'unknown' + staleAt (skipped next sweep, no longer
+      // servable) and stop — no failure timestamp, no fabricated error code,
+      // no action-request cascade, no user notification. The authoritative
+      // arx_live_commands row raises LIVE_UNKNOWN with its own audit trail.
+      if (isLiveBridgeMirrorPayload(command.payload)) {
+        await db.update(mt5CommandsTable).set({
+          status: LIVE_MIRROR_UNKNOWN_STATUS,
+          staleAt: now,
+          errorMessage: command.errorMessage ?? "watchdog_no_broker_callback_outcome_unverified",
+          brokerMessage: command.brokerMessage ?? "No execution result received within timeout; outcome unverified — awaiting reconciliation.",
+          updatedAt: now,
+        }).where(and(
+          eq(mt5CommandsTable.id, command.id),
+          // CAS: a racing EA result write wins — never downgrade it.
+          inArray(mt5CommandsTable.status, NON_TERMINAL_STATUSES as unknown as string[]),
+        ));
+        logger.warn({
+          commandId: command.id,
+          liveCommandId: (command.payload as Record<string, unknown>)["liveCommandId"],
+        }, "watchdog_live_mirror_outcome_unknown");
+        markedUnknown += 1;
+        continue;
+      }
+
       // Mark the command as failed + stamp staleAt so it's skipped next sweep.
       await db.update(mt5CommandsTable).set({
         status: "failed",
@@ -110,7 +169,7 @@ export async function sweepStuckCommands(now: Date = new Date()): Promise<Watchd
     }
   }
 
-  return { scanned: stuck.length, marked, errors };
+  return { scanned: stuck.length, marked, markedUnknown, errors };
 }
 
 let watchdogTimer: NodeJS.Timeout | null = null;
@@ -123,7 +182,7 @@ export function startStuckCommandWatchdog(): void {
     running = true;
     sweepStuckCommands()
       .then((r) => {
-        if (r.marked > 0 || r.errors > 0) {
+        if (r.marked > 0 || r.markedUnknown > 0 || r.errors > 0) {
           logger.info(r, "stuck_command_watchdog_swept");
         }
       })

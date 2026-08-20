@@ -553,11 +553,23 @@ export async function ingestBrokerCandles(
   // ── Mirror accepted CLOSED bars into the read path (cache + provider) ─────────
   // This is the existing foundation, NOT a source-priority change: the
   // "mt5_broker" cache slot and the in-memory provider series already exist and
-  // are read by the chart/scanner router.
+  // are read by the chart/scanner router. R4 slice 2: this path KNOWS the
+  // authenticated bridge, so both mirrors carry it — the in-memory provider
+  // partitions the series by bridge (two bridges can never blend), and the
+  // market_candles row is attributed via the nullable bridge_connection_id
+  // column (conflict target unchanged until the migration lands — see
+  // upsertCandles' transitional contract).
   if (mirrorClosed.length > 0) {
-    await upsertCandles(symbol, timeframe, MT5_BROKER_MIRROR_SOURCE, mirrorClosed);
+    await upsertCandles(symbol, timeframe, MT5_BROKER_MIRROR_SOURCE, mirrorClosed, {
+      bridgeConnectionId: ctx.bridgeConnectionId,
+    });
     const { mergeCandleFromMT5 } = await import("./providers/mt5Provider.js");
-    for (const c of mirrorClosed) mergeCandleFromMT5(symbol, c, timeframe);
+    for (const c of mirrorClosed) {
+      mergeCandleFromMT5(symbol, c, timeframe, {
+        bridgeConnectionId: ctx.bridgeConnectionId,
+        userId: ctx.userId,
+      });
+    }
   }
 
   // ── Maintain the per-series backfill status from the full stored extent ───────

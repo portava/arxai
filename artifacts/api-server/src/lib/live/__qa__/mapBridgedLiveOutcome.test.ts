@@ -3,14 +3,28 @@
 // (wired as `pnpm --filter @workspace/api-server run test:live-outcome-map`)
 //
 // The mapper is the single source of truth for turning an EA/broker terminal
-// result into a Phase B outcome. The critical, safety-relevant invariant under
-// test: LIVE_FILLED is returned ONLY when a confirmed broker ticket exists, so a
-// "success"-looking result with no ticket can never be reported as a fill and can
-// never (downstream) FULFIL an exposure reservation.
+// result into a Phase B outcome. The critical, safety-relevant invariants:
+//   * LIVE_FILLED is returned ONLY when a confirmed broker ticket exists, so a
+//     "success"-looking result with no ticket can never be reported as a fill
+//     and can never (downstream) FULFIL an exposure reservation.
+//   * R2 S1 (audit G1b): a non-failure status with NO ticket is LIVE_UNKNOWN,
+//     never LIVE_FAILED — LIVE_FAILED released the exposure reservation, and
+//     if the order actually stood at the broker the master pool was
+//     under-counted. UNKNOWN holds the reservation until reconciliation.
+//   * Explicit fail/error/reject statuses are the EA/broker CONFIRMING
+//     non-execution and stay LIVE_FAILED / LIVE_REJECTED.
+
+// Offline pattern: importing ../liveCommandPipeline.js transitively imports
+// @workspace/db, whose module init throws when DATABASE_URL is unset. A dummy
+// loopback URL satisfies the init; the pg Pool is lazy and NO query is ever
+// issued by these tests. (Dynamic import — a static one would hoist above
+// the env stamp.)
+process.env.DATABASE_URL ??= "postgres://qa:qa@127.0.0.1:1/qa_offline_never_connects";
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mapBridgedLiveOutcome } from "../liveCommandPipeline.js";
+
+const { mapBridgedLiveOutcome } = await import("../liveCommandPipeline.js");
 
 test("FILLED status WITH a broker ticket => LIVE_FILLED", () => {
   assert.equal(
@@ -23,19 +37,31 @@ test("FILLED status WITH a broker ticket => LIVE_FILLED", () => {
   );
 });
 
-test("success-like status WITHOUT a broker ticket => LIVE_FAILED (never a fake fill)", () => {
+test("success-like status WITHOUT a broker ticket => LIVE_UNKNOWN (never a fake fill, never a fabricated failure)", () => {
   assert.equal(
     mapBridgedLiveOutcome({ status: "FILLED", hasBrokerTicket: false }),
-    "LIVE_FAILED",
+    "LIVE_UNKNOWN",
   );
   assert.equal(
     mapBridgedLiveOutcome({ status: "DONE", hasBrokerTicket: false }),
-    "LIVE_FAILED",
+    "LIVE_UNKNOWN",
   );
   assert.equal(
     mapBridgedLiveOutcome({ status: "OK", hasBrokerTicket: false }),
-    "LIVE_FAILED",
+    "LIVE_UNKNOWN",
   );
+});
+
+test("ambiguous success is NEVER coerced to LIVE_FAILED (audit G1b regression pin)", () => {
+  // LIVE_FAILED downstream RELEASES the master exposure reservation; an
+  // unproven outcome must HOLD it. If this mapping ever regresses to
+  // LIVE_FAILED, the pool can be under-counted while a real order stands.
+  for (const status of ["FILLED", "DONE", "OK", "COMPLETED", "SUCCESS"]) {
+    const outcome = mapBridgedLiveOutcome({ status, hasBrokerTicket: false });
+    assert.notEqual(outcome, "LIVE_FAILED", `${status} without ticket must not fabricate a failure`);
+    assert.notEqual(outcome, "LIVE_FILLED", `${status} without ticket must not fabricate a fill`);
+    assert.equal(outcome, "LIVE_UNKNOWN");
+  }
 });
 
 test("rejected status => LIVE_REJECTED regardless of ticket", () => {
@@ -58,7 +84,7 @@ test("a broker 'success' retcode but REJECTED status still maps to LIVE_REJECTED
   );
 });
 
-test("fail/error statuses => LIVE_FAILED", () => {
+test("explicit fail/error statuses => LIVE_FAILED (confirmed non-execution)", () => {
   assert.equal(
     mapBridgedLiveOutcome({ status: "FAILED", hasBrokerTicket: false }),
     "LIVE_FAILED",
@@ -89,9 +115,11 @@ test("stale (status or reason) wins over everything => STALE_COMMAND_REJECTED", 
   );
 });
 
-test("empty / whitespace status without ticket => LIVE_FAILED (honest default)", () => {
+test("empty / whitespace status without ticket => LIVE_UNKNOWN (no proof of anything)", () => {
+  // An unparseable status with no ticket proves neither execution nor
+  // non-execution — the only honest answer is UNKNOWN.
   assert.equal(
     mapBridgedLiveOutcome({ status: "", hasBrokerTicket: false }),
-    "LIVE_FAILED",
+    "LIVE_UNKNOWN",
   );
 });

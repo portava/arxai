@@ -20,7 +20,10 @@ router.post("/brain/analyze", async (req, res) => {
   const parsed = AnalyzeBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "Invalid request", details: parsed.error.issues }); return; }
   const { symbol, ...settings } = parsed.data;
-  const result = analyzeMarket(symbol, undefined, undefined, settings);
+  // R7 step 1a — analyzeMarket now routes REAL candles (no synthetic default)
+  // and returns { available:false, reason:"INSUFFICIENT_REAL_DATA" } when the
+  // feed cannot prove enough closed bars. Both shapes serialize through as-is.
+  const result = await analyzeMarket(symbol, undefined, undefined, settings);
   res.json(result);
 });
 

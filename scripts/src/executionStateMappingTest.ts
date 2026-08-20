@@ -109,7 +109,7 @@ export async function run(): Promise<CiTestResultLike> {
     }
   }
 
-  // ── 2a. arx_live_commands vocabulary (11 literals) ────────────────────────
+  // ── 2a. arx_live_commands vocabulary (13 literals) ────────────────────────
   const ARX_EXPECTED = [
     ["LIVE_DRAFT", "created", false],
     ["LIVE_CONFIRMATION_REQUIRED", "awaiting_confirmation", false],
@@ -122,6 +122,9 @@ export async function run(): Promise<CiTestResultLike> {
     ["LIVE_CANCELLED", "cancelled", false],
     ["LIVE_CLOSED", "filled", true],
     ["LIVE_EXPIRED", "expired", true],
+    // R2 S1 — epistemic states, lossless onto their canonical namesakes.
+    ["LIVE_UNKNOWN", "unknown", false],
+    ["LIVE_RECONCILIATION_REQUIRED", "reconciliation_required", false],
   ] as const;
   checkVocabulary("arx_live_commands.status → canonical", fromArxLiveStatus, ARX_EXPECTED);
   {

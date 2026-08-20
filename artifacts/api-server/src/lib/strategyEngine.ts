@@ -453,7 +453,31 @@ const VOLATILITIES: Record<string, number> = {
   "META": 0.012, "JPM": 0.007, "NFLX": 0.015, "BABA": 0.016,
 };
 
-export function generateSyntheticCandles(symbol: string, count = 250): Candle[] {
+/** Explicit opt-in for the production synthetic fence below. */
+export interface SyntheticCandleOptions {
+  /** Pass true ONLY from legitimately-synthetic contexts (backtest fixtures,
+   *  replay scenarios, shadow simulation, an explicitly SYNTHETIC-labeled
+   *  provider). Never from a decision/display path claiming real data. */
+  allowSynthetic?: boolean;
+}
+
+export const SYNTHETIC_CANDLES_FENCE_MESSAGE =
+  "SYNTHETIC_CANDLES_BLOCKED: generateSyntheticCandles is fenced in production. " +
+  "Fabricated OHLC must never feed a production analysis/decision path; pass " +
+  "{ allowSynthetic: true } only from an explicitly synthetic context " +
+  "(backtest/replay/shadow or a SYNTHETIC-labeled provider).";
+
+export function generateSyntheticCandles(
+  symbol: string,
+  count = 250,
+  opts?: SyntheticCandleOptions,
+): Candle[] {
+  // R7 step 1e — production fence. Refuse unless the caller explicitly opted
+  // into synthetic data. Read at call time (not module init) so tests and
+  // long-lived processes observe NODE_ENV changes deterministically.
+  if (process.env.NODE_ENV === "production" && opts?.allowSynthetic !== true) {
+    throw new Error(SYNTHETIC_CANDLES_FENCE_MESSAGE);
+  }
   let price = BASE_PRICES[symbol] ?? 1.0;
   const vol = VOLATILITIES[symbol] ?? 0.008;
   const candles: Candle[] = [];

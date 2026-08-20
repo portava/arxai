@@ -14,6 +14,7 @@
     "test:unified-live-readiness": "tsx ./src/unifiedLiveReadinessDecisionTest.ts",
     "test:shared-feed-verdict": "tsx ./src/sharedFeedVerdictContractTest.ts",
     "test:live-preflight-readiness-observation": "tsx ./src/livePreflightReadinessObservationTest.ts",
+    "test:risk-correlation": "tsx ./src/riskCorrelationTest.ts",
     "test:worktree-integrity": "tsx ./src/ci/check-worktree-integrity.test.ts",
     "test:capital-constitution": "tsx ./src/ci/check-capital-constitution.test.ts",
     "test:execution-state-mapping": "tsx ./src/executionStateMappingTest.ts",

@@ -83,6 +83,133 @@ export function isBrokerConfirmedLive(args: {
   return args.source != null && BROKER_GRADE_CANDLE_SOURCES.has(args.source);
 }
 
+// ── Enforceable live-ENTRY dispatch gate (R4 slice 3 prep — pure predicate) ──
+//
+// `isBrokerConfirmedLive` is consumed OBSERVE-ONLY at today's dispatch
+// preflight (liveCommandPipeline.ts consults the unified readiness resolver
+// "purely to OBSERVE … it NEVER changes the return value"). This block is the
+// ENFORCING form the wave-4 pipeline integrator wires as a hard refusal: a
+// deterministic, side-effect-free decision over facts the caller supplies. It
+// reads no env, no DB, no feed — the SAME inputs always yield the SAME
+// decision, so the pipeline, tests, and audit replay agree byte-for-byte.
+//
+// Gate rule (spec §10.1 "decision market data source == execution broker
+// connection"): a live ENTRY requires a broker-confirmed LIVE feed, and — when
+// the caller names the executing bridge — that feed must be attributed to the
+// SAME bridge. Close/reduce/modify commands are exempt: they manage exposure
+// that already exists, and blocking an exit on a feed hiccup is the dangerous
+// direction.
+//
+// Enforcement is DEFAULT-ON. The documented owner-testing override is the env
+// value of ARX_ENFORCE_BROKER_CONFIRMED_FEED: set it to "0" / "false" / "off" /
+// "disabled" to observe without blocking. The raw value is an INPUT to the
+// predicate (callers pass process.env[...]) — the predicate itself never
+// touches process.env. When not enforcing, the violation is still reported
+// (observe parity) but `allowed` stays true and `refusalCode` stays null.
+
+/** Env var name whose value disables enforcement (documented override). */
+export const BROKER_FEED_GATE_ENV = "ARX_ENFORCE_BROKER_CONFIRMED_FEED";
+
+const GATE_DISABLE_VALUES: ReadonlySet<string> = new Set(["0", "false", "off", "disabled", "no"]);
+
+/** Default-ON parse: only an explicit disable value turns enforcement off.
+ *  Unset/empty/any other value (including typos) stays ENFORCING — fail-closed. */
+export function brokerFeedGateEnforcementEnabled(raw: string | null | undefined): boolean {
+  if (raw == null) return true;
+  return !GATE_DISABLE_VALUES.has(raw.trim().toLowerCase());
+}
+
+/** Command intent at dispatch. Only ENTRY opens NEW exposure and is gated. */
+export type LiveDispatchIntent = "ENTRY" | "CLOSE" | "REDUCE" | "MODIFY";
+
+export type BrokerFeedGateViolation =
+  /** Feed is not broker-confirmed LIVE (stale/awaiting, or a third-party
+   *  assistant_real:* source). Matches the unified-readiness blocker code. */
+  | "BROKER_FEED_NOT_CONFIRMED"
+  /** Feed is broker-confirmed but attributed to a DIFFERENT bridge than the
+   *  one that will execute. */
+  | "BROKER_FEED_BRIDGE_MISMATCH"
+  /** Caller named the executing bridge but the feed carries no bridge
+   *  attribution (e.g. durable-mirror bars pre-migration, or an un-threaded
+   *  ingest path) — fail-closed: unproven same-bridge is NOT same-bridge. */
+  | "BROKER_FEED_BRIDGE_UNATTRIBUTED";
+
+export interface LiveEntryFeedGateInput {
+  intent: LiveDispatchIntent;
+  /** Shared feed-truth verdict for the tradable symbol/timeframe. */
+  verdict: SymbolFeedVerdict;
+  /** Winning provider label (`BrokerConfirmedFeed.feedSource`). */
+  source: string | null;
+  derivBacked: boolean;
+  /** Bridge the served series is attributed to (provenance envelope /
+   *  `SeriesProvenance.bridgeConnectionId`); null = unattributed. */
+  feedBridgeConnectionId?: number | null;
+  /** Bridge that will EXECUTE the command. Omit/null when the caller does not
+   *  bind the gate to a specific bridge (feed-confirmation-only mode). */
+  executionBridgeConnectionId?: number | null;
+  /** Raw env value of BROKER_FEED_GATE_ENV (callers pass process.env[...]). */
+  enforceEnvValue?: string | null;
+}
+
+export interface LiveEntryFeedGateDecision {
+  /** TRUE for CLOSE/REDUCE/MODIFY — exempt regardless of feed state. */
+  intentExempt: boolean;
+  /** Whether the default-ON enforcement flag is active. */
+  enforcing: boolean;
+  /** `isBrokerConfirmedLive` over the supplied feed facts. */
+  feedConfirmed: boolean;
+  /** What is wrong with the feed for a live ENTRY, independent of whether
+   *  enforcement or the intent exemption lets the command through. */
+  violation: BrokerFeedGateViolation | null;
+  /** The binding output: FALSE means the integrator must refuse dispatch. */
+  allowed: boolean;
+  /** Non-null exactly when allowed === false. */
+  refusalCode: BrokerFeedGateViolation | null;
+  detail: string;
+}
+
+/**
+ * Pure enforcing gate decision for one dispatch. Precedence of violations:
+ * NOT_CONFIRMED (feed quality) before bridge binding (UNATTRIBUTED/MISMATCH) —
+ * a stale feed's attribution is irrelevant. `allowed` is false only when the
+ * intent is ENTRY, a violation exists, AND enforcement is on. This predicate
+ * can only ever BLOCK a dispatch the old observe-only path allowed — it never
+ * relaxes any other gate.
+ */
+export function evaluateLiveEntryFeedGate(input: LiveEntryFeedGateInput): LiveEntryFeedGateDecision {
+  const intentExempt = input.intent !== "ENTRY";
+  const enforcing = brokerFeedGateEnforcementEnabled(input.enforceEnvValue);
+  const feedConfirmed = isBrokerConfirmedLive({
+    verdict: input.verdict,
+    source: input.source,
+    derivBacked: input.derivBacked,
+  });
+
+  let violation: BrokerFeedGateViolation | null = null;
+  if (!feedConfirmed) {
+    violation = "BROKER_FEED_NOT_CONFIRMED";
+  } else if (input.executionBridgeConnectionId != null) {
+    if (input.feedBridgeConnectionId == null) {
+      violation = "BROKER_FEED_BRIDGE_UNATTRIBUTED";
+    } else if (input.feedBridgeConnectionId !== input.executionBridgeConnectionId) {
+      violation = "BROKER_FEED_BRIDGE_MISMATCH";
+    }
+  }
+
+  const allowed = intentExempt || violation == null || !enforcing;
+  const refusalCode = allowed ? null : violation;
+
+  const detail = intentExempt
+    ? `intent ${input.intent} is exempt (manages existing exposure); feed violation ${violation ?? "none"} reported for observability only`
+    : violation == null
+      ? `broker-confirmed LIVE feed from ${input.source ?? "unknown source"}${input.executionBridgeConnectionId != null ? ` bound to executing bridge ${input.executionBridgeConnectionId}` : ""}`
+      : enforcing
+        ? `ENTRY refused: ${violation}`
+        : `ENTRY would be refused (${violation}) but ${BROKER_FEED_GATE_ENV} disables enforcement — observe-only`;
+
+  return { intentExempt, enforcing, feedConfirmed, violation, allowed, refusalCode, detail };
+}
+
 const FEED_TIMEOUT_MS = 2500;
 
 function withTimeout<T>(p: Promise<T>, fallback: T): Promise<T> {

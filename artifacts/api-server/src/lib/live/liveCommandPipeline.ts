@@ -11,7 +11,7 @@
 // live and vice versa.
 
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   db,
   arxLiveCommandsTable,
@@ -106,10 +106,18 @@ const ALLOWED_TRANSITIONS: Record<ArxLiveCommandStatus, ArxLiveCommandStatus[]> 
   LIVE_CONFIRMATION_REQUIRED: ["LIVE_APPROVED", "LIVE_CANCELLED", "LIVE_BLOCKED"],
   LIVE_APPROVED: ["SENT_TO_MT5_LIVE", "LIVE_BLOCKED", "LIVE_CANCELLED"],
   // Task #28 — a SENT command may also expire (TTL sweep or EA stale-reject).
-  SENT_TO_MT5_LIVE: ["LIVE_FILLED", "LIVE_REJECTED", "LIVE_FAILED", "LIVE_BLOCKED", "LIVE_EXPIRED"],
+  // R2 S1 — a SENT command with pickup evidence but no confirmed broker
+  // outcome enters LIVE_UNKNOWN (TTL sweep) — never a presumed terminal.
+  SENT_TO_MT5_LIVE: ["LIVE_FILLED", "LIVE_REJECTED", "LIVE_FAILED", "LIVE_BLOCKED", "LIVE_EXPIRED", "LIVE_UNKNOWN"],
   LIVE_FILLED: ["LIVE_CLOSED"],
   LIVE_REJECTED: [], LIVE_FAILED: [], LIVE_BLOCKED: [], LIVE_CANCELLED: [], LIVE_CLOSED: [],
   LIVE_EXPIRED: [],
+  // R2 S1 — UNKNOWN is deliberately narrow: it may NOT be cancelled (a real
+  // position may exist; cancel would release the held reservation) and only
+  // reconciliation (R2 S3) escalates it. RECONCILIATION_REQUIRED resolves to
+  // a broker-truth terminal only.
+  LIVE_UNKNOWN: ["LIVE_RECONCILIATION_REQUIRED"],
+  LIVE_RECONCILIATION_REQUIRED: ["LIVE_FILLED", "LIVE_REJECTED", "LIVE_FAILED", "LIVE_CANCELLED", "LIVE_EXPIRED"],
 };
 
 // Task #28 — default time-to-live for a dispatched live command. If the EA
@@ -122,9 +130,20 @@ export const LIVE_COMMAND_TTL_SECONDS = 60;
 // Terminal states a live command can rest in. A result POST that arrives for
 // a command already in one of these states is a duplicate and is acknowledged
 // (DUPLICATE_IGNORED) without re-applying the outcome.
+// R2 S1 — LIVE_UNKNOWN and LIVE_RECONCILIATION_REQUIRED are intentionally
+// NOT terminal: an unconfirmed outcome must keep its exposure reservation
+// held and its duplicate-block active until reconciliation resolves it.
 const LIVE_TERMINAL_STATUSES: ArxLiveCommandStatus[] = [
   "LIVE_FILLED", "LIVE_REJECTED", "LIVE_FAILED",
   "LIVE_BLOCKED", "LIVE_CANCELLED", "LIVE_CLOSED", "LIVE_EXPIRED",
+];
+
+// R2 S1 — the epistemic (non-terminal, unresolved-outcome) states. A late
+// broker result arriving while a command rests here is RETAINED as evidence
+// (execution_events) and acknowledged, but never applied — only the
+// reconciliation path (R2 S3) may resolve these states.
+const LIVE_EPISTEMIC_STATUSES: ArxLiveCommandStatus[] = [
+  "LIVE_UNKNOWN", "LIVE_RECONCILIATION_REQUIRED",
 ];
 
 // Task #28 — pure freshness/lifecycle helpers. Extracted so the exactly-once
@@ -175,6 +194,198 @@ export function findGhostClosedPositionIds(
   return openPositions
     .filter((r) => typeof r.brokerTicket === "string" && closedTickets.has(r.brokerTicket))
     .map((r) => r.id);
+}
+
+// ── R2 S1 — pure UNKNOWN-semantics helpers ──────────────────────────────────
+// Extracted (same pattern as the TTL/kill-switch helpers above) so the
+// epistemology contracts are unit-testable offline without a DB.
+
+/** PURE transition-legality predicate over the live state machine. */
+export function isAllowedLiveTransition(
+  from: ArxLiveCommandStatus,
+  to: ArxLiveCommandStatus,
+): boolean {
+  return (ALLOWED_TRANSITIONS[from] ?? []).includes(to);
+}
+
+/**
+ * PURE classification of a TTL-elapsed SENT_TO_MT5_LIVE command (audit G1a).
+ *
+ * LIVE_EXPIRED (terminal, reservation released) is permitted ONLY when the EA
+ * provably never saw the command:
+ *   - arx-side pickup stamp (`pickedByEaAt`) is null, AND
+ *   - the mt5_commands transport mirror (the mailbox the v1.50 EA actually
+ *     polls) was never claimed — absent (null), still PENDING, or cancelled
+ *     before pickup.
+ * ANY evidence of pickup — pickedByEaAt set, or a mirror status other than
+ * the never-served set — means the order may be standing at the broker, so
+ * the row goes to LIVE_UNKNOWN (non-terminal, reservation HELD). Unrecognized
+ * mirror statuses fail toward LIVE_UNKNOWN: when in doubt, do not presume
+ * non-execution.
+ */
+export function classifySweptLiveCommand(input: {
+  pickedByEaAt: Date | null;
+  /** Transport-mirror status; null = no mirror row exists for this command. */
+  mirrorStatus: string | null;
+}): "LIVE_EXPIRED" | "LIVE_UNKNOWN" {
+  if (input.pickedByEaAt != null) return "LIVE_UNKNOWN";
+  const mirror = input.mirrorStatus;
+  const neverServed = mirror == null || mirror === "PENDING" || mirror === "cancelled";
+  return neverServed ? "LIVE_EXPIRED" : "LIVE_UNKNOWN";
+}
+
+/**
+ * PURE master-exposure-reservation settlement rule (audit G1b).
+ *
+ *   FULFILL — confirmed fill (broker ticket verified upstream).
+ *   RELEASE — confirmed non-execution (broker/EA explicitly rejected/failed,
+ *             or the EA itself refused the command as stale, or the server
+ *             proved the EA never received it).
+ *   HOLD    — unconfirmed outcome: the order may be standing at the broker,
+ *             so the reserved lots must stay attributed to the master pool
+ *             until reconciliation resolves the command. Releasing here
+ *             under-counts the pool and can over-expose the master account.
+ *
+ * Any status outside the live-command vocabulary holds — never releases —
+ * because an unrecognized state is by definition unconfirmed.
+ */
+export function settleReservationForStatus(
+  finalStatus: ArxLiveCommandStatus,
+): "FULFILL" | "RELEASE" | "HOLD" {
+  switch (finalStatus) {
+    case "LIVE_FILLED":
+      return "FULFILL";
+    case "LIVE_REJECTED":
+    case "LIVE_FAILED":
+    case "LIVE_EXPIRED":
+    case "LIVE_BLOCKED":
+    case "LIVE_CANCELLED":
+      return "RELEASE";
+    default:
+      return "HOLD";
+  }
+}
+
+// ── R2 S2 — append-only execution_events writer ─────────────────────────────
+
+/** Shaped row for one execution_events insert (see lib/db executionEvents.ts). */
+export interface ExecutionEventRow {
+  commandRowId: number;
+  source: string;
+  eventType: string;
+  payload: Record<string, unknown>;
+  occurredAt: Date;
+}
+
+/**
+ * PURE shaping/validation of an execution-event row. Refuses (with a reason,
+ * never a throw) rather than fabricating an anchor or a type:
+ *   - commandRowId must be a positive integer (the arx_live_commands PK);
+ *   - source and eventType must be non-empty after trimming;
+ *   - a missing occurredAt falls back to `now` (the caller's clock) — the
+ *     received_at column is stamped by the DB independently.
+ */
+export function buildExecutionEventRow(input: {
+  commandRowId: number | null | undefined;
+  source: string | null | undefined;
+  eventType: string | null | undefined;
+  payload?: Record<string, unknown> | null;
+  occurredAt?: Date | null;
+  now?: Date;
+}): { ok: true; row: ExecutionEventRow } | { ok: false; reason: string } {
+  const id = input.commandRowId;
+  if (typeof id !== "number" || !Number.isInteger(id) || id <= 0) {
+    return { ok: false, reason: "EVENT_COMMAND_ROW_ID_INVALID" };
+  }
+  const source = (input.source ?? "").trim();
+  if (source === "") return { ok: false, reason: "EVENT_SOURCE_EMPTY" };
+  const eventType = (input.eventType ?? "").trim();
+  if (eventType === "") return { ok: false, reason: "EVENT_TYPE_EMPTY" };
+  return {
+    ok: true,
+    row: {
+      commandRowId: id,
+      source,
+      eventType,
+      payload: input.payload ?? {},
+      occurredAt: input.occurredAt ?? input.now ?? new Date(),
+    },
+  };
+}
+
+// execution_events writes go through raw parameterized SQL rather than the
+// drizzle table object: the schema barrel export (lib/db/src/schema/index.ts)
+// is a coordinator-owned registration, and evidence writing must neither
+// depend on that registration landing first nor ever break this module's
+// typecheck/dispatch. The INSERT computes the per-command sequence_no in the
+// statement itself; the unique(command_id, sequence_no) index turns a
+// concurrent-writer race into a unique violation, retried a bounded number
+// of times.
+const EXECUTION_EVENT_INSERT_ATTEMPTS = 3;
+
+/**
+ * Append one evidence row to execution_events. BEST-EFFORT BY CONTRACT:
+ * every failure path warns and returns — an evidence write must never fail,
+ * delay, or throw into dispatch/result settlement.
+ */
+async function recordExecutionEvent(input: {
+  commandRowId: number | null | undefined;
+  source: string;
+  eventType: string;
+  payload?: Record<string, unknown> | null;
+  occurredAt?: Date | null;
+}): Promise<void> {
+  try {
+    const shaped = buildExecutionEventRow(input);
+    if (!shaped.ok) {
+      logger.warn({
+        [PHASE_B_LIVE_LOG_PREFIX]: true,
+        event: "EXECUTION_EVENT_SKIPPED",
+        reason: shaped.reason, eventType: input.eventType,
+      }, "execution event refused by shaping — evidence not recorded");
+      return;
+    }
+    const { row } = shaped;
+    let payloadJson: string;
+    try {
+      payloadJson = JSON.stringify(row.payload);
+    } catch {
+      payloadJson = JSON.stringify({ unserializablePayload: true });
+    }
+    for (let attempt = 1; attempt <= EXECUTION_EVENT_INSERT_ATTEMPTS; attempt++) {
+      try {
+        await db.execute(sql`
+          insert into execution_events
+            (command_id, source, event_type, payload, occurred_at, sequence_no)
+          values (
+            ${row.commandRowId}, ${row.source}, ${row.eventType},
+            ${payloadJson}::jsonb, ${row.occurredAt},
+            (select coalesce(max(sequence_no), 0) + 1
+               from execution_events where command_id = ${row.commandRowId})
+          )
+        `);
+        return;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        const isSeqRace = /execution_events_command_seq_uq|duplicate key/.test(msg);
+        if (isSeqRace && attempt < EXECUTION_EVENT_INSERT_ATTEMPTS) continue;
+        logger.warn({
+          [PHASE_B_LIVE_LOG_PREFIX]: true,
+          event: "EXECUTION_EVENT_WRITE_FAILED",
+          commandRowId: row.commandRowId, eventType: row.eventType,
+          attempt, error: msg,
+        }, "execution event write failed — evidence not recorded (dispatch unaffected)");
+        return;
+      }
+    }
+  } catch (e) {
+    logger.warn({
+      [PHASE_B_LIVE_LOG_PREFIX]: true,
+      event: "EXECUTION_EVENT_WRITE_FAILED",
+      eventType: input.eventType,
+      error: e instanceof Error ? e.message : String(e),
+    }, "execution event write failed — evidence not recorded (dispatch unaffected)");
+  }
 }
 
 // Global emergency-kill-switch pre-gate. POST /api/admin/trading/emergency-kill
@@ -2531,6 +2742,18 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
       symbol: row.symbol, side: row.side, volume: Number(row.requestedVolume),
       idempotencyKey: idemKey,
     }, "Phase B dispatch SENT_TO_MT5_LIVE — awaiting EA pickup");
+    await recordExecutionEvent({
+      commandRowId: sent.id, source: "arx", eventType: "DISPATCH_SENT",
+      occurredAt: dispatchNow,
+      payload: {
+        commandId: args.commandId,
+        bridgeConnectionId: bridge!.id,
+        idempotencyKey: idemKey,
+        requestedVolume: Number(row.requestedVolume),
+        ttlSeconds: LIVE_COMMAND_TTL_SECONDS,
+        expiresAt: expiresAt.toISOString(),
+      },
+    });
 
     // ── ARX live transport bridge ───────────────────────────────────────────
     // Mirror the live command into the legacy mt5_commands mailbox that the
@@ -2677,16 +2900,28 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
 }
 
 /**
- * Task #28 — sweep expired live commands to LIVE_EXPIRED.
+ * Task #28 / R2 S1 — sweep TTL-elapsed live commands.
  *
- * A SENT_TO_MT5_LIVE command whose `expiresAt` is in the past is considered
- * stale: the EA either never polled it or stalled. We move it to the terminal
- * LIVE_EXPIRED state (never re-served, never retried) and release any master
- * exposure reservation it held. Scoped to a single user when `userId` is
- * given (the natural choke point is the EA poll); call with no userId for a
- * global sweep. Returns the number of commands expired.
+ * A SENT_TO_MT5_LIVE command whose `expiresAt` is in the past is classified
+ * by pickup evidence (`classifySweptLiveCommand`):
+ *
+ *   - NO pickup evidence (arx `pickedByEaAt` null AND the mt5_commands
+ *     transport mirror was never claimed) → terminal LIVE_EXPIRED; the master
+ *     exposure reservation is released — the EA provably never saw it.
+ *   - ANY pickup evidence → NON-TERMINAL LIVE_UNKNOWN; the reservation is
+ *     HELD — the order may be standing at the broker and only reconciliation
+ *     may resolve it (audit G1a: never presume non-execution after pickup).
+ *
+ * Scoped to a single user when `userId` is given (the natural choke point is
+ * the EA poll); call with no userId for a global sweep. `expired` counts only
+ * LIVE_EXPIRED terminalizations; `unknown` counts LIVE_UNKNOWN entries.
  */
-export async function sweepExpiredLiveCommands(args?: { userId?: number }): Promise<{ expired: number; commandIds: string[] }> {
+export async function sweepExpiredLiveCommands(args?: { userId?: number }): Promise<{
+  expired: number;
+  commandIds: string[];
+  unknown: number;
+  unknownCommandIds: string[];
+}> {
   const now = new Date();
   const where = args?.userId != null
     ? and(
@@ -2698,17 +2933,78 @@ export async function sweepExpiredLiveCommands(args?: { userId?: number }): Prom
         eq(arxLiveCommandsTable.status, "SENT_TO_MT5_LIVE"),
         sql`${arxLiveCommandsTable.expiresAt} is not null and ${arxLiveCommandsTable.expiresAt} < ${now}`,
       );
-  // CAS update guarded by status so a concurrent EA result/pickup cannot
-  // race the sweep — only rows still SENT_TO_MT5_LIVE are expired.
-  const expired = await db.update(arxLiveCommandsTable).set({
+
+  const candidates = await db.select().from(arxLiveCommandsTable).where(where);
+  if (candidates.length === 0) {
+    return { expired: 0, commandIds: [], unknown: 0, unknownCommandIds: [] };
+  }
+
+  // Transport-mirror pickup evidence. The v1.50 EA polls ONLY the legacy
+  // mt5_commands mailbox, so a bridged command's arx-side `pickedByEaAt`
+  // stays null even after the EA claimed (and possibly executed) the mirror.
+  // Classifying on `pickedByEaAt` alone would terminalize those rows as
+  // LIVE_EXPIRED — exactly the G1a hole — so the mirror status is consulted
+  // as a second pickup-evidence source. A failed lookup degrades to a
+  // non-never-served sentinel: when the evidence is unreadable, classify
+  // toward LIVE_UNKNOWN, never toward presumed non-execution.
+  const mirrorStatusByCommandId = new Map<string, string>();
+  try {
+    const { mt5CommandsTable } = await import("@workspace/db");
+    const mirrors = await db.select({
+      liveCommandId: sql<string | null>`${mt5CommandsTable.payload} ->> 'liveCommandId'`,
+      status: mt5CommandsTable.status,
+    }).from(mt5CommandsTable)
+      .where(inArray(
+        sql`${mt5CommandsTable.payload} ->> 'liveCommandId'`,
+        candidates.map((c) => c.commandId),
+      ));
+    for (const m of mirrors) {
+      if (m.liveCommandId == null) continue;
+      const prev = mirrorStatusByCommandId.get(m.liveCommandId);
+      // If any mirror row shows pickup, that evidence wins over a never-served one.
+      const prevNeverServed = prev == null || prev === "PENDING" || prev === "cancelled";
+      if (prev === undefined || prevNeverServed) mirrorStatusByCommandId.set(m.liveCommandId, m.status);
+    }
+  } catch (e) {
+    for (const c of candidates) mirrorStatusByCommandId.set(c.commandId, "MIRROR_LOOKUP_FAILED");
+    logger.warn({
+      [PHASE_B_LIVE_LOG_PREFIX]: true,
+      event: "LIVE_SWEEP_MIRROR_LOOKUP_FAILED",
+      error: e instanceof Error ? e.message : String(e),
+    }, "sweep could not read transport mirrors — classifying all candidates toward LIVE_UNKNOWN");
+  }
+
+  const toExpire: string[] = [];
+  const toUnknown: string[] = [];
+  for (const c of candidates) {
+    const verdict = classifySweptLiveCommand({
+      pickedByEaAt: c.pickedByEaAt,
+      mirrorStatus: mirrorStatusByCommandId.get(c.commandId) ?? null,
+    });
+    (verdict === "LIVE_EXPIRED" ? toExpire : toUnknown).push(c.commandId);
+  }
+
+  // CAS updates guarded by status so a concurrent EA result/pickup cannot
+  // race the sweep — only rows still SENT_TO_MT5_LIVE transition.
+  const expired = toExpire.length === 0 ? [] : await db.update(arxLiveCommandsTable).set({
     status: "LIVE_EXPIRED",
     expiredAt: now,
     rejectedAt: now,
     rejectionReason: "LIVE_COMMAND_TTL_EXPIRED",
-  }).where(where).returning();
+  }).where(and(
+    inArray(arxLiveCommandsTable.commandId, toExpire),
+    eq(arxLiveCommandsTable.status, "SENT_TO_MT5_LIVE"),
+  )).returning();
+
+  const unknown = toUnknown.length === 0 ? [] : await db.update(arxLiveCommandsTable).set({
+    status: "LIVE_UNKNOWN",
+  }).where(and(
+    inArray(arxLiveCommandsTable.commandId, toUnknown),
+    eq(arxLiveCommandsTable.status, "SENT_TO_MT5_LIVE"),
+  )).returning();
 
   for (const cmd of expired) {
-    // Release any reservation tied to this command (no-op if absent).
+    // Provably-never-delivered: release the reservation (no-op if absent).
     try {
       const { releaseReservationByCommandId } =
         await import("../concurrency/exposureReservation.js");
@@ -2717,16 +3013,67 @@ export async function sweepExpiredLiveCommands(args?: { userId?: number }): Prom
     await audit({
       eventType: "LIVE_COMMAND_TTL_EXPIRED", severity: "HIGH",
       userId: cmd.userId, symbol: cmd.symbol,
-      message: `Live command expired before EA execution: ${cmd.commandId} (ttl=${cmd.ttlSeconds ?? "?"}s)`,
+      message: `Live command expired before EA pickup: ${cmd.commandId} (ttl=${cmd.ttlSeconds ?? "?"}s)`,
       metadata: { commandId: cmd.commandId, sentToMt5At: cmd.sentToMt5At, expiresAt: cmd.expiresAt },
+    });
+    await recordExecutionEvent({
+      commandRowId: cmd.id, source: "arx", eventType: "TTL_EXPIRED",
+      occurredAt: now,
+      payload: {
+        commandId: cmd.commandId,
+        sentToMt5At: cmd.sentToMt5At?.toISOString() ?? null,
+        expiresAt: cmd.expiresAt?.toISOString() ?? null,
+        mirrorStatus: mirrorStatusByCommandId.get(cmd.commandId) ?? null,
+        reservationSettlement: "RELEASE",
+      },
     });
     logger.warn({
       [PHASE_B_LIVE_LOG_PREFIX]: true,
       event: "LIVE_COMMAND_TTL_EXPIRED",
       commandId: cmd.commandId, userId: cmd.userId,
-    }, "Phase B live command swept to LIVE_EXPIRED (TTL)");
+    }, "Phase B live command swept to LIVE_EXPIRED (TTL, never picked up)");
   }
-  return { expired: expired.length, commandIds: expired.map((c) => c.commandId) };
+
+  for (const cmd of unknown) {
+    // Pickup evidence exists and no result arrived: the outcome is UNKNOWN.
+    // The reservation is deliberately NOT released (audit G1a/G1b) — reserved
+    // lots stay attributed until reconciliation confirms the true outcome.
+    await audit({
+      eventType: "LIVE_COMMAND_OUTCOME_UNKNOWN", severity: "CRITICAL",
+      userId: cmd.userId, symbol: cmd.symbol,
+      message: `Live command picked up but no broker result within TTL — outcome UNKNOWN, reservation held: ${cmd.commandId}`,
+      metadata: {
+        commandId: cmd.commandId,
+        pickedByEaAt: cmd.pickedByEaAt,
+        mirrorStatus: mirrorStatusByCommandId.get(cmd.commandId) ?? null,
+        sentToMt5At: cmd.sentToMt5At, expiresAt: cmd.expiresAt,
+      },
+    });
+    await recordExecutionEvent({
+      commandRowId: cmd.id, source: "arx", eventType: "UNKNOWN_ENTERED_TTL_NO_RESULT",
+      occurredAt: now,
+      payload: {
+        commandId: cmd.commandId,
+        pickedByEaAt: cmd.pickedByEaAt?.toISOString() ?? null,
+        mirrorStatus: mirrorStatusByCommandId.get(cmd.commandId) ?? null,
+        sentToMt5At: cmd.sentToMt5At?.toISOString() ?? null,
+        expiresAt: cmd.expiresAt?.toISOString() ?? null,
+        reservationSettlement: "HOLD",
+      },
+    });
+    logger.error({
+      [PHASE_B_LIVE_LOG_PREFIX]: true,
+      event: "LIVE_COMMAND_OUTCOME_UNKNOWN",
+      commandId: cmd.commandId, userId: cmd.userId,
+    }, "Phase B live command entered LIVE_UNKNOWN — reservation held, reconciliation required");
+  }
+
+  return {
+    expired: expired.length,
+    commandIds: expired.map((c) => c.commandId),
+    unknown: unknown.length,
+    unknownCommandIds: unknown.map((c) => c.commandId),
+  };
 }
 
 /** Phase B — EA picks up the next SENT_TO_MT5_LIVE command for this bridge. */
@@ -2799,6 +3146,12 @@ export async function pickupNextLiveCommand(args: {
     commandId: row.commandId, userId: args.userId,
     bridgeConnectionId: args.bridgeConnectionId,
   }, "Phase B live command picked up by EA");
+
+  await recordExecutionEvent({
+    commandRowId: row.id, source: "ea", eventType: "EA_PICKED_UP",
+    occurredAt: row.pickedByEaAt,
+    payload: { commandId: row.commandId, bridgeConnectionId: args.bridgeConnectionId },
+  });
 
   return { command: updated, refusalReason: null };
 }
@@ -2955,6 +3308,7 @@ export type BridgedLiveOutcome =
   | "LIVE_FILLED"
   | "LIVE_REJECTED"
   | "LIVE_FAILED"
+  | "LIVE_UNKNOWN"
   | "STALE_COMMAND_REJECTED";
 
 const LIVE_FAILED_STATUS_RE = /fail|error|reject/i;
@@ -2962,14 +3316,19 @@ const LIVE_FAILED_STATUS_RE = /fail|error|reject/i;
 /**
  * Pure, honest mapping of an EA/broker terminal result into a Phase B outcome.
  *
- * HONESTY RULE (see memory dispatch-vs-execution-honesty): a `LIVE_FILLED`
- * outcome is only ever returned when a confirmed broker ticket is present. A
- * "success"-looking status with NO broker ticket is NOT proof of a fill, so it
- * collapses to `LIVE_FAILED` — this prevents fabricating a fill and, critically,
- * prevents wrongly FULFILLING an exposure reservation (recordLiveCommandResult
- * fulfils on LIVE_FILLED, releases on every other outcome). Stale wins first so
- * a TTL-elapsed refusal lands on LIVE_EXPIRED. The failed/reject classification
- * mirrors the legacy `/fail|error|reject/i` status test used at the EA boundary.
+ * HONESTY RULES (see memory dispatch-vs-execution-honesty; audit G1b):
+ *   - `LIVE_FILLED` is only ever returned when a confirmed broker ticket is
+ *     present — a fill is never fabricated from a success-looking status.
+ *   - R2 S1: a non-failure status with NO broker ticket is `LIVE_UNKNOWN`,
+ *     never `LIVE_FAILED`. The old coercion to LIVE_FAILED released the
+ *     master exposure reservation; if the order actually stood at the broker
+ *     the pool was under-counted and the next reservation could over-expose
+ *     the master account. UNKNOWN holds the reservation until reconciliation
+ *     resolves the true outcome.
+ *   - Explicit failure/rejection statuses (the legacy `/fail|error|reject/i`
+ *     EA-boundary test) are the EA/broker CONFIRMING non-execution — those
+ *     remain LIVE_FAILED / LIVE_REJECTED. Stale wins first so a TTL-elapsed
+ *     refusal lands on LIVE_EXPIRED.
  */
 export function mapBridgedLiveOutcome(input: {
   status: string;
@@ -2985,7 +3344,7 @@ export function mapBridgedLiveOutcome(input: {
   if (LIVE_FAILED_STATUS_RE.test(status)) {
     return statusLc.includes("reject") ? "LIVE_REJECTED" : "LIVE_FAILED";
   }
-  return input.hasBrokerTicket ? "LIVE_FILLED" : "LIVE_FAILED";
+  return input.hasBrokerTicket ? "LIVE_FILLED" : "LIVE_UNKNOWN";
 }
 
 export async function recordLiveCommandResult(args: {
@@ -2994,7 +3353,10 @@ export async function recordLiveCommandResult(args: {
   // Task #28 — STALE_COMMAND_REJECTED lets the EA report that it refused a
   // command whose TTL had already elapsed when it polled it. The server maps
   // it to the terminal LIVE_EXPIRED state.
-  outcome: "LIVE_FILLED" | "LIVE_REJECTED" | "LIVE_FAILED" | "STALE_COMMAND_REJECTED";
+  // R2 S1 — LIVE_UNKNOWN is the honest mapping of an ambiguous EA report
+  // (success-looking status, no broker ticket): non-terminal, reservation
+  // held, resolved only by reconciliation.
+  outcome: "LIVE_FILLED" | "LIVE_REJECTED" | "LIVE_FAILED" | "LIVE_UNKNOWN" | "STALE_COMMAND_REJECTED";
   reportingBridgeConnectionId: number;
   brokerTicket?: string | null;
   fillPrice?: number | null;
@@ -3022,10 +3384,26 @@ export async function recordLiveCommandResult(args: {
     return { ok: false, command: null, reason: "BRIDGE_BINDING_MISMATCH" };
   }
 
+  // R2 S2 — the full reported broker evidence, retained verbatim on every
+  // path (applied, duplicate, late, conflicting). Previously the losing side
+  // of the first-write-wins CAS survived only as duplicateResultCount++ and
+  // the ticket/price/retcode were destroyed (audit G3).
+  const reportedEvidence: Record<string, unknown> = {
+    reportedOutcome: args.outcome,
+    brokerTicket: args.brokerTicket ?? null,
+    fillPrice: args.fillPrice ?? null,
+    executedVolume: args.executedVolume ?? null,
+    mt5Retcode: args.mt5Retcode ?? null,
+    brokerMessage: args.brokerMessage ?? null,
+    eaReason: args.eaReason ?? null,
+    reportingBridgeConnectionId: args.reportingBridgeConnectionId,
+  };
+
   // Task #28 — exactly-once: if the command is already in a terminal state
   // this is a duplicate result POST (EA retried, or a result raced the TTL
   // sweep). We acknowledge it with ok:true so the EA stops retrying, record
-  // the duplicate for audit, but NEVER re-apply the outcome.
+  // the duplicate for audit, but NEVER re-apply the outcome. R2 S2: the
+  // reported payload is RETAINED as an execution event, not destroyed.
   if (row.status !== "SENT_TO_MT5_LIVE") {
     if (isTerminalLiveStatus(row.status as ArxLiveCommandStatus)) {
       const [bumped] = await db.update(arxLiveCommandsTable).set({
@@ -3038,14 +3416,37 @@ export async function recordLiveCommandResult(args: {
         message: `Duplicate live result ignored for ${args.commandId} (already ${row.status}); reported ${args.outcome}`,
         metadata: { commandId: args.commandId, existingStatus: row.status, reportedOutcome: args.outcome },
       });
+      await recordExecutionEvent({
+        commandRowId: row.id, source: "ea", eventType: "LATE_RESULT_RETAINED",
+        payload: { commandId: args.commandId, existingStatus: row.status, applied: false, ...reportedEvidence },
+      });
       return { ok: true, command: bumped ?? row, reason: "DUPLICATE_IGNORED" };
+    }
+    // R2 S1 — a result arriving while the command rests in an epistemic state
+    // (LIVE_UNKNOWN / LIVE_RECONCILIATION_REQUIRED) is late broker evidence.
+    // It is retained for the reconciler and acknowledged so the EA stops
+    // retrying, but NEVER applied here: only reconciliation (R2 S3) may
+    // resolve an unknown outcome, and the reservation stays held meanwhile.
+    if (LIVE_EPISTEMIC_STATUSES.includes(row.status as ArxLiveCommandStatus)) {
+      await audit({
+        eventType: "LIVE_RESULT_RETAINED_UNKNOWN", severity: "CRITICAL",
+        userId: args.userId, symbol: row.symbol,
+        message: `Late live result retained for ${args.commandId} (currently ${row.status}); reported ${args.outcome} — reconciliation required to resolve`,
+        metadata: { commandId: args.commandId, existingStatus: row.status, reportedOutcome: args.outcome, brokerTicket: args.brokerTicket ?? null },
+      });
+      await recordExecutionEvent({
+        commandRowId: row.id, source: "ea", eventType: "LATE_RESULT_RETAINED",
+        payload: { commandId: args.commandId, existingStatus: row.status, applied: false, ...reportedEvidence },
+      });
+      return { ok: true, command: row, reason: "RESULT_RETAINED_FOR_RECONCILIATION" };
     }
     // Non-terminal but not SENT (e.g. DRAFT/APPROVED) — illegal result.
     return { ok: false, command: null, reason: "BAD_STATE" };
   }
 
   // Map the EA outcome to the final command status. STALE_COMMAND_REJECTED
-  // becomes LIVE_EXPIRED (terminal); everything else is its own status.
+  // becomes LIVE_EXPIRED (terminal); everything else is its own status
+  // (LIVE_UNKNOWN stays LIVE_UNKNOWN — non-terminal).
   const finalStatus: ArxLiveCommandStatus =
     args.outcome === "STALE_COMMAND_REJECTED" ? "LIVE_EXPIRED" : args.outcome;
 
@@ -3064,6 +3465,11 @@ export async function recordLiveCommandResult(args: {
   };
   if (args.outcome === "LIVE_FILLED") {
     updates.filledAt = now;
+  } else if (args.outcome === "LIVE_UNKNOWN") {
+    // R2 S1 — no terminal stamps: this is not a rejection, not an expiry,
+    // not a fill. The evidence columns above (retcode/brokerMessage/…) and
+    // the execution event carry what the EA reported; rejectionReason stays
+    // untouched so the row never claims a confident refusal it cannot prove.
   } else if (args.outcome === "STALE_COMMAND_REJECTED") {
     updates.rejectedAt = now;
     updates.expiredAt = now;
@@ -3124,43 +3530,82 @@ export async function recordLiveCommandResult(args: {
         message: `Duplicate live result lost CAS race for ${args.commandId} (now ${current.status}); reported ${args.outcome}`,
         metadata: { commandId: args.commandId, existingStatus: current.status, reportedOutcome: args.outcome },
       });
+      // R2 S2 — retain the losing side of the race: if the first-arriving
+      // result was wrong, this event is the evidence reconciliation needs.
+      await recordExecutionEvent({
+        commandRowId: current.id, source: "ea", eventType: "LATE_RESULT_RETAINED",
+        payload: { commandId: args.commandId, existingStatus: current.status, applied: false, lostCasRace: true, ...reportedEvidence },
+      });
       return { ok: true, command: bumped ?? current, reason: "DUPLICATE_IGNORED" };
+    }
+    // R2 S1 — the race may also have been lost to the TTL sweep moving the
+    // row into LIVE_UNKNOWN: retain the evidence, never apply it here.
+    if (current && LIVE_EPISTEMIC_STATUSES.includes(current.status as ArxLiveCommandStatus)) {
+      await recordExecutionEvent({
+        commandRowId: current.id, source: "ea", eventType: "LATE_RESULT_RETAINED",
+        payload: { commandId: args.commandId, existingStatus: current.status, applied: false, lostCasRace: true, ...reportedEvidence },
+      });
+      return { ok: true, command: current, reason: "RESULT_RETAINED_FOR_RECONCILIATION" };
     }
     return { ok: false, command: current ?? null, reason: "CAS_CONFLICT" };
   }
 
   // Tamper-evident mirror of the broker order outcome — best-effort, never
-  // throws (cannot affect fill settlement). FILLED is ALLOWED; everything else
-  // is DENIED so a rejected/failed order is permanently chain-recorded.
+  // throws (cannot affect fill settlement). FILLED is ALLOWED; an UNKNOWN
+  // outcome is ATTEMPTED (no confirmed result exists to allow or deny);
+  // everything else is DENIED so a rejected/failed order is permanently
+  // chain-recorded.
   await mirrorCriticalEvent({
     eventType: "ORDER_RESULT", severity: "CRITICAL",
-    status: args.outcome === "LIVE_FILLED" ? "ALLOWED" : "DENIED",
+    status: args.outcome === "LIVE_FILLED" ? "ALLOWED"
+      : args.outcome === "LIVE_UNKNOWN" ? "ATTEMPTED"
+      : "DENIED",
     actorUserId: args.userId, actorType: "EA",
     affectedObject: `arx_live_commands:${args.commandId}`,
     message: `Live order result: ${args.outcome}`,
     metadata: { commandId: args.commandId, symbol: row.symbol, outcome: args.outcome, hasBrokerTicket: !!args.brokerTicket },
   });
 
-  // Settle the master-exposure reservation taken at dispatch time.
-  // LIVE_FILLED → FULFILLED (lots remain attributed via shared_trade_attribution).
-  // LIVE_REJECTED / LIVE_FAILED → RELEASED (lots return to the pool).
-  // Both helpers act only on rows still in RESERVED, so duplicate EA
-  // callbacks are idempotent.
-  try {
-    const { fulfillReservationByCommandId, releaseReservationByCommandId } =
-      await import("../concurrency/exposureReservation.js");
-    if (args.outcome === "LIVE_FILLED") {
-      await fulfillReservationByCommandId(args.commandId);
-    } else {
-      await releaseReservationByCommandId(args.commandId);
-    }
-  } catch (e) {
+  // R2 S2 — the applied transition, with the full broker evidence.
+  await recordExecutionEvent({
+    commandRowId: updated.id, source: "ea", eventType: `RESULT_${finalStatus}`,
+    occurredAt: now,
+    payload: { commandId: args.commandId, applied: true, finalStatus, ...reportedEvidence },
+  });
+
+  // Settle the master-exposure reservation taken at dispatch time
+  // (pure rule: settleReservationForStatus — audit G1b).
+  //   FULFILL — confirmed fill (lots stay attributed via shared_trade_attribution).
+  //   RELEASE — confirmed non-execution (lots return to the pool).
+  //   HOLD    — UNKNOWN outcome: the reservation is deliberately NOT touched;
+  //             releasing an unconfirmed order under-counts the pool and can
+  //             over-expose the master account. Reconciliation settles it.
+  // The fulfil/release helpers act only on rows still in RESERVED, so
+  // duplicate EA callbacks are idempotent.
+  const settlement = settleReservationForStatus(finalStatus);
+  if (settlement === "HOLD") {
     logger.error({
       [PHASE_B_LIVE_LOG_PREFIX]: true,
-      event: "RESERVATION_SETTLEMENT_FAILED",
+      event: "RESERVATION_HELD_UNKNOWN_OUTCOME",
       commandId: args.commandId, outcome: args.outcome,
-      error: e instanceof Error ? e.message : String(e),
-    }, "failed to settle exposure reservation — manual reconciliation required");
+    }, "exposure reservation HELD — outcome unknown, reconciliation required");
+  } else {
+    try {
+      const { fulfillReservationByCommandId, releaseReservationByCommandId } =
+        await import("../concurrency/exposureReservation.js");
+      if (settlement === "FULFILL") {
+        await fulfillReservationByCommandId(args.commandId);
+      } else {
+        await releaseReservationByCommandId(args.commandId);
+      }
+    } catch (e) {
+      logger.error({
+        [PHASE_B_LIVE_LOG_PREFIX]: true,
+        event: "RESERVATION_SETTLEMENT_FAILED",
+        commandId: args.commandId, outcome: args.outcome,
+        error: e instanceof Error ? e.message : String(e),
+      }, "failed to settle exposure reservation — manual reconciliation required");
+    }
   }
 
   // Task #28 (T003) — forced reconciliation of position close. When a

@@ -2,6 +2,7 @@ import {
   pgTable,
   serial,
   text,
+  integer,
   doublePrecision,
   timestamp,
   uniqueIndex,
@@ -34,6 +35,19 @@ export const marketCandlesTable = pgTable(
     symbol: text("symbol").notNull(),
     timeframe: text("timeframe").notNull(),
     source: text("source").notNull(),
+    // Bridge/connection that produced the bar (R4 slice 2). NULLABLE:
+    //   - non-broker sources ("deriv", "assistant_real:*") have no bridge, and
+    //   - rows written before this column landed are honestly unattributed.
+    // TRANSITIONAL: this column is NOT yet part of the unique key below, so the
+    // "mt5_broker" mirror still holds ONE row per (symbol,timeframe,barTime) —
+    // a second bridge writing the same bar overwrites it (last write wins, now
+    // ATTRIBUTED to the overwriting bridge instead of silently mislabeled).
+    // Widening the unique key to include this column requires a dedupe +
+    // backfill migration and a bridge-scoped read path — a follow-up slice.
+    // Cross-account isolation is enforced today by the bridge-scoped
+    // `broker_candles` system of record and the bridge-partitioned in-memory
+    // provider; this mirror is a read cache.
+    bridgeConnectionId: integer("bridge_connection_id"),
     barTime: timestamp("bar_time", { withTimezone: true }).notNull(),
     open: doublePrecision("open").notNull(),
     high: doublePrecision("high").notNull(),

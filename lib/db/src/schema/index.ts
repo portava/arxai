@@ -465,3 +465,6 @@ export * from "./discoveryPipeline";
 // ── Phase 0 (prodready-20260819) — Owner Decision Registry (Blueprint #54).
 // APPEND-ONLY rulings ledger; forward-fix via supersedesId, no UPDATE/DELETE.
 export * from "./ownerDecisions";
+
+// R2-S2 — append-only execution evidence log (unique(command_id, sequence_no)).
+export * from "./executionEvents";

@@ -1,11 +1,21 @@
-// Market Brain — master orchestrator for all market intelligence modules
+// Market Brain — master orchestrator for all market intelligence modules.
+//
+// FABRICATION REMOVAL (R7 step 1a). This module previously defaulted
+// `candles ?? generateSyntheticCandles(symbol, 250)` — and its only route
+// caller passed `undefined`, so every /brain/analyze response was an analysis
+// of a fresh Math.random walk served with entry/SL/TP and riskApproved and no
+// synthetic marker. Now: candles come from the unified market-data router
+// (provenance-preserving accessor); insufficient real data produces the honest
+// refusal `{ available: false, reason: "INSUFFICIENT_REAL_DATA" }` instead of
+// an analysis of invented bars.
 import type { Candle } from "../lib/strategyEngine.js";
-import { generateSyntheticCandles, getMarketTypeForSymbol } from "../lib/strategyEngine.js";
+import { getMarketTypeForSymbol } from "../lib/strategyEngine.js";
+import { getMarketDataWithProvenance } from "../lib/data/dataManager.js";
 import { getSymbolInfo } from "./symbols/symbolRegistry.js";
 import { analyzeTechnical } from "./technical/technicalEngine.js";
 import { analyzeMacro } from "./macro/macroEngine.js";
 import { analyzeSession } from "./sessions/sessionEngine.js";
-import { analyzeNewsRisk } from "./news/newsRiskEngine.js";
+import { analyzeNewsRiskLive } from "./news/newsRiskEngine.js";
 import {
   computeConfidence,
   computeNewsRiskPenalty,
@@ -32,6 +42,8 @@ export interface BrainSettings {
 }
 
 export interface MarketBrainResult {
+  /** Discriminant vs MarketBrainRefusal. Always true on a full analysis. */
+  available: true;
   symbol: string;
   category: string;
   direction: "BUY" | "SELL" | "WAIT";
@@ -88,6 +100,51 @@ export interface MarketBrainResult {
     blockTrading: boolean;
     reason: string;
     nextEvent?: string;
+    providerConnected?: boolean;
+  };
+  /** Origin of the analyzed candles: "caller" when the caller supplied them,
+   *  otherwise the router provider id that served the real bars. */
+  candleSource: string;
+  candleCount: number;
+}
+
+/** Honest refusal — returned instead of analyzing fabricated data when no
+ *  (or not enough) real candles are available. Keeps the envelope keys a
+ *  generic consumer reads (symbol/direction/confidence/riskApproved/
+ *  blockedReason/timestamp) while withholding every market number. */
+export interface MarketBrainRefusal {
+  available: false;
+  reason: "INSUFFICIENT_REAL_DATA";
+  symbol: string;
+  direction: "WAIT";
+  confidence: 0;
+  riskApproved: false;
+  blockedReason: string;
+  reasons: string[];
+  timestamp: string;
+}
+
+export type MarketBrainOutcome = MarketBrainResult | MarketBrainRefusal;
+
+/** Minimum real closed bars before the brain will analyze. Below this the
+ *  EMA-50 alignment / structure reads would be seeded from too little data. */
+export const MIN_REAL_CANDLES_FOR_BRAIN = 60;
+
+function refuseInsufficientRealData(symbol: string, detail: string): MarketBrainRefusal {
+  const blockedReason = `INSUFFICIENT_REAL_DATA: ${detail}`;
+  return {
+    available: false,
+    reason: "INSUFFICIENT_REAL_DATA",
+    symbol,
+    direction: "WAIT",
+    confidence: 0,
+    riskApproved: false,
+    blockedReason,
+    reasons: [
+      blockedReason,
+      "ARX does not analyze fabricated candles — analysis is withheld until a real feed serves enough closed bars.",
+    ],
+    timestamp: new Date().toISOString(),
   };
 }
 
@@ -129,24 +186,51 @@ function describeMarketCondition(technical: ReturnType<typeof analyzeTechnical>)
   return "Consolidation";
 }
 
-export function analyzeMarket(
+export async function analyzeMarket(
   symbol: string,
   candles?: Candle[],
   accountState?: Partial<AccountState>,
   settings?: BrainSettings,
-): MarketBrainResult {
+): Promise<MarketBrainOutcome> {
   const timestamp = new Date().toISOString();
   const symbolInfo = getSymbolInfo(symbol);
   const category = symbolInfo?.category ?? getMarketTypeForSymbol(symbol);
   const minConfidence = settings?.minConfidence ?? symbolInfo?.minimumConfidence ?? 65;
-  const candleData = candles ?? generateSyntheticCandles(symbol, 250);
+
+  // ─── Real candles only ──────────────────────────────────────────────────────
+  // Caller-supplied candles are honored (back-compat: callers own their data's
+  // provenance). Otherwise the unified router serves real bars or nothing —
+  // there is NO synthetic default. Too few bars ⇒ honest refusal.
+  let candleData: Candle[];
+  let candleSource: string;
+  if (candles) {
+    candleData = candles;
+    candleSource = "caller";
+  } else {
+    try {
+      const served = await getMarketDataWithProvenance(symbol, "1m", 250);
+      candleData = served.candles.map((c) => ({
+        time: c.time, open: c.open, high: c.high, low: c.low, close: c.close,
+        volume: c.volume ?? 0,
+      }));
+      candleSource = served.provenance?.providerId ?? "router";
+    } catch (err) {
+      return refuseInsufficientRealData(symbol, `market-data router failed: ${String(err).slice(0, 160)}`);
+    }
+  }
+  if (candleData.length < MIN_REAL_CANDLES_FOR_BRAIN) {
+    return refuseInsufficientRealData(
+      symbol,
+      `only ${candleData.length}/${MIN_REAL_CANDLES_FOR_BRAIN} real closed candles available from ${candleSource}`,
+    );
+  }
   const price = candleData[candleData.length - 1]?.close ?? 0;
 
   // ─── Run all sub-engines ────────────────────────────────────────────────────
   const technical = analyzeTechnical(symbol, candleData);
   const macro = analyzeMacro(symbol, category);
   const session = analyzeSession(category, symbol);
-  const newsRisk = analyzeNewsRisk(symbol, category);
+  const newsRisk = await analyzeNewsRiskLive(symbol, category);
 
   // ─── Strategy match score ────────────────────────────────────────────────────
   const { score: strategyMatchScore, bestStrategy } = computeStrategyMatchScore(
@@ -242,6 +326,7 @@ export function analyzeMarket(
   ];
 
   return {
+    available: true,
     symbol,
     category,
     direction,
@@ -279,6 +364,8 @@ export function analyzeMarket(
     },
     macroDetails: macro,
     sessionDetails: { session: session.session, liquidityLevel: session.liquidityLevel, recommendedMarkets: session.recommendedMarkets, caution: session.caution, sessionScore: session.sessionScore },
-    newsDetails: { majorNewsSoon: newsRisk.majorNewsSoon, riskLevel: newsRisk.riskLevel, blockTrading: newsRisk.blockTrading, reason: newsRisk.reason, nextEvent: newsRisk.nextEvent },
+    newsDetails: { majorNewsSoon: newsRisk.majorNewsSoon, riskLevel: newsRisk.riskLevel, blockTrading: newsRisk.blockTrading, reason: newsRisk.reason, nextEvent: newsRisk.nextEvent, providerConnected: newsRisk.providerConnected },
+    candleSource,
+    candleCount: candleData.length,
   };
 }

@@ -8,7 +8,10 @@ export type MarketDataSource = "REAL" | "FALLBACK" | "MOCK";
 
 export type LiquidityLevel = "LOW" | "NORMAL" | "HIGH";
 export type VolatilityLevel = "LOW" | "NORMAL" | "HIGH" | "EXTREME";
-export type DataQualityStatus = "GOOD" | "DEGRADED" | "MISSING";
+// "SYNTHETIC" — data was invented in-process (fallback generator). It is never
+// GOOD: decision-capable consumers must treat it as blocked (computeBlockers
+// emits a CRITICAL blocker for it); display-only consumers must label it.
+export type DataQualityStatus = "GOOD" | "DEGRADED" | "MISSING" | "SYNTHETIC";
 export type Timeframe = "M1" | "M5" | "M15" | "M30" | "H1" | "H4" | "D1";
 export type Severity = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 

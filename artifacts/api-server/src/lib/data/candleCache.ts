@@ -85,14 +85,26 @@ export interface ReadCachedResult {
  * by barTime within the batch (last write wins) and ON CONFLICT updates OHLCV in
  * place so a re-fetched window never creates duplicate rows. Invalid bars are
  * dropped (never stored). Returns the number of bars written.
+ *
+ * `opts.bridgeConnectionId` (R4 slice 2) attributes the writing bridge on
+ * broker-mirror rows. TRANSITIONAL CONTRACT (until the migration widens the
+ * unique key): the conflict target stays (symbol, timeframe, source, barTime),
+ * so a second bridge writing the same bar still overwrites the row — but the
+ * row now names the bridge that last wrote it instead of silently mislabeling.
+ * The column is referenced ONLY when a bridge id is supplied, so every
+ * non-broker write path keeps working against a database where the column has
+ * not been pushed yet; the attributed mirror write itself requires the pushed
+ * column (deploy-ordering note for the coordinator).
  */
 export async function upsertCandles(
   symbol: string,
   timeframe: string,
   source: string,
   candles: Candle[],
+  opts?: { bridgeConnectionId?: number | null },
 ): Promise<{ written: number; rejected: number }> {
   const sym = symbol.trim().toUpperCase();
+  const bridgeConnectionId = opts?.bridgeConnectionId ?? null;
   const byTime = new Map<string, (typeof marketCandlesTable.$inferInsert)>();
   let rejected = 0;
   for (const c of candles) {
@@ -117,13 +129,17 @@ export async function upsertCandles(
       close: c.close,
       volume: c.volume ?? null,
       updatedAt: new Date(),
+      // Field present only when attributable — an omitted field keeps the
+      // column out of the generated INSERT entirely (pre-migration safety);
+      // null is never written as a fake attribution, it is simply absent.
+      ...(bridgeConnectionId != null ? { bridgeConnectionId } : {}),
     });
   }
   const rows = [...byTime.values()];
   if (rows.length === 0) return { written: 0, rejected };
 
   // Chunk to keep the parameter count well under Postgres' 65535 bind limit
-  // (10 columns/row → ~6500 rows max; 1000 is comfortably safe).
+  // (11 columns/row → ~5900 rows max; 1000 is comfortably safe).
   const CHUNK = 1000;
   for (let i = 0; i < rows.length; i += CHUNK) {
     const slice = rows.slice(i, i + CHUNK);
@@ -144,6 +160,11 @@ export async function upsertCandles(
           close: sql`excluded.close`,
           volume: sql`excluded.volume`,
           updatedAt: sql`now()`,
+          // Re-attribute on overwrite so the surviving row names its actual
+          // last writer. Referenced only on attributed writes (see contract).
+          ...(bridgeConnectionId != null
+            ? { bridgeConnectionId: sql`excluded.bridge_connection_id` }
+            : {}),
         },
       });
   }

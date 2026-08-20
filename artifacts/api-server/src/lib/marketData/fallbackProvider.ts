@@ -1,8 +1,20 @@
 // Build DD — Fallback (synthetic) market data provider.
 //
-// Always available. Used when no real provider is configured or when the
-// real provider fails. Wraps the existing strategyEngine synthetic candle
-// generator and synthesizes a plausible bid/ask spread for downstream use.
+// HONESTY CONTRACT (R7 step 1c). This provider INVENTS bars. It previously
+// stamped its output `dataQuality.status: "GOOD"` and re-timed the quote to
+// `Date.now()` — explicitly to dodge the stale blocker. Both are gone:
+//
+//   - status is "SYNTHETIC" (never GOOD), and computeBlockers in
+//     marketDataService emits a CRITICAL blocker for it, so no decision-capable
+//     consumer can act on this output;
+//   - the quote timestamp is the last synthetic bar's own time — this provider
+//     never claims freshness it did not observe, so the stale blocker fires
+//     naturally on top of the synthetic blocker;
+//   - the unified service no longer serves this provider's candles to its
+//     (decision-capable) consumers at all — it returns honest-empty instead.
+//     This class remains ONLY for explicitly display-labeled synthetic use and
+//     for the health surface's "fallback exists" report.
+//
 // Output is ALWAYS labeled source="FALLBACK" so callers cannot mistake it
 // for live data.
 
@@ -44,7 +56,7 @@ function classifyVolatility(candles: MarketCandle[]): VolatilityLevel {
   return "EXTREME";
 }
 
-function sessionContextFor(symbol: string, candles: MarketCandle[]): SessionContext {
+export function sessionContextFor(symbol: string, candles: MarketCandle[]): SessionContext {
   const session = detectSession();
   const isSynthetic = symbol.toLowerCase().includes("volatility")
     || symbol.toLowerCase().includes("boom")
@@ -63,6 +75,10 @@ function sessionContextFor(symbol: string, candles: MarketCandle[]): SessionCont
   };
 }
 
+export const SYNTHETIC_DATA_WARNING =
+  "SYNTHETIC data — these bars were invented in-process, not observed on any market. " +
+  "Never decision-grade. Display only, clearly labeled.";
+
 export class FallbackMarketDataProvider implements MarketDataProvider {
   readonly name = "synthetic-fallback";
   readonly source = "FALLBACK" as const;
@@ -73,7 +89,10 @@ export class FallbackMarketDataProvider implements MarketDataProvider {
 
   async fetch(req: { symbol: string; timeframe: string; limit: number }): Promise<MarketDataSnapshot> {
     const start = Date.now();
-    const raw = generateSyntheticCandles(req.symbol, Math.max(50, req.limit));
+    // Explicit opt-in to the production synthetic fence: this provider IS the
+    // explicitly-synthetic context, and its output is labeled SYNTHETIC +
+    // blocked for decisions by computeBlockers.
+    const raw = generateSyntheticCandles(req.symbol, Math.max(50, req.limit), { allowSynthetic: true });
     const tfMs = timeframeMinutes(req.timeframe) * 60_000;
     // Re-stamp times so spacing matches the requested timeframe.
     const baseTime = Date.now() - raw.length * tfMs;
@@ -102,27 +121,28 @@ export class FallbackMarketDataProvider implements MarketDataProvider {
       ask: Number(ask.toFixed(5)),
       mid: Number(mid.toFixed(5)),
       spread: Number(spread.toFixed(5)),
-      // Quote timestamp = "now" (live tick); the candles array still uses
-      // their own per-bar open times. Without this, an M5 fallback quote
-      // would be ~5 minutes old by definition and trigger the stale blocker.
-      timestamp: new Date().toISOString(),
+      // Quote timestamp = the last synthetic bar's own time. This provider
+      // observed nothing "now"; forging freshness to dodge the stale blocker
+      // is exactly the dishonesty this fix removes. The stale blocker firing
+      // on synthetic output is correct behavior.
+      timestamp: last.time,
       timeframe: req.timeframe as MarketDataSnapshot["timeframe"],
       candles,
       sessionContext: session,
       dataQuality: {
-        status: "GOOD",
+        status: "SYNTHETIC",
         latencyMs,
         candlesAvailable: candles.length,
-        warnings: ["Using synthetic FALLBACK data — no real provider configured."],
+        warnings: [SYNTHETIC_DATA_WARNING],
       },
     };
   }
 
   async health(): Promise<{ ok: boolean; detail: string; latencyMs: number }> {
-    const t = Date.now();
-    // synthetic generator is in-process; "health" is just a no-op probe
-    void generateSyntheticCandles("Volatility 75 Index", 5);
-    return { ok: true, detail: "Synthetic generator OK", latencyMs: Date.now() - t };
+    // In-process generator; no probe call needed (and the production synthetic
+    // fence makes an un-opted probe throw). "ok" means only "the fallback
+    // class exists" — never that its data is usable for decisions.
+    return { ok: true, detail: "Synthetic generator present (SYNTHETIC-labeled, never decision-grade)", latencyMs: 0 };
   }
 }
 

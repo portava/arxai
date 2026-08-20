@@ -47,7 +47,12 @@ import {
   isDerivSyntheticSymbol,
   resolveDerivSymbol,
 } from "./providers/derivProvider.js";
-import { mt5Provider, getMt5CandleAvailability } from "./providers/mt5Provider.js";
+import {
+  mt5Provider,
+  getMt5CandleAvailability,
+  readMt5Candles,
+  MULTI_BRIDGE_CONTENTION_NOTE,
+} from "./providers/mt5Provider.js";
 import { getMarketProvider } from "../assistant/marketProvider.js";
 import { readCachedCandles } from "./candleCache.js";
 import {
@@ -92,6 +97,15 @@ export interface MarketCandlesResult {
    * unchanged.
    */
   provenance?: SeriesProvenance;
+  /**
+   * Provenance qualifier notes for the served series (R4 slice 2), e.g.
+   * MULTI_BRIDGE_CONTENTION when ≥2 attributed bridges held fresh series for
+   * this symbol|timeframe and the read served the primary (most recent)
+   * WITHOUT blending. Present only when non-empty; additive — carried beside
+   * the envelope because `SeriesProvenance` (types.ts, wave-2 ownership) has
+   * no notes field yet.
+   */
+  provenanceNotes?: string[];
 }
 
 export interface MarketQuoteResult {
@@ -200,15 +214,19 @@ function makeProvenance(args: {
   delayed: boolean | null;
   source: SeriesProvenance["source"];
   sourceId: string;
+  /** Serving-bridge identity (R4 slice 2): the in-memory mt5 store is
+   *  bridge-partitioned, so live reads CAN attribute a bridge/owner now.
+   *  Omitted/null = unattributable (durable mirror, non-broker providers) —
+   *  stays null, never guessed. */
+  bridgeConnectionId?: number | null;
+  userId?: number | null;
 }): SeriesProvenance {
   return {
     providerId: args.providerId,
     subProviderId: args.subProviderId ?? null,
     brokerCode: args.brokerCode,
-    // No serving-layer bridge/account dimension exists yet (in-memory store and
-    // market_candles mirror are keyed symbol|timeframe only — later slice).
-    bridgeConnectionId: null,
-    userId: null,
+    bridgeConnectionId: args.bridgeConnectionId ?? null,
+    userId: args.userId ?? null,
     brokerSymbol: null,
     environment: args.environment ?? "unknown",
     receivedAt: new Date().toISOString(),
@@ -288,17 +306,28 @@ async function readDurableBrokerCandles(
   return { served: read.candles, hasAny: true, count: read.count, stale: false, insufficient: false };
 }
 
-async function tryMt5Candles(symbol: string, timeframe: string, limit: number): Promise<ProviderAttempt & { candles: Candle[]; provenance: SeriesProvenance | null }> {
+async function tryMt5Candles(
+  symbol: string,
+  timeframe: string,
+  limit: number,
+  opts?: { bridgeConnectionId?: number | null },
+): Promise<ProviderAttempt & { candles: Candle[]; provenance: SeriesProvenance | null; notes?: string[] }> {
   const t0 = Date.now();
   // 1) LIVE in-memory provider — the freshest pushed bars win when present.
   const connected = await mt5Provider.isConnected();
   let liveError: string | null = null;
   if (connected) {
     try {
-      const candles = await mt5Provider.getCandles(symbol, timeframe, limit);
-      if (candles.length > 0) {
+      // Bridge-scoped read (R4 slice 2): with opts.bridgeConnectionId the read
+      // is pinned to that bridge's partition (miss → honest fall-through);
+      // without, it serves the single most-recently-pushing writer and reports
+      // that identity — series are NEVER blended across bridges.
+      const read = readMt5Candles(symbol, timeframe, limit, {
+        bridgeConnectionId: opts?.bridgeConnectionId ?? null,
+      });
+      if (read.candles.length > 0) {
         return {
-          provider: "mt5_broker", ok: true, reason: null, candleCount: candles.length, ms: Date.now() - t0, candles,
+          provider: "mt5_broker", ok: true, reason: null, candleCount: read.candles.length, ms: Date.now() - t0, candles: read.candles,
           // Live branch serves only what a connected EA pushed from the
           // terminal's own real-time chart series → delayed: false. Bars are
           // tick aggregates → "DERIVED" under the lib/provenance taxonomy.
@@ -308,7 +337,12 @@ async function tryMt5Candles(symbol: string, timeframe: string, limit: number): 
             delayed: false,
             source: "DERIVED",
             sourceId: `mt5_broker:${sourceSymbolKey(symbol)}:${timeframe}`,
+            bridgeConnectionId: read.bridgeConnectionId,
+            userId: read.userId,
           }),
+          // Contention is a serve-time truth about the store (two attributed
+          // bridges fresh on one series): named, never silently resolved.
+          ...(read.contention ? { notes: [MULTI_BRIDGE_CONTENTION_NOTE] } : {}),
         };
       }
     } catch (err) {
@@ -348,10 +382,16 @@ async function tryMt5Candles(symbol: string, timeframe: string, limit: number): 
     reason = liveError;
   } else if (connected) {
     // Live feed connected, but neither the in-memory series nor the durable
-    // store has this timeframe. Distinguish "this symbol was never pushed" from
-    // "this timeframe specifically is missing while the symbol pushes others".
+    // store served this request. Distinguish: (a) a bridge-pinned read missed
+    // while ANOTHER writer serves this symbol|timeframe (must not be
+    // mislabeled as a missing timeframe), (b) this timeframe is missing while
+    // the symbol pushes others, (c) the symbol was never pushed at all.
     const avail = getMt5CandleAvailability(symbol, timeframe);
-    reason = avail.symbolHasAnySeries ? "MT5_TIMEFRAME_MISSING" : "MT5_CANDLES_NOT_PUSHED";
+    if (opts?.bridgeConnectionId != null && avail.requestedFresh) {
+      reason = "MT5_BRIDGE_SERIES_MISSING";
+    } else {
+      reason = avail.symbolHasAnySeries ? "MT5_TIMEFRAME_MISSING" : "MT5_CANDLES_NOT_PUSHED";
+    }
   } else {
     reason = "MT5_BROKER_FEED_NOT_ACTIVE";
   }
@@ -539,7 +579,7 @@ export async function routeCandles(symbol: string, timeframe: string, limit: num
     if (id === "mt5_broker") {
       const r = await tryMt5Candles(symbol, tf, limit);
       attempts.push(stripCandles(r));
-      if (r.ok) return success(symbol, assetClass, r.candles, r.provider, attempts, r.provenance);
+      if (r.ok) return success(symbol, assetClass, r.candles, r.provider, attempts, r.provenance, r.notes);
     } else if (id === "deriv") {
       const r = await tryDerivCandles(symbol, tf, limit);
       attempts.push(stripCandles(r));
@@ -562,6 +602,142 @@ export async function routeCandles(symbol: string, timeframe: string, limit: num
     userMessage: noFeedMessage(assetClass, /*candles*/ true),
     adminDetail: `All providers failed for ${symbol} (${assetClass}). Chain: ${chain.join(" → ")}. Reasons: ${attempts.map((a) => `${a.provider}=${a.reason ?? "ok"}`).join("; ")}`,
   };
+}
+
+// ── Decision-grade routing (R4 slice 4 prep — audit-marketdata §3.3, §10.2.6) ─
+//
+// Decision/execution surfaces must never ride a silently substituted venue:
+// when the EXECUTION broker's feed is stale/absent, the answer is WAIT — not a
+// fresh-looking series borrowed from assistant_real/twelvedata/deriv. Display
+// surfaces keep the full labeled fallback chain (`routeCandles`, unchanged).
+
+/** The venue that will EXECUTE the order this decision feeds. "mt5" = the
+ *  MT5 broker bridge (default; the only execution path shipped today).
+ *  "deriv" = a Deriv API connection — valid ONLY for synthetics, and only when
+ *  the executing venue genuinely IS the Deriv connection (no Deriv execution
+ *  adapter exists yet; parameterized so the wave-4 integrator names the venue
+ *  instead of this router guessing it). */
+export type IntendedExecutionVenue = "mt5" | "deriv";
+
+/** WAIT reason when the caller names a Deriv execution venue for a symbol that
+ *  is not a Deriv synthetic — cross-venue decision data is refused, never
+ *  substituted. */
+export const DECISION_VENUE_MISMATCH_REASON = "DERIV_EXECUTION_VENUE_REQUIRES_SYNTHETIC";
+/** Fallback WAIT reason when an execution-broker attempt failed without naming
+ *  a more precise one. */
+export const DECISION_FEED_UNAVAILABLE_REASON = "EXECUTION_BROKER_FEED_UNAVAILABLE";
+
+export interface DecisionCandlesResult {
+  ok: boolean;
+  /** "SERVE" exactly when ok === true; "WAIT" is the honest refusal state. */
+  verdict: "SERVE" | "WAIT";
+  /** Refusal code when verdict === "WAIT" (reuses the router's existing reason
+   *  taxonomy, e.g. MT5_BROKER_HISTORY_STALE / MT5_BROKER_FEED_NOT_ACTIVE /
+   *  DERIV_NOT_CONFIGURED); null when served. */
+  reason: string | null;
+  symbol: string;
+  assetClass: AssetClass;
+  intendedVenue: IntendedExecutionVenue;
+  candles: Candle[];
+  primaryProvider: string | null;
+  attempts: ProviderAttempt[];
+  userMessage: string;
+  adminDetail: string;
+  provenance?: SeriesProvenance;
+  provenanceNotes?: string[];
+}
+
+function decisionWait(
+  symbol: string,
+  assetClass: AssetClass,
+  intendedVenue: IntendedExecutionVenue,
+  reason: string,
+  attempts: ProviderAttempt[],
+): DecisionCandlesResult {
+  return {
+    ok: false,
+    verdict: "WAIT",
+    reason,
+    symbol,
+    assetClass,
+    intendedVenue,
+    candles: [],
+    primaryProvider: null,
+    attempts,
+    userMessage:
+      "Waiting for the execution broker's live feed. Decisions never use a substitute data source.",
+    adminDetail: `Decision-grade WAIT for ${symbol} (${assetClass}); execution venue ${intendedVenue}; reason ${reason}. Fallback providers deliberately NOT attempted.`,
+  };
+}
+
+/**
+ * Decision-grade candle read: serves ONLY the execution broker's feed and
+ * returns `{ ok:false, verdict:"WAIT", reason }` when that feed is stale,
+ * insufficient, or absent — it NEVER falls through to assistant_real/
+ * twelvedata (and reaches deriv only when the caller names the Deriv
+ * connection as the executing venue for a synthetic). Display paths must keep
+ * using `routeCandles`.
+ *
+ * `opts.bridgeConnectionId` pins the LIVE in-memory read to the executing
+ * bridge's partition. The durable-mirror fallback inside the mt5 slot cannot
+ * be bridge-filtered until the market_candles migration lands; bars it serves
+ * carry `provenance.bridgeConnectionId: null` (honestly unattributed) so a
+ * same-bridge dispatch gate can see — and refuse — the missing attribution.
+ */
+export async function routeCandlesForDecision(
+  symbol: string,
+  timeframe: string,
+  opts?: {
+    limit?: number;
+    intendedVenue?: IntendedExecutionVenue;
+    bridgeConnectionId?: number | null;
+  },
+): Promise<DecisionCandlesResult> {
+  const assetClass = classifySymbol(symbol);
+  const intendedVenue: IntendedExecutionVenue = opts?.intendedVenue ?? "mt5";
+  const limit = opts?.limit ?? 200;
+  const tf = normalizeTimeframe(timeframe);
+  const attempts: ProviderAttempt[] = [];
+
+  if (intendedVenue === "deriv") {
+    // The Deriv WS feed may feed a decision ONLY when the executing venue IS
+    // the Deriv connection — and that venue trades synthetics only.
+    if (assetClass !== "synthetic") {
+      return decisionWait(symbol, assetClass, intendedVenue, DECISION_VENUE_MISMATCH_REASON, attempts);
+    }
+    const r = await tryDerivCandles(symbol, tf, limit);
+    attempts.push(stripCandles(r));
+    if (r.ok) {
+      return {
+        ...success(symbol, assetClass, r.candles, r.provider, attempts, r.provenance),
+        verdict: "SERVE",
+        reason: null,
+        intendedVenue,
+      };
+    }
+    return decisionWait(
+      symbol, assetClass, intendedVenue, r.reason ?? DECISION_FEED_UNAVAILABLE_REASON, attempts,
+    );
+  }
+
+  // Execution venue "mt5": the broker slot is the WHOLE chain. Its internal
+  // live→durable preference is unchanged; only the cross-venue fall-through is
+  // removed.
+  const r = await tryMt5Candles(symbol, tf, limit, {
+    bridgeConnectionId: opts?.bridgeConnectionId ?? null,
+  });
+  attempts.push(stripCandles(r));
+  if (r.ok) {
+    return {
+      ...success(symbol, assetClass, r.candles, r.provider, attempts, r.provenance, r.notes),
+      verdict: "SERVE",
+      reason: null,
+      intendedVenue,
+    };
+  }
+  return decisionWait(
+    symbol, assetClass, intendedVenue, r.reason ?? DECISION_FEED_UNAVAILABLE_REASON, attempts,
+  );
 }
 
 export async function routeQuote(symbol: string): Promise<MarketQuoteResult> {
@@ -670,10 +846,11 @@ export function getRouterDiagnostics(): RouterDiagnostics {
 // ── helpers ──────────────────────────────────────────────────────────────
 
 // Attempts are diagnostics that get serialized to admin surfaces — they must
-// carry neither the payload nor the provenance envelope (the envelope belongs
-// to the WINNING result only; a failed attempt has nothing to attribute).
-function stripCandles<T extends { candles: Candle[]; provenance: SeriesProvenance | null } & ProviderAttempt>(r: T): ProviderAttempt {
-  const { candles: _candles, provenance: _provenance, ...rest } = r;
+// carry neither the payload nor the provenance envelope nor its notes (the
+// envelope belongs to the WINNING result only; a failed attempt has nothing to
+// attribute).
+function stripCandles<T extends { candles: Candle[]; provenance: SeriesProvenance | null; notes?: string[] } & ProviderAttempt>(r: T): ProviderAttempt {
+  const { candles: _candles, provenance: _provenance, notes: _notes, ...rest } = r;
   return rest;
 }
 function stripQuote<T extends { quote: MarketQuote | null; provenance: SeriesProvenance | null } & ProviderAttempt>(r: T): ProviderAttempt {
@@ -681,7 +858,7 @@ function stripQuote<T extends { quote: MarketQuote | null; provenance: SeriesPro
   return rest;
 }
 
-function success(symbol: string, assetClass: AssetClass, candles: Candle[], provider: string, attempts: ProviderAttempt[], provenance: SeriesProvenance | null): MarketCandlesResult {
+function success(symbol: string, assetClass: AssetClass, candles: Candle[], provider: string, attempts: ProviderAttempt[], provenance: SeriesProvenance | null, notes?: string[]): MarketCandlesResult {
   return {
     ok: true,
     symbol,
@@ -692,8 +869,9 @@ function success(symbol: string, assetClass: AssetClass, candles: Candle[], prov
     userMessage: "Live feed active",
     adminDetail: `Served by ${provider}; ${candles.length} candles; ${attempts.length} provider(s) tried.`,
     // Spread keeps the field ABSENT (not `undefined`-valued) when an adapter
-    // produced no envelope, so JSON serializations stay byte-compatible.
+    // produced no envelope/notes, so JSON serializations stay byte-compatible.
     ...(provenance ? { provenance } : {}),
+    ...(notes && notes.length > 0 ? { provenanceNotes: notes } : {}),
   };
 }
 function successQuote(symbol: string, assetClass: AssetClass, quote: MarketQuote, provider: string, attempts: ProviderAttempt[], provenance: SeriesProvenance | null): MarketQuoteResult {

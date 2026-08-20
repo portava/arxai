@@ -1,4 +1,38 @@
-// News Risk Engine — detects upcoming high-impact economic events and blocks/warns trading
+// News Risk Engine — verdicts from the REAL economic calendar seam.
+//
+// FABRICATION REMOVAL (R7 step 1d). This module previously shipped a
+// hardcoded weekly template (`NEWS_SCHEDULE`) of "typical" event times —
+// including an explicitly labeled "Fed Chair Speech (simulated)" — and scored
+// news risk against the UTC clock as if those events existed. That is a clock,
+// not a calendar. It is gone.
+//
+// The repo already has the provider-agnostic calendar seam
+// (`lib/news/calendar/newsRiskResolver` → `getEconomicCalendarResult`): a
+// connected provider yields REAL events; a missing/errored provider yields the
+// honest `newsRiskUnavailable` verdict (never blockTrading, never a countdown,
+// `calendarAvailable: false`). This engine is now a thin adapter over that
+// seam:
+//
+//   analyzeNewsRiskLive  — async, resolves the real calendar. Used by the
+//                          market brain (already an async path).
+//   analyzeNewsRisk      — sync signature kept for the timing brain
+//                          (newsHeatEngine calls it synchronously). It answers
+//                          from the last successfully-resolved calendar
+//                          snapshot and kicks off a background refresh; until
+//                          a real snapshot exists it returns the honest
+//                          "calendar unavailable" verdict. It NEVER fabricates
+//                          an event and NEVER blocks trading on unknown data.
+
+import {
+  resolveNewsRiskEvents,
+  newsRiskFrom,
+  type ResolvedNewsRiskEvents,
+} from "../../lib/news/calendar/newsRiskResolver.js";
+import {
+  isSyntheticNewsSymbol,
+  scoreNewsRisk,
+  type NewsRisk,
+} from "../../lib/news/calendar/newsRiskScorer.js";
 
 export interface NewsRiskAnalysis {
   majorNewsSoon: boolean;
@@ -8,123 +42,130 @@ export interface NewsRiskAnalysis {
   blockTrading: boolean;
   reason: string;
   nextEvent?: string;
+  /** True only when the verdict is derived from a KNOWN event set (connected
+   *  calendar, or a synthetic symbol that is genuinely news-immune).
+   *  `riskLevel: "Low"` with `providerConnected: false` means "cannot see",
+   *  NOT "clear" — never reassure on it. Optional so existing injected test
+   *  fixtures (newsHeatEngine deps) stay valid; this engine always sets it. */
+  providerConnected?: boolean;
+  /** Present when the verdict could not be read from a real calendar. */
+  safetyNote?: string;
 }
 
-interface NewsEvent {
-  name: string;
-  utcHourRange: [number, number];
-  days?: number[];
-  affectedCurrencies: string[];
-  affectedIndices: string[];
-  impact: "High" | "Medium";
-  blockWindow: number;
+export const NEWS_CALENDAR_NOT_CONNECTED_NOTE =
+  "No economic-calendar provider is connected/readable. ARX does not fabricate news " +
+  "events, so news risk is UNKNOWN (shown as Low with providerConnected=false) and " +
+  "trading is never blocked or cleared on invented data.";
+
+const SYNTHETIC_REASON =
+  "Synthetic indices are immune to real-world economic news. No news filter applied.";
+
+function toAnalysis(risk: NewsRisk): NewsRiskAnalysis {
+  const riskLevel: NewsRiskAnalysis["riskLevel"] =
+    risk.blockTrading ? "Critical"
+    : risk.riskLevel === "high" ? "High"
+    : risk.riskLevel === "medium" ? "Medium"
+    : "Low";
+  return {
+    majorNewsSoon: risk.riskLevel === "high" || risk.riskLevel === "medium",
+    affectedCurrencies: risk.upcomingEvent ? [risk.upcomingEvent.currency] : [],
+    affectedIndices: risk.upcomingEvent?.affectedMarkets ?? [],
+    riskLevel,
+    blockTrading: risk.blockTrading,
+    reason: risk.reason,
+    nextEvent: risk.upcomingEvent?.title,
+    providerConnected: risk.calendarAvailable,
+    safetyNote: risk.calendarAvailable ? undefined : NEWS_CALENDAR_NOT_CONNECTED_NOTE,
+  };
 }
 
-const NEWS_SCHEDULE: NewsEvent[] = [
-  // Monday — Tokyo BOJ watch
-  { name: "BOJ Policy Statement (watch)", utcHourRange: [23.5, 24], days: [0, 1], affectedCurrencies: ["JPY"], affectedIndices: ["JP225"], impact: "High", blockWindow: 0.5 },
-  // Wednesday — US CPI typical release
-  { name: "US Consumer Price Index (CPI)", utcHourRange: [12.5, 13.5], days: [3], affectedCurrencies: ["USD", "EUR"], affectedIndices: ["US30", "NAS100", "SPX500"], impact: "High", blockWindow: 0.75 },
-  // Wednesday — ECB Rate Statement (alt weeks)
-  { name: "ECB Interest Rate Decision", utcHourRange: [11.75, 12.5], days: [4], affectedCurrencies: ["EUR", "USD"], affectedIndices: ["GER40"], impact: "High", blockWindow: 1 },
-  // Wednesday — FOMC Statement
-  { name: "FOMC Rate Decision", utcHourRange: [18.0, 19.5], days: [3], affectedCurrencies: ["USD"], affectedIndices: ["US30", "NAS100", "SPX500"], impact: "High", blockWindow: 1.5 },
-  // Thursday — BOE rate decision (alt weeks)
-  { name: "Bank of England Rate Decision", utcHourRange: [12.0, 13.0], days: [4], affectedCurrencies: ["GBP", "USD"], affectedIndices: ["UK100"], impact: "High", blockWindow: 1 },
-  // Thursday — US Jobless claims
-  { name: "US Jobless Claims", utcHourRange: [12.5, 13.0], days: [4], affectedCurrencies: ["USD"], affectedIndices: ["US30", "SPX500"], impact: "Medium", blockWindow: 0.5 },
-  // Friday — US NFP (first Friday of month)
-  { name: "US Nonfarm Payrolls (NFP)", utcHourRange: [12.5, 13.5], days: [5], affectedCurrencies: ["USD", "EUR", "GBP", "JPY", "AUD"], affectedIndices: ["US30", "NAS100", "SPX500"], impact: "High", blockWindow: 1.0 },
-  // Friday — US Retail Sales (varies)
-  { name: "US Retail Sales", utcHourRange: [12.5, 13.0], days: [5], affectedCurrencies: ["USD"], affectedIndices: ["US30", "SPX500"], impact: "Medium", blockWindow: 0.5 },
-  // Monday — UK CPI (varies)
-  { name: "UK CPI", utcHourRange: [7.0, 8.0], days: [2], affectedCurrencies: ["GBP", "EUR"], affectedIndices: ["UK100"], impact: "High", blockWindow: 0.5 },
-  // Daily — US session open liquidity spike
-  { name: "US Market Open Liquidity Spike", utcHourRange: [13.25, 13.75], days: [1, 2, 3, 4, 5], affectedCurrencies: ["USD"], affectedIndices: ["US30", "NAS100", "SPX500"], impact: "Medium", blockWindow: 0.25 },
-  // Daily — Fed Chair speech (simulated)
-  { name: "Fed Chair Speech (simulated)", utcHourRange: [17.5, 18.25], days: [2, 4], affectedCurrencies: ["USD", "EUR"], affectedIndices: ["US30", "NAS100"], impact: "High", blockWindow: 0.5 },
-  // Japan GDP
-  { name: "Japan GDP (quarterly release)", utcHourRange: [23.5, 0.5], days: [2], affectedCurrencies: ["JPY"], affectedIndices: ["JP225"], impact: "High", blockWindow: 0.5 },
-];
-
-function isSymbolAffected(symbol: string, currencies: string[], indices: string[]): boolean {
-  // Check if symbol contains any affected currency
-  for (const c of currencies) {
-    if (symbol.includes(c)) return true;
-  }
-  // Check if symbol matches an index
-  for (const idx of indices) {
-    if (symbol === idx || symbol.startsWith(idx)) return true;
-  }
-  return false;
-}
-
-export function analyzeNewsRisk(symbol: string, category: string): NewsRiskAnalysis {
-  // Synthetic indices are never affected by news
-  if (category === "synthetic") {
-    return { majorNewsSoon: false, affectedCurrencies: [], affectedIndices: [], riskLevel: "Low", blockTrading: false, reason: "Synthetic indices are immune to real-world economic news. No news filter applied." };
-  }
-
-  const now = new Date();
-  const utcHour = now.getUTCHours() + now.getUTCMinutes() / 60;
-  const utcDay = now.getUTCDay(); // 0=Sun, 1=Mon...
-
-  const activeEvents: NewsEvent[] = [];
-  const soonEvents: NewsEvent[] = [];
-
-  for (const event of NEWS_SCHEDULE) {
-    if (event.days && !event.days.includes(utcDay)) continue;
-    const [start, end] = event.utcHourRange;
-    const windowStart = start - event.blockWindow;
-    const windowEnd = end + event.blockWindow * 0.5;
-    if (utcHour >= windowStart && utcHour <= windowEnd) {
-      if (isSymbolAffected(symbol, event.affectedCurrencies, event.affectedIndices)) {
-        if (utcHour >= start && utcHour <= end) {
-          activeEvents.push(event);
-        } else {
-          soonEvents.push(event);
-        }
-      }
-    }
-  }
-
-  if (activeEvents.length > 0) {
-    const critical = activeEvents.find((e) => e.impact === "High");
-    const allCurrencies = [...new Set(activeEvents.flatMap((e) => e.affectedCurrencies))];
-    const allIndices = [...new Set(activeEvents.flatMap((e) => e.affectedIndices))];
-    return {
-      majorNewsSoon: true,
-      affectedCurrencies: allCurrencies,
-      affectedIndices: allIndices,
-      riskLevel: critical ? "Critical" : "High",
-      blockTrading: !!critical,
-      reason: `🚨 ACTIVE: ${activeEvents.map((e) => e.name).join(", ")}. ${critical ? "High-impact event — trading blocked." : "Medium-impact event — proceed with caution."}`,
-      nextEvent: activeEvents[0].name,
-    };
-  }
-
-  if (soonEvents.length > 0) {
-    const critical = soonEvents.find((e) => e.impact === "High");
-    const allCurrencies = [...new Set(soonEvents.flatMap((e) => e.affectedCurrencies))];
-    const allIndices = [...new Set(soonEvents.flatMap((e) => e.affectedIndices))];
-    const minutesToEvent = Math.round((soonEvents[0].utcHourRange[0] - utcHour) * 60);
-    return {
-      majorNewsSoon: true,
-      affectedCurrencies: allCurrencies,
-      affectedIndices: allIndices,
-      riskLevel: critical ? "High" : "Medium",
-      blockTrading: false,
-      reason: `⚠️ UPCOMING (${minutesToEvent > 0 ? `~${minutesToEvent} min` : "passing"}): ${soonEvents.map((e) => e.name).join(", ")}. ${critical ? "Avoid new positions — high-impact event approaching." : "Caution — news approaching."}`,
-      nextEvent: soonEvents[0].name,
-    };
-  }
-
+function syntheticAnalysis(): NewsRiskAnalysis {
   return {
     majorNewsSoon: false,
     affectedCurrencies: [],
     affectedIndices: [],
     riskLevel: "Low",
     blockTrading: false,
-    reason: "No major economic events detected for this symbol in the current time window.",
+    reason: SYNTHETIC_REASON,
+    // The verdict is genuinely KNOWN without a provider (instrument-class fact).
+    providerConnected: true,
   };
+}
+
+function unavailableAnalysis(reason: string): NewsRiskAnalysis {
+  return {
+    majorNewsSoon: false,
+    affectedCurrencies: [],
+    affectedIndices: [],
+    riskLevel: "Low",
+    blockTrading: false,
+    reason,
+    providerConnected: false,
+    safetyNote: NEWS_CALENDAR_NOT_CONNECTED_NOTE,
+  };
+}
+
+// ── Async path (market brain) ─────────────────────────────────────────────────
+
+export async function analyzeNewsRiskLive(
+  symbol: string,
+  category: string,
+): Promise<NewsRiskAnalysis> {
+  if (category === "synthetic" || isSyntheticNewsSymbol(symbol)) return syntheticAnalysis();
+  const resolved = await resolveCached();
+  return toAnalysis(newsRiskFrom(symbol, resolved));
+}
+
+// ── Sync path (timing brain / newsHeatEngine) ────────────────────────────────
+//
+// The calendar can only be read asynchronously. The sync signature is kept for
+// its existing consumer by serving the last-resolved snapshot and refreshing in
+// the background (the underlying calendar service itself caches for ~5 min).
+// UNKNOWN is a valid outcome: before the first successful resolution the
+// verdict is the honest unavailable shape, never an invented schedule.
+
+const SNAPSHOT_TTL_MS = 5 * 60_000;
+let cachedResolved: ResolvedNewsRiskEvents | null = null;
+let cachedAtMs = 0;
+let refreshInFlight: Promise<void> | null = null;
+
+async function resolveCached(): Promise<ResolvedNewsRiskEvents> {
+  const now = Date.now();
+  if (cachedResolved && now - cachedAtMs < SNAPSHOT_TTL_MS) return cachedResolved;
+  const resolved = await resolveNewsRiskEvents();
+  cachedResolved = resolved;
+  cachedAtMs = Date.now();
+  return resolved;
+}
+
+function kickBackgroundRefresh(): void {
+  const now = Date.now();
+  if (refreshInFlight) return;
+  if (cachedResolved && now - cachedAtMs < SNAPSHOT_TTL_MS) return;
+  refreshInFlight = resolveCached()
+    .then(() => undefined, () => undefined)
+    .finally(() => { refreshInFlight = null; });
+}
+
+/** TEST-ONLY: clear the module snapshot so tests are deterministic. */
+export function __resetNewsRiskSnapshotForTests(): void {
+  cachedResolved = null;
+  cachedAtMs = 0;
+  refreshInFlight = null;
+}
+
+export function analyzeNewsRisk(symbol: string, category: string): NewsRiskAnalysis {
+  if (category === "synthetic" || isSyntheticNewsSymbol(symbol)) return syntheticAnalysis();
+
+  kickBackgroundRefresh();
+
+  if (!cachedResolved) {
+    return unavailableAnalysis(
+      "Economic calendar not loaded yet — news risk is UNKNOWN (no fabricated schedule).",
+    );
+  }
+  if (!cachedResolved.available) {
+    return unavailableAnalysis(cachedResolved.reason);
+  }
+  return toAnalysis(scoreNewsRisk(symbol, cachedResolved.events));
 }

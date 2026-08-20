@@ -4,16 +4,29 @@
 // timestamp, candles, sessionContext, dataQuality} snapshot regardless of
 // where the data comes from.
 //
-// Selection order:
+// HONEST FALLBACK SEMANTICS (R7 step 1c). Every current consumer of this
+// service is decision-capable (tradeDecision orchestration, paper-execution
+// fills, the paper monitor's TP/SL closes). The old behavior — real provider
+// missing/failed → serve the synthetic generator's candles, stamped GOOD with
+// a re-timed "fresh" quote — let `shouldTrade: true` and simulated fills be
+// produced from fabricated bars. Now:
+//
 //   1. Real provider if isConfigured() AND fetch succeeds.
-//   2. Fallback (synthetic) provider — always available.
+//   2. Otherwise: an HONEST EMPTY snapshot — no candles, no bid/ask (NaN, so
+//      no numeric comparison can ever "hit" a level on it), a truthful
+//      never-fresh timestamp, dataQuality MISSING and a reason in warnings —
+//      plus CRITICAL blockers from computeBlockers. Consumers' existing
+//      blocker plumbing turns this into HOLD / rejection / skip.
+//
+// The synthetic FallbackMarketDataProvider still exists for explicitly-labeled
+// display-only use, but this service never serves its candles to consumers.
 //
 // Computes safety blockers (missing/stale/wide-spread/extreme/closed) so
 // Build AA can convert them directly into HOLD reasons. Service NEVER
 // places trades, NEVER mutates safetyCore, and NEVER touches MT5 surfaces.
 
 import { logger } from "../logger.js";
-import { fallbackMarketDataProvider } from "./fallbackProvider.js";
+import { fallbackMarketDataProvider, sessionContextFor } from "./fallbackProvider.js";
 import { realMarketDataProvider } from "./realProvider.js";
 import type {
   MarketDataBlocker,
@@ -61,36 +74,75 @@ export interface GetMarketDataResult {
   providerError?: string;
 }
 
+/** A quote time that can never read as fresh. There IS no quote; the field is
+ *  required by the snapshot shape, so it carries the honest "never" value. */
+export const NO_QUOTE_TIMESTAMP = new Date(0).toISOString();
+
+/**
+ * Honest empty snapshot — served when no REAL provider can. Carries no market
+ * numbers: candles empty, bid/ask/mid/spread NaN (NaN comparisons are always
+ * false, so no TP/SL/level logic can ever "hit" on it), timestamp pinned to
+ * the never-fresh epoch. The reason travels in dataQuality.warnings.
+ */
+export function emptySnapshot(symbol: string, timeframe: Timeframe, reason: string): MarketDataSnapshot {
+  return {
+    symbol,
+    source: "FALLBACK",
+    provider: "none-real-unavailable",
+    bid: Number.NaN,
+    ask: Number.NaN,
+    mid: Number.NaN,
+    spread: Number.NaN,
+    timestamp: NO_QUOTE_TIMESTAMP,
+    timeframe,
+    candles: [],
+    // Session facts are clock-derived (not market data); volatility defaults
+    // to the type's neutral "NORMAL" — with zero candles nothing keys off it.
+    sessionContext: sessionContextFor(symbol, []),
+    dataQuality: {
+      status: "MISSING",
+      latencyMs: 0,
+      candlesAvailable: 0,
+      warnings: [reason],
+    },
+  };
+}
+
+export const NO_REAL_PROVIDER_REASON =
+  "No real market-data provider served this request. ARX does not substitute " +
+  "synthetic candles on a decision-capable path — empty with reason instead.";
+
 export async function getMarketData(req: MarketDataRequest): Promise<GetMarketDataResult> {
   const symbol = req.symbol;
   const timeframe: Timeframe = req.timeframe ?? "M5";
   const limit = req.limit ?? 100;
 
   if (!isSymbolSupported(symbol)) {
-    const snapshot = await fallbackMarketDataProvider.fetch({ symbol, timeframe, limit });
-    snapshot.dataQuality.status = "MISSING";
-    snapshot.dataQuality.warnings.push(`Symbol "${symbol}" is not in the supported list.`);
+    const snapshot = emptySnapshot(symbol, timeframe, `Symbol "${symbol}" is not in the supported list.`);
     const blockers = computeBlockers(snapshot);
     blockers.push({ blocked: true, reason: `Symbol "${symbol}" unsupported`, severity: "HIGH" });
     logRequest(symbol, snapshot, true, "symbol unsupported");
     return { snapshot, blockers, usedFallback: true, providerError: "symbol unsupported" };
   }
 
-  const primary = pickProvider();
   let snapshot: MarketDataSnapshot;
   let usedFallback = false;
   let providerError: string | undefined;
 
-  try {
-    snapshot = await primary.fetch({ symbol, timeframe, limit });
-  } catch (err) {
-    providerError = String(err);
-    if (primary.source !== "FALLBACK") {
-      logger.warn({ symbol, provider: primary.name, err: providerError },
-        "Build DD: real provider failed — falling back to synthetic");
-    }
-    snapshot = await fallbackMarketDataProvider.fetch({ symbol, timeframe, limit });
+  if (!realMarketDataProvider.isConfigured()) {
+    providerError = "real provider not configured";
+    snapshot = emptySnapshot(symbol, timeframe, `${NO_REAL_PROVIDER_REASON} (real provider not configured)`);
     usedFallback = true;
+  } else {
+    try {
+      snapshot = await realMarketDataProvider.fetch({ symbol, timeframe, limit });
+    } catch (err) {
+      providerError = String(err);
+      logger.warn({ symbol, provider: realMarketDataProvider.name, err: providerError },
+        "Build DD: real provider failed — serving honest empty (no synthetic substitution)");
+      snapshot = emptySnapshot(symbol, timeframe, `${NO_REAL_PROVIDER_REASON} (real provider failed: ${providerError.slice(0, 160)})`);
+      usedFallback = true;
+    }
   }
 
   const blockers = computeBlockers(snapshot);
@@ -159,6 +211,16 @@ export function computeBlockers(snap: MarketDataSnapshot): MarketDataBlocker[] {
   }
   if (snap.dataQuality.status === "MISSING") {
     out.push({ blocked: true, reason: "Market data MISSING", severity: "CRITICAL" });
+  }
+
+  // Synthetic / non-real data — a decision-capable consumer must refuse.
+  // Two independent triggers so neither a mislabeled status nor a mislabeled
+  // source can slip fabricated data past the blocker.
+  if (snap.dataQuality.status === "SYNTHETIC") {
+    out.push({ blocked: true, reason: "SYNTHETIC data — fabricated in-process, never decision-grade", severity: "CRITICAL" });
+  }
+  if (snap.source !== "REAL") {
+    out.push({ blocked: true, reason: `Data source is ${snap.source}, not a real provider — decisions must refuse`, severity: "CRITICAL" });
   }
 
   return out;
