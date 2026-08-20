@@ -70,11 +70,15 @@ function withAdapter(
   return new Mt5ReadOnlyAdapter(reader, userId, id);
 }
 
-router.get("/me/broker-hub/connections/:connectionId", async (req, res) => {
+router.get("/me/broker-hub/connections/:connectionId", requireUser, async (req, res) => {
   const adapter = withAdapter(req, res, mt5ProjectionReader);
   if (!adapter) return;
   try {
     const health = await adapter.readHealth();
+    if (health.reason === "CONNECTION_NOT_FOUND") {
+      notFound(res);
+      return;
+    }
     res.json({
       ...base(adapter),
       status: health.status,
@@ -89,7 +93,7 @@ router.get("/me/broker-hub/connections/:connectionId", async (req, res) => {
   }
 });
 
-router.get("/me/broker-hub/connections/:connectionId/account", async (req, res) => {
+router.get("/me/broker-hub/connections/:connectionId/account", requireUser, async (req, res) => {
   const adapter = withAdapter(req, res, mt5ProjectionReader);
   if (!adapter) return;
   try {
@@ -118,7 +122,7 @@ router.get("/me/broker-hub/connections/:connectionId/account", async (req, res) 
   }
 });
 
-router.get("/me/broker-hub/connections/:connectionId/capabilities", async (req, res) => {
+router.get("/me/broker-hub/connections/:connectionId/capabilities", requireUser, async (req, res) => {
   const adapter = withAdapter(req, res, mt5ProjectionReader);
   if (!adapter) return;
   try {
@@ -137,7 +141,7 @@ router.get("/me/broker-hub/connections/:connectionId/capabilities", async (req, 
   }
 });
 
-router.get("/me/broker-hub/connections/:connectionId/instruments", async (req, res) => {
+router.get("/me/broker-hub/connections/:connectionId/instruments", requireUser, async (req, res) => {
   const adapter = withAdapter(req, res, mt5ProjectionReader);
   if (!adapter) return;
   try {
