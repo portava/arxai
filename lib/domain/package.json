@@ -11,7 +11,6 @@
     "./market-heat": "./src/market-heat/index.ts",
     "./ai": "./src/ai/index.ts",
     "./broker": "./src/broker/index.ts",
-    "./broker-hub": "./src/broker-hub/index.ts",
     "./risk": "./src/risk/index.ts",
     "./state": "./src/state/index.ts",
     "./events": "./src/events/index.ts",

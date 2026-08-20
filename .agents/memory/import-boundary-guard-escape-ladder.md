@@ -95,20 +95,6 @@ each architect escape becomes a permanent flag-case. Anchor closure on an
 explicit scope boundary and get the reviewer to confirm it, or the review loop
 never converges.
 
-**Read-only DB fence:** when a whole directory must remain read-only, do not only
-ban writes to named protected tables. Ban the mutation capability itself
-(fluent, computed, bound, and destructured insert/update/delete) plus raw
-execute/query APIs and raw DML statements. Keep negative fixtures for direct,
-alias, namespace, bind, computed, destructured, and raw-SQL forms.
-
-**Why:** table-name scans are defeated by local/namespace indirection, while a
-fluent-method-only scan is defeated by raw SQL. The actual invariant is “this
-boundary cannot write,” so guard that capability instead of enumerating current
-targets.
-
-**How to apply:** use this stricter rule only for directories whose contract is
-fully read-only; a mixed read/write service needs AST/provenance-aware policy
-instead of a blanket mutation ban.
-
-**Env note:** use the repository's serial `typecheck:ci` lane so each package
-runs under its configured heap cap; avoid concurrent typecheck lanes.
+**Env note:** typecheck the `scripts` package with a heap cap
+(`NODE_OPTIONS=--max-old-space-size=2560 pnpm --filter @workspace/scripts run
+typecheck`); the full workspace `typecheck:ci` OOMs in this sandbox.

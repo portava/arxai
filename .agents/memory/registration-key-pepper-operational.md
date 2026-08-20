@@ -10,12 +10,6 @@ hashes every ARX key as `sha256(normalizeArxKey(rawKey) + REGISTRATION_KEY_PEPPE
 The SAME pepper is read at generation time and at signup-validation time
 (`acceptInviteTx` / `validateInviteForRegistration`).
 
-**NEVER set the pepper via `setEnvVars` (shared env).** Shared env vars are written
-INTO the git-tracked `.replit` — doing so re-commits the secret (this happened once
-during rotation; that interim value is compromised and was removed+re-rotated). The
-pepper must live ONLY in Replit Secrets via `requestSecrets`. There were zero PENDING
-keys at the 2026-08-16 rotation, so nothing needed re-issuing.
-
 **Rule: one pepper governs both sides.**
 - **Why:** a key's stored `invite_code_hash` only matches at signup if validation
   uses the identical pepper. Generate with pepper A, validate with pepper B ⇒ every

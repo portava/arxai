@@ -189,7 +189,7 @@ router.post("/notifications/test-event", requireUser, async (req, res) => {
 router.post("/notifications/ingest", requireUser, async (req, res) => {
   try {
     const limit = req.body?.limitPerSource ? Number(req.body.limitPerSource) : 50;
-    res.json(envelope({ ingest: await ingest({ limitPerSource: limit, userId: req.authUser!.id }) }));
+    res.json(envelope({ ingest: await ingest({ limitPerSource: limit }) }));
   } catch (err) {
     res.status(500).json(envelope({ error: "ingest failed", detail: String(err).slice(0, 200) }));
   }

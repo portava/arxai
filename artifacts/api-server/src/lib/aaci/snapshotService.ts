@@ -15,6 +15,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { logger } from "../logger.js";
 import { evaluateGovernor } from "../riskGovernor/governor.js";
+import { buildSnapshot as buildBrokerSnapshot } from "../brokerReadOnly/service.js";
 import { scanSymbolTimeframe } from "../marketScanner.js";
 import { getNewsIntelligence } from "../news/newsIntelligenceService.js";
 import { getUnreadCount } from "../alerts/alertManager.js";
@@ -111,12 +112,58 @@ export async function buildAaciSnapshot(
   }
 
   // ── Account snapshot + bridge connectivity (E + account) ──────────────────
-  // The broker-readonly providers are global operator diagnostics, not
-  // user-bound connections. Never fold one into a per-user AACI snapshot or
-  // attribute its account to input.userId. Until an owner-bound adapter exists,
-  // the only honest per-user value is unknown.
-  unavailable.push("AccountAnalytics");
-  unavailable.push("MT5Bridge");
+  // `buildBrokerSnapshot()` reads the SHARED master/operator broker connector,
+  // not per-user data. Folding it into a regular user's verdict would let
+  // master-account state drive that user's scores/hard gate — a per-user
+  // isolation breach. So this source defaults to ADMIN-ONLY. Regular users get
+  // an honest unknown account/bridge (which conservatively degrades to caution —
+  // correct for an advisory layer that only ever ADDS caution). The autonomous
+  // self-trade executor opts in (`includeMasterBroker`) because the agent
+  // genuinely runs ON the shared master bridge. Per-user broker wiring is a
+  // separate follow-up.
+  const includeMasterBroker = input.includeMasterBroker ?? role === "admin";
+  if (includeMasterBroker) {
+    try {
+      const { snapshot: broker } = await buildBrokerSnapshot();
+      // Never fold a DEMO/sandbox broker snapshot into a real verdict. The
+      // brokerReadOnly connector defaults to a demo provider with placeholder
+      // figures (e.g. $10,000) when no real broker is configured; consuming
+      // that as a "live" account would surface a fabricated balance and a
+      // fake "connected" bridge. Only a real, non-demo connected provider is
+      // trusted here; otherwise record an honest unknown (caution-only).
+      const isRealBroker = broker.connected && broker.provider !== "demo";
+      if (isRealBroker && broker.account) {
+        snapshot.account = {
+          mode: "live",
+          balance: broker.account.balance,
+          equity: broker.account.equity,
+          freeMargin: broker.account.freeMargin,
+          lastUpdated: broker.generatedAt,
+        };
+        snapshot.bridge = {
+          status: "connected",
+          executionRouteReady: true,
+          lastHeartbeat: broker.generatedAt,
+        };
+        const openCount = broker.openPositions.length;
+        snapshot.positions.openCount = openCount;
+        snapshot.positions.mt5OpenCount = openCount;
+        snapshot.positions.lastUpdated = broker.generatedAt;
+      } else {
+        // No real broker source — honest unknown, never borrow demo figures.
+        unavailable.push("AccountAnalytics");
+        unavailable.push("MT5Bridge");
+      }
+    } catch (err) {
+      logger.warn({ err }, "aaci: broker snapshot read failed");
+      unavailable.push("AccountAnalytics");
+      unavailable.push("MT5Bridge");
+    }
+  } else {
+    // Honest unknown — no per-user broker source wired yet; never borrow master.
+    unavailable.push("AccountAnalytics");
+    unavailable.push("MT5Bridge");
+  }
 
   // ── Scanner (M + bias) ────────────────────────────────────────────────────
   if (symbol) {

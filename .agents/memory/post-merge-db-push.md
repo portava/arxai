@@ -28,8 +28,6 @@ introspection spiked to ~348s (install 21s + push ~348s = ~369s). The
 introspection time is variable and NOT proportional to what the merge changes —
 it tracks total schema size + DB load — and it is trending up as the schema
 grows, so the budget must stay generous and may need further raising over time.
-3. Do not assume a filtered Drizzle push is isolated, or that exit code 0 proves
-   success. Verify the intended constraints and inspect output for SQL errors.
 
 **How to set:** direct edits to `.replit` are blocked; the `[postMerge]` timeout
 can only be changed via `setPostMergeConfig({ scriptPath, timeoutMs })` (a
@@ -38,7 +36,3 @@ code_execution callback). Confirm with `getPostMergeConfig()`.
 **How to apply:** When a merged/upcoming task adds DB tables (e.g. the Investor
 Portal tables) and post-merge setup fails, first check it's `push-force` + a
 generous timeout before suspecting the migration itself.
-
-For local verification, keep the canonical full Drizzle schema as the deployment
-artifact and verify target constraints after a push. Do not commit a subset
-config as a workaround for legacy drift.

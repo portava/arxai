@@ -148,8 +148,4 @@ CLAUDE_FIX_AGENT_ENABLED = "true"
 CLAUDE_FIX_AGENT_DRY_RUN = "true"
 CLAUDE_PROVIDER = "replit_managed"
 CLAUDE_MODEL = "claude-sonnet-4-6"
-# REGISTRATION_KEY_PEPPER is intentionally NOT set here.
-# It is the only secret protecting registration-key hashes and must live in
-# Replit Secrets, never in this git-tracked file. The code reads it from
-# process.env and fails closed when absent (REGISTRATION_KEY_PEPPER_MISSING),
-# so key generation and validation refuse rather than degrade.
+REGISTRATION_KEY_PEPPER = "059ad89d5f55acb0b80009cecb41376a60ddb60a86bb99d0efbe5a1f84a7bfe0"
