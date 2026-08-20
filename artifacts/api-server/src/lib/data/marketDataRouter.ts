@@ -40,11 +40,11 @@
 //     no-op and the router falls through to the next provider.
 
 import type { Candle, MarketQuote, SeriesProvenance } from "./types.js";
+import { resolveCanonicalSymbol, type CanonicalAssetClass } from "./symbolResolution.js";
 import {
   getDerivCandles,
   getDerivTick,
   getDerivFeedStatus,
-  isDerivSyntheticSymbol,
   resolveDerivSymbol,
 } from "./providers/derivProvider.js";
 import {
@@ -61,14 +61,11 @@ import {
   TIMEFRAME_MS,
 } from "./brokerCandleStore.js";
 
-export type AssetClass =
-  | "synthetic"   // Deriv volatility / boom / crash / step / jump
-  | "forex"       // EURUSD, GBPUSD, etc.
-  | "metals"      // XAU, XAG
-  | "indices"     // US30, NAS100, SPX500, GER40, UK100, JP225
-  | "crypto"      // BTCUSDT, ETHUSDT, etc.
-  | "stocks"      // TSLA, AAPL, etc.
-  | "unknown";
+// R4 slice 6: the union now has a single declaration in symbolResolution.ts
+// (the canonical resolver). Re-exported under the historical name so every
+// existing `import type { AssetClass } from "./marketDataRouter.js"` keeps
+// working unchanged — same seven literals, same meaning.
+export type AssetClass = CanonicalAssetClass;
 
 export interface ProviderAttempt {
   provider: string;
@@ -142,46 +139,19 @@ function normalizeTimeframe(tf: string): string {
 }
 
 // ── Symbol classification ────────────────────────────────────────────────
-
-const FOREX_PAIRS = new Set([
-  "EURUSD", "GBPUSD", "USDJPY", "USDCHF", "USDCAD", "AUDUSD", "NZDUSD",
-  "EURJPY", "GBPJPY", "EURGBP", "EURCHF", "AUDJPY", "CADJPY", "CHFJPY",
-  "NZDJPY", "AUDNZD", "EURAUD", "EURCAD", "EURNZD", "GBPAUD", "GBPCAD",
-  "GBPCHF", "GBPNZD",
-]);
-const METALS = new Set(["XAUUSD", "XAGUSD", "XPTUSD", "XPDUSD"]);
-const INDICES = new Set([
-  "US30", "NAS100", "SPX500", "GER40", "UK100", "JP225",
-  "FRA40", "AUS200", "HK50", "EU50",
-  // ARX Focus index canonicals not covered above (Task #558). DXY (US Dollar
-  // Index) and GER30 (DAX, an alias of GER40) classify as indices so they route
-  // through the index provider chain (mt5_broker → assistant_real) and fall to
-  // an honest empty feed rather than misclassifying as a stock/unknown.
-  "DXY", "GER30",
-]);
+//
+// R4 slice 6 (audit-marketdata §4.1/§4.2): classification is DELEGATED to the
+// canonical resolver, which consults the approved @workspace/markets Top 250
+// universe FIRST and only then the router's previous regex/set logic (ported
+// verbatim into symbolResolution.ts as the fallback tier). Behavior for every
+// symbol the old classifier knew is preserved; unknown stays an explicit
+// "unknown" and flows to this router's existing honest no-feed refusal —
+// never to a silent synthetic default (that foot-gun lived in
+// lib/data/types.ts getMarketType, now deprecated).
 
 /** Public: classify any ARX-canonical or free-form symbol into an asset class. */
 export function classifySymbol(symbolOrLabel: string): AssetClass {
-  const s = (symbolOrLabel ?? "").trim().toUpperCase();
-  if (!s) return "unknown";
-
-  // Synthetic — anything Deriv knows about, plus tolerant V## / VOLATILITY / BOOM / CRASH / STEP / JUMP.
-  if (isDerivSyntheticSymbol(s)) return "synthetic";
-  if (/^V\d+(_1S)?$/.test(s)) return "synthetic";
-  if (/VOLATILITY|BOOM|CRASH|STEP|JUMP/.test(s)) return "synthetic";
-
-  if (METALS.has(s)) return "metals";
-  if (INDICES.has(s)) return "indices";
-  if (FOREX_PAIRS.has(s)) return "forex";
-
-  // Crypto: BASE + USDT or BASE + USD (3-6 letters base).
-  if (/^[A-Z]{3,6}USDT$/.test(s)) return "crypto";
-  if (/^(BTC|ETH|SOL|XRP|DOGE|ADA|MATIC|LTC|LINK|DOT)USD$/.test(s)) return "crypto";
-
-  // Stocks: 1-5 plain letters (TSLA, AAPL, MSFT, NVDA, AMZN, META, GOOGL).
-  if (/^[A-Z]{1,5}$/.test(s)) return "stocks";
-
-  return "unknown";
+  return resolveCanonicalSymbol(symbolOrLabel).assetClass;
 }
 
 // ── Provider chain definitions ───────────────────────────────────────────

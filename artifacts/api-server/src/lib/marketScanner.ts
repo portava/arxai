@@ -114,12 +114,26 @@ export interface OpportunityScore {
   label: OpportunityLabel;
   factors: {
     trendAlignment: number;
+    /** R7 step 5 (intel-engine.md §1.3) — PINNED 0. This factor was the SAME
+     *  entryQualityScore input double-counted under a second name (there is no
+     *  S/R model behind it; `entryTiming` keeps the single honest copy). The
+     *  field survives only for payload-shape compatibility until the
+     *  expectancy engine (lib/domain/src/expectancy) replaces this score. */
     supportResistanceQuality: number;
+    /** The ONE rescaled copy of aiBrain's entryQualityScore (0..15). */
     entryTiming: number;
     riskRewardQuality: number;
     volatilityCondition: number;
+    /** R7 step 5 — derived from the ACTUAL quote spread vs the entry-to-stop
+     *  distance when the caller supplies a live spread; otherwise the neutral
+     *  constant. NEVER derived from riskScore (the pre-R7 proxy). */
     spreadCondition: number;
     strategyMatch: number;
+    /** R7 step 5 — NOT calibration. No calibration exists anywhere in the
+     *  pre-trade path yet, so this is pinned to the neutral constant
+     *  NEUTRAL_CALIBRATION_FACTOR until lib/domain/src/expectancy
+     *  (probabilityEngine/estimateOutcome) has real outcome data to plug in.
+     *  The field name is kept for payload-shape compatibility only. */
     aiConfidenceCalibration: number;
   };
 }
@@ -129,16 +143,86 @@ function clamp(n: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, n));
 }
 
-export function opportunityScore(a: MarketAnalysis, strategyMatch = 7): OpportunityScore {
+// R7 step 5 (intel-engine.md §1.3) — honest-factor constants.
+//
+// NEUTRAL_CALIBRATION_FACTOR: the former `confidenceScore/10` pseudo-factor
+// claimed "calibration" where none exists. Until the expectancy engine
+// (lib/domain/src/expectancy — estimateOutcome over durable real-feed
+// outcomes) supplies measured calibration, this factor is the neutral midpoint
+// of its 0..10 range for EVERY row — it neither rewards nor punishes anything.
+export const NEUTRAL_CALIBRATION_FACTOR = 5;
+// NEUTRAL_SPREAD_FACTOR: midpoint of the 0..10 spread factor, used whenever no
+// usable live spread is available. Never derived from riskScore.
+export const NEUTRAL_SPREAD_FACTOR = 5;
+// Spread-to-stop ratio at which the spread factor bottoms out at 0. Same
+// ratio family as the scalp engine's spreadRatioWide gates (0.22–0.4): a
+// spread that eats >= half the stop distance contributes nothing.
+export const SPREAD_RATIO_FLOOR = 0.5;
+
+/** Optional live-quote context for the spread factor (R7 step 5). */
+export interface OpportunitySpreadInput {
+  /** Current quote spread in PRICE units. Must be finite and > 0 to be used:
+   *  the router substitutes 0 when a quote has no spread, which is
+   *  indistinguishable from "unknown", so 0/absent honestly falls back to the
+   *  neutral constant rather than pretending a zero-cost fill. */
+  spreadPrice: number | null;
+}
+
+// Spread factor from ACTUAL spread vs the entry-to-stop distance (the same
+// spread-cost-relative-to-risk framing the scalp engine gates on). Neutral
+// when the spread or the stop geometry is unavailable — never fabricated,
+// never proxied from riskScore.
+function spreadConditionFactor(a: MarketAnalysis, spreadPrice: number | null | undefined): number {
+  if (spreadPrice == null || !Number.isFinite(spreadPrice) || spreadPrice <= 0) {
+    return NEUTRAL_SPREAD_FACTOR;
+  }
+  const entry = (a.entryZone.low + a.entryZone.high) / 2;
+  const stopDist = Math.abs(entry - a.stopLoss);
+  if (!Number.isFinite(stopDist) || stopDist <= 0) return NEUTRAL_SPREAD_FACTOR;
+  const ratio = spreadPrice / stopDist;
+  return clamp(Math.round(10 * (1 - ratio / SPREAD_RATIO_FLOOR)), 0, 10);
+}
+
+// R7 step 5 — DOWNGRADE-ONLY DOCTRINE CEILING. This is the exact pre-R7 factor
+// sum (including the upward double-count and the riskScore/confidence proxies),
+// retained ONLY as a Math.min() cap on the honest score so the re-factoring can
+// never RAISE any row's total above what the old formula produced for the same
+// input (the neutral constants could otherwise add points to rows the old
+// proxies happened to punish). It is a ceiling, never a source: no factor is
+// derived from it, and it can only lower a score. Delete together with
+// opportunityScore when lib/domain/src/expectancy replaces this scoring.
+function legacyOpportunityCeiling(a: MarketAnalysis, stratMatch: number): number {
   const trend = clamp(Math.round((a.trendStrength / 100) * 15), 0, 15);
-  const sr = clamp(Math.round((a.entryQualityScore / 100) * 15), 0, 15);
+  const eq15 = clamp(Math.round((a.entryQualityScore / 100) * 15), 0, 15);
+  const rr = clamp(Math.round(Math.min(a.riskRewardRatio / 3, 1) * 15), 0, 15);
+  const vol = a.marketBias === "choppy" ? 2 : 8;
+  const spreadProxy = clamp(10 - Math.round((a.riskScore / 100) * 10), 0, 10);
+  const calibProxy = clamp(Math.round((a.confidenceScore / 100) * 10), 0, 10);
+  return trend + eq15 * 2 + rr + vol + spreadProxy + stratMatch + calibProxy;
+}
+
+export function opportunityScore(
+  a: MarketAnalysis,
+  strategyMatch = 7,
+  spread?: OpportunitySpreadInput,
+): OpportunityScore {
+  const trend = clamp(Math.round((a.trendStrength / 100) * 15), 0, 15);
+  // R7 step 5 — the former supportResistanceQuality factor was entryQualityScore
+  // double-counted under a second name (intel-engine.md §1.3). One honest copy
+  // remains (entryTiming); the duplicate is pinned to 0.
+  const sr = 0;
   const timing = clamp(Math.round((a.entryQualityScore / 100) * 15), 0, 15);
   const rr = clamp(Math.round(Math.min(a.riskRewardRatio / 3, 1) * 15), 0, 15);
   const vol = a.marketBias === "choppy" ? 2 : 8;
-  const spread = clamp(10 - Math.round((a.riskScore / 100) * 10), 0, 10);
+  const spreadFactor = spreadConditionFactor(a, spread?.spreadPrice);
   const stratMatch = clamp(Math.round(strategyMatch), 0, 10);
-  const calib = clamp(Math.round((a.confidenceScore / 100) * 10), 0, 10);
-  const score = trend + sr + timing + rr + vol + spread + stratMatch + calib;
+  const calib = NEUTRAL_CALIBRATION_FACTOR;
+  const honest = trend + sr + timing + rr + vol + spreadFactor + stratMatch + calib;
+  // Downgrade-only doctrine: the honest total may never exceed the pre-R7
+  // total for the same input (see legacyOpportunityCeiling). When the ceiling
+  // binds, the factor breakdown sums ABOVE `score` — the factors stay the
+  // honest per-factor reads and `score` carries the doctrinal cap.
+  const score = Math.min(honest, legacyOpportunityCeiling(a, stratMatch));
   let label: OpportunityLabel;
   if (score >= 90) label = "ELITE";
   else if (score >= 80) label = "STRONG";
@@ -149,7 +233,7 @@ export function opportunityScore(a: MarketAnalysis, strategyMatch = 7): Opportun
     score, label,
     factors: {
       trendAlignment: trend, supportResistanceQuality: sr, entryTiming: timing,
-      riskRewardQuality: rr, volatilityCondition: vol, spreadCondition: spread,
+      riskRewardQuality: rr, volatilityCondition: vol, spreadCondition: spreadFactor,
       strategyMatch: stratMatch, aiConfidenceCalibration: calib,
     },
   };
@@ -1136,6 +1220,11 @@ async function analyzeViaRouter(
    *  legacy 30-bar analysis window every existing consumer was tuned on. */
   regimeCandles: Awaited<ReturnType<typeof routeCandles>>["candles"];
   primaryProvider: string | null;
+  /** R7 step 5 — the ACTUAL routed quote spread in price units, or null when
+   *  the quote carried none (the router's 0-substitute is indistinguishable
+   *  from "unknown" and is reported as null, never as a zero-cost spread).
+   *  Feeds opportunityScore's spreadCondition factor — never riskScore. */
+  quoteSpreadPrice: number | null;
 } | null> {
   try {
     // Bounded fan-out: route the candle + quote lookups through the SHARED
@@ -1177,6 +1266,11 @@ async function analyzeViaRouter(
       rawCandles: analysisWindow,
       regimeCandles: cr.candles,
       primaryProvider: cr.primaryProvider ?? null,
+      quoteSpreadPrice:
+        qr.ok && qr.quote && qr.quote.spread != null &&
+        Number.isFinite(qr.quote.spread) && qr.quote.spread > 0
+          ? qr.quote.spread
+          : null,
     };
   } catch { return null; }
 }
@@ -1222,7 +1316,9 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
     // analysis window is unchanged for every other consumer). No feed / thin
     // feed ⇒ UNKNOWN, and computeFinalRead withholds the actionable label.
     const regime = resolveScannerRegime(sym, tf, routed?.regimeCandles ?? null);
-    const opp = opportunityScore(a);
+    // R7 step 5 — the spreadCondition factor consumes the ACTUAL routed quote
+    // spread (null → neutral). 7 is the pre-existing strategyMatch default.
+    const opp = opportunityScore(a, 7, { spreadPrice: routed?.quoteSpreadPrice ?? null });
     const entry = (a.entryZone.low + a.entryZone.high) / 2;
     // Phase 22X — distinguish "history loaded but no live tick yet"
     // from "no data at all". For synthetic symbols served by the

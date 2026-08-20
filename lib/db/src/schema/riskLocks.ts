@@ -3,6 +3,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
 export const RISK_LOCK_TYPES = [
+  "FAILURE_STREAK", // wave-4 breaker: >=3 consecutive terminal live failures, 30-min cooling-off
   "USER_MANUAL",
   "DAILY_LOSS_LIMIT",
   "MAX_TRADES_REACHED",

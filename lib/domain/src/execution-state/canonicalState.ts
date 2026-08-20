@@ -41,6 +41,7 @@
 //   REJECTED                    → rejected                lossless
 //   BLOCKED                     → risk_rejected           LOSSY (covers every gate refusal, not only risk gates)
 //   FAILED                      → rejected                LOSSY (conflates broker failure with the 2-minute no-pickup sweep — audit G1d)
+//   DEMO_PARTIALLY_FILLED       → partially_filled        lossless (R2 S5 forward-declared: recognized by the read layer ahead of its adoption in the DemoCommandStatus writer vocabulary — see MT5_DEMO_STATUS_MAP note)
 //
 // Mapping table — mt5_commands.status, free text (lib/db/src/schema/mt5Commands.ts:21
 // schema comment + observed writers: routes/mt5.ts, executionReconciler.ts,
@@ -49,8 +50,8 @@
 //   DELIVERED                   → submitting              LOSSY (EA transport pickup, not a broker acknowledgement)
 //   claimed                     → submitting              LOSSY (legacy variant of DELIVERED)
 //   sent                        → submitting              LOSSY (EA reported non-terminal "pending"; executionReconciler mapCommandStatus)
-//   completed                   → filled                  LOSSY (may conceal a partial fill: executionReconciler maps partial→completed — audit G2)
-//   executed                    → filled                  LOSSY (legacy variant of completed; same partial-fill concealment)
+//   completed                   → filled                  LOSSY (rows written before R2 S5 may conceal a partial fill: executionReconciler used to map partial→completed — audit G2; S5 stopped the coercion, historical rows remain)
+//   executed                    → filled                  LOSSY (legacy variant of completed; same historical partial-fill concealment)
 //   partial                     → partially_filled        lossless (EA-posted status stored verbatim by /mt5/command-result)
 //   failed                      → rejected                LOSSY (conflates broker rejection, transport failure, and the 5-minute watchdog presumption — audit G1c)
 //   rejected                    → rejected                lossless
@@ -162,6 +163,14 @@ export const MT5_DEMO_STATUS_MAP: MappingTable = Object.freeze({
     lossy: true,
     note: "conflates broker failure with the 2-minute no-pickup sweep (audit G1d)",
   },
+  // R2 S5 (audit G2) — FORWARD-DECLARED partial-fill literal. The demo path's
+  // status vocabulary has no partial state today; this mapping recognizes the
+  // literal ahead of its adoption in executionMode.ts DemoCommandStatus /
+  // DEMO_COMMAND_TRANSITIONS (out of this slice's scope — reported to the
+  // coordinator) so the read layer stays total on the day the writer lands.
+  // mt5_demo_commands.status is a free-text column, so no migration is
+  // needed; until the writer adopts it this entry simply never matches.
+  DEMO_PARTIALLY_FILLED: { state: "partially_filled", lossy: false },
 } satisfies Record<string, CanonicalStateMapping>);
 
 export function fromMt5DemoStatus(s: string): CanonicalStateMapping {
@@ -193,12 +202,12 @@ export const MT5_COMMAND_STATUS_MAP: MappingTable = Object.freeze({
   completed: {
     state: "filled",
     lossy: true,
-    note: "may conceal a partial fill: executionReconciler maps partial to completed (audit G2)",
+    note: "rows written before R2 S5 may conceal a partial fill: executionReconciler used to map partial to completed (audit G2)",
   },
   executed: {
     state: "filled",
     lossy: true,
-    note: "legacy variant of completed; same partial-fill concealment (audit G2)",
+    note: "legacy variant of completed; same historical partial-fill concealment (audit G2)",
   },
   partial: { state: "partially_filled", lossy: false },
   failed: {

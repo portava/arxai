@@ -38,8 +38,24 @@ import {
 } from "@workspace/domain/safety-contracts/preTradeBrokerGuard";
 import { evaluateSyntheticLiveFloor, type SymbolFeedVerdict } from "@workspace/domain/safety-contracts/syntheticLiveFloor";
 import { isApprovedArxMarket, ARX_FOCUS_BLOCKED_REASON } from "@workspace/domain/market";
+// Wave-4 correlation guard — the R3 slice 6 pure core. @workspace/domain has
+// no "./risk-correlation" subpath export (package.json is coordinator-owned
+// and out of scope this wave), so the evaluator is consumed via the root
+// barrel's `riskCorrelation` namespace — the same established pattern
+// safetyCore.ts / the security modules use for the root barrel.
+import { riskCorrelation } from "@workspace/domain";
 import { getBrokerSymbolSpec } from "../mt5/brokerSymbolSpec.js";
 import { resolveSymbolFeedVerdictForSymbol } from "../data/symbolFeedVerdictForSymbol.js";
+// R4 slice 3 — enforcing broker-confirmed-feed entry gate. The pure
+// predicate + fail-honest feed resolver both live in brokerConfirmedFeed.ts
+// (whose modules — marketDataRouter / deriv provider / freshness — are
+// already in this file's import graph via symbolFeedVerdictForSymbol).
+import {
+  evaluateLiveEntryFeedGate,
+  resolveBrokerConfirmedFeed,
+  brokerFeedGateEnforcementEnabled,
+  BROKER_FEED_GATE_ENV,
+} from "../data/brokerConfirmedFeed.js";
 import { evaluateEntryDataSufficiency } from "./entryDataSufficiency.js";
 import { explainMt5Retcode } from "../mt5/mt5Retcodes.js";
 import { getMyArming } from "./liveArming.js";
@@ -503,6 +519,248 @@ export function activeRiskLockBlockReason(args: {
   return null;
 }
 
+// Per-trade required-margin / risk USD proxy shared by the allocation
+// headroom pre-gate (preflight) and the wave-4 correlation-cluster pre-gate:
+// lot × 1000 USD-equivalent (a typical 100:1 leveraged forex mini-lot margin
+// envelope). Deliberately conservative; MT5 still enforces true margin
+// server-side. Hoisted to module scope (was preflight-local) so both
+// consumers derive the SAME per-command risk figure and can never drift.
+export const REQUIRED_MARGIN_PROXY_PER_LOT_USD = 1000;
+
+// The R3 slice 6 pure cluster-exposure evaluator (see import note above).
+const { evaluateClusterExposure } = riskCorrelation;
+
+// ── R3 slice 4 — price-collar pre-gate ──────────────────────────────────────
+// Preflight intentionally passes `requestedPrice: null` into the broker-rule
+// guard ("server does not enforce slippage") and delegates deviation to the
+// EA — fail-OPEN by design when the user has NOT asked for a server-side
+// collar. arx_live_user_settings.max_entry_deviation_bps is that ask: when
+// set, dispatch resolves a dispatch-time reference price from the execution
+// broker feed (the same getLiveQuote provider chain the preflight quote legs
+// use) and refuses entries whose draft-vs-now deviation exceeds the cap,
+// BEFORE the 18-gate evaluator.
+export const PRICE_DEVIATION_BLOCK_REASON =
+  "LIVE_BLOCKED:PRICE_DEVIATION_TOO_LARGE" as const;
+
+/**
+ * PURE decision for the price-collar pre-gate (no I/O — same extraction
+ * pattern as the kill-switch / weekly / risk-lock helpers above).
+ * TRUE = refuse the dispatch.
+ *
+ * - ENTRY-ONLY: close/modify never block here (never-trap-money split).
+ * - Cap null/undefined = gate skipped (fail-open): the EA's own
+ *   DEVIATION_TOO_LARGE guard + broker-side SetDeviationInPoints still apply.
+ * - Cap SET (including a REAL cap of 0 bps — 0 is never "unlimited"): the
+ *   check is DEMANDED, so unprovable inputs fail CLOSED —
+ *     · corrupt cap (non-finite / negative)            → refuse;
+ *     · missing/non-positive draft requested price     → refuse (no
+ *       provenance of the price the user approved);
+ *     · missing/unresolvable dispatch reference price  → refuse (cannot
+ *       prove the deviation is inside the cap).
+ * - The deviation decision is NOT re-derived here: it REUSES the pure
+ *   DEVIATION_TOO_LARGE check in @workspace/domain preTradeBrokerGuard by
+ *   feeding it a synthetic 1-point == 1-bp frame (point = reference/10000,
+ *   maxDeviationPoints = cap-in-bps, bid = ask = reference, fresh quote).
+ *   Under these inputs every other leg of that guard is inert (positive
+ *   prices, zero spread, null broker spec ⇒ spec legs fail-open), so the
+ *   ONLY consulted check is the deviation leg — one shared slippage
+ *   definition, zero drift between server and EA semantics.
+ */
+export function priceCollarBlocksDispatch(args: {
+  maxEntryDeviationBps: number | null | undefined;
+  /** Draft-time price the user approved (payload.referencePrice). */
+  requestedPrice: number | null | undefined;
+  /** Dispatch-time reference price from the execution broker feed. */
+  referencePrice: number | null | undefined;
+  side: "BUY" | "SELL";
+  isEntryCommand: boolean;
+}): boolean {
+  if (!args.isEntryCommand) return false;
+  const cap = args.maxEntryDeviationBps;
+  if (cap == null) return false;
+  if (!Number.isFinite(cap) || cap < 0) return true;
+  const requested = args.requestedPrice;
+  if (requested == null || !Number.isFinite(requested) || requested <= 0) return true;
+  const reference = args.referencePrice;
+  if (reference == null || !Number.isFinite(reference) || reference <= 0) return true;
+  const guard = evaluatePreTradeBrokerGuard({
+    side: args.side,
+    volume: 0.01, // inert: every volume leg fails open on a null broker spec
+    stopLoss: null,
+    takeProfit: null,
+    requestedPrice: requested,
+    quote: { bid: reference, ask: reference, quoteAgeMs: 0 },
+    spec: {
+      visible: null, tradeAllowed: null, tradeMode: null, marketOpen: null,
+      point: reference / 10_000, // 1 "point" == 1 bp of the reference price
+      minVolume: null, maxVolume: null, volumeStep: null,
+      stopsLevelPoints: null, freezeLevelPoints: null,
+    },
+    limits: { ...DEFAULT_PRE_TRADE_GUARD_LIMITS, maxDeviationPoints: cap },
+  });
+  const deviation = guard.checks.find((c) => c.key === "DEVIATION_TOO_LARGE");
+  // Fail-closed: if the shared guard ever stopped emitting the deviation
+  // check, a demanded collar must refuse rather than silently pass.
+  return deviation == null || deviation.passed === false;
+}
+
+// ── R3 slice 5 — signal-age pre-gate ────────────────────────────────────────
+// arx_live_commands.signal_timestamp carries the caller-supplied provenance
+// of WHEN the signal/decision behind an entry was generated (threaded from
+// createLiveDraft's typed input). arx_live_user_settings.max_signal_age_ms
+// is the user's demanded bound; dispatch consumes both via this reason
+// literal BEFORE the 18-gate evaluator.
+export const SIGNAL_TOO_OLD_BLOCK_REASON = "LIVE_BLOCKED:SIGNAL_TOO_OLD" as const;
+
+/**
+ * PURE decision for the signal-age pre-gate (no I/O). TRUE = refuse.
+ *
+ * - ENTRY-ONLY: close/modify never block here.
+ * - Bound null/undefined = no bound configured — gate skipped.
+ * - Corrupt bound (non-finite / negative) = refuse (fail-closed, never guess).
+ * - Bound SET + missing/unparseable signalTimestamp = refuse: a configured
+ *   bound means the user demands provenance of timing, so an entry that
+ *   cannot prove when its signal was generated must not fire.
+ * - Refusal is strictly `age > bound` (a REAL bound of 0 ms admits only a
+ *   signal stamped at/after `now`). A FUTURE timestamp yields negative age
+ *   and passes — clock skew must not spuriously refuse here; the TTL /
+ *   clock-drift contracts own that direction.
+ */
+export function signalAgeBlocksDispatch(args: {
+  maxSignalAgeMs: number | null | undefined;
+  signalTimestamp: Date | string | null | undefined;
+  isEntryCommand: boolean;
+  now?: Date;
+}): boolean {
+  if (!args.isEntryCommand) return false;
+  const bound = args.maxSignalAgeMs;
+  if (bound == null) return false;
+  if (!Number.isFinite(bound) || bound < 0) return true;
+  if (args.signalTimestamp == null) return true;
+  const tsMs = new Date(args.signalTimestamp).getTime();
+  if (!Number.isFinite(tsMs)) return true;
+  const nowMs = (args.now ?? new Date()).getTime();
+  return nowMs - tsMs > bound;
+}
+
+// ── Wave-4 — correlation-cluster pre-gate (wires the R3 slice 6 pure core) ──
+// evaluateClusterExposure clusters the candidate with same-(risk family ×
+// direction) open exposure; caps come from the TWO nullable
+// arx_live_user_settings columns max_cluster_risk_usd / max_cluster_positions.
+export const CLUSTER_BLOCK_REASON_PREFIX = "LIVE_BLOCKED:CLUSTER_" as const;
+
+/**
+ * PURE decision for the cluster-exposure pre-gate (no I/O). Returns the full
+ * LIVE_BLOCKED:CLUSTER_<REASON> literal plus the evaluator's evaluation (for
+ * the audit snapshot), or null when nothing blocks.
+ *
+ * - ENTRY-ONLY: close/modify never block here.
+ * - BOTH caps null/undefined = no cap configured — gate skipped entirely
+ *   (matching the evaluator's nullable-cap "unset ⇒ no cap" semantics; 0 is
+ *   a REAL cap of zero, never "unlimited").
+ * - With ANY cap set the evaluator decides, and its fail-closed validation
+ *   refusals (corrupt candidate / corrupt open row / corrupt cap) block too —
+ *   a corrupt row must never silently create capacity.
+ * - Reason composition mirrors the risk-lock prefix pattern; a leading
+ *   "CLUSTER_" on the evaluator reason is collapsed so CLUSTER_RISK_EXCEEDED
+ *   surfaces as LIVE_BLOCKED:CLUSTER_RISK_EXCEEDED (never ..._CLUSTER_CLUSTER_...)
+ *   while CANDIDATE_INVALID surfaces as LIVE_BLOCKED:CLUSTER_CANDIDATE_INVALID.
+ */
+export function clusterExposureBlockReason(args: {
+  candidate: { symbol: string; side: string; riskAmount: number };
+  openPositions: ReadonlyArray<{ symbol: string; side: string; riskAmount: number }>;
+  maxClusterRiskUsd: number | null | undefined;
+  maxClusterPositions: number | null | undefined;
+  isEntryCommand: boolean;
+}): { reason: string; evaluation: ReturnType<typeof evaluateClusterExposure> } | null {
+  if (!args.isEntryCommand) return null;
+  const riskCap = args.maxClusterRiskUsd ?? null;
+  const positionsCap = args.maxClusterPositions ?? null;
+  if (riskCap == null && positionsCap == null) return null;
+  const evaluation = evaluateClusterExposure({
+    candidate: args.candidate,
+    openPositions: [...args.openPositions],
+    maxClusterRisk: riskCap,
+    maxClusterPositions: positionsCap,
+  });
+  if (evaluation.allowed) return null;
+  const evaluatorReason = evaluation.reason ?? "REFUSED";
+  const suffix = evaluatorReason.startsWith("CLUSTER_")
+    ? evaluatorReason.slice("CLUSTER_".length)
+    : evaluatorReason;
+  return { reason: `${CLUSTER_BLOCK_REASON_PREFIX}${suffix}`, evaluation };
+}
+
+// ── R4 slice 3 — broker-confirmed-feed entry gate (ENFORCING) ───────────────
+// evaluateLiveEntryFeedGate (lib/data/brokerConfirmedFeed.ts) was landed as a
+// pure predicate with the pipeline still observe-only; this wave makes it an
+// enforcing entry pre-gate. Default-ON: ARX_ENFORCE_BROKER_CONFIRMED_FEED
+// absent/any-non-disable value ENFORCES; only an explicit disable value
+// (e.g. "false") turns it observe-only — named loudly at startup below.
+// Close/reduce/modify are exempt inside the predicate itself (intent split).
+export const BROKER_FEED_BLOCK_REASON =
+  "LIVE_BLOCKED:BROKER_FEED_NOT_CONFIRMED" as const;
+
+// Startup override notice — a disabled safety gate must never be silent.
+// Evaluated once at module init (the pipeline is loaded at server startup).
+if (!brokerFeedGateEnforcementEnabled(process.env[BROKER_FEED_GATE_ENV])) {
+  logger.warn({
+    [PHASE_B_LIVE_LOG_PREFIX]: true,
+    event: "BROKER_FEED_GATE_ENFORCEMENT_DISABLED",
+    envVar: BROKER_FEED_GATE_ENV,
+    rawValue: process.env[BROKER_FEED_GATE_ENV] ?? null,
+  }, `${BROKER_FEED_GATE_ENV} explicitly disables broker-confirmed-feed enforcement — live ENTRY dispatch will NOT be blocked on an unconfirmed feed (observe-only)`);
+}
+
+// ── R3 slice 7 — failure-streak breaker ─────────────────────────────────────
+// After recordLiveCommandResult APPLIES a terminal LIVE_FAILED/LIVE_REJECTED,
+// the user's consecutive per-symbol terminal failures are counted (pure
+// helper below) and at >= FAILURE_STREAK_THRESHOLD a 30-minute risk_locks row
+// is inserted. Enforcement is automatic: the wave-2 risk-lock pre-gate blocks
+// entries with LIVE_BLOCKED:RISK_LOCK_FAILURE_STREAK while the lock is active
+// (it blocks EVERY active lock type, unknown ones included — fail-closed by
+// its own contract), and close/modify stay allowed via that gate's
+// entry-vs-ops split. riskLocks.ts's RISK_LOCK_TYPES vocabulary is not in
+// this wave's scope; risk_locks.lock_type is free text, so the literal lives
+// here.
+export const FAILURE_STREAK_LOCK_TYPE = "FAILURE_STREAK" as const;
+export const FAILURE_STREAK_THRESHOLD = 3;
+export const FAILURE_STREAK_LOCK_MINUTES = 30;
+
+/**
+ * PURE consecutive-terminal-failure counter over a user's per-symbol command
+ * statuses ordered NEWEST FIRST (arx_live_commands ORDER BY id DESC).
+ *
+ * - LIVE_FAILED / LIVE_REJECTED extend the streak.
+ * - LIVE_FILLED / LIVE_CLOSED (broker-confirmed success) RESET — stop.
+ * - Every other status (BLOCKED / CANCELLED / EXPIRED, the epistemic
+ *   UNKNOWN states, and non-terminal rows) is NEUTRAL: it neither extends
+ *   nor resets. A gate refusal or an unresolved outcome is not broker
+ *   success, so it must not launder a failure streak back to zero.
+ */
+export function countConsecutiveTerminalFailures(
+  statusesNewestFirst: readonly string[],
+): number {
+  let streak = 0;
+  for (const status of statusesNewestFirst) {
+    if (status === "LIVE_FAILED" || status === "LIVE_REJECTED") {
+      streak += 1;
+      continue;
+    }
+    if (status === "LIVE_FILLED" || status === "LIVE_CLOSED") break;
+  }
+  return streak;
+}
+
+/** PURE threshold rule: >= FAILURE_STREAK_THRESHOLD consecutive terminal
+ *  failures engages the breaker (non-finite input never engages). */
+export function failureStreakShouldLock(
+  streak: number,
+  threshold: number = FAILURE_STREAK_THRESHOLD,
+): boolean {
+  return Number.isFinite(streak) && streak >= threshold;
+}
+
 async function audit(args: {
   eventType: string; userId: number; message: string;
   symbol?: string; severity?: string; metadata?: Record<string, unknown>;
@@ -565,6 +823,17 @@ export interface LiveDraftInput {
    * leg (fail-open) and relies on its broker-side SetDeviationInPoints cap.
    */
   referencePrice?: number | null;
+  /**
+   * R3 slice 5 — provenance timestamp of the signal/decision this entry was
+   * generated from (caller-supplied: scanner signal time, agent decision
+   * time, …). Persisted on the typed `signal_timestamp` column. When the
+   * user configures arx_live_user_settings.max_signal_age_ms, the dispatch
+   * signal-age pre-gate refuses entries older than the bound — and, fail
+   * CLOSED, refuses entries with NO stamp at all while a bound is set (a
+   * bound demands provenance of timing). Absent + no bound = unchanged
+   * behaviour.
+   */
+  signalTimestamp?: Date | string | null;
   ip?: string;
   /**
    * One-click fast-path SL override. Set ONLY by `/me/one-click/submit-live`
@@ -794,10 +1063,12 @@ async function preflight(input: LiveDraftInput): Promise<LiveDraftRefusal | { ok
     }
     // Per-trade required-margin estimate. We do not have a per-symbol
     // contract-size + leverage model in scope, so we use a deliberately
-    // conservative notional-style proxy: lot * 1000 USD-equivalent. This
-    // matches a typical 100:1 leveraged forex mini-lot margin envelope
-    // and refuses obviously over-sized tickets (e.g. 5.0 lots on a $200
-    // headroom). MT5 will still enforce true margin server-side.
+    // conservative notional-style proxy: lot * REQUIRED_MARGIN_PROXY_PER_LOT_USD
+    // (module-scope const — ALSO the risk unit of the wave-4 correlation
+    // cluster pre-gate, so the two can never drift). This matches a typical
+    // 100:1 leveraged forex mini-lot margin envelope and refuses obviously
+    // over-sized tickets (e.g. 5.0 lots on a $200 headroom). MT5 will still
+    // enforce true margin server-side.
     //
     // OWNER/ADMIN UNRESTRICTED: this internal proxy is skipped. The real
     // broker-side margin check at OrderSend remains the authority for the
@@ -805,7 +1076,6 @@ async function preflight(input: LiveDraftInput): Promise<LiveDraftRefusal | { ok
     // synthetic) is not refused by the $1000/lot heuristic. Every other
     // pool gate above (userAvailable > 0, isOverAllocated, master cap) STILL
     // applies to the owner.
-    const REQUIRED_MARGIN_PROXY_PER_LOT_USD = 1000;
     const estRequiredMarginUsd = Math.max(0, input.requestedVolume) * REQUIRED_MARGIN_PROXY_PER_LOT_USD;
     // T019 — owner/admin skip this app-added shared-pool margin proxy unless
     // they re-enable the `enforceAllocationLimit` governance toggle. Keyed on
@@ -1487,6 +1757,15 @@ export async function createLiveDraft(
     // Task #213 — self-trade agent/decision attribution (additive, nullable).
     selfTradeAgentId: input.selfTradeAgentId ?? null,
     selfTradeDecisionId: input.selfTradeDecisionId ?? null,
+    // R3 slice 5 — signal-provenance stamp (typed column; nullable). An
+    // unparseable caller value is stored as NULL — provenance is never
+    // fabricated; with a max_signal_age_ms bound configured the dispatch
+    // pre-gate then fail-closed refuses the entry.
+    signalTimestamp: (() => {
+      if (input.signalTimestamp == null) return null;
+      const d = new Date(input.signalTimestamp);
+      return Number.isFinite(d.getTime()) ? d : null;
+    })(),
     rubyExplanationSummary: input.rubyExplanationSummary ?? null,
     payload: draftPayload,
     payloadHash: integrity.payloadHash,
@@ -1839,6 +2118,297 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
       }, "Active risk lock blocked live dispatch");
       return { ok: false as const, reason: "LIVE_BLOCKED" as const,
         primaryReason: lockReason, blockReasons: [lockReason], command: blocked };
+    }
+  }
+
+  // ── WAVE-4 PRE-GATES (R3 slices 4/5 + correlation guard + R4 slice 3) ───
+  // Four additive, ENTRY-ONLY refusal walls, ordered AFTER the risk-lock
+  // pre-gate above and BEFORE the 18-gate evaluator below (source order is
+  // pinned by preGateWave4.test.ts; the pure 18-gate contract file is
+  // untouched). Each follows the established pre-gate shape: pure-helper
+  // decision → LIVE_BLOCKED row + dispatchGateSnapshot + audit +
+  // kill-switch-style typed return. CLOSE_LIVE_POSITION / MODIFY_LIVE_SLTP
+  // pass every one of them (never trap open exposure — the same
+  // entry-vs-ops split the risk-lock gate applies).
+  const isWave4EntryCommand = row.commandType === "PLACE_LIVE_MARKET_ORDER"
+    || row.commandType === "PLACE_LIVE_PENDING_ORDER";
+
+  // ── PRICE-COLLAR PRE-GATE (R3 slice 4) ─────────────────────────────────
+  // Runs only when the user demanded a server-side collar (cap non-null);
+  // otherwise slippage stays delegated to the EA exactly as before.
+  if (isWave4EntryCommand && settings.maxEntryDeviationBps != null) {
+    // Draft-time approved price: the SAME payload.referencePrice the draft
+    // stamped for the EA's deviation guard (set only from the typed
+    // server-side argument; client payloads are scrubbed at draft).
+    const draftRefRaw = (row.payload as Record<string, unknown> | null)?.["referencePrice"];
+    const requestedPrice = typeof draftRefRaw === "number" ? draftRefRaw : null;
+    // Dispatch-time reference from the execution broker feed — the same
+    // getLiveQuote provider chain the preflight quote legs read. With a cap
+    // SET, a fetch failure leaves the reference null and the pure helper
+    // refuses (fail-CLOSED — deliberately unlike the advisory preflight
+    // SL-sanity legs, which skip on a failed quote: a demanded collar must
+    // never be silently skipped).
+    let dispatchReferencePrice: number | null = null;
+    try {
+      const { getMarketProvider } = await import("../assistant/marketProvider.js");
+      const q = await getMarketProvider().getLiveQuote(row.symbol);
+      const ref = row.side === "BUY" ? (q.ask ?? q.price) : (q.bid ?? q.price);
+      dispatchReferencePrice =
+        typeof ref === "number" && Number.isFinite(ref) && ref > 0 ? ref : null;
+    } catch (err) {
+      logger.warn(
+        { err, userId: args.userId, symbol: row.symbol, commandId: args.commandId },
+        "live-dispatch: price-collar reference quote fetch failed — collar is fail-closed (entry will refuse)",
+      );
+    }
+    if (priceCollarBlocksDispatch({
+      maxEntryDeviationBps: Number(settings.maxEntryDeviationBps),
+      requestedPrice,
+      referencePrice: dispatchReferencePrice,
+      side: row.side as "BUY" | "SELL",
+      isEntryCommand: true,
+    })) {
+      const reason = PRICE_DEVIATION_BLOCK_REASON;
+      const [blocked] = await db.update(arxLiveCommandsTable).set({
+        status: "LIVE_BLOCKED",
+        rejectionReason: reason,
+        rejectedAt: new Date(),
+        dispatchGateSnapshot: {
+          decision: "BLOCKED",
+          primaryReason: reason,
+          blockReasons: [reason, "BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED"],
+          priceCollarGate: true,
+          maxEntryDeviationBps: Number(settings.maxEntryDeviationBps),
+          requestedPrice,
+          dispatchReferencePrice,
+          at: new Date().toISOString(),
+        } as unknown as Record<string, unknown>,
+      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      await audit({
+        eventType: "PRICE_COLLAR_BLOCKED", severity: "HIGH",
+        userId: args.userId, symbol: row.symbol,
+        message: `Live dispatch BLOCKED by price collar: ${reason}`,
+        metadata: {
+          commandId: args.commandId, commandType: row.commandType,
+          maxEntryDeviationBps: Number(settings.maxEntryDeviationBps),
+          requestedPrice, dispatchReferencePrice,
+        },
+      });
+      logger.warn({
+        [PHASE_B_LIVE_LOG_PREFIX]: true,
+        event: "PRICE_COLLAR_BLOCKED",
+        commandId: args.commandId, userId: args.userId, primaryReason: reason,
+      }, "Price collar blocked live dispatch");
+      return { ok: false as const, reason: "LIVE_BLOCKED" as const,
+        primaryReason: reason, blockReasons: [reason], command: blocked };
+    }
+  }
+
+  // ── SIGNAL-AGE PRE-GATE (R3 slice 5) ───────────────────────────────────
+  // Refuses entries whose signal_timestamp is older than the user's
+  // max_signal_age_ms bound; with a bound set, a missing stamp refuses
+  // fail-closed (a bound demands provenance of timing). No bound = skipped.
+  if (isWave4EntryCommand) {
+    if (signalAgeBlocksDispatch({
+      maxSignalAgeMs: settings.maxSignalAgeMs,
+      signalTimestamp: row.signalTimestamp,
+      isEntryCommand: true,
+    })) {
+      const reason = SIGNAL_TOO_OLD_BLOCK_REASON;
+      const [blocked] = await db.update(arxLiveCommandsTable).set({
+        status: "LIVE_BLOCKED",
+        rejectionReason: reason,
+        rejectedAt: new Date(),
+        dispatchGateSnapshot: {
+          decision: "BLOCKED",
+          primaryReason: reason,
+          blockReasons: [reason, "BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED"],
+          signalAgeGate: true,
+          maxSignalAgeMs: settings.maxSignalAgeMs,
+          signalTimestamp: row.signalTimestamp != null
+            ? new Date(row.signalTimestamp).toISOString() : null,
+          at: new Date().toISOString(),
+        } as unknown as Record<string, unknown>,
+      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      await audit({
+        eventType: "SIGNAL_AGE_BLOCKED", severity: "HIGH",
+        userId: args.userId, symbol: row.symbol,
+        message: `Live dispatch BLOCKED by signal age: ${reason}`,
+        metadata: {
+          commandId: args.commandId, commandType: row.commandType,
+          maxSignalAgeMs: settings.maxSignalAgeMs,
+          signalTimestamp: row.signalTimestamp != null
+            ? new Date(row.signalTimestamp).toISOString() : null,
+        },
+      });
+      logger.warn({
+        [PHASE_B_LIVE_LOG_PREFIX]: true,
+        event: "SIGNAL_AGE_BLOCKED",
+        commandId: args.commandId, userId: args.userId, primaryReason: reason,
+      }, "Signal age blocked live dispatch");
+      return { ok: false as const, reason: "LIVE_BLOCKED" as const,
+        primaryReason: reason, blockReasons: [reason], command: blocked };
+    }
+  }
+
+  // ── CORRELATION-CLUSTER PRE-GATE (wires R3 slice 6's pure core) ────────
+  // Runs only when the user configured at least one cluster cap. Candidate
+  // risk uses the SAME conservative USD proxy the allocation headroom
+  // pre-gate derives per trade (lots × REQUIRED_MARGIN_PROXY_PER_LOT_USD);
+  // clustered exposure re-reads the same open-position + in-flight rows the
+  // per-user exposure gate counts (open arx_live_positions PLUS
+  // SENT_TO_MT5_LIVE commands, closing the same TOCTOU window: two parallel
+  // dispatches must not both pass the cluster cap before either reaches the
+  // EA). The pure evaluator decides — including its fail-closed validation
+  // refusals (a corrupt row must never silently create capacity).
+  if (isWave4EntryCommand
+    && (settings.maxClusterRiskUsd != null || settings.maxClusterPositions != null)) {
+    const clusterOpenPositions = await db.select({
+      symbol: arxLivePositionsTable.symbol,
+      side: arxLivePositionsTable.side,
+      volume: arxLivePositionsTable.volume,
+    }).from(arxLivePositionsTable).where(and(
+      eq(arxLivePositionsTable.userId, args.userId),
+      isNull(arxLivePositionsTable.closedAt),
+    ));
+    const clusterInFlight = await db.select({
+      symbol: arxLiveCommandsTable.symbol,
+      side: arxLiveCommandsTable.side,
+      volume: arxLiveCommandsTable.requestedVolume,
+    }).from(arxLiveCommandsTable).where(and(
+      eq(arxLiveCommandsTable.userId, args.userId),
+      eq(arxLiveCommandsTable.status, "SENT_TO_MT5_LIVE"),
+      isNull(arxLiveCommandsTable.filledAt),
+      isNull(arxLiveCommandsTable.rejectedAt),
+    ));
+    const clusterBlock = clusterExposureBlockReason({
+      candidate: {
+        symbol: row.symbol,
+        side: row.side,
+        riskAmount: Number(row.requestedVolume) * REQUIRED_MARGIN_PROXY_PER_LOT_USD,
+      },
+      openPositions: [...clusterOpenPositions, ...clusterInFlight].map((p) => ({
+        symbol: p.symbol,
+        side: p.side,
+        riskAmount: Number(p.volume ?? 0) * REQUIRED_MARGIN_PROXY_PER_LOT_USD,
+      })),
+      maxClusterRiskUsd: settings.maxClusterRiskUsd,
+      maxClusterPositions: settings.maxClusterPositions,
+      isEntryCommand: true,
+    });
+    if (clusterBlock != null) {
+      const reason = clusterBlock.reason;
+      const [blocked] = await db.update(arxLiveCommandsTable).set({
+        status: "LIVE_BLOCKED",
+        rejectionReason: reason,
+        rejectedAt: new Date(),
+        dispatchGateSnapshot: {
+          decision: "BLOCKED",
+          primaryReason: reason,
+          blockReasons: [reason, "BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED"],
+          clusterExposureGate: true,
+          clusterKey: clusterBlock.evaluation.clusterKey,
+          clusterRisk: clusterBlock.evaluation.clusterRisk,
+          clusterCount: clusterBlock.evaluation.clusterCount,
+          maxClusterRiskUsd: settings.maxClusterRiskUsd,
+          maxClusterPositions: settings.maxClusterPositions,
+          at: new Date().toISOString(),
+        } as unknown as Record<string, unknown>,
+      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      await audit({
+        eventType: "CLUSTER_EXPOSURE_BLOCKED", severity: "HIGH",
+        userId: args.userId, symbol: row.symbol,
+        message: `Live dispatch BLOCKED by correlation-cluster guard: ${reason}`,
+        metadata: {
+          commandId: args.commandId, commandType: row.commandType,
+          clusterKey: clusterBlock.evaluation.clusterKey,
+          clusterRisk: clusterBlock.evaluation.clusterRisk,
+          clusterCount: clusterBlock.evaluation.clusterCount,
+          maxClusterRiskUsd: settings.maxClusterRiskUsd,
+          maxClusterPositions: settings.maxClusterPositions,
+        },
+      });
+      logger.warn({
+        [PHASE_B_LIVE_LOG_PREFIX]: true,
+        event: "CLUSTER_EXPOSURE_BLOCKED",
+        commandId: args.commandId, userId: args.userId, primaryReason: reason,
+      }, "Correlation-cluster guard blocked live dispatch");
+      return { ok: false as const, reason: "LIVE_BLOCKED" as const,
+        primaryReason: reason, blockReasons: [reason], command: blocked };
+    }
+  }
+
+  // ── BROKER-CONFIRMED-FEED PRE-GATE (R4 slice 3 — now ENFORCING) ────────
+  // Feed facts are resolved fail-honest (errors / timeouts / no candles ⇒
+  // AWAITING ⇒ not confirmed — resolveBrokerConfirmedFeed never throws); the
+  // pure evaluateLiveEntryFeedGate predicate decides. Bridge binding is
+  // deliberately NOT passed: this pre-gate runs before bridge selection, in
+  // the predicate's documented feed-confirmation-only mode. Enforcement is
+  // default-ON (env absent enforces); an explicit disable value logs the
+  // violation observe-only (plus the startup override notice at module init).
+  // Close/modify are exempt both here (isWave4EntryCommand) and inside the
+  // predicate's own intent split.
+  if (isWave4EntryCommand) {
+    const feed = await resolveBrokerConfirmedFeed(row.symbol);
+    const feedGate = evaluateLiveEntryFeedGate({
+      intent: "ENTRY",
+      verdict: feed.verdict,
+      source: feed.feedSource,
+      derivBacked: feed.derivBacked,
+      enforceEnvValue: process.env[BROKER_FEED_GATE_ENV] ?? null,
+    });
+    if (!feedGate.allowed) {
+      // Without bridge binding the only reachable refusal is
+      // BROKER_FEED_NOT_CONFIRMED; the composition stays general so a future
+      // bridge-bound caller cannot silently mislabel a different violation.
+      const reason = feedGate.refusalCode === "BROKER_FEED_NOT_CONFIRMED"
+        ? BROKER_FEED_BLOCK_REASON
+        : `LIVE_BLOCKED:${feedGate.refusalCode}`;
+      const [blocked] = await db.update(arxLiveCommandsTable).set({
+        status: "LIVE_BLOCKED",
+        rejectionReason: reason,
+        rejectedAt: new Date(),
+        dispatchGateSnapshot: {
+          decision: "BLOCKED",
+          primaryReason: reason,
+          blockReasons: [reason, "BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED"],
+          brokerFeedGate: true,
+          feedVerdict: feed.verdict,
+          feedSource: feed.feedSource,
+          derivBacked: feed.derivBacked,
+          lastCandleAt: feed.lastCandleAt,
+          detail: feedGate.detail,
+          at: new Date().toISOString(),
+        } as unknown as Record<string, unknown>,
+      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      await audit({
+        eventType: "BROKER_FEED_BLOCKED", severity: "HIGH",
+        userId: args.userId, symbol: row.symbol,
+        message: `Live dispatch BLOCKED by broker-confirmed-feed gate: ${reason}`,
+        metadata: {
+          commandId: args.commandId, commandType: row.commandType,
+          feedVerdict: feed.verdict, feedSource: feed.feedSource,
+          derivBacked: feed.derivBacked,
+        },
+      });
+      logger.warn({
+        [PHASE_B_LIVE_LOG_PREFIX]: true,
+        event: "BROKER_FEED_BLOCKED",
+        commandId: args.commandId, userId: args.userId, primaryReason: reason,
+      }, "Broker-confirmed-feed gate blocked live dispatch");
+      return { ok: false as const, reason: "LIVE_BLOCKED" as const,
+        primaryReason: reason, blockReasons: [reason], command: blocked };
+    }
+    if (feedGate.violation != null) {
+      // Enforcement explicitly disabled — observe-only parity: the violation
+      // is still named so the override can never hide a bad feed silently.
+      logger.warn({
+        [PHASE_B_LIVE_LOG_PREFIX]: true,
+        event: "BROKER_FEED_VIOLATION_OBSERVED",
+        commandId: args.commandId, userId: args.userId,
+        violation: feedGate.violation, feedVerdict: feed.verdict,
+        feedSource: feed.feedSource, envVar: BROKER_FEED_GATE_ENV,
+      }, "Broker-feed violation observed but enforcement is explicitly disabled — entry NOT blocked");
     }
   }
 
@@ -3686,6 +4256,83 @@ export async function recordLiveCommandResult(args: {
     commandId: args.commandId, userId: args.userId,
     brokerTicket: args.brokerTicket, mt5Retcode: args.mt5Retcode,
   }, "Phase B live result recorded");
+
+  // ── R3 slice 7 — FAILURE-STREAK BREAKER (best-effort, never gates) ───────
+  // A terminal broker failure was just APPLIED (the CAS above won — this is
+  // not a duplicate/late report). Count this user's consecutive per-symbol
+  // terminal failures (newest first; broker-confirmed success resets — pure
+  // countConsecutiveTerminalFailures) and at >= FAILURE_STREAK_THRESHOLD
+  // insert a FAILURE_STREAK_LOCK_MINUTES-long risk_locks row. Enforcement is
+  // automatic and needs no new gate: the wave-2 risk-lock pre-gate refuses
+  // entries with LIVE_BLOCKED:RISK_LOCK_FAILURE_STREAK while the lock is
+  // active, and close/modify stay allowed via that gate's entry-vs-ops
+  // split. The ENTIRE block is try/caught: streak accounting must NEVER
+  // break result recording — the applied result above is already committed
+  // and is returned unchanged regardless of what happens here.
+  if (finalStatus === "LIVE_FAILED" || finalStatus === "LIVE_REJECTED") {
+    try {
+      const recentRows = await db.select({ status: arxLiveCommandsTable.status })
+        .from(arxLiveCommandsTable)
+        .where(and(
+          eq(arxLiveCommandsTable.userId, args.userId),
+          eq(arxLiveCommandsTable.symbol, row.symbol),
+        ))
+        .orderBy(desc(arxLiveCommandsTable.id))
+        .limit(50);
+      const streak = countConsecutiveTerminalFailures(recentRows.map((r) => r.status));
+      if (failureStreakShouldLock(streak)) {
+        const { riskLocksTable } = await import("@workspace/db");
+        // Dedupe: one active FAILURE_STREAK lock per user at a time — the
+        // 4th/5th consecutive failure must extend nothing and stack nothing.
+        const existing = await db.select({ id: riskLocksTable.id })
+          .from(riskLocksTable)
+          .where(and(
+            eq(riskLocksTable.userId, args.userId),
+            eq(riskLocksTable.lockType, FAILURE_STREAK_LOCK_TYPE),
+            eq(riskLocksTable.isActive, true),
+            sql`(${riskLocksTable.endTime} is null or ${riskLocksTable.endTime} > ${now})`,
+          )).limit(1);
+        if (!existing[0]) {
+          const lockEnd = new Date(now.getTime() + FAILURE_STREAK_LOCK_MINUTES * 60 * 1000);
+          await db.insert(riskLocksTable).values({
+            userId: args.userId,
+            lockType: FAILURE_STREAK_LOCK_TYPE,
+            reason: `${streak} consecutive terminal live failures on ${row.symbol} (last command ${args.commandId})`,
+            startTime: now,
+            endTime: lockEnd,
+            isActive: true,
+            overrideAllowed: false,
+            relatedTradeId: args.commandId,
+          });
+          await audit({
+            eventType: "FAILURE_STREAK_LOCK_CREATED", severity: "HIGH",
+            userId: args.userId, symbol: row.symbol,
+            message: `Failure-streak breaker engaged: ${streak} consecutive terminal failures on ${row.symbol} — ${FAILURE_STREAK_LOCK_MINUTES}m ${FAILURE_STREAK_LOCK_TYPE} risk lock created`,
+            metadata: {
+              commandId: args.commandId,
+              streak,
+              lockType: FAILURE_STREAK_LOCK_TYPE,
+              endTime: lockEnd.toISOString(),
+            },
+          });
+          logger.warn({
+            [PHASE_B_LIVE_LOG_PREFIX]: true,
+            event: "FAILURE_STREAK_LOCK_CREATED",
+            commandId: args.commandId, userId: args.userId,
+            symbol: row.symbol, streak,
+          }, "Failure-streak breaker engaged — FAILURE_STREAK risk lock created (entries blocked by the risk-lock pre-gate)");
+        }
+      }
+    } catch (e) {
+      logger.warn({
+        [PHASE_B_LIVE_LOG_PREFIX]: true,
+        event: "FAILURE_STREAK_ACCOUNTING_FAILED",
+        commandId: args.commandId, userId: args.userId,
+        error: e instanceof Error ? e.message : String(e),
+      }, "failure-streak accounting failed — result recording unaffected");
+    }
+  }
+
   return { ok: true, command: updated };
 }
 

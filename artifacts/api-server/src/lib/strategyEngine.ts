@@ -24,6 +24,24 @@ export interface SignalOutput {
   macroBias?: "Bullish" | "Bearish" | "Neutral";
   marketCondition?: string;
   session?: string;
+  /** R7 step 7 (intel-engine.md §1.1) — honesty label. Every payload this
+   *  engine emits is ADVISORY_UNCALIBRATED until an edge passes validation
+   *  (lib/discovery + lib/validation over real recorded data): none of the 7
+   *  strategies has a validated sample, a cost model, or calibrated
+   *  confidence. Additive + optional (out-of-scope fixture literals keep
+   *  compiling); the exported strategy wrappers + runStrategyScan set it on
+   *  EVERY real payload — WAIT included. */
+  advisory?: typeof STRATEGY_ADVISORY_LABEL;
+}
+
+/** The single honesty label stamped on every strategy-engine payload. */
+export const STRATEGY_ADVISORY_LABEL = "ADVISORY_UNCALIBRATED" as const;
+
+// Stamp the honesty label at the exported seam so no strategy payload —
+// actionable or WAIT, whichever return path built it — can serialize without
+// it. Pure and additive; nothing else in the payload is touched.
+function labeledAdvisory(s: SignalOutput): SignalOutput {
+  return { ...s, advisory: STRATEGY_ADVISORY_LABEL };
 }
 
 // ─── Indicator helpers ────────────────────────────────────────────────────────
@@ -82,8 +100,15 @@ export function computeMarketCondition(candles: Candle[]): string {
   const atr = computeATR(recent, 14);
   const avgRange = recent.reduce((a, c) => a + (c.high - c.low), 0) / recent.length;
   const rsi = computeRSI(closes, 14);
-  const ema20 = computeEMA(closes, 10);
-  const e20 = ema20[ema20.length - 1];
+  // R7 step 7 honesty fix (intel-engine.md §1.5): this is an EMA-10 — the
+  // variable was misnamed `ema20`. Renamed to match the math; the period is
+  // deliberately UNCHANGED (widening the window would alter classification
+  // behavior, which is a strategy change and belongs behind validation, not
+  // an honesty patch). Window math verified: computeEMA seeds with the SMA of
+  // the first `period` (10) closes, then iterates once per remaining close —
+  // over this 20-close window that is a well-formed EMA-10 with 11 points.
+  const ema10 = computeEMA(closes, 10);
+  const e10 = ema10[ema10.length - 1];
 
   const highRange = Math.max(...closes) - Math.min(...closes);
   const isSideways = highRange < atr * 0.8;
@@ -94,16 +119,16 @@ export function computeMarketCondition(candles: Candle[]): string {
   const wickDown = Math.min(last.open, last.close) - last.low;
   const body = Math.abs(last.close - last.open);
 
-  if (isExpanding && rsi > 65 && price > e20) return "Strong Uptrend";
-  if (isExpanding && rsi < 35 && price < e20) return "Strong Downtrend";
+  if (isExpanding && rsi > 65 && price > e10) return "Strong Uptrend";
+  if (isExpanding && rsi < 35 && price < e10) return "Strong Downtrend";
   if (rsi > 70 && wickUp > body) return "Reversal Risk";
   if (rsi < 30 && wickDown > body) return "Reversal Risk";
   if (isExpanding) return "Breakout Forming";
   if (isSideways && rsi > 60) return "Range";
   if (isSideways && rsi < 40) return "Range";
   if (isSideways) return "Choppy";
-  if (price > e20 && rsi >= 45 && rsi <= 60) return "Pullback";
-  if (price < e20 && rsi >= 40 && rsi <= 55) return "Pullback";
+  if (price > e10 && rsi >= 45 && rsi <= 60) return "Pullback";
+  if (price < e10 && rsi >= 40 && rsi <= 55) return "Pullback";
   if (atr < avgRange * 0.5) return "Low Volatility";
   if (atr > avgRange * 2.5) return "High Volatility";
   return "Neutral";
@@ -127,6 +152,10 @@ export function computeTechnicalBias(candles: Candle[]): "Bullish" | "Bearish" |
 // ─── Strategy 1: Trend Continuation (EMA 20/50/200 + RSI + ATR) ──────────────
 
 export function trendContinuationStrategy(candles: Candle[], symbol: string): SignalOutput {
+  return labeledAdvisory(trendContinuationCore(candles, symbol));
+}
+
+function trendContinuationCore(candles: Candle[], symbol: string): SignalOutput {
   if (candles.length < 210) {
     return { symbol, direction: "WAIT", confidence: 0, entryPrice: candles[candles.length - 1]?.close ?? 0, stopLoss: 0, takeProfit: 0, reason: "Insufficient candle data", strategy: "Trend Continuation", riskWarning: "Need 210+ candles" };
   }
@@ -142,11 +171,18 @@ export function trendContinuationStrategy(candles: Candle[], symbol: string): Si
   const e200 = ema200[ema200.length - 1];
 
   if (price > e50 && price > e200 && e20 > e50 && rsi >= 50 && rsi <= 70) {
-    const confidence = Math.min(95, 60 + Math.floor((rsi - 50) * 1.5) + (price > e200 ? 10 : 0));
+    // R7 step 7 honesty fix (intel-engine.md §1.1): the former
+    // `+ (price > e200 ? 10 : 0)` term sat inside a branch that already
+    // requires price > e200 — the `: 0` arm was unreachable, so it was a
+    // constant +10 dressed as a factor. Folded into the base (60 → 70);
+    // outputs are identical for every reachable input.
+    const confidence = Math.min(95, 70 + Math.floor((rsi - 50) * 1.5));
     return { symbol, direction: "BUY", confidence, entryPrice: price, stopLoss: price - atr * 1.5, takeProfit: price + atr * 2.5, reason: `Price above EMA50/200. EMA20 > EMA50. RSI at ${rsi.toFixed(1)}. Trend momentum confirmed.`, strategy: "Trend Continuation", riskWarning: rsi > 65 ? "RSI approaching overbought zone" : "" };
   }
   if (price < e50 && price < e200 && e20 < e50 && rsi >= 30 && rsi <= 50) {
-    const confidence = Math.min(95, 60 + Math.floor((50 - rsi) * 1.5) + (price < e200 ? 10 : 0));
+    // Same honesty fix as the BUY branch: `price < e200` is guaranteed here,
+    // so the former conditional +10 was a constant. Folded (60 → 70).
+    const confidence = Math.min(95, 70 + Math.floor((50 - rsi) * 1.5));
     return { symbol, direction: "SELL", confidence, entryPrice: price, stopLoss: price + atr * 1.5, takeProfit: price - atr * 2.5, reason: `Price below EMA50/200. EMA20 < EMA50. RSI at ${rsi.toFixed(1)}. Downtrend momentum confirmed.`, strategy: "Trend Continuation", riskWarning: rsi < 35 ? "RSI approaching oversold zone" : "" };
   }
   return { symbol, direction: "WAIT", confidence: 30, entryPrice: price, stopLoss: 0, takeProfit: 0, reason: "No clear trend alignment across EMAs", strategy: "Trend Continuation", riskWarning: "" };
@@ -155,12 +191,26 @@ export function trendContinuationStrategy(candles: Candle[], symbol: string): Si
 // ─── Strategy 2: Break of Structure ──────────────────────────────────────────
 
 export function breakOfStructureStrategy(candles: Candle[], symbol: string): SignalOutput {
+  return labeledAdvisory(breakOfStructureCore(candles, symbol));
+}
+
+// CONSTRAINT (intel-engine.md §1.1 — honest note, NOT a redesign): the stop is
+// placed at the OPPOSITE 17-bar extreme (`swingLow` for a BUY taken at the top
+// of the range, `swingHigh` for a SELL at the bottom). Realized risk is
+// therefore up to the FULL range height, so the effective R:R is structurally
+// far worse than the `(price − swingLow) * 1.5` take-profit arithmetic makes
+// the reason string sound. Changing the stop geometry is a strategy redesign
+// and belongs behind the validation pipeline (lib/discovery/lib/validation),
+// not in an honesty patch — this note exists so no reader mistakes the
+// current geometry for a vetted 1.5R setup.
+function breakOfStructureCore(candles: Candle[], symbol: string): SignalOutput {
   if (candles.length < 20) {
     return { symbol, direction: "WAIT", confidence: 0, entryPrice: candles[candles.length - 1]?.close ?? 0, stopLoss: 0, takeProfit: 0, reason: "Insufficient data", strategy: "Break of Structure", riskWarning: "" };
   }
   const recent = candles.slice(-20);
   const price = recent[recent.length - 1].close;
-  const atr = computeATR(recent, 14);
+  // (The former `computeATR(recent, 14)` local was removed with the phantom
+  // `atr > 0` confidence term below — nothing else in this strategy read it.)
   const closes = recent.map((c) => c.close);
   const rsi = computeRSI(closes, 14);
   const swingHigh = Math.max(...recent.slice(0, -3).map((c) => c.high));
@@ -169,11 +219,17 @@ export function breakOfStructureStrategy(candles: Candle[], symbol: string): Sig
   const prevCandle = recent[recent.length - 2];
 
   if (prevCandle.high > swingHigh && lastCandle.close < lastCandle.open && rsi < 65) {
-    const confidence = Math.min(88, 65 + (rsi > 50 ? 10 : 0) + (atr > 0 ? 5 : 0));
+    // R7 step 7 honesty fix (intel-engine.md §1.1): `+ (atr > 0 ? 5 : 0)` was
+    // a constant wearing a factor's clothes — ATR is > 0 for any window that
+    // can print a structure break (a fully flat window can never satisfy
+    // prevCandle.high > swingHigh). Folded into the base (65 → 70); outputs
+    // are identical for every reachable input.
+    const confidence = Math.min(88, 70 + (rsi > 50 ? 10 : 0));
     return { symbol, direction: "BUY", confidence, entryPrice: price, stopLoss: swingLow, takeProfit: price + (price - swingLow) * 1.5, reason: `Bullish Break of Structure confirmed. Price broke ${swingHigh.toFixed(4)} and pulled back. RSI: ${rsi.toFixed(1)}.`, strategy: "Break of Structure", riskWarning: "False breakout possible in choppy conditions" };
   }
   if (prevCandle.low < swingLow && lastCandle.close > lastCandle.open && rsi > 35) {
-    const confidence = Math.min(88, 65 + (rsi < 50 ? 10 : 0) + (atr > 0 ? 5 : 0));
+    // Same honesty fix as the BUY branch: the phantom ATR term folded (65 → 70).
+    const confidence = Math.min(88, 70 + (rsi < 50 ? 10 : 0));
     return { symbol, direction: "SELL", confidence, entryPrice: price, stopLoss: swingHigh, takeProfit: price - (swingHigh - price) * 1.5, reason: `Bearish Break of Structure confirmed. Price broke ${swingLow.toFixed(4)} and pulled back. RSI: ${rsi.toFixed(1)}.`, strategy: "Break of Structure", riskWarning: "Monitor for continuation before entry" };
   }
   return { symbol, direction: "WAIT", confidence: 25, entryPrice: price, stopLoss: 0, takeProfit: 0, reason: "No structure break detected", strategy: "Break of Structure", riskWarning: "" };
@@ -182,6 +238,10 @@ export function breakOfStructureStrategy(candles: Candle[], symbol: string): Sig
 // ─── Strategy 3: Liquidity Sweep Reversal ────────────────────────────────────
 
 export function liquiditySweepStrategy(candles: Candle[], symbol: string): SignalOutput {
+  return labeledAdvisory(liquiditySweepCore(candles, symbol));
+}
+
+function liquiditySweepCore(candles: Candle[], symbol: string): SignalOutput {
   if (candles.length < 15) {
     return { symbol, direction: "WAIT", confidence: 0, entryPrice: candles[candles.length - 1]?.close ?? 0, stopLoss: 0, takeProfit: 0, reason: "Insufficient data", strategy: "Liquidity Sweep Reversal", riskWarning: "" };
   }
@@ -211,6 +271,10 @@ export function liquiditySweepStrategy(candles: Candle[], symbol: string): Signa
 // ─── Strategy 4: Volatility Expansion ────────────────────────────────────────
 
 export function volatilityExpansionStrategy(candles: Candle[], symbol: string): SignalOutput {
+  return labeledAdvisory(volatilityExpansionCore(candles, symbol));
+}
+
+function volatilityExpansionCore(candles: Candle[], symbol: string): SignalOutput {
   if (candles.length < 20) {
     return { symbol, direction: "WAIT", confidence: 0, entryPrice: candles[candles.length - 1]?.close ?? 0, stopLoss: 0, takeProfit: 0, reason: "Insufficient data", strategy: "Volatility Expansion", riskWarning: "" };
   }
@@ -219,13 +283,16 @@ export function volatilityExpansionStrategy(candles: Candle[], symbol: string): 
   const atr = computeATR(recent, 14);
   const avgATR = computeATR(recent.slice(0, -5), 14);
   const closes = recent.map((c) => c.close);
-  const ema20 = computeEMA(closes, 10);
+  // R7 step 7 honesty fix (intel-engine.md §1.5, same defect as
+  // computeMarketCondition): this is an EMA-10 that was misnamed `ema20`.
+  // Renamed only — the period is unchanged (see the note there).
+  const ema10 = computeEMA(closes, 10);
   const last = recent[recent.length - 1];
   const candleBody = Math.abs(last.close - last.open);
   const candleRange = last.high - last.low;
   const bodyRatio = candleRange > 0 ? candleBody / candleRange : 0;
   const isExpanding = atr > avgATR * 1.4 && bodyRatio > 0.6;
-  const trend = ema20[ema20.length - 1];
+  const trend = ema10[ema10.length - 1];
 
   if (isExpanding && last.close > last.open && price > trend) {
     const confidence = Math.min(85, 60 + Math.floor(bodyRatio * 20) + (atr > avgATR * 2 ? 5 : 0));
@@ -241,6 +308,10 @@ export function volatilityExpansionStrategy(candles: Candle[], symbol: string): 
 // ─── Strategy 5: Pullback Continuation ───────────────────────────────────────
 
 export function pullbackContinuationStrategy(candles: Candle[], symbol: string): SignalOutput {
+  return labeledAdvisory(pullbackContinuationCore(candles, symbol));
+}
+
+function pullbackContinuationCore(candles: Candle[], symbol: string): SignalOutput {
   if (candles.length < 60) {
     return { symbol, direction: "WAIT", confidence: 0, entryPrice: candles[candles.length - 1]?.close ?? 0, stopLoss: 0, takeProfit: 0, reason: "Insufficient data", strategy: "Pullback Continuation", riskWarning: "" };
   }
@@ -274,6 +345,10 @@ export function pullbackContinuationStrategy(candles: Candle[], symbol: string):
 // ─── Strategy 6: Mean Reversion ───────────────────────────────────────────────
 
 export function meanReversionStrategy(candles: Candle[], symbol: string): SignalOutput {
+  return labeledAdvisory(meanReversionCore(candles, symbol));
+}
+
+function meanReversionCore(candles: Candle[], symbol: string): SignalOutput {
   if (candles.length < 20) {
     return { symbol, direction: "WAIT", confidence: 0, entryPrice: candles[candles.length - 1]?.close ?? 0, stopLoss: 0, takeProfit: 0, reason: "Insufficient data", strategy: "Mean Reversion", riskWarning: "" };
   }
@@ -307,6 +382,10 @@ export function meanReversionStrategy(candles: Candle[], symbol: string): Signal
 // ─── Strategy 7: Session Breakout ─────────────────────────────────────────────
 
 export function sessionBreakoutStrategy(candles: Candle[], symbol: string): SignalOutput {
+  return labeledAdvisory(sessionBreakoutCore(candles, symbol));
+}
+
+function sessionBreakoutCore(candles: Candle[], symbol: string): SignalOutput {
   if (candles.length < 20) {
     return { symbol, direction: "WAIT", confidence: 0, entryPrice: candles[candles.length - 1]?.close ?? 0, stopLoss: 0, takeProfit: 0, reason: "Insufficient data", strategy: "Session Breakout", riskWarning: "" };
   }
@@ -387,7 +466,7 @@ export function runStrategyScan(
 ): SignalOutput {
   if (candles.length < 5) {
     const price = candles[candles.length - 1]?.close ?? 0;
-    return { symbol, marketType, direction: "WAIT", confidence: 0, entryPrice: price, stopLoss: 0, takeProfit: 0, reason: "Insufficient candle data", strategy: "None", riskWarning: "" };
+    return { symbol, marketType, direction: "WAIT", confidence: 0, entryPrice: price, stopLoss: 0, takeProfit: 0, reason: "Insufficient candle data", strategy: "None", riskWarning: "", advisory: STRATEGY_ADVISORY_LABEL };
   }
 
   const session = detectSession();
@@ -408,14 +487,16 @@ export function runStrategyScan(
   const price = candles[candles.length - 1].close;
 
   if (actionable.length === 0) {
-    return { symbol, marketType, direction: "WAIT", confidence: 0, entryPrice: price, stopLoss: 0, takeProfit: 0, reason: "No actionable signal from any strategy", strategy: "No Trade Filter", riskWarning: "", session, marketCondition, technicalBias };
+    return { symbol, marketType, direction: "WAIT", confidence: 0, entryPrice: price, stopLoss: 0, takeProfit: 0, reason: "No actionable signal from any strategy", strategy: "No Trade Filter", riskWarning: "", session, marketCondition, technicalBias, advisory: STRATEGY_ADVISORY_LABEL };
   }
 
   let best = actionable[0];
   best = noTradeFilter(best, candles, minConfidence);
   best = newsAvoidanceFilter(best, marketType);
 
-  return { ...best, marketType, session, marketCondition, technicalBias };
+  // R7 step 7 — the advisory honesty label is re-stamped here so the scan
+  // seam guarantees it even if a future strategy/filter path forgets to.
+  return { ...best, marketType, session, marketCondition, technicalBias, advisory: STRATEGY_ADVISORY_LABEL };
 }
 
 // ─── Synthetic candle generator ───────────────────────────────────────────────

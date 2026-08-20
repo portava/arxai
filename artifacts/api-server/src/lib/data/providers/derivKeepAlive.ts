@@ -1,6 +1,6 @@
 import { logger } from "../../logger.js";
 import { getDerivWsClient } from "./derivWsClient.js";
-import { DERIV_SYNTHETIC_SYMBOLS } from "./derivProvider.js";
+import { DERIV_SYNTHETIC_SYMBOLS, resolveDerivSymbol } from "./derivProvider.js";
 import { startDerivFormingBridge } from "../chart/derivFormingBridge.js";
 import { mapWithConcurrency } from "../../marketScanner.js";
 
@@ -10,8 +10,82 @@ const KEEP_ALIVE_CONCURRENCY = 4;
 const KEEP_ALIVE_CANDLE_GRANULARITY = 60;
 const KEEP_ALIVE_CANDLE_COUNT = 3;
 
+// Phase 2 four-symbol universe (vision.md:243; audit-deriv.md G8), expressed
+// as ARX labels and resolved through the canonical DERIV_SYNTHETIC_SYMBOLS map
+// at call time — the venue ids (1HZ25V / 1HZ50V / R_75 / 1HZ75V) are looked
+// up, never restated here, so this list cannot drift from the map. Runtime
+// discovery validation (derivSymbolDiscovery) independently checks the map
+// itself against the venue's active_symbols.
+export const DERIV_PHASE2_UNIVERSE_ARX_LABELS = ["V25_1S", "V50_1S", "V75", "V75_1S"] as const;
+
+export interface ResolvedDerivUniverse {
+  /** Deriv venue ids the keep-alive should pin (deduped, input order). */
+  derivIds: string[];
+  source: "env" | "default";
+  /** ARX_DERIV_UNIVERSE entries that matched NO known symbol — skipped and
+   *  reported, never guessed (honesty doctrine). */
+  invalidEntries: string[];
+}
+
+/**
+ * Resolve the configured keep-alive universe (audit G8/G11, R5 slice 7).
+ *
+ * ARX_DERIV_UNIVERSE is a comma list of ARX labels or Deriv ids (e.g.
+ * "V75,1HZ25V"). Entries are resolved through the static map via
+ * resolveDerivSymbol; unresolvable entries are reported in `invalidEntries`
+ * and skipped — never guessed into a venue id. When the env var is unset,
+ * empty, or yields zero valid entries, the default is the four-symbol Phase 2
+ * universe (a fully invalid config falls back to the default rather than
+ * silencing the keep-alive entirely, WITH the invalid entries reported —
+ * the Phase 2 data floor is the safer failure mode than a dead feed).
+ *
+ * NOTE (read before widening): the client has NO per-symbol consumer tracking
+ * (eagerWarmupSymbols is add-only and conflates warm-up pins with on-demand
+ * subscribes), so "symbols with active consumers" cannot be computed today —
+ * this env-configured universe is option (b) of R5 slice 7. On-demand symbols
+ * outside the universe still subscribe through the provider paths and still
+ * re-subscribe after reconnects via the client's eager set; they simply stop
+ * receiving the every-20s keep-alive candle refresh.
+ */
+export function resolveConfiguredDerivUniverse(
+  rawEnvValue: string | undefined = process.env.ARX_DERIV_UNIVERSE,
+): ResolvedDerivUniverse {
+  const invalidEntries: string[] = [];
+  const fromEnv: string[] = [];
+  const seen = new Set<string>();
+  for (const part of (rawEnvValue ?? "").split(",")) {
+    const entry = part.trim();
+    if (entry.length === 0) continue;
+    const resolved = resolveDerivSymbol(entry);
+    if (!resolved) {
+      invalidEntries.push(entry);
+      continue;
+    }
+    if (!seen.has(resolved.derivId)) {
+      seen.add(resolved.derivId);
+      fromEnv.push(resolved.derivId);
+    }
+  }
+  if (fromEnv.length > 0) {
+    return { derivIds: fromEnv, source: "env", invalidEntries };
+  }
+  const defaults: string[] = [];
+  for (const label of DERIV_PHASE2_UNIVERSE_ARX_LABELS) {
+    const resolved = resolveDerivSymbol(label);
+    // A Phase 2 label missing from the canonical map is a wiring defect —
+    // report it rather than silently shrinking the default universe.
+    if (!resolved) {
+      invalidEntries.push(label);
+      continue;
+    }
+    defaults.push(resolved.derivId);
+  }
+  return { derivIds: defaults, source: "default", invalidEntries };
+}
+
 let started = false;
 let cycleInFlight = false;
+let invalidUniverseWarned = false;
 const lastRefreshBySymbol = new Map<string, number>();
 
 function derivConfigured(): boolean {
@@ -25,8 +99,22 @@ async function runKeepAliveCycle(): Promise<void> {
   try {
     const client = getDerivWsClient();
     client.ensureConnection();
+    // Narrowed universe (audit collision #5): the keep-alive previously pinned
+    // ALL 22 mapped synthetics every cycle. It now pins only the configured
+    // universe (default: the four-symbol Phase 2 set). Re-resolved every cycle
+    // so an env change takes effect without a restart.
+    const universe = resolveConfiguredDerivUniverse();
+    if (universe.invalidEntries.length > 0 && !invalidUniverseWarned) {
+      invalidUniverseWarned = true;
+      logger.warn(
+        { invalidEntries: universe.invalidEntries, source: universe.source, derivIds: universe.derivIds },
+        "ARX_DERIV_UNIVERSE entries did not resolve against the canonical symbol map — skipped, never guessed",
+      );
+    }
+    const universeIds = new Set(universe.derivIds);
     const now = Date.now();
     const due = DERIV_SYNTHETIC_SYMBOLS.filter((s) => {
+      if (!universeIds.has(s.derivId)) return false;
       const last = lastRefreshBySymbol.get(s.derivId) ?? 0;
       return now - last >= PER_SYMBOL_COOLDOWN_MS;
     });

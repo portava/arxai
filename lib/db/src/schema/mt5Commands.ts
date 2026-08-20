@@ -18,7 +18,7 @@ export const mt5CommandsTable = pgTable("mt5_commands", {
   tp: real("tp"),
   ticket: integer("ticket"),
   payload: jsonb("payload"),                                 // structured params (Phase 4A)
-  status: text("status").notNull().default("PENDING"),       // PENDING|DELIVERED|claimed|sent|completed|failed|expired|cancelled (legacy: executed/failed/blocked_demo_mode/rejected)
+  status: text("status").notNull().default("PENDING"),       // PENDING|DELIVERED|claimed|sent|partial|completed|failed|expired|cancelled (legacy: executed/failed/blocked_demo_mode/rejected; "unknown" = live-mirror watchdog verdict, R2 S1; "partial" = non-terminal partial fill — R2 S5 stopped coercing it to completed)
   detail: text("detail"),                                    // legacy free-form
   resultPayload: jsonb("result_payload"),
   errorMessage: text("error_message"),

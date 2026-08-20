@@ -35,6 +35,14 @@ import {
 //              → guard_checking
 //                 → queued         (guards pass → mt5_commands row inserted)
 //                    → sent_to_mt5 (EA claimed the command)
+//                       → partially_filled (EA reported a partial fill —
+//                             NON-terminal; remaining quantity still working.
+//                             R2 S5, audit G2: previously coerced to executed,
+//                             silently dropping the unfilled remainder. Written
+//                             by executionReconciler.mapActionStatus; adoption
+//                             in tradeAction/types.ts ACTION_STATUSES +
+//                             statusMachine.ts is a follow-up outside R2 S5.)
+//                          → executed / failed (full fill or explicit close)
 //                       → executed (EA reported success)
 //                       → failed   (EA reported failure)
 //                 → rejected       (a guard failed; never queues)

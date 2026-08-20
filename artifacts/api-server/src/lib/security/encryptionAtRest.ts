@@ -75,3 +75,130 @@ export function readField(stored: string): FieldReadResult {
 export function isLegacyPlaintext(stored: string): boolean {
   return !security.isEncryptedEnvelope(stored);
 }
+
+// ═════════════════════════════════════════════════════════════════════════════
+// R6 multi-broker Phase 0 — credential-vault primitives (THROWING, fail-closed)
+//
+// audit-connections.md G-3 / red-fail test 4: `encryptField` FAILS OPEN — it
+// returns the plaintext UNCHANGED when no key is configured. That degradation
+// is honest and acceptable for its original AACI fields (legacy plaintext rows
+// are expected, flagged via readField, and surfaced for review), but it is
+// NEVER acceptable for broker credentials: a silently-written plaintext
+// credential row is exactly the defect the audit pinned.
+//
+// CONSTRAINT (do not "fix"): the fail-open semantics of encryptField/readField
+// above are LOAD-BEARING for the AACI fields that already flow through them.
+// Changing encryptField to throw would turn a missing env key into an AACI
+// outage. Credentials get NEW throwing variants; the legacy path stays as-is.
+//
+// Ciphertext format: CREDENTIAL_CIPHERTEXT_PREFIX + standard arxenc envelope
+// ("arxcred1:" + "arxenc:<v>:<iv>:<tag>:<ct>"). The distinct prefix makes a
+// credential blob mechanically distinguishable from legacy encryptField
+// output in BOTH directions:
+//   - security.isEncryptedEnvelope(credentialBlob) === false (no "arxenc:" start)
+//   - isCredentialCiphertext(encryptFieldOutput)   === false (no "arxcred1:" start)
+// Consequence: readField() would classify a credential blob as "legacy
+// plaintext" and return the raw blob — so credential values must ONLY ever be
+// read via decryptCredential(). The prefix guard below makes decryptCredential
+// equally refuse non-credential input instead of guessing.
+//
+// LOGGING RULE: no plaintext, no ciphertext, no key material in any error
+// message or log line produced here. Errors carry only static text + a code.
+// ═════════════════════════════════════════════════════════════════════════════
+
+/** Prefix stamped on every credential ciphertext (versioned independently of the key version inside the envelope). */
+export const CREDENTIAL_CIPHERTEXT_PREFIX = "arxcred1:";
+
+/**
+ * Thrown when the credential vault is asked to operate without a configured
+ * active key. `code` matches the HTTP surface the audit specifies for the
+ * connect flow (503 VAULT_NOT_READY). Message is static — never includes the
+ * value being encrypted/decrypted.
+ */
+export class CredentialEncryptionUnavailableError extends Error {
+  readonly code = "VAULT_NOT_READY" as const;
+  constructor() {
+    super(
+      "Credential vault is not ready: no active encryption key is configured. " +
+        "Refusing to handle credentials (fail-closed; never plaintext).",
+    );
+    this.name = "CredentialEncryptionUnavailableError";
+  }
+}
+
+/**
+ * Thrown when decryptCredential receives a value that is not a well-formed
+ * credential ciphertext (missing prefix, corrupt envelope, failed auth tag is
+ * surfaced by node:crypto itself). Message is static — the offending value is
+ * NEVER echoed, since a malformed "ciphertext" may in fact be a plaintext
+ * credential.
+ */
+export class CredentialCiphertextInvalidError extends Error {
+  readonly code = "CREDENTIAL_CIPHERTEXT_INVALID" as const;
+  constructor(detail: string) {
+    super(`Invalid credential ciphertext: ${detail}`);
+    this.name = "CredentialCiphertextInvalidError";
+  }
+}
+
+/** True when a stored value carries the credential-vault prefix. */
+export function isCredentialCiphertext(stored: unknown): boolean {
+  return (
+    typeof stored === "string" && stored.startsWith(CREDENTIAL_CIPHERTEXT_PREFIX)
+  );
+}
+
+/**
+ * Encrypt a broker credential for storage. THROWS
+ * CredentialEncryptionUnavailableError when the active key is not configured —
+ * unlike encryptField, this can never return plaintext.
+ */
+export function encryptCredential(plaintext: string): string {
+  const key = getKeyring().get(ACTIVE_KEY_VERSION);
+  if (!key || !isEncryptionReady()) {
+    throw new CredentialEncryptionUnavailableError();
+  }
+  return (
+    CREDENTIAL_CIPHERTEXT_PREFIX +
+    security.encryptString(plaintext, ACTIVE_KEY_VERSION, key as Buffer)
+  );
+}
+
+/**
+ * Decrypt a stored credential ciphertext. Fail-closed on every branch:
+ *  - vault not ready                → CredentialEncryptionUnavailableError
+ *  - missing credential prefix      → CredentialCiphertextInvalidError
+ *  - inner payload not an envelope  → CredentialCiphertextInvalidError
+ *  - unknown key version / bad tag  → throws from security.decryptString
+ * There is NO legacy-plaintext fallback here by design: a credential that is
+ * not verifiably ours to decrypt is never returned.
+ */
+export function decryptCredential(stored: string): string {
+  if (!isEncryptionReady()) {
+    throw new CredentialEncryptionUnavailableError();
+  }
+  if (!isCredentialCiphertext(stored)) {
+    throw new CredentialCiphertextInvalidError(
+      "value does not carry the credential prefix.",
+    );
+  }
+  const envelope = stored.slice(CREDENTIAL_CIPHERTEXT_PREFIX.length);
+  if (!security.isEncryptedEnvelope(envelope)) {
+    // Corrupt row (prefix present but no envelope behind it). Refuse — never
+    // return the raw bytes; they could be an accidentally-prefixed plaintext.
+    throw new CredentialCiphertextInvalidError(
+      "prefixed value does not contain an encryption envelope.",
+    );
+  }
+  const result = security.decryptString(envelope, getKeyring());
+  return result.value;
+}
+
+/**
+ * TEST-ONLY (pattern: resetBrokerProviderForTests in broker/registry.ts).
+ * Drops the cached keyring so a test can flip ARX_ENCRYPTION_KEY between
+ * not-ready and ready states within one process. Never called in production.
+ */
+export function __resetKeyringCacheForTests(): void {
+  cachedKeyring = null;
+}

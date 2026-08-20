@@ -168,6 +168,17 @@ export const arxLiveCommandsTable = pgTable("arx_live_commands", {
   selfTradeAgentId: integer("self_trade_agent_id"),
   selfTradeDecisionId: integer("self_trade_decision_id"),
 
+  // R3 slice 5 — signal-provenance timestamp. When the caller knows WHEN the
+  // signal/decision behind an entry was generated (scanner signal time, agent
+  // decision time), createLiveDraft threads it here. Nullable + additive: a
+  // NULL means "no timing provenance supplied". The dispatch signal-age
+  // pre-gate refuses entries older than arx_live_user_settings.
+  // max_signal_age_ms — and, fail-closed, refuses entries with a NULL stamp
+  // while a bound is configured (a bound demands provenance of timing).
+  // Migration: additive nullable column, no backfill needed (drizzle push on
+  // Replit later; existing rows read as NULL = no provenance).
+  signalTimestamp: timestamp("signal_timestamp", { withTimezone: true }),
+
   // ── AACI Security Phase 3 — Command Integrity & Live Execution Protection ──
   // Tamper / replay / source protection for sensitive (live) commands. All
   // additive + nullable; a legacy row with NULLs is treated as integrity
@@ -313,6 +324,31 @@ export const arxLiveUserSettingsTable = pgTable("arx_live_user_settings", {
 
   requireStopLoss: boolean("require_stop_loss").notNull().default(true),
   adminAllowNoStopLoss: boolean("admin_allow_no_stop_loss").notNull().default(false),
+
+  // ── Wave-4 dispatch pre-gate caps. ALL nullable + additive: NULL means the
+  // corresponding gate is not configured (skipped / no bound / no cap) —
+  // existing rows and users change behaviour ONLY by explicitly setting a
+  // value. Migration: additive nullable columns, no backfill, no default
+  // (drizzle push on Replit later). NOTE deliberate contrast with the NOT
+  // NULL DEFAULT 0 caps above: for these, 0 is a REAL cap of zero (the
+  // 0-as-unlimited trap is not reproduced); "off" is NULL.
+  //
+  // R3 slice 4 — price collar: max |draft-requested vs dispatch-reference|
+  // deviation in BASIS POINTS for entries. NULL = server collar off (the
+  // EA's own DEVIATION_TOO_LARGE guard still applies). With a cap set, an
+  // unresolvable reference price fails CLOSED at dispatch.
+  maxEntryDeviationBps: doublePrecision("max_entry_deviation_bps"),
+  // R3 slice 5 — max age (ms) of arx_live_commands.signal_timestamp for
+  // entries. NULL = no bound. With a bound set, a missing signal timestamp
+  // fails CLOSED (a bound demands provenance of timing).
+  maxSignalAgeMs: integer("max_signal_age_ms"),
+  // Correlation guard (wires lib/domain risk-correlation, R3 slice 6 core):
+  // caps on the candidate's (risk family × direction) cluster INCLUDING the
+  // candidate — USD proxy risk and position count. NULL = no cap for that
+  // dimension. Production values are an owner decision (the pure core ships
+  // no defaults).
+  maxClusterRiskUsd: doublePrecision("max_cluster_risk_usd"),
+  maxClusterPositions: integer("max_cluster_positions"),
 
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

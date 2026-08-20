@@ -468,3 +468,9 @@ export * from "./ownerDecisions";
 
 // R2-S2 — append-only execution evidence log (unique(command_id, sequence_no)).
 export * from "./executionEvents";
+// R2-S4 — persisted reconciliation runs (freshness gate input).
+export * from "./reconciliationRuns";
+// R4 slice 7 — per-connection market-data entitlement records.
+export * from "./marketDataEntitlements";
+// R6 — per-user broker eligibility; COMPLIANCE_HOLD is the fail-closed default.
+export * from "./brokerEligibility";

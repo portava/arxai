@@ -40,6 +40,15 @@ export const mt5DemoCommandsTable = pgTable("mt5_demo_commands", {
   accountLogin: text("account_login"),
   commandType: text("command_type").notNull(),
   payload: jsonb("payload").notNull(),
+  // DemoCommandStatus (lib/domain/src/safety-contracts/executionMode.ts):
+  // DRAFT | USER_CONFIRMATION_REQUIRED | DEMO_APPROVED | SENT_TO_MT5_DEMO |
+  // FILLED_DEMO | REJECTED | BLOCKED | FAILED.
+  // R2 S5 (audit G2) — DEMO_PARTIALLY_FILLED is RESERVED as the demo path's
+  // non-terminal partial-fill literal: the canonical read layer
+  // (lib/domain/src/execution-state/canonicalState.ts) already maps it to
+  // partially_filled; adopting it in the DemoCommandStatus writer vocabulary
+  // + DEMO_COMMAND_TRANSITIONS is a follow-up outside this slice. Free-text
+  // column — no migration needed when it lands.
   status: text("status").notNull().default("DRAFT"),
   reason: text("reason"),
   safetyGateSnapshot: jsonb("safety_gate_snapshot").notNull(),

@@ -3,7 +3,10 @@
 // Connects to wss://ws.derivws.com/websockets/v3?app_id=<APP_ID> only
 // when DERIV_APP_ID is set. Supports:
 //   - request/response by req_id correlation (ticks_history, candles)
-//   - tick subscription (forget on unsubscribe)
+//   - tick subscription with REAL forget on unsubscribe (unsubscribeTicks →
+//     `forget` by retained subscription id; forgetAllTicks → `forget_all`)
+//   - account-identity retention from the authorize response (loginid,
+//     is_virtual, currency, landing company) — see getAccountIdentity()
 //   - ping keepalive every 30s
 //   - exponential reconnect backoff (1s → 30s)
 //   - bounded last-tick cache per symbol
@@ -16,6 +19,10 @@
 //     out, returns { ok:false, reason }.
 
 import WebSocket, { type RawData } from "ws";
+// Type-only: the canonical DerivAccountIdentity lives in the pure domain layer
+// (lib/domain/src/deriv-contracts) so the virtual execution gate and this
+// retention site can never drift apart. Erased at runtime — no module graph.
+import type { derivContracts } from "@workspace/domain";
 
 import { logger } from "../../logger.js";
 // NOTE: circular with derivProvider.ts (which imports this module). Safe only
@@ -53,6 +60,18 @@ export interface DerivTick {
 
 /** Observer notified for every live tick that lands on the socket. */
 export type DerivTickListener = (tick: DerivTick) => void;
+
+/** Canonical identity shape — single-sourced from the domain layer. */
+export type DerivAccountIdentity = derivContracts.DerivAccountIdentity;
+
+/** Outcome envelope for venue-side stream release. `forgot` is true ONLY when
+ *  the venue confirmed the forget — local bookkeeping removal alone never
+ *  claims it (honesty: a stream the venue may still push is not "forgotten"). */
+export interface DerivForgetResult {
+  ok: boolean;
+  forgot: boolean;
+  reason?: string;
+}
 
 interface PendingRequest {
   resolve: (msg: Record<string, unknown>) => void;
@@ -99,6 +118,12 @@ class DerivWsClient {
   private lastDiscoveryValidation: DerivMapValidation | null = null;
   // Warn-dedupe: mismatch warnings fire at most once per connect session.
   private discoveryMismatchWarnedThisConnect = false;
+  // Account identity retained from THIS session's authorize response (audit
+  // G2). Null until authorize succeeds and parses; cleared on connect/close so
+  // the demo-only virtual gate never acts on a previous session's evidence.
+  private accountIdentity: DerivAccountIdentity | null = null;
+  // Warn-dedupe: the real-account warning fires at most once per connect.
+  private realAccountWarnedThisConnect = false;
 
   configured(): boolean {
     const id = (process.env.DERIV_APP_ID ?? "").trim();
@@ -129,6 +154,10 @@ class DerivWsClient {
    *  Null when discovery has not run or returned an empty payload (an empty
    *  payload is not evidence the venue lacks our ids). */
   getLastDiscoveryValidation(): DerivMapValidation | null { return this.lastDiscoveryValidation; }
+  /** Account identity retained from THIS session's authorize, or null when no
+   *  authorize has succeeded this session. Null must be treated as UNKNOWN by
+   *  every consumer — the demo-only virtual gate refuses it. */
+  getAccountIdentity(): DerivAccountIdentity | null { return this.accountIdentity; }
   /** Returns true when active_symbols has been fetched at least once
    *  since the most recent successful connect/authorize. */
   isActiveSymbolsLoaded(): boolean { return this.activeSymbolsCount != null; }
@@ -204,6 +233,10 @@ class DerivWsClient {
           this.activeSymbolsError = null;
           // New connect session — mismatch warnings may fire once again.
           this.discoveryMismatchWarnedThisConnect = false;
+          // Identity is per-session evidence: a reconnect must re-prove it via
+          // a fresh authorize (fail-closed — the virtual gate refuses null).
+          this.accountIdentity = null;
+          this.realAccountWarnedThisConnect = false;
           this.startPing();
           // If a token is configured (either mode), authorize and track the response.
           const token = (process.env.DERIV_API_TOKEN ?? "").trim();
@@ -212,6 +245,10 @@ class DerivWsClient {
               if (resp.authorize) {
                 this.authorized = true;
                 this.lastAuthorizeError = null;
+                // Retain the payload instead of discarding it (audit G2):
+                // loginid / is_virtual / currency / landing company, plus the
+                // DERIV_ENVIRONMENT assertion. Never logs or stores the token.
+                this.retainAccountIdentity(resp.authorize);
               }
               // Kick off eager warm-up regardless of authorize outcome:
               // active_symbols + ticks_history work for both authed and
@@ -371,6 +408,9 @@ class DerivWsClient {
     this.pending.clear();
     this.subscribedSymbols.clear();
     this.subscriptionIdBySymbol.clear();
+    // Identity describes a live authorized session; a dead socket is not one.
+    // The reconnect's fresh authorize re-proves it (fail-closed in between).
+    this.accountIdentity = null;
     this.scheduleReconnect();
   }
 
@@ -513,6 +553,64 @@ class DerivWsClient {
     }
   }
 
+  /** Retain the parsed `authorize` payload as this session's account identity
+   *  (audit G2: previously discarded — only a boolean survived).
+   *
+   *  HONESTY RULES:
+   *    - Absent fields stay null; is_virtual missing reads UNKNOWN (null),
+   *      never demo. The virtual gate refuses null.
+   *    - DERIV_ENVIRONMENT is wired as an ASSERTION, not a selector: when the
+   *      operator declared "demo" but the venue reports a REAL account,
+   *      identityMismatch is marked and warned — never silently reconciled.
+   *    - DERIV_ACCOUNT_ID remains presence-only (it selects nothing); account
+   *      selection is out of scope for this slice.
+   *    - NEVER logs the token; only identity fields appear in log payloads.
+   *    - Warns at most ONCE per connect session when the account is REAL. */
+  private retainAccountIdentity(rawAuthorize: unknown): void {
+    const now = Date.now();
+    const rec = (typeof rawAuthorize === "object" && rawAuthorize !== null)
+      ? rawAuthorize as Record<string, unknown>
+      : {};
+    const loginid = typeof rec.loginid === "string" && rec.loginid.length > 0 ? rec.loginid : null;
+    const isVirtual =
+      rec.is_virtual === 1 || rec.is_virtual === true ? true
+      : rec.is_virtual === 0 || rec.is_virtual === false ? false
+      : null;
+    const currency = typeof rec.currency === "string" && rec.currency.length > 0 ? rec.currency : null;
+    const landingCompany =
+      typeof rec.landing_company_name === "string" && rec.landing_company_name.length > 0
+        ? rec.landing_company_name
+        : typeof rec.landing_company_fullname === "string" && rec.landing_company_fullname.length > 0
+          ? rec.landing_company_fullname
+          : null;
+    const declaredRaw = (process.env.DERIV_ENVIRONMENT ?? "").trim().toLowerCase();
+    const declaredEnvironment = declaredRaw.length > 0 ? declaredRaw : null;
+    const identityMismatch = declaredEnvironment === "demo" && isVirtual === false;
+    this.accountIdentity = {
+      loginid,
+      isVirtual,
+      currency,
+      landingCompany,
+      declaredEnvironment,
+      identityMismatch,
+      retainedAt: new Date(now).toISOString(),
+      retainedAtMs: now,
+    };
+    if (isVirtual === false && !this.realAccountWarnedThisConnect) {
+      this.realAccountWarnedThisConnect = true;
+      logger.warn(
+        { loginid, currency, landingCompany, declaredEnvironment },
+        "Deriv connection is a REAL account — execution slices are demo-only and will refuse",
+      );
+      if (identityMismatch) {
+        logger.warn(
+          { loginid, declaredEnvironment },
+          "DERIV_ENVIRONMENT=demo contradicts the venue-reported REAL account — identityMismatch marked; resolve the config or the token",
+        );
+      }
+    }
+  }
+
   /** Eager warm-up: runs once per successful WS session. Fetches
    *  active_symbols (cached count for diagnostics) and subscribes to a
    *  small set of core synthetic-index tick streams so the in-memory
@@ -568,6 +666,13 @@ class DerivWsClient {
     this.subscribedSymbols.add(derivSymbol);
     // Track as eager so reconnects re-subscribe automatically.
     this.eagerWarmupSymbols.add(derivSymbol);
+    // Retain the subscription id from the subscribe RESPONSE itself (the
+    // stream-message path also captures it, but the response is the earliest
+    // and most reliable source) — required for a targeted `forget` later.
+    const subscription = resp.subscription as { id?: unknown } | undefined;
+    if (subscription && typeof subscription.id === "string" && subscription.id.length > 0) {
+      this.subscriptionIdBySymbol.set(derivSymbol, subscription.id);
+    }
     const tick = resp.tick as { symbol?: string; epoch?: number; quote?: number } | undefined;
     if (tick && typeof tick.epoch === "number" && typeof tick.quote === "number") {
       const t: DerivTick = { symbol: derivSymbol, epoch: tick.epoch, quote: tick.quote };
@@ -580,6 +685,61 @@ class DerivWsClient {
 
   getCachedTick(derivSymbol: string): DerivTick | null {
     return this.lastTickBySymbol.get(derivSymbol) ?? null;
+  }
+
+  /** Release ONE tick stream (audit G11 — the header claimed forget-on-
+   *  unsubscribe for years while no `forget` existed anywhere).
+   *
+   *  Local bookkeeping (subscribedSymbols / eagerWarmupSymbols /
+   *  subscriptionIdBySymbol) is removed FIRST and unconditionally so a
+   *  reconnect can never resurrect a stream the caller dropped, even when the
+   *  venue-side forget fails. The result is honest about what happened:
+   *  `forgot` is true ONLY on venue confirmation — a locally-dropped stream
+   *  the venue may still push until socket death is reported as such, never
+   *  claimed forgotten. The last-tick cache is intentionally kept: it is
+   *  historical truth with its own age gating (per-symbol feed honesty). */
+  async unsubscribeTicks(derivSymbol: string): Promise<DerivForgetResult> {
+    const subId = this.subscriptionIdBySymbol.get(derivSymbol) ?? null;
+    const wasSubscribed = this.subscribedSymbols.has(derivSymbol) || subId != null;
+    this.subscribedSymbols.delete(derivSymbol);
+    this.eagerWarmupSymbols.delete(derivSymbol);
+    this.subscriptionIdBySymbol.delete(derivSymbol);
+    if (!wasSubscribed) {
+      return { ok: true, forgot: false, reason: "not_subscribed" };
+    }
+    if (subId == null) {
+      // No retained id → a targeted forget is impossible. forget_all("ticks")
+      // is NOT substituted here because it would kill every other consumer's
+      // stream. The venue stream may persist until socket death — say so.
+      return { ok: true, forgot: false, reason: "no_subscription_id_venue_stream_may_persist_until_socket_death" };
+    }
+    try {
+      const resp = await this.request({ forget: subId });
+      const forgot = resp.forget === 1 || resp.forget === true;
+      return forgot
+        ? { ok: true, forgot: true }
+        : { ok: true, forgot: false, reason: "venue_reported_subscription_not_found" };
+    } catch (err) {
+      return { ok: false, forgot: false, reason: (err as Error).message.slice(0, 200) };
+    }
+  }
+
+  /** Release EVERY tick stream on this connection via `forget_all: ticks`.
+   *  Clears all local subscription bookkeeping first (including the eager
+   *  set, so reconnect warm-up starts from its defaults, not the old pins).
+   *  `forgottenCount` reflects the venue's own answer; null means the venue
+   *  did not enumerate (never fabricated). */
+  async forgetAllTicks(): Promise<{ ok: boolean; forgottenCount: number | null; reason?: string }> {
+    this.subscribedSymbols.clear();
+    this.subscriptionIdBySymbol.clear();
+    this.eagerWarmupSymbols.clear();
+    try {
+      const resp = await this.request({ forget_all: "ticks" });
+      const arr = resp.forget_all;
+      return { ok: true, forgottenCount: Array.isArray(arr) ? arr.length : null };
+    } catch (err) {
+      return { ok: false, forgottenCount: null, reason: (err as Error).message.slice(0, 200) };
+    }
   }
 }
 

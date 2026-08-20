@@ -21,6 +21,7 @@ import {
   livePositionsTable,
   sharedTradeAttributionTable,
   tradeCommandAuditLogTable,
+  arxLiveCommandsTable,
 } from "@workspace/db/schema";
 import { and, eq, isNotNull } from "drizzle-orm";
 import { writeActionTimeline } from "../tradeAction/timeline.js";
@@ -74,10 +75,16 @@ export type ReconcileOutcome = {
 };
 
 // Map an EA-reported execution status to our mt5_commands.status field.
-function mapCommandStatus(s: ExecutionResultStatus): string {
+// R2 S5 (audit G2, red-fail test 5): "partial" is NO LONGER coerced to the
+// terminal "completed" — a partial fill leaves remaining quantity working at
+// the broker, so the command stays in the non-terminal "partial" literal
+// (already an observed mt5_commands vocabulary member, canonical
+// partially_filled) and only a later full-fill / explicit-close callback
+// terminalizes it. Exported for offline contract tests.
+export function mapCommandStatus(s: ExecutionResultStatus): string {
   switch (s) {
     case "executed": return "completed";
-    case "partial": return "completed";
+    case "partial": return "partial";
     case "rejected": return "failed";
     case "failed": return "failed";
     case "pending": return "sent";
@@ -85,18 +92,33 @@ function mapCommandStatus(s: ExecutionResultStatus): string {
 }
 
 // Map to a trade_action_requests.status terminal/non-terminal.
-function mapActionStatus(s: ExecutionResultStatus): string {
+// R2 S5: "partial" maps to the non-terminal "partially_filled" instead of the
+// terminal "executed" (which silently dropped the unfilled remainder).
+// CONSTRAINT NOTE: "partially_filled" is written here as a free-text status
+// ahead of its adoption in tradeAction/types.ts ACTION_STATUSES +
+// statusMachine.ts (out of this slice's scope — reported to the coordinator).
+// Consequences until those land: canTransition() is not consulted on this
+// reconciler path (writes are direct, as before), and status-enumerating
+// readers (pending-action lists, the watchdog cascade) will not include
+// partially_filled rows — the watchdog omission is CORRECT (a partially
+// filled order must never be presumed failed), the list omission is a known
+// visibility gap, not a safety gap. Exported for offline contract tests.
+export function mapActionStatus(s: ExecutionResultStatus): string {
   switch (s) {
     case "executed": return "executed";
-    case "partial": return "executed";
+    case "partial": return "partially_filled";
     case "rejected": return "rejected";
     case "failed": return "failed";
     case "pending": return "sent_to_mt5";
   }
 }
 
-const TERMINAL_COMMAND_STATUSES = new Set(["completed", "failed", "expired", "cancelled"]);
-const TERMINAL_ACTION_STATUSES = new Set(["executed", "rejected", "failed", "expired", "cancelled"]);
+// R2 S5 — exported so the offline suite can pin that the partial literals are
+// (and stay) OUTSIDE the terminal sets: monotonicity guards must let a later
+// full-fill callback terminalize a partial, and completedAt/failedAt must
+// never be stamped on a partial.
+export const TERMINAL_COMMAND_STATUSES = new Set(["completed", "failed", "expired", "cancelled"]);
+export const TERMINAL_ACTION_STATUSES = new Set(["executed", "rejected", "failed", "expired", "cancelled"]);
 
 export async function reconcileExecutionResult(input: {
   command: typeof mt5CommandsTable.$inferSelect;
@@ -141,6 +163,16 @@ export async function reconcileExecutionResult(input: {
     failedAt: isTerminal && isFailed ? now : command.failedAt,
     updatedAt: now,
   }).where(eq(mt5CommandsTable.id, command.id));
+
+  // R2 S5 (audit G2) — partial-fill evidence. A partial is now non-terminal
+  // (see mapCommandStatus/mapActionStatus above); the executed-vs-requested
+  // volumes are already recorded on the rows (filledLotSize vs lot), and for
+  // a BRIDGED live command the evidence is ALSO appended to the append-only
+  // execution_events log as a PARTIAL_FILL event so reconciliation and audit
+  // can aggregate multi-fill history. Best-effort: never fails settlement.
+  if (result.status === "partial") {
+    await recordPartialFillEvidence(command, result, now);
+  }
 
   // ── 2. Locate the linked trade_action_request (by explicit
   //      actionRequestId or by tradeCommandId backref).
@@ -497,6 +529,70 @@ export async function reconcileExecutionResult(input: {
     livePositionId,
     attributionId,
   };
+}
+
+// R2 S5 — append PARTIAL_FILL evidence to the execution_events log.
+//
+// HONESTY / ANCHORING: execution_events.command_id anchors to the
+// arx_live_commands integer PK. Only a BRIDGED live command (mirror payload
+// stamped {bridged:"LIVE_PHASE_B", liveCommandId} by enqueueBridgedMt5Command)
+// has such an anchor; a purely legacy mt5_commands row does not, and we never
+// fabricate one — for those the partial-fill evidence lives in
+// mt5_commands.filledLotSize/resultPayload as before, and the skip is logged.
+// Best-effort by contract: any failure warns and returns — evidence writing
+// must never fail or delay result settlement. The writer is the shared S2/S3
+// one (dynamic import so this legacy module never statically drags the live
+// pipeline graph, and a writer failure cannot break this module's load).
+async function recordPartialFillEvidence(
+  command: typeof mt5CommandsTable.$inferSelect,
+  result: ExecutionResultInput,
+  now: Date,
+): Promise<void> {
+  try {
+    const payload = command.payload as Record<string, unknown> | null;
+    const liveCommandId =
+      payload != null && typeof payload["liveCommandId"] === "string"
+        ? payload["liveCommandId"]
+        : null;
+    if (!liveCommandId) {
+      logger.info({ commandId: command.id }, "partial_fill_on_legacy_command_no_arx_anchor_event_skipped");
+      return;
+    }
+    const [live] = await db.select({
+      id: arxLiveCommandsTable.id,
+      requestedVolume: arxLiveCommandsTable.requestedVolume,
+    }).from(arxLiveCommandsTable)
+      .where(eq(arxLiveCommandsTable.commandId, liveCommandId))
+      .limit(1);
+    if (!live) {
+      logger.warn({ commandId: command.id, liveCommandId }, "partial_fill_bridged_anchor_not_found_event_skipped");
+      return;
+    }
+    const requestedVolume = result.lotSizeRequested ?? command.lot ?? live.requestedVolume ?? null;
+    const executedVolume = result.lotSizeFilled ?? null;
+    const { appendExecutionEvidence } = await import("../live/unknownReconciler.js");
+    await appendExecutionEvidence({
+      commandRowId: live.id,
+      source: "ea",
+      eventType: "PARTIAL_FILL",
+      occurredAt: result.executedAt ?? now,
+      payload: {
+        mt5CommandId: command.id,
+        liveCommandId,
+        requestedVolume,
+        executedVolume,
+        remainingVolume:
+          requestedVolume != null && executedVolume != null
+            ? Number((requestedVolume - executedVolume).toFixed(8))
+            : null,
+        brokerTicket: result.mt5PositionTicket ?? result.mt5OrderTicket ?? null,
+        fillPrice: result.fillPrice ?? null,
+        brokerMessage: result.brokerMessage ?? null,
+      },
+    });
+  } catch (e) {
+    logger.warn({ err: e, commandId: command.id }, "partial_fill_event_write_failed");
+  }
 }
 
 async function upsertLivePositionOpen(args: {

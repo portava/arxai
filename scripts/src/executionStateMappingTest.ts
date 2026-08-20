@@ -136,7 +136,7 @@ export async function run(): Promise<CiTestResultLike> {
     );
   }
 
-  // ── 2b. mt5_demo_commands vocabulary (8 literals) ─────────────────────────
+  // ── 2b. mt5_demo_commands vocabulary (8 writer literals + 1 forward-declared) ──
   const DEMO_EXPECTED = [
     ["DRAFT", "created", false],
     ["USER_CONFIRMATION_REQUIRED", "awaiting_confirmation", false],
@@ -146,14 +146,35 @@ export async function run(): Promise<CiTestResultLike> {
     ["REJECTED", "rejected", false],
     ["BLOCKED", "risk_rejected", true],
     ["FAILED", "rejected", true],
+    // R2 S5 (audit G2) — forward-declared partial-fill literal: the mapping
+    // layer recognizes it AHEAD of its adoption in executionMode.ts
+    // DemoCommandStatus (free-text column, so this is read-side only).
+    ["DEMO_PARTIALLY_FILLED", "partially_filled", false],
   ] as const;
   checkVocabulary("mt5_demo_commands.status → canonical", fromMt5DemoStatus, DEMO_EXPECTED);
   {
+    // R2 S5 — the demo writer vocabulary has no partial state yet, so the
+    // coverage law is: test table = DEMO_COMMAND_STATUSES ∪ FORWARD_DECLARED,
+    // with every forward-declared literal STILL ABSENT from the writer
+    // vocabulary. The day executionMode.ts adopts DEMO_PARTIALLY_FILLED,
+    // the third assertion goes red and forces this list back to empty —
+    // the exact-coverage discipline self-restores.
+    const FORWARD_DECLARED_DEMO = ["DEMO_PARTIALLY_FILLED"] as const;
     const covered = new Set(DEMO_EXPECTED.map(([l]) => l));
     assert(
-      safetyContracts.DEMO_COMMAND_STATUSES.every((s) => covered.has(s)) &&
-        safetyContracts.DEMO_COMMAND_STATUSES.length === covered.size,
-      "test table covers DEMO_COMMAND_STATUSES exactly (executionMode.ts is the source of truth)",
+      safetyContracts.DEMO_COMMAND_STATUSES.every((s) => covered.has(s)),
+      "test table covers every DEMO_COMMAND_STATUSES literal (executionMode.ts is the source of truth)",
+    );
+    assert(
+      covered.size === safetyContracts.DEMO_COMMAND_STATUSES.length + FORWARD_DECLARED_DEMO.length &&
+        FORWARD_DECLARED_DEMO.every((l) => covered.has(l)),
+      "test table adds exactly the forward-declared literals, nothing else",
+    );
+    assert(
+      FORWARD_DECLARED_DEMO.every(
+        (l) => !(safetyContracts.DEMO_COMMAND_STATUSES as readonly string[]).includes(l),
+      ),
+      "forward-declared literals are still absent from DEMO_COMMAND_STATUSES (once adopted, remove them from FORWARD_DECLARED_DEMO)",
     );
   }
 
