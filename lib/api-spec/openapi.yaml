@@ -27,6 +27,8 @@ tags:
     description: Bot and system settings
   - name: mt5
     description: MT5 EA bridge endpoints
+  - name: broker-hub
+    description: Feature-flagged, tenant-owned broker metadata (read-only)
   - name: learning
     description: AI learning and coaching
   - name: data
@@ -11127,8 +11129,171 @@ paths:
         "401": { description: Authentication required }
         "403": { description: Admin or owner role required }
 
+  /me/broker-hub/connections/{connectionId}:
+    get:
+      operationId: getMyBrokerHubConnection
+      tags: [broker-hub]
+      summary: Read the caller-owned broker connection metadata
+      parameters:
+        - $ref: "#/components/parameters/BrokerHubConnectionId"
+      responses:
+        "200":
+          description: Read-only connection metadata
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BrokerHubConnectionResponse" }
+        "404": { description: Not found or feature disabled }
+  /me/broker-hub/connections/{connectionId}/account:
+    get:
+      operationId: getMyBrokerHubAccount
+      tags: [broker-hub]
+      summary: Read the caller-owned masked broker account snapshot
+      parameters:
+        - $ref: "#/components/parameters/BrokerHubConnectionId"
+      responses:
+        "200":
+          description: Read-only account metadata
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BrokerHubAccountResponse" }
+        "404": { description: Not found or feature disabled }
+  /me/broker-hub/connections/{connectionId}/capabilities:
+    get:
+      operationId: getMyBrokerHubCapabilities
+      tags: [broker-hub]
+      summary: Read caller-owned broker read capabilities
+      parameters:
+        - $ref: "#/components/parameters/BrokerHubConnectionId"
+      responses:
+        "200":
+          description: Read-only capability metadata
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BrokerHubCapabilitiesResponse" }
+        "404": { description: Not found or feature disabled }
+  /me/broker-hub/connections/{connectionId}/instruments:
+    get:
+      operationId: getMyBrokerHubInstruments
+      tags: [broker-hub]
+      summary: Read caller-owned EA-discovered broker instruments
+      parameters:
+        - $ref: "#/components/parameters/BrokerHubConnectionId"
+      responses:
+        "200":
+          description: Exact broker symbols from owned EA discovery
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BrokerHubInstrumentsResponse" }
+        "404": { description: Not found or feature disabled }
+
 components:
+  parameters:
+    BrokerHubConnectionId:
+      name: connectionId
+      in: path
+      required: true
+      description: Owned MT5 bridge connection identifier
+      schema: { type: integer, minimum: 1 }
   schemas:
+    BrokerHubFlags:
+      type: object
+      required: [metadataEnabled, tradingEnabled, automationEnabled, canPlaceLiveTrade]
+      properties:
+        metadataEnabled: { type: boolean, enum: [false] }
+        tradingEnabled: { type: boolean, enum: [false] }
+        automationEnabled: { type: boolean, enum: [false] }
+        canPlaceLiveTrade: { type: boolean, enum: [false] }
+
+    BrokerHubConnectionResponse:
+      allOf:
+        - $ref: "#/components/schemas/BrokerHubFlags"
+        - type: object
+          required: [venue, connectionId, status, connected, nativeStatus, observedAt, staleSeconds, reason]
+          properties:
+            venue: { type: string, enum: [MT5] }
+            connectionId: { type: integer }
+            status: { type: string }
+            connected: { type: boolean }
+            nativeStatus: { type: ["string", "null"] }
+            observedAt: { type: ["string", "null"], format: date-time }
+            staleSeconds: { type: ["integer", "null"] }
+            reason: { type: string }
+
+    BrokerHubAccountResponse:
+      allOf:
+        - $ref: "#/components/schemas/BrokerHubFlags"
+        - type: object
+          required: [venue, connectionId, accountRefMasked, brokerName, serverName, environment, currency, balance, equity, margin, freeMargin, leverage, observedAt, snapshotStatus]
+          properties:
+            venue: { type: string, enum: [MT5] }
+            connectionId: { type: integer }
+            accountRefMasked: { type: ["string", "null"] }
+            brokerName: { type: ["string", "null"] }
+            serverName: { type: ["string", "null"] }
+            environment: { type: string, enum: [UNKNOWN, DEMO, LIVE] }
+            currency: { type: ["string", "null"] }
+            balance: { type: ["number", "null"] }
+            equity: { type: ["number", "null"] }
+            margin: { type: ["number", "null"] }
+            freeMargin: { type: ["number", "null"] }
+            leverage: { type: ["number", "null"] }
+            observedAt: { type: ["string", "null"], format: date-time }
+            snapshotStatus: { type: string, enum: [FRESH, STALE, MISSING] }
+
+    BrokerHubInstrument:
+      type: object
+      required: [symbol, displayName, exactBrokerSymbol, brokerReportsTradeAllowed, discoveryStatus, digits, point, minVolume, maxVolume, volumeStep, evidence]
+      properties:
+        symbol: { type: string }
+        displayName: { type: ["string", "null"] }
+        exactBrokerSymbol: { type: string }
+        brokerReportsTradeAllowed: { type: boolean }
+        discoveryStatus: { type: string, enum: [FRESH, STALE] }
+        digits: { type: ["integer", "null"] }
+        point: { type: ["number", "null"] }
+        minVolume: { type: ["number", "null"] }
+        maxVolume: { type: ["number", "null"] }
+        volumeStep: { type: ["number", "null"] }
+        evidence:
+          type: object
+          required: [observedAt, exactBrokerSymbol, nativeConnectionRef]
+          properties:
+            observedAt: { type: string, format: date-time }
+            exactBrokerSymbol: { type: string }
+            nativeConnectionRef: { type: string }
+
+    BrokerHubInstrumentsResponse:
+      allOf:
+        - $ref: "#/components/schemas/BrokerHubFlags"
+        - type: object
+          required: [venue, connectionId, discoveryStatus, instruments]
+          properties:
+            venue: { type: string, enum: [MT5] }
+            connectionId: { type: integer }
+            discoveryStatus: { type: string, enum: [AVAILABLE, DISCOVERY_REQUIRED] }
+            instruments:
+              type: array
+              items: { $ref: "#/components/schemas/BrokerHubInstrument" }
+
+    BrokerHubCapabilitiesResponse:
+      allOf:
+        - $ref: "#/components/schemas/BrokerHubFlags"
+        - type: object
+          required: [venue, connectionId, observedAt, capabilities]
+          properties:
+            venue: { type: string, enum: [MT5] }
+            connectionId: { type: integer }
+            observedAt: { type: ["string", "null"], format: date-time }
+            capabilities:
+              type: object
+              required: [accountSnapshot, positionSnapshot, openOrderSnapshot, instrumentDiscovery, marketDataSnapshot]
+              properties:
+                accountSnapshot: { type: boolean }
+                positionSnapshot: { type: boolean, enum: [false] }
+                openOrderSnapshot: { type: boolean, enum: [false] }
+                instrumentDiscovery: { type: boolean }
+                marketDataSnapshot: { type: boolean }
+
     # ── Claude Backend Fix Agent (Task #705) — ADMIN-ONLY, ADVISORY / DIAGNOSTIC.
     FixAgentRequest:
       type: object

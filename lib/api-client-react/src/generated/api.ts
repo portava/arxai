@@ -149,6 +149,10 @@ import type {
   BridgeV2UserStatus,
   BrokerHealthLogList,
   BrokerHealthResponse,
+  BrokerHubAccountResponse,
+  BrokerHubCapabilitiesResponse,
+  BrokerHubConnectionResponse,
+  BrokerHubInstrumentsResponse,
   BrokerReconnectBody,
   BrokerReconnectResponse,
   BrokerToggleBody,
@@ -44862,3 +44866,389 @@ export const useAddAdminCockpitNote = <
 > => {
   return useMutation(getAddAdminCockpitNoteMutationOptions(options));
 };
+
+/**
+ * @summary Read the caller-owned broker connection metadata
+ */
+export const getGetMyBrokerHubConnectionUrl = (connectionId: number) => {
+  return `/api/me/broker-hub/connections/${connectionId}`;
+};
+
+export const getMyBrokerHubConnection = async (
+  connectionId: number,
+  options?: RequestInit,
+): Promise<BrokerHubConnectionResponse> => {
+  return customFetch<BrokerHubConnectionResponse>(
+    getGetMyBrokerHubConnectionUrl(connectionId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetMyBrokerHubConnectionQueryKey = (connectionId: number) => {
+  return [`/api/me/broker-hub/connections/${connectionId}`] as const;
+};
+
+export const getGetMyBrokerHubConnectionQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMyBrokerHubConnection>>,
+  TError = ErrorType<void>,
+>(
+  connectionId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getMyBrokerHubConnection>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetMyBrokerHubConnectionQueryKey(connectionId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getMyBrokerHubConnection>>
+  > = ({ signal }) =>
+    getMyBrokerHubConnection(connectionId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!connectionId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getMyBrokerHubConnection>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetMyBrokerHubConnectionQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getMyBrokerHubConnection>>
+>;
+export type GetMyBrokerHubConnectionQueryError = ErrorType<void>;
+
+/**
+ * @summary Read the caller-owned broker connection metadata
+ */
+
+export function useGetMyBrokerHubConnection<
+  TData = Awaited<ReturnType<typeof getMyBrokerHubConnection>>,
+  TError = ErrorType<void>,
+>(
+  connectionId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getMyBrokerHubConnection>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetMyBrokerHubConnectionQueryOptions(
+    connectionId,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Read the caller-owned masked broker account snapshot
+ */
+export const getGetMyBrokerHubAccountUrl = (connectionId: number) => {
+  return `/api/me/broker-hub/connections/${connectionId}/account`;
+};
+
+export const getMyBrokerHubAccount = async (
+  connectionId: number,
+  options?: RequestInit,
+): Promise<BrokerHubAccountResponse> => {
+  return customFetch<BrokerHubAccountResponse>(
+    getGetMyBrokerHubAccountUrl(connectionId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetMyBrokerHubAccountQueryKey = (connectionId: number) => {
+  return [`/api/me/broker-hub/connections/${connectionId}/account`] as const;
+};
+
+export const getGetMyBrokerHubAccountQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMyBrokerHubAccount>>,
+  TError = ErrorType<void>,
+>(
+  connectionId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getMyBrokerHubAccount>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetMyBrokerHubAccountQueryKey(connectionId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getMyBrokerHubAccount>>
+  > = ({ signal }) =>
+    getMyBrokerHubAccount(connectionId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!connectionId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getMyBrokerHubAccount>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetMyBrokerHubAccountQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getMyBrokerHubAccount>>
+>;
+export type GetMyBrokerHubAccountQueryError = ErrorType<void>;
+
+/**
+ * @summary Read the caller-owned masked broker account snapshot
+ */
+
+export function useGetMyBrokerHubAccount<
+  TData = Awaited<ReturnType<typeof getMyBrokerHubAccount>>,
+  TError = ErrorType<void>,
+>(
+  connectionId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getMyBrokerHubAccount>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetMyBrokerHubAccountQueryOptions(
+    connectionId,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Read caller-owned broker read capabilities
+ */
+export const getGetMyBrokerHubCapabilitiesUrl = (connectionId: number) => {
+  return `/api/me/broker-hub/connections/${connectionId}/capabilities`;
+};
+
+export const getMyBrokerHubCapabilities = async (
+  connectionId: number,
+  options?: RequestInit,
+): Promise<BrokerHubCapabilitiesResponse> => {
+  return customFetch<BrokerHubCapabilitiesResponse>(
+    getGetMyBrokerHubCapabilitiesUrl(connectionId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetMyBrokerHubCapabilitiesQueryKey = (connectionId: number) => {
+  return [
+    `/api/me/broker-hub/connections/${connectionId}/capabilities`,
+  ] as const;
+};
+
+export const getGetMyBrokerHubCapabilitiesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMyBrokerHubCapabilities>>,
+  TError = ErrorType<void>,
+>(
+  connectionId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getMyBrokerHubCapabilities>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getGetMyBrokerHubCapabilitiesQueryKey(connectionId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getMyBrokerHubCapabilities>>
+  > = ({ signal }) =>
+    getMyBrokerHubCapabilities(connectionId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!connectionId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getMyBrokerHubCapabilities>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetMyBrokerHubCapabilitiesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getMyBrokerHubCapabilities>>
+>;
+export type GetMyBrokerHubCapabilitiesQueryError = ErrorType<void>;
+
+/**
+ * @summary Read caller-owned broker read capabilities
+ */
+
+export function useGetMyBrokerHubCapabilities<
+  TData = Awaited<ReturnType<typeof getMyBrokerHubCapabilities>>,
+  TError = ErrorType<void>,
+>(
+  connectionId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getMyBrokerHubCapabilities>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetMyBrokerHubCapabilitiesQueryOptions(
+    connectionId,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Read caller-owned EA-discovered broker instruments
+ */
+export const getGetMyBrokerHubInstrumentsUrl = (connectionId: number) => {
+  return `/api/me/broker-hub/connections/${connectionId}/instruments`;
+};
+
+export const getMyBrokerHubInstruments = async (
+  connectionId: number,
+  options?: RequestInit,
+): Promise<BrokerHubInstrumentsResponse> => {
+  return customFetch<BrokerHubInstrumentsResponse>(
+    getGetMyBrokerHubInstrumentsUrl(connectionId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetMyBrokerHubInstrumentsQueryKey = (connectionId: number) => {
+  return [
+    `/api/me/broker-hub/connections/${connectionId}/instruments`,
+  ] as const;
+};
+
+export const getGetMyBrokerHubInstrumentsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMyBrokerHubInstruments>>,
+  TError = ErrorType<void>,
+>(
+  connectionId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getMyBrokerHubInstruments>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getGetMyBrokerHubInstrumentsQueryKey(connectionId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getMyBrokerHubInstruments>>
+  > = ({ signal }) =>
+    getMyBrokerHubInstruments(connectionId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!connectionId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getMyBrokerHubInstruments>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetMyBrokerHubInstrumentsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getMyBrokerHubInstruments>>
+>;
+export type GetMyBrokerHubInstrumentsQueryError = ErrorType<void>;
+
+/**
+ * @summary Read caller-owned EA-discovered broker instruments
+ */
+
+export function useGetMyBrokerHubInstruments<
+  TData = Awaited<ReturnType<typeof getMyBrokerHubInstruments>>,
+  TError = ErrorType<void>,
+>(
+  connectionId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getMyBrokerHubInstruments>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetMyBrokerHubInstrumentsQueryOptions(
+    connectionId,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
