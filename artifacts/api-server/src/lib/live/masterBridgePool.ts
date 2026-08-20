@@ -25,11 +25,12 @@
 //   are responsible for deciding whether to *block* on the deficit.
 //   This separation keeps the projection truthful regardless of mode.
 
-import { and, eq, isNull } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { openLiveExposureCondition } from "./livePositionExposure.js";
 import { computeAvailableBalance } from "./investorLiveBalance.js";
 import {
   db,
+  arxLiveCommandsTable,
   arxMasterAccountConfigTable,
   arxMasterBridgePoolTable,
   arxLivePositionsTable,
@@ -282,24 +283,106 @@ export async function getUserAllocationView(userId: number): Promise<{
   };
 }
 
+// ── R3 slice 3 — real reserved-risk from in-flight rows ─────────────────────
+// SHARED VOCABULARY (also consumed by the advisory-locked per-user headroom
+// check in lib/concurrency/exposureReservation.ts so the two can never drift):
+//
+// A command holds reserved risk while its outcome is not broker-confirmed:
+//   SENT_TO_MT5_LIVE            — dispatched, awaiting EA/broker result;
+//   LIVE_UNKNOWN                — pickup evidence, outcome unconfirmed
+//                                 (reservation HELD by the G1b matrix);
+//   LIVE_RECONCILIATION_REQUIRED — escalated unknown, still unresolved.
+// ENTRY command types only: an in-flight CLOSE/MODIFY is risk-REDUCING
+// intent; counting its lots as reserved margin would shrink entry headroom
+// and double-count against the open position it targets (whose floating loss
+// already reduces available allocation).
+export const RESERVED_RISK_IN_FLIGHT_STATUSES = [
+  "SENT_TO_MT5_LIVE", "LIVE_UNKNOWN", "LIVE_RECONCILIATION_REQUIRED",
+] as const;
+export const RESERVED_RISK_ENTRY_COMMAND_TYPES = [
+  "PLACE_LIVE_MARKET_ORDER", "PLACE_LIVE_PENDING_ORDER",
+] as const;
+
 /**
- * Compute and persist per-allocation reserved-risk. Currently a thin
- * wrapper that uses 0 (no per-position margin model yet); kept as the
- * single mutation surface so a future margin model only needs to land
- * here. Updates user_slot_allocation.reserved_risk + last_reconciled_at.
+ * PURE reserved-risk computation (offline-testable): sum of requestedVolume
+ * over rows that are BOTH in an in-flight status AND an entry type, times the
+ * per-lot margin proxy (the caller passes the pipeline's shared
+ * REQUIRED_MARGIN_PROXY_PER_LOT_USD — a compile-time constant, so the
+ * non-finite/non-positive proxy guard below is a bug tripwire, not a policy).
+ *
+ * HONESTY NOTE on corrupt volumes: a row whose volume cannot be read as a
+ * positive finite number contributes 0 — a number is never fabricated. That
+ * direction UNDER-counts reserved risk, but such a row could not have passed
+ * dispatch volume validation; the tradeoff is named here and pinned by the
+ * wave-5 test matrix rather than silently chosen.
+ */
+export function computeReservedRiskUsd(
+  rows: ReadonlyArray<{
+    status: string;
+    commandType: string;
+    requestedVolume: number | string | null | undefined;
+  }>,
+  marginProxyPerLotUsd: number,
+): number {
+  if (!Number.isFinite(marginProxyPerLotUsd) || marginProxyPerLotUsd <= 0) return 0;
+  let lots = 0;
+  for (const r of rows) {
+    if (!(RESERVED_RISK_IN_FLIGHT_STATUSES as readonly string[]).includes(r.status)) continue;
+    if (!(RESERVED_RISK_ENTRY_COMMAND_TYPES as readonly string[]).includes(r.commandType)) continue;
+    const v = Number(r.requestedVolume);
+    if (!Number.isFinite(v) || v <= 0) continue;
+    lots += v;
+  }
+  return lots * marginProxyPerLotUsd;
+}
+
+/**
+ * Compute and persist per-allocation reserved-risk. R3 slice 3: no longer a
+ * hard-coded 0 — reserved risk is derived from the user's in-flight rows
+ * (SENT_TO_MT5_LIVE + LIVE_UNKNOWN + LIVE_RECONCILIATION_REQUIRED entry
+ * commands) at the pipeline's shared REQUIRED_MARGIN_PROXY_PER_LOT_USD, via
+ * the pure computeReservedRiskUsd above. Still the single mutation surface:
+ * a future true per-position margin model replaces only this derivation.
+ * Updates user_slot_allocation.reserved_risk + last_reconciled_at.
  */
 export async function reconcileAllocationsReservedRisk(): Promise<{ updated: number }> {
   const allocRows = await db.select({
     id: userSlotAllocationTable.id,
     userId: userSlotAllocationTable.userId,
   }).from(userSlotAllocationTable);
+  // Dynamic import: liveCommandPipeline.ts statically imports THIS module, so
+  // a static import of its shared margin-proxy constant would be an init
+  // cycle. At runtime the pipeline module is already loaded (it is the sole
+  // dispatch path), so this resolves from the module cache.
+  const { REQUIRED_MARGIN_PROXY_PER_LOT_USD } = await import("./liveCommandPipeline.js");
+  const inFlightRows = allocRows.length === 0 ? [] : await db.select({
+    userId: arxLiveCommandsTable.userId,
+    status: arxLiveCommandsTable.status,
+    commandType: arxLiveCommandsTable.commandType,
+    requestedVolume: arxLiveCommandsTable.requestedVolume,
+  }).from(arxLiveCommandsTable)
+    .where(inArray(
+      arxLiveCommandsTable.status,
+      [...RESERVED_RISK_IN_FLIGHT_STATUSES],
+    ));
+  const rowsByUser = new Map<number, { status: string; commandType: string; requestedVolume: number | string | null }[]>();
+  for (const r of inFlightRows) {
+    const bucket = rowsByUser.get(r.userId);
+    const shaped = {
+      status: String(r.status),
+      commandType: String(r.commandType),
+      requestedVolume: r.requestedVolume as number | string | null,
+    };
+    if (bucket) bucket.push(shaped);
+    else rowsByUser.set(r.userId, [shaped]);
+  }
   const now = new Date();
   let updated = 0;
   for (const a of allocRows) {
-    // Sum margin held against open positions for this user. With no
-    // per-position margin column yet, this is 0 — but writing the row
-    // keeps last_reconciled_at honest.
-    const reserved = 0;
+    const reserved = round2(computeReservedRiskUsd(
+      rowsByUser.get(a.userId) ?? [],
+      REQUIRED_MARGIN_PROXY_PER_LOT_USD,
+    ));
     await db.update(userSlotAllocationTable).set({
       reservedRisk: reserved,
       lastReconciledAt: now,

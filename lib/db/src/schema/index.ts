@@ -474,3 +474,5 @@ export * from "./reconciliationRuns";
 export * from "./marketDataEntitlements";
 // R6 — per-user broker eligibility; COMPLIANCE_HOLD is the fail-closed default.
 export * from "./brokerEligibility";
+// R7 step 6 — production edge library; rows are born with every live gate false.
+export * from "./edgeLibrary";

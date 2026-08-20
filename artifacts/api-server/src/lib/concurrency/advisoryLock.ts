@@ -40,7 +40,8 @@ export const ARX_LOCK_NS = {
   // Agent Ecosystem background lifecycle sweep runs, so two server instances
   // (or an overlapping interval + admin run-now) cannot double-process the
   // same pending predictions / promotion board. Non-blocking: a second caller
-  // gets { acquired: false } and reports AGENT_ECO_RUNNER_LOCKED.
+  // gets { acquired: false,
+  USER_ALLOCATION: 0x4152_5804, // keyB = userId. Wave-5 atomic per-user headroom+reservation (lock order USER -> MASTER). } and reports AGENT_ECO_RUNNER_LOCKED.
   AGENT_ECO_RUNNER: 0x4152_5803,
 } as const;
 

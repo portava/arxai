@@ -143,3 +143,15 @@ pepper are invalid and the old value must never be reintroduced.
 
 Context: The prior value had appeared in exported/committed material, so it is
 assumed compromised regardless of actual exposure.
+
+## Ruling 10 — Reconciliation-freshness gate staging (2026-08-20)
+`ARX_REQUIRE_FRESH_RECONCILIATION` ships default-OFF: no scheduled reconciler
+exists yet, and a default-ON gate with zero reconciliation runs would refuse
+every live entry including the owner's controlled testing. The default flips to
+ON in the same change that schedules `reconcileUnknownCommands` on Replit.
+
+## Ruling 11 — Master exposure cap 0-means-unlimited trap (2026-08-20)
+`shared_master_accounts.max_total_exposure_lots = 0` (the column default) means
+UNLIMITED today. Changing 0 to a hard zero-cap requires an explicit owner ruling
+plus a migration adding an explicit unlimited marker; until then startup logs
+`MASTER_EXPOSURE_CAP_ZERO_MEANS_UNLIMITED`.

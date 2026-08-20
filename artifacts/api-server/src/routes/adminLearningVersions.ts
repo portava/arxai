@@ -7,12 +7,24 @@
 //   POST /api/admin/learning/versions/:id/approve — admin approve for live
 //   POST /api/admin/learning/versions/:id/rollback — rollback a live version
 //   GET  /api/admin/learning/active            — get current active live version
+//   GET  /api/admin/learning/edges             — read-only production_edges list (R7 step 6)
 //   GET  /api/me/learning/version-status       — user-facing: is Ruby using validated learning?
 //
 // SAFETY:
 //   - liveAllowed only set when all 4 gates pass AND admin explicitly approves
 //   - Rollback immediately deactivates — no grace period for bad learning
 //   - All approval/rollback actions logged to audit vault
+//
+// EVIDENCE HONESTY (R7 step 6):
+//   - Every gate computation EXCLUDES shadow_predictions rows labeled
+//     SYNTHETIC_SIMULATOR (the wave-2 provenance label): synthetic-walk rows
+//     are not market evidence, so they can neither validate nor walk-forward
+//     a version. The gates stay honestly deadlocked until REAL durable shadow
+//     rows exist — that is the correct state, not a bug. syntheticRowCount is
+//     surfaced separately so the operator can see WHY the sample reads low.
+//   - The production_edges surface here is READ-ONLY. Promotion decisions are
+//     the pure gate in ../lib/learning/edgePromotion.ts; no write route exists
+//     this wave, and liveAllowed is owner-pressed, never route-set.
 
 import { Router } from "express";
 import { z } from "zod/v4";
@@ -23,11 +35,15 @@ import {
   learningModelVersionsTable,
   shadowPredictionsTable,
   globalSignalEdgesTable,
+  productionEdgesTable,
   VERSION_GATES,
   type LearningModelVersionRow,
 } from "@workspace/db/schema";
 import { eq, desc, and, sql } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
+// The wave-2 provenance label — imported, not re-typed, so the exclusion below
+// can never drift from the literal shadowPersistence actually writes.
+import { SYNTHETIC_SIMULATOR_SOURCE } from "../lib/shadowPersistence.js";
 import { logger } from "../lib/logger.js";
 
 const log = logger.child({ component: "learningVersions" });
@@ -52,6 +68,7 @@ async function computeGates(versionId: string): Promise<{
   shadowValidated: boolean;
   shadowAccuracy: number | null;
   shadowSampleSize: number | null;
+  syntheticRowCount: number;
 }> {
   // 1. Data quality — check global signal edges have enough data
   const edgeCount = await db.select({ count: sql<number>`count(*)::int` })
@@ -63,10 +80,26 @@ async function computeGates(versionId: string): Promise<{
 
   // 2. Walk-forward — use shadow mode historical win rate as proxy.
   // Newest-first (id tiebreak) so the slice below is genuinely the most recent half.
+  //
+  // REAL ROWS ONLY: rows labeled SYNTHETIC_SIMULATOR come from the synthetic
+  // random-walk simulator, not the market — counting them would let a
+  // random-number generator validate a learning version. The SQL exclusion
+  // means no gate below ever sees a synthetic row. If that leaves the sample
+  // under MIN_SHADOW_SAMPLE, the gates stay failed — honestly.
   const shadowRows = await db.select()
     .from(shadowPredictionsTable)
-    .where(sql`${shadowPredictionsTable.status} IN ('SHADOW_WIN', 'SHADOW_LOSS')`)
+    .where(and(
+      sql`${shadowPredictionsTable.status} IN ('SHADOW_WIN', 'SHADOW_LOSS')`,
+      sql`${shadowPredictionsTable.source} <> ${SYNTHETIC_SIMULATOR_SOURCE}`,
+    ))
     .orderBy(desc(shadowPredictionsTable.createdAt), desc(shadowPredictionsTable.id));
+
+  // Counted separately (ALL synthetic rows, any status) purely so the operator
+  // can see why shadowSampleSize reads low while the table looks populated.
+  const syntheticCount = await db.select({ count: sql<number>`count(*)::int` })
+    .from(shadowPredictionsTable)
+    .where(eq(shadowPredictionsTable.source, SYNTHETIC_SIMULATOR_SOURCE));
+  const syntheticRowCount = syntheticCount[0]?.count ?? 0;
 
   const shadowSampleSize = shadowRows.length;
   let shadowAccuracy: number | null = null;
@@ -97,6 +130,7 @@ async function computeGates(versionId: string): Promise<{
     shadowValidated,
     shadowAccuracy,
     shadowSampleSize,
+    syntheticRowCount,
   };
 }
 
@@ -130,6 +164,40 @@ router.get("/admin/learning/active", requireUser, async (req, res) => {
     activeVersion: active[0] ?? null,
     hasActiveVersion: active.length > 0,
   });
+});
+
+// ── GET /api/admin/learning/edges — READ-ONLY production_edges list ──────────
+// R7 step 6 promotion spine. Deliberately read-only: promotion is the pure
+// gate in ../lib/learning/edgePromotion.ts, no write route exists this wave,
+// and liveAllowed is owner-pressed — a route that could flip it would be a
+// route that shouldn't exist. Lives in THIS router because it already owns
+// /admin/learning* (no routes/index.ts change needed).
+router.get("/admin/learning/edges", requireUser, async (req, res) => {
+  const admin = requireAdmin(req, res); if (!admin) return;
+
+  try {
+    const edges = await db.select()
+      .from(productionEdgesTable)
+      .orderBy(desc(productionEdgesTable.createdAt))
+      .limit(100);
+
+    return res.json({
+      ok: true,
+      edges,
+      count: edges.length,
+      readOnly: true,
+      note: "Promotion runs through the pure edgePromotion gate; liveAllowed is owner-pressed and never set by any route.",
+    });
+  } catch (e) {
+    // Honest UNKNOWN: the table may not be migrated yet (new schema this wave;
+    // drizzle-kit push is owner-run). Refusing with the reason beats a 500.
+    log.warn({ err: e }, "production_edges_list_unavailable");
+    return res.status(503).json({
+      ok: false,
+      error: "EDGE_LIBRARY_UNAVAILABLE",
+      message: "production_edges could not be read — if the edgeLibrary migration has not been pushed yet, this is expected.",
+    });
+  }
 });
 
 // ── POST /api/admin/learning/versions — create version record ─────────────────
@@ -184,7 +252,10 @@ router.post("/admin/learning/versions", requireUser, async (req, res) => {
     blockedGates: [
       !gates.dataValidated     ? `Data quality too low (${gates.dataQualityScore ?? 0}/100, need ${VERSION_GATES.MIN_DATA_QUALITY})` : null,
       !gates.walkForwardPassed ? `Walk-forward score too low (${gates.walkForwardScore ?? 0}%, need ${VERSION_GATES.MIN_WALK_FORWARD}%)` : null,
-      !gates.shadowValidated   ? `Shadow accuracy too low (${gates.shadowAccuracy ?? 0}% from ${gates.shadowSampleSize ?? 0} predictions, need ${VERSION_GATES.MIN_SHADOW_ACCURACY}% from ${VERSION_GATES.MIN_SHADOW_SAMPLE})` : null,
+      !gates.shadowValidated   ? `Shadow accuracy too low (${gates.shadowAccuracy ?? 0}% from ${gates.shadowSampleSize ?? 0} REAL predictions, need ${VERSION_GATES.MIN_SHADOW_ACCURACY}% from ${VERSION_GATES.MIN_SHADOW_SAMPLE})` : null,
+      gates.syntheticRowCount > 0
+        ? `${gates.syntheticRowCount} SYNTHETIC_SIMULATOR rows were excluded from every gate — synthetic rows are not market evidence`
+        : null,
     ].filter(Boolean),
   });
 });

@@ -23,6 +23,12 @@ import {
   updateShadowOutcome,
   SYNTHETIC_SIMULATOR_SOURCE,
 } from "./shadowPersistence.js";
+import {
+  buildFeatureSnapshot,
+  latestCloseIso,
+  FEATURE_SET_ID,
+  type FeatureSnapshot,
+} from "./features/featureSnapshot.js";
 
 function adaptCandles(symbol: string): EngineCandle[] {
   return marketSimulator.candlesFor(symbol, 240).map((c) => ({
@@ -42,6 +48,18 @@ export interface ShadowDecision {
   reason: string; reasonToAvoid: string;
   status: ShadowStatus; expiresAt: string; pnlR?: number; outcomeAt?: string;
   dataSource: "SHADOW";
+  /**
+   * R7 step 4 — feature provenance. `featureSetId` pins WHICH shared-engine
+   * version (lib/features FEATURE_SET_ID) ran when this decision was made;
+   * `featureSnapshot` is the EXACT feature assumptions it saw (or an honest
+   * INSUFFICIENT_DATA / LOOKAHEAD_REFUSED refusal), computed from the SAME
+   * candles the strategy scan consumed. Both are persisted verbatim so
+   * research/replay can reproduce the decision (Part IV). Optional + additive:
+   * pre-R7 in-memory decisions and fixtures stay valid; absence means the
+   * assumptions were never recorded — an honest UNKNOWN, never a default.
+   */
+  featureSetId?: string;
+  featureSnapshot?: FeatureSnapshot;
 }
 
 const decisions = new Map<string, ShadowDecision>();
@@ -85,6 +103,27 @@ export function createShadowDecision(symbol: string, tf = "M15"): ShadowDecision
       : !rg.approved ? "SHADOW_REJECTED"
       : "SHADOW_TRACKING_OUTCOME";
 
+  // R7 step 4 — stamp the decision with the shared feature engine's snapshot,
+  // computed from the SAME candles the strategy scan above consumed (never a
+  // second fetch). These candles are SYNTHETIC simulator bars until the
+  // real-data swap (later R7 step): the stamp records the exact assumptions
+  // the decision saw — it does NOT upgrade their provenance, which stays
+  // labeled SYNTHETIC_SIMULATOR_SOURCE on the persisted row. asOf anchors to
+  // the newest bar's close so replaying the same bars reproduces the snapshot.
+  let featureSnapshot: FeatureSnapshot | undefined;
+  try {
+    const featureAsOf = latestCloseIso(candles);
+    if (featureAsOf !== null) {
+      featureSnapshot = buildFeatureSnapshot(symbol, candles, featureAsOf);
+    }
+  } catch {
+    // NOT a lookahead swallow: buildFeatureSnapshot already returns a typed
+    // LOOKAHEAD_REFUSED refusal for LookaheadError and rethrows only
+    // non-lookahead defects. A defect in this additive stamp must not break
+    // the shadow scanner loop (module contract) — the decision is recorded
+    // without the stamp, which reads as an honest "assumptions not recorded".
+  }
+
   const d: ShadowDecision = {
     id: newId(), ts: new Date().toISOString(), symbol, tf, strategy: scan.strategy,
     marketCondition: classifyMarket(symbol), action, entry, sl, tp,
@@ -94,6 +133,8 @@ export function createShadowDecision(symbol: string, tf = "M15"): ShadowDecision
     reason: scan.reason, reasonToAvoid: rg.hardBlocks.join("; ") || scan.riskWarning || "",
     status, expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
     dataSource: "SHADOW",
+    featureSetId: FEATURE_SET_ID,
+    featureSnapshot,
   };
   decisions.set(d.id, d);
   totalsObserved++;

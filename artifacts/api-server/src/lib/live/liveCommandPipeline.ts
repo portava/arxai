@@ -57,6 +57,19 @@ import {
   BROKER_FEED_GATE_ENV,
 } from "../data/brokerConfirmedFeed.js";
 import { evaluateEntryDataSufficiency } from "./entryDataSufficiency.js";
+// R2-S7 — execution-adapter seam. The pipeline consumes ONLY the interface;
+// the sole implementation wraps this file's own enqueueBridgedMt5Command
+// (injected below, function unchanged) so delivery behavior is byte-equivalent
+// and R5's Deriv adapter can implement the same seam later.
+import {
+  Mt5EaBridgeAdapter,
+  type ExecutionAdapter,
+} from "./executionAdapter.js";
+// R2-S4 — the freshness gate's run-row shape is a type-only import (erased at
+// runtime). The VALUE import of reconciliationFreshnessVerdict is dynamic at
+// the gate site: unknownReconciler.ts statically imports this module's pure
+// helpers, so a static value import here would create an init cycle.
+import type { ReconciliationRunRowLike } from "./unknownReconciler.js";
 import { explainMt5Retcode } from "../mt5/mt5Retcodes.js";
 import { getMyArming } from "./liveArming.js";
 import {
@@ -710,6 +723,90 @@ if (!brokerFeedGateEnforcementEnabled(process.env[BROKER_FEED_GATE_ENV])) {
     envVar: BROKER_FEED_GATE_ENV,
     rawValue: process.env[BROKER_FEED_GATE_ENV] ?? null,
   }, `${BROKER_FEED_GATE_ENV} explicitly disables broker-confirmed-feed enforcement — live ENTRY dispatch will NOT be blocked on an unconfirmed feed (observe-only)`);
+}
+
+// ── R2-S4 — reconciliation-freshness entry pre-gate (flag-staged) ───────────
+// reconciliationFreshnessVerdict (unknownReconciler.ts) is the pure read-side
+// predicate over the newest reconciliation_runs row; this wave wires it as an
+// ENTRY-ONLY dispatch pre-gate behind ARX_REQUIRE_FRESH_RECONCILIATION.
+//
+// DEFAULT OFF THIS RELEASE (deliberate, not an oversight): no scheduled
+// reconciler exists yet on Replit, so a default-ON gate would see zero
+// reconciliation_runs rows and fail-closed refuse EVERY live entry — including
+// the owner's own live testing. The default flips ON once the reconciler is
+// scheduled; that flip is an owner call and must be recorded in the Owner
+// Decision Registry (docs/OWNER_DECISIONS.md) — see the startup log below.
+//
+// When ON: the newest run row for this user (scope 'user') or bridge-wide
+// (user_id NULL) must be COMPLETED, younger than ARX_RECONCILIATION_MAX_AGE_MS
+// (default 300000), and verified-clean on BOTH match verdicts. Everything else
+// — no run, unfinished run, stale run, unreadable table — refuses entries
+// fail-closed with LIVE_BLOCKED:RECONCILIATION_STALE; a verified mismatch
+// refuses with LIVE_BLOCKED:RECONCILIATION_MISMATCH. ENTRIES ONLY:
+// close/modify always pass (never trap open exposure — the same entry-vs-ops
+// split every other pre-gate applies).
+export const RECONCILIATION_FRESHNESS_GATE_ENV = "ARX_REQUIRE_FRESH_RECONCILIATION" as const;
+export const RECONCILIATION_MAX_AGE_ENV = "ARX_RECONCILIATION_MAX_AGE_MS" as const;
+export const DEFAULT_RECONCILIATION_MAX_AGE_MS = 300_000;
+export const RECONCILIATION_STALE_BLOCK_REASON =
+  "LIVE_BLOCKED:RECONCILIATION_STALE" as const;
+export const RECONCILIATION_MISMATCH_BLOCK_REASON =
+  "LIVE_BLOCKED:RECONCILIATION_MISMATCH" as const;
+
+/**
+ * PURE flag parse. Default OFF: ONLY an explicit enable value ("1" | "true" |
+ * "on" | "yes", case-insensitive, trimmed) turns the gate on. Absent / empty /
+ * anything else stays off — the opposite polarity of the broker-feed gate
+ * (default-ON) because here the enforcing dependency (a scheduled reconciler)
+ * does not exist yet.
+ */
+export function reconciliationFreshnessGateEnabled(raw: string | null | undefined): boolean {
+  if (raw == null) return false;
+  const v = raw.trim().toLowerCase();
+  return v === "1" || v === "true" || v === "on" || v === "yes";
+}
+
+/** PURE max-age parse: positive finite ms, else the 300000 default (a
+ *  corrupt bound must not silently widen OR narrow the window — it falls
+ *  back to the documented default, never to "no bound"). */
+export function resolveReconciliationMaxAgeMs(raw: string | null | undefined): number {
+  if (raw == null || raw.trim() === "") return DEFAULT_RECONCILIATION_MAX_AGE_MS;
+  const n = Number(raw.trim());
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_RECONCILIATION_MAX_AGE_MS;
+}
+
+/**
+ * PURE verdict → block-reason mapping (offline-testable). null = pass. A
+ * verified MISMATCH gets its own literal; EVERY other refusal (NO_RUN,
+ * RUN_NOT_COMPLETED, RUN_STALE, RUN_TIMESTAMP_INVALID, MATCH_UNVERIFIED,
+ * INVALID_MAX_AGE) is surfaced as STALE — fail-closed, and honest: none of
+ * those states proves a mismatch, only that freshness cannot be proven.
+ */
+export function reconciliationGateBlockReason(
+  verdict: { ok: boolean; reason: string },
+): string | null {
+  if (verdict.ok) return null;
+  return verdict.reason === "MISMATCH"
+    ? RECONCILIATION_MISMATCH_BLOCK_REASON
+    : RECONCILIATION_STALE_BLOCK_REASON;
+}
+
+// Startup notice — the staged flag must never be silent in either direction.
+// Evaluated once at module init (the pipeline is loaded at server startup).
+if (!reconciliationFreshnessGateEnabled(process.env[RECONCILIATION_FRESHNESS_GATE_ENV])) {
+  logger.warn({
+    [PHASE_B_LIVE_LOG_PREFIX]: true,
+    event: "RECONCILIATION_FRESHNESS_GATE_OFF",
+    envVar: RECONCILIATION_FRESHNESS_GATE_ENV,
+    rawValue: process.env[RECONCILIATION_FRESHNESS_GATE_ENV] ?? null,
+  }, `${RECONCILIATION_FRESHNESS_GATE_ENV} is OFF (default this release): live ENTRY dispatch is NOT gated on reconciliation freshness. Deliberate: no scheduled reconciler exists yet on Replit — a default-ON gate with zero reconciliation_runs would refuse every entry. The default flips ON once the reconciler is scheduled; record that flip in the Owner Decision Registry (docs/OWNER_DECISIONS.md).`);
+} else {
+  logger.warn({
+    [PHASE_B_LIVE_LOG_PREFIX]: true,
+    event: "RECONCILIATION_FRESHNESS_GATE_ON",
+    envVar: RECONCILIATION_FRESHNESS_GATE_ENV,
+    maxAgeMs: resolveReconciliationMaxAgeMs(process.env[RECONCILIATION_MAX_AGE_ENV]),
+  }, `${RECONCILIATION_FRESHNESS_GATE_ENV} is ON: live ENTRY dispatch refuses without a fresh, clean reconciliation run (fail-closed; close/modify exempt)`);
 }
 
 // ── R3 slice 7 — failure-streak breaker ─────────────────────────────────────
@@ -2412,6 +2509,88 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
     }
   }
 
+  // ── RECONCILIATION-FRESHNESS PRE-GATE (R2-S4, flag-staged, default OFF) ──
+  // See the module-scope constants above for the full staging rationale.
+  // ENTRY-ONLY, additive: runs after the broker-feed pre-gate and BEFORE the
+  // 18-gate evaluator; never replaces or weakens any downstream gate. The
+  // run row is read with raw parameterized SQL for the same reason the
+  // reconciler writes it that way: the reconciliation_runs registration is
+  // coordinator-owned and the table may not exist yet — with the flag ON, an
+  // unreadable table degrades to "no run", which is the fail-closed
+  // direction (an operator who demanded proof must not trade without it).
+  if (isWave4EntryCommand
+    && reconciliationFreshnessGateEnabled(process.env[RECONCILIATION_FRESHNESS_GATE_ENV])) {
+    const maxAgeMs = resolveReconciliationMaxAgeMs(process.env[RECONCILIATION_MAX_AGE_ENV]);
+    let freshnessRunRow: ReconciliationRunRowLike | null = null;
+    let runReadError: string | null = null;
+    try {
+      // Newest run covering this user: a user-scoped run (user_id = X) or a
+      // bridge-wide run (user_id NULL) both qualify. id DESC = insertion order.
+      const res = await db.execute(sql`
+        select status, completed_at, positions_match, orders_match
+          from reconciliation_runs
+         where user_id = ${args.userId} or user_id is null
+         order by id desc
+         limit 1
+      `);
+      const rows = (res as unknown as { rows?: Array<Record<string, unknown>> }).rows ?? [];
+      const r0 = rows[0];
+      if (r0 != null) {
+        freshnessRunRow = {
+          status: (r0["status"] ?? null) as string | null,
+          completedAt: (r0["completed_at"] ?? null) as Date | string | null,
+          positionsMatch: (r0["positions_match"] ?? null) as boolean | null,
+          ordersMatch: (r0["orders_match"] ?? null) as boolean | null,
+        };
+      }
+    } catch (e) {
+      runReadError = e instanceof Error ? e.message : String(e);
+    }
+    // Dynamic value import — unknownReconciler statically imports this
+    // module's pure helpers; a static value import here would be a cycle.
+    const { reconciliationFreshnessVerdict } = await import("./unknownReconciler.js");
+    const verdict = reconciliationFreshnessVerdict(freshnessRunRow, maxAgeMs);
+    const freshnessBlockReason = reconciliationGateBlockReason(verdict);
+    if (freshnessBlockReason != null) {
+      const reason = freshnessBlockReason;
+      const [blocked] = await db.update(arxLiveCommandsTable).set({
+        status: "LIVE_BLOCKED",
+        rejectionReason: reason,
+        rejectedAt: new Date(),
+        dispatchGateSnapshot: {
+          decision: "BLOCKED",
+          primaryReason: reason,
+          blockReasons: [reason, "BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED"],
+          reconciliationFreshnessGate: true,
+          freshnessReason: verdict.reason,
+          runAgeMs: verdict.ageMs,
+          maxAgeMs,
+          runReadError,
+          at: new Date().toISOString(),
+        } as unknown as Record<string, unknown>,
+      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      await audit({
+        eventType: "RECONCILIATION_FRESHNESS_BLOCKED", severity: "HIGH",
+        userId: args.userId, symbol: row.symbol,
+        message: `Live dispatch BLOCKED by reconciliation-freshness gate: ${reason}`,
+        metadata: {
+          commandId: args.commandId, commandType: row.commandType,
+          freshnessReason: verdict.reason, runAgeMs: verdict.ageMs,
+          maxAgeMs, runReadError,
+        },
+      });
+      logger.warn({
+        [PHASE_B_LIVE_LOG_PREFIX]: true,
+        event: "RECONCILIATION_FRESHNESS_BLOCKED",
+        commandId: args.commandId, userId: args.userId,
+        primaryReason: reason, freshnessReason: verdict.reason,
+        runAgeMs: verdict.ageMs, maxAgeMs, runReadError,
+      }, "Reconciliation-freshness gate blocked live dispatch");
+      return { ok: false as const, reason: "LIVE_BLOCKED" as const,
+        primaryReason: reason, blockReasons: [reason], command: blocked };
+    }
+  }
+
   // Phase 22V Part 3 — per-user TP requirement is sourced from
   // user_master_live_access (default true on approved-shared-bridge users).
   // Loaded here so the evaluator + audit snapshot stay consistent.
@@ -3175,13 +3354,33 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
       return { ok: false as const, reason, command: blocked, gate: phaseBGate };
     }
     {
-      const { reserveExposureAtomic } = await import("../concurrency/exposureReservation.js");
-      const r = await reserveExposureAtomic({
+      // R3 slice 3 — the per-user allocation headroom check previously ran
+      // ONLY at preflight, unlocked, against user_slot_allocation.reserved_risk
+      // (which the reconciler stub hard-coded to 0), so two parallel same-user
+      // dispatches could both pass it. The reservation call below now takes a
+      // pg advisory lock keyed by userId and re-derives headroom INSIDE the
+      // lock from live in-flight rows before the reservation row is written
+      // (then the master-exposure lock runs unchanged inside it). Enforcement
+      // mirrors the preflight margin-proxy governance split EXACTLY
+      // (enforceMarginProxy = !useGovernance || gov.enforceAllocationLimit)
+      // and is ENTRY-ONLY — a close/modify must never be trapped by headroom.
+      const { reserveExposureAtomicWithUserHeadroom } =
+        await import("../concurrency/exposureReservation.js");
+      const enforceUserHeadroom = isEntryRow
+        && (!useGovernanceDispatch || govDispatch.enforceAllocationLimit);
+      const r = await reserveExposureAtomicWithUserHeadroom({
         sharedMasterAccountId: sma.id,
         addingLot: Number(row.requestedVolume),
         userId: args.userId,
         commandId: args.commandId,
         symbol: row.symbol,
+        userHeadroom: enforceUserHeadroom
+          ? {
+              estRequiredMarginUsd:
+                Math.max(0, Number(row.requestedVolume)) * REQUIRED_MARGIN_PROXY_PER_LOT_USD,
+              marginProxyPerLotUsd: REQUIRED_MARGIN_PROXY_PER_LOT_USD,
+            }
+          : null,
       });
       if (!r.ok) {
         const [blocked] = await db.update(arxLiveCommandsTable).set({
@@ -3195,6 +3394,7 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
             currentOpenLots: r.currentOpenLots,
             reservedLots: r.reservedLots,
             cap: r.cap,
+            ...(r.userHeadroom != null ? { userHeadroom: r.userHeadroom } : {}),
             routingMode,
             at: new Date().toISOString(),
           } as unknown as Record<string, unknown>,
@@ -3203,7 +3403,11 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
           eventType: "LIVE_DISPATCH_BLOCKED", severity: "HIGH",
           userId: args.userId, symbol: row.symbol,
           message: `Master exposure reservation refused: ${r.reason}`,
-          metadata: { commandId: args.commandId, currentOpenLots: r.currentOpenLots, reservedLots: r.reservedLots, cap: r.cap },
+          metadata: {
+            commandId: args.commandId, currentOpenLots: r.currentOpenLots,
+            reservedLots: r.reservedLots, cap: r.cap,
+            ...(r.userHeadroom != null ? { userHeadroom: r.userHeadroom } : {}),
+          },
         });
         return { ok: false as const, reason: r.reason, command: blocked, gate: phaseBGate };
       }
@@ -3330,8 +3534,13 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
     // v1.50 EA actually polls. If this mirror fails the command would sit
     // unclaimed until its TTL elapsed (silent dead order), so fail it CLOSED
     // instead and release any exposure reservation.
+    //
+    // R2-S7 — delivery goes through the ExecutionAdapter seam. The adapter is
+    // the SAME enqueueBridgedMt5Command function (injected unchanged below),
+    // so behavior is byte-equivalent; the mirror-failure → mark-failed
+    // semantics in the catch stay HERE so every future venue inherits them.
     try {
-      const { mt5CommandId, action: eaAction } = await enqueueBridgedMt5Command({
+      const { mt5CommandId, action: eaAction } = await mt5ExecutionAdapter.deliver({
         liveRow: sent,
         bridgeUserId: bridge!.userId!,
         bridgeConnectionId: bridge!.id,
@@ -3873,6 +4082,24 @@ async function enqueueBridgedMt5Command(opts: {
 
   return { mt5CommandId: ins!.id, action };
 }
+
+// R2-S7 — the ONE adapter instance the dispatch path consumes (typed as the
+// interface, never the class, so the R5 Deriv adapter can slot in behind the
+// same seam). Wrapping — not reimplementing — enqueueBridgedMt5Command keeps
+// delivery byte-equivalent: same INSERT, same silent-close-failure guard,
+// same UNMAPPED_LIVE_COMMAND_TYPE throw the call site's catch maps to
+// BRIDGE_UNMAPPED_COMMAND_TYPE. The wrapper is an explicit field-forwarding
+// call (not a bare function reference) so the check-live-dispatch-cas CI
+// guard's mirror-call literal keeps matching the ONLY place delivery is
+// invoked — which sits, as the guard requires, after the dispatch CAS claim
+// and the race-lost refusal in source order.
+const mt5ExecutionAdapter: ExecutionAdapter = new Mt5EaBridgeAdapter(
+  (command) => enqueueBridgedMt5Command({
+    liveRow: command.liveRow,
+    bridgeUserId: command.bridgeUserId,
+    bridgeConnectionId: command.bridgeConnectionId,
+  }),
+);
 
 export type BridgedLiveOutcome =
   | "LIVE_FILLED"

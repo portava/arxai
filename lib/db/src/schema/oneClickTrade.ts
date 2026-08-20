@@ -223,6 +223,22 @@ export const arxDispatchExposureReservationsTable = pgTable(
     symbol: text("symbol").notNull(),
     lotSize: doublePrecision("lot_size").notNull(),
     status: text("status").notNull().default("RESERVED"),
+    // R3 slice 3 — optional TTL for a future stuck-RESERVED sweeper. NULL =
+    // no expiry (every legacy row, and every row until the writer starts
+    // stamping it). MIGRATION IMPLICATION: additive nullable column — needs
+    // `db push` (owner-run) before ANY code writes it; the INSERT in
+    // lib/concurrency/exposureReservation.ts deliberately does NOT name this
+    // column yet, because a raw INSERT against a not-yet-migrated production
+    // table would fail-closed every SHARED_MASTER_MT5 dispatch.
+    // SWEEP CONSIDERATION (for the future sweeper, recorded here with the
+    // column): an expired RESERVED row may be released ONLY when its linked
+    // arx_live_commands row rests in a reservation-RELEASING terminal state
+    // (settleReservationForStatus === "RELEASE") or provably never
+    // dispatched. NEVER sweep a reservation whose command is epistemic
+    // (LIVE_UNKNOWN / LIVE_RECONCILIATION_REQUIRED) — those HOLD by the G1b
+    // matrix; releasing them under-counts the pool and can over-expose the
+    // master account.
+    expiresAt: timestamp("expires_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

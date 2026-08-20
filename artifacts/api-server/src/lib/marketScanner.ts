@@ -37,6 +37,11 @@ import {
 import { routeCandles, routeQuote } from "./data/marketDataRouter.js";
 import { classifySymbol, resolveDerivSymbol } from "./data/marketDataRouter.js";
 import {
+  buildFeatureSnapshot,
+  latestCloseIso,
+  type FeatureSnapshot,
+} from "./features/featureSnapshot.js";
+import {
   ARX_FOCUS_MARKETS,
   getTierOneMarkets,
   isApprovedArxMarket,
@@ -342,6 +347,19 @@ export interface ScannerOpportunity {
    * stay valid; real scans always attach it.
    */
   regime?: ScannerRegimeRead;
+  /**
+   * ONE FEATURE PATH (R7 step 4) — the shared feature engine's snapshot for
+   * this row, computed ONCE per symbol scan from the SAME routed candle window
+   * the regime state machine consumes (never a second fetch, never simulator
+   * bars). Either the exact `FeatureVector` (stamped with `featureSetId` +
+   * `dataSnapshotHash`) or an honest refusal (INSUFFICIENT_DATA /
+   * LOOKAHEAD_REFUSED). ADDITIVE ONLY in this slice: no scoring, label, gate,
+   * or ranking consumes it here — the expectancy engine
+   * (lib/domain/src/decision-intelligence/expectancy.engine.ts) consumes these
+   * snapshots in a later calibration step. Absent when the router served no
+   * candles (no honest asOf anchor exists) — mirroring how fixtures omit it.
+   */
+  featureSnapshot?: FeatureSnapshot;
   /**
    * HTF TREND FVG PULLBACK (Task #675) — display/decision-support CHILD input.
    * Higher-timeframe (4H+1H) trend alignment → 5M pullback through 50 MA/200 EMA
@@ -1316,6 +1334,31 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
     // analysis window is unchanged for every other consumer). No feed / thin
     // feed ⇒ UNKNOWN, and computeFinalRead withholds the actionable label.
     const regime = resolveScannerRegime(sym, tf, routed?.regimeCandles ?? null);
+    // ── ONE FEATURE PATH (R7 step 4) ───────────────────────────────────────
+    // Compute the shared-engine feature snapshot ONCE per symbol scan, from
+    // the SAME routed window the regime authority just consumed — no second
+    // fetch, so scanner features and regime can never describe different data.
+    // asOf is anchored to the newest bar's CLOSE (latestCloseIso): every
+    // supplied bar is knowable then, and replaying the same candles reproduces
+    // the byte-identical snapshot. No routed candles ⇒ no honest anchor ⇒ the
+    // field stays absent (an AWAITING_FEED row has no features to claim).
+    // ADDITIVE ONLY: nothing below reads it — scoring/labels/gates are
+    // unchanged in this slice; the expectancy engine
+    // (lib/domain/src/decision-intelligence/expectancy.engine.ts) consumes
+    // these snapshots in a later calibration step.
+    let featureSnapshot: FeatureSnapshot | undefined;
+    try {
+      const featureCandles = routed?.regimeCandles ?? [];
+      const featureAsOf = latestCloseIso(featureCandles);
+      if (featureAsOf !== null) {
+        featureSnapshot = buildFeatureSnapshot(sym, featureCandles, featureAsOf);
+      }
+    } catch {
+      // NOT a lookahead swallow: buildFeatureSnapshot already surfaces
+      // LookaheadError as a typed LOOKAHEAD_REFUSED refusal and rethrows only
+      // non-lookahead defects. A defect in this additive decoration must not
+      // kill an otherwise-honest scanner row; the row ships without the field.
+    }
     // R7 step 5 — the spreadCondition factor consumes the ACTUAL routed quote
     // spread (null → neutral). 7 is the pre-existing strategyMatch default.
     const opp = opportunityScore(a, 7, { spreadPrice: routed?.quoteSpreadPrice ?? null });
@@ -1515,6 +1558,7 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
       chartConfirmed,
       sufficiency,
       regime,
+      featureSnapshot,
       patternImpact,
       trendlineImpact,
     };

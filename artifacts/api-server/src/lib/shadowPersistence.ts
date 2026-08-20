@@ -73,6 +73,14 @@ export function shapeShadowDecisionRow(
     rgApproved:      d.riskGovernor.approved,
     rgLevel:         d.riskGovernor.level,
     rgHardBlocks:    JSON.stringify(d.riskGovernor.hardBlocks),
+    // R7 step 4 — feature provenance, persisted verbatim so research/replay
+    // can reproduce the decision's exact feature assumptions (Part IV).
+    // Additive + nullable: an unstamped decision (pre-R7, or a defect skipped
+    // the stamp) persists null — honest "assumptions not recorded", never a
+    // fabricated default. The snapshot may itself be an honest refusal
+    // (INSUFFICIENT_DATA / LOOKAHEAD_REFUSED) — refusals are evidence too.
+    featureSetId:    d.featureSetId ?? null,
+    featureSnapshot: d.featureSnapshot ? JSON.stringify(d.featureSnapshot) : null,
     predictedAt:     new Date(d.ts),
     expiresAt:       new Date(d.expiresAt),
     status:          d.status,

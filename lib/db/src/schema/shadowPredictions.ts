@@ -48,6 +48,20 @@ export const shadowPredictionsTable = pgTable("shadow_predictions", {
   rgLevel:       text("rg_level"),
   rgHardBlocks:  text("rg_hard_blocks"),              // JSON array as text
 
+  // ── R7 step 4 — feature provenance (research/replay reproducibility) ──────
+  // featureSetId pins WHICH shared feature engine version (lib/features
+  // FEATURE_SET_ID, e.g. "fset_v1") ran when the decision was made;
+  // featureSnapshot is the EXACT FeatureSnapshot it saw (JSON as text, same
+  // convention as rgHardBlocks) — either the full FeatureVector or an honest
+  // INSUFFICIENT_DATA / LOOKAHEAD_REFUSED refusal. Both nullable + additive:
+  // pre-R7 rows read as null (their assumptions were never recorded — an
+  // honest UNKNOWN, never backfilled).
+  // MIGRATION IMPLICATION: two additive nullable columns — plain
+  // `ALTER TABLE shadow_predictions ADD COLUMN` via drizzle-kit, no backfill,
+  // no rewrite, existing readers/writers unaffected.
+  featureSetId:    text("feature_set_id"),
+  featureSnapshot: text("feature_snapshot"),          // JSON FeatureSnapshot as text
+
   predictedAt:   timestamp("predicted_at", { withTimezone: true }).notNull().defaultNow(),
   expiresAt:     timestamp("expires_at", { withTimezone: true }),
 
