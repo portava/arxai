@@ -101,6 +101,9 @@ importers:
       '@workspace/domain':
         specifier: workspace:*
         version: link:../../lib/domain
+      '@workspace/features':
+        specifier: workspace:*
+        version: link:../../lib/features
       '@workspace/integrations-anthropic-ai':
         specifier: workspace:*
         version: link:../../lib/integrations-anthropic-ai
