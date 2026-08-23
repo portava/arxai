@@ -64,6 +64,7 @@ import { evaluateEntryDataSufficiency } from "./entryDataSufficiency.js";
 import {
   Mt5EaBridgeAdapter,
   type ExecutionAdapter,
+  type Mt5DeliveryResult,
 } from "./executionAdapter.js";
 // R2-S4 — the freshness gate's run-row shape is a type-only import (erased at
 // runtime). The VALUE import of reconciliationFreshnessVerdict is dynamic at
@@ -4125,12 +4126,19 @@ async function enqueueBridgedMt5Command(opts: {
 // guard's mirror-call literal keeps matching the ONLY place delivery is
 // invoked — which sits, as the guard requires, after the dispatch CAS claim
 // and the race-lost refusal in source order.
-const mt5ExecutionAdapter: ExecutionAdapter = new Mt5EaBridgeAdapter(
+const mt5ExecutionAdapter: ExecutionAdapter<Mt5DeliveryResult> = new Mt5EaBridgeAdapter(
+  // Deliberately `.then(...)` rather than an async/await block: the seam's own
+  // test pins that the enqueue helper is never directly awaited in this file,
+  // so a direct awaited call can never bypass the adapter. Keeping that pin
+  // literally true is worth more than the cosmetic win of await.
+  // transportRef is the venue-neutral handle; for the EA bridge it IS the
+  // mailbox row id. Both are carried so existing consumers keep the typed
+  // numeric id while the seam itself stays venue-agnostic.
   (command) => enqueueBridgedMt5Command({
     liveRow: command.liveRow,
     bridgeUserId: command.bridgeUserId,
     bridgeConnectionId: command.bridgeConnectionId,
-  }),
+  }).then((r) => ({ ...r, transportRef: String(r.mt5CommandId) })),
 );
 
 export type BridgedLiveOutcome =

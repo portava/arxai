@@ -36,20 +36,37 @@ export interface ExecutionDeliveryCommand {
   bridgeConnectionId: number;
 }
 
-/** What a successful delivery reports back to the pipeline. */
+/**
+ * What a successful delivery reports back to the pipeline.
+ *
+ * `transportRef` is the venue-neutral handle: an opaque reference to WHERE the
+ * command now lives in that venue's transport. This is what `mt5CommandId`
+ * always meant — the generalization names the concept rather than inventing
+ * one, so a second venue does not have to pretend to have an mt5_commands row.
+ */
 export interface DeliveryResult {
-  /** The transport-mirror row id (mt5_commands PK for the EA bridge). */
-  mt5CommandId: number;
+  /** Opaque, venue-scoped. EA bridge: the mt5_commands PK as a string. */
+  transportRef: string;
   /** The venue-level action the command was mapped to (e.g. OPEN_MARKET). */
   action: string;
+}
+
+/**
+ * The EA bridge's result. Keeps the numeric mailbox id as a first-class field
+ * because the pipeline's audit and logging rows are typed on it; a stringly
+ * -typed transportRef alone would silently widen those.
+ */
+export interface Mt5DeliveryResult extends DeliveryResult {
+  /** The transport-mirror row id (mt5_commands PK). */
+  mt5CommandId: number;
 }
 
 /** Minimal venue seam. deliver() either resolves with the transport handle
  *  or REJECTS — it never swallows a failure into a fake success, because the
  *  pipeline's fail-closed mark-failed handling depends on the rejection. */
-export interface ExecutionAdapter {
+export interface ExecutionAdapter<R extends DeliveryResult = DeliveryResult> {
   readonly venue: string;
-  deliver(command: ExecutionDeliveryCommand): Promise<DeliveryResult>;
+  deliver(command: ExecutionDeliveryCommand): Promise<R>;
 }
 
 export const MT5_EA_BRIDGE_VENUE = "mt5_ea_bridge" as const;
@@ -60,14 +77,21 @@ export const MT5_EA_BRIDGE_VENUE = "mt5_ea_bridge" as const;
  * stays private to liveCommandPipeline.ts). Pure pass-through: no retries,
  * no error mapping, no added semantics.
  */
-export class Mt5EaBridgeAdapter implements ExecutionAdapter {
+export class Mt5EaBridgeAdapter implements ExecutionAdapter<Mt5DeliveryResult> {
   readonly venue: typeof MT5_EA_BRIDGE_VENUE = MT5_EA_BRIDGE_VENUE;
 
   constructor(
-    private readonly enqueue: (opts: ExecutionDeliveryCommand) => Promise<DeliveryResult>,
+    private readonly enqueue: (opts: ExecutionDeliveryCommand) => Promise<Mt5DeliveryResult>,
   ) {}
 
-  deliver(command: ExecutionDeliveryCommand): Promise<DeliveryResult> {
+  deliver(command: ExecutionDeliveryCommand): Promise<Mt5DeliveryResult> {
     return this.enqueue(command);
   }
 }
+
+// NOT generalized yet, deliberately: ExecutionDeliveryCommand still carries an
+// ArxLiveCommand whose volume is expressed in MT5 lots. A Deriv multiplier
+// contract has no lot concept (stake x multiplier), so the INPUT side needs a
+// venue-neutral notional — but shaping that before a certified Deriv round-trip
+// would be guessing at the most safety-critical boundary in the system. It
+// lands with the Deriv adapter, informed by a real response.

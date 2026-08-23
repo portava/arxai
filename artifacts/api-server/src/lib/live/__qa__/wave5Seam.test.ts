@@ -78,7 +78,7 @@ const exposureSource = readFileSync(
 
 test("adapter venue literal is CI-pinned", () => {
   assert.equal(MT5_EA_BRIDGE_VENUE, "mt5_ea_bridge");
-  const adapter = new Mt5EaBridgeAdapter(async () => ({ mt5CommandId: 1, action: "X" }));
+  const adapter = new Mt5EaBridgeAdapter(async () => ({ mt5CommandId: 1, transportRef: "1", action: "X" }));
   assert.equal(adapter.venue, "mt5_ea_bridge");
 });
 
@@ -86,7 +86,7 @@ test("deliver() is a pure pass-through: same command object in, same result out"
   const seen: unknown[] = [];
   const adapter = new Mt5EaBridgeAdapter(async (opts) => {
     seen.push(opts);
-    return { mt5CommandId: 42, action: "OPEN_MARKET" };
+    return { mt5CommandId: 42, transportRef: "42", action: "OPEN_MARKET" };
   });
   const command = {
     liveRow: { commandId: "lvcmd_x" } as never,
@@ -96,7 +96,7 @@ test("deliver() is a pure pass-through: same command object in, same result out"
   const result = await adapter.deliver(command);
   assert.equal(seen.length, 1);
   assert.equal(seen[0], command, "the exact command object must be forwarded (no reshaping)");
-  assert.deepEqual(result, { mt5CommandId: 42, action: "OPEN_MARKET" });
+  assert.deepEqual(result, { mt5CommandId: 42, transportRef: "42", action: "OPEN_MARKET" });
 });
 
 test("deliver() NEVER swallows a failure — rejection propagates verbatim", async () => {
@@ -116,8 +116,10 @@ test("pipeline consumes the interface: adapter import + injected wrap, no direct
     "pipeline must import the seam module",
   );
   assert.ok(
-    /new Mt5EaBridgeAdapter\(\s*\(command\) => enqueueBridgedMt5Command\(\{/.test(pipelineSource),
-    "the sole implementation must wrap the existing enqueue function unchanged (field-forwarding injection)",
+    /new Mt5EaBridgeAdapter\([\s\S]*?\(command\) => enqueueBridgedMt5Command\(\{/.test(pipelineSource),
+    "the sole implementation must still wrap enqueueBridgedMt5Command with field-forwarding "
+      + "(the wrapper now awaits it to attach the venue-neutral transportRef; the mirror-call "
+      + "literal check-live-dispatch-cas matches must survive)",
   );
   assert.ok(
     pipelineSource.includes("mt5ExecutionAdapter.deliver({"),
@@ -132,8 +134,9 @@ test("pipeline consumes the interface: adapter import + injected wrap, no direct
     "exactly ONE delivery invocation exists — inside the adapter injection (the CAS guard's mirror literal)",
   );
   assert.ok(
-    /const mt5ExecutionAdapter: ExecutionAdapter =/.test(pipelineSource),
-    "the instance must be typed as the INTERFACE so R5's Deriv adapter can slot in",
+    /const mt5ExecutionAdapter: ExecutionAdapter(<[^>]+>)? =/.test(pipelineSource),
+    "the instance must be typed as the INTERFACE (optionally parameterised by its "
+      + "venue result) so R5's Deriv adapter can slot in — never as the concrete class",
   );
 });
 
@@ -459,4 +462,31 @@ test("startup notice: the staged default is named loudly at module init (source 
     pipelineSource.includes("docs/OWNER_DECISIONS.md"),
     "the default-flip must cite the Owner Decision Registry",
   );
+});
+
+// ── R5 groundwork — the seam's RETURN type is venue-neutral ─────────────────
+
+test("DeliveryResult exposes a venue-neutral transportRef, and MT5 carries both", async () => {
+  const adapter = new Mt5EaBridgeAdapter(
+    async () => ({ mt5CommandId: 77, transportRef: "77", action: "OPEN_MARKET" }),
+  );
+  const r = await adapter.deliver({
+    liveRow: {} as never, bridgeUserId: 1, bridgeConnectionId: 2,
+  });
+  // transportRef is what a second venue implements; mt5CommandId stays typed
+  // for the existing audit/logging consumers.
+  assert.equal(r.transportRef, "77");
+  assert.equal(r.mt5CommandId, 77);
+});
+
+test("the seam's INPUT is deliberately NOT generalized yet", () => {
+  const src = readFileSync(
+    new URL("../executionAdapter.ts", import.meta.url), "utf8",
+  );
+  // ExecutionDeliveryCommand still carries an MT5-lot-shaped ArxLiveCommand.
+  // Generalizing it before a certified Deriv round-trip would be guessing at
+  // the most safety-critical boundary; the file must SAY so rather than leave
+  // a future reader assuming the seam is finished.
+  assert.match(src, /NOT generalized yet, deliberately/);
+  assert.match(src, /ExecutionDeliveryCommand still carries/);
 });
