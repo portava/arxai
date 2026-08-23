@@ -28,6 +28,10 @@ import {
   getMyArming,
   LIVE_CONFIRMATION_PHRASE,
   ARX_LIVE_HARD_WEEKLY_DRAWDOWN_PCT,
+  ARX_LIVE_HARD_MAX_ENTRY_DEVIATION_BPS,
+  ARX_LIVE_HARD_MAX_SIGNAL_AGE_MS,
+  ARX_LIVE_HARD_MAX_CLUSTER_RISK_USD,
+  ARX_LIVE_HARD_MAX_CLUSTER_POSITIONS,
 } from "../lib/live/liveArming.js";
 import {
   createLiveDraft,
@@ -701,7 +705,12 @@ router.get("/me/live/settings", requireUser, async (req, res) => {
   const userId = uid(req);
   if (!userId) { res.status(401).json({ error: "AUTH_REQUIRED" }); return; }
   const settings = await getOrCreateUserSettings(userId);
-  res.json({ settings, hardWeeklyDrawdownPct: ARX_LIVE_HARD_WEEKLY_DRAWDOWN_PCT, ...envelope() });
+  res.json({ settings, hardWeeklyDrawdownPct: ARX_LIVE_HARD_WEEKLY_DRAWDOWN_PCT, hardCaps: {
+    maxEntryDeviationBps: ARX_LIVE_HARD_MAX_ENTRY_DEVIATION_BPS,
+    maxSignalAgeMs: ARX_LIVE_HARD_MAX_SIGNAL_AGE_MS,
+    maxClusterRiskUsd: ARX_LIVE_HARD_MAX_CLUSTER_RISK_USD,
+    maxClusterPositions: ARX_LIVE_HARD_MAX_CLUSTER_POSITIONS,
+  }, ...envelope() });
 });
 
 router.put("/me/live/settings", requireUser, async (req, res) => {
@@ -714,14 +723,30 @@ router.put("/me/live/settings", requireUser, async (req, res) => {
   // and may only be overridden by an admin via `adminAllowNoStopLoss`
   // (admin-only path, not exposed on this endpoint). Any `requireStopLoss`
   // field in the request body is silently dropped.
+  const capField = (key: string): number | null | undefined => {
+    if (!(key in b)) return undefined;
+    const v = b[key];
+    if (v === null) return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
   const updated = await updateUserSettings({
     userId,
     weeklyDrawdownCeilingPct: b.weeklyDrawdownCeilingPct != null ? Number(b.weeklyDrawdownCeilingPct) : undefined,
     dailyLossLimitUsd: b.dailyLossLimitUsd != null ? Number(b.dailyLossLimitUsd) : undefined,
     maxLotPerMarket: b.maxLotPerMarket,
     allowedSymbols: Array.isArray(b.allowedSymbols) ? b.allowedSymbols.map(String) : undefined,
+    maxEntryDeviationBps: capField("maxEntryDeviationBps"),
+    maxSignalAgeMs: capField("maxSignalAgeMs"),
+    maxClusterRiskUsd: capField("maxClusterRiskUsd"),
+    maxClusterPositions: capField("maxClusterPositions"),
   });
-  res.json({ settings: updated, hardWeeklyDrawdownPct: ARX_LIVE_HARD_WEEKLY_DRAWDOWN_PCT, ...envelope() });
+  res.json({ settings: updated, hardWeeklyDrawdownPct: ARX_LIVE_HARD_WEEKLY_DRAWDOWN_PCT, hardCaps: {
+    maxEntryDeviationBps: ARX_LIVE_HARD_MAX_ENTRY_DEVIATION_BPS,
+    maxSignalAgeMs: ARX_LIVE_HARD_MAX_SIGNAL_AGE_MS,
+    maxClusterRiskUsd: ARX_LIVE_HARD_MAX_CLUSTER_RISK_USD,
+    maxClusterPositions: ARX_LIVE_HARD_MAX_CLUSTER_POSITIONS,
+  }, ...envelope() });
 });
 
 // ── Live EA heartbeat debug — surfaces the freshest non-revoked bridge for

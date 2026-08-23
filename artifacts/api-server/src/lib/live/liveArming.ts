@@ -25,6 +25,15 @@ export const LIVE_CONFIRMATION_PHRASE = "ENABLE LIVE TRADING";
 export const LIVE_ARMING_SCHEMA_VERSION = "v2-split-account-broker-server";
 export const ARX_LIVE_HARD_WEEKLY_DRAWDOWN_PCT = 10;
 
+// Wave-4 pre-gate caps (arxLiveUserSettings) — user-settable, tighten-only,
+// clamped to these server-side ceilings. A user may set a STRICTER value
+// than the ceiling; they can never loosen past it. Consistent with the
+// weekly-drawdown pattern above (Math.min against the hard cap).
+export const ARX_LIVE_HARD_MAX_ENTRY_DEVIATION_BPS = 50;   // 0.5% max collar
+export const ARX_LIVE_HARD_MAX_SIGNAL_AGE_MS = 5 * 60_000; // 5 minutes
+export const ARX_LIVE_HARD_MAX_CLUSTER_RISK_USD = 5_000;
+export const ARX_LIVE_HARD_MAX_CLUSTER_POSITIONS = 10;
+
 /**
  * Per-market sane defaults. Users can choose LOWER; server refuses to
  * accept HIGHER without admin override (Phase A: admin override deferred).

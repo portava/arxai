@@ -84,6 +84,10 @@ import {
   ARX_LIVE_DEFAULT_MAX_LOT_PER_MARKET,
   ARX_LIVE_DEFAULT_ALLOWED_SYMBOLS,
   ARX_LIVE_HARD_WEEKLY_DRAWDOWN_PCT,
+  ARX_LIVE_HARD_MAX_ENTRY_DEVIATION_BPS,
+  ARX_LIVE_HARD_MAX_SIGNAL_AGE_MS,
+  ARX_LIVE_HARD_MAX_CLUSTER_RISK_USD,
+  ARX_LIVE_HARD_MAX_CLUSTER_POSITIONS,
 } from "./liveArming.js";
 import { liveBrokerExecutionEnabled, resolveLiveBrokerExecutionEnabledAsync, buildLiveIdempotencyKey, PHASE_B_LIVE_LOG_PREFIX } from "./phaseBConfig.js";
 import { getEnvelope } from "../adminTrading/safetyEnvelope.js";
@@ -4623,6 +4627,14 @@ export async function updateUserSettings(args: {
   maxLotPerMarket?: Record<string, number>;
   allowedSymbols?: string[];
   requireStopLoss?: boolean;
+  // Wave-4 pre-gate caps. `null` explicitly clears a cap (gate skipped for
+  // that dimension); `undefined` leaves the stored value untouched.
+  // Non-null values are ALWAYS clamped to the hard ceiling in liveArming.ts —
+  // a user can tighten past it but can never loosen beyond it.
+  maxEntryDeviationBps?: number | null;
+  maxSignalAgeMs?: number | null;
+  maxClusterRiskUsd?: number | null;
+  maxClusterPositions?: number | null;
 }) {
   await getOrCreateUserSettings(args.userId);
   const updates: Record<string, unknown> = { updatedAt: new Date() };
@@ -4645,6 +4657,23 @@ export async function updateUserSettings(args: {
     updates.allowedSymbols = args.allowedSymbols.filter((s) => ARX_LIVE_DEFAULT_ALLOWED_SYMBOLS.includes(s));
   }
   if (args.requireStopLoss !== undefined) updates.requireStopLoss = args.requireStopLoss;
+
+  // Each cap: undefined = leave untouched; null = explicitly clear (gate
+  // skipped); a finite number = clamp into (0, hardCeiling].
+  const clampCap = (value: number | null | undefined, hardCeiling: number): number | null | undefined => {
+    if (value === undefined) return undefined;
+    if (value === null) return null;
+    if (!Number.isFinite(value) || value <= 0) return null; // non-positive/garbage clears, never fabricates a cap
+    return Math.min(value, hardCeiling);
+  };
+  const entryDeviation = clampCap(args.maxEntryDeviationBps, ARX_LIVE_HARD_MAX_ENTRY_DEVIATION_BPS);
+  if (entryDeviation !== undefined) updates.maxEntryDeviationBps = entryDeviation;
+  const signalAge = clampCap(args.maxSignalAgeMs, ARX_LIVE_HARD_MAX_SIGNAL_AGE_MS);
+  if (signalAge !== undefined) updates.maxSignalAgeMs = signalAge;
+  const clusterRisk = clampCap(args.maxClusterRiskUsd, ARX_LIVE_HARD_MAX_CLUSTER_RISK_USD);
+  if (clusterRisk !== undefined) updates.maxClusterRiskUsd = clusterRisk;
+  const clusterPositions = clampCap(args.maxClusterPositions, ARX_LIVE_HARD_MAX_CLUSTER_POSITIONS);
+  if (clusterPositions !== undefined) updates.maxClusterPositions = clusterPositions;
 
   await db.update(arxLiveUserSettingsTable).set(updates)
     .where(eq(arxLiveUserSettingsTable.userId, args.userId));
