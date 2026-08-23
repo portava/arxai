@@ -116,3 +116,37 @@ test("approval state distinguishes NOT_APPROVED from UNKNOWN", () => {
   // Absent evidence must NOT read as a denial — it reads as unknown.
   assert.equal(buildConnectionCard(input({ approvedForMasterLive: null })).approvalState, "UNKNOWN");
 });
+
+// ── Route wiring (the projection must not be dead code) ─────────────────────
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+
+const routeSrc = readFileSync(
+  path.join(path.dirname(fileURLToPath(import.meta.url)), "../../../routes/meBrokerHub.ts"),
+  "utf8",
+);
+
+test("the card projection is actually served by a list route", () => {
+  assert.match(routeSrc, /router\.get\("\/me\/broker-hub\/connections",\s*requireUser/);
+  assert.match(routeSrc, /buildConnectionCard\(/);
+});
+
+test("every card query is scoped to the authenticated user", () => {
+  const start = routeSrc.indexOf('router.get("/me/broker-hub/connections",');
+  const block = routeSrc.slice(start, routeSrc.indexOf("router.get", start + 10));
+  // Three per-user reads plus the reconciliation lookup must all filter by
+  // the session user — a card set leaking another user's connection would be
+  // a per-user isolation breach, not just a display bug.
+  assert.match(block, /eq\(mt5ConnectionTable\.userId, userId\)/);
+  assert.match(block, /eq\(userSlotAllocationTable\.userId, userId\)/);
+  assert.match(block, /eq\(userMasterLiveAccessTable\.userId, userId\)/);
+  assert.match(block, /user_id = \$\{userId\}/);
+  assert.ok(!/req\.(query|body|params)\.userId/.test(block), "userId must never come from the request");
+});
+
+test("the list route advertises no order submission (Phase 1 is read-only)", () => {
+  const start = routeSrc.indexOf('router.get("/me/broker-hub/connections",');
+  const block = routeSrc.slice(start, routeSrc.indexOf("router.get", start + 10));
+  assert.match(block, /orderSubmissionAvailable: false/);
+});

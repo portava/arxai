@@ -12,6 +12,14 @@ import {
 } from "../lib/brokerHub/mt5ReadOnlyAdapter.js";
 import { mt5ProjectionReader } from "../lib/brokerHub/mt5ProjectionReader.js";
 import { isBrokerHubReadOnlyEnabled } from "../lib/brokerHub/featureFlag.js";
+import { buildConnectionCard } from "../lib/brokerHub/connectionCard.js";
+import { and, desc, eq, sql } from "drizzle-orm";
+import {
+  db,
+  mt5ConnectionTable,
+  userSlotAllocationTable,
+  userMasterLiveAccessTable,
+} from "@workspace/db";
 
 const router = Router();
 const NO_TRADE_FLAGS = {
@@ -69,6 +77,95 @@ function withAdapter(
   }
   return new Mt5ReadOnlyAdapter(reader, userId, id);
 }
+
+// Spec §3.1 — the Broker Connections card set for THIS user.
+//
+// Read-only and per-user scoped: every row is filtered by req.authUser.id, so
+// one user can never see another's connection. Each card is built by the pure
+// projection in lib/brokerHub/connectionCard.ts, which declares any field it
+// cannot source rather than guessing one.
+router.get("/me/broker-hub/connections", requireUser, async (req, res) => {
+  const userId = ownerId(req);
+  if (!userId) { notFound(res); return; }
+  try {
+    const now = new Date();
+
+    const connections = await db.select().from(mt5ConnectionTable)
+      .where(eq(mt5ConnectionTable.userId, userId));
+
+    // Allocation and approval are per-USER (not per-connection), so they are
+    // read once and applied to every card.
+    const allocRows = await db.select({
+      allocationStatus: userSlotAllocationTable.allocationStatus,
+      tradingFrozen: userSlotAllocationTable.tradingFrozen,
+      closeOnlyMode: userSlotAllocationTable.closeOnlyMode,
+      allocatedFunds: userSlotAllocationTable.allocatedFunds,
+    }).from(userSlotAllocationTable)
+      .where(eq(userSlotAllocationTable.userId, userId)).limit(1);
+    const alloc = allocRows[0] ?? null;
+
+    const approvalRows = await db.select({
+      approvedForMasterLive: userMasterLiveAccessTable.approvedForMasterLive,
+      masterLiveStatus: userMasterLiveAccessTable.masterLiveStatus,
+    }).from(userMasterLiveAccessTable)
+      .where(eq(userMasterLiveAccessTable.userId, userId)).limit(1);
+    const approval = approvalRows[0] ?? null;
+
+    // Newest COMPLETED reconciliation run for this user. Raw SQL because the
+    // table is young and written by the reconciler via raw SQL too; a failure
+    // here degrades the field to null (and the card says so) rather than
+    // failing the whole card set.
+    let lastReconciledAt: Date | null = null;
+    try {
+      const runs = await db.execute(sql`
+        select completed_at from reconciliation_runs
+        where user_id = ${userId} and status = 'COMPLETED' and completed_at is not null
+        order by completed_at desc limit 1
+      `);
+      const first = (runs as unknown as { rows?: Array<{ completed_at?: unknown }> }).rows?.[0];
+      const raw = first?.completed_at;
+      if (raw instanceof Date) lastReconciledAt = raw;
+      else if (typeof raw === "string") {
+        const parsed = new Date(raw);
+        if (!Number.isNaN(parsed.getTime())) lastReconciledAt = parsed;
+      }
+    } catch { /* stays null; the card declares it unavailable */ }
+
+    const cards = connections.map((c) => ({
+      connectionId: c.id,
+      ...buildConnectionCard({
+        connectionName: c.connectionName ?? null,
+        status: c.status ?? null,
+        accountNumber: c.accountNumber ?? null,
+        brokerName: c.brokerName ?? null,
+        serverName: c.serverName ?? null,
+        accountCurrency: c.accountCurrency ?? null,
+        mode: c.mode ?? null,
+        accountType: c.accountType ?? null,
+        eaVersion: c.eaVersion ?? null,
+        lastHeartbeat: c.lastHeartbeat ?? null,
+        lastPositionsSnapshotAt: c.lastPositionsSnapshotAt ?? null,
+        clockDriftSeconds: c.clockDriftSeconds ?? null,
+        readOnlyMode: c.readOnlyMode ?? null,
+        allowOrderExecution: c.allowOrderExecution ?? null,
+        tokenRevokedAt: c.tokenRevokedAt ?? null,
+        tokenRotatedAt: c.tokenRotatedAt ?? null,
+        allocationStatus: alloc?.allocationStatus ?? null,
+        tradingFrozen: alloc?.tradingFrozen ?? null,
+        closeOnlyMode: alloc?.closeOnlyMode ?? null,
+        allocatedFunds: alloc?.allocatedFunds ?? null,
+        approvedForMasterLive: approval?.approvedForMasterLive ?? null,
+        masterLiveStatus: approval?.masterLiveStatus ?? null,
+        lastReconciledAt,
+        now,
+      }),
+    }));
+
+    res.json({ connections: cards, orderSubmissionAvailable: false });
+  } catch {
+    res.status(500).json({ error: "BROKER_METADATA_UNAVAILABLE" });
+  }
+});
 
 router.get("/me/broker-hub/connections/:connectionId", requireUser, async (req, res) => {
   const adapter = withAdapter(req, res, mt5ProjectionReader);
