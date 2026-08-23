@@ -35,6 +35,7 @@
     "test:bridge-scoped-candle-serving": "node --import tsx --test --test-force-exit src/lib/data/__qa__/bridgeScopedCandleServing.test.ts",
     "test:broker-confirmed-gate": "node --import tsx --test --test-force-exit src/lib/data/__qa__/brokerConfirmedGate.test.ts",
     "test:decision-grade-wait": "node --import tsx --test --test-force-exit src/lib/data/__qa__/decisionGradeWait.test.ts",
+    "test:deriv-execution-messages": "node --import tsx --test --test-force-exit src/lib/deriv/__qa__/executionMessages.test.ts",
     "test:ack-partial-fill": "node --import tsx --test --test-force-exit src/lib/live/__qa__/ackPartialFill.test.ts",
     "test:broker-catalog": "node --import tsx --test --test-force-exit src/routes/__qa__/brokerCatalog.test.ts",
     "test:preview-provenance-honesty": "node --import tsx --test --test-force-exit src/lib/execution/__qa__/previewProvenanceHonesty.test.ts",
