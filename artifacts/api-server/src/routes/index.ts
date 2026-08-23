@@ -607,6 +607,13 @@ router.use(adminLearningVersionsRouter);
 
 // Owner Decision Registry (blueprint Phase 0) — append-only rulings ledger.
 // ADMIN/OWNER gated inside the router; no update/delete surface exists.
+// Multi-broker spec §15 — GET /api/brokers/catalog. Read-only venue catalog:
+// implemented venues report real capability, unimplemented ones report an
+// explicit NOT_IMPLEMENTED/ONBOARDING_REQUIRED state (§21). No order
+// submission exists at Phase 1 for any venue.
+import brokerCatalogRouter from "./brokerCatalog.js";
+router.use(brokerCatalogRouter);
+
 import adminOwnerDecisionsRouter from "./adminOwnerDecisions.js";
 router.use(adminOwnerDecisionsRouter);
 
