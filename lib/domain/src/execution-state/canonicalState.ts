@@ -133,6 +133,10 @@ export const ARX_LIVE_STATUS_MAP: MappingTable = Object.freeze({
     note: "conflates the server no-pickup TTL sweep with the EA's own STALE_COMMAND_REJECTED refusal (since R2 S1, picked-up rows go to LIVE_UNKNOWN instead)",
   },
   // R2 S1 — epistemic states land losslessly on their canonical namesakes.
+  // R2 S5 — both map LOSSLESSLY: the canonical vocabulary has exact members
+  // for them, which is the whole point of the spec §20 separation.
+  LIVE_ACKNOWLEDGED: { state: "acknowledged", lossy: false },
+  LIVE_PARTIALLY_FILLED: { state: "partially_filled", lossy: false },
   LIVE_UNKNOWN: { state: "unknown", lossy: false },
   LIVE_RECONCILIATION_REQUIRED: { state: "reconciliation_required", lossy: false },
 } satisfies Record<string, CanonicalStateMapping>);

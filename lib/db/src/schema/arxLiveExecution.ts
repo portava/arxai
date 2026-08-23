@@ -35,6 +35,25 @@ export const ARX_LIVE_COMMAND_STATUSES = [
   // stamp LIVE_EXPIRED on a row with NO pickup evidence (arx pickedByEaAt
   // null AND transport mirror never claimed) — provable non-delivery.
   "LIVE_EXPIRED",
+  // R2 S5 (spec §12 / §20 "Acknowledged is not treated as filled") —
+  // NON-TERMINAL execution stages between dispatch and a settled outcome.
+  //
+  // LIVE_ACKNOWLEDGED: the broker acknowledged the order but NO fill is
+  // confirmed. An acknowledgement is not an execution; treating it as one is
+  // exactly the conflation §20 forbids. Reservation stays HELD.
+  // Reachable from the bridge-v2 TRADE_TRANSACTION lifecycle (REQUEST /
+  // ORDER_ADD without a dealTicket). The production v1.5x EA posts only a
+  // settled result, so this state is FORWARD-DECLARED for that path: the read
+  // layer and transition table recognize it ahead of a v2 writer, exactly as
+  // DEMO_PARTIALLY_FILLED was.
+  "LIVE_ACKNOWLEDGED",
+  // LIVE_PARTIALLY_FILLED: a broker ticket exists and executedVolume is
+  // strictly between zero and requestedVolume. Emittable TODAY — the EA
+  // already reports executedVolume; it was simply never classified, so a
+  // partial landed as a full LIVE_FILLED. Reservation stays HELD: the
+  // remainder is still working, so releasing on the filled portion would
+  // under-count exposure.
+  "LIVE_PARTIALLY_FILLED",
   // R2 S1 (audit-execution.md G1) — epistemic states. NON-TERMINAL.
   //
   // LIVE_UNKNOWN: the command was (or may have been) seen by the EA and no

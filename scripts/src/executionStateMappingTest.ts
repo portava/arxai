@@ -125,6 +125,11 @@ export async function run(): Promise<CiTestResultLike> {
     // R2 S1 — epistemic states, lossless onto their canonical namesakes.
     ["LIVE_UNKNOWN", "unknown", false],
     ["LIVE_RECONCILIATION_REQUIRED", "reconciliation_required", false],
+    // R2 S5 — execution stages, also lossless: the canonical enum has exact
+    // members for both, which is precisely what spec §20 ("acknowledged is
+    // not treated as filled") requires the vocabulary to express.
+    ["LIVE_ACKNOWLEDGED", "acknowledged", false],
+    ["LIVE_PARTIALLY_FILLED", "partially_filled", false],
   ] as const;
   checkVocabulary("arx_live_commands.status → canonical", fromArxLiveStatus, ARX_EXPECTED);
   {

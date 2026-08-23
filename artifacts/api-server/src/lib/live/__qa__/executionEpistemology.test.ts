@@ -50,7 +50,10 @@ const pipelineSource = readFileSync(
 test("the epistemic literals are in the schema vocabulary", () => {
   assert.ok((ARX_LIVE_COMMAND_STATUSES as readonly string[]).includes("LIVE_UNKNOWN"));
   assert.ok((ARX_LIVE_COMMAND_STATUSES as readonly string[]).includes("LIVE_RECONCILIATION_REQUIRED"));
-  assert.equal(ARX_LIVE_COMMAND_STATUSES.length, 13, "11 legacy + 2 epistemic literals");
+  assert.equal(
+    ARX_LIVE_COMMAND_STATUSES.length, 15,
+    "11 legacy + 2 epistemic (S1) + 2 execution-stage (S5: ACKNOWLEDGED, PARTIALLY_FILLED)",
+  );
 });
 
 test("LIVE_UNKNOWN and LIVE_RECONCILIATION_REQUIRED are NON-terminal; the prior terminal set is unchanged", () => {
@@ -68,13 +71,18 @@ test("LIVE_UNKNOWN and LIVE_RECONCILIATION_REQUIRED are NON-terminal; the prior 
 });
 
 test("the epistemic transitions are exactly the S1 plan — nothing wider", () => {
-  // Entry: only from SENT_TO_MT5_LIVE.
-  assert.equal(isAllowedLiveTransition("SENT_TO_MT5_LIVE", "LIVE_UNKNOWN"), true);
+  // Entry into LIVE_UNKNOWN: from a dispatched command, and (R2 S5) from the
+  // two unsettled execution stages — an acked order whose broker then goes
+  // quiet, or a partial whose remainder stops being reported, is genuinely
+  // unknown. Every OTHER origin stays illegal.
+  const unknownEntryPoints = new Set<ArxLiveCommandStatus>([
+    "SENT_TO_MT5_LIVE", "LIVE_ACKNOWLEDGED", "LIVE_PARTIALLY_FILLED",
+  ]);
   for (const from of ARX_LIVE_COMMAND_STATUSES) {
-    if (from === "SENT_TO_MT5_LIVE") continue;
     assert.equal(
-      isAllowedLiveTransition(from, "LIVE_UNKNOWN"), false,
-      `${from} → LIVE_UNKNOWN must be illegal`,
+      isAllowedLiveTransition(from, "LIVE_UNKNOWN"),
+      unknownEntryPoints.has(from),
+      `${from} → LIVE_UNKNOWN`,
     );
   }
   // LIVE_UNKNOWN escalates ONLY to LIVE_RECONCILIATION_REQUIRED. In
@@ -88,8 +96,10 @@ test("the epistemic transitions are exactly the S1 plan — nothing wider", () =
     );
   }
   // LIVE_RECONCILIATION_REQUIRED resolves only to a broker-truth terminal.
+  // R2 S5 adds LIVE_PARTIALLY_FILLED: reconciliation may discover the broker
+  // filled only part of the order, which is a truthful resolution.
   const allowedResolutions = new Set<ArxLiveCommandStatus>([
-    "LIVE_FILLED", "LIVE_REJECTED", "LIVE_FAILED", "LIVE_CANCELLED", "LIVE_EXPIRED",
+    "LIVE_FILLED", "LIVE_PARTIALLY_FILLED", "LIVE_REJECTED", "LIVE_FAILED", "LIVE_CANCELLED", "LIVE_EXPIRED",
   ]);
   for (const to of ARX_LIVE_COMMAND_STATUSES) {
     assert.equal(

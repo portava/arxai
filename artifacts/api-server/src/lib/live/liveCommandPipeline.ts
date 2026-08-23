@@ -141,7 +141,17 @@ const ALLOWED_TRANSITIONS: Record<ArxLiveCommandStatus, ArxLiveCommandStatus[]> 
   // Task #28 — a SENT command may also expire (TTL sweep or EA stale-reject).
   // R2 S1 — a SENT command with pickup evidence but no confirmed broker
   // outcome enters LIVE_UNKNOWN (TTL sweep) — never a presumed terminal.
-  SENT_TO_MT5_LIVE: ["LIVE_FILLED", "LIVE_REJECTED", "LIVE_FAILED", "LIVE_BLOCKED", "LIVE_EXPIRED", "LIVE_UNKNOWN"],
+  // R2 S5 — a dispatched command may also be ACKNOWLEDGED (broker saw it, no
+  // fill confirmed) or PARTIALLY_FILLED (ticket + executedVolume < requested)
+  // before it settles. Both are non-terminal and hold the reservation.
+  SENT_TO_MT5_LIVE: ["LIVE_FILLED", "LIVE_REJECTED", "LIVE_FAILED", "LIVE_BLOCKED", "LIVE_EXPIRED", "LIVE_UNKNOWN", "LIVE_ACKNOWLEDGED", "LIVE_PARTIALLY_FILLED"],
+  // An acknowledgement settles into any real outcome, or into UNKNOWN if the
+  // broker goes quiet after acking — an ack is NOT evidence of execution.
+  LIVE_ACKNOWLEDGED: ["LIVE_FILLED", "LIVE_PARTIALLY_FILLED", "LIVE_REJECTED", "LIVE_FAILED", "LIVE_EXPIRED", "LIVE_UNKNOWN"],
+  // A partial completes, closes, or has its remainder cancelled. It may also
+  // go UNKNOWN if the remainder's fate stops being reported. It may NOT go to
+  // REJECTED/FAILED: real exposure already exists at the broker.
+  LIVE_PARTIALLY_FILLED: ["LIVE_FILLED", "LIVE_CLOSED", "LIVE_CANCELLED", "LIVE_UNKNOWN"],
   LIVE_FILLED: ["LIVE_CLOSED"],
   LIVE_REJECTED: [], LIVE_FAILED: [], LIVE_BLOCKED: [], LIVE_CANCELLED: [], LIVE_CLOSED: [],
   LIVE_EXPIRED: [],
@@ -150,7 +160,7 @@ const ALLOWED_TRANSITIONS: Record<ArxLiveCommandStatus, ArxLiveCommandStatus[]> 
   // reconciliation (R2 S3) escalates it. RECONCILIATION_REQUIRED resolves to
   // a broker-truth terminal only.
   LIVE_UNKNOWN: ["LIVE_RECONCILIATION_REQUIRED"],
-  LIVE_RECONCILIATION_REQUIRED: ["LIVE_FILLED", "LIVE_REJECTED", "LIVE_FAILED", "LIVE_CANCELLED", "LIVE_EXPIRED"],
+  LIVE_RECONCILIATION_REQUIRED: ["LIVE_FILLED", "LIVE_PARTIALLY_FILLED", "LIVE_REJECTED", "LIVE_FAILED", "LIVE_CANCELLED", "LIVE_EXPIRED"],
 };
 
 // Task #28 — default time-to-live for a dispatched live command. If the EA
@@ -177,6 +187,18 @@ const LIVE_TERMINAL_STATUSES: ArxLiveCommandStatus[] = [
 // reconciliation path (R2 S3) may resolve these states.
 const LIVE_EPISTEMIC_STATUSES: ArxLiveCommandStatus[] = [
   "LIVE_UNKNOWN", "LIVE_RECONCILIATION_REQUIRED",
+];
+
+// R2 S5 — statuses a fresh EA/broker result may still be APPLIED to.
+//
+// SENT is the ordinary case. ACKNOWLEDGED and PARTIALLY_FILLED are added
+// because a result arriving after them is the normal next step of the same
+// order (the ack settles; the remainder fills), NOT late evidence for the
+// reconciler — deliberately kept OUT of LIVE_EPISTEMIC_STATUSES, which parks
+// a result for reconciliation and would otherwise strand every partial.
+// Legality of each specific hop is still enforced by ALLOWED_TRANSITIONS.
+const LIVE_RESULT_APPLICABLE_STATUSES: ArxLiveCommandStatus[] = [
+  "SENT_TO_MT5_LIVE", "LIVE_ACKNOWLEDGED", "LIVE_PARTIALLY_FILLED",
 ];
 
 // Task #28 — pure freshness/lifecycle helpers. Extracted so the exactly-once
@@ -294,6 +316,12 @@ export function settleReservationForStatus(
     case "LIVE_BLOCKED":
     case "LIVE_CANCELLED":
       return "RELEASE";
+    // R2 S5 — explicit for clarity (the fail-closed default already did this):
+    // an ack proves nothing about execution, and a partial still has a working
+    // remainder. Releasing on either would under-count live exposure.
+    case "LIVE_ACKNOWLEDGED":
+    case "LIVE_PARTIALLY_FILLED":
+      return "HOLD";
     default:
       return "HOLD";
   }
@@ -4107,6 +4135,7 @@ const mt5ExecutionAdapter: ExecutionAdapter = new Mt5EaBridgeAdapter(
 
 export type BridgedLiveOutcome =
   | "LIVE_FILLED"
+  | "LIVE_PARTIALLY_FILLED"
   | "LIVE_REJECTED"
   | "LIVE_FAILED"
   | "LIVE_UNKNOWN"
@@ -4131,10 +4160,43 @@ const LIVE_FAILED_STATUS_RE = /fail|error|reject/i;
  *     remain LIVE_FAILED / LIVE_REJECTED. Stale wins first so a TTL-elapsed
  *     refusal lands on LIVE_EXPIRED.
  */
+/**
+ * R2 S5 — lot-comparison tolerance. Volumes are doubles carrying broker lot
+ * steps (0.01 and finer), so an exact `<` would classify float noise as a
+ * partial fill. A fill within this tolerance of the request counts as FULL.
+ */
+export const LIVE_VOLUME_EPSILON = 1e-9;
+
+/**
+ * PURE — is this broker result a partial fill? Requires ALL of: a confirmed
+ * ticket (no ticket is never a fill of any size), a finite positive executed
+ * volume, a finite positive requested volume, and executed strictly below
+ * requested beyond the float tolerance. Anything unknown returns false, so a
+ * missing volume degrades to the existing full-fill/UNKNOWN behavior rather
+ * than inventing a partial.
+ */
+export function isPartialFill(input: {
+  hasBrokerTicket: boolean;
+  executedVolume?: number | null;
+  requestedVolume?: number | null;
+}): boolean {
+  if (!input.hasBrokerTicket) return false;
+  const executed = input.executedVolume;
+  const requested = input.requestedVolume;
+  if (typeof executed !== "number" || !Number.isFinite(executed)) return false;
+  if (typeof requested !== "number" || !Number.isFinite(requested)) return false;
+  if (executed <= 0 || requested <= 0) return false;
+  return executed < requested - LIVE_VOLUME_EPSILON;
+}
+
 export function mapBridgedLiveOutcome(input: {
   status: string;
   reason?: string | null;
   hasBrokerTicket: boolean;
+  /** R2 S5 — supplied by the EA result; absent on paths that do not report it. */
+  executedVolume?: number | null;
+  /** R2 S5 — the command row's requested volume. */
+  requestedVolume?: number | null;
 }): BridgedLiveOutcome {
   const status = input.status ?? "";
   const statusLc = status.toLowerCase();
@@ -4145,6 +4207,10 @@ export function mapBridgedLiveOutcome(input: {
   if (LIVE_FAILED_STATUS_RE.test(status)) {
     return statusLc.includes("reject") ? "LIVE_REJECTED" : "LIVE_FAILED";
   }
+  // R2 S5 — a ticket with a short fill is a PARTIAL, not a full fill. Checked
+  // before the full-fill branch so a partial can never be recorded as
+  // complete (spec §12: partial fills update exposure immediately).
+  if (isPartialFill(input)) return "LIVE_PARTIALLY_FILLED";
   return input.hasBrokerTicket ? "LIVE_FILLED" : "LIVE_UNKNOWN";
 }
 
@@ -4157,7 +4223,12 @@ export async function recordLiveCommandResult(args: {
   // R2 S1 — LIVE_UNKNOWN is the honest mapping of an ambiguous EA report
   // (success-looking status, no broker ticket): non-terminal, reservation
   // held, resolved only by reconciliation.
-  outcome: "LIVE_FILLED" | "LIVE_REJECTED" | "LIVE_FAILED" | "LIVE_UNKNOWN" | "STALE_COMMAND_REJECTED";
+  // R2 S5 — LIVE_ACKNOWLEDGED is accepted here but is NOT producible by
+  // mapBridgedLiveOutcome: the v1.5x EA posts only a settled result and has no
+  // ack signal. It is forward-declared for the bridge-v2 TRADE_TRANSACTION
+  // lifecycle (REQUEST/ORDER_ADD without a dealTicket), which can call this
+  // entry point directly once its lifecycle mapping lands.
+  outcome: "LIVE_FILLED" | "LIVE_PARTIALLY_FILLED" | "LIVE_ACKNOWLEDGED" | "LIVE_REJECTED" | "LIVE_FAILED" | "LIVE_UNKNOWN" | "STALE_COMMAND_REJECTED";
   reportingBridgeConnectionId: number;
   brokerTicket?: string | null;
   fillPrice?: number | null;
@@ -4205,7 +4276,7 @@ export async function recordLiveCommandResult(args: {
   // sweep). We acknowledge it with ok:true so the EA stops retrying, record
   // the duplicate for audit, but NEVER re-apply the outcome. R2 S2: the
   // reported payload is RETAINED as an execution event, not destroyed.
-  if (row.status !== "SENT_TO_MT5_LIVE") {
+  if (!LIVE_RESULT_APPLICABLE_STATUSES.includes(row.status as ArxLiveCommandStatus)) {
     if (isTerminalLiveStatus(row.status as ArxLiveCommandStatus)) {
       const [bumped] = await db.update(arxLiveCommandsTable).set({
         duplicateResultCount: (row.duplicateResultCount ?? 0) + 1,
@@ -4248,8 +4319,23 @@ export async function recordLiveCommandResult(args: {
   // Map the EA outcome to the final command status. STALE_COMMAND_REJECTED
   // becomes LIVE_EXPIRED (terminal); everything else is its own status
   // (LIVE_UNKNOWN stays LIVE_UNKNOWN — non-terminal).
+  // R2 S5 — reclassify a short fill as PARTIAL using the row's authoritative
+  // requestedVolume. The EA reports executedVolume but not what was asked for,
+  // so this is the only place the comparison can be made honestly. A partial
+  // previously landed as a full LIVE_FILLED, which both overstated execution
+  // and FULFILLED the whole exposure reservation.
+  const effectiveOutcome: typeof args.outcome =
+    args.outcome === "LIVE_FILLED"
+      && isPartialFill({
+        hasBrokerTicket: args.brokerTicket != null,
+        executedVolume: args.executedVolume ?? null,
+        requestedVolume: row.requestedVolume,
+      })
+      ? "LIVE_PARTIALLY_FILLED"
+      : args.outcome;
+
   const finalStatus: ArxLiveCommandStatus =
-    args.outcome === "STALE_COMMAND_REJECTED" ? "LIVE_EXPIRED" : args.outcome;
+    effectiveOutcome === "STALE_COMMAND_REJECTED" ? "LIVE_EXPIRED" : effectiveOutcome;
 
   // Validate transition is legal.
   assertCanTransition(row.status as ArxLiveCommandStatus, finalStatus);
@@ -4264,14 +4350,23 @@ export async function recordLiveCommandResult(args: {
     mt5Retcode: args.mt5Retcode ?? null,
     brokerMessage: args.brokerMessage ?? null,
   };
-  if (args.outcome === "LIVE_FILLED") {
+  if (effectiveOutcome === "LIVE_FILLED") {
     updates.filledAt = now;
-  } else if (args.outcome === "LIVE_UNKNOWN") {
+  } else if (effectiveOutcome === "LIVE_UNKNOWN") {
     // R2 S1 — no terminal stamps: this is not a rejection, not an expiry,
     // not a fill. The evidence columns above (retcode/brokerMessage/…) and
     // the execution event carry what the EA reported; rejectionReason stays
     // untouched so the row never claims a confident refusal it cannot prove.
-  } else if (args.outcome === "STALE_COMMAND_REJECTED") {
+  } else if (effectiveOutcome === "LIVE_PARTIALLY_FILLED") {
+    // R2 S5 — real exposure exists, but the order is NOT complete: no
+    // filledAt (that would claim a full fill) and no rejectedAt (nothing was
+    // refused). executedVolume above carries the filled size; the remainder
+    // is still working and the reservation stays HELD.
+  } else if (effectiveOutcome === "LIVE_ACKNOWLEDGED") {
+    // R2 S5 — the broker saw the order; nothing is filled and nothing is
+    // refused. No terminal stamps of any kind (spec §20: acknowledged is not
+    // treated as filled).
+  } else if (effectiveOutcome === "STALE_COMMAND_REJECTED") {
     updates.rejectedAt = now;
     updates.expiredAt = now;
     if (row.rejectionReason == null) updates.rejectionReason = "STALE_COMMAND_REJECTED";
