@@ -69,6 +69,14 @@ export interface DerivPortfolioRequest {
   req_id: number;
 }
 
+export interface DerivContractsForRequest {
+  contracts_for: string;
+  currency: string;
+  /** "multiplier" narrows the payload to the category we model. */
+  contract_type?: string;
+  req_id: number;
+}
+
 export interface DerivOpenContractRequest {
   proposal_open_contract: 1;
   contract_id: number;
@@ -169,6 +177,28 @@ export function buildOpenContractRequest(
     return { refused: "INVALID_CONTRACT_ID" };
   }
   return { proposal_open_contract: 1, contract_id: contractId, req_id: reqId };
+}
+
+/**
+ * Build the capability request for ONE symbol.
+ *
+ * The response feeds `parseMultiplierCapability`, which refuses (returns null)
+ * rather than guessing when a bound is absent — so this request exists to make
+ * the venue state its own limits instead of ARX hardcoding them (spec §17:
+ * capabilities are discovered, never assumed).
+ */
+export function buildContractsForRequest(
+  symbol: string,
+  currency: string,
+  reqId: number,
+): DerivContractsForRequest | { refused: string } {
+  if (typeof symbol !== "string" || symbol.length === 0) {
+    return { refused: "MISSING_SYMBOL" };
+  }
+  if (typeof currency !== "string" || currency.length === 0) {
+    return { refused: "MISSING_CURRENCY" };
+  }
+  return { contracts_for: symbol, currency, contract_type: "multiplier", req_id: reqId };
 }
 
 /** What a buy response yields once parsed. */

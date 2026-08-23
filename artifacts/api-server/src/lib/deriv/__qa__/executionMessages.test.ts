@@ -15,6 +15,7 @@ import {
   buildSellRequest,
   buildOpenContractRequest,
   buildPortfolioRequest,
+  buildContractsForRequest,
   parseBuyResponse,
   parsePortfolioResponse,
   isDerivError,
@@ -137,4 +138,33 @@ test("a portfolio error or missing array is a refusal, not an empty book", () =>
   const missing = parsePortfolioResponse({ portfolio: {} });
   assert.equal(missing.ok, false, "an unusable payload must not look like a flat book");
   assert.equal(missing.reason, "MISSING_CONTRACTS_ARRAY");
+});
+
+test("contracts_for asks the VENUE for its limits rather than hardcoding them", () => {
+  assert.deepEqual(
+    buildContractsForRequest("R_75", "USD", 3),
+    { contracts_for: "R_75", currency: "USD", contract_type: "multiplier", req_id: 3 },
+  );
+  assert.deepEqual(buildContractsForRequest("", "USD", 1), { refused: "MISSING_SYMBOL" });
+  assert.deepEqual(buildContractsForRequest("R_75", "", 1), { refused: "MISSING_CURRENCY" });
+});
+
+test("the capability parser consumes a raw contracts_for envelope end to end", async () => {
+  const { parseMultiplierCapability } = await import("@workspace/domain/deriv-contracts");
+  const cap = parseMultiplierCapability({
+    contracts_for: {
+      available: [
+        {
+          contract_category: "multiplier",
+          contract_type: "MULTUP",
+          multiplier_range: [50, 100],
+          min_stake: 1,
+          max_stake: 2000,
+          currency: "USD",
+        },
+      ],
+    },
+  }, "R_75");
+  assert.ok(cap, "a well-formed payload must parse");
+  assert.equal(cap!.symbol, "R_75");
 });
