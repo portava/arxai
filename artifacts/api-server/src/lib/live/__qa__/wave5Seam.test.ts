@@ -48,6 +48,9 @@ const {
   Mt5EaBridgeAdapter,
   MT5_EA_BRIDGE_VENUE,
 } = await import("../executionAdapter.js");
+// Type-only: erased at runtime, so it does NOT defeat the dynamic-import
+// pattern this suite uses to keep module init offline.
+import type { Mt5DeliveryResult } from "../executionAdapter.js";
 
 const { reconciliationFreshnessVerdict } = await import("../unknownReconciler.js");
 
@@ -489,4 +492,65 @@ test("the seam's INPUT is deliberately NOT generalized yet", () => {
   // a future reader assuming the seam is finished.
   assert.match(src, /NOT generalized yet, deliberately/);
   assert.match(src, /ExecutionDeliveryCommand still carries/);
+});
+
+// ── Behavioural proof that .then() did not change delivery semantics ─────────
+//
+// The source pins above are LEXICAL (exactly one enqueue call site, inside the
+// adapter injection) and therefore fragile on their own. These tests pin the
+// OBSERVABLE contract instead, so a future rewrite — await, .then(), or
+// anything else — is judged on behaviour rather than spelling.
+//
+// Note what the contract actually is: the caller MUST wait for delivery to
+// settle. It destructures mt5CommandId to proceed, so fire-and-forget delivery
+// would drop both the mailbox id and any mirror failure. That was true of the
+// original wrapper too (it returned the promise directly and the call site
+// awaited it) — the risk to guard against is a rewrite that makes delivery
+// NOT awaited, not one that keeps waiting.
+
+test("deliver() does NOT settle before the underlying enqueue settles", async () => {
+  let releaseEnqueue!: (v: Mt5DeliveryResult) => void;
+  const enqueueGate = new Promise<Mt5DeliveryResult>((resolve) => { releaseEnqueue = resolve; });
+
+  const adapter = new Mt5EaBridgeAdapter(
+    (command) => enqueueGate.then((r) => ({ ...r, transportRef: String(r.mt5CommandId) })),
+  );
+
+  let settled = false;
+  const delivery = adapter
+    .deliver({ liveRow: {} as never, bridgeUserId: 1, bridgeConnectionId: 2 })
+    .then((r) => { settled = true; return r; });
+
+  // Flush the microtask queue several times: if delivery were fire-and-forget
+  // (or resolved independently of enqueue) it would have settled by now.
+  for (let i = 0; i < 5; i += 1) await Promise.resolve();
+  assert.equal(settled, false, "delivery must not settle while enqueue is still pending");
+
+  releaseEnqueue({ mt5CommandId: 99, transportRef: "99", action: "OPEN_MARKET" });
+  const result = await delivery;
+  assert.equal(settled, true, "delivery settles once enqueue settles");
+  assert.equal(result.mt5CommandId, 99, "the mailbox id reaches the caller");
+  assert.equal(result.transportRef, "99", "the venue-neutral handle reaches the caller");
+});
+
+test("a delivery failure REJECTS the caller rather than resolving silently", async () => {
+  const adapter = new Mt5EaBridgeAdapter(
+    () => Promise.reject(new Error("BRIDGE_ENQUEUE_FAILED")),
+  );
+  // The pipeline's mark-failed path depends on this rejection arriving; a
+  // wrapper that swallowed it would strand the command as SENT forever.
+  await assert.rejects(
+    () => adapter.deliver({ liveRow: {} as never, bridgeUserId: 1, bridgeConnectionId: 2 }),
+    /BRIDGE_ENQUEUE_FAILED/,
+  );
+});
+
+test("the pipeline AWAITS delivery — delivery is not fire-and-forget at the call site", () => {
+  // The behavioural counterpart to the lexical pins: whatever the wrapper's
+  // spelling, the dispatch path must consume delivery's settled result.
+  assert.match(
+    pipelineSource,
+    /await mt5ExecutionAdapter\.deliver\(\{/,
+    "the dispatch path must await delivery and use its result",
+  );
 });
