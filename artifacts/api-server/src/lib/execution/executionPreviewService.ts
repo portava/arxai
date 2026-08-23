@@ -58,8 +58,15 @@ export async function buildExecutionPreviewForUser(
   let bid: number | null = null;
   let ask: number | null = null;
   let quoteAgeMs: number | null = null;
+  // Which venue actually priced this preview. The router may fall back across
+  // providers for a DISPLAY read; that is allowed here (this surface is
+  // advisory and must keep rendering), but a spread/ATR estimate sourced from
+  // a venue the user is NOT executing on is misleading unless it says so.
+  let quoteSource: string | null = null;
+  let atrSource: string | null = null;
   try {
     const q = await routeQuote(symbol);
+    if (q.ok) quoteSource = q.provenance?.providerId ?? q.primaryProvider ?? null;
     if (q.ok && q.quote) {
       bid = typeof q.quote.bid === "number" ? q.quote.bid : null;
       ask = typeof q.quote.ask === "number" ? q.quote.ask : null;
@@ -72,6 +79,7 @@ export async function buildExecutionPreviewForUser(
   let atrPrice: number | null = null;
   try {
     const routed = await routeCandles(symbol, "M15", 200);
+    if (routed.ok) atrSource = routed.provenance?.providerId ?? routed.primaryProvider ?? null;
     const candles: Candle[] = (routed.candles ?? []).map((c) => ({
       open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume,
       time: typeof c.time === "number" ? c.time : Date.parse(String(c.time)) || 0,
@@ -135,7 +143,7 @@ export async function buildExecutionPreviewForUser(
     }
   } catch { /* null exposure — multi-entry omitted honestly */ }
 
-  return estimateExecutionPreview({
+  const preview = estimateExecutionPreview({
     symbol,
     side,
     orderType,
@@ -154,4 +162,26 @@ export async function buildExecutionPreviewForUser(
     openExposure,
     maxSpreadPoints,
   });
+
+  // Provenance honesty: name the pricing venue whenever it is not the MT5
+  // bridge the user executes through. Appended as a WARNING (never a blocker)
+  // — the preview stays viable, the trader just learns the estimate was priced
+  // elsewhere. Costs quoted from another venue's book can differ materially.
+  const foreignSources = Array.from(
+    new Set(
+      [quoteSource, atrSource].filter(
+        (src): src is string => typeof src === "string" && src !== "mt5_broker",
+      ),
+    ),
+  );
+  if (foreignSources.length > 0) {
+    return {
+      ...preview,
+      warnings: [
+        ...preview.warnings,
+        `Costs estimated from ${foreignSources.join(" + ")} data, not your execution broker's book — actual spread and fill may differ.`,
+      ],
+    };
+  }
+  return preview;
 }
