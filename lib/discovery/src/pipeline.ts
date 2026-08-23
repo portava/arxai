@@ -45,6 +45,12 @@ export function stableStringify(v: unknown): string {
   if (v === undefined) return '"__undefined__"';
   if (v === null) return "null";
   if (typeof v === "number" && !Number.isFinite(v)) return `"__${String(v)}__"`;
+  // A bigint has NO JSON form: JSON.stringify(1n) THROWS. Since @workspace/money
+  // represents every amount as bigint minor units, an amount reaching this
+  // hasher would have crashed the caller. Matches lib/features/eventChain's
+  // canonicalization exactly, so hashes stay comparable across packages.
+  // Strictly additive: every value that hashed before hashes identically.
+  if (typeof v === "bigint") return `"${v.toString()}n"`;
   if (typeof v !== "object") return JSON.stringify(v);
   if (Array.isArray(v)) return `[${v.map(stableStringify).join(",")}]`;
   const o = v as Record<string, unknown>;

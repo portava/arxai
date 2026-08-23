@@ -18,6 +18,7 @@
     "test:expectancy-engine": "tsx ./src/expectancyEngineTest.ts",
     "test:compliance-gate": "tsx ./src/complianceGateTest.ts",
     "test:provenance-no-collapse": "tsx ./src/ci/check-provenance-no-collapse.test.ts",
+    "test:stable-stringify-parity": "tsx ./src/stableStringifyParityTest.ts",
     "test:risk-correlation": "tsx ./src/riskCorrelationTest.ts",
     "test:vault-mutations": "tsx ./src/ci/check-vault-mutations.test.ts",
     "test:worktree-integrity": "tsx ./src/ci/check-worktree-integrity.test.ts",
