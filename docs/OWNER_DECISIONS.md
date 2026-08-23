@@ -150,6 +150,25 @@ exists yet, and a default-ON gate with zero reconciliation runs would refuse
 every live entry including the owner's controlled testing. The default flips to
 ON in the same change that schedules `reconcileUnknownCommands` on Replit.
 
+### Ruling 10a — blocker cleared, flip still owner-pressed (2026-08-23)
+`startUnknownReconcilerWorker` now schedules `reconcileUnknownCommands` every
+60s at server start (opt-out via `ARX_UNKNOWN_RECONCILER_ENABLED`), so Ruling
+10's stated precondition is satisfied and LIVE_UNKNOWN commands are recoverable
+rather than held indefinitely.
+
+The gate nonetheless stays default-OFF pending one verification the code cannot
+perform for itself: the reconciler has never run against the production
+database. Before flipping, confirm on Replit that
+
+  1. `reconciliation_runs` rows accumulate with `status = COMPLETED` (not
+     RUNNING-and-abandoned, which the freshness predicate reads as stale), and
+  2. a pass logs `unknown_reconciler_pass` without errors.
+
+Then set `ARX_REQUIRE_FRESH_RECONCILIATION=true` and record the flip here. The
+asymmetry is deliberate: a default-ON gate whose reconciler is silently failing
+refuses EVERY live entry, so the failure mode of flipping early is worse than
+the failure mode of flipping late.
+
 ## Ruling 11 — Master exposure cap 0-means-unlimited trap (2026-08-20)
 `shared_master_accounts.max_total_exposure_lots = 0` (the column default) means
 UNLIMITED today. Changing 0 to a hard zero-cap requires an explicit owner ruling

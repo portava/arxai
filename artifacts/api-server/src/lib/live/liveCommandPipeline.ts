@@ -803,7 +803,7 @@ if (!reconciliationFreshnessGateEnabled(process.env[RECONCILIATION_FRESHNESS_GAT
     event: "RECONCILIATION_FRESHNESS_GATE_OFF",
     envVar: RECONCILIATION_FRESHNESS_GATE_ENV,
     rawValue: process.env[RECONCILIATION_FRESHNESS_GATE_ENV] ?? null,
-  }, `${RECONCILIATION_FRESHNESS_GATE_ENV} is OFF (default this release): live ENTRY dispatch is NOT gated on reconciliation freshness. Deliberate: no scheduled reconciler exists yet on Replit — a default-ON gate with zero reconciliation_runs would refuse every entry. The default flips ON once the reconciler is scheduled; record that flip in the Owner Decision Registry (docs/OWNER_DECISIONS.md).`);
+  }, `${RECONCILIATION_FRESHNESS_GATE_ENV} is OFF (default this release): live ENTRY dispatch is NOT gated on reconciliation freshness. The scheduled reconciler NOW EXISTS (startUnknownReconcilerWorker, 60s cadence), so the original blocker is cleared — the gate stays OFF only until an operator confirms reconciliation_runs rows are accumulating cleanly against the real database. Flipping it is an owner decision (Owner Decision Registry, Ruling 10): a default-ON gate whose reconciler is failing would refuse every live entry.`);
 } else {
   logger.warn({
     [PHASE_B_LIVE_LOG_PREFIX]: true,

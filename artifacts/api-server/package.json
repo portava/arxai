@@ -35,6 +35,7 @@
     "test:bridge-scoped-candle-serving": "node --import tsx --test --test-force-exit src/lib/data/__qa__/bridgeScopedCandleServing.test.ts",
     "test:broker-confirmed-gate": "node --import tsx --test --test-force-exit src/lib/data/__qa__/brokerConfirmedGate.test.ts",
     "test:decision-grade-wait": "node --import tsx --test --test-force-exit src/lib/data/__qa__/decisionGradeWait.test.ts",
+    "test:unknown-reconciler-worker": "node --import tsx --test --test-force-exit src/lib/live/__qa__/unknownReconcilerWorker.test.ts",
     "test:user-settings-cap-writer": "node --import tsx --test --test-force-exit src/lib/live/__qa__/userSettingsCapWriter.test.ts",
     "test:wave5-seam": "node --import tsx --test --test-force-exit src/lib/live/__qa__/wave5Seam.test.ts",
     "test:edge-promotion": "node --import tsx --test --test-force-exit src/lib/learning/__qa__/edgePromotion.test.ts",

@@ -5,6 +5,7 @@ import { bootstrapOwnerUser } from "./lib/auth/ownerBootstrap";
 import { bootstrapAdminUser } from "./lib/auth/adminBootstrap";
 import { bootstrapLegacyOwnerDowngrade } from "./lib/auth/legacyOwnerDowngrade";
 import { startStuckCommandWatchdog } from "./lib/mt5/stuckCommandWatchdog";
+import { startUnknownReconcilerWorker } from "./lib/live/unknownReconcilerWorker";
 import { startMt5FeedStalenessWatchdog } from "./lib/data/mt5FeedStalenessWatchdog";
 import { startPoolViewAnomalyDetector } from "./lib/audit/poolViewAnomalyDetector";
 import { startAgentEcosystemLifecycleRunner } from "./lib/agentEcosystem/lifecycleRunner";
@@ -131,6 +132,12 @@ ensureSafetyCoreInitialized()
         logger.error({ err: String(e) }, "Startup readiness check threw (non-fatal)"),
       );
       startStuckCommandWatchdog();
+      // R2 S3/S4 — scheduled UNKNOWN-command reconciler. Resolves LIVE_UNKNOWN
+      // commands from broker evidence (never fabricates an outcome) and
+      // persists a reconciliation_runs row per pass, which is what allows the
+      // dispatch freshness gate to be turned on at all (Ruling 10).
+      // Opt-out via ARX_UNKNOWN_RECONCILER_ENABLED; disabling is logged loudly.
+      startUnknownReconcilerWorker();
       // MT5 candle-feed staleness + connectivity watchdog — raises an admin
       // alert when a previously-contributing symbol+timeframe series stops
       // pushing candles for longer than CANDLE_TTL (the chart then silently
