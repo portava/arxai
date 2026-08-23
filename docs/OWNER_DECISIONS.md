@@ -174,3 +174,27 @@ the failure mode of flipping late.
 UNLIMITED today. Changing 0 to a hard zero-cap requires an explicit owner ruling
 plus a migration adding an explicit unlimited marker; until then startup logs
 `MASTER_EXPOSURE_CAP_ZERO_MEANS_UNLIMITED`.
+
+## Ruling 12 — execution_events append-only is enforced in CI, not by REVOKE (2026-08-23)
+The planned `REVOKE UPDATE, DELETE ON execution_events` was NOT run, and should
+not be. The application connects as `postgres`, which is both the table owner
+and a superuser — and **superusers bypass privilege checks entirely**. The
+statement would succeed, alter the ACL, and enforce nothing: the result is an
+audit trail asserting the ledger is append-only while it stays fully mutable.
+False assurance is worse than none.
+
+Enforcement instead lives where it can actually hold, and where it is checked on
+every commit: `scripts/src/ci/check-vault-mutations.ts` now guards
+`execution_events` and `owner_decisions` in BOTH forms — Drizzle symbol
+(`.update(executionEventsTable)`) and raw parameterized SQL
+(`update execution_events …`), the form these tables are actually written
+through. Proven to fail red against all three violation shapes.
+
+`reconciliation_runs` and `production_edges` are deliberately excluded: both
+legitimately mutate (run finalization; rung advance / retirement).
+
+To obtain real DB-layer enforcement later, the app must stop connecting as a
+superuser: create a dedicated non-superuser role, grant it INSERT/SELECT on the
+append-only tables and full rights elsewhere, then repoint `DATABASE_URL`. That
+is an infrastructure change with a real risk of breaking unrelated writes, so it
+is an owner decision, not a migration to slip in.
