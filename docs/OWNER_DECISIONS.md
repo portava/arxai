@@ -198,3 +198,45 @@ superuser: create a dedicated non-superuser role, grant it INSERT/SELECT on the
 append-only tables and full rights elsewhere, then repoint `DATABASE_URL`. That
 is an infrastructure change with a real risk of breaking unrelated writes, so it
 is an owner decision, not a migration to slip in.
+
+## Ruling 13 — bigint/string canonicalization collision: pinned, not fixed (2026-08-23)
+`stableStringify` encodes a bigint as `"<digits>n"`, which is byte-identical to
+what `JSON.stringify` produces for the STRING `"<digits>n"`. So `BigInt(1)` and
+`"1n"` share a canonical form, and two structurally different payloads hash the
+same. Narrow, but it is exactly the ambiguity the tamper-evident event chain
+exists to prevent.
+
+Verified NOT affected: `1n` vs `1`, `1n` vs `"1"`, `0n` vs `0`, `-5n` vs `-5`,
+large bigints vs their lossy `number` counterparts, bigints nested in arrays and
+objects, and nested Money values (amount and currency both distinguished).
+
+NOT fixed in this change, deliberately. Any injective encoding alters bigint
+output, which invalidates every stored hash containing one and forces a
+re-verification of the event chain. That is a decision about existing evidence,
+not a refactor. The parity suite pins the CURRENT behaviour so the collision
+stays visible and a future fix must consciously break the pin.
+
+Owner decision required: whether to re-encode (and re-verify stored chains) or
+to constrain callers so a bigint and a string can never occupy the same field.
+
+## Ruling 14 — replay determinism is NOT implemented (2026-08-23)
+Recorded as a known evidence gap. Current decisions are re-runnable but NOT
+replayable, and must not be described as replayable: re-running code proves
+nothing unless the run is pinned to the same evidence and versions.
+
+A legitimate replay envelope requires ALL of:
+  1. an immutable input snapshot (not a hash alone — a hash can verify an input
+     you still possess, but cannot reconstruct one you do not),
+  2. code/build version,
+  3. policy/model versions,
+  4. canonicalization version,
+  5. the clock / as-of value,
+  6. the random seed where applicable,
+  7. the original output hash.
+
+Today NO decision row carries any of these, and `evaluateForReplay` exists only
+in a comment in replaySim/engine.ts, whose own header states it deliberately
+does not call the live orchestrator.
+
+Deferred until after Deriv certification by owner direction. The live decision
+schema is NOT to be touched this week.

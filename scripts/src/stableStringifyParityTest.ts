@@ -78,6 +78,69 @@ export async function run(): Promise<CiTestResultLike> {
     else fail(`${name}: key order changed the output (${a} vs ${b})`);
   }
 
+  // ── Type-distinction across the bigint boundary (review request) ──────────
+  // A bigint must not be confusable with the number or string that prints the
+  // same, or a Money amount could be substituted for a plain scalar without
+  // changing the hash.
+  for (const [name, fn] of IMPLS) {
+    const checks: ReadonlyArray<readonly [string, unknown, unknown]> = [
+      ["1n vs 1", BigInt(1), 1],
+      ["1n vs '1'", BigInt(1), "1"],
+      ["0n vs 0", BigInt(0), 0],
+      ["-5n vs -5", BigInt(-5), -5],
+      ["0n vs '0'", BigInt(0), "0"],
+      ["bigint in array vs number in array", [BigInt(1)], [1]],
+      ["bigint in object vs number in object", { v: BigInt(1) }, { v: 1 }],
+      ["large bigint vs lossy number", BigInt("9007199254740993"), 9007199254740993],
+    ];
+    for (const [label, a, b] of checks) {
+      if (fn(a) !== fn(b)) pass(`${name}: distinguishes ${label}`);
+      else fail(`${name}: COLLISION on ${label} → both "${fn(a)}"`);
+    }
+  }
+
+  // ── KNOWN LIMITATION, pinned deliberately ─────────────────────────────────
+  // A bigint encodes as `"<digits>n"`, which is exactly what JSON.stringify
+  // produces for the STRING "<digits>n". So BigInt(1) and "1n" share a
+  // canonical form. Two structurally different payloads therefore hash
+  // identically — narrow, but it is precisely the ambiguity the event chain
+  // exists to prevent.
+  //
+  // NOT fixed here on purpose: any injective encoding changes bigint output,
+  // which would invalidate every stored hash that contains one. That is an
+  // owner decision about existing evidence, not a refactor. Recorded in
+  // docs/OWNER_DECISIONS.md. This test pins the CURRENT behaviour so the
+  // collision stays visible and a future fix must consciously break it.
+  for (const [name, fn] of IMPLS) {
+    if (fn(BigInt(1)) === fn("1n")) {
+      pass(`${name}: known bigint/string collision is still pinned (1n vs "1n")`);
+    } else {
+      fail(
+        `${name}: the bigint/string collision changed. If this was intentional, `
+        + `stored hashes containing a bigint are now INVALID and the chain must be `
+        + `re-verified — update docs/OWNER_DECISIONS.md before removing this pin.`,
+      );
+    }
+  }
+
+  // ── Nested value objects (review request) ─────────────────────────────────
+  // Money is bigint-backed; a Money nested in a payload must hash, and two
+  // different amounts must not collapse together.
+  {
+    const { Money } = await import("@workspace/money");
+    const a = Money.fromMinor(BigInt(12345), "USD");
+    const b = Money.fromMinor(BigInt(12346), "USD");
+    const c = Money.fromMinor(BigInt(12345), "EUR");
+    for (const [name, fn] of IMPLS) {
+      if (fn({ amount: a }) === fn({ amount: a })) pass(`${name}: nested Money is stable`);
+      else fail(`${name}: nested Money is unstable`);
+      if (fn({ amount: a }) !== fn({ amount: b })) pass(`${name}: distinguishes Money amounts`);
+      else fail(`${name}: collapsed two different Money amounts`);
+      if (fn({ amount: a }) !== fn({ amount: c })) pass(`${name}: distinguishes Money currencies`);
+      else fail(`${name}: collapsed USD and EUR at the same minor units`);
+    }
+  }
+
   // Sensitivity: canonicalization must still DISTINGUISH different values, or
   // it would silently collapse distinct evidence onto one hash.
   for (const [name, fn] of IMPLS) {
