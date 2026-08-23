@@ -95,7 +95,7 @@ const CASES: readonly MutationCase[] = [
 ];`,
     replace: `const APPEND_ONLY_SQL_TABLES: string[] = [];`,
     pkg: "@workspace/scripts",
-    script: "test:worktree-integrity",
+    script: "test:vault-mutations",
   },
 ];
 

@@ -19,6 +19,7 @@
     "test:compliance-gate": "tsx ./src/complianceGateTest.ts",
     "test:provenance-no-collapse": "tsx ./src/ci/check-provenance-no-collapse.test.ts",
     "test:risk-correlation": "tsx ./src/riskCorrelationTest.ts",
+    "test:vault-mutations": "tsx ./src/ci/check-vault-mutations.test.ts",
     "test:worktree-integrity": "tsx ./src/ci/check-worktree-integrity.test.ts",
     "test:capital-constitution": "tsx ./src/ci/check-capital-constitution.test.ts",
     "test:execution-state-mapping": "tsx ./src/executionStateMappingTest.ts",
