@@ -530,6 +530,34 @@ export function weeklyDrawdownBlocksDispatch(args: {
 // (LIVE_BLOCKED:RISK_LOCK_<TYPE>) BEFORE the 18-gate evaluator.
 export const RISK_LOCK_BLOCK_REASON_PREFIX = "LIVE_BLOCKED:RISK_LOCK_" as const;
 
+// ── CLOSE-ONLY MODE (spec §3.1 global control / §20 "close-only proven") ────
+export const CLOSE_ONLY_BLOCK_REASON = "LIVE_BLOCKED:CLOSE_ONLY_MODE" as const;
+
+/**
+ * PURE — does close-only mode refuse this dispatch?
+ *
+ * Close-only means: manage what you already hold, open nothing new. So it
+ * refuses ENTRY commands only; CLOSE/MODIFY always pass, because a control
+ * that trapped open exposure would be strictly more dangerous than the risk
+ * it was set to contain.
+ *
+ * Distinct from `tradingFrozen`, which is an operator FREEZE carrying a
+ * reason/actor/timestamp. Close-only is a risk posture that can be set
+ * without the administrative framing, so the two are read independently and
+ * either one refuses on its own.
+ *
+ * Fail-open on absence is deliberate and safe here: the flag defaults false,
+ * and an absent allocation row already fails elsewhere in the pool checks.
+ * This gate only ever ADDS a refusal.
+ */
+export function closeOnlyBlocksDispatch(args: {
+  closeOnlyMode: boolean | null | undefined;
+  isEntryCommand: boolean;
+}): boolean {
+  if (!args.isEntryCommand) return false;
+  return args.closeOnlyMode === true;
+}
+
 /**
  * PURE decision for the risk-lock pre-gate (no I/O — extracted so the
  * contract is unit-testable offline). Returns the full block-reason literal
@@ -2248,6 +2276,55 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
       }, "Active risk lock blocked live dispatch");
       return { ok: false as const, reason: "LIVE_BLOCKED" as const,
         primaryReason: lockReason, blockReasons: [lockReason], command: blocked };
+    }
+  }
+
+  // ── CLOSE-ONLY PRE-GATE (spec §3.1 / §20) ──────────────────────────────
+  // user_slot_allocation.close_only_mode was persisted and surfaced to admin
+  // UI but never read by any dispatch path — the schema said so outright
+  // ("future hook ... Not enforced yet"). Spec §3.1 lists close-only as a
+  // global control and §20 requires it PROVEN, so it now refuses ENTRY
+  // dispatch. Entry-only: closes and SL/TP edits must always survive, or the
+  // control would trap the exposure it exists to wind down. Additive — the
+  // flag defaults false, so enabling enforcement changes nothing until an
+  // operator sets it, and it can only ever refuse, never permit.
+  if (row.commandType === "PLACE_LIVE_MARKET_ORDER"
+    || row.commandType === "PLACE_LIVE_PENDING_ORDER") {
+    const { userSlotAllocationTable: _closeOnlyAllocTable } = await import("@workspace/db");
+    const closeOnlyRows = await db.select({
+      closeOnlyMode: _closeOnlyAllocTable.closeOnlyMode,
+    }).from(_closeOnlyAllocTable)
+      .where(eq(_closeOnlyAllocTable.userId, args.userId)).limit(1);
+    if (closeOnlyBlocksDispatch({
+      closeOnlyMode: closeOnlyRows[0]?.closeOnlyMode,
+      isEntryCommand: true,
+    })) {
+      const [blocked] = await db.update(arxLiveCommandsTable).set({
+        status: "LIVE_BLOCKED",
+        rejectionReason: CLOSE_ONLY_BLOCK_REASON,
+        rejectedAt: new Date(),
+        dispatchGateSnapshot: {
+          decision: "BLOCKED",
+          primaryReason: CLOSE_ONLY_BLOCK_REASON,
+          blockReasons: [CLOSE_ONLY_BLOCK_REASON, "BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED"],
+          closeOnlyGate: true,
+          at: new Date().toISOString(),
+        } as unknown as Record<string, unknown>,
+      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      await audit({
+        eventType: "CLOSE_ONLY_MODE_BLOCKED", severity: "HIGH",
+        userId: args.userId, symbol: row.symbol,
+        message: "Live ENTRY dispatch BLOCKED by close-only mode; closes and SL/TP edits remain allowed",
+        metadata: { commandId: args.commandId, commandType: row.commandType },
+      });
+      logger.warn({
+        [PHASE_B_LIVE_LOG_PREFIX]: true,
+        event: "CLOSE_ONLY_MODE_BLOCKED",
+        commandId: args.commandId, userId: args.userId,
+      }, "Close-only mode blocked live entry dispatch");
+      return { ok: false as const, reason: "LIVE_BLOCKED" as const,
+        primaryReason: CLOSE_ONLY_BLOCK_REASON,
+        blockReasons: [CLOSE_ONLY_BLOCK_REASON], command: blocked };
     }
   }
 

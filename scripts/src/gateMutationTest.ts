@@ -87,6 +87,14 @@ const CASES: readonly MutationCase[] = [
     script: "test:emergency-kill-switch-gate",
   },
   {
+    breaks: "close-only must refuse entries but NEVER block a close (trapping exposure)",
+    file: "artifacts/api-server/src/lib/live/liveCommandPipeline.ts",
+    find: "  if (!args.isEntryCommand) return false;\n  return args.closeOnlyMode === true;",
+    replace: "  return args.closeOnlyMode === true;",
+    pkg: "@workspace/api-server",
+    script: "test:close-only-gate",
+  },
+  {
     breaks: "the append-only ledger guard must reject raw-SQL UPDATE/DELETE",
     file: "scripts/src/ci/check-vault-mutations.ts",
     find: `const APPEND_ONLY_SQL_TABLES = [

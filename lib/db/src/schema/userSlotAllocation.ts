@@ -69,9 +69,12 @@ export const userSlotAllocationTable = pgTable("user_slot_allocation", {
   // allocationStatus: active | frozen.
   // tradingFrozen: block manual live dispatch (read at liveCommandPipeline).
   // aiTradingFrozen: block AI sleeve dispatch (when AI sleeve is wired).
-  // closeOnlyMode: future hook for CLOSE-only when frozen with open
-  //   positions. Not enforced yet; existing positions follow normal rules
-  //   per the brief ("do not auto-close").
+  // closeOnlyMode: ENFORCED at live dispatch (closeOnlyBlocksDispatch in
+  //   liveCommandPipeline). Refuses ENTRY commands only — closes and SL/TP
+  //   edits always pass, so the control can never trap the exposure it exists
+  //   to wind down. Independent of tradingFrozen: either refuses on its own.
+  //   Nothing auto-closes; existing positions follow normal rules per the
+  //   brief ("do not auto-close").
   // freezeReason: operator-provided reason; surfaced to user as a
   //   sanitized "paused by operator" string, not the raw reason.
   allocationStatus: text("allocation_status").notNull().default("active"),
