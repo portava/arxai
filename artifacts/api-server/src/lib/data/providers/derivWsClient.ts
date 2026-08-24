@@ -103,6 +103,9 @@ class DerivWsClient {
   private connectedAt: number | null = null;
   private authorized = false;
   private lastAuthorizeError: string | null = null;
+  /** Deriv's machine-readable authorize error code (e.g. "InvalidToken").
+   *  Enum-like and credential-free, so it is safe to surface to operators. */
+  private lastAuthorizeErrorCode: string | null = null;
   // Eager warm-up state — survives reconnects.
   private eagerWarmupSymbols = new Set<string>();
   private warmupAttemptedAt: number | null = null;
@@ -227,6 +230,7 @@ class DerivWsClient {
           this.lastErrorMessage = null;
           this.authorized = false;
           this.lastAuthorizeError = null;
+          this.lastAuthorizeErrorCode = null;
           // Reset per-session caches; a fresh authorize may give a different view.
           this.activeSymbolsCount = null;
           this.activeSymbolsLoadedAt = null;
@@ -245,6 +249,7 @@ class DerivWsClient {
               if (resp.authorize) {
                 this.authorized = true;
                 this.lastAuthorizeError = null;
+                this.lastAuthorizeErrorCode = null;
                 // Retain the payload instead of discarding it (audit G2):
                 // loginid / is_virtual / currency / landing company, plus the
                 // DERIV_ENVIRONMENT assertion. Never logs or stores the token.
@@ -254,9 +259,16 @@ class DerivWsClient {
               // active_symbols + ticks_history work for both authed and
               // unauthed (public) connections on Deriv synthetic indices.
               void this.runEagerWarmup();
-            }).catch((err: Error) => {
+            }).catch((err: Error & { derivErrorCode?: string }) => {
               this.authorized = false;
               this.lastAuthorizeError = err.message.slice(0, 200);
+              this.lastAuthorizeErrorCode = err.derivErrorCode ?? null;
+              // Log the CODE only — never the message (which can echo request
+              // context) and never the token.
+              logger.warn(
+                { derivErrorCode: this.lastAuthorizeErrorCode },
+                "deriv_authorize_failed",
+              );
               // Still attempt warm-up — public synthetics don't require auth.
               void this.runEagerWarmup();
             });
@@ -310,6 +322,10 @@ class DerivWsClient {
 
   isAuthorized(): boolean { return this.authorized; }
   getLastAuthorizeError(): string | null { return this.lastAuthorizeError; }
+  /** Deriv's machine-readable authorize error code, e.g. "InvalidToken".
+   *  Exposed so an auth failure is diagnosable from the status surface
+   *  instead of requiring an operator to instrument this client. */
+  getLastAuthorizeErrorCode(): string | null { return this.lastAuthorizeErrorCode; }
 
   /** Active probe: runs `active_symbols` + `ticks_history(R_75, 60s, 5)`
    *  through the WS and returns sanitized results. Admin-only callers. */
@@ -477,7 +493,18 @@ class DerivWsClient {
       this.pending.delete(reqId);
       if (msg.error) {
         const err = msg.error as Record<string, unknown>;
-        p.reject(new Error(typeof err.message === "string" ? err.message : "deriv_error"));
+        // Preserve Deriv's MACHINE-READABLE error code alongside the prose.
+        // The code (e.g. "InvalidToken") is the diagnosable half; discarding it
+        // meant an auth failure could only be identified by instrumenting this
+        // client from outside. The code is a short enum-like token and carries
+        // no credential material, so it is safe to retain and surface.
+        const rejection = new Error(
+          typeof err.message === "string" ? err.message : "deriv_error",
+        ) as Error & { derivErrorCode?: string };
+        if (typeof err.code === "string" && err.code.length > 0) {
+          rejection.derivErrorCode = err.code;
+        }
+        p.reject(rejection);
       } else {
         p.resolve(msg);
       }

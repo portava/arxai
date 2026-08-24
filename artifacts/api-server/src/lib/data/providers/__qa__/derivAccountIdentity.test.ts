@@ -382,3 +382,48 @@ test("SOURCE PROOF: the keep-alive cycle filters by the resolved universe instea
   assert.ok(filterAt > 0, "cycle must filter DERIV_SYNTHETIC_SYMBOLS by the universe");
   assert.ok(resolveAt < subscribeAt && filterAt < subscribeAt, "narrowing must happen BEFORE any subscribe");
 });
+
+// ── Authorize error CODE retention (certification follow-up) ────────────────
+// A live certification attempt returned is_virtual/currency null. Diagnosing it
+// required wrapping this client in temporary instrumentation, because the
+// rejection carried only Deriv's prose message and discarded `error.code` —
+// the machine-readable half. The answer turned out to be "InvalidToken", which
+// the client had received and thrown away.
+//
+// The code is enum-like and carries no credential material, so it is retained
+// and surfaced; the MESSAGE is deliberately not logged, since Deriv error
+// messages can echo request context.
+
+test("the Deriv error code is preserved on the rejection and surfaced", () => {
+  const src = readFileSync(
+    new URL("../derivWsClient.ts", import.meta.url), "utf8",
+  );
+  assert.match(src, /derivErrorCode\?: string/, "the rejection must carry the code");
+  assert.match(src, /rejection\.derivErrorCode = err\.code/, "the code must be copied off the envelope");
+  assert.match(src, /getLastAuthorizeErrorCode\(\): string \| null/, "the code must be readable without instrumenting");
+});
+
+test("the code is logged but the authorize message and token never are", () => {
+  const src = readFileSync(
+    new URL("../derivWsClient.ts", import.meta.url), "utf8",
+  );
+  const start = src.indexOf("deriv_authorize_failed");
+  assert.ok(start > -1, "an authorize failure must be logged");
+  const around = src.slice(Math.max(0, start - 400), start + 100);
+  assert.match(around, /derivErrorCode/, "the log must carry the code");
+  assert.ok(
+    !/lastAuthorizeError[^C]/.test(around.split("logger.warn")[1] ?? ""),
+    "the prose message must not be logged — it can echo request context",
+  );
+  assert.ok(!/DERIV_API_TOKEN/.test(around), "the token must never appear near the log call");
+});
+
+test("a successful authorize clears BOTH the message and the code", () => {
+  const src = readFileSync(
+    new URL("../derivWsClient.ts", import.meta.url), "utf8",
+  );
+  const start = src.indexOf("this.authorized = true;");
+  const block = src.slice(start, start + 400);
+  assert.match(block, /lastAuthorizeError = null/);
+  assert.match(block, /lastAuthorizeErrorCode = null/, "a stale code must not survive a later success");
+});
