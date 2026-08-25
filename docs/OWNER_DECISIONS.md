@@ -299,3 +299,31 @@ Implemented:
 Classification is deliberately unchanged: an alphanumeric app id + PAT is still
 detected as "new". The credentials were always recognized correctly; only the
 route they were sent down was wrong.
+
+## Ruling 16 — the Deriv new-API transport is CERTIFIED read-only; order placement is NOT (2026-08-25)
+A live read-only certification against Deriv passed **17/17 steps** on demo
+account `…1092`: REST account discovery, deterministic demo selection, OTP,
+authenticated WebSocket (no `authorize` sent), ping, server clock, 89 active
+symbols, `contracts_for`, a priced `proposal` carrying a buyable id, `balance`,
+`portfolio`, and the read-only gate refusing a buy.
+
+**Resolved: multipliers ARE served on this surface.** The endpoints live under
+`/trading/v1/options/` while ARX trades MULTUP/MULTDOWN, and this program
+carried that as an open assumption from the first day of implementation,
+explicitly refusing to treat "options is probably an umbrella name" as fact.
+Step 9 settled it with evidence: `R_100` returned **65 contract types**
+including multipliers. The transport is usable for ARX's actual strategy.
+
+**What this ruling does NOT authorise.** Certifying the transport is not
+certifying trading. `buy` and `sell` have mappers and normalizers but no
+certified path, and the demo-trade certification (spec Phase 15) is
+deliberately unbuilt. Building the thing that places an order is an owner
+decision, not an implementation detail, and no run in this program has ever
+placed one.
+
+Standing holds that survive this ruling: no `DerivExecutionAdapter`, no live
+dispatch through the new transport, and the 18-gate Phase B evaluator remains
+the only path to a live order.
+
+Evidence: `pnpm --filter @workspace/api-server run certify:deriv-new-api`,
+2026-08-25 17:50 UTC, 17/17. Re-runnable; it places no trade by construction.

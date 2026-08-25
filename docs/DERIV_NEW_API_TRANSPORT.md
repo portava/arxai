@@ -90,14 +90,29 @@ and a certification that runs automatically stops being a decision someone made.
 **Certifying the transport is not certifying trading.** Order placement stays
 uncertified until the separate demo-trade certification is run deliberately.
 
-### Step 9 is load-bearing
+Status 2026-08-25: **17/17 steps pass** against the live venue on a demo
+account. See Ruling 16 in `OWNER_DECISIONS.md`.
+
+### Step 9 is load-bearing — and it has now answered
 
 The endpoints are published under `/trading/v1/options/` while ARX trades
-**multipliers**. Deriv documents the surface as covering options, multipliers,
-accumulators and derived indices, so `options` is most likely an umbrella
-product name — but that is an assumption, and step 9 settles it with evidence.
-If the surface exposes no `MULTUP`/`MULTDOWN`, the transport is real and still
-useless to ARX, and certification fails loudly rather than passing quietly.
+**multipliers**. That was carried as an open assumption for the whole build,
+never as a fact.
+
+**Settled 2026-08-25: `R_100` returned 65 contract types including
+MULTUP/MULTDOWN.** `options` is an umbrella product name and the surface serves
+ARX's actual market. The step remains in the sequence because a venue can
+change what it offers, and a transport that works but cannot price the
+contracts ARX trades is useless — so this fails loudly rather than passing
+quietly.
+
+Note the request shape: `contracts_for` is `additionalProperties: false` and
+takes **only** `{contracts_for: "<symbol>"}` plus the optional envelope keys.
+The symbol is the value, not a field — the `symbol` → `underlying_symbol`
+rename does not propagate here. Multiplier capability is discovered from
+`available[].contract_type` in the RESPONSE; it was never a request filter.
+Sending `currency` or `contract_type` here is rejected as
+`InputValidationFailed`.
 
 ## Separation from legacy (Ruling 15a)
 
