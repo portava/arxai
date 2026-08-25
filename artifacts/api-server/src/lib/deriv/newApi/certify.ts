@@ -113,7 +113,17 @@ const bad = (step: number, name: string, detail: string, code?: DerivNewApiError
   ({ step, name, status: "FAIL", detail, errorCode: code ?? null });
 
 function describeErr(e: unknown): { detail: string; code: DerivNewApiErrorCode | null } {
-  if (e instanceof DerivNewApiError) return { detail: e.code, code: e.code };
+  if (e instanceof DerivNewApiError) {
+    // Surface Deriv's OWN enum-like code and the HTTP status, not just ARX's
+    // classification. Both are safe — an enum and a number, never prose —
+    // and without them a 401 is undiagnosable without guessing. The previous
+    // InvalidToken incident took several cycles for exactly this reason, and
+    // the first version of this function reproduced the hole in new code.
+    const parts: string[] = [e.code];
+    if (e.httpStatus !== null) parts.push(`http ${e.httpStatus}`);
+    parts.push(e.derivCode !== null ? `deriv:${e.derivCode}` : "deriv:<no code in body>");
+    return { detail: parts.join(" "), code: e.code };
+  }
   if (e instanceof DerivCertificationRefusal) return { detail: e.message, code: null };
   // Deliberately NOT the message: an arbitrary thrown value can carry request
   // context, and request context here contains the Authorization header.
