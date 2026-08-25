@@ -62,7 +62,9 @@ async function probe(p: Probe, config: { appId: string; token: string }): Promis
 }
 
 async function main(): Promise<void> {
-  const config = resolveNewApiConfig();
+  // Deliberately permissive: diagnosing a config that cannot authenticate is
+  // this command's entire job.
+  const config = resolveNewApiConfig({ allowIncoherent: true });
   if (typeof config === "string") {
     console.error(`cannot diagnose: ${config}`);
     process.exitCode = 1;

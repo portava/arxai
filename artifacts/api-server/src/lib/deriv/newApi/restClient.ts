@@ -35,11 +35,28 @@ export interface DerivNewApiConfig {
  * Returns a typed refusal rather than throwing a message that might later be
  * logged with the values interpolated.
  */
-export function resolveNewApiConfig(): DerivNewApiConfig | DerivNewApiErrorCode {
+export function resolveNewApiConfig(
+  opts: {
+    /**
+     * Accept a configuration that CANNOT authenticate. Only the diagnose
+     * command passes this: its whole purpose is to examine a broken config,
+     * and a refusal here would disable the tool that identifies the breakage.
+     */
+    allowIncoherent?: boolean;
+  } = {},
+): DerivNewApiConfig | DerivNewApiErrorCode {
   const appId = (process.env["DERIV_APP_ID"] ?? "").trim();
   const token = (process.env["DERIV_API_TOKEN"] ?? "").trim();
   if (appId.length === 0) return "DERIV_NEW_API_INVALID_APP_ID";
   if (token.length === 0) return "DERIV_NEW_API_UNAUTHORIZED";
+  // A NUMERIC App ID is the legacy generation's format, and Deriv rejects one
+  // on the new API as "Invalid application". detectDerivApiMode already encodes
+  // exactly this (numeric implies legacy), so refusing here contradicts
+  // nothing — it closes the one way the pair could still reach the wire: an
+  // explicit DERIV_API_MODE=new, which overrides the inference that would
+  // otherwise have caught it. That combination produced a live incident whose
+  // only symptom was an HTTP rejection that reads like a credential problem.
+  if (!opts.allowIncoherent && /^\d+$/.test(appId)) return "DERIV_NEW_API_INVALID_APP_ID";
   return { appId, token };
 }
 

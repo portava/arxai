@@ -18,6 +18,11 @@ import {
 import { fetchAccounts, selectDemoAccount, isRealAccount } from "./accounts.js";
 import { NewDerivTransport, canSendTradingRequest } from "./transport.js";
 import { DerivNewApiError, type DerivNewApiErrorCode } from "./errors.js";
+import { DERIV_OTP_VALIDITY_MS, DERIV_OTP_SAFE_AGE_MS } from "./otp.js";
+
+/** Maximum tolerable clock disagreement with Deriv. Derived from the OTP
+ *  freshness margin so the two cannot drift apart. */
+export const MAX_CLOCK_SKEW_MS = DERIV_OTP_VALIDITY_MS - DERIV_OTP_SAFE_AGE_MS;
 import {
   mapActiveSymbolsRequest, mapContractsForRequest, mapProposalRequest,
   mapBalanceRequest, mapPortfolioRequest, normalizeProposal, normalizeBalance,
@@ -159,21 +164,31 @@ export async function runReadOnlyCertification(args: {
   });
   let accountId: string | null = null;
 
-  // 1 — configuration present and actually the new generation.
-  const config = resolveNewApiConfig();
-  if (typeof config === "string") {
-    steps.push(bad(1, "config", config, config));
-    return report();
-  }
+  // 1 — configuration present, coherent, and actually the new generation.
   const d = describeConfig();
   if (d.mode !== "new") {
     steps.push(bad(1, "config", `mode is ${d.mode}; certification applies to the new generation only`));
     return report();
   }
+  // GATE, not a label. This previously printed the App ID shape inside a
+  // PASSING step: a legacy App ID in new mode certified step 1 green and then
+  // failed at step 2 as an HTTP rejection, which reads like a credential
+  // problem and sends the operator after the token. The incoherence is
+  // detectable here, before a single request, so it is refused here.
+  if (d.appIdShape === "numeric") {
+    steps.push(bad(1, "config",
+      "DERIV_APP_ID is NUMERIC — the legacy generation's format. Deriv rejects it "
+      + "on the new API as \"Invalid application\". This is a CONFIGURATION error, "
+      + "not a credential error: the token is not implicated.",
+      "DERIV_NEW_API_INVALID_APP_ID"));
+    return report();
+  }
+  const config = resolveNewApiConfig();
+  if (typeof config === "string") {
+    steps.push(bad(1, "config", config, config));
+    return report();
+  }
   // Presence and length only — never the value, never a prefix.
-  // The App ID SHAPE is reported because a legacy (numeric) App ID sent to the
-  // new API is rejected as "Invalid application" — a failure that otherwise
-  // looks like a credential problem and sends the operator after the token.
   steps.push(ok(1, "config",
     `mode=new appId=${d.appIdShape} pat=present(len ${d.patLength})`));
 
@@ -263,7 +278,19 @@ export async function runReadOnlyCertification(args: {
       return report();
     }
     const skewSec = Math.abs(Math.floor(Date.now() / 1000) - serverTime);
-    steps.push(ok(7, "time", `server clock reachable, skew ${skewSec}s`));
+    // A BOUND, not a readout. Step 7 used to compute the skew and pass
+    // regardless of magnitude, which certifies a clock that cannot support the
+    // things depending on it. The bound is DERIVED from the OTP margin rather
+    // than picked: an OTP is treated as stale at DERIV_OTP_SAFE_AGE_MS against
+    // Deriv's DERIV_OTP_VALIDITY_MS, and skew larger than that margin can let a
+    // ticket ARX believes is fresh already be expired at the venue. Deriving it
+    // means the two cannot drift apart.
+    if (skewSec * 1000 > MAX_CLOCK_SKEW_MS) {
+      steps.push(bad(7, "time",
+        `clock skew ${skewSec}s exceeds the ${MAX_CLOCK_SKEW_MS / 1000}s OTP freshness margin`));
+      return report();
+    }
+    steps.push(ok(7, "time", `server clock reachable, skew ${skewSec}s (bound ${MAX_CLOCK_SKEW_MS / 1000}s)`));
 
     // 8 — tradable universe.
     const symbolsRes = await send(8, "active_symbols", mapActiveSymbolsRequest());

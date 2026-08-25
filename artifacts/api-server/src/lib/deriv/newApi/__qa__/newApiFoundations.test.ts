@@ -527,3 +527,21 @@ test("timing is reported on success AND failure, durations only", async () => {
   }));
   assert.equal(seen.length, 2, "timing must be reported on the failure path too");
 });
+
+test("resolveNewApiConfig REFUSES a legacy-format App ID for the new API", () => {
+  const prev = process.env["DERIV_APP_ID"];
+  const prevTok = process.env["DERIV_API_TOKEN"];
+  try {
+    process.env["DERIV_APP_ID"] = "1089";
+    process.env["DERIV_API_TOKEN"] = "fixture-not-a-real-token";
+    assert.equal(resolveNewApiConfig(), "DERIV_NEW_API_INVALID_APP_ID");
+    // The diagnose command must still be able to examine a broken config —
+    // refusing there would disable the tool that identifies the breakage.
+    const permissive = resolveNewApiConfig({ allowIncoherent: true });
+    assert.equal(typeof permissive, "object");
+    assert.equal((permissive as { appId: string }).appId, "1089");
+  } finally {
+    if (prev === undefined) delete process.env["DERIV_APP_ID"]; else process.env["DERIV_APP_ID"] = prev;
+    if (prevTok === undefined) delete process.env["DERIV_API_TOKEN"]; else process.env["DERIV_API_TOKEN"] = prevTok;
+  }
+});

@@ -228,3 +228,44 @@ test("the certification module contains no buy or sell call site", () => {
     "certify.ts references a trade mapper");
   assert.ok(!/send\([^)]*\bbuy\b/.test(code), "certify.ts appears to send a buy");
 });
+
+// ── Config coherence (the live "Invalid application" incident) ──────────────
+
+test("a NUMERIC App ID in new mode FAILS step 1 — before any request", async () => {
+  // The incident: DERIV_API_MODE=new with a legacy-format App ID. Step 1
+  // printed `appId=numeric` and passed anyway; the run then died at step 2 on
+  // an HTTP rejection that reads like a credential problem, sending the
+  // operator after the token. The token was never implicated.
+  const sent: string[] = [];
+  const report = await withEnv({ ...NEW_ENV, DERIV_APP_ID: "1089" }, () =>
+    runReadOnlyCertification({
+      fetchImpl: fakeFetch(ACCOUNTS_OK), transportFactory: fakeTransport({}, sent),
+    }));
+  assert.equal(report.passed, false);
+  assert.equal(report.haltedAt, 1, "must halt at config, not at the venue");
+  assert.match(report.steps[0]!.detail, /CONFIGURATION error/);
+  assert.match(report.steps[0]!.detail, /not a credential error/);
+  // Nothing was sent: the incoherence is detectable without a request.
+  assert.equal(sent.length, 0);
+});
+
+test("clock skew beyond the OTP freshness margin FAILS step 7", async () => {
+  // Step 7 used to compute the skew and pass at any magnitude.
+  const stale = Math.floor(Date.now() / 1000) - 600;      // 10 minutes adrift
+  const report = await withEnv(NEW_ENV, () => runReadOnlyCertification({
+    fetchImpl: fakeFetch(ACCOUNTS_OK),
+    transportFactory: fakeTransport({ time: { time: stale } }),
+  }));
+  assert.equal(report.passed, false);
+  assert.equal(report.haltedAt, 7);
+  assert.match(report.steps[6]!.detail, /exceeds the .*OTP freshness margin/);
+});
+
+test("skew INSIDE the margin still passes — the bound is not a blanket refusal", async () => {
+  const slight = Math.floor(Date.now() / 1000) - 3;
+  const report = await withEnv(NEW_ENV, () => runReadOnlyCertification({
+    fetchImpl: fakeFetch(ACCOUNTS_OK),
+    transportFactory: fakeTransport({ time: { time: slight } }),
+  }));
+  assert.equal(report.passed, true, JSON.stringify(report.steps.filter((s) => s.status === "FAIL")));
+});
