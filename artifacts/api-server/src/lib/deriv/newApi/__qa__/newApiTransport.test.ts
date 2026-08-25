@@ -209,3 +209,38 @@ test("neither the PAT nor the OTP is ever logged", () => {
     assert.ok(!/Bearer/.test(region), "no Authorization material in logs");
   }
 });
+
+// ── Ruling 15a separation, tree-wide (spec Phase 12) ────────────────────────
+//
+// The original pin covered transport.ts alone. Every module added since —
+// wire, certify, apiMode — could have reintroduced the fall-through the ruling
+// exists to prevent, and no test would have noticed. This scans the whole
+// new-API tree instead of one file, so a NEW module is covered the moment it
+// is created rather than whenever someone remembers to extend a list.
+
+test("NO module in the new-API tree reaches the legacy generation", async () => {
+  const { readdirSync, readFileSync } = await import("node:fs");
+  const dir = new URL("../", import.meta.url);
+  const files = readdirSync(dir).filter((f) => f.endsWith(".ts"));
+  assert.ok(files.length >= 6, `expected the new-API tree, found ${files.length} file(s)`);
+
+  for (const file of files) {
+    const code = readFileSync(new URL(file, dir), "utf8")
+      // Comments in this tree DISCUSS the legacy path constantly — that is
+      // the point of the ruling. Matching prose would be a false failure,
+      // the mirror of the comment-trap that produced false passes.
+      .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+    assert.ok(!/derivWsClient/.test(code),
+      `${file} imports the legacy client — new mode must not fall through to it`);
+    assert.ok(!/ws\.derivws\.com|\/websockets\/v3/.test(code),
+      `${file} names the legacy WebSocket host`);
+    assert.ok(!/\b1089\b/.test(code),
+      `${file} references the bootstrap app id`);
+    // An `authorize` PAYLOAD is the legacy handshake. The word appears in
+    // error codes (DERIV_NEW_API_UNAUTHORIZED) and in prose, so match the
+    // message shape a real handshake would build.
+    assert.ok(!/\bauthorize\s*:/.test(code),
+      `${file} builds an authorize payload`);
+  }
+});
