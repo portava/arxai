@@ -50,6 +50,7 @@
     "test:deriv-new-api-wire": "node --import tsx --test --test-force-exit src/lib/deriv/newApi/__qa__/newApiWire.test.ts",
     "test:deriv-new-api-transport": "node --import tsx --test --test-force-exit src/lib/deriv/newApi/__qa__/newApiTransport.test.ts",
     "diagnose:deriv-new-api": "node --import tsx src/scripts/derivNewApiDiagnose.ts",
+    "close:deriv-demo-position": "node --import tsx src/scripts/derivCloseDemoPosition.ts",
     "certify:deriv-demo-trade": "node --import tsx src/scripts/derivDemoTradeCertify.ts",
     "certify:deriv-new-api": "node --import tsx src/scripts/derivNewApiCertify.ts",
     "test:deriv-new-api-certify": "node --import tsx --test --test-force-exit src/lib/deriv/newApi/__qa__/newApiCertify.test.ts",

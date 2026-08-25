@@ -345,21 +345,114 @@ test("a NON-ZERO P/L is graded non-zero — the comparison did real work", async
 test("the hold is CAPPED — an unbounded hold widens the orphan window", async () => {
   // A killed process cannot report an open position, so the window in which
   // that can happen must stay bounded no matter what a caller asks for.
-  let slept = -1;
+  // SUMMED, not last-seen: the hold is now issued in keepalive-sized slices,
+  // so a single-value probe would only ever see the final slice.
+  let slept = 0;
   await runDemoTradeCertification(CONFIG, {
-    ...AUTH, observeMs: 999_999_999, sleep: async (ms: number) => { slept = ms; },
-    fetchImpl: fakeFetch(ACCOUNTS("demo")), transportFactory: fakeTransport(),
+    ...AUTH, observeMs: 999_999_999, sleep: async (ms: number) => { slept += ms; },
+    fetchImpl: fakeFetch(ACCOUNTS("demo")), transportFactory: fakeTransport({ ping: { ping: "pong" } }),
   });
-  assert.equal(slept, DEMO_TRADE_MAX_OBSERVE_MS, `hold was ${slept}ms`);
+  assert.equal(slept, DEMO_TRADE_MAX_OBSERVE_MS, `total hold was ${slept}ms`);
 });
 
 test("a negative hold cannot invert into a wait or skip the sell", async () => {
-  let slept = -1;
+  let slept = 0;
   const r = await runDemoTradeCertification(CONFIG, {
-    ...AUTH, observeMs: -5000, sleep: async (ms: number) => { slept = ms; },
+    ...AUTH, observeMs: -5000, sleep: async (ms: number) => { slept += ms; },
     fetchImpl: fakeFetch(ACCOUNTS("demo")), transportFactory: fakeTransport(),
   });
   assert.equal(slept, 0);
   assert.equal(r.certified, true);
   assert.equal(r.positionLeftOpen, false, "the position must still be closed");
+});
+
+// ── Socket survival during the hold (the stranded-position incident) ───────
+
+test("a long hold PINGS to keep the socket alive", async () => {
+  // The 60s live run dropped the socket at exactly 60s, because the harness
+  // slept silently and the connection idled out — stranding an open position.
+  const sent: string[] = [];
+  await runDemoTradeCertification(CONFIG, {
+    ...AUTH, observeMs: 60_000, sleep: async () => {},
+    fetchImpl: fakeFetch(ACCOUNTS("demo")),
+    transportFactory: fakeTransport({ ping: { ping: "pong" } }, sent),
+  });
+  const pings = sent.filter((o) => o === "ping").length;
+  // 60s in 15s slices = 3 keepalives (the final slice needs none).
+  assert.equal(pings, 3, `expected 3 keepalives, got ${pings}`);
+  // Keepalive must never become a way to send anything that commits capital.
+  assert.equal(sent.filter((o) => o === "buy").length, 1);
+});
+
+test("a SHORT hold sends no keepalive — no pointless traffic", async () => {
+  const sent: string[] = [];
+  await runDemoTradeCertification(CONFIG, {
+    ...AUTH, observeMs: 3_000, sleep: async () => {},
+    fetchImpl: fakeFetch(ACCOUNTS("demo")), transportFactory: fakeTransport({}, sent),
+  });
+  assert.equal(sent.filter((o) => o === "ping").length, 0);
+});
+
+test("a socket that drops during the hold RECONNECTS to close the position", async () => {
+  // Abandoning an open trade because the transport blinked is the worst
+  // outcome available here.
+  let state = "WS_READY";
+  let reconnected = false;
+  const sent: string[] = [];
+  const factory = () => ({
+    connect: async () => { state = "WS_READY"; },
+    reconnect: async () => { reconnected = true; state = "WS_READY"; },
+    getState: () => state,
+    close: () => {},
+    send: async (p: Record<string, unknown>) => {
+      const op = Object.keys(p).find((k) => k !== "req_id" && k !== "subscribe")!;
+      sent.push(op);
+      if (op === "ping") { state = "DISCONNECTED"; throw new Error("socket gone"); }
+      if (state !== "WS_READY") throw new Error("not ready");
+      const answers: Record<string, unknown> = {
+        proposal: { proposal: { id: "q", ask_price: 1, spot: 100 } },
+        buy: { buy: { contract_id: 555, buy_price: 1 } },
+        proposal_open_contract: { proposal_open_contract: { contract_id: 555, is_sold: 1, profit: 0.5 } },
+        sell: { sold: { sold_for: 1.5 } },
+      };
+      return answers[op] as Record<string, unknown>;
+    },
+  }) as never;
+
+  const r = await runDemoTradeCertification(CONFIG, {
+    ...AUTH, observeMs: 60_000, sleep: async () => {},
+    fetchImpl: fakeFetch(ACCOUNTS("demo")), transportFactory: factory,
+  });
+  assert.ok(reconnected, "must reconnect rather than strand the position");
+  assert.equal(r.positionLeftOpen, false, "the position must end up closed");
+  assert.ok(sent.includes("sell"));
+});
+
+test("if reconnect FAILS the position is reported open, never abandoned quietly", async () => {
+  let state = "WS_READY";
+  const factory = () => ({
+    connect: async () => { state = "WS_READY"; },
+    reconnect: async () => { throw new Error("cannot reconnect"); },
+    getState: () => state,
+    close: () => {},
+    send: async (p: Record<string, unknown>) => {
+      const op = Object.keys(p).find((k) => k !== "req_id" && k !== "subscribe")!;
+      if (op === "ping") { state = "DISCONNECTED"; throw new Error("socket gone"); }
+      const answers: Record<string, unknown> = {
+        proposal: { proposal: { id: "q", ask_price: 1 } },
+        buy: { buy: { contract_id: 777, buy_price: 1 } },
+      };
+      if (!(op in answers)) throw new Error("not ready");
+      return answers[op] as Record<string, unknown>;
+    },
+  }) as never;
+
+  const r = await runDemoTradeCertification(CONFIG, {
+    ...AUTH, observeMs: 60_000, sleep: async () => {},
+    fetchImpl: fakeFetch(ACCOUNTS("demo")), transportFactory: factory,
+  });
+  assert.equal(r.certified, false);
+  assert.equal(r.positionLeftOpen, true);
+  assert.equal(r.contractId, 777, "the id must survive so it can be closed by hand");
+  assert.match(r.steps.find((s) => s.step === "reconnect")!.detail, /OPEN/);
 });

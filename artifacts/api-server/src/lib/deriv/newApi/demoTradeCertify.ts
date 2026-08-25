@@ -55,6 +55,16 @@ export const MAX_ORDERS_PER_PROCESS = 1;
  *  so the window in which that can happen stays bounded. */
 export const DEMO_TRADE_MAX_OBSERVE_MS = 300_000;
 export const DEMO_TRADE_DEFAULT_OBSERVE_MS = 3_000;
+
+/**
+ * Ping interval during the hold.
+ *
+ * A 60s hold dropped the socket at EXACTLY 60s: the connection idles out when
+ * nothing is sent, and the harness was sleeping silently. That stranded an
+ * open position — the harness reported it correctly, but the position still
+ * had to be closed by hand. The hold now keeps the socket alive.
+ */
+export const DEMO_TRADE_KEEPALIVE_MS = 15_000;
 let ordersPlacedThisProcess = 0;
 
 /** Test-only reset. Named so its presence in production code is obvious. */
@@ -329,7 +339,39 @@ export async function runDemoTradeCertification(
       Math.max(opts.observeMs ?? DEMO_TRADE_DEFAULT_OBSERVE_MS, 0),
       DEMO_TRADE_MAX_OBSERVE_MS,
     );
-    await sleep(holdMs);
+    // Hold in KEEPALIVE-sized slices rather than one long sleep. `ping` is
+    // read-only and cannot commit capital; the alternative is an idle socket
+    // that Deriv closes underneath an open position.
+    let held = 0;
+    while (held < holdMs) {
+      const slice = Math.min(DEMO_TRADE_KEEPALIVE_MS, holdMs - held);
+      await sleep(slice);
+      held += slice;
+      if (held >= holdMs) break;
+      try {
+        await send({ ping: 1 });
+      } catch {
+        // A failed keepalive means the socket is gone. Stop holding and go
+        // straight to closing — every extra second is a second the position
+        // stays open.
+        break;
+      }
+    }
+    // A dropped socket must not strand the position. Reconnect (fresh OTP) and
+    // continue to the close — abandoning an open trade because the transport
+    // blinked is the worst outcome available here.
+    if (!canSendTradingRequest(transport.getState())) {
+      try {
+        await transport.reconnect();
+        steps.push(ok("reconnect", "socket dropped during the hold; reconnected to close the position"));
+      } catch (e) {
+        const { detail } = describe(e);
+        steps.push(unresolved("reconnect",
+          `${detail} — position ${contractId} is OPEN and the socket cannot be re-established`));
+        return report();
+      }
+    }
+
     let openState;
     try {
       const req = mapOpenContractRequest(contractId);
