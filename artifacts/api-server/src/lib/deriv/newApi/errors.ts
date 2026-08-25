@@ -49,10 +49,21 @@ export class DerivNewApiError extends Error {
   readonly derivCode: string | null;
   /** HTTP status for REST failures; null for WS/protocol failures. */
   readonly httpStatus: number | null;
+  /** The `error=` parameter from a WWW-Authenticate challenge (RFC 6750) —
+   *  an enum such as invalid_token. The accompanying error_description is
+   *  deliberately NOT captured: it is prose and can echo request context. */
+  readonly authChallenge: string | null;
+  /** Response content-type and byte length. Shape only, never content. A 401
+   *  carrying no JSON body at all distinguishes an edge rejection from an
+   *  application-level refusal. */
+  readonly bodyShape: string | null;
 
   constructor(
     code: DerivNewApiErrorCode,
-    opts: { derivCode?: string | null; httpStatus?: number | null; detail?: string } = {},
+    opts: {
+      derivCode?: string | null; httpStatus?: number | null; detail?: string;
+      authChallenge?: string | null; bodyShape?: string | null;
+    } = {},
   ) {
     // The message is the CLASSIFICATION, never the credential or the venue's
     // prose — this object is what surfaces in logs and thrown errors.
@@ -61,6 +72,8 @@ export class DerivNewApiError extends Error {
     this.code = code;
     this.derivCode = opts.derivCode ?? null;
     this.httpStatus = opts.httpStatus ?? null;
+    this.authChallenge = opts.authChallenge ?? null;
+    this.bodyShape = opts.bodyShape ?? null;
   }
 }
 

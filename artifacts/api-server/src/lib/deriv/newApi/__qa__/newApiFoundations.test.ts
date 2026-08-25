@@ -27,16 +27,26 @@ import {
 const PAT = "pat-SUPER-SECRET-value-do-not-leak";
 const CONFIG = { appId: "33mVSM4MR95zbFCS2LKxS", token: PAT };
 
+/**
+ * Returns a REAL Response, not a hand-rolled object.
+ *
+ * The previous fixture was `{ok, status, json}` cast to Response. It had no
+ * `headers` and no `text()`, so client code touching either crashed with a
+ * TypeError that surfaced as an undefined error code — and it could never have
+ * caught the single-use-body-stream bug, because it had no stream. A real
+ * Response also derives `ok` from the status rather than trusting a flag.
+ */
 function fakeFetch(res: {
-  ok?: boolean; status?: number; json?: unknown; throws?: Error;
+  ok?: boolean; status?: number; json?: unknown; body?: string;
+  contentType?: string; headers?: Record<string, string>; throws?: Error;
 }): typeof fetch {
   return (async (_url: string, _init?: RequestInit) => {
     if (res.throws) throw res.throws;
-    return {
-      ok: res.ok ?? true,
+    const body = res.body ?? (res.json === undefined ? "" : JSON.stringify(res.json));
+    return new Response(body, {
       status: res.status ?? 200,
-      json: async () => res.json,
-    } as unknown as Response;
+      headers: { "content-type": res.contentType ?? "application/json", ...(res.headers ?? {}) },
+    });
   }) as unknown as typeof fetch;
 }
 
@@ -103,7 +113,7 @@ test("the request carries Deriv-App-ID and Bearer auth", async () => {
   let seen: RequestInit | undefined;
   const spy = (async (_u: string, init?: RequestInit) => {
     seen = init;
-    return { ok: true, status: 200, json: async () => ({}) } as unknown as Response;
+    return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
   }) as unknown as typeof fetch;
   await derivRestRequest({ method: "GET", path: "/x", config: CONFIG, fetchImpl: spy });
   const headers = seen?.headers as Record<string, string>;
@@ -260,4 +270,88 @@ test("an OTP failure is not reported as a credential failure", async () => {
       return true;
     },
   );
+});
+
+// ── Credential-rejection diagnostics ────────────────────────────────────────
+
+test("a 401 with an EMPTY body is distinguishable from an application refusal", async () => {
+  // This is the exact live symptom. Deriv's application errors carry a JSON
+  // error.code; a bare 401 means the request never reached the application,
+  // which points at the App ID rather than the token's validity. Without the
+  // body shape the two are indistinguishable and the operator has to guess.
+  await assert.rejects(
+    () => derivRestRequest({
+      method: "GET", path: "/x", config: CONFIG,
+      fetchImpl: fakeFetch({ status: 401, body: "", contentType: "text/html" }),
+    }),
+    (err: DerivNewApiError) => {
+      assert.equal(err.code, "DERIV_NEW_API_UNAUTHORIZED");
+      assert.equal(err.derivCode, null);
+      assert.equal(err.bodyShape, "text/html 0B");
+      return true;
+    },
+  );
+});
+
+test("the WWW-Authenticate enum is captured but its prose description is NOT", async () => {
+  await assert.rejects(
+    () => derivRestRequest({
+      method: "GET", path: "/x", config: CONFIG,
+      fetchImpl: fakeFetch({
+        status: 401, body: "",
+        headers: {
+          "www-authenticate":
+            'Bearer realm="deriv", error="invalid_token", error_description="token echoing REQUEST-CONTEXT here"',
+        },
+      }),
+    }),
+    (err: DerivNewApiError) => {
+      assert.equal(err.authChallenge, "invalid_token");
+      // error_description is prose and can echo request context — the whole
+      // reason Deriv's messages are never propagated.
+      const blob = `${err.message} ${JSON.stringify(err)}`;
+      assert.ok(!blob.includes("REQUEST-CONTEXT"), "challenge prose leaked");
+      return true;
+    },
+  );
+});
+
+test("a non-JSON error body no longer hides the status classification", async () => {
+  // The first version called res.json() and would throw on an HTML body
+  // BEFORE it could report anything. A response stream is single-use, so the
+  // body is now read once as text and parsed from that string.
+  await assert.rejects(
+    () => derivRestRequest({
+      method: "GET", path: "/x", config: CONFIG,
+      fetchImpl: fakeFetch({ status: 403, body: "<html>denied</html>", contentType: "text/html" }),
+    }),
+    (err: DerivNewApiError) => {
+      assert.equal(err.code, "DERIV_NEW_API_INSUFFICIENT_SCOPE");
+      assert.equal(err.bodyShape, "text/html 19B");
+      assert.ok(!err.message.includes("denied"), "venue prose leaked");
+      return true;
+    },
+  );
+});
+
+test("authMode omits a header WITHOUT changing how headers are built", async () => {
+  // The probe must not construct its own request — one place builds credential
+  // headers. It selects among them.
+  const sent: Array<Record<string, string>> = [];
+  const spy = (async (_u: string, init?: RequestInit) => {
+    sent.push((init?.headers ?? {}) as Record<string, string>);
+    return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
+  }) as unknown as typeof fetch;
+
+  await derivRestRequest({ method: "GET", path: "/x", config: CONFIG, fetchImpl: spy, authMode: "app-id-only" });
+  assert.ok(!("Authorization" in sent[0]!), "app-id-only must send NO credential");
+  assert.equal(sent[0]!["Deriv-App-ID"], CONFIG.appId);
+
+  await derivRestRequest({ method: "GET", path: "/x", config: CONFIG, fetchImpl: spy, authMode: "bearer-only" });
+  assert.ok(!("Deriv-App-ID" in sent[1]!));
+  assert.ok(sent[1]!["Authorization"]!.startsWith("Bearer "));
+
+  await derivRestRequest({ method: "GET", path: "/x", config: CONFIG, fetchImpl: spy });
+  assert.equal(sent[2]!["Deriv-App-ID"], CONFIG.appId);
+  assert.ok(sent[2]!["Authorization"]!.startsWith("Bearer "));
 });

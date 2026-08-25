@@ -85,6 +85,12 @@ export async function derivRestRequest<T>(args: {
   timeoutMs?: number;
   /** Injected for tests; defaults to global fetch. */
   fetchImpl?: typeof fetch;
+  /**
+   * Which credential headers to send. DIAGNOSTIC USE ONLY — omitting a header
+   * is how the diagnose command distinguishes an App-ID rejection from a token
+   * rejection WITHOUT inspecting the token. Defaults to sending both.
+   */
+  authMode?: "both" | "app-id-only" | "bearer-only";
 }): Promise<DerivRestResponse<T>> {
   const doFetch = args.fetchImpl ?? fetch;
   const controller = new AbortController();
@@ -94,9 +100,10 @@ export async function derivRestRequest<T>(args: {
   try {
     res = await doFetch(`${DERIV_NEW_API_BASE}${args.path}`, {
       method: args.method,
+      // STILL the one and only place credential headers are constructed.
       headers: {
-        "Deriv-App-ID": args.config.appId,
-        Authorization: `Bearer ${args.config.token}`,
+        ...(args.authMode === "bearer-only" ? {} : { "Deriv-App-ID": args.config.appId }),
+        ...(args.authMode === "app-id-only" ? {} : { Authorization: `Bearer ${args.config.token}` }),
         "Content-Type": "application/json",
       },
       body: args.body === undefined ? undefined : JSON.stringify(args.body),
@@ -115,16 +122,28 @@ export async function derivRestRequest<T>(args: {
   }
 
   if (!res.ok) {
-    // Read Deriv's enum-like code if present; never its prose.
+    // Read the body ONCE as text, then shape + parse from that. Calling
+    // res.json() and later res.text() would fail: the stream is single-use.
+    const contentType = (res.headers.get("content-type") ?? "none").split(";")[0]!;
+    let raw = "";
+    try { raw = await res.text(); } catch { /* unreadable */ }
+    const bodyShape = `${contentType} ${raw.length}B`;
+
     let derivCode: string | null = null;
     try {
-      const parsed = await res.json() as { error?: { code?: unknown }; code?: unknown };
-      const raw = parsed?.error?.code ?? parsed?.code;
-      if (typeof raw === "string" && raw.length > 0) derivCode = raw;
-    } catch { /* body unreadable — status alone classifies it */ }
+      const parsed = JSON.parse(raw) as { error?: { code?: unknown }; code?: unknown };
+      const c = parsed?.error?.code ?? parsed?.code;
+      if (typeof c === "string" && c.length > 0) derivCode = c;
+    } catch { /* not JSON — status and shape classify it */ }
+
+    // RFC 6750 challenge: capture the `error=` ENUM only. error_description
+    // is prose and is deliberately left behind.
+    const challenge = res.headers.get("www-authenticate");
+    const m = challenge ? /error="?([A-Za-z0-9_-]+)"?/.exec(challenge) : null;
+    const authChallenge = m ? m[1]! : (challenge ? "present-without-error-param" : null);
+
     throw new DerivNewApiError(classifyHttpStatus(res.status), {
-      derivCode,
-      httpStatus: res.status,
+      derivCode, httpStatus: res.status, authChallenge, bodyShape,
     });
   }
 

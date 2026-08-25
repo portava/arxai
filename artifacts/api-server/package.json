@@ -49,6 +49,7 @@
     "test:pre-gate-wave4": "node --import tsx --test --test-force-exit src/lib/live/__qa__/preGateWave4.test.ts",
     "test:deriv-new-api-wire": "node --import tsx --test --test-force-exit src/lib/deriv/newApi/__qa__/newApiWire.test.ts",
     "test:deriv-new-api-transport": "node --import tsx --test --test-force-exit src/lib/deriv/newApi/__qa__/newApiTransport.test.ts",
+    "diagnose:deriv-new-api": "node --import tsx src/scripts/derivNewApiDiagnose.ts",
     "certify:deriv-new-api": "node --import tsx src/scripts/derivNewApiCertify.ts",
     "test:deriv-new-api-certify": "node --import tsx --test --test-force-exit src/lib/deriv/newApi/__qa__/newApiCertify.test.ts",
     "test:deriv-new-api-foundations": "node --import tsx --test --test-force-exit src/lib/deriv/newApi/__qa__/newApiFoundations.test.ts",

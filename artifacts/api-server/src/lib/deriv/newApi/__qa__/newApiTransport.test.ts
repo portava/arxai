@@ -40,7 +40,12 @@ function fakeSocket(record: { url?: string; sent: string[]; sockets: number }) {
 function otpFetch(wsUrl = DEMO_WS, calls = { n: 0 }): typeof fetch {
   return (async () => {
     calls.n += 1;
-    return { ok: true, status: 200, json: async () => ({ ws_url: wsUrl }) } as unknown as Response;
+    // A REAL Response: the cast-object fixture had no headers and no text(),
+    // so client code touching either crashed inside a catch and surfaced as
+    // the wrong error code.
+    return new Response(JSON.stringify({ ws_url: wsUrl }), {
+      status: 200, headers: { "content-type": "application/json" },
+    });
   }) as unknown as typeof fetch;
 }
 
@@ -116,7 +121,7 @@ test("a credential failure during OTP is NOT retried", async () => {
   const calls = { n: 0 };
   const failing = (async () => {
     calls.n += 1;
-    return { ok: false, status: 401, json: async () => ({}) } as unknown as Response;
+    return new Response("{}", { status: 401, headers: { "content-type": "application/json" } });
   }) as unknown as typeof fetch;
   const t = new NewDerivTransport(CONFIG, fakeSocket({ sent: [], sockets: 0 }), failing);
   await assert.rejects(() => t.connect("ACC-D1"), (e: DerivNewApiError) => {
