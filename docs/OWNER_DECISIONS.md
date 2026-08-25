@@ -358,3 +358,42 @@ between quote and buy, and a hold long enough to move the P/L off zero.
 a single manual demo order. It does not authorise autonomous execution, live
 money, a DerivExecutionAdapter, or dispatch through the 18-gate path. All
 standing holds from Ruling 16 remain.
+
+## Ruling 18 — reconciliation proven on a NON-ZERO P/L; keepalive and recovery added (2026-08-25)
+Contract `10548672559`: bought at 1, held 60s while the spot moved 618.38 →
+618.80, sold for 1.03, venue-confirmed settled. Derived P/L
+`0.030000000000000027`, Deriv-reported `0.03`, **agrees**, graded
+`evidence: non-zero`.
+
+This closes the gap Ruling 17 left open. ARX's reconciliation arithmetic has
+now been exercised against a real, non-zero venue-reported P/L rather than
+`0 === 0`.
+
+It also vindicated the cent-rounding fix in a way a test could not: the derived
+value really did arrive as `0.030000000000000027`. Whole-cent comparison
+handled it exactly.
+
+**The incident that preceded it, recorded because the fix came from it.** A
+first 60s attempt STRANDED an open position — contract `10547739159` — when the
+socket idled out at exactly 60.0s. The harness had been sleeping silently
+through the hold. The cause was mine: `--observe-seconds` was added and a 60s
+hold recommended without considering socket idle timeout, which the 3s default
+had never exposed.
+
+The harness behaved correctly around the defect — it detected the drop, refused
+to guess, reported the contract id, and exited non-zero — and the position was
+recovered cleanly (profit 0.09, proceeds 1.09, venue-confirmed settled). But
+correctly reporting a stranded position is not as good as not stranding one.
+
+Now: the hold runs in 15s slices with a read-only `ping` between them; a
+dropped socket triggers reconnect-with-fresh-OTP and proceeds to the close; and
+`close:deriv-demo-position` recovers a position that is already stranded,
+closing exactly the id an operator names and confirming settlement from the
+venue. It never discovers positions on its own, so it cannot become a bulk
+flattener.
+
+**Still unexercised by any run:** a REJECTED order, a PARTIAL fill, and a
+REQUOTE between quote and buy. Until those are covered, buy/sell is certified
+for the HAPPY PATH only. All standing holds from Rulings 16 and 17 remain:
+no autonomous execution, no live money, no `DerivExecutionAdapter`, no dispatch
+through the 18-gate path.
