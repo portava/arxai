@@ -23,7 +23,7 @@ const INTENT = {
 // ── The generation change itself ────────────────────────────────────────────
 
 test("proposal sends underlying_symbol and NEVER legacy symbol", () => {
-  const req = mapProposalRequest(INTENT as never) as Record<string, unknown>;
+  const req = mapProposalRequest(INTENT as never) as unknown as Record<string, unknown>;
   assert.equal(req["underlying_symbol"], "R_100");
   // The rename is the whole reason this module exists. A payload carrying
   // both would be accepted by a lenient venue and silently keep the legacy
@@ -32,7 +32,7 @@ test("proposal sends underlying_symbol and NEVER legacy symbol", () => {
 });
 
 test("proposal carries no loginid — the session owns account context", () => {
-  const req = mapProposalRequest(INTENT as never) as Record<string, unknown>;
+  const req = mapProposalRequest(INTENT as never) as unknown as Record<string, unknown>;
   assert.ok(!("loginid" in req));
   assert.ok(!("passthrough" in req));
 });
@@ -79,7 +79,7 @@ test("a quote without an id is a protocol error, not a half-filled object", () =
 });
 
 test("a quote's missing numbers stay NULL rather than becoming 0", () => {
-  const q = normalizeProposal({ proposal: { id: "abc" } }) as Record<string, unknown>;
+  const q = normalizeProposal({ proposal: { id: "abc" } }) as unknown as Record<string, unknown>;
   // 0 would read as a free contract. Null reads as "Deriv did not say".
   assert.equal(q["askPrice"], null);
   assert.equal(q["payout"], null);
