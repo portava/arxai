@@ -12,6 +12,7 @@ import {
   runDemoTradeCertification, assertSingleDemoOrder, recordOrderAttempt,
   __resetOrderLatchForTests, ordersPlaced,
   DEMO_TRADE_AUTHORIZATION, DEMO_TRADE_MAX_STAKE, DemoTradeRefusal,
+  DEMO_TRADE_MAX_OBSERVE_MS,
 } from "../demoTradeCertify.js";
 
 const CONFIG = { appId: "arx-test-app", token: "fixture-not-a-real-token" };
@@ -304,4 +305,61 @@ test("the OTP demo check is an ALLOW-list — an unknown socket path is refused"
     assert.ok(!`${(r as InstanceType<typeof DerivNewApiError>).detail}`.includes("SECRET"),
       "the OTP leaked into the refusal detail");
   }
+});
+
+// ── Evidence grading and the bounded hold ──────────────────────────────────
+
+test("a ZERO P/L is graded zero-only, even though it PASSES", async () => {
+  // The run is a valid lifecycle test and legitimately certifies. What it must
+  // not do is imply the reconciliation comparison did real work: 0 === 0 is
+  // satisfied identically by a function that always agrees.
+  const r = await runDemoTradeCertification(CONFIG, {
+    ...AUTH, observeMs: 0, sleep: async () => {},
+    fetchImpl: fakeFetch(ACCOUNTS("demo")),
+    transportFactory: fakeTransport({
+      buy: { buy: { contract_id: 555, buy_price: 1 } },
+      sell: { sold: { sold_for: 1 } },
+      proposal_open_contract: { proposal_open_contract: { contract_id: 555, is_sold: 1, profit: 0 } },
+    }),
+  });
+  assert.equal(r.certified, true, "a flat trade still certifies the lifecycle");
+  assert.equal(r.reconciliation!.evidence, "zero-only");
+  assert.match(r.steps.find((s) => s.step === "reconcile")!.detail, /zero-only/);
+});
+
+test("a NON-ZERO P/L is graded non-zero — the comparison did real work", async () => {
+  const r = await runDemoTradeCertification(CONFIG, {
+    ...AUTH, observeMs: 0, sleep: async () => {},
+    fetchImpl: fakeFetch(ACCOUNTS("demo")),
+    transportFactory: fakeTransport({
+      buy: { buy: { contract_id: 555, buy_price: 1 } },
+      sell: { sold: { sold_for: 1.37 } },
+      proposal_open_contract: { proposal_open_contract: { contract_id: 555, is_sold: 1, profit: 0.37 } },
+    }),
+  });
+  assert.equal(r.certified, true);
+  assert.equal(r.reconciliation!.evidence, "non-zero");
+  assert.equal(r.reconciliation!.agrees, true);
+});
+
+test("the hold is CAPPED — an unbounded hold widens the orphan window", async () => {
+  // A killed process cannot report an open position, so the window in which
+  // that can happen must stay bounded no matter what a caller asks for.
+  let slept = -1;
+  await runDemoTradeCertification(CONFIG, {
+    ...AUTH, observeMs: 999_999_999, sleep: async (ms: number) => { slept = ms; },
+    fetchImpl: fakeFetch(ACCOUNTS("demo")), transportFactory: fakeTransport(),
+  });
+  assert.equal(slept, DEMO_TRADE_MAX_OBSERVE_MS, `hold was ${slept}ms`);
+});
+
+test("a negative hold cannot invert into a wait or skip the sell", async () => {
+  let slept = -1;
+  const r = await runDemoTradeCertification(CONFIG, {
+    ...AUTH, observeMs: -5000, sleep: async (ms: number) => { slept = ms; },
+    fetchImpl: fakeFetch(ACCOUNTS("demo")), transportFactory: fakeTransport(),
+  });
+  assert.equal(slept, 0);
+  assert.equal(r.certified, true);
+  assert.equal(r.positionLeftOpen, false, "the position must still be closed");
 });

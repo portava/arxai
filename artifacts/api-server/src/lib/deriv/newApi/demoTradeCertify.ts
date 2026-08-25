@@ -50,6 +50,11 @@ export const DEMO_TRADE_MAX_STAKE = 1;
 
 /** One order per process. Module state, so a second call cannot reset it. */
 export const MAX_ORDERS_PER_PROCESS = 1;
+
+/** Hard ceiling on the hold. A killed process cannot report an open position,
+ *  so the window in which that can happen stays bounded. */
+export const DEMO_TRADE_MAX_OBSERVE_MS = 300_000;
+export const DEMO_TRADE_DEFAULT_OBSERVE_MS = 3_000;
 let ordersPlacedThisProcess = 0;
 
 /** Test-only reset. Named so its presence in production code is obvious. */
@@ -69,7 +74,11 @@ export interface DemoTradeOptions {
   /** Injected for tests. */
   fetchImpl?: typeof fetch;
   transportFactory?: (c: DerivNewApiConfig) => NewDerivTransport;
-  /** Max wall-clock spent observing the open position before selling. */
+  /** Wall-clock spent holding the position before selling. Bounded by
+   *  DEMO_TRADE_MAX_OBSERVE_MS: a longer hold raises the chance that the spot
+   *  moves enough to exercise reconciliation on a NON-ZERO P/L, but it also
+   *  widens the window in which an interrupted process orphans an open
+   *  position, which no in-process handler can report. */
   observeMs?: number;
   sleep?: (ms: number) => Promise<void>;
 }
@@ -96,6 +105,19 @@ export interface DemoTradeReport {
     reportedProfit: number | null;
     derivedProfit: number | null;
     agrees: boolean | null;
+    /**
+     * How much this run actually PROVES about reconciliation.
+     *
+     * "zero-only" means the P/L was 0, so the comparison evaluated 0 === 0 and
+     * a function that always agreed would produce identical output. The run is
+     * still a valid lifecycle test; it is simply not evidence that ARX detects
+     * a real disagreement. Grading this in the report keeps a weak result from
+     * being read as a strong one.
+     */
+    evidence: "zero-only" | "non-zero";
+    entrySpot: number | null;
+    exitSpot: number | null;
+    holdMs: number | null;
   } | null;
 }
 
@@ -259,7 +281,9 @@ export async function runDemoTradeCertification(
       steps.push(bad("proposal", detail, code));
       return report();
     }
-    steps.push(ok("proposal", `quote ${quote.proposalId.slice(0, 6)}… ask=${quote.askPrice ?? "unstated"}`));
+    const entrySpot = quote.spotPrice;
+    steps.push(ok("proposal",
+      `quote ${quote.proposalId.slice(0, 6)}… ask=${quote.askPrice ?? "unstated"} spot=${entrySpot ?? "unstated"}`));
 
     // 5 — THE ORDER. Price ceiling is the lower of the quoted ask and the cap,
     // so a requote between quote and buy cannot exceed what was authorized.
@@ -301,7 +325,11 @@ export async function runDemoTradeCertification(
 
     // 6 — observe the open position.
     const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
-    await sleep(Math.min(opts.observeMs ?? 3000, 30_000));
+    const holdMs = Math.min(
+      Math.max(opts.observeMs ?? DEMO_TRADE_DEFAULT_OBSERVE_MS, 0),
+      DEMO_TRADE_MAX_OBSERVE_MS,
+    );
+    await sleep(holdMs);
     let openState;
     try {
       const req = mapOpenContractRequest(contractId);
@@ -389,7 +417,17 @@ export async function runDemoTradeCertification(
     const agrees = (derived !== null && reported !== null)
       ? Math.round(derived * 100) === Math.round(reported * 100)
       : null;
-    reconciliation = { buyPrice, sellProceeds: proceeds, reportedProfit: reported, derivedProfit: derived, agrees };
+    // Grade the evidence, don't just record the verdict. A P/L of exactly 0
+    // means the comparison only ever evaluated 0 === 0, which a reconciliation
+    // that ALWAYS agreed would satisfy identically. Saying so in the report is
+    // what stops a weak run being cited as a strong one.
+    const evidence: "zero-only" | "non-zero" =
+      (reported !== null && Math.round(reported * 100) !== 0) ? "non-zero" : "zero-only";
+    reconciliation = {
+      buyPrice, sellProceeds: proceeds, reportedProfit: reported,
+      derivedProfit: derived, agrees, evidence,
+      entrySpot, exitSpot: openState.currentSpot, holdMs,
+    };
     if (agrees === null) {
       steps.push(unresolved("reconcile",
         `cannot reconcile: buy=${buyPrice ?? "?"} proceeds=${proceeds ?? "?"} reported=${reported ?? "?"}`));
@@ -400,7 +438,9 @@ export async function runDemoTradeCertification(
         `P/L MISMATCH: derived ${derived} vs Deriv-reported ${reported}`));
       return report();
     }
-    steps.push(ok("reconcile", `P/L agrees: ${reported} (proceeds ${proceeds} − cost ${buyPrice})`));
+    steps.push(ok("reconcile",
+      `P/L agrees: ${reported} (proceeds ${proceeds} − cost ${buyPrice})`
+      + ` [evidence: ${evidence}]`));
     return report();
   } finally {
     transport.close();
