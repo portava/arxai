@@ -91,10 +91,21 @@ export function redactSecrets(text: string, config: DerivNewApiConfig): string {
   return out;
 }
 
+/** MEASURED durations for one REST attempt. Timing only — no content. */
+export interface RestTiming {
+  /** Time to response headers. */
+  fetchMs: number | null;
+  /** Additional time spent reading the body. */
+  bodyMs: number | null;
+  /** Total wall clock for the attempt. */
+  totalMs: number | null;
+}
+
 export interface DerivRestResponse<T> {
   ok: true;
   status: number;
   body: T;
+  timing: RestTiming;
 }
 
 /**
@@ -127,71 +138,128 @@ export async function derivRestRequest<T>(args: {
    * length-capped, and passed through redactSecrets() first.
    */
   captureBody?: boolean;
+  /** Receives MEASURED phase durations, on success and on failure alike.
+   *  Durations only — never headers, body, or credentials. */
+  onTiming?: (timing: RestTiming) => void;
 }): Promise<DerivRestResponse<T>> {
   const doFetch = args.fetchImpl ?? fetch;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), args.timeoutMs ?? DERIV_REST_TIMEOUT_MS);
+  const timeoutMs = args.timeoutMs ?? DERIV_REST_TIMEOUT_MS;
+  const startedAt = Date.now();
 
-  let res: Response;
+  // Whether OUR timer is what aborted the request. Without this flag every
+  // AbortError — from any cause — was reported as DERIV_NEW_API_REQUEST_TIMEOUT
+  // with the message "no response within 15000ms", a duration that was never
+  // measured. That turned an unrelated fast failure into a fabricated timeout
+  // and sent the investigation after network latency that did not exist.
+  let timerFired = false;
+  const controller = new AbortController();
+  const timer = setTimeout(() => { timerFired = true; controller.abort(); }, timeoutMs);
+
+  const timing: RestTiming = { fetchMs: null, bodyMs: null, totalMs: null };
+  const finish = <R>(v: R): R => {
+    timing.totalMs = Date.now() - startedAt;
+    args.onTiming?.(timing);
+    return v;
+  };
+
+  // The timer is cleared in an OUTER finally, so the abort signal still covers
+  // the BODY read. It used to be cleared as soon as headers arrived, leaving
+  // res.json() unguarded — a stalled body then hung forever with no timeout
+  // at all, which is a worse failure than the one being guarded against.
   try {
-    res = await doFetch(`${DERIV_NEW_API_BASE}${args.path}`, {
-      method: args.method,
-      // STILL the one and only place credential headers are constructed.
-      headers: {
-        ...(args.authMode === "bearer-only" ? {} : { "Deriv-App-ID": args.config.appId }),
-        ...(args.authMode === "app-id-only" ? {} : { Authorization: `Bearer ${args.config.token}` }),
-        "Content-Type": "application/json",
-      },
-      body: args.body === undefined ? undefined : JSON.stringify(args.body),
-      signal: controller.signal,
-    });
-  } catch (e) {
-    // NOTE: the caught error is deliberately NOT included. A fetch failure can
-    // stringify the request init — headers included — in some runtimes.
-    const aborted = (e as Error)?.name === "AbortError";
-    throw new DerivNewApiError(
-      aborted ? "DERIV_NEW_API_REQUEST_TIMEOUT" : "DERIV_NEW_API_WS_CONNECT_FAILED",
-      { detail: aborted ? `no response within ${args.timeoutMs ?? DERIV_REST_TIMEOUT_MS}ms` : "REST transport failure" },
-    );
+    let res: Response;
+    try {
+      res = await doFetch(`${DERIV_NEW_API_BASE}${args.path}`, {
+        method: args.method,
+        // STILL the one and only place credential headers are constructed.
+        headers: {
+          ...(args.authMode === "bearer-only" ? {} : { "Deriv-App-ID": args.config.appId }),
+          ...(args.authMode === "app-id-only" ? {} : { Authorization: `Bearer ${args.config.token}` }),
+          "Content-Type": "application/json",
+        },
+        body: args.body === undefined ? undefined : JSON.stringify(args.body),
+        signal: controller.signal,
+      });
+    } catch (e) {
+      // The caught error's MESSAGE is still never included: a fetch failure can
+      // stringify the request init, headers included. The class name and any
+      // errno-style cause code are enum-like and safe, and they are what
+      // actually distinguishes DNS failure from refusal from abort.
+      const elapsedMs = Date.now() - startedAt;
+      const name = (e as Error)?.name ?? "unknown";
+      const causeCode = (e as { cause?: { code?: unknown } })?.cause?.code;
+      const causeStr = `${name}${typeof causeCode === "string" ? `/${causeCode}` : ""}`;
+      timing.fetchMs = elapsedMs;
+      finish(null);
+      if (timerFired) {
+        throw new DerivNewApiError("DERIV_NEW_API_REQUEST_TIMEOUT", {
+          detail: `our ${timeoutMs}ms timeout fired (measured ${elapsedMs}ms)`,
+          elapsedMs, causeCode: causeStr,
+        });
+      }
+      // An abort we did NOT cause is not a timeout. Saying so was the defect.
+      throw new DerivNewApiError("DERIV_NEW_API_REST_TRANSPORT_FAILED", {
+        detail: `${causeStr} after ${elapsedMs}ms — our ${timeoutMs}ms timeout had NOT fired`,
+        elapsedMs, causeCode: causeStr,
+      });
+    }
+    timing.fetchMs = Date.now() - startedAt;
+
+    if (!res.ok) {
+      // Read the body ONCE as text, then shape + parse from that. Calling
+      // res.json() and later res.text() would fail: the stream is single-use.
+      const contentType = (res.headers.get("content-type") ?? "none").split(";")[0]!;
+      let raw = "";
+      try { raw = await res.text(); } catch { /* unreadable */ }
+      timing.bodyMs = Date.now() - startedAt - (timing.fetchMs ?? 0);
+      const bodyShape = `${contentType} ${raw.length}B`;
+
+      let derivCode: string | null = null;
+      try {
+        const parsed = JSON.parse(raw) as { error?: { code?: unknown }; code?: unknown };
+        const c = parsed?.error?.code ?? parsed?.code;
+        if (typeof c === "string" && c.length > 0) derivCode = c;
+      } catch { /* not JSON — status and shape classify it */ }
+
+      // RFC 6750 challenge: capture the `error=` ENUM only. error_description
+      // is prose and is deliberately left behind.
+      const challenge = res.headers.get("www-authenticate");
+      const m = challenge ? /error="?([A-Za-z0-9_-]+)"?/.exec(challenge) : null;
+      const authChallenge = m ? m[1]! : (challenge ? "present-without-error-param" : null);
+
+      finish(null);
+      throw new DerivNewApiError(classifyHttpStatus(res.status), {
+        derivCode, httpStatus: res.status, authChallenge, bodyShape,
+        bodySnippet: args.captureBody ? redactSecrets(raw, args.config) : null,
+        elapsedMs: timing.totalMs,
+      });
+    }
+
+    let body: T;
+    try {
+      body = await res.json() as T;
+    } catch (e) {
+      const elapsedMs = Date.now() - startedAt;
+      finish(null);
+      // A body read aborted by OUR timer is a timeout, not malformed JSON.
+      // Before the timer covered the body read this case could not arise —
+      // the read simply hung forever instead.
+      if (timerFired) {
+        throw new DerivNewApiError("DERIV_NEW_API_REQUEST_TIMEOUT", {
+          detail: `our ${timeoutMs}ms timeout fired while reading the body (measured ${elapsedMs}ms)`,
+          elapsedMs, httpStatus: res.status,
+        });
+      }
+      throw new DerivNewApiError("DERIV_NEW_API_PROTOCOL_ERROR", {
+        httpStatus: res.status, elapsedMs,
+        detail: "response was not valid JSON",
+        causeCode: (e as Error)?.name ?? null,
+      });
+    }
+    timing.bodyMs = Date.now() - startedAt - (timing.fetchMs ?? 0);
+    finish(null);
+    return { ok: true, status: res.status, body, timing };
   } finally {
     clearTimeout(timer);
   }
-
-  if (!res.ok) {
-    // Read the body ONCE as text, then shape + parse from that. Calling
-    // res.json() and later res.text() would fail: the stream is single-use.
-    const contentType = (res.headers.get("content-type") ?? "none").split(";")[0]!;
-    let raw = "";
-    try { raw = await res.text(); } catch { /* unreadable */ }
-    const bodyShape = `${contentType} ${raw.length}B`;
-
-    let derivCode: string | null = null;
-    try {
-      const parsed = JSON.parse(raw) as { error?: { code?: unknown }; code?: unknown };
-      const c = parsed?.error?.code ?? parsed?.code;
-      if (typeof c === "string" && c.length > 0) derivCode = c;
-    } catch { /* not JSON — status and shape classify it */ }
-
-    // RFC 6750 challenge: capture the `error=` ENUM only. error_description
-    // is prose and is deliberately left behind.
-    const challenge = res.headers.get("www-authenticate");
-    const m = challenge ? /error="?([A-Za-z0-9_-]+)"?/.exec(challenge) : null;
-    const authChallenge = m ? m[1]! : (challenge ? "present-without-error-param" : null);
-
-    throw new DerivNewApiError(classifyHttpStatus(res.status), {
-      derivCode, httpStatus: res.status, authChallenge, bodyShape,
-      bodySnippet: args.captureBody ? redactSecrets(raw, args.config) : null,
-    });
-  }
-
-  let body: T;
-  try {
-    body = await res.json() as T;
-  } catch {
-    throw new DerivNewApiError("DERIV_NEW_API_PROTOCOL_ERROR", {
-      httpStatus: res.status,
-      detail: "response was not valid JSON",
-    });
-  }
-  return { ok: true, status: res.status, body };
 }

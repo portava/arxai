@@ -11,7 +11,10 @@
 // A `proposal` IS included: it is a price quote and commits nothing. `buy` is
 // what commits, and `buy` cannot pass the allow-list.
 
-import { resolveNewApiConfig, describeConfig, type DerivNewApiConfig } from "./restClient.js";
+import {
+  resolveNewApiConfig, describeConfig,
+  type DerivNewApiConfig, type RestTiming,
+} from "./restClient.js";
 import { fetchAccounts, selectDemoAccount, isRealAccount } from "./accounts.js";
 import { NewDerivTransport, canSendTradingRequest } from "./transport.js";
 import { DerivNewApiError, type DerivNewApiErrorCode } from "./errors.js";
@@ -178,14 +181,18 @@ export async function runReadOnlyCertification(args: {
   try {
     // 2 — REST reachability + credential acceptance.
     let accounts;
+    let restTiming: RestTiming | null = null;
     try {
-      accounts = await fetchAccounts(config, args.fetchImpl);
+      accounts = await fetchAccounts(config, args.fetchImpl, (t) => { restTiming = t; });
     } catch (e) {
       const { detail, code } = describeErr(e);
       steps.push(bad(2, "rest_accounts", detail, code));
       return report();
     }
-    steps.push(ok(2, "rest_accounts", `${accounts.length} account(s) visible`));
+    const t = restTiming as RestTiming | null;
+    steps.push(ok(2, "rest_accounts",
+      `${accounts.length} account(s) visible`
+      + (t ? ` (headers ${t.fetchMs}ms, body ${t.bodyMs}ms, total ${t.totalMs}ms)` : "")));
 
     // 3 — deterministic demo selection. Fail-closed on ambiguity.
     // The config object deliberately holds ONLY the credential pair, so the

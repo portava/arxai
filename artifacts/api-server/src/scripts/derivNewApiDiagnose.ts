@@ -12,7 +12,9 @@
  * Read-only: GET only, no trade, no account mutation.
  */
 
-import { resolveNewApiConfig, derivRestRequest, describeConfig } from "../lib/deriv/newApi/restClient.js";
+import {
+  resolveNewApiConfig, derivRestRequest, describeConfig, type RestTiming,
+} from "../lib/deriv/newApi/restClient.js";
 import { DERIV_ACCOUNTS_PATH } from "../lib/deriv/newApi/accounts.js";
 import { DerivNewApiError } from "../lib/deriv/newApi/errors.js";
 
@@ -26,13 +28,21 @@ const PROBES: Probe[] = [
 
 interface ProbeResult { line: string; body: string | null; ok: boolean }
 
+const fmt = (t: RestTiming | null): string =>
+  t ? `headers ${t.fetchMs}ms body ${t.bodyMs}ms total ${t.totalMs}ms` : "no timing";
+
 async function probe(p: Probe, config: { appId: string; token: string }): Promise<ProbeResult> {
+  let timing: RestTiming | null = null;
   try {
     const res = await derivRestRequest<unknown>({
       method: "GET", path: DERIV_ACCOUNTS_PATH, config,
       authMode: p.authMode, captureBody: true,
+      onTiming: (t) => { timing = t; },
     });
-    return { line: `HTTP ${res.status} OK`, body: null, ok: true };
+    return {
+      line: `HTTP ${res.status} OK  ${fmt(timing)}`,
+      body: null, ok: true,
+    };
   } catch (e) {
     if (e instanceof DerivNewApiError) {
       return {
@@ -41,6 +51,7 @@ async function probe(p: Probe, config: { appId: string; token: string }): Promis
           `deriv:${e.derivCode ?? "none"}`,
           `challenge:${e.authChallenge ?? "none"}`,
           `body:${e.bodyShape ?? "none"}`,
+          fmt(timing),
         ].join("  "),
         body: e.bodySnippet,
         ok: false,

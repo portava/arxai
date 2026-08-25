@@ -26,6 +26,10 @@ export const DERIV_NEW_API_ERRORS = [
   "DERIV_NEW_API_OTP_EXPIRED",
   /** The authenticated socket could not be established. */
   "DERIV_NEW_API_WS_CONNECT_FAILED",
+  // A REST transport failure. Previously these were reported as
+  // WS_CONNECT_FAILED, which sends an operator to inspect the WebSocket layer
+  // for a failure that happened over HTTP.
+  "DERIV_NEW_API_REST_TRANSPORT_FAILED",
   /** Deriv spoke, but not in a shape this client can honour. */
   "DERIV_NEW_API_PROTOCOL_ERROR",
   /** A request was sent and no reply arrived inside the bound. */
@@ -61,6 +65,14 @@ export class DerivNewApiError extends Error {
    *  captureBody — the diagnose command does, ordinary calls do not, so the
    *  venue's prose still never reaches production logs or thrown errors. */
   readonly bodySnippet: string | null;
+  /** MEASURED wall-clock duration of the attempt. Never an asserted budget —
+   *  the point is to be able to tell a real 15s timeout from an abort that
+   *  happened in 40ms. */
+  readonly elapsedMs: number | null;
+  /** The thrown error's class name plus any errno-style cause code
+   *  (ECONNREFUSED, UND_ERR_CONNECT_TIMEOUT, …). Enum-like and safe; the
+   *  error MESSAGE is still withheld because it can echo request context. */
+  readonly causeCode: string | null;
 
   constructor(
     code: DerivNewApiErrorCode,
@@ -68,6 +80,7 @@ export class DerivNewApiError extends Error {
       derivCode?: string | null; httpStatus?: number | null; detail?: string;
       authChallenge?: string | null; bodyShape?: string | null;
       bodySnippet?: string | null;
+      elapsedMs?: number | null; causeCode?: string | null;
     } = {},
   ) {
     // The message is the CLASSIFICATION, never the credential or the venue's
@@ -80,6 +93,8 @@ export class DerivNewApiError extends Error {
     this.authChallenge = opts.authChallenge ?? null;
     this.bodyShape = opts.bodyShape ?? null;
     this.bodySnippet = opts.bodySnippet ?? null;
+    this.elapsedMs = opts.elapsedMs ?? null;
+    this.causeCode = opts.causeCode ?? null;
   }
 }
 

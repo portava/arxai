@@ -410,3 +410,120 @@ test("a long body is truncated so a capture cannot become a dump", async () => {
     },
   );
 });
+
+// ── Abort classification (the certification "timeout" investigation) ────────
+//
+// certify reported DERIV_NEW_API_REQUEST_TIMEOUT at rest_accounts while the
+// standalone diagnosis reached the same endpoint successfully. The request
+// paths are identical, so the label was the thing under suspicion — and it was
+// wrong: ANY AbortError became REQUEST_TIMEOUT with the asserted message
+// "no response within 15000ms", a duration never measured.
+
+test("an abort we did NOT cause is not reported as our timeout", async () => {
+  const abortErr = Object.assign(new Error("aborted"), { name: "AbortError" });
+  const started = Date.now();
+  await assert.rejects(
+    () => derivRestRequest({
+      method: "GET", path: "/x", config: CONFIG,
+      timeoutMs: 30_000,                       // our budget is nowhere near spent
+      fetchImpl: fakeFetch({ throws: abortErr }),
+    }),
+    (err: DerivNewApiError) => {
+      // The defect: this used to be DERIV_NEW_API_REQUEST_TIMEOUT claiming
+      // "no response within 30000ms" after roughly zero milliseconds.
+      assert.equal(err.code, "DERIV_NEW_API_REST_TRANSPORT_FAILED");
+      assert.ok(!/no response within/.test(err.message), "fabricated a duration");
+      assert.ok(err.elapsedMs !== null && err.elapsedMs < 5_000,
+        `elapsed should be tiny, got ${err.elapsedMs}`);
+      assert.match(err.message, /timeout had NOT fired/);
+      return true;
+    },
+  );
+  assert.ok(Date.now() - started < 5_000, "must fail fast, not wait out the budget");
+});
+
+test("a REAL timeout is reported as one, with a MEASURED duration", async () => {
+  const hang = (async (_u: string, init?: RequestInit) => {
+    // Never resolves on its own; only the abort signal ends it.
+    return new Promise<Response>((_res, rej) => {
+      init?.signal?.addEventListener("abort", () =>
+        rej(Object.assign(new Error("aborted"), { name: "AbortError" })));
+    });
+  }) as unknown as typeof fetch;
+
+  await assert.rejects(
+    () => derivRestRequest({ method: "GET", path: "/x", config: CONFIG, timeoutMs: 60, fetchImpl: hang }),
+    (err: DerivNewApiError) => {
+      assert.equal(err.code, "DERIV_NEW_API_REQUEST_TIMEOUT");
+      // Measured, not asserted: it must actually be at least the budget.
+      assert.ok(err.elapsedMs !== null && err.elapsedMs >= 55, `elapsed ${err.elapsedMs}`);
+      assert.match(err.message, /measured/);
+      return true;
+    },
+  );
+});
+
+test("a REST transport failure is not labelled a WEBSOCKET connect failure", async () => {
+  // It used to be. That sends an operator to inspect the socket layer for a
+  // failure that happened over HTTP.
+  const dns = Object.assign(new TypeError("fetch failed"), { cause: { code: "ENOTFOUND" } });
+  await assert.rejects(
+    () => derivRestRequest({ method: "GET", path: "/x", config: CONFIG, fetchImpl: fakeFetch({ throws: dns }) }),
+    (err: DerivNewApiError) => {
+      assert.equal(err.code, "DERIV_NEW_API_REST_TRANSPORT_FAILED");
+      assert.notEqual(err.code, "DERIV_NEW_API_WS_CONNECT_FAILED");
+      // The errno is enum-like and is the single most useful field here.
+      assert.equal(err.causeCode, "TypeError/ENOTFOUND");
+      assert.ok(!err.message.includes("fetch failed"), "venue/runtime prose leaked");
+      return true;
+    },
+  );
+});
+
+test("the timeout covers the BODY read, not just the headers", async () => {
+  // The timer used to be cleared as soon as headers arrived, leaving the body
+  // read unguarded — a stalled body then hung FOREVER rather than timing out.
+  const stalledBody = (async (_u: string, init?: RequestInit) => {
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"accounts":'));
+        init?.signal?.addEventListener("abort", () => controller.error(new Error("aborted")));
+        // never closes
+      },
+    });
+    return new Response(stream, { status: 200, headers: { "content-type": "application/json" } });
+  }) as unknown as typeof fetch;
+
+  const started = Date.now();
+  await assert.rejects(
+    () => derivRestRequest({ method: "GET", path: "/x", config: CONFIG, timeoutMs: 80, fetchImpl: stalledBody }),
+    (err: DerivNewApiError) => {
+      assert.equal(err.code, "DERIV_NEW_API_REQUEST_TIMEOUT");
+      assert.match(err.message, /reading the body/);
+      return true;
+    },
+  );
+  assert.ok(Date.now() - started < 5_000, "a stalled body must not hang");
+});
+
+test("timing is reported on success AND failure, durations only", async () => {
+  const seen: unknown[] = [];
+  const res = await derivRestRequest({
+    method: "GET", path: "/x", config: CONFIG,
+    fetchImpl: fakeFetch({ status: 200, json: { accounts: [] } }),
+    onTiming: (t) => seen.push(t),
+  });
+  assert.ok(res.timing.totalMs !== null);
+  assert.equal(seen.length, 1);
+  // Timing must never become a channel for anything but numbers.
+  const blob = JSON.stringify(seen[0]);
+  assert.ok(!blob.includes(PAT) && !blob.includes(CONFIG.appId), "timing leaked a credential");
+  assert.ok(/^\{("(fetchMs|bodyMs|totalMs)":(\d+|null),?)+\}$/.test(blob), `unexpected timing shape ${blob}`);
+
+  await assert.rejects(() => derivRestRequest({
+    method: "GET", path: "/x", config: CONFIG,
+    fetchImpl: fakeFetch({ status: 500, body: "boom" }),
+    onTiming: (t) => seen.push(t),
+  }));
+  assert.equal(seen.length, 2, "timing must be reported on the failure path too");
+});

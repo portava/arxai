@@ -9,7 +9,7 @@
 // legacy VRTC-style login id; that assumption belongs to the old generation.
 
 import { DerivNewApiError } from "./errors.js";
-import { derivRestRequest, type DerivNewApiConfig } from "./restClient.js";
+import { type RestTiming, derivRestRequest, type DerivNewApiConfig } from "./restClient.js";
 
 export const DERIV_ACCOUNTS_PATH = "/trading/v1/options/accounts";
 
@@ -122,9 +122,10 @@ export function selectDemoAccount(
 export async function fetchAccounts(
   config: DerivNewApiConfig,
   fetchImpl?: typeof fetch,
+  onTiming?: (t: RestTiming) => void,
 ): Promise<DerivNewApiAccount[]> {
   const res = await derivRestRequest<unknown>({
-    method: "GET", path: DERIV_ACCOUNTS_PATH, config, fetchImpl,
+    method: "GET", path: DERIV_ACCOUNTS_PATH, config, fetchImpl, onTiming,
   });
   const body = res.body as { accounts?: unknown; data?: unknown };
   const rawList = Array.isArray(body?.accounts) ? body.accounts
