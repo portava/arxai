@@ -43,15 +43,37 @@ export const READ_ONLY_KEYS = [
   "balance", "portfolio", "forget", "forget_all",
 ] as const;
 
-/** Non-operation keys: request parameters and envelope fields. A Deriv payload
- *  carries these ALONGSIDE the operation, so they cannot be treated as
- *  operations — the first version of this gate did, and refused a perfectly
- *  legal `contracts_for` for carrying `currency`. */
-export const PERMITTED_PARAM_KEYS = [
-  "req_id", "subscribe",
-  "underlying_symbol", "contract_type", "amount", "basis", "currency",
-  "multiplier", "limit_order", "contract_id", "product_type",
-] as const;
+/** Envelope keys, legal on EVERY operation per Deriv's request schemas. */
+export const ENVELOPE_KEYS = ["req_id", "passthrough", "subscribe"] as const;
+
+/**
+ * Parameters each operation permits, mirroring Deriv's per-operation request
+ * schemas — every one of which is additionalProperties:false, so a single
+ * surplus key is a hard reject.
+ *
+ * This replaces a single GLOBAL parameter list. That list could not express
+ * per-operation legality, so `currency` and `contract_type` — legal on
+ * proposal, illegal on contracts_for — passed the gate and reached the venue
+ * as the live InputValidationFailed. I had previously widened the gate
+ * believing it had wrongly refused a "perfectly legal" contracts_for carrying
+ * currency; per Deriv's schema that payload was never legal. The gate was
+ * right and the diagnosis was wrong.
+ */
+export const OPERATION_PARAMS: Record<string, readonly string[]> = {
+  ping: [],
+  time: [],
+  // The symbol/detail level is the VALUE of the operation key, not a parameter.
+  active_symbols: [],
+  contracts_for: [],
+  balance: [],
+  portfolio: [],
+  forget: [],
+  forget_all: [],
+  proposal: [
+    "underlying_symbol", "contract_type", "amount", "basis",
+    "currency", "multiplier", "limit_order",
+  ],
+};
 
 export class DerivCertificationRefusal extends Error {}
 
@@ -89,11 +111,17 @@ export function assertReadOnly(payload: Record<string, unknown>): void {
     );
   }
 
-  const stray = keys.filter((k) =>
-    !ops.includes(k) && !(PERMITTED_PARAM_KEYS as readonly string[]).includes(k));
+  // Per-operation, not global: legality depends on WHICH operation is being
+  // sent, and Deriv rejects any surplus key outright.
+  const op = ops[0]!;
+  const permitted = new Set<string>([
+    ...ENVELOPE_KEYS,
+    ...(OPERATION_PARAMS[op] ?? []),
+  ]);
+  const stray = keys.filter((k) => k !== op && !permitted.has(k));
   if (stray.length > 0) {
     throw new DerivCertificationRefusal(
-      `read-only certification refused unrecognised parameter(s): ${stray.join(",")}`,
+      `read-only certification refused parameter(s) not permitted on ${op}: ${stray.join(",")}`,
     );
   }
 }
@@ -337,7 +365,7 @@ export async function runReadOnlyCertification(args: {
     // unusable for ARX's actual strategy, and that must be a loud FAIL.
     const symbol = args.symbol ?? "R_100";
     const currency = args.currency ?? "USD";
-    const cfReq = mapContractsForRequest(symbol, currency);
+    const cfReq = mapContractsForRequest(symbol);
     if (cfReq instanceof DerivNewApiError) {
       steps.push(bad(9, "contracts_for", cfReq.code, cfReq.code));
       return report();

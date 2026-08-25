@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 import {
   mapProposalRequest, mapBuyRequest, mapSellRequest, mapContractsForRequest,
   mapOpenContractRequest, normalizeProposal, normalizePurchase,
-  normalizeOpenContract, normalizePortfolio, normalizeBalance,
+  normalizeOpenContract, normalizePortfolio, normalizeBalance, numeric,
   LEGACY_ONLY_FIELDS,
 } from "../wire.js";
 import { DerivNewApiError } from "../errors.js";
@@ -63,9 +63,22 @@ test("sell accepts 0 (sell-at-market) but refuses negative proceeds", () => {
   assert.ok(mapSellRequest(1.5, 1) instanceof DerivNewApiError, "contract id must be integral");
 });
 
-test("contracts_for and open-contract requests refuse empty inputs", () => {
-  assert.ok(mapContractsForRequest("", "USD") instanceof DerivNewApiError);
-  assert.ok(mapContractsForRequest("R_100", "") instanceof DerivNewApiError);
+test("contracts_for sends ONLY its own key — no currency, no contract_type", () => {
+  // The live InputValidationFailed. Deriv's schema is additionalProperties:
+  // false and permits exactly {contracts_for, passthrough, req_id}; ARX sent
+  // two surplus keys, one of which (contract_type) never existed on this
+  // operation in either generation.
+  const req = mapContractsForRequest("R_100");
+  // deepStrictEqual on the WHOLE object is load-bearing: a subset assertion is
+  // exactly what would let a surplus key through again.
+  assert.deepStrictEqual(req, { contracts_for: "R_100" });
+  assert.deepStrictEqual(Object.keys(req as object), ["contracts_for"]);
+});
+
+test("contracts_for validates the symbol against the schema's own pattern", () => {
+  assert.ok(mapContractsForRequest("") instanceof DerivNewApiError);
+  assert.ok(mapContractsForRequest("x") instanceof DerivNewApiError, "under 2 chars");
+  assert.ok(mapContractsForRequest("has space") instanceof DerivNewApiError);
   assert.ok(mapOpenContractRequest(-1) instanceof DerivNewApiError);
 });
 
@@ -153,4 +166,33 @@ test("wire module emits no legacy-generation request keys", () => {
   }
   // The rename is the whole point, so pin the replacement is really there.
   assert.ok(/underlying_symbol:\s/.test(code), "wire.ts must emit underlying_symbol");
+});
+
+// ── Numeric tolerance (an UNRESOLVED docs conflict, held open on purpose) ───
+
+test("price fields accept BOTH numbers and numeric strings", () => {
+  // Deriv's proposal_response schema types ask_price/payout/spot as `number`,
+  // while Deriv's own migration page says those fields "now accept both
+  // numbers and strings". One source is stale and the docs do not say which,
+  // so both are accepted rather than guessing — the approach that resolved
+  // the OTP nesting. Picking wrong here silently nulls a real price.
+  assert.equal(numeric(10.5), 10.5);
+  assert.equal(numeric("10.5"), 10.5);
+  assert.equal(numeric("0"), 0, "a genuine zero must survive");
+  const q = normalizeProposal({ proposal: { id: "abc", ask_price: "5.50", payout: "11" } });
+  assert.equal((q as { askPrice: number | null }).askPrice, 5.5);
+  assert.equal((q as { payout: number | null }).payout, 11);
+});
+
+test("tolerance does NOT extend to junk — absent stays null, never 0", () => {
+  // The whole null-not-zero rule would be defeated by a loose parse: Number("")
+  // is 0, which would read as a free contract.
+  for (const junk of ["", "   ", "abc", null, undefined, {}, [], true, NaN, Infinity]) {
+    assert.equal(numeric(junk), null, `accepted junk: ${JSON.stringify(junk)}`);
+  }
+});
+
+test("a string profit does not become a silently-missing profit", () => {
+  const c = normalizeOpenContract({ proposal_open_contract: { contract_id: 5, profit: "-2.25" } });
+  assert.equal((c as { profit: number | null }).profit, -2.25);
 });

@@ -42,16 +42,35 @@ test("the gate is an allow-list: an unknown operation is refused by default", ()
   }
 });
 
-test("parameters travel alongside an operation without being mistaken for one", () => {
-  // The first version of this gate treated every top-level key as an
-  // operation and refused a legal contracts_for for carrying `currency`.
-  assert.doesNotThrow(() => assertReadOnly({ ping: 1, req_id: 4, subscribe: 1 }));
-  assert.doesNotThrow(() => assertReadOnly(
-    { contracts_for: "R_100", currency: "USD", contract_type: "multiplier" }));
+test("a parameter legal on ONE operation is refused on another", () => {
+  // This test previously asserted the opposite, encoding my own wrong belief
+  // that {contracts_for, currency, contract_type} was "perfectly legal" and
+  // that the gate had wrongly refused it. Deriv's schema says otherwise:
+  // contracts_for is additionalProperties:false permitting only its own key.
+  // The gate was right, my diagnosis was wrong, and widening it on that basis
+  // is how the invalid payload reached the venue as InputValidationFailed.
+  assert.throws(
+    () => assertReadOnly({ contracts_for: "R_100", currency: "USD", contract_type: "multiplier" }),
+    DerivCertificationRefusal,
+    "surplus keys on contracts_for must be refused",
+  );
+  // The very same parameters ARE legal on proposal — which is precisely what a
+  // single global list could not express.
   assert.doesNotThrow(() => assertReadOnly({
     proposal: 1, underlying_symbol: "R_100", contract_type: "MULTUP",
     amount: 1, basis: "stake", currency: "USD", multiplier: 100,
   }));
+});
+
+test("envelope fields are legal on every operation", () => {
+  assert.doesNotThrow(() => assertReadOnly({ ping: 1, req_id: 4, subscribe: 1 }));
+  // passthrough is permitted by all eight new-generation request schemas; it
+  // was previously pinned as legacy-only, which was simply false.
+  assert.doesNotThrow(() => assertReadOnly({ contracts_for: "R_100", passthrough: { a: 1 } }));
+});
+
+test("the corrected contracts_for payload passes the gate", () => {
+  assert.doesNotThrow(() => assertReadOnly({ contracts_for: "R_100" }));
 });
 
 test("a payload naming two operations is refused as ambiguous", () => {

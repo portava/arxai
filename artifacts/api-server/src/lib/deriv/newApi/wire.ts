@@ -22,8 +22,13 @@ import type { DerivMultiplierContractIntent } from "@workspace/domain/deriv-cont
 import { DerivNewApiError } from "./errors.js";
 
 /** Fields the new API no longer accepts. Pinned so a legacy payload cannot be
- *  copied across by accident. */
-export const LEGACY_ONLY_FIELDS = ["symbol", "loginid", "passthrough"] as const;
+ *  copied across by accident.
+ *
+ *  `passthrough` was previously listed here and does NOT belong: all eight
+ *  new-generation request schemas permit it as an optional property. The pin
+ *  was over-restrictive rather than wrong on the wire — ARX sends none — but a
+ *  pin asserting a false fact is a pin that will mislead the next reader. */
+export const LEGACY_ONLY_FIELDS = ["symbol", "loginid"] as const;
 
 // ── Requests ────────────────────────────────────────────────────────────────
 
@@ -108,13 +113,33 @@ export const mapBalanceRequest = (): { balance: 1 } => ({ balance: 1 });
 export const mapActiveSymbolsRequest = (): { active_symbols: "brief" } =>
   ({ active_symbols: "brief" });
 
+/**
+ * Map a contracts_for query.
+ *
+ * Deriv's contracts_for_request schema is additionalProperties:false and
+ * permits exactly three keys: contracts_for, passthrough, req_id. The symbol
+ * is the VALUE, not a separate field — the proposal rename
+ * (symbol -> underlying_symbol) does NOT propagate here.
+ *
+ * ARX previously sent `currency` (legacy-only, removed in this generation) and
+ * `contract_type: "multiplier"` — which never existed on this operation in
+ * EITHER generation, and whose value is not a member of any contract_type enum
+ * (those are uppercase MULTUP/MULTDOWN). Two surplus keys against a strict
+ * schema is exactly the InputValidationFailed the live run hit.
+ *
+ * Multiplier capability is discovered from the RESPONSE: available[] carries
+ * contract_type and multiplier_range. It was never a request-side filter.
+ */
 export function mapContractsForRequest(
   underlyingSymbol: string,
-  currency: string,
-): { contracts_for: string; currency: string; contract_type: string } | DerivNewApiError {
-  if (!underlyingSymbol) return new DerivNewApiError("DERIV_NEW_API_PROTOCOL_ERROR", { detail: "missing underlying symbol" });
-  if (!currency) return new DerivNewApiError("DERIV_NEW_API_PROTOCOL_ERROR", { detail: "missing currency" });
-  return { contracts_for: underlyingSymbol, currency, contract_type: "multiplier" };
+): { contracts_for: string } | DerivNewApiError {
+  // The schema's own constraint, rather than a bare falsy check.
+  if (!/^\w{2,30}$/.test(underlyingSymbol)) {
+    return new DerivNewApiError("DERIV_NEW_API_PROTOCOL_ERROR", {
+      detail: "underlying symbol must match ^\\w{2,30}$",
+    });
+  }
+  return { contracts_for: underlyingSymbol };
 }
 
 export function mapOpenContractRequest(
@@ -124,6 +149,21 @@ export function mapOpenContractRequest(
     return new DerivNewApiError("DERIV_NEW_API_PROTOCOL_ERROR", { detail: "invalid contract id" });
   }
   return { proposal_open_contract: 1, contract_id: contractId };
+}
+
+/**
+ * Read a numeric field that Deriv may send as either a number or a string.
+ *
+ * Returns null for anything else — never 0. A missing price must stay unstated
+ * rather than becoming a free contract.
+ */
+export function numeric(v: unknown): number | null {
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  if (typeof v === "string" && v.trim() !== "") {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
 }
 
 // ── Normalized responses (ARX types, not Deriv types) ───────────────────────
@@ -152,8 +192,13 @@ export function normalizeProposal(msg: unknown): ArxProposal | DerivNewApiError 
   if (typeof id !== "string" || id.length === 0) {
     return new DerivNewApiError("DERIV_NEW_API_PROTOCOL_ERROR", { detail: "proposal carried no id" });
   }
-  const num = (v: unknown): number | null =>
-    typeof v === "number" && Number.isFinite(v) ? v : null;
+  // DOCS CONFLICT, deliberately unresolved: proposal_response.schema.json types
+  // ask_price/payout/spot as `number`, while Deriv's own migration page says
+  // "Several response fields now accept both numbers and strings". One is
+  // stale and the documentation does not say which, so both are accepted —
+  // the same approach that resolved the OTP nesting. A numeric string is a
+  // value Deriv states it may send; "" and "abc" are still null.
+  const num = numeric;
   return {
     proposalId: id,
     askPrice: num(r["ask_price"]),
@@ -190,8 +235,8 @@ export function normalizePurchase(msg: unknown): ArxPurchase | DerivNewApiError 
   }
   return {
     contractId,
-    transactionId: typeof r["transaction_id"] === "number" ? r["transaction_id"] : null,
-    buyPrice: typeof r["buy_price"] === "number" ? r["buy_price"] : null,
+    transactionId: numeric(r["transaction_id"]),
+    buyPrice: numeric(r["buy_price"]),
   };
 }
 
@@ -221,8 +266,8 @@ export function normalizeOpenContract(msg: unknown): ArxOpenContract | DerivNewA
   return {
     contractId,
     isSettled: settled,
-    profit: typeof r["profit"] === "number" && Number.isFinite(r["profit"]) ? r["profit"] : null,
-    currentSpot: typeof r["current_spot"] === "number" ? r["current_spot"] : null,
+    profit: numeric(r["profit"]),
+    currentSpot: numeric(r["current_spot"]),
     status: typeof r["status"] === "string" ? r["status"] : null,
   };
 }
@@ -259,7 +304,7 @@ export function normalizePortfolio(msg: unknown): {
       underlyingSymbol: typeof e["underlying_symbol"] === "string" ? e["underlying_symbol"]
         : typeof e["symbol"] === "string" ? e["symbol"] : null,
       contractType: typeof e["contract_type"] === "string" ? e["contract_type"] : null,
-      buyPrice: typeof e["buy_price"] === "number" ? e["buy_price"] : null,
+      buyPrice: numeric(e["buy_price"]),
     });
   }
   return { contracts, skipped };
@@ -274,7 +319,7 @@ export function normalizeBalance(msg: unknown): { balance: number | null; curren
   }
   const r = b as Record<string, unknown>;
   return {
-    balance: typeof r["balance"] === "number" && Number.isFinite(r["balance"]) ? r["balance"] : null,
+    balance: numeric(r["balance"]),
     currency: typeof r["currency"] === "string" ? r["currency"] : null,
   };
 }
