@@ -11,6 +11,7 @@
 //     Deriv's prose is deliberately NOT propagated: it can echo request context.
 //   * `describeConfig()` reports PRESENCE and metadata only.
 
+import { detectDerivApiMode, type DerivApiMode } from "../apiMode.js";
 import {
   DerivNewApiError,
   classifyHttpStatus,
@@ -44,7 +45,7 @@ export function resolveNewApiConfig(): DerivNewApiConfig | DerivNewApiErrorCode 
 
 /** Safe-to-log configuration description. Presence and metadata ONLY. */
 export function describeConfig(): {
-  mode: "new";
+  mode: DerivApiMode;
   appIdPresent: boolean;
   patPresent: boolean;
   patLength: number;
@@ -52,7 +53,9 @@ export function describeConfig(): {
   const appId = (process.env["DERIV_APP_ID"] ?? "").trim();
   const token = (process.env["DERIV_API_TOKEN"] ?? "").trim();
   return {
-    mode: "new",
+    // The REAL detected mode. This used to be the literal "new", which made
+    // every caller's mode check unfireable — including certification's.
+    mode: detectDerivApiMode(),
     appIdPresent: appId.length > 0,
     patPresent: token.length > 0,
     // Length is metadata, not content: it distinguishes "empty" and "truncated"

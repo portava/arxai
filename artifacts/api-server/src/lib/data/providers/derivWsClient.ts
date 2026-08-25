@@ -19,6 +19,7 @@
 //     out, returns { ok:false, reason }.
 
 import WebSocket, { type RawData } from "ws";
+import { detectDerivApiMode } from "../../deriv/apiMode.js";
 // Type-only: the canonical DerivAccountIdentity lives in the pure domain layer
 // (lib/domain/src/deriv-contracts) so the virtual execution gate and this
 // retention site can never drift apart. Erased at runtime — no module graph.
@@ -198,18 +199,11 @@ class DerivWsClient {
     }
   }
 
-  /** Detect which API mode to use based on env vars. */
+  /** Detect which API mode to use based on env vars.
+   *  Delegates to the neutral detector so the new transport and this client
+   *  cannot disagree about which generation is configured. */
   static detectMode(): "new" | "legacy" | "none" {
-    const mode = (process.env.DERIV_API_MODE ?? "auto").trim().toLowerCase();
-    const appId = (process.env.DERIV_APP_ID ?? "").trim();
-    const token = (process.env.DERIV_API_TOKEN ?? "").trim();
-    if (mode === "legacy") return "legacy";
-    if (mode === "new") return "new";
-    // auto: alphanumeric appId + PAT token → new mode
-    if (appId && token && /[a-zA-Z]/.test(appId)) return "new";
-    // auto: numeric appId → legacy
-    if (appId && /^\d+$/.test(appId)) return "legacy";
-    return "none";
+    return detectDerivApiMode();
   }
 
   /** Idempotent: ensures the WS is connected or in-flight. */
