@@ -13,12 +13,17 @@
 // bound to the contract id returned by that buy. Attaching a take-profit
 // instead would leave a position open for an unbounded time, which is worse.
 //
-// REFUSALS, in the order they are checked:
-//   1. not new-generation mode
-//   2. no explicit human authorization token
+// REFUSALS implemented HERE, in the order they are checked:
+//   1. no explicit human authorization token
+//   2. stake above the hard cap
 //   3. account is real, or not provably demo
-//   4. stake above the hard cap
-//   5. a second order in the same process
+//   4. a second order in the same process
+//   5. any money-movement operation
+//
+// A legacy-format App ID is refused earlier and elsewhere, by
+// resolveNewApiConfig() in restClient.ts, which the CLI calls before reaching
+// this module. An earlier version of this comment listed that as refusal #1 of
+// this file, which was simply untrue of this file.
 //
 // This module is NEVER imported by strategy, dispatch, or scheduler code. A
 // test pins that.
@@ -30,7 +35,7 @@ import { DerivNewApiError, type DerivNewApiErrorCode } from "./errors.js";
 import { type DerivOtpPhase } from "./otp.js";
 import {
   mapProposalRequest, mapBuyRequest, mapSellRequest, mapOpenContractRequest,
-  normalizeProposal, normalizePurchase, normalizeOpenContract,
+  normalizeProposal, normalizePurchase, normalizeOpenContract, numeric,
 } from "./wire.js";
 
 /**
@@ -304,6 +309,15 @@ export async function runDemoTradeCertification(
       const res = await send(req as unknown as Record<string, unknown>);
       const c = normalizeOpenContract(res);
       if (c instanceof DerivNewApiError) throw c;
+      // Identity assert. req_id correlation already pairs request to reply, but
+      // this run is the thing PROVING contract tracking works, so it does not
+      // lean on the mechanism under test. A reply about a different contract
+      // must never be read as news about ours.
+      if (c.contractId !== contractId) {
+        throw new DerivNewApiError("DERIV_NEW_API_PROTOCOL_ERROR", {
+          detail: `venue replied about contract ${c.contractId}, not ${contractId}`,
+        });
+      }
       openState = c;
       steps.push(ok("observe",
         `settled=${c.isSettled} profit=${c.profit ?? "unstated"} spot=${c.currentSpot ?? "unstated"}`));
@@ -325,8 +339,10 @@ export async function runDemoTradeCertification(
       const res = await send(sellReq as unknown as Record<string, unknown>);
       const sold = (res as { sold?: unknown }).sold ?? (res as { sell?: unknown }).sell;
       const s = (typeof sold === "object" && sold !== null) ? sold as Record<string, unknown> : {};
-      proceeds = typeof s["sold_for"] === "number" ? s["sold_for"]
-        : typeof s["amount"] === "number" ? s["amount"] : null;
+      // Same numeric reader as every other money field in this module. It was
+      // the one bare typeof check left, which made a string-valued sold_for
+      // silently null — fail-safe, but inconsistent for no reason.
+      proceeds = numeric(s["sold_for"]) ?? numeric(s["amount"]);
       steps.push(ok("sell", `contract ${contractId} closed for ${proceeds ?? "unstated"}`));
     } catch (e) {
       const { detail } = describe(e);
@@ -342,6 +358,13 @@ export async function runDemoTradeCertification(
       const res = await send(req as unknown as Record<string, unknown>);
       const c = normalizeOpenContract(res);
       if (c instanceof DerivNewApiError) throw c;
+      // Same assert on the closure check — a settled reply about ANY contract
+      // must not clear the open-position alarm for OURS.
+      if (c.contractId !== contractId) {
+        throw new DerivNewApiError("DERIV_NEW_API_PROTOCOL_ERROR", {
+          detail: `closure reply named contract ${c.contractId}, not ${contractId}`,
+        });
+      }
       confirmedClosed = c.isSettled;
       openState = c;
     } catch { /* fall through to the honest UNRESOLVED below */ }
@@ -359,8 +382,12 @@ export async function runDemoTradeCertification(
     const buyPrice = purchase.buyPrice;
     const derived = (proceeds !== null && buyPrice !== null) ? proceeds - buyPrice : null;
     const reported = openState.profit;
+    // Compared in whole CENTS. `Math.abs(a - b) < 0.01` is not float-safe: a
+    // genuine one-cent discrepancy can land just under the threshold and
+    // certify a real mismatch as agreement. Rounding both to integer cents
+    // makes the comparison exact.
     const agrees = (derived !== null && reported !== null)
-      ? Math.abs(derived - reported) < 0.01
+      ? Math.round(derived * 100) === Math.round(reported * 100)
       : null;
     reconciliation = { buyPrice, sellProceeds: proceeds, reportedProfit: reported, derivedProfit: derived, agrees };
     if (agrees === null) {

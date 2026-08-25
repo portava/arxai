@@ -87,12 +87,24 @@ export function parseOtpResponse(raw: unknown): string | DerivNewApiError {
       detail: "OTP WebSocket URL was not wss://",
     });
   }
-  // A REAL-account socket must never be dialled by the certification path.
-  // Checked here because this is the last point the destination is visible
-  // before it becomes an opaque credential.
-  if (/\/ws\/real(\b|\?)/.test(candidate)) {
+  // A REAL-account socket must never be dialled. Checked here because this is
+  // the last point the destination is visible before it becomes an opaque
+  // credential.
+  //
+  // ALLOW-list, not a deny-list. Refusing only "/ws/real" accepts every path
+  // that is merely not that literal string — a new venue path, a different
+  // case, an unexpected host. This mirrors the rule the account check already
+  // applies: demo must be PROVEN, not merely not-disproven.
+  let parsed: URL;
+  try { parsed = new URL(candidate); } catch {
+    return new DerivNewApiError("DERIV_NEW_API_PROTOCOL_ERROR", {
+      detail: "OTP WebSocket URL did not parse",
+    });
+  }
+  if (!/^\/trading\/v1\/options\/ws\/(demo|virtual)$/i.test(parsed.pathname)) {
     return new DerivNewApiError("DERIV_NEW_API_NO_DEMO_ACCOUNT", {
-      detail: "OTP resolved to a REAL-account socket; refusing",
+      // The path only — never the query, which carries the OTP.
+      detail: `OTP resolved to a non-demo socket path (${parsed.pathname}); refusing`,
     });
   }
   return candidate;

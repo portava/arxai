@@ -194,15 +194,26 @@ test("EXACTLY ONE file imports the demo-trade harness: its own CLI", () => {
   // than a pattern, so adding any new importer — a route, a job, a scheduler,
   // an adapter — fails this test by name.
   const SOLE_PERMITTED_IMPORTER = "src/scripts/derivDemoTradeCertify.ts";
-  const roots = ["src/lib", "src/routes", "src/scripts", "src/services", "src/jobs"];
+  // Scan ALL of src, recursively. The previous version walked an allow-list of
+  // five named directories, TWO of which (src/services, src/jobs) do not exist
+  // in this repo, while src/brain, src/middlewares, src/app.ts and src/index.ts
+  // were never visited at all. Worse, a missing directory was swallowed
+  // silently, so the list could rot without ever failing. A tripwire that
+  // scans the wrong tree is indistinguishable from one that finds nothing.
   const offenders: string[] = [];
+  let scanned = 0;
   const walk = (dir: string) => {
-    let entries;
-    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
-    for (const e of entries) {
+    // Deliberately NOT wrapped in try/catch: an unreadable source root must
+    // fail this test loudly rather than quietly reduce its coverage.
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
       const full = `${dir}/${e.name}`;
-      if (e.isDirectory()) { walk(full); continue; }
+      if (e.isDirectory()) {
+        if (e.name === "node_modules" || e.name === "dist") continue;
+        walk(full);
+        continue;
+      }
       if (!e.name.endsWith(".ts")) continue;
+      scanned += 1;
       if (full.endsWith("/demoTradeCertify.ts") || full.endsWith("/newApiDemoTrade.test.ts")) continue;
       if (full.endsWith(SOLE_PERMITTED_IMPORTER)) continue;
       const code = readFileSync(full, "utf8")
@@ -210,7 +221,11 @@ test("EXACTLY ONE file imports the demo-trade harness: its own CLI", () => {
       if (/demoTradeCertify/.test(code)) offenders.push(full);
     }
   };
-  for (const r of roots) walk(`${process.cwd()}/${r}`);
+  walk(`${process.cwd()}/src`);
+  // Prove the walk actually covered the tree. A broken walk returning zero
+  // offenders would otherwise look identical to a clean result.
+  assert.ok(scanned > 500, `walk covered only ${scanned} files — it is not scanning the tree`);
+
   assert.deepEqual(offenders, [],
     `the demo-trade harness must be reachable ONLY from ${SOLE_PERMITTED_IMPORTER}, `
     + `but is also imported by: ${offenders.join(", ")}`);
@@ -226,5 +241,67 @@ test("the harness touches no execution adapter or dispatch path", () => {
   for (const forbidden of ["ExecutionAdapter", "dispatchLiveCommand", "liveCommandPipeline",
     "PhaseBDispatch", "enqueueBridged", "strategy"]) {
     assert.ok(!code.includes(forbidden), `harness references ${forbidden}`);
+  }
+});
+
+// ── Hardening from the red-team pass ───────────────────────────────────────
+
+test("a venue reply about a DIFFERENT contract does not clear our alarm", () => {
+  // This run is the thing PROVING contract tracking works, so it must not lean
+  // on req_id correlation — the mechanism under test — to decide identity.
+  return runDemoTradeCertification(CONFIG, {
+    ...AUTH, observeMs: 0, sleep: async () => {},
+    fetchImpl: fakeFetch(ACCOUNTS("demo")),
+    transportFactory: fakeTransport({
+      proposal_open_contract: { proposal_open_contract: { contract_id: 999, is_sold: 1, profit: 0.25 } },
+    }),
+  }).then((r) => {
+    assert.equal(r.certified, false);
+    assert.equal(r.positionLeftOpen, true, "our position must still be flagged open");
+    assert.match(r.steps.find((s) => s.step === "observe")!.detail, /not 555/);
+  });
+});
+
+test("reconciliation compares whole cents, not a float epsilon", async () => {
+  // A DISCRIMINATING case, not merely a mismatch. My first attempt used
+  // 0.26 vs 0.25, where |diff| evaluates to 0.010000000000000009 and the old
+  // epsilon rejected it too — so the test passed under both implementations
+  // and proved nothing.
+  //
+  // Here: proceeds 0.3 − cost 0.2 = 0.09999999999999998 in IEEE 754, against a
+  // reported 0.09. That is a genuine ONE CENT discrepancy, but the difference
+  // computes to 0.00999999999999998, which is strictly LESS than 0.01 — so the
+  // old tolerance certified a real mismatch as agreement. Whole cents: 10 vs 9.
+  const derived = 0.3 - 0.2;
+  assert.ok(Math.abs(derived - 0.09) < 0.01, "precondition: the old epsilon accepts this");
+  assert.notEqual(Math.round(derived * 100), Math.round(0.09 * 100), "precondition: cents differ");
+
+  const r = await runDemoTradeCertification(CONFIG, {
+    ...AUTH, observeMs: 0, sleep: async () => {},
+    fetchImpl: fakeFetch(ACCOUNTS("demo")),
+    transportFactory: fakeTransport({
+      buy: { buy: { contract_id: 555, buy_price: 0.2, transaction_id: 9 } },
+      sell: { sold: { sold_for: 0.3 } },
+      proposal_open_contract: { proposal_open_contract: { contract_id: 555, is_sold: 1, profit: 0.09 } },
+    }),
+  });
+  assert.equal(r.certified, false, "a full-cent mismatch must not certify");
+  assert.match(r.steps.find((s) => s.step === "reconcile")!.detail, /MISMATCH/);
+});
+
+test("the OTP demo check is an ALLOW-list — an unknown socket path is refused", async () => {
+  const { parseOtpResponse } = await import("../otp.js");
+  const { DerivNewApiError } = await import("../errors.js");
+  // Demo and virtual are permitted...
+  for (const good of ["demo", "virtual"]) {
+    const r = parseOtpResponse({ data: { url: `wss://api.derivws.com/trading/v1/options/ws/${good}?otp=x` } });
+    assert.equal(typeof r, "string", `${good} should be allowed`);
+  }
+  // ...and everything else is refused, not merely the literal "/ws/real".
+  for (const bad of ["real", "REAL", "live", "prod", "real2", "demo2"]) {
+    const r = parseOtpResponse({ data: { url: `wss://api.derivws.com/trading/v1/options/ws/${bad}?otp=SECRET` } });
+    assert.ok(r instanceof DerivNewApiError, `${bad} was allowed through`);
+    assert.ok(!`${(r as InstanceType<typeof DerivNewApiError>).detail}`.includes("SECRET"),
+      "the OTP leaked into the refusal detail");
   }
 });
