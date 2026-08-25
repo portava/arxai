@@ -240,3 +240,38 @@ does not call the live orchestrator.
 
 Deferred until after Deriv certification by owner direction. The live decision
 schema is NOT to be touched this week.
+
+## Ruling 15 — Deriv "new mode" PAT authorize is unproven and does not work (2026-08-23)
+Two separate demo tokens both failed certification with `InvalidToken`. The
+cause is NOT the tokens.
+
+`DerivWsClient.detectMode()` selects "new" mode for an alphanumeric
+`DERIV_APP_ID` plus a PAT. In that mode `resolveWsUrl()` cannot pass the
+alphanumeric app id to the legacy WS handshake, so it connects with the public
+bootstrap app id (`DERIV_WS_LEGACY_APP_ID`, default 1089) and then calls the
+LEGACY `authorize` with the PAT — per its own comment, "authorize with the
+PAT". That assumption was never exercised against the venue. A Deriv
+Developers PAT is not a valid credential for legacy `authorize`, so every token
+is rejected regardless of how it was created.
+
+Observed config at the time: DERIV_API_MODE=new, alphanumeric DERIV_APP_ID,
+68-char DERIV_API_TOKEN, DERIV_WS_URL=wss://ws.derivws.com/websockets/v3.
+(A legacy API token is ~15 chars, `a1-` prefixed.)
+
+CERTIFICATION PATH (legacy mode — the documented, working one, and the API our
+wire layer targets: proposal / buy / sell / portfolio / contracts_for are all
+v3 calls):
+  - DERIV_APP_ID   = 1089            (numeric)
+  - DERIV_API_TOKEN = a LEGACY API token created at app.deriv.com ->
+                      Settings -> API token with the DEMO (VRTC...) account
+                      selected, scopes: read + trade
+  - DERIV_API_MODE = legacy          (or unset; auto picks legacy for a
+                      numeric app id)
+
+Owner decision required on the "new" mode path itself: either prove the correct
+new-API endpoint and auth flow, or remove the mode so it cannot silently select
+a route that always fails. It must not remain as an untested branch that
+presents a credential problem when the defect is in the route selection.
+
+NOTE: this was found only because the client now retains Deriv's error CODE
+(commit b3e18cd). With the prose message alone it read as a bad token.
