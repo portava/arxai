@@ -93,6 +93,30 @@ uncertified until the separate demo-trade certification is run deliberately.
 Status 2026-08-25: **17/17 steps pass** against the live venue on a demo
 account. See Ruling 16 in `OWNER_DECISIONS.md`.
 
+## Demo trade certification
+
+```bash
+pnpm --filter @workspace/api-server run certify:deriv-demo-trade -- \
+  --authorize=PLACE-ONE-DEMO-ORDER
+```
+
+**This places a real order.** One capped multiplier on a demo account, closed
+by the harness, then reconciled. Refuses without the exact authorization
+string, refuses a real or not-provably-demo account, refuses a second order in
+the same process, and refuses any money-movement operation.
+
+A multiplier has no expiry, so settlement cannot be reached by waiting — the
+harness sells to close, bound to the contract id its own buy returned.
+
+Exactly one file may import this harness: its own CLI. A test walks all of
+`src` and fails by name if anything else does.
+
+Executed 2026-08-25 (Ruling 17): contract `10545847099`, bought at 1, sold at
+1, venue-confirmed settled, reconciled. **The P/L was 0, so the reconciliation
+comparison was only exercised at `0 === 0`** — the mismatch path is unit-tested
+but has never fired against the live venue. Do not read that run as evidence
+that ARX detects a real P/L disagreement.
+
 ### Step 9 is load-bearing — and it has now answered
 
 The endpoints are published under `/trading/v1/options/` while ARX trades

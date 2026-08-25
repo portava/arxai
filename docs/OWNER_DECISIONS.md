@@ -327,3 +327,34 @@ the only path to a live order.
 
 Evidence: `pnpm --filter @workspace/api-server run certify:deriv-new-api`,
 2026-08-25 17:50 UTC, 17/17. Re-runnable; it places no trade by construction.
+
+## Ruling 17 — one demo trade executed and reconciled; the P/L check was exercised only at ZERO (2026-08-25)
+Contract `10545847099` was bought at 1, observed open (`settled=false`, spot
+617.83), sold for 1, confirmed settled by the venue, and reconciled. One buy,
+one sell, no position left open, every refusal intact.
+
+**PROVEN by this run.** An order reaches the venue and returns a contract id;
+that id is tracked from open through close; the sell targets that exact
+contract; settlement is confirmed from the venue rather than inferred from the
+sell reply; and the open-position alarm clears only on the venue's verdict.
+
+**NOT proven by this run — read this before trusting reconciliation.** The P/L
+was exactly **0**: proceeds 1 − cost 1 = 0, and Deriv reported 0. The
+comparison therefore only ever evaluated `0 === 0`. A reconciliation that
+always returned zero, or always agreed, would have produced byte-identical
+output. The mismatch path is covered by unit tests (a fabricated 99 vs a
+derived 0.25 fails, and a one-cent float case fails), but **no live run has yet
+shown ARX detecting a real disagreement with Deriv's own arithmetic.**
+
+That is a consequence of the instrument, not a defect: a multiplier held ~3
+seconds on a quiet spot produces no measurable P/L at 2dp. Establishing it
+requires a second deliberate run with a longer hold, which is a separate
+owner decision and a separate order.
+
+**Unexercised by any live run:** a rejected order, a partial fill, a requote
+between quote and buy, and a hold long enough to move the P/L off zero.
+
+**What this ruling does NOT authorise.** Buy/sell semantics are certified for
+a single manual demo order. It does not authorise autonomous execution, live
+money, a DerivExecutionAdapter, or dispatch through the 18-gate path. All
+standing holds from Ruling 16 remain.
