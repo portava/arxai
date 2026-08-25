@@ -64,7 +64,7 @@ test("a request before WS_READY is refused, not queued or dropped silently", asy
 });
 
 test("connect reaches WS_READY and dials the URL the OTP endpoint returned", async () => {
-  const rec = { sent: [] as string[], sockets: 0 };
+  const rec: { url?: string; sent: string[]; sockets: number } = { sent: [], sockets: 0 };
   const t = new NewDerivTransport(CONFIG, fakeSocket(rec), otpFetch());
   await t.connect("ACC-D1");
   assert.equal(t.getState(), "WS_READY");
