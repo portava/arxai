@@ -123,6 +123,8 @@ export interface DerivRestResponse<T> {
   status: number;
   body: T;
   timing: RestTiming;
+  /** Response content-type. Structural metadata, never content. */
+  contentType: string;
 }
 
 /**
@@ -275,7 +277,10 @@ export async function derivRestRequest<T>(args: {
     }
     timing.bodyMs = Date.now() - startedAt - (timing.fetchMs ?? 0);
     finish(null);
-    return { ok: true, status: res.status, body, timing };
+    return {
+      ok: true, status: res.status, body, timing,
+      contentType: (res.headers.get("content-type") ?? "none").split(";")[0]!,
+    };
   } finally {
     clearTimeout(timer);
   }

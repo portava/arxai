@@ -73,6 +73,10 @@ export class DerivNewApiError extends Error {
    *  (ECONNREFUSED, UND_ERR_CONNECT_TIMEOUT, …). Enum-like and safe; the
    *  error MESSAGE is still withheld because it can echo request context. */
   readonly causeCode: string | null;
+  /** ARX's OWN explanation, kept as a field rather than only baked into the
+   *  message. certify reported the code and dropped this, so "OTP response
+   *  contained no WebSocket URL" surfaced as a bare PROTOCOL_ERROR. */
+  readonly detail: string | null;
 
   constructor(
     code: DerivNewApiErrorCode,
@@ -95,6 +99,7 @@ export class DerivNewApiError extends Error {
     this.bodySnippet = opts.bodySnippet ?? null;
     this.elapsedMs = opts.elapsedMs ?? null;
     this.causeCode = opts.causeCode ?? null;
+    this.detail = opts.detail ?? null;
   }
 }
 

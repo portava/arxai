@@ -18,6 +18,7 @@ import {
 import { fetchAccounts, selectDemoAccount, isRealAccount } from "./accounts.js";
 import { NewDerivTransport, canSendTradingRequest } from "./transport.js";
 import { DerivNewApiError, type DerivNewApiErrorCode } from "./errors.js";
+import { type DerivOtpPhase } from "./otp.js";
 import { DERIV_OTP_VALIDITY_MS, DERIV_OTP_SAFE_AGE_MS } from "./otp.js";
 
 /** Maximum tolerable clock disagreement with Deriv. Derived from the OTP
@@ -130,6 +131,11 @@ function describeErr(e: unknown): { detail: string; code: DerivNewApiErrorCode |
     const parts: string[] = [e.code];
     if (e.httpStatus !== null) parts.push(`http ${e.httpStatus}`);
     parts.push(e.derivCode !== null ? `deriv:${e.derivCode}` : "deriv:<no code in body>");
+    // ARX's OWN explanation. This is our text, not the venue's, so it is safe
+    // — and it is usually the sentence that identifies the fault. Dropping it
+    // turned a precise "no WebSocket URL in the OTP response" into a bare
+    // PROTOCOL_ERROR and cost a full round trip.
+    if (e.detail !== null) parts.push(`— ${e.detail}`);
     return { detail: parts.join(" "), code: e.code };
   }
   if (e instanceof DerivCertificationRefusal) return { detail: e.message, code: null };
@@ -234,22 +240,41 @@ export async function runReadOnlyCertification(args: {
     }
     steps.push(ok(4, "assert_demo", "account is demo/virtual"));
 
-    // 5 — OTP + authenticated socket. The OTP URL is never logged or returned.
+    // 5 — OTP + authenticated socket, reported as FIVE named substeps.
+    // A single pass/fail here could not distinguish a rejected request from a
+    // parse mismatch from a socket failure: the live run reported
+    // PROTOCOL_ERROR with no indication of which. Each substep is emitted by
+    // the REAL transport path, not a parallel copy of it.
     transport = args.transportFactory
       ? args.transportFactory(config)
       : new NewDerivTransport(config, undefined, args.fetchImpl);
+
+    const phases: DerivOtpPhase[] = [];
+    let connectErr: unknown = null;
     try {
-      await transport.connect(accountId);
+      await transport.connect(accountId, (p) => phases.push(p));
     } catch (e) {
-      const { detail, code } = describeErr(e);
-      steps.push(bad(5, "otp_and_connect", detail, code));
+      connectErr = e;
+    }
+    for (const p of phases) {
+      steps.push(p.ok
+        ? ok(5, p.name, p.detail + (p.elapsedMs !== null ? ` (${p.elapsedMs}ms)` : ""))
+        : bad(5, p.name, p.detail));
+    }
+    if (connectErr !== null) {
+      const { detail, code } = describeErr(connectErr);
+      // Only add a summary line if no substep already recorded the failure —
+      // otherwise the precise substep is the better record.
+      if (!phases.some((p) => !p.ok)) steps.push(bad(5, "otp_and_connect", detail, code));
       return report();
     }
     if (!canSendTradingRequest(transport.getState())) {
-      steps.push(bad(5, "otp_and_connect", `state ${transport.getState()} is not ready`));
+      steps.push(bad(5, "ws_ready", `state ${transport.getState()} is not ready`));
       return report();
     }
-    steps.push(ok(5, "otp_and_connect", "authenticated socket ready (no authorize sent)"));
+    if (phases.length === 0) {
+      steps.push(ok(5, "ws_ready", "authenticated socket ready (no authorize sent)"));
+    }
 
     const send = async (
       step: number, name: string, payload: Record<string, unknown>,

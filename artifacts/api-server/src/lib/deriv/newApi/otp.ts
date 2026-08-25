@@ -57,11 +57,29 @@ export function parseOtpResponse(raw: unknown): string | DerivNewApiError {
     });
   }
   const r = raw as Record<string, unknown>;
-  const candidate = [r["ws_url"], r["wsUrl"], r["url"], r["websocket_url"]]
-    .find((v): v is string => typeof v === "string" && v.length > 0);
+  // Deriv NESTS the socket URL: { data: { url: "wss://…?otp=…" } }. The first
+  // implementation searched only the top level and reported a bare
+  // PROTOCOL_ERROR against a perfectly valid response. Both shapes are
+  // accepted because the published schema documents the nesting only through
+  // a code example, so pinning exclusively to it would be its own guess.
+  const nested = (typeof r["data"] === "object" && r["data"] !== null)
+    ? r["data"] as Record<string, unknown>
+    : {};
+  const candidate = [
+    nested["url"], nested["ws_url"], nested["wsUrl"], nested["websocket_url"],
+    r["ws_url"], r["wsUrl"], r["url"], r["websocket_url"],
+  ].find((v): v is string => typeof v === "string" && v.length > 0);
+
   if (!candidate) {
+    // Report the STRUCTURE that arrived — key names only, never values. A
+    // value here would be the OTP itself. Without this the next schema change
+    // is another blind investigation.
+    const seen = Object.keys(r);
+    const seenNested = Object.keys(nested);
     return new DerivNewApiError("DERIV_NEW_API_PROTOCOL_ERROR", {
-      detail: "OTP response contained no WebSocket URL",
+      detail: "OTP response contained no WebSocket URL"
+        + ` (top-level keys: ${seen.join(",") || "none"}`
+        + `${seenNested.length ? `; data keys: ${seenNested.join(",")}` : ""})`,
     });
   }
   if (!candidate.startsWith("wss://")) {
@@ -80,13 +98,28 @@ export function parseOtpResponse(raw: unknown): string | DerivNewApiError {
   return candidate;
 }
 
-/** Request a fresh OTP ticket for one account. */
+/**
+ * One observable stage of the OTP + socket handshake.
+ *
+ * Reports STRUCTURE and TIMING only: status, durations, content-type, key
+ * names, and whether a URL field was present. Never the OTP, never the URL's
+ * query string, never a credential.
+ */
+export interface DerivOtpPhase {
+  name: "otp_request" | "otp_response_parse" | "ws_url_validate" | "ws_connect" | "ws_ready";
+  ok: boolean;
+  detail: string;
+  elapsedMs: number | null;
+}
+
 export async function requestOtpTicket(args: {
   accountId: string;
   config: DerivNewApiConfig;
   nowMs?: number;
   fetchImpl?: typeof fetch;
+  onPhase?: (p: DerivOtpPhase) => void;
 }): Promise<DerivOtpTicket> {
+  const emit = args.onPhase ?? (() => {});
   let res;
   try {
     res = await derivRestRequest<unknown>({
@@ -97,17 +130,60 @@ export async function requestOtpTicket(args: {
     });
   } catch (e) {
     if (e instanceof DerivNewApiError) {
-      // Re-classify transport-level failures of THIS call as OTP failures so a
-      // caller can tell "could not get an OTP" from "could not authenticate".
+      emit({
+        name: "otp_request", ok: false, elapsedMs: e.elapsedMs,
+        detail: `http ${e.httpStatus ?? "-"} ${e.code}`
+          + (e.derivCode ? ` deriv:${e.derivCode}` : "")
+          + (e.detail ? ` — ${e.detail}` : ""),
+      });
+      // A credential verdict is preserved as-is: re-labelling it OTP_FAILED
+      // would send an operator to the OTP endpoint for a token problem.
       if (e.code === "DERIV_NEW_API_UNAUTHORIZED" || e.code === "DERIV_NEW_API_INSUFFICIENT_SCOPE") throw e;
+      // Otherwise classify as an OTP failure but PRESERVE the original code,
+      // Deriv's code and the status rather than collapsing them.
       throw new DerivNewApiError("DERIV_NEW_API_OTP_FAILED", {
         derivCode: e.derivCode, httpStatus: e.httpStatus,
+        elapsedMs: e.elapsedMs, causeCode: e.causeCode,
+        detail: `underlying=${e.code}${e.detail ? ` (${e.detail})` : ""}`,
       });
     }
+    emit({ name: "otp_request", ok: false, elapsedMs: null, detail: "non-protocol failure" });
     throw e;
   }
+
+  const bodyKeys = (typeof res.body === "object" && res.body !== null)
+    ? Object.keys(res.body as Record<string, unknown>) : [];
+  const nestedKeys = (typeof (res.body as { data?: unknown })?.data === "object"
+    && (res.body as { data?: unknown }).data !== null)
+    ? Object.keys((res.body as { data: Record<string, unknown> }).data) : [];
+  emit({
+    name: "otp_request", ok: true, elapsedMs: res.timing.totalMs,
+    detail: `http ${res.status} ${res.contentType}`
+      + ` headers ${res.timing.fetchMs}ms body ${res.timing.bodyMs}ms`
+      + ` keys:[${bodyKeys.join(",") || "none"}]`
+      + (nestedKeys.length ? ` data.keys:[${nestedKeys.join(",")}]` : ""),
+  });
+
   const parsed = parseOtpResponse(res.body);
-  if (parsed instanceof DerivNewApiError) throw parsed;
+  if (parsed instanceof DerivNewApiError) {
+    emit({
+      name: "otp_response_parse", ok: false, elapsedMs: null,
+      detail: parsed.detail ?? parsed.code,
+    });
+    throw parsed;
+  }
+  emit({
+    name: "otp_response_parse", ok: true, elapsedMs: null,
+    detail: "WebSocket URL field present",
+  });
+
+  // Scheme + host + path only. describeOtpUrlForLog drops the query string,
+  // which is where the OTP lives.
+  emit({
+    name: "ws_url_validate", ok: true, elapsedMs: null,
+    detail: describeOtpUrlForLog(parsed),
+  });
+
   return { wsUrl: parsed, issuedAtMs: args.nowMs ?? Date.now(), consumed: false };
 }
 

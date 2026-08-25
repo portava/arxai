@@ -545,3 +545,41 @@ test("resolveNewApiConfig REFUSES a legacy-format App ID for the new API", () =>
     if (prevTok === undefined) delete process.env["DERIV_API_TOKEN"]; else process.env["DERIV_API_TOKEN"] = prevTok;
   }
 });
+
+// ── OTP response shape (the live step-5 PROTOCOL_ERROR) ────────────────────
+
+test("the OTP URL is read from Deriv's DOCUMENTED nested shape { data: { url } }", () => {
+  // The live failure. The parser searched only the top level, so a perfectly
+  // valid Deriv response was rejected as a protocol error. Deriv's own example
+  // does `const { data } = await response.json()` then `data.url`.
+  const real = { data: { url: "wss://api.derivws.com/trading/v1/options/ws/demo?otp=abc123xyz789" } };
+  const parsed = parseOtpResponse(real);
+  assert.equal(typeof parsed, "string");
+  assert.match(parsed as string, /\/ws\/demo/);
+});
+
+test("the flat shape still parses — the nesting is documented only by example", () => {
+  // Pinning exclusively to the nested form would be its own guess.
+  const flat = { ws_url: "wss://api.derivws.com/trading/v1/options/ws/demo?otp=x" };
+  assert.equal(typeof parseOtpResponse(flat), "string");
+});
+
+test("a REAL-account socket is refused even when NESTED", () => {
+  // The refusal must not be defeated by the shape that actually arrives.
+  const real = { data: { url: "wss://api.derivws.com/trading/v1/options/ws/real?otp=x" } };
+  const r = parseOtpResponse(real);
+  assert.ok(r instanceof DerivNewApiError);
+  assert.equal((r as DerivNewApiError).code, "DERIV_NEW_API_NO_DEMO_ACCOUNT");
+});
+
+test("an unrecognised OTP shape reports the KEYS it saw, never the values", () => {
+  // Without this the next schema change is another blind round trip. Key names
+  // are structural; a value here would be the OTP itself.
+  const r = parseOtpResponse({ data: { socket: "wss://x?otp=SECRET" }, meta: 1 });
+  assert.ok(r instanceof DerivNewApiError);
+  const d = (r as DerivNewApiError).detail!;
+  assert.match(d, /top-level keys: data,meta/);
+  assert.match(d, /data keys: socket/);
+  assert.ok(!d.includes("SECRET"), "an OTP value leaked into the diagnostic");
+  assert.ok(!d.includes("wss://"), "a URL value leaked into the diagnostic");
+});

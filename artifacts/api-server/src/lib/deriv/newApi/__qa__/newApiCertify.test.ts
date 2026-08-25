@@ -7,6 +7,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+
+/** Find a step by NAME. Indexing by position silently re-targets whenever the
+ *  step list changes shape — which is exactly what happened when step 5 was
+ *  split into substeps. */
+const stepNamed = (r: { steps: Array<{ name: string; detail: string; status: string }> }, name: string) => {
+  const s = r.steps.find((x) => x.name === name);
+  assert.ok(s, `no step named ${name} in [${r.steps.map((x) => x.name).join(",")}]`);
+  return s!;
+};
 import {
   assertReadOnly, CAPITAL_COMMITTING_KEYS, READ_ONLY_KEYS,
   DerivCertificationRefusal, runReadOnlyCertification,
@@ -87,7 +96,16 @@ function fakeTransport(overrides: Record<string, unknown> = {}, sentSink?: strin
     ...overrides,
   };
   return () => ({
-    connect: async () => {},
+    connect: async (_id: string, onPhase?: (p: {
+      name: string; ok: boolean; detail: string; elapsedMs: number | null;
+    }) => void) => {
+      // Mirror the real transport's substeps so the report shape under test
+      // matches the report shape in production.
+      for (const name of ["otp_request", "otp_response_parse", "ws_url_validate",
+        "ws_connect", "ws_ready"]) {
+        onPhase?.({ name, ok: true, detail: `fake ${name}`, elapsedMs: 1 });
+      }
+    },
     getState: () => "WS_READY",
     getAccountId: () => "VRTC9001",
     close: () => {},
@@ -132,7 +150,8 @@ test("a full read-only run passes and NEVER sends a capital-committing op", asyn
   }));
   assert.equal(report.passed, true, JSON.stringify(report.steps.filter((s) => s.status === "FAIL")));
   assert.equal(report.haltedAt, null);
-  assert.equal(report.steps.length, 13);
+  // 13 numbered steps, with step 5 reported as five named substeps.
+  assert.equal(report.steps.length, 17);
   for (const key of CAPITAL_COMMITTING_KEYS) {
     assert.ok(!sent.includes(key), `certification sent ${key}`);
   }
@@ -165,7 +184,7 @@ test("NO multipliers on the surface is a loud FAIL, not a quiet pass", async () 
   }));
   assert.equal(report.passed, false);
   assert.equal(report.haltedAt, 9);
-  assert.match(report.steps[8]!.detail, /no MULTUP\/MULTDOWN/);
+  assert.match(stepNamed(report, "contracts_for").detail, /no MULTUP\/MULTDOWN/);
 });
 
 test("a quote with no buyable id fails rather than being reported as a quote", async () => {
@@ -185,8 +204,11 @@ test("a partial run is never reported as passed", async () => {
   assert.equal(report.passed, false);
   assert.equal(report.haltedAt, 7);
   // Halts immediately: later greens after a red invite reading a broken run
-  // as a working one.
-  assert.equal(report.steps.length, 7);
+  // as a working one. Asserted by NAME so splitting a step cannot silently
+  // re-target this.
+  assert.equal(stepNamed(report, "time").status, "FAIL");
+  assert.ok(!report.steps.some((s) => ["active_symbols", "contracts_for", "proposal"].includes(s.name)),
+    "no step after the failure may be attempted");
 });
 
 test("legacy mode refuses certification instead of certifying the wrong path", async () => {
@@ -243,8 +265,8 @@ test("a NUMERIC App ID in new mode FAILS step 1 — before any request", async (
     }));
   assert.equal(report.passed, false);
   assert.equal(report.haltedAt, 1, "must halt at config, not at the venue");
-  assert.match(report.steps[0]!.detail, /CONFIGURATION error/);
-  assert.match(report.steps[0]!.detail, /not a credential error/);
+  assert.match(stepNamed(report, "config").detail, /CONFIGURATION error/);
+  assert.match(stepNamed(report, "config").detail, /not a credential error/);
   // Nothing was sent: the incoherence is detectable without a request.
   assert.equal(sent.length, 0);
 });
@@ -258,7 +280,7 @@ test("clock skew beyond the OTP freshness margin FAILS step 7", async () => {
   }));
   assert.equal(report.passed, false);
   assert.equal(report.haltedAt, 7);
-  assert.match(report.steps[6]!.detail, /exceeds the .*OTP freshness margin/);
+  assert.match(stepNamed(report, "time").detail, /exceeds the .*OTP freshness margin/);
 });
 
 test("skew INSIDE the margin still passes — the bound is not a blanket refusal", async () => {

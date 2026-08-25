@@ -13,6 +13,7 @@
 import { WebSocket } from "ws";
 import { DerivNewApiError } from "./errors.js";
 import { type DerivNewApiConfig } from "./restClient.js";
+import { type DerivOtpPhase } from "./otp.js";
 import {
   requestOtpTicket, isTicketUsable, describeOtpUrlForLog, type DerivOtpTicket,
 } from "./otp.js";
@@ -115,7 +116,8 @@ export class NewDerivTransport {
    * single-use and re-dialling one fails in a way that looks like an auth
    * problem.
    */
-  async connect(accountId: string): Promise<void> {
+  async connect(accountId: string, onPhase?: (p: DerivOtpPhase) => void): Promise<void> {
+    const emit = onPhase ?? (() => {});
     this.accountId = accountId;
     this.setState("OTP_REQUESTING");
 
@@ -125,6 +127,7 @@ export class NewDerivTransport {
       try {
         ticket = await requestOtpTicket({
           accountId, config: this.config, fetchImpl: this.fetchImpl,
+          onPhase: emit,
         });
       } catch (e) {
         lastErr = e instanceof DerivNewApiError
@@ -144,11 +147,27 @@ export class NewDerivTransport {
       }
 
       this.ticket = ticket;
+      const dialStart = Date.now();
       try {
         await this.dial(ticket);
+        emit({
+          name: "ws_connect", ok: true, elapsedMs: Date.now() - dialStart,
+          // Host + path only; the query carrying the OTP is dropped.
+          detail: `socket open to ${describeOtpUrlForLog(ticket.wsUrl)}`,
+        });
         this.setState("WS_READY");
+        emit({
+          name: "ws_ready", ok: true, elapsedMs: null,
+          detail: "authenticated session ready (no authorize sent)",
+        });
         return;
       } catch (e) {
+        emit({
+          name: "ws_connect", ok: false, elapsedMs: Date.now() - dialStart,
+          detail: e instanceof DerivNewApiError
+            ? `${e.code}${e.detail ? ` — ${e.detail}` : ""}`
+            : "socket dial failed",
+        });
         // Mark consumed regardless: a dialled OTP is spent even on failure.
         ticket.consumed = true;
         this.ticket = null;
