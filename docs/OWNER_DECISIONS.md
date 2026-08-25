@@ -275,3 +275,27 @@ presents a credential problem when the defect is in the route selection.
 
 NOTE: this was found only because the client now retains Deriv's error CODE
 (commit b3e18cd). With the prose message alone it read as a bad token.
+
+### Ruling 15a — EXECUTED: new mode kept, quarantined from legacy transport (2026-08-23)
+Owner ruling: KEEP new mode. Alphanumeric App IDs and PATs are valid credentials
+for Deriv's CURRENT API; the defect was architectural — new-generation
+credentials must never enter the legacy WebSocket `authorize` flow. Deriv states
+legacy App IDs do not work with the new APIs, so these are two API GENERATIONS,
+not two credential formats for one handshake.
+
+Implemented:
+  1. Legacy path preserved untouched and remains the certification target.
+  2. `DERIV_API_MODE=new` now fails CLOSED with `DERIV_NEW_API_NOT_IMPLEMENTED`
+     BEFORE any socket is opened.
+  3. The bootstrap-1089 substitution is REMOVED; new mode resolves no URL.
+  4. The refusal is explicitly NOT a credential verdict.
+  5. Regression tests pin that new credentials can never reach legacy
+     `authorize` — including a second barrier at the call site — and are proven
+     to fail red when the shim is restored.
+  6. The real flow is left as a separate task and documented in-file:
+     Bearer PAT + Deriv-App-ID -> REST account discovery -> account OTP ->
+     authenticated new WebSocket.
+
+Classification is deliberately unchanged: an alphanumeric app id + PAT is still
+detected as "new". The credentials were always recognized correctly; only the
+route they were sent down was wrong.

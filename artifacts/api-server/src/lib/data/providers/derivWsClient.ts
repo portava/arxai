@@ -37,6 +37,13 @@ import {
 } from "./derivSymbolDiscovery.js";
 
 const DEFAULT_WS_URL = "wss://ws.derivws.com/websockets/v3";
+
+/** Ruling 15 — new-mode (alphanumeric app id + PAT) is a DIFFERENT Deriv API
+ *  generation whose transport is not built yet. Selecting it fails closed with
+ *  this explicit reason so the refusal can never be mistaken for a rejected
+ *  credential. Its real flow is Bearer PAT + Deriv-App-ID -> REST account
+ *  discovery -> account OTP -> authenticated new WebSocket. */
+export const DERIV_NEW_API_NOT_IMPLEMENTED = "DERIV_NEW_API_NOT_IMPLEMENTED";
 const PING_MS = 30_000;
 const REQUEST_TIMEOUT_MS = 8_000;
 const MAX_BACKOFF_MS = 30_000;
@@ -215,7 +222,18 @@ class DerivWsClient {
     void this.resolveWsUrl().then(url => {
       if (!url) {
         this.connecting = false;
-        this.lastErrorMessage = "deriv_config: Could not resolve WebSocket URL. Check DERIV_APP_ID, DERIV_API_TOKEN, and DERIV_API_MODE.";
+        // Ruling 15: a quarantined new-mode selection is NOT a credential
+        // problem and must never be reported as one.
+        if (DerivWsClient.detectMode() === "new") {
+          this.lastErrorMessage = DERIV_NEW_API_NOT_IMPLEMENTED;
+          this.lastAuthorizeErrorCode = DERIV_NEW_API_NOT_IMPLEMENTED;
+          logger.warn(
+            { derivErrorCode: DERIV_NEW_API_NOT_IMPLEMENTED },
+            "deriv_new_api_mode_selected_but_not_implemented",
+          );
+        } else {
+          this.lastErrorMessage = "deriv_config: Could not resolve WebSocket URL. Check DERIV_APP_ID, DERIV_API_TOKEN, and DERIV_API_MODE.";
+        }
         return;
       }
       this.wsUrl = url;
@@ -242,6 +260,22 @@ class DerivWsClient {
           this.accountIdentity = null;
           this.realAccountWarnedThisConnect = false;
           this.startPing();
+          // Ruling 15 — SECOND barrier. resolveWsUrl() already refuses to open
+          // a socket in new mode, so this should be unreachable; it exists
+          // because the failure it prevents (a PAT sent to legacy `authorize`)
+          // presents as a bad credential and cost two good demo tokens to
+          // diagnose. Cheap guard, expensive failure.
+          if (DerivWsClient.detectMode() === "new") {
+            this.authorized = false;
+            this.lastAuthorizeError = DERIV_NEW_API_NOT_IMPLEMENTED;
+            this.lastAuthorizeErrorCode = DERIV_NEW_API_NOT_IMPLEMENTED;
+            logger.warn(
+              { derivErrorCode: DERIV_NEW_API_NOT_IMPLEMENTED },
+              "deriv_new_mode_pat_blocked_from_legacy_authorize",
+            );
+            void this.runEagerWarmup();
+            return;
+          }
           // If a token is configured (either mode), authorize and track the response.
           const token = (process.env.DERIV_API_TOKEN ?? "").trim();
           if (token) {
@@ -302,11 +336,21 @@ class DerivWsClient {
     const mode = DerivWsClient.detectMode();
     const base = (process.env.DERIV_WS_URL ?? "").trim() || DEFAULT_WS_URL;
     if (mode === "new") {
-      // Alphanumeric DERIV_APP_ID is a Deriv Developers/PAT app id and cannot
-      // be passed to the legacy WS handshake. Use the public bootstrap app id
-      // (overridable via DERIV_WS_LEGACY_APP_ID) and authorize with the PAT.
-      const bootstrap = (process.env.DERIV_WS_LEGACY_APP_ID ?? "1089").trim();
-      return `${base}?app_id=${encodeURIComponent(bootstrap)}`;
+      // QUARANTINED — Owner Decision Registry, Ruling 15.
+      //
+      // This branch previously substituted the public bootstrap app id (1089)
+      // and then called the LEGACY `authorize` with the PAT. That shim is
+      // removed: Deriv's new API is a different GENERATION, not a second
+      // credential format for the same handshake, and legacy app ids do not
+      // work with the new APIs (nor PATs with the legacy one). The shim made a
+      // valid PAT look like a bad credential — two good demo tokens were
+      // rejected as InvalidToken before the cause was found.
+      //
+      // The real flow is: Bearer PAT + Deriv-App-ID -> REST account discovery
+      // -> account-scoped OTP -> authenticated NEW WebSocket. Until that
+      // transport exists and is integration-tested, new mode fails CLOSED with
+      // an explicit reason. A PAT must never reach legacy `authorize`.
+      return null;
     }
     if (mode === "legacy") {
       const legacyId = (process.env.DERIV_WS_LEGACY_APP_ID ?? this.appId).trim();
