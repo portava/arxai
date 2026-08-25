@@ -168,7 +168,11 @@ export async function runReadOnlyCertification(args: {
     return report();
   }
   // Presence and length only — never the value, never a prefix.
-  steps.push(ok(1, "config", `mode=new appId=present pat=present(len ${d.patLength})`));
+  // The App ID SHAPE is reported because a legacy (numeric) App ID sent to the
+  // new API is rejected as "Invalid application" — a failure that otherwise
+  // looks like a credential problem and sends the operator after the token.
+  steps.push(ok(1, "config",
+    `mode=new appId=${d.appIdShape} pat=present(len ${d.patLength})`));
 
   let transport: NewDerivTransport | null = null;
   try {

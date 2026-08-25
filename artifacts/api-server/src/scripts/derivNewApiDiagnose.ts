@@ -59,7 +59,11 @@ async function main(): Promise<void> {
   }
   const d = describeConfig();
   console.log("Deriv new-API credential diagnosis (read-only, GET only)");
-  console.log(`mode=${d.mode}  appId=present  token=present(len ${d.patLength})`);
+  console.log(`mode=${d.mode}  appId=${d.appIdShape}  token=present(len ${d.patLength})`);
+  if (d.appIdShape === "numeric") {
+    console.log("  ⚠ The App ID is NUMERIC — that is the LEGACY generation's format.");
+    console.log("    The new API rejects a legacy App ID as \"Invalid application\".");
+  }
   console.log("The token is never inspected — only which headers are sent varies.\n");
 
   const results: Record<string, ProbeResult> = {};

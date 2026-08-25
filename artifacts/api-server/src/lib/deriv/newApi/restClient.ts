@@ -47,6 +47,12 @@ export function resolveNewApiConfig(): DerivNewApiConfig | DerivNewApiErrorCode 
 export function describeConfig(): {
   mode: DerivApiMode;
   appIdPresent: boolean;
+  /** An App ID is a PUBLIC identifier — it travels in legacy WS URLs — so its
+   *  shape is safe to report, unlike the token's. A NUMERIC App ID is the
+   *  legacy generation's format; the new generation issues alphanumeric ones.
+   *  Sending a legacy App ID to the new API is rejected as "Invalid
+   *  application", so this distinction is the first thing to check. */
+  appIdShape: "numeric" | "alphanumeric" | "empty";
   patPresent: boolean;
   patLength: number;
 } {
@@ -57,6 +63,8 @@ export function describeConfig(): {
     // every caller's mode check unfireable — including certification's.
     mode: detectDerivApiMode(),
     appIdPresent: appId.length > 0,
+    appIdShape: appId.length === 0 ? "empty"
+      : /^\d+$/.test(appId) ? "numeric" : "alphanumeric",
     patPresent: token.length > 0,
     // Length is metadata, not content: it distinguishes "empty" and "truncated"
     // from "present" without revealing a single character.
