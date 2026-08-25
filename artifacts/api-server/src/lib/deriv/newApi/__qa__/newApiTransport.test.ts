@@ -249,3 +249,69 @@ test("NO module in the new-API tree reaches the legacy generation", async () => 
       `${file} builds an authorize payload`);
   }
 });
+
+// ── Rejection classification (the live step-9 InputValidationFailed) ────────
+
+/** A socket that answers every request with one Deriv error object. */
+function rejectingSocket(error: Record<string, unknown>) {
+  const handlers: Record<string, (a?: unknown) => void> = {};
+  const factory = (): DerivSocket => {
+    const s: DerivSocket = {
+      send: (d) => {
+        const { req_id } = JSON.parse(d) as { req_id: number };
+        queueMicrotask(() => handlers["message"]?.(JSON.stringify({ req_id, error })));
+      },
+      close: () => handlers["close"]?.(),
+      on: (e, cb) => { handlers[e] = cb; },
+    };
+    queueMicrotask(() => handlers["open"]?.());
+    return s;
+  };
+  return factory;
+}
+
+test("a rejected READ-ONLY query is not reported as a rejected TRADE", async () => {
+  // The live run reported contracts_for failing as DERIV_NEW_API_TRADING_REJECTED.
+  // Nothing was traded. Saying a trade was refused when none was attempted is
+  // the kind of claim this system exists to never make.
+  const t = new NewDerivTransport(CONFIG, rejectingSocket({ code: "InputValidationFailed" }), otpFetch());
+  await t.connect("ACC-D1");
+  await assert.rejects(() => t.send({ contracts_for: "R_100", currency: "USD" }),
+    (e: DerivNewApiError) => {
+      assert.equal(e.code, "DERIV_NEW_API_REQUEST_REJECTED");
+      assert.notEqual(e.code, "DERIV_NEW_API_TRADING_REJECTED");
+      assert.equal(e.derivCode, "InputValidationFailed");
+      assert.match(e.detail!, /op=contracts_for/);
+      return true;
+    });
+});
+
+test("a rejected BUY is still TRADING_REJECTED", async () => {
+  // The distinction must not erase the category that matters.
+  const t = new NewDerivTransport(CONFIG, rejectingSocket({ code: "InsufficientBalance" }), otpFetch());
+  await t.connect("ACC-D1");
+  await assert.rejects(() => t.send({ buy: "quote-1", price: 10 }),
+    (e: DerivNewApiError) => {
+      assert.equal(e.code, "DERIV_NEW_API_TRADING_REJECTED");
+      assert.equal(e.derivCode, "InsufficientBalance");
+      return true;
+    });
+});
+
+test("a validation failure names the offending FIELDS, never their values", async () => {
+  // InputValidationFailed alone says only that something in the payload was
+  // wrong. The field names are what identify which part; the values are not
+  // reported and could echo request content.
+  const t = new NewDerivTransport(CONFIG, rejectingSocket({
+    code: "InputValidationFailed",
+    details: { contract_type: "SECRET-VALUE-HERE", currency: "also-secret" },
+  }), otpFetch());
+  await t.connect("ACC-D1");
+  await assert.rejects(() => t.send({ contracts_for: "R_100" }),
+    (e: DerivNewApiError) => {
+      assert.match(e.detail!, /fields:\[contract_type,currency\]/);
+      assert.ok(!e.detail!.includes("SECRET-VALUE-HERE"), "a details VALUE leaked");
+      assert.ok(!`${e.message}`.includes("also-secret"), "a details VALUE leaked into the message");
+      return true;
+    });
+});

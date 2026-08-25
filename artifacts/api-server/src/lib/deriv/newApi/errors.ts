@@ -36,6 +36,12 @@ export const DERIV_NEW_API_ERRORS = [
   "DERIV_NEW_API_REQUEST_TIMEOUT",
   /** The venue refused the trade on its merits. NOT a credential fault. */
   "DERIV_NEW_API_TRADING_REJECTED",
+  // Deriv rejected a NON-trading request — a malformed query, an unsupported
+  // parameter. Distinct from TRADING_REJECTED (a trade was refused) and from
+  // PROTOCOL_ERROR (ARX could not parse a valid reply). Three different
+  // operator actions; collapsing them reported a read-only metadata query as
+  // a rejected trade.
+  "DERIV_NEW_API_REQUEST_REJECTED",
   /** The new transport is selected but a required piece is not built yet. */
   "DERIV_NEW_API_NOT_IMPLEMENTED",
 ] as const;

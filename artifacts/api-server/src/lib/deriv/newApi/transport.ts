@@ -64,6 +64,8 @@ const defaultSocketFactory: DerivSocketFactory = (url) => {
 };
 
 interface Pending {
+  /** Which operation this request asked for. */
+  op?: string;
   resolve: (v: Record<string, unknown>) => void;
   reject: (e: Error) => void;
   timer: NodeJS.Timeout;
@@ -232,10 +234,24 @@ export class NewDerivTransport {
     if (!p) return;
     clearTimeout(p.timer);
     this.pending.delete(id);
-    const err = msg["error"] as { code?: unknown } | undefined;
+    const err = msg["error"] as { code?: unknown; details?: unknown } | undefined;
     if (err && typeof err === "object") {
       const code = typeof err.code === "string" ? err.code : null;
-      p.reject(new DerivNewApiError("DERIV_NEW_API_TRADING_REJECTED", { derivCode: code }));
+      // A validation failure usually names the offending FIELDS in `details`.
+      // Those key names are structural and safe; their values are not
+      // reported. Without this an InputValidationFailed says only that
+      // something in the payload was wrong, not which part.
+      const detailKeys = (typeof err.details === "object" && err.details !== null)
+        ? Object.keys(err.details as Record<string, unknown>) : [];
+      const fields = detailKeys.length ? ` fields:[${detailKeys.join(",")}]` : "";
+      // Only an actual trade can be TRADING_REJECTED. A read-only query that
+      // Deriv refuses is a rejected REQUEST — reporting it as a rejected trade
+      // says a trade was attempted, which would be false.
+      const isTrade = p.op === "buy" || p.op === "sell";
+      p.reject(new DerivNewApiError(
+        isTrade ? "DERIV_NEW_API_TRADING_REJECTED" : "DERIV_NEW_API_REQUEST_REJECTED",
+        { derivCode: code, detail: `op=${p.op}${fields}` },
+      ));
       return;
     }
     p.resolve(msg);
@@ -280,7 +296,10 @@ export class NewDerivTransport {
           detail: `no reply within ${DERIV_WS_REQUEST_TIMEOUT_MS}ms`,
         }));
       }, DERIV_WS_REQUEST_TIMEOUT_MS);
-      this.pending.set(id, { resolve, reject, timer });
+      // The operation name is retained so a rejection can be classified by
+      // what was ASKED, not lumped under trading.
+      const op = Object.keys(payload).find((k) => k !== "req_id" && k !== "subscribe") ?? "unknown";
+      this.pending.set(id, { resolve, reject, timer, op });
       try {
         sock.send(JSON.stringify({ ...payload, req_id: id }));
       } catch {
