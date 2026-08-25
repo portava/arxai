@@ -64,6 +64,25 @@ export function describeConfig(): {
   };
 }
 
+/**
+ * Remove anything credential-shaped from a string.
+ *
+ * The credential values are used to FIND and mask themselves — the standing
+ * rule is that the token is never exposed, and masking is what enforces that
+ * rather than violating it. Nothing about the token's content is reported.
+ */
+export function redactSecrets(text: string, config: DerivNewApiConfig): string {
+  const capped = text.length > 256 ? `${text.slice(0, 256)}…[truncated]` : text;
+  let out = capped;
+  if (config.token) out = out.split(config.token).join("<token:redacted>");
+  if (config.appId) out = out.split(config.appId).join("<app-id:redacted>");
+  // An OTP can appear in a URL echoed back inside an error body.
+  out = out.replace(/otp=[^&\s"']+/gi, "otp=<redacted>");
+  // Bearer values, in case one is echoed in a form we did not send.
+  out = out.replace(/Bearer\s+[A-Za-z0-9._~+/-]+=*/gi, "Bearer <redacted>");
+  return out;
+}
+
 export interface DerivRestResponse<T> {
   ok: true;
   status: number;
@@ -91,6 +110,15 @@ export async function derivRestRequest<T>(args: {
    * rejection WITHOUT inspecting the token. Defaults to sending both.
    */
   authMode?: "both" | "app-id-only" | "bearer-only";
+  /**
+   * Capture a REDACTED, truncated error body. DIAGNOSTIC USE ONLY.
+   *
+   * Ordinarily the venue's prose is never propagated — it can echo request
+   * context. But a short text/plain rejection usually states the actual cause,
+   * and refusing to read it turns diagnosis into guesswork. So it is opt-in,
+   * length-capped, and passed through redactSecrets() first.
+   */
+  captureBody?: boolean;
 }): Promise<DerivRestResponse<T>> {
   const doFetch = args.fetchImpl ?? fetch;
   const controller = new AbortController();
@@ -144,6 +172,7 @@ export async function derivRestRequest<T>(args: {
 
     throw new DerivNewApiError(classifyHttpStatus(res.status), {
       derivCode, httpStatus: res.status, authChallenge, bodyShape,
+      bodySnippet: args.captureBody ? redactSecrets(raw, args.config) : null,
     });
   }
 

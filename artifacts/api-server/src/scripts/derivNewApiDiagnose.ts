@@ -24,22 +24,29 @@ const PROBES: Probe[] = [
   { name: "Bearer only ", authMode: "bearer-only", note: "no App-ID sent — isolates the header requirement" },
 ];
 
-async function probe(p: Probe, config: { appId: string; token: string }): Promise<string> {
+interface ProbeResult { line: string; body: string | null; ok: boolean }
+
+async function probe(p: Probe, config: { appId: string; token: string }): Promise<ProbeResult> {
   try {
     const res = await derivRestRequest<unknown>({
-      method: "GET", path: DERIV_ACCOUNTS_PATH, config, authMode: p.authMode,
+      method: "GET", path: DERIV_ACCOUNTS_PATH, config,
+      authMode: p.authMode, captureBody: true,
     });
-    return `HTTP ${res.status} OK`;
+    return { line: `HTTP ${res.status} OK`, body: null, ok: true };
   } catch (e) {
     if (e instanceof DerivNewApiError) {
-      return [
-        `HTTP ${e.httpStatus ?? "-"}`,
-        `deriv:${e.derivCode ?? "none"}`,
-        `challenge:${e.authChallenge ?? "none"}`,
-        `body:${e.bodyShape ?? "none"}`,
-      ].join("  ");
+      return {
+        line: [
+          `HTTP ${e.httpStatus ?? "-"}`,
+          `deriv:${e.derivCode ?? "none"}`,
+          `challenge:${e.authChallenge ?? "none"}`,
+          `body:${e.bodyShape ?? "none"}`,
+        ].join("  "),
+        body: e.bodySnippet,
+        ok: false,
+      };
     }
-    return "non-protocol failure (message withheld)";
+    return { line: "non-protocol failure (message withheld)", body: null, ok: false };
   }
 }
 
@@ -55,41 +62,47 @@ async function main(): Promise<void> {
   console.log(`mode=${d.mode}  appId=present  token=present(len ${d.patLength})`);
   console.log("The token is never inspected — only which headers are sent varies.\n");
 
-  const results: Record<string, string> = {};
+  const results: Record<string, ProbeResult> = {};
   for (const p of PROBES) {
     const out = await probe(p, config);
     results[p.authMode] = out;
-    console.log(`  ${p.name}  ${out}`);
+    console.log(`  ${p.name}  ${out.line}`);
+    if (out.body) console.log(`               ↳ says: ${JSON.stringify(out.body)}`);
     console.log(`               ↳ ${p.note}`);
   }
 
   console.log("\nReading:");
-  const both = results["both"] ?? "";
-  const appOnly = results["app-id-only"] ?? "";
-  const bearerOnly = results["bearer-only"] ?? "";
+  const both = results["both"]!;
+  const appOnly = results["app-id-only"]!;
+  const bearerOnly = results["bearer-only"]!;
 
-  if (both.startsWith("HTTP 200")) {
+  if (both.ok) {
     console.log("  Credentials accepted — rerun certification.");
     return;
   }
-  // If sending NO credential produces the same response as sending one, the
-  // request is being rejected before the token is ever evaluated.
-  const sameAsNoCredential = both.split("body:")[0] === appOnly.split("body:")[0];
-  if (sameAsNoCredential) {
-    console.log("  The response is IDENTICAL with and without a credential, so the");
-    console.log("  token is not being evaluated at all. Suspect the App ID: unregistered,");
-    console.log("  not enabled for this API, or not linked to the token's account.");
+
+  // Compare the FULL result, body shape included. The first version of this
+  // heuristic split the line on "body:" and compared only the part before it,
+  // which discarded the one field that actually differs — so three visibly
+  // different responses were declared identical. Never exclude the
+  // discriminating signal from the discriminator.
+  const identicalToNoCredential = both.line === appOnly.line && both.body === appOnly.body;
+
+  if (identicalToNoCredential) {
+    console.log("  The response is byte-identical with and without a credential, so the");
+    console.log("  token is not being evaluated. Suspect the App ID: unregistered, not");
+    console.log("  enabled for this API, or not linked to the token's account.");
   } else {
-    console.log("  Sending the credential changes the response, so the App ID is being");
-    console.log("  accepted and the TOKEN is what is refused. Suspect wrong token type");
-    console.log("  (legacy API token vs PAT/OAuth) or a missing `trade` scope.");
+    console.log("  The response CHANGES when the credential is sent, so it is being read");
+    console.log("  and refused. The App ID is reaching the service.");
   }
-  if (bearerOnly.startsWith("HTTP 200")) {
-    console.log("  The Deriv-App-ID header is optional on this endpoint.");
+  if (!bearerOnly.ok && bearerOnly.line !== both.line) {
+    console.log("  Omitting Deriv-App-ID also changes the response, so that header is");
+    console.log("  being honoured too.");
   }
-  console.log("\n  A 401 whose body is 0B / non-JSON is an edge rejection: Deriv's");
-  console.log("  application errors carry a JSON error.code, so an empty body means");
-  console.log("  the request never reached the application layer.");
+  console.log("");
+  console.log("  The venue's own messages above supersede this inference — read them");
+  console.log("  first. They are redacted and truncated, never raw.");
 }
 
 main().catch((e: unknown) => {

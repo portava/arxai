@@ -355,3 +355,58 @@ test("authMode omits a header WITHOUT changing how headers are built", async () 
   assert.equal(sent[2]!["Deriv-App-ID"], CONFIG.appId);
   assert.ok(sent[2]!["Authorization"]!.startsWith("Bearer "));
 });
+
+test("a captured error body is REDACTED of every credential shape", async () => {
+  // The body capture exists so a plain-text rejection can be read. It must not
+  // become the leak the no-prose rule was protecting against.
+  const hostile = [
+    `token was ${PAT} and app ${CONFIG.appId}`,
+    'redirect wss://x/ws/demo?otp=SECRETOTP&x=1',
+    'sent Authorization: Bearer abc.def-ghi_jkl',
+  ].join(" | ");
+  await assert.rejects(
+    () => derivRestRequest({
+      method: "GET", path: "/x", config: CONFIG, captureBody: true,
+      fetchImpl: fakeFetch({ status: 401, body: hostile, contentType: "text/plain" }),
+    }),
+    (err: DerivNewApiError) => {
+      const snip = err.bodySnippet!;
+      assert.ok(!snip.includes(PAT), "PAT survived redaction");
+      assert.ok(!snip.includes(CONFIG.appId), "app id survived redaction");
+      assert.ok(!snip.includes("SECRETOTP"), "OTP survived redaction");
+      assert.ok(!/Bearer\s+abc/.test(snip), "bearer value survived redaction");
+      assert.ok(snip.includes("<token:redacted>"));
+      return true;
+    },
+  );
+});
+
+test("body capture is OPT-IN — ordinary calls still propagate no prose", async () => {
+  // The production rule is unchanged: the venue's prose never reaches logs or
+  // thrown errors unless a diagnostic explicitly asks for it.
+  await assert.rejects(
+    () => derivRestRequest({
+      method: "GET", path: "/x", config: CONFIG,
+      fetchImpl: fakeFetch({ status: 401, body: "internal detail", contentType: "text/plain" }),
+    }),
+    (err: DerivNewApiError) => {
+      assert.equal(err.bodySnippet, null);
+      assert.ok(!err.message.includes("internal detail"));
+      return true;
+    },
+  );
+});
+
+test("a long body is truncated so a capture cannot become a dump", async () => {
+  await assert.rejects(
+    () => derivRestRequest({
+      method: "GET", path: "/x", config: CONFIG, captureBody: true,
+      fetchImpl: fakeFetch({ status: 401, body: "A".repeat(5000), contentType: "text/plain" }),
+    }),
+    (err: DerivNewApiError) => {
+      assert.ok(err.bodySnippet!.length < 300, `snippet was ${err.bodySnippet!.length}B`);
+      assert.ok(err.bodySnippet!.endsWith("[truncated]"));
+      return true;
+    },
+  );
+});

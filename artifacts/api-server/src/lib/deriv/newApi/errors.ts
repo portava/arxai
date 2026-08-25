@@ -57,12 +57,17 @@ export class DerivNewApiError extends Error {
    *  carrying no JSON body at all distinguishes an edge rejection from an
    *  application-level refusal. */
   readonly bodyShape: string | null;
+  /** A REDACTED, truncated error body. Populated ONLY when a caller passes
+   *  captureBody — the diagnose command does, ordinary calls do not, so the
+   *  venue's prose still never reaches production logs or thrown errors. */
+  readonly bodySnippet: string | null;
 
   constructor(
     code: DerivNewApiErrorCode,
     opts: {
       derivCode?: string | null; httpStatus?: number | null; detail?: string;
       authChallenge?: string | null; bodyShape?: string | null;
+      bodySnippet?: string | null;
     } = {},
   ) {
     // The message is the CLASSIFICATION, never the credential or the venue's
@@ -74,6 +79,7 @@ export class DerivNewApiError extends Error {
     this.httpStatus = opts.httpStatus ?? null;
     this.authChallenge = opts.authChallenge ?? null;
     this.bodyShape = opts.bodyShape ?? null;
+    this.bodySnippet = opts.bodySnippet ?? null;
   }
 }
 
