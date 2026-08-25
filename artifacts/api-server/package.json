@@ -47,6 +47,7 @@
     "test:edge-promotion": "node --import tsx --test --test-force-exit src/lib/learning/__qa__/edgePromotion.test.ts",
     "test:feature-snapshot": "node --import tsx --test --test-force-exit src/lib/features/__qa__/featureSnapshot.test.ts",
     "test:pre-gate-wave4": "node --import tsx --test --test-force-exit src/lib/live/__qa__/preGateWave4.test.ts",
+    "test:deriv-new-api-foundations": "node --import tsx --test --test-force-exit src/lib/deriv/newApi/__qa__/newApiFoundations.test.ts",
     "test:deriv-mode-quarantine": "node --import tsx --test --test-force-exit src/lib/data/providers/__qa__/derivModeQuarantine.test.ts",
     "test:deriv-account-identity": "node --import tsx --test --test-force-exit src/lib/data/providers/__qa__/derivAccountIdentity.test.ts",
     "test:unknown-reconciler": "node --import tsx --test --test-force-exit src/lib/live/__qa__/unknownReconciler.test.ts",
