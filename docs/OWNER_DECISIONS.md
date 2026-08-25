@@ -360,10 +360,29 @@ money, a DerivExecutionAdapter, or dispatch through the 18-gate path. All
 standing holds from Ruling 16 remain.
 
 ## Ruling 18 — reconciliation proven on a NON-ZERO P/L; keepalive and recovery added (2026-08-25)
-Contract `10548672559`: bought at 1, held 60s while the spot moved 618.38 →
-618.80, sold for 1.03, venue-confirmed settled. Derived P/L
-`0.030000000000000027`, Deriv-reported `0.03`, **agrees**, graded
-`evidence: non-zero`.
+Contract `10548672559`: bought at 1, held 60s, sold for 1.03, venue-confirmed
+settled. Derived P/L `0.030000000000000027`, Deriv-reported `0.03`,
+**agrees**, graded `evidence: non-zero`.
+
+> **AMENDED same day.** This ruling originally reported "the spot moved 618.38
+> → 618.80". **Withdraw that figure.** A later audit established that ARX was
+> pairing the PROPOSAL's pre-trade quote with a POST-settlement streaming tick
+> and presenting the delta as the trade's movement. Neither number was the
+> venue's record for this contract, which publishes `entry_spot` and
+> `exit_spot` in a reply ARX was already parsing and discarding.
+>
+> **The P/L evidence is unaffected and stands**: `derived = proceeds − cost`
+> and Deriv's `profit` never involved those spot fields, so the non-zero
+> reconciliation result is sound. What was wrong was a diagnostic line, not
+> the arithmetic — but it was the line quoted as evidence, and it stated an
+> economic fact about the trade that the venue never confirmed.
+>
+> Fixed: the venue's own `entry_spot`/`exit_spot` are now read, with NO
+> fallback to the quote or the streaming tick — UNRESOLVED is the honest
+> answer when Deriv is silent. The quote is still reported, labelled as a
+> quote. This is the rule ARX's MT5 reconciler already enforced
+> (`fillPrice: null`, "never fabricated onto the command"); the new Deriv path
+> simply had not inherited it.
 
 This closes the gap Ruling 17 left open. ARX's reconciliation arithmetic has
 now been exercised against a real, non-zero venue-reported P/L rather than

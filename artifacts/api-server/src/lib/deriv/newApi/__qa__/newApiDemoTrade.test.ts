@@ -31,8 +31,8 @@ function fakeTransport(over: Record<string, unknown> = {}, sink?: string[]) {
   const answers: Record<string, unknown> = {
     proposal: { proposal: { id: "quote-1", ask_price: 1 } },
     buy: { buy: { contract_id: 555, buy_price: 1, transaction_id: 9 } },
-    proposal_open_contract: { proposal_open_contract: { contract_id: 555, is_sold: 1, profit: 0.25 } },
-    sell: { sold: { sold_for: 1.25 } },
+    proposal_open_contract: { proposal_open_contract: { contract_id: 555, is_sold: 1, profit: 0.25, entry_spot: 100, exit_spot: 100.5 } },
+    sell: { sell: { contract_id: 555, sold_for: 1.25 } },
     ...over,
   };
   return () => ({
@@ -136,10 +136,30 @@ test("a buy reply with NO contract id is UNRESOLVED, never 'no trade happened'",
 });
 
 test("a failed SELL reports the position as LEFT OPEN with its contract id", async () => {
+  // A GENUINE failure: the send itself throws. The previous fixture supplied
+  // `sell: undefined`, which the fake returned as a valid-but-empty reply —
+  // so it exercised a receiptless response, not a failed sell. Those are now
+  // different paths: a receiptless reply falls through to the venue re-read,
+  // while a throw means the sell never completed.
+  const factory = () => ({
+    connect: async () => {},
+    getState: () => "WS_READY",
+    close: () => {},
+    send: async (p: Record<string, unknown>) => {
+      const op = Object.keys(p).find((k) => k !== "req_id" && k !== "subscribe")!;
+      if (op === "sell") throw new Error("sell failed");
+      const answers: Record<string, unknown> = {
+        proposal: { proposal: { id: "q", ask_price: 1 } },
+        buy: { buy: { contract_id: 555, buy_price: 1 } },
+        proposal_open_contract: { proposal_open_contract: { contract_id: 555, profit: 0 } },
+      };
+      return answers[op] as Record<string, unknown>;
+    },
+  }) as never;
   const r = await runDemoTradeCertification(CONFIG, {
     ...AUTH, observeMs: 0, sleep: async () => {},
     fetchImpl: fakeFetch(ACCOUNTS("demo")),
-    transportFactory: fakeTransport({ sell: undefined as never }),
+    transportFactory: factory,
   });
   assert.equal(r.positionLeftOpen, true);
   assert.equal(r.contractId, 555, "the contract id must survive the failure");
@@ -282,7 +302,7 @@ test("reconciliation compares whole cents, not a float epsilon", async () => {
     fetchImpl: fakeFetch(ACCOUNTS("demo")),
     transportFactory: fakeTransport({
       buy: { buy: { contract_id: 555, buy_price: 0.2, transaction_id: 9 } },
-      sell: { sold: { sold_for: 0.3 } },
+      sell: { sell: { contract_id: 555, sold_for: 0.3 } },
       proposal_open_contract: { proposal_open_contract: { contract_id: 555, is_sold: 1, profit: 0.09 } },
     }),
   });
@@ -318,7 +338,7 @@ test("a ZERO P/L is graded zero-only, even though it PASSES", async () => {
     fetchImpl: fakeFetch(ACCOUNTS("demo")),
     transportFactory: fakeTransport({
       buy: { buy: { contract_id: 555, buy_price: 1 } },
-      sell: { sold: { sold_for: 1 } },
+      sell: { sell: { contract_id: 555, sold_for: 1 } },
       proposal_open_contract: { proposal_open_contract: { contract_id: 555, is_sold: 1, profit: 0 } },
     }),
   });
@@ -333,7 +353,7 @@ test("a NON-ZERO P/L is graded non-zero — the comparison did real work", async
     fetchImpl: fakeFetch(ACCOUNTS("demo")),
     transportFactory: fakeTransport({
       buy: { buy: { contract_id: 555, buy_price: 1 } },
-      sell: { sold: { sold_for: 1.37 } },
+      sell: { sell: { contract_id: 555, sold_for: 1.37 } },
       proposal_open_contract: { proposal_open_contract: { contract_id: 555, is_sold: 1, profit: 0.37 } },
     }),
   });
@@ -413,7 +433,7 @@ test("a socket that drops during the hold RECONNECTS to close the position", asy
         proposal: { proposal: { id: "q", ask_price: 1, spot: 100 } },
         buy: { buy: { contract_id: 555, buy_price: 1 } },
         proposal_open_contract: { proposal_open_contract: { contract_id: 555, is_sold: 1, profit: 0.5 } },
-        sell: { sold: { sold_for: 1.5 } },
+        sell: { sell: { contract_id: 555, sold_for: 1.5 } },
       };
       return answers[op] as Record<string, unknown>;
     },
@@ -455,4 +475,75 @@ test("if reconnect FAILS the position is reported open, never abandoned quietly"
   assert.equal(r.positionLeftOpen, true);
   assert.equal(r.contractId, 777, "the id must survive so it can be closed by hand");
   assert.match(r.steps.find((s) => s.step === "reconnect")!.detail, /OPEN/);
+});
+
+// ── Provenance and sell-receipt honesty (failure-mode audit) ───────────────
+
+test("entry/exit spot come from the VENUE, never from the quote", async () => {
+  // The reported "spot 618.38 → 618.80" from a live run paired a PRE-TRADE
+  // quote with a POST-SETTLEMENT streaming tick and presented the delta as the
+  // trade's move. Neither number was the venue's record of this contract.
+  // ARX's own MT5 reconciler already forbids exactly this — a price observed
+  // at a different moment is never attributed to the fill.
+  const r = await runDemoTradeCertification(CONFIG, {
+    ...AUTH, observeMs: 0, sleep: async () => {},
+    fetchImpl: fakeFetch(ACCOUNTS("demo")),
+    transportFactory: fakeTransport({
+      proposal: { proposal: { id: "q", ask_price: 1, spot: 500 } },       // quote
+      proposal_open_contract: {
+        proposal_open_contract: {
+          contract_id: 555, is_sold: 1, profit: 0.25,
+          entry_spot: 617, exit_spot: 618, current_spot: 999,             // venue
+        },
+      },
+    }),
+  });
+  const rec = r.reconciliation!;
+  assert.equal(rec.entrySpot, 617, "entry must be the venue's entry_spot");
+  assert.equal(rec.exitSpot, 618, "exit must be the venue's exit_spot");
+  assert.equal(rec.quotedSpot, 500, "the quote is kept, but labelled as a quote");
+  // The streaming tick must not leak in as either endpoint.
+  assert.notEqual(rec.exitSpot, 999);
+});
+
+test("when the venue states no entry/exit, they stay UNRESOLVED — no fallback", async () => {
+  // A fallback to the quote is precisely the guess being removed.
+  const r = await runDemoTradeCertification(CONFIG, {
+    ...AUTH, observeMs: 0, sleep: async () => {},
+    fetchImpl: fakeFetch(ACCOUNTS("demo")),
+    transportFactory: fakeTransport({
+      proposal: { proposal: { id: "q", ask_price: 1, spot: 500 } },
+      proposal_open_contract: {
+        proposal_open_contract: { contract_id: 555, is_sold: 1, profit: 0.25, current_spot: 999 },
+      },
+    }),
+  });
+  assert.equal(r.reconciliation!.entrySpot, null);
+  assert.equal(r.reconciliation!.exitSpot, null);
+});
+
+test("a sell reply with NO receipt is not reported as a close", async () => {
+  // Deriv's sell_response marks the receipt NOT required, so an error-free
+  // reply can arrive without one. The step line said "contract N closed" on
+  // no evidence — and it is the first line an operator reads.
+  const r = await runDemoTradeCertification(CONFIG, {
+    ...AUTH, observeMs: 0, sleep: async () => {},
+    fetchImpl: fakeFetch(ACCOUNTS("demo")),
+    transportFactory: fakeTransport({ sell: { msg_type: "sell" } }),   // valid, receiptless
+  });
+  const sellStep = r.steps.find((s) => s.step === "sell")!;
+  assert.equal(sellStep.status, "UNRESOLVED", "a receiptless sell must not PASS");
+  assert.match(sellStep.detail, /no receipt/);
+  assert.ok(!/closed/.test(sellStep.detail), "must not claim a close");
+});
+
+test("a sell receipt naming a DIFFERENT contract does not confirm ours", async () => {
+  const r = await runDemoTradeCertification(CONFIG, {
+    ...AUTH, observeMs: 0, sleep: async () => {},
+    fetchImpl: fakeFetch(ACCOUNTS("demo")),
+    transportFactory: fakeTransport({ sell: { sell: { contract_id: 888, sold_for: 1.25 } } }),
+  });
+  const sellStep = r.steps.find((s) => s.step === "sell")!;
+  assert.equal(sellStep.status, "UNRESOLVED");
+  assert.match(sellStep.detail, /names contract 888, not 555/);
 });

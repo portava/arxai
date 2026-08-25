@@ -240,9 +240,47 @@ export function normalizePurchase(msg: unknown): ArxPurchase | DerivNewApiError 
   };
 }
 
+export interface ArxSale {
+  contractId: number | null;
+  proceeds: number | null;
+  transactionId: number | null;
+}
+
+/**
+ * Normalize a sell response.
+ *
+ * HONESTY: Deriv's sell_response marks the `sell` receipt as NOT required, so
+ * an error-free reply can legitimately arrive without one. A reply with no
+ * receipt is NOT evidence of a close — the same rule normalizePurchase
+ * enforces on the buy side, where no contract id is never a fill.
+ */
+export function normalizeSale(msg: unknown): ArxSale | DerivNewApiError {
+  // Deriv's schema names the receipt `sell`. `sold` is accepted because the
+  // harness's own early fixtures used it and the venue has not been observed
+  // rejecting either; the schema name is checked first.
+  const raw = (msg as { sell?: unknown; sold?: unknown } | null);
+  const s = raw?.sell ?? raw?.sold;
+  if (typeof s !== "object" || s === null) {
+    return new DerivNewApiError("DERIV_NEW_API_PROTOCOL_ERROR", {
+      detail: "sell carried no receipt — not reported as a close",
+    });
+  }
+  const r = s as Record<string, unknown>;
+  return {
+    contractId: typeof r["contract_id"] === "number" ? r["contract_id"] : null,
+    proceeds: numeric(r["sold_for"]) ?? numeric(r["amount"]),
+    transactionId: numeric(r["transaction_id"]),
+  };
+}
+
 export interface ArxOpenContract {
   contractId: number;
   isSettled: boolean;
+  /** The venue's OWN entry/exit for this contract. Schema types both as
+   *  ["null","string"], so they route through `numeric`. Null when Deriv did
+   *  not state them — never substituted from a quote or a streaming tick. */
+  entrySpot: number | null;
+  exitSpot: number | null;
   /** Realized or running P/L as reported; null when absent, never 0. */
   profit: number | null;
   currentSpot: number | null;
@@ -267,6 +305,10 @@ export function normalizeOpenContract(msg: unknown): ArxOpenContract | DerivNewA
     contractId,
     isSettled: settled,
     profit: numeric(r["profit"]),
+    entrySpot: numeric(r["entry_spot"]),
+    exitSpot: numeric(r["exit_spot"]),
+    // The live STREAMING quote at read time — NOT the contract's exit. Named
+    // for what it is so it cannot be mistaken for one again.
     currentSpot: numeric(r["current_spot"]),
     status: typeof r["status"] === "string" ? r["status"] : null,
   };

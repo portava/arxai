@@ -74,7 +74,12 @@ async function main(): Promise<void> {
     console.log("\n  Reconciliation:");
     console.log(`    buy ${r.buyPrice ?? "?"}  proceeds ${r.sellProceeds ?? "?"}`);
     console.log(`    derived P/L ${r.derivedProfit ?? "?"}  Deriv-reported ${r.reportedProfit ?? "?"}`);
-    console.log(`    spot ${r.entrySpot ?? "?"} → ${r.exitSpot ?? "?"} over ${(r.holdMs ?? 0) / 1000}s`);
+    // Venue-reported entry/exit. The quote is printed separately and labelled,
+    // because presenting a pre-trade quote as the trade's entry states an
+    // economic fact the venue never confirmed.
+    console.log(`    venue spot ${r.entrySpot ?? "UNRESOLVED"} → ${r.exitSpot ?? "UNRESOLVED"}`
+      + ` over ${(r.holdMs ?? 0) / 1000}s`);
+    console.log(`    (quoted spot before the order: ${r.quotedSpot ?? "unstated"})`);
     console.log(`    agrees: ${r.agrees === null ? "UNRESOLVED" : r.agrees}`);
     if (r.evidence === "zero-only") {
       console.log("");

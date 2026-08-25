@@ -35,7 +35,7 @@ import { DerivNewApiError, type DerivNewApiErrorCode } from "./errors.js";
 import { type DerivOtpPhase } from "./otp.js";
 import {
   mapProposalRequest, mapBuyRequest, mapSellRequest, mapOpenContractRequest,
-  normalizeProposal, normalizePurchase, normalizeOpenContract, numeric,
+  normalizeProposal, normalizePurchase, normalizeOpenContract, normalizeSale, numeric,
 } from "./wire.js";
 
 /**
@@ -125,8 +125,13 @@ export interface DemoTradeReport {
      * being read as a strong one.
      */
     evidence: "zero-only" | "non-zero";
+    /** The venue's own entry/exit for the contract. Null when Deriv did not
+     *  state them — never filled in from the quote or a streaming tick. */
     entrySpot: number | null;
     exitSpot: number | null;
+    /** What the PROPOSAL quoted, before the order existed. Kept for
+     *  comparison, never presented as the trade's entry. */
+    quotedSpot: number | null;
     holdMs: number | null;
   } | null;
 }
@@ -291,9 +296,13 @@ export async function runDemoTradeCertification(
       steps.push(bad("proposal", detail, code));
       return report();
     }
-    const entrySpot = quote.spotPrice;
+    // The QUOTE's spot. Explicitly NOT the trade's entry: the venue publishes
+    // entry_spot for that, and attributing a pre-trade quote to the fill is
+    // the thing unknownReconciler.ts already forbids on the MT5 path
+    // ("never fabricated onto the command").
+    const quotedSpot = quote.spotPrice;
     steps.push(ok("proposal",
-      `quote ${quote.proposalId.slice(0, 6)}… ask=${quote.askPrice ?? "unstated"} spot=${entrySpot ?? "unstated"}`));
+      `quote ${quote.proposalId.slice(0, 6)}… ask=${quote.askPrice ?? "unstated"} quotedSpot=${quotedSpot ?? "unstated"}`));
 
     // 5 — THE ORDER. Price ceiling is the lower of the quoted ask and the cap,
     // so a requote between quote and buy cannot exceed what was authorized.
@@ -407,13 +416,26 @@ export async function runDemoTradeCertification(
     let proceeds: number | null = null;
     try {
       const res = await send(sellReq as unknown as Record<string, unknown>);
-      const sold = (res as { sold?: unknown }).sold ?? (res as { sell?: unknown }).sell;
-      const s = (typeof sold === "object" && sold !== null) ? sold as Record<string, unknown> : {};
-      // Same numeric reader as every other money field in this module. It was
-      // the one bare typeof check left, which made a string-valued sold_for
-      // silently null — fail-safe, but inconsistent for no reason.
-      proceeds = numeric(s["sold_for"]) ?? numeric(s["amount"]);
-      steps.push(ok("sell", `contract ${contractId} closed for ${proceeds ?? "unstated"}`));
+      const sale = normalizeSale(res);
+      if (sale instanceof DerivNewApiError) {
+        // A reply with no receipt is NOT a close. This step used to report
+        // PASS — "contract N closed" — on no evidence at all, and it is the
+        // first line an operator reads. Deriv's sell_response marks the
+        // receipt as not required, so a receiptless reply is legitimate and
+        // must fall through to the venue re-read, which is the only thing
+        // that can actually settle it.
+        steps.push(unresolved("sell",
+          `${sale.detail ?? sale.code} — verifying against the venue`));
+      } else if (sale.contractId !== null && sale.contractId !== contractId) {
+        steps.push(unresolved("sell",
+          `receipt names contract ${sale.contractId}, not ${contractId} — verifying against the venue`));
+      } else {
+        proceeds = sale.proceeds;
+        // "sell receipt", not "closed": closure is decided by the venue
+        // re-read below, never by the sell reply.
+        steps.push(ok("sell",
+          `contract ${contractId} sell receipt: ${proceeds ?? "proceeds unstated"}`));
+      }
     } catch (e) {
       const { detail } = describe(e);
       steps.push(unresolved("sell", `${detail} — position ${contractId} is LEFT OPEN; close it manually`));
@@ -468,7 +490,12 @@ export async function runDemoTradeCertification(
     reconciliation = {
       buyPrice, sellProceeds: proceeds, reportedProfit: reported,
       derivedProfit: derived, agrees, evidence,
-      entrySpot, exitSpot: openState.currentSpot, holdMs,
+      // The VENUE's own entry and exit. No `?? quotedSpot` and no
+      // `?? currentSpot` fallback: a fallback here is exactly the guess this
+      // fix removes, and UNRESOLVED is the honest answer when Deriv is silent.
+      entrySpot: openState.entrySpot,
+      exitSpot: openState.exitSpot,
+      quotedSpot, holdMs,
     };
     if (agrees === null) {
       steps.push(unresolved("reconcile",
