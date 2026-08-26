@@ -27,7 +27,7 @@ const intent = (over: Partial<DerivOrderIntent> = {}): DerivOrderIntent => ({
 });
 
 const venue = (over: Partial<DerivVenueEvidence> = {}): DerivVenueEvidence => ({
-  openContracts: [], portfolioReadAtMs: T(-1_000),
+  openContracts: [], portfolioReadAtMs: T(-1_000), closedInclusive: true,
   lateReplies: [], evidenceComplete: true, ...over,
 });
 
@@ -283,4 +283,44 @@ test("the residual duplicate risk is DOCUMENTED, not implied away", () => {
   assert.match(src, /no dedup key/i);
   assert.match(src, /CLIENT-SIDE DISCIPLINE/);
   assert.match(src, /can still double-order/i);
+});
+
+// ── The false-absence defect (found by adversarial review, reproduced) ─────
+
+test("an OPEN-ONLY portfolio read can NEVER prove absence", () => {
+  // The defect this module shipped with. Deriv's `portfolio` returns only
+  // OUTSTANDING contracts. An order that filled and was then closed — a
+  // multiplier stop-out needs no action from ARX, and in a crash scenario ARX
+  // is dead by construction — is simply absent from that read. Treating it as
+  // a complete sweep reported "no trade" for an order that had executed.
+  const r = one(intent({ writeDisposition: "WRITTEN" }), venue({
+    openContracts: [], portfolioReadAtMs: T(-1_000), closedInclusive: false,
+  }));
+  assert.equal(r.action, "RESOLVED");
+  if (r.action === "RESOLVED") {
+    assert.notEqual(r.verdict.action, "RESOLVE_ABSENT",
+      "reported no-trade for an order whose frame was confirmed written");
+    assert.equal(r.verdict.action, "HOLD");
+    if (r.verdict.action === "HOLD") assert.equal(r.verdict.reason, "NO_COMPLETE_SNAPSHOT");
+  }
+});
+
+test("absence becomes provable ONLY with closed-inclusive evidence", () => {
+  const r = one(intent({ writeDisposition: "WRITTEN" }), venue({
+    openContracts: [], portfolioReadAtMs: T(-1_000), closedInclusive: true,
+  }));
+  assert.equal(r.action, "RESOLVED");
+  if (r.action === "RESOLVED") assert.equal(r.verdict.action, "RESOLVE_ABSENT");
+});
+
+test("closed-inclusive evidence does not weaken any OTHER hold", () => {
+  // The gate must not become a bypass: every existing reason to hold still
+  // holds when the flag is set.
+  const stale = one(
+    intent({ createdAtMs: T(-21 * 60_000), frameWrittenAtMs: T(-20 * 60_000) }),
+    venue({ portfolioReadAtMs: T(-10 * 60_000), closedInclusive: true }),
+  );
+  if (stale.action === "RESOLVED") assert.equal(stale.verdict.action, "HOLD");
+  const incomplete = one(intent(), venue({ closedInclusive: true, evidenceComplete: false }));
+  if (incomplete.action === "RESOLVED") assert.equal(incomplete.verdict.action, "HOLD");
 });

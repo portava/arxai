@@ -108,6 +108,106 @@ export function mapSellRequest(
   return { sell: contractId, price: minProceeds };
 }
 
+/**
+ * A CLOSED-INCLUSIVE venue read, for restart recovery.
+ *
+ * `portfolio` returns only OUTSTANDING contracts, so it cannot see an order
+ * that filled and then closed — which made it unable to distinguish "never
+ * executed" from "executed and closed", and produced a false "no trade".
+ * `statement` returns transactions, including the buy row that exists from the
+ * moment a buy executes.
+ *
+ * Chosen over `profit_table`, which lists only contracts that have been SOLD.
+ * A buy row appears immediately, which is precisely the fact recovery needs
+ * when it cannot tell whether an order landed at all.
+ *
+ * `description: 1` is REQUIRED: without it the rows carry no `shortcode`, and
+ * a statement transaction has no underlying_symbol field at all — the symbol
+ * can only be recovered by parsing the shortcode.
+ */
+export function mapStatementRequest(args: {
+  fromEpochSec: number;
+  toEpochSec: number;
+  limit?: number;
+}): { statement: 1; action_type: "buy"; date_from: number; date_to: number; description: 1; limit?: number } | DerivNewApiError {
+  if (!Number.isFinite(args.fromEpochSec) || !Number.isFinite(args.toEpochSec)) {
+    return new DerivNewApiError("DERIV_NEW_API_PROTOCOL_ERROR", { detail: "invalid statement window" });
+  }
+  if (args.toEpochSec < args.fromEpochSec) {
+    return new DerivNewApiError("DERIV_NEW_API_PROTOCOL_ERROR", { detail: "statement window is inverted" });
+  }
+  const req = {
+    statement: 1 as const, action_type: "buy" as const,
+    date_from: Math.floor(args.fromEpochSec), date_to: Math.floor(args.toEpochSec),
+    description: 1 as const,
+  };
+  return args.limit !== undefined ? { ...req, limit: args.limit } : req;
+}
+
+/** One buy transaction as the venue records it. */
+export interface ArxStatementBuy {
+  contractId: number;
+  transactionId: number | null;
+  /** Epoch seconds. `transaction_time` — NOT `purchase_time`, which Deriv
+   *  documents as "present only for sell transaction" and is therefore always
+   *  absent on the buy rows recovery reads. */
+  transactionTimeSec: number | null;
+  /** Compact contract description. Present only when description: 1 was sent;
+   *  the only place a statement row carries the symbol. */
+  shortcode: string | null;
+  amount: number | null;
+}
+
+/**
+ * Normalize a statement response.
+ *
+ * Rows without a numeric contract_id are SKIPPED and counted — the same rule
+ * the portfolio normalizer follows. A row that cannot identify a contract
+ * cannot resolve an order, and coercing an id would corrupt the comparison
+ * recovery depends on.
+ */
+export function normalizeStatement(msg: unknown): { buys: ArxStatementBuy[]; skipped: number } | DerivNewApiError {
+  const raw = (msg as { statement?: { transactions?: unknown } } | null)?.statement?.transactions;
+  if (!Array.isArray(raw)) {
+    return new DerivNewApiError("DERIV_NEW_API_PROTOCOL_ERROR", { detail: "no statement transactions array" });
+  }
+  const buys: ArxStatementBuy[] = [];
+  let skipped = 0;
+  for (const entry of raw) {
+    if (typeof entry !== "object" || entry === null) { skipped += 1; continue; }
+    const e = entry as Record<string, unknown>;
+    const id = e["contract_id"];
+    if (typeof id !== "number") { skipped += 1; continue; }
+    buys.push({
+      contractId: id,
+      transactionId: numeric(e["transaction_id"]),
+      transactionTimeSec: numeric(e["transaction_time"]),
+      shortcode: typeof e["shortcode"] === "string" ? e["shortcode"] : null,
+      amount: numeric(e["amount"]),
+    });
+  }
+  return { buys, skipped };
+}
+
+/**
+ * Does a statement shortcode describe this symbol?
+ *
+ * A statement transaction carries NO underlying_symbol, so the symbol lives
+ * only inside the shortcode (e.g. "MULTUP_R_100_10.00_..."). Matching is
+ * therefore a substring test on a delimited field, and it is deliberately
+ * conservative: an unparseable or absent shortcode returns null — UNKNOWN —
+ * rather than false, because "cannot tell" must never read as "not ours".
+ */
+export function shortcodeMatchesSymbol(
+  shortcode: string | null,
+  underlyingSymbol: string,
+): boolean | null {
+  if (shortcode === null || shortcode.length === 0) return null;
+  const parts = shortcode.toUpperCase().split("_");
+  if (parts.length < 2) return null;
+  return shortcode.toUpperCase().includes(underlyingSymbol.toUpperCase());
+}
+
 export const mapPortfolioRequest = (): { portfolio: 1 } => ({ portfolio: 1 });
 export const mapBalanceRequest = (): { balance: 1 } => ({ balance: 1 });
 export const mapActiveSymbolsRequest = (): { active_symbols: "brief" } =>

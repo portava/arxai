@@ -12,6 +12,7 @@ import {
   mapOpenContractRequest, normalizeProposal, normalizePurchase,
   normalizeOpenContract, normalizePortfolio, normalizeBalance, numeric,
   normalizeProtection, verifyProtection,
+  mapStatementRequest, normalizeStatement, shortcodeMatchesSymbol,
   LEGACY_ONLY_FIELDS,
 } from "../wire.js";
 import { DerivNewApiError } from "../errors.js";
@@ -296,4 +297,57 @@ test("an open contract carries the venue's protection through normalization", ()
     },
   });
   assert.equal((c as { protection: { stopLoss: number | null } }).protection.stopLoss, 4.25);
+});
+
+// ── Closed-inclusive statement read (restart recovery) ────────────────────
+
+test("statement request uses transaction dating and REQUIRES description", () => {
+  const r = mapStatementRequest({ fromEpochSec: 1000, toEpochSec: 2000 });
+  assert.deepStrictEqual(r, {
+    statement: 1, action_type: "buy", date_from: 1000, date_to: 2000, description: 1,
+  });
+  // Without description: 1 the rows carry no shortcode, and a statement row
+  // has NO underlying_symbol field — so the symbol would be unrecoverable.
+  assert.equal((r as { description: number }).description, 1);
+});
+
+test("statement request refuses an inverted or non-finite window", () => {
+  assert.ok(mapStatementRequest({ fromEpochSec: 2000, toEpochSec: 1000 }) instanceof DerivNewApiError);
+  assert.ok(mapStatementRequest({ fromEpochSec: Number.NaN, toEpochSec: 1 }) instanceof DerivNewApiError);
+});
+
+test("statement rows read transaction_time, NOT purchase_time", () => {
+  // Deriv documents purchase_time as "present only for sell transaction", so
+  // it is always absent on the buy rows recovery reads. Dating from it would
+  // leave every recovered buy undated.
+  const r = normalizeStatement({ statement: { transactions: [
+    { contract_id: 555, transaction_id: 9, transaction_time: 1730000000, shortcode: "MULTUP_R_100_1.00", amount: -1 },
+  ] } });
+  assert.ok(!(r instanceof DerivNewApiError));
+  if (!(r instanceof DerivNewApiError)) {
+    assert.equal(r.buys[0]!.transactionTimeSec, 1730000000);
+    assert.equal(r.buys[0]!.contractId, 555);
+  }
+});
+
+test("statement rows without a contract id are skipped AND counted", () => {
+  const r = normalizeStatement({ statement: { transactions: [
+    { contract_id: 1, transaction_time: 1 }, { transaction_id: 2 }, null,
+  ] } });
+  assert.ok(!(r instanceof DerivNewApiError));
+  if (!(r instanceof DerivNewApiError)) {
+    assert.equal(r.buys.length, 1);
+    assert.equal(r.skipped, 2, "a silent skip would hide a real contract");
+  }
+});
+
+test("an unreadable shortcode is UNKNOWN, never 'not ours'", () => {
+  // A statement row carries no underlying_symbol, so the symbol lives only in
+  // the shortcode. "Cannot tell" must never read as "not our contract" — that
+  // is how a real position gets filtered out of the evidence set.
+  assert.equal(shortcodeMatchesSymbol(null, "R_100"), null);
+  assert.equal(shortcodeMatchesSymbol("", "R_100"), null);
+  assert.equal(shortcodeMatchesSymbol("GARBAGE", "R_100"), null);
+  assert.equal(shortcodeMatchesSymbol("MULTUP_R_100_1.00_0", "R_100"), true);
+  assert.equal(shortcodeMatchesSymbol("MULTUP_R_50_1.00_0", "R_100"), false);
 });

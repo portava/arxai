@@ -141,11 +141,33 @@ export function checkDuplicateOrder(
 
 /** Venue evidence gathered AFTER a restart, before classifying. */
 export interface DerivVenueEvidence {
-  /** A COMPLETE portfolio read. Partial reads must not be passed here —
-   *  absence can never be proven from an incomplete sweep. */
+  /** Contracts visible to the recovery read. */
   openContracts: ArxPortfolioEntry[];
-  /** When that complete read landed. Null when no complete read succeeded. */
+  /** When that read landed. Null when none succeeded. */
   portfolioReadAtMs: number | null;
+  /**
+   * Does the evidence set include contracts that may ALREADY HAVE CLOSED?
+   *
+   * THIS GATES ABSENCE, and it exists because of a false-"no trade" this
+   * module shipped with. Deriv's `portfolio` returns only OUTSTANDING
+   * contracts — its schema is titled "Receive information about my current
+   * portfolio of outstanding options". An order that filled and was then
+   * closed (a multiplier stop-out needs no action from ARX, and in a crash
+   * scenario ARX is dead by construction) is simply ABSENT from a portfolio
+   * read. Feeding that to the classifier as a complete sweep asserted a
+   * completeness Deriv never supplied, and produced RESOLVE_ABSENT for an
+   * order that had executed.
+   *
+   * The classifier's `lastCompleteSnapshotAt` means a sweep over a store that
+   * RETAINS closed rows. A portfolio read is not that, so it must not be
+   * presented as one.
+   *
+   * Only a closed-inclusive source — a `statement` read covering the order's
+   * window — can satisfy this. Until one is supplied, absence stays unprovable
+   * and recovery HOLDS. That is the correct failure direction: a held order
+   * costs an operator a look, a false "no trade" costs a stranded position.
+   */
+  closedInclusive: boolean;
   /** Late replies recovered from any durable orphan store, for THIS intent. */
   lateReplies: Array<{ contractId: number | null; derivCode: string | null }>;
   /** False when ANY evidence source was unreadable. Blocks absence
@@ -229,7 +251,9 @@ export function toUnknownCommandEvidence(
   return {
     positions,
     lateResults,
-    lastCompleteSnapshotAt: venue.portfolioReadAtMs !== null
+    // Withheld unless the evidence set can actually see a closed contract.
+    // Passing a portfolio timestamp here is what produced the false absence.
+    lastCompleteSnapshotAt: (venue.closedInclusive && venue.portfolioReadAtMs !== null)
       ? new Date(venue.portfolioReadAtMs) : null,
     evidenceComplete: venue.evidenceComplete,
   };
