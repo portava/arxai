@@ -475,3 +475,43 @@ test("a TIMED-OUT request is marked WRITTEN — silence is not evidence of non-e
     t.mock.timers.reset();
   }
 });
+
+test("the REAL transport records an outbound frame only AFTER the write succeeds", async () => {
+  // Evidence must never be able to claim a frame reached the venue when the
+  // write threw. Exercised against the REAL transport: a fake one cannot prove
+  // the ordering, and an earlier version of this test used one — so the
+  // mutation that moved the record before the write stayed green.
+  const observed: Array<{ dir: string; raw: string }> = [];
+  const h: Record<string, (a?: unknown) => void> = {};
+  const factory = (): DerivSocket => {
+    const s: DerivSocket = {
+      send: () => { throw new Error("write failed"); },
+      close: () => h["close"]?.(),
+      on: (e, cb) => { h[e] = cb; },
+    };
+    queueMicrotask(() => h["open"]?.());
+    return s;
+  };
+  const t = new NewDerivTransport(CONFIG, factory, otpFetch(),
+    (dir, raw) => { observed.push({ dir, raw }); });
+  await t.connect("ACC-D1");
+
+  const err = await t.send({ ping: 1 }).catch((e: DerivNewApiError) => e) as DerivNewApiError;
+  assert.equal(err.wireWritten, false, "a failed write claimed transmission");
+  assert.equal(observed.filter((o) => o.dir === "out").length, 0,
+    "recorded an outbound frame for a write that threw");
+});
+
+test("the REAL transport records an outbound frame when the write DOES succeed", async () => {
+  // The mirror, so the test above cannot pass by the observer never firing.
+  const observed: Array<{ dir: string; raw: string }> = [];
+  const m = manualSocket();
+  const t = new NewDerivTransport(CONFIG, m.factory, otpFetch(),
+    (dir, raw) => { observed.push({ dir, raw }); });
+  await t.connect("ACC-D1");
+  const p = t.send({ ping: 1 });
+  m.deliver({ req_id: m.lastReqId(), ping: "pong" });
+  await p;
+  assert.equal(observed.filter((o) => o.dir === "out").length, 1);
+  assert.equal(observed.filter((o) => o.dir === "in").length, 1);
+});

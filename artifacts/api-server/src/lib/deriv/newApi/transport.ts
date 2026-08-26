@@ -58,6 +58,23 @@ export interface DerivSocket {
 
 export type DerivSocketFactory = (url: string) => DerivSocket;
 
+/**
+ * Raw WS frame observer, for evidence capture ONLY.
+ *
+ * Opt-in via the constructor and unset in every production construction, so
+ * this cannot become an ambient logging vector. The observer receives frames
+ * VERBATIM; redacting them is the observer's job, because only the caller
+ * knows which credentials are in scope. WS frames carry no PAT (it rides the
+ * REST Authorization header) and no OTP (it rides the socket URL query), but
+ * the recorder redacts regardless — a guarantee that depends on where a secret
+ * happens to live is not a guarantee.
+ */
+export type DerivFrameObserver = (
+  direction: "out" | "in",
+  raw: string,
+  meta: { reqId: number | null; op: string | null; atMs: number },
+) => void;
+
 const defaultSocketFactory: DerivSocketFactory = (url) => {
   const ws = new WebSocket(url, { handshakeTimeout: DERIV_WS_CONNECT_TIMEOUT_MS });
   return {
@@ -123,6 +140,8 @@ export class NewDerivTransport {
     private readonly config: DerivNewApiConfig,
     private readonly socketFactory: DerivSocketFactory = defaultSocketFactory,
     private readonly fetchImpl?: typeof fetch,
+    /** Evidence capture only. Never set in production construction. */
+    private readonly onFrame?: DerivFrameObserver,
   ) {}
 
   getState(): DerivTransportState { return this.state; }
@@ -265,6 +284,21 @@ export class NewDerivTransport {
   }
 
   private onMessage(raw: unknown): void {
+    // Recorded BEFORE parsing: a frame ARX cannot parse is exactly the kind of
+    // evidence this observer exists to capture, and parsing first would drop it.
+    if (this.onFrame) {
+      const text = String(raw);
+      let peekId: number | null = null;
+      try {
+        const v = (JSON.parse(text) as { req_id?: unknown })?.req_id;
+        if (typeof v === "number") peekId = v;
+      } catch { /* unparseable — that IS the observation */ }
+      this.onFrame("in", text, {
+        reqId: peekId,
+        op: peekId === null ? null : this.issuedOps.get(peekId) ?? null,
+        atMs: Date.now(),
+      });
+    }
     let msg: Record<string, unknown>;
     try {
       msg = JSON.parse(String(raw)) as Record<string, unknown>;
@@ -400,7 +434,11 @@ export class NewDerivTransport {
         if (oldest !== undefined) this.issuedOps.delete(oldest);
       }
       try {
-        sock.send(JSON.stringify({ ...payload, req_id: id }));
+        const frame = JSON.stringify({ ...payload, req_id: id });
+        sock.send(frame);
+        // Recorded AFTER the write returns. An exception above means the frame
+        // did NOT go out, and it must not appear in evidence as though it did.
+        this.onFrame?.("out", frame, { reqId: id, op, atMs: Date.now() });
       } catch {
         clearTimeout(timer);
         this.pending.delete(id);
