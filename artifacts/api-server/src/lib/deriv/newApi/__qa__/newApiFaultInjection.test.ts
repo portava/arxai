@@ -26,8 +26,18 @@ const fetchDemo: typeof fetch =
 
 beforeEach(() => __resetOrderLatchForTests());
 
-/** Run the harness against an injection plan. */
+/**
+ * Run the harness against an injection plan.
+ *
+ * Resets the one-order latch FIRST. Without this a test calling run() twice
+ * has its second buy refused by the latch before the injected fault is ever
+ * reached — so the run under test never happens and the assertion passes for
+ * the wrong reason. That is exactly what "I2: a proven refusal and an
+ * unknowable failure are DISTINGUISHABLE" was doing: its second case was
+ * being refused by the latch, not by the injected socket loss.
+ */
 async function run(over: InjectionPlan = {}) {
+  __resetOrderLatchForTests();
   const log = newLog();
   const report = await runDemoTradeCertification(CONFIG, {
     ...AUTH, observeMs: 0, sleep: async () => {},
@@ -146,7 +156,7 @@ test("I2: a failed SELL leaves the position reported OPEN with its id", async ()
   });
   assert.equal(report.positionLeftOpen, true);
   assert.equal(report.contractId, 555);
-  assert.match(step(report, "sell")!.detail, /LEFT OPEN/);
+  assert.match(step(report, "confirm_closed")!.detail, /not confirmed settled/);
 });
 
 test("I2: a venue rejection of the SELL does not clear the alarm", async () => {
@@ -360,4 +370,106 @@ test("a late reply for a DIFFERENT operation never resolves the buy", async () =
   });
   assert.equal(report.contractId, null, "adopted a receipt from an unrelated request");
   assert.equal(step(report, "buy")!.status, "UNRESOLVED");
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// Evidence precedence: receipt vs venue re-read (audit priority 3)
+// ════════════════════════════════════════════════════════════════════════════
+
+test("a refused sell still ASKS the venue — the rejection adjudicates the REQUEST", async () => {
+  // "Already sold" refuses the sell precisely BECAUSE the contract is closed.
+  // Returning open on that reply reports a closed position as open — a false
+  // claim, even though it errs toward caution. The venue decides.
+  const { report } = await run({
+    sell: V.error("ContractAlreadySold", "sell"),
+    proposal_open_contract: V.settled(),
+  });
+  assert.equal(report.positionLeftOpen, false, "reported a settled contract as open");
+  assert.match(step(report, "confirm_closed")!.detail, /despite the sell request failing/);
+});
+
+test("a refused sell on a GENUINELY open contract keeps the alarm, with venue evidence", async () => {
+  // The mandatory pair. Same rejection, opposite venue state, opposite verdict.
+  const { report } = await run({
+    sell: V.error("MarketIsClosed", "sell"),
+    proposal_open_contract: V.open({ is_sold: 0, status: "open", is_settleable: 0 }),
+  });
+  assert.equal(report.positionLeftOpen, true);
+  assert.match(step(report, "confirm_closed")!.detail, /NOT SOLD/);
+  assert.match(step(report, "confirm_closed")!.detail, /status=open/);
+});
+
+test("a receipt CONTRADICTED by the venue does not report CLOSED — it surfaces", async () => {
+  // The receipt says sold; the venue says unsold. ARX must not pick a side
+  // quietly. A sell may have half-happened, and the operator needs to know
+  // that before this account trades again.
+  const { report } = await run({
+    sell: V.sell({ sold_for: 1.25 }),
+    proposal_open_contract: V.open({ is_sold: 0, status: "open" }),
+  });
+  assert.equal(report.certified, false);
+  assert.equal(report.positionLeftOpen, true);
+  const c = step(report, "confirm_closed")!;
+  assert.equal(c.status, "FAIL");
+  assert.match(c.detail, /CONTRADICTION/);
+  assert.match(c.detail, /Not reporting CLOSED/);
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// Settlement matrix (audit priority 6)
+// ════════════════════════════════════════════════════════════════════════════
+
+test("settlement is three-valued: SOLD / NOT_SOLD / ABSENT / UNRECOGNISED", async () => {
+  const cases: Array<[unknown, string, boolean]> = [
+    [1,      "SOLD",         false],   // [is_sold, evidence, positionLeftOpen]
+    [true,   "SOLD",         false],
+    [0,      "NOT_SOLD",     true],
+    [false,  "NOT_SOLD",     true],
+    [undefined, "ABSENT",    true],
+    ["1",    "UNRECOGNISED", true],    // the string-drift trap
+    ["true", "UNRECOGNISED", true],
+    [null,   "ABSENT",       true],
+  ];
+  for (const [is_sold, evidence, leftOpen] of cases) {
+    const { report } = await run({
+      proposal_open_contract: { kind: "reply", body: {
+        proposal_open_contract: {
+          contract_id: 555, ...(is_sold === undefined ? {} : { is_sold }),
+          profit: 0.25, entry_spot: 617, exit_spot: 618,
+        },
+      } },
+    });
+    __resetOrderLatchForTests();
+    assert.equal(report.positionLeftOpen, leftOpen,
+      `is_sold=${JSON.stringify(is_sold)} (${evidence}) gave leftOpen=${report.positionLeftOpen}`);
+  }
+});
+
+test("an UNRECOGNISED is_sold names itself rather than looking like an open position", async () => {
+  // A schema drift must be attributable. "is_sold was present in a type ARX
+  // does not accept" sends someone to the schema; "not confirmed settled"
+  // sends them to the venue to hunt a position that may be closed.
+  const { report } = await run({
+    proposal_open_contract: { kind: "reply", body: {
+      proposal_open_contract: { contract_id: 555, is_sold: "1", profit: 0.25 },
+    } },
+  });
+  assert.match(step(report, "confirm_closed")!.detail, /type ARX does not accept/);
+});
+
+test("SILENCE and NOT_SOLD are reported differently — they are different facts", async () => {
+  const absent = await run({
+    proposal_open_contract: { kind: "reply", body: {
+      proposal_open_contract: { contract_id: 555, profit: 0.25 },
+    } },
+  });
+  const notSold = await run({
+    proposal_open_contract: V.open({ is_sold: 0, status: "open" }),
+  });
+  assert.match(step(absent.report, "confirm_closed")!.detail, /stated no is_sold at all/);
+  assert.match(step(notSold.report, "confirm_closed")!.detail, /NOT SOLD/);
+  // Both hold the alarm — being conservative is correct — but the operator is
+  // told which situation they are in.
+  assert.equal(absent.report.positionLeftOpen, true);
+  assert.equal(notSold.report.positionLeftOpen, true);
 });

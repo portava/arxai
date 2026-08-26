@@ -505,6 +505,8 @@ export async function runDemoTradeCertification(
       return report();
     }
     let proceeds: number | null = null;
+    let sellReceiptSeen = false;
+    let sellFailed = false;
     try {
       const res = await send(sellReq as unknown as Record<string, unknown>);
       const sale = normalizeSale(res);
@@ -522,15 +524,25 @@ export async function runDemoTradeCertification(
           `receipt names contract ${sale.contractId}, not ${contractId} — verifying against the venue`));
       } else {
         proceeds = sale.proceeds;
+        sellReceiptSeen = true;
         // "sell receipt", not "closed": closure is decided by the venue
         // re-read below, never by the sell reply.
         steps.push(ok("sell",
           `contract ${contractId} sell receipt: ${proceeds ?? "proceeds unstated"}`));
       }
     } catch (e) {
-      const { detail } = describe(e);
-      steps.push(unresolved("sell", `${detail} — position ${contractId} is LEFT OPEN; close it manually`));
-      return report();
+      const { detail, code } = describe(e);
+      // DO NOT RETURN. This used to give up here and assert LEFT OPEN without
+      // ever asking the venue — local inference overriding the authority.
+      //
+      // A rejection adjudicates the REQUEST, not the POSITION: "already sold"
+      // refuses the sell precisely BECAUSE the contract is already closed.
+      // Returning open on that reply reports a closed position as open, which
+      // is a false claim even though it errs toward caution.
+      sellFailed = true;
+      steps.push(unresolved("sell",
+        `${detail} — the sell did not complete; asking the venue for the contract's actual state`,
+        code));
     }
 
     // 8 — confirm closure from the venue, not from the sell reply.
@@ -552,13 +564,38 @@ export async function runDemoTradeCertification(
       openState = c;
     } catch { /* fall through to the honest UNRESOLVED below */ }
 
+    // EVIDENCE PRECEDENCE. The re-read is the venue's statement about the
+    // contract's CURRENT state and is strictly later than the receipt, which
+    // is a statement about an event. Where they disagree the re-read wins for
+    // deciding state — but a disagreement is itself a fact the operator needs,
+    // so it is surfaced rather than silently resolved.
+    if (sellReceiptSeen && openState.settlementEvidence === "NOT_SOLD") {
+      steps.push(bad("confirm_closed",
+        `CONTRADICTION: a sell receipt exists for contract ${contractId}, but the venue `
+        + `reports it NOT SOLD (status=${openState.venueStatus ?? "unstated"}). `
+        + "Not reporting CLOSED. Reconcile manually before trading this account again."));
+      return report();
+    }
     if (!confirmedClosed) {
+      // Name WHY, so a schema drift is attributable instead of looking like
+      // an ordinary open position.
+      const why =
+        openState.settlementEvidence === "UNRECOGNISED"
+          ? "is_sold was present in a type ARX does not accept — evidence of nothing"
+          : openState.settlementEvidence === "ABSENT"
+            ? "the venue stated no is_sold at all"
+            : `the venue reports it NOT SOLD (status=${openState.venueStatus ?? "unstated"}`
+              + `, settleable=${openState.isSettleable ?? "unstated"})`;
       steps.push(unresolved("confirm_closed",
-        `contract ${contractId} not confirmed settled by the venue — verify manually`));
+        `contract ${contractId} not confirmed settled: ${why}`
+        + (sellFailed ? " — and the sell did not complete" : "")
+        + ". Verify manually."));
       return report();
     }
     positionLeftOpen = false;
-    steps.push(ok("confirm_closed", `contract ${contractId} confirmed settled`));
+    steps.push(ok("confirm_closed",
+      `contract ${contractId} confirmed settled by the venue`
+      + (sellFailed ? " — despite the sell request failing, the position IS closed" : "")));
 
     // 9 — reconcile. Deriv's reported profit must agree with proceeds minus
     // cost. A disagreement is a FAIL: this is the entire point of the run.

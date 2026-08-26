@@ -273,10 +273,28 @@ export function normalizeSale(msg: unknown): ArxSale | DerivNewApiError {
   };
 }
 
+/**
+ * What the venue actually said about settlement.
+ *
+ * SOLD          the venue asserts the contract is sold — the only closure evidence
+ * NOT_SOLD      the venue asserts it is NOT sold — evidence it is still open
+ * ABSENT        the venue said nothing — no evidence either way
+ * UNRECOGNISED  is_sold present in a type ARX does not accept — also no evidence,
+ *               but it must be reported differently from silence so a schema
+ *               drift is attributable instead of looking like an open position
+ */
+export type SettlementEvidence = "SOLD" | "NOT_SOLD" | "ABSENT" | "UNRECOGNISED";
+
 export interface ArxOpenContract {
   contractId: number;
   /** True ONLY on evidence of a SALE. Expiry alone does not set this. */
   isSettled: boolean;
+  /** The venue's settlement statement, three-valued rather than boolean. */
+  settlementEvidence: SettlementEvidence;
+  /** Venue settleability when stated; null when absent — absent is not false. */
+  isSettleable: boolean | null;
+  /** The venue's own status string, when stated. */
+  venueStatus: string | null;
   /** Expired per the venue. Not settlement — see isSettled. */
   isExpired: boolean;
   /** The venue's OWN entry/exit for this contract. Schema types both as
@@ -304,15 +322,29 @@ export function normalizeOpenContract(msg: unknown): ArxOpenContract | DerivNewA
   // multiplier the close path is a sale, and Deriv can report an expired
   // contract that is neither sold nor settleable. Treating expiry as closure
   // CLEARED the open-position alarm on a contract the venue still called
-  // unsold — the exact false claim invariant I1 forbids.
+  // unsold.
   //
-  // Absence of both still means OPEN. Assuming settlement strands
-  // reconciliation, so silence never closes a position.
-  const settled = r["is_sold"] === 1 || r["is_sold"] === true;
+  // Three-valued on purpose. "not SOLD" and "no usable evidence" are
+  // different facts, and collapsing them into a boolean makes an unreadable
+  // reply indistinguishable from a venue statement that the contract is open.
+  // An unrecognised TYPE is evidence of nothing, and the resulting failure
+  // must name itself rather than surfacing as a generic "not confirmed".
+  const rawSold = r["is_sold"];
+  const settlementEvidence: SettlementEvidence =
+    rawSold === 1 || rawSold === true ? "SOLD"
+      : rawSold === 0 || rawSold === false ? "NOT_SOLD"
+        : rawSold === undefined || rawSold === null ? "ABSENT"
+          : "UNRECOGNISED";
+  const settled = settlementEvidence === "SOLD";
   const expired = r["is_expired"] === 1 || r["is_expired"] === true;
   return {
     contractId,
     isSettled: settled,
+    settlementEvidence,
+    // The venue's own settleability flag, when stated. Absent is not false.
+    isSettleable: r["is_settleable"] === 1 || r["is_settleable"] === true ? true
+      : r["is_settleable"] === 0 || r["is_settleable"] === false ? false : null,
+    venueStatus: typeof r["status"] === "string" ? r["status"] : null,
     // Reported separately so an expired-but-unsold contract is visible rather
     // than silently folded into either verdict.
     isExpired: expired,

@@ -163,7 +163,11 @@ test("a failed SELL reports the position as LEFT OPEN with its contract id", asy
   });
   assert.equal(r.positionLeftOpen, true);
   assert.equal(r.contractId, 555, "the contract id must survive the failure");
-  assert.match(r.steps.find((s) => s.step === "sell")!.detail, /LEFT OPEN/);
+  // Asserted on the OUTCOME, not on an intermediate step's wording. A failed
+  // sell now defers to the venue re-read rather than declaring the state
+  // itself, so the sell line reports what it did and confirm_closed reports
+  // what is true.
+  assert.match(r.steps.find((s) => s.step === "confirm_closed")!.detail, /not confirmed settled/);
 });
 
 test("a P/L MISMATCH fails certification — that is the point of the run", async () => {
