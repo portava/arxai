@@ -444,7 +444,11 @@ export async function runDemoTradeCertification(
     }
     contractId = purchase.contractId;
     positionLeftOpen = true;   // true until a sell is CONFIRMED
-    steps.push(ok("buy", `contract ${contractId} opened at ${purchase.buyPrice ?? "unstated"}`));
+    steps.push(ok("buy",
+      `contract ${contractId} opened`
+      + (purchase.buyPrice !== null
+        ? ` at ${purchase.buyPrice}`
+        : " (venue stated no buy_price)")));
 
     // 6 — observe the open position.
     const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
@@ -476,7 +480,8 @@ export async function runDemoTradeCertification(
     if (!canSendTradingRequest(transport.getState())) {
       try {
         await transport.reconnect();
-        steps.push(ok("reconnect", "socket dropped during the hold; reconnected to close the position"));
+        // States what happened, not what it will achieve.
+        steps.push(ok("reconnect", "socket dropped during the hold; reconnected"));
       } catch (e) {
         const { detail } = describe(e);
         steps.push(unresolved("reconnect",
@@ -502,8 +507,14 @@ export async function runDemoTradeCertification(
         });
       }
       openState = c;
+      // `current_spot` is the venue's LIVE STREAMING quote at read time, not
+      // this contract's entry or exit. Labelling it `spot=` invited exactly
+      // the misreading that put a pre-trade quote in a reconciliation report
+      // as the trade's entry. Named for what it is.
       steps.push(ok("observe",
-        `settled=${c.isSettled} profit=${c.profit ?? "unstated"} spot=${c.currentSpot ?? "unstated"}`));
+        `settlement=${c.settlementEvidence} profit=${c.profit ?? "unstated"}`
+        + ` streamingSpot=${c.currentSpot ?? "unstated"}`
+        + (c.isExpired ? " expired=true(NOT settlement)" : "")));
     } catch (e) {
       const { detail } = describe(e);
       steps.push(unresolved("observe", `${detail} — position ${contractId} is OPEN and unobserved`));

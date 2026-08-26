@@ -619,3 +619,47 @@ test("a late sell receipt for a DIFFERENT contract is not adopted", async () => 
   assert.notEqual(report.reconciliation?.sellProceeds, 9.99);
   assert.equal(report.positionLeftOpen, true);
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+// Reporting honesty (audit priority 8)
+// ════════════════════════════════════════════════════════════════════════════
+
+test("no PASS step claims a close before the venue confirms one", async () => {
+  // "contract N closed" on a sell receipt alone was the original instance.
+  // Closure is the venue's verdict; the receipt is an event report.
+  const { report } = await run({
+    sell: V.sell(),
+    proposal_open_contract: V.open({ is_sold: 0, status: "open" }),
+  });
+  for (const s of report.steps.filter((x) => x.status === "PASS")) {
+    assert.ok(!/\bclosed\b|\bsettled\b/i.test(s.detail),
+      `PASS step "${s.step}" claims closure without venue confirmation: ${s.detail}`);
+  }
+});
+
+test("the streaming quote is never labelled as the contract's spot", async () => {
+  // current_spot is the live quote at read time. Labelling it `spot=` is what
+  // put a pre-trade quote into a reconciliation report as the trade's entry.
+  const { report } = await run({
+    proposal_open_contract: V.settled({ current_spot: 999, entry_spot: 617, exit_spot: 618 }),
+  });
+  const observe = step(report, "observe")!;
+  assert.match(observe.detail, /streamingSpot=999/);
+  assert.ok(!/(^|[^g])spot=999/i.test(observe.detail.replace("streamingSpot=999", "")),
+    `an unqualified spot label survives: ${observe.detail}`);
+  // And the reconciliation's spots come from the venue's own fields.
+  assert.equal(report.reconciliation!.entrySpot, 617);
+  assert.equal(report.reconciliation!.exitSpot, 618);
+});
+
+test("a buy with no stated price does not imply one", async () => {
+  const { report } = await run({ buy: V.buy({ buy_price: undefined }) });
+  const buy = step(report, "buy")!;
+  assert.match(buy.detail, /venue stated no buy_price/);
+  assert.ok(!/opened at\s*$|opened at unstated/.test(buy.detail));
+});
+
+test("expiry is surfaced as NOT settlement wherever it is reported", async () => {
+  const { report } = await run({ proposal_open_contract: V.expiredUnsold() });
+  assert.match(step(report, "observe")!.detail, /expired=true\(NOT settlement\)/);
+});
