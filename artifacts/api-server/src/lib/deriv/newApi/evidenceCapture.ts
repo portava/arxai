@@ -263,6 +263,22 @@ export async function captureVenueEvidence(
         } else {
           unreadableReason = "non-protocol failure (message withheld)";
         }
+        // A rejection never resolves, so the success path above never runs and
+        // replyKeys came back EMPTY for every genuine rejection in the first
+        // live capture — even though the frame was recorded. Recover the
+        // structure from the frame ARX actually observed, correlated by the
+        // req_id it issued.
+        const answer = frames.slice(mark).find((f) => f.direction === "in");
+        if (answer) {
+          try {
+            const parsed = JSON.parse(answer.raw) as Record<string, unknown>;
+            replyKeys = Object.keys(parsed).sort();
+            const errBlock = parsed["error"];
+            if (errBlock && typeof errBlock === "object") {
+              nestedKeys = Object.keys(errBlock as Record<string, unknown>).sort();
+            }
+          } catch { /* unparseable — the frame itself remains the evidence */ }
+        }
       }
 
       probes.push({

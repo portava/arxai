@@ -390,3 +390,61 @@ test("assertProvablyDemo refuses a real account and an untyped one, DIRECTLY", a
   assert.doesNotThrow(() => assertProvablyDemo({ accountId: "VRTC9001", accountType: "demo" }));
   assert.doesNotThrow(() => assertProvablyDemo({ accountId: "VRTC9001", accountType: "virtual" }));
 });
+
+// ── Findings from the FIRST live capture ───────────────────────────────────
+
+test("a venue REJECTION records wireWritten=true — the reply proves transmission", async () => {
+  // The live capture reported "wireWritten: unstated" for all five genuine
+  // rejections. The venue answered, so the frame demonstrably reached it.
+  const { DerivNewApiError } = await import("../errors.js");
+  const factory = (_c: unknown, onFrame: (d: "out" | "in", r: string, m: { reqId: number | null; op: string | null; atMs: number }) => void) => ({
+    connect: async () => {}, reconnect: async () => {}, getState: () => "WS_READY", close: () => {},
+    send: async (p: Record<string, unknown>) => {
+      const op = Object.keys(p)[0]!;
+      onFrame("out", JSON.stringify({ ...p, req_id: 1 }), { reqId: 1, op, atMs: 1 });
+      onFrame("in", JSON.stringify({ error: { code: "InputValidationFailed", details: { contract_type: "x" } }, req_id: 1 }),
+        { reqId: 1, op, atMs: 2 });
+      throw new DerivNewApiError("DERIV_NEW_API_REQUEST_REJECTED", {
+        derivCode: "InputValidationFailed", wireWritten: true,
+      });
+    },
+  }) as never;
+  const art = await envOn(() => captureVenueEvidence({
+    authorization: EVIDENCE_AUTHORIZATION.READ_ONLY,
+    fetchImpl: fetchOf(DEMO), transportFactory: factory,
+    probes: [{ name: "r", question: "q", payload: { proposal: 1 }, expectRejection: true }],
+    nowMs: () => 1,
+  }));
+  assert.equal(art.probes[0]!.outcome, "VENUE_REJECTION");
+  assert.equal(art.probes[0]!.wireWritten, true, "a venue reply did not prove transmission");
+});
+
+test("a REJECTION records the reply's structure, recovered from the frame", async () => {
+  // replyKeys came back empty for every rejection: a rejection never resolves,
+  // so the success path that fills them never runs. The frame was recorded
+  // all along; the structure is now recovered from it.
+  const { DerivNewApiError } = await import("../errors.js");
+  const factory = (_c: unknown, onFrame: (d: "out" | "in", r: string, m: { reqId: number | null; op: string | null; atMs: number }) => void) => ({
+    connect: async () => {}, reconnect: async () => {}, getState: () => "WS_READY", close: () => {},
+    send: async (p: Record<string, unknown>) => {
+      const op = Object.keys(p)[0]!;
+      onFrame("out", JSON.stringify({ ...p, req_id: 1 }), { reqId: 1, op, atMs: 1 });
+      onFrame("in", JSON.stringify({
+        error: { code: "InputValidationFailed", message: "x", details: { contract_type: "y" } },
+        echo_req: {}, msg_type: "proposal", req_id: 1,
+      }), { reqId: 1, op, atMs: 2 });
+      throw new DerivNewApiError("DERIV_NEW_API_REQUEST_REJECTED", {
+        derivCode: "InputValidationFailed", wireWritten: true,
+      });
+    },
+  }) as never;
+  const art = await envOn(() => captureVenueEvidence({
+    authorization: EVIDENCE_AUTHORIZATION.READ_ONLY,
+    fetchImpl: fetchOf(DEMO), transportFactory: factory,
+    probes: [{ name: "r", question: "q", payload: { proposal: 1 }, expectRejection: true }],
+    nowMs: () => 1,
+  }));
+  assert.deepEqual(art.probes[0]!.replyKeys, ["echo_req", "error", "msg_type", "req_id"]);
+  // The error block's own keys — structure, never the message content.
+  assert.deepEqual(art.probes[0]!.nestedKeys, ["code", "details", "message"]);
+});

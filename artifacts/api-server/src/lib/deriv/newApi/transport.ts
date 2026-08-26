@@ -334,7 +334,16 @@ export class NewDerivTransport {
       const isTrade = p.op === "buy" || p.op === "sell";
       p.reject(new DerivNewApiError(
         isTrade ? "DERIV_NEW_API_TRADING_REJECTED" : "DERIV_NEW_API_REQUEST_REJECTED",
-        { derivCode: code, detail: `op=${p.op}${fields}` },
+        {
+          derivCode: code, detail: `op=${p.op}${fields}`,
+          // A venue REPLY is the strongest possible proof the frame reached
+          // the venue — it could not have answered otherwise. This was left
+          // unset, so the first live capture recorded every genuine rejection
+          // as "wireWritten: unstated". Not a safety fault (a rejection is
+          // adjudicated before transmission is consulted, and null is treated
+          // as written anyway) but it understated a certainty ARX actually had.
+          wireWritten: true,
+        },
       ));
       return;
     }
