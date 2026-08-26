@@ -178,3 +178,58 @@ describe("E1 — legacy invite issuance refuses without the pepper", () => {
     );
   });
 });
+
+// ── Rotation window: dual-read of a PREVIOUS pepper ────────────────────────
+//
+// A key's stored hash is sha256(normalizedKey + pepper), so rotating the
+// pepper invalidates every outstanding key unless both are readable for a
+// window. These pin the window's shape — and, more importantly, its limits.
+
+describe("registration-key pepper rotation window", () => {
+  it("reads the previous pepper only as a non-empty value", () => {
+    const prev = process.env["REGISTRATION_KEY_PEPPER_PREVIOUS"];
+    try {
+      delete process.env["REGISTRATION_KEY_PEPPER_PREVIOUS"];
+      assert.equal(betaInvitesRepo.getRegistrationKeyPepperPrevious(), null);
+      process.env["REGISTRATION_KEY_PEPPER_PREVIOUS"] = "   ";
+      assert.equal(betaInvitesRepo.getRegistrationKeyPepperPrevious(), null,
+        "whitespace accepted as a pepper");
+      // Length only — no value is asserted anywhere in this suite.
+      process.env["REGISTRATION_KEY_PEPPER_PREVIOUS"] = "x".repeat(40);
+      assert.equal(betaInvitesRepo.getRegistrationKeyPepperPrevious()?.length, 40);
+    } finally {
+      if (prev === undefined) delete process.env["REGISTRATION_KEY_PEPPER_PREVIOUS"];
+      else process.env["REGISTRATION_KEY_PEPPER_PREVIOUS"] = prev;
+    }
+  });
+
+  it("does NOT let a previous pepper rescue a missing primary", () => {
+    // The fail-closed rule is about the CURRENT secret. A stale value standing
+    // in for an absent primary would turn a rotation aid into a weakening.
+    const prev = process.env["REGISTRATION_KEY_PEPPER_PREVIOUS"];
+    try {
+      process.env["REGISTRATION_KEY_PEPPER_PREVIOUS"] = "y".repeat(40);
+      withPepper(null, () => {
+        assert.equal(getRegistrationKeyPepper().ok, false,
+          "a missing primary reported as configured");
+        assert.equal(isRegistrationKeyPepperConfigured(), false);
+      });
+    } finally {
+      if (prev === undefined) delete process.env["REGISTRATION_KEY_PEPPER_PREVIOUS"];
+      else process.env["REGISTRATION_KEY_PEPPER_PREVIOUS"] = prev;
+    }
+  });
+
+  it("documents the window as temporary and states what it does not do", () => {
+    const src = readFileSync(
+      resolve(ROOT, "lib/db/src/repositories/betaInvites.ts"), "utf8",
+    ).replace(/\s*\n\s*\*?\s*/g, " ");
+    // The migration is only safe if operators know to remove it afterwards,
+    // and only honest if the weakening it does NOT do is stated.
+    assert.match(src, /then UNSET it/i, "the window is not documented as temporary");
+    assert.match(src, /NOT A FALLBACK FOR A MISSING PRIMARY/i,
+      "the fail-closed limit is not documented");
+    // And the lookup must gate it behind the current pepper.
+    assert.match(src, /Gated on pc\.ok/i, "the gating is not documented at the call site");
+  });
+});

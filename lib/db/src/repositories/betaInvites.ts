@@ -104,6 +104,30 @@ export function isRegistrationKeyPepperConfigured(): boolean {
   return getRegistrationKeyPepper().ok;
 }
 
+/**
+ * The PREVIOUS pepper, during a rotation window. Optional.
+ *
+ * WHY THIS EXISTS. A registration key's stored hash is
+ * sha256(normalizedKey + pepper). Rotating the pepper therefore invalidates
+ * EVERY outstanding key: the stored hash can never be reproduced from the key
+ * plus the new pepper, the legacy tiers below cannot match either, and the
+ * holder is simply refused. Without a dual-read window, rotating the pepper
+ * silently bricks every unredeemed invite.
+ *
+ * Set REGISTRATION_KEY_PEPPER_PREVIOUS to the outgoing value for the duration
+ * of the migration, then UNSET it. While it is set, keys issued under either
+ * pepper are redeemable; new keys are always written under the current one.
+ *
+ * DELIBERATELY NOT A FALLBACK FOR A MISSING PRIMARY. It is consulted only when
+ * the current pepper is present — see findInviteByCode. Allowing a stale
+ * secret to authenticate while the primary is unset would turn a rotation aid
+ * into a way of weakening the fail-closed rule.
+ */
+export function getRegistrationKeyPepperPrevious(): string | null {
+  const p = (process.env.REGISTRATION_KEY_PEPPER_PREVIOUS ?? "").trim();
+  return p.length > 0 ? p : null;
+}
+
 /** Hash a registration key with the pepper (fail-closed — throws when pepper missing). */
 export function hashRegistrationKeyPeppered(normalizedKey: string): string {
   const pc = getRegistrationKeyPepper();
@@ -218,6 +242,20 @@ export async function findInviteByCode(rawCode: string): Promise<BetaInviteRow |
     const byPeppered = await db.select().from(betaInvitesTable)
       .where(eq(betaInvitesTable.inviteCodeHash, pepperedHash)).limit(1);
     if (byPeppered[0]) return byPeppered[0];
+  }
+
+  // 1b. Previous pepper, ONLY during a rotation window and ONLY when the
+  //     current pepper is configured. Gated on pc.ok so a stale secret can
+  //     never stand in for a missing primary.
+  if (pc.ok) {
+    const prev = getRegistrationKeyPepperPrevious();
+    if (prev !== null) {
+      const normalizedKey = normalizeArxKey(code);
+      const prevHash = createHash("sha256").update(normalizedKey + prev, "utf8").digest("hex");
+      const byPrev = await db.select().from(betaInvitesTable)
+        .where(eq(betaInvitesTable.inviteCodeHash, prevHash)).limit(1);
+      if (byPrev[0]) return byPrev[0];
+    }
   }
 
   // Fail closed: ARX-format keys MUST be looked up via peppered hash only.
