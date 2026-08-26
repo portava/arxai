@@ -515,3 +515,31 @@ test("the REAL transport records an outbound frame when the write DOES succeed",
   assert.equal(observed.filter((o) => o.dir === "out").length, 1);
   assert.equal(observed.filter((o) => o.dir === "in").length, 1);
 });
+
+test("the REAL transport marks a venue REJECTION as written — the reply proves it", async () => {
+  // Exercised against the real transport. The evidence-suite version of this
+  // used a fake whose thrown error hardcoded wireWritten:true, so the real
+  // rejection path was never touched and the mutation that removed the field
+  // stayed green — while the commit message claimed it went red.
+  const m = manualSocket();
+  const t = new NewDerivTransport(CONFIG, m.factory, otpFetch());
+  await t.connect("ACC-D1");
+  const p = t.send({ proposal: 1 }).catch((e: DerivNewApiError) => e);
+  m.deliver({ req_id: m.lastReqId(), error: { code: "InputValidationFailed" } });
+  const e = await p as DerivNewApiError;
+  assert.equal(e.code, "DERIV_NEW_API_REQUEST_REJECTED");
+  assert.equal(e.derivCode, "InputValidationFailed");
+  // The venue answered, so the frame demonstrably reached it.
+  assert.equal(e.wireWritten, true, "a venue reply did not prove transmission");
+});
+
+test("the REAL transport marks a venue TRADE rejection as written too", async () => {
+  const m = manualSocket();
+  const t = new NewDerivTransport(CONFIG, m.factory, otpFetch());
+  await t.connect("ACC-D1");
+  const p = t.send({ buy: "q", price: 1 }).catch((e: DerivNewApiError) => e);
+  m.deliver({ req_id: m.lastReqId(), error: { code: "InsufficientBalance" } });
+  const e = await p as DerivNewApiError;
+  assert.equal(e.code, "DERIV_NEW_API_TRADING_REJECTED");
+  assert.equal(e.wireWritten, true);
+});
