@@ -54,6 +54,7 @@
     "certify:deriv-demo-trade": "node --import tsx src/scripts/derivDemoTradeCertify.ts",
     "certify:deriv-new-api": "node --import tsx src/scripts/derivNewApiCertify.ts",
     "test:deriv-new-api-certify": "node --import tsx --test --test-force-exit src/lib/deriv/newApi/__qa__/newApiCertify.test.ts",
+    "test:deriv-fault-injection": "node --import tsx --test --test-force-exit src/lib/deriv/newApi/__qa__/newApiFaultInjection.test.ts",
     "test:deriv-demo-trade": "node --import tsx --test --test-force-exit src/lib/deriv/newApi/__qa__/newApiDemoTrade.test.ts",
     "test:deriv-new-api-foundations": "node --import tsx --test --test-force-exit src/lib/deriv/newApi/__qa__/newApiFoundations.test.ts",
     "test:deriv-mode-quarantine": "node --import tsx --test --test-force-exit src/lib/data/providers/__qa__/derivModeQuarantine.test.ts",

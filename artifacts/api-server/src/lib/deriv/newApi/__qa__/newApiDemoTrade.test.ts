@@ -235,8 +235,13 @@ test("EXACTLY ONE file imports the demo-trade harness: its own CLI", () => {
       }
       if (!e.name.endsWith(".ts")) continue;
       scanned += 1;
-      if (full.endsWith("/demoTradeCertify.ts") || full.endsWith("/newApiDemoTrade.test.ts")) continue;
+      if (full.endsWith("/demoTradeCertify.ts")) continue;
       if (full.endsWith(SOLE_PERMITTED_IMPORTER)) continue;
+      // Tests may import it: the guarantee is that no PRODUCTION path reaches
+      // the harness, and a __qa__ file is not one. Scoped to the repo's test
+      // directory convention rather than a bare "*.test.ts" suffix, so a
+      // production file cannot exempt itself by being named like a test.
+      if (full.includes("/__qa__/")) continue;
       const code = readFileSync(full, "utf8")
         .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
       if (/demoTradeCertify/.test(code)) offenders.push(full);
@@ -248,8 +253,8 @@ test("EXACTLY ONE file imports the demo-trade harness: its own CLI", () => {
   assert.ok(scanned > 500, `walk covered only ${scanned} files — it is not scanning the tree`);
 
   assert.deepEqual(offenders, [],
-    `the demo-trade harness must be reachable ONLY from ${SOLE_PERMITTED_IMPORTER}, `
-    + `but is also imported by: ${offenders.join(", ")}`);
+    `outside tests, the demo-trade harness must be reachable ONLY from `
+    + `${SOLE_PERMITTED_IMPORTER}, but is also imported by: ${offenders.join(", ")}`);
   // And prove the permitted importer really does exist — otherwise this test
   // would pass trivially if the CLI were renamed or deleted.
   const cli = readFileSync(`${process.cwd()}/${SOLE_PERMITTED_IMPORTER}`, "utf8");
