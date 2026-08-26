@@ -73,6 +73,30 @@ export function ordersPlaced(): number { return ordersPlacedThisProcess; }
 
 export class DemoTradeRefusal extends Error {}
 
+/**
+ * Did the VENUE adjudicate this request?
+ *
+ * The transport builds TRADING_REJECTED / REQUEST_REJECTED only from an
+ * `error` frame correlated to our own req_id — meaning Deriv answered and
+ * refused. That is evidence of non-creation, not an absence of evidence, so
+ * it is a clean no-trade rather than an UNKNOWN.
+ *
+ * The distinction was previously unreachable: recordOrderAttempt() ran before
+ * the send, so every buy failure took the "an order was sent" branch and a
+ * proven refusal was indistinguishable from a dropped socket. Crying wolf on
+ * refusals ARX can prove never became contracts is how operators learn to
+ * ignore the alarm that matters.
+ *
+ * Deriv's buy_response requires all nine receipt fields including
+ * `balance_after` — a balance that cannot exist for a purchase that never
+ * completed — so a refusal can never masquerade as a conforming receipt.
+ */
+export function isAdjudicatedRejection(e: unknown): boolean {
+  return e instanceof DerivNewApiError
+    && (e.code === "DERIV_NEW_API_TRADING_REJECTED"
+      || e.code === "DERIV_NEW_API_REQUEST_REJECTED");
+}
+
 export interface DemoTradeOptions {
   /** Must equal DEMO_TRADE_AUTHORIZATION. */
   authorization?: string;
@@ -175,8 +199,11 @@ export function recordOrderAttempt(): void { ordersPlacedThisProcess += 1; }
 const ok = (step: string, detail: string): DemoTradeStep => ({ step, status: "PASS", detail });
 const bad = (step: string, detail: string, code?: DerivNewApiErrorCode | null): DemoTradeStep =>
   ({ step, status: "FAIL", detail, errorCode: code ?? null });
-const unresolved = (step: string, detail: string): DemoTradeStep =>
-  ({ step, status: "UNRESOLVED", detail });
+const unresolved = (step: string, detail: string, code?: DerivNewApiErrorCode | null): DemoTradeStep =>
+  // The classification is retained. It used to be dropped on every UNRESOLVED
+  // step, so the one state that most needs machine-readable triage carried
+  // only prose.
+  ({ step, status: "UNRESOLVED", detail, errorCode: code ?? null });
 
 function describe(e: unknown): { detail: string; code: DerivNewApiErrorCode | null } {
   if (e instanceof DerivNewApiError) {
@@ -304,9 +331,34 @@ export async function runDemoTradeCertification(
     steps.push(ok("proposal",
       `quote ${quote.proposalId.slice(0, 6)}… ask=${quote.askPrice ?? "unstated"} quotedSpot=${quotedSpot ?? "unstated"}`));
 
-    // 5 — THE ORDER. Price ceiling is the lower of the quoted ask and the cap,
-    // so a requote between quote and buy cannot exceed what was authorized.
-    const ceiling = Math.min(quote.askPrice ?? stake, DEMO_TRADE_MAX_STAKE);
+    // 5 — THE ORDER.
+    //
+    // The quote must state a usable price BEFORE anything is sent. Three
+    // failures used to slip through here:
+    //   - ask_price absent: `?? stake` invented a ceiling out of ARX's own
+    //     intent and the run certified GREEN against a quote that never
+    //     stated a price;
+    //   - ask_price unparseable: `numeric` returns null, collapsing into the
+    //     same invented ceiling;
+    //   - ask_price ABOVE the cap: Math.min silently clamped and sent a
+    //     doomed order the venue was always going to refuse.
+    // Refusing here costs nothing; the alternative spends a real order to
+    // discover what the quote already said.
+    if (quote.askPrice === null) {
+      steps.push(bad("quote_validate",
+        "venue quoted no readable ask price — there is no price to authorize"));
+      return report();
+    }
+    if (quote.askPrice > DEMO_TRADE_MAX_STAKE) {
+      steps.push(bad("quote_validate",
+        `venue quoted ${quote.askPrice}, above the ${DEMO_TRADE_MAX_STAKE} cap — `
+        + "refusing rather than clamping to a price the venue did not offer"));
+      return report();
+    }
+    steps.push(ok("quote_validate",
+      `ask ${quote.askPrice} is readable and within the ${DEMO_TRADE_MAX_STAKE} cap`));
+    // Now a genuine ceiling: the venue's own ask, at or under the cap.
+    const ceiling = quote.askPrice;
     const buyReq = mapBuyRequest(quote.proposalId, ceiling);
     if (buyReq instanceof DerivNewApiError) {
       steps.push(bad("buy", buyReq.detail ?? buyReq.code, buyReq.code));
@@ -328,13 +380,23 @@ export async function runDemoTradeCertification(
       purchase = p;
     } catch (e) {
       const { detail, code } = describe(e);
-      // Same reasoning: the send already counted. Only a refusal BEFORE the
-      // send can be called a clean no-trade.
+      if (isAdjudicatedRejection(e)) {
+        // The venue answered our req_id and refused. No contract was created,
+        // so there is nothing to warn about and positionLeftOpen stays false.
+        steps.push(bad("buy", `${detail} — venue REFUSED the order; no contract was created`, code));
+        return report();
+      }
       if (ordersPlacedThisProcess > 0) {
-        steps.push(unresolved("buy", `${detail} — order was SENT; outcome UNKNOWN, reconcile manually`));
+        // The frame reached the wire and nothing adjudicated it. The order may
+        // have executed; only the venue can settle that.
+        steps.push(unresolved("buy",
+          `${detail} — the buy frame WAS written to the socket; outcome UNKNOWN, reconcile manually`,
+          code));
         positionLeftOpen = true;
       } else {
-        steps.push(bad("buy", detail, code));
+        // Refused before a byte left ARX. Non-transmission is provable, so
+        // this is the one fault class that may claim a clean no-trade.
+        steps.push(bad("buy", `${detail} — refused before the order reached the socket`, code));
       }
       return report();
     }

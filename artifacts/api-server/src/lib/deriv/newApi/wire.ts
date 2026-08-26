@@ -275,7 +275,10 @@ export function normalizeSale(msg: unknown): ArxSale | DerivNewApiError {
 
 export interface ArxOpenContract {
   contractId: number;
+  /** True ONLY on evidence of a SALE. Expiry alone does not set this. */
   isSettled: boolean;
+  /** Expired per the venue. Not settlement — see isSettled. */
+  isExpired: boolean;
   /** The venue's OWN entry/exit for this contract. Schema types both as
    *  ["null","string"], so they route through `numeric`. Null when Deriv did
    *  not state them — never substituted from a quote or a streaming tick. */
@@ -297,13 +300,22 @@ export function normalizeOpenContract(msg: unknown): ArxOpenContract | DerivNewA
   if (typeof contractId !== "number") {
     return new DerivNewApiError("DERIV_NEW_API_PROTOCOL_ERROR", { detail: "open contract carried no id" });
   }
-  // `is_sold`/`is_expired` are the settlement evidence; absence means STILL
-  // OPEN, not settled — assuming settlement would strand reconciliation.
-  const settled = r["is_sold"] === 1 || r["is_sold"] === true
-    || r["is_expired"] === 1 || r["is_expired"] === true;
+  // SETTLEMENT REQUIRES A SALE. `is_expired` alone is NOT settlement: for a
+  // multiplier the close path is a sale, and Deriv can report an expired
+  // contract that is neither sold nor settleable. Treating expiry as closure
+  // CLEARED the open-position alarm on a contract the venue still called
+  // unsold — the exact false claim invariant I1 forbids.
+  //
+  // Absence of both still means OPEN. Assuming settlement strands
+  // reconciliation, so silence never closes a position.
+  const settled = r["is_sold"] === 1 || r["is_sold"] === true;
+  const expired = r["is_expired"] === 1 || r["is_expired"] === true;
   return {
     contractId,
     isSettled: settled,
+    // Reported separately so an expired-but-unsold contract is visible rather
+    // than silently folded into either verdict.
+    isExpired: expired,
     profit: numeric(r["profit"]),
     entrySpot: numeric(r["entry_spot"]),
     exitSpot: numeric(r["exit_spot"]),

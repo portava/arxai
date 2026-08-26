@@ -41,6 +41,8 @@ export interface InjectionLog {
   closed: boolean;
 }
 
+import { DerivNewApiError } from "../errors.js";
+
 const reply = (body: Record<string, unknown>): Reaction => ({ kind: "reply", body });
 
 /**
@@ -90,8 +92,13 @@ export function injectedTransport(plan: InjectionPlan, log: InjectionLog) {
           state = "DISCONNECTED";
           // The caller cannot tell whether this reached the venue. That
           // ambiguity is exactly what I2 governs.
-          throw Object.assign(new Error("socket closed with the request in flight"), {
-            name: "SocketClosed",
+          //
+          // TYPED, as the real transport's onClose does — it rejects in-flight
+          // requests with WS_CONNECT_FAILED. A plain Error here made the
+          // classification legitimately null and hid that UNRESOLVED steps
+          // were dropping their error code.
+          throw new DerivNewApiError("DERIV_NEW_API_WS_CONNECT_FAILED", {
+            detail: "socket closed with the request in flight",
           });
         case "hang": return new Promise<Record<string, unknown>>(() => {});
       }
@@ -116,8 +123,32 @@ export const V = {
   buy: (over: Record<string, unknown> = {}) =>
     reply({ buy: { contract_id: 555, buy_price: 1, transaction_id: 9, ...over } }),
 
-  /** A venue error. Deriv nests the code under `error`. */
-  error: (code: string, details?: Record<string, unknown>) =>
+  /**
+   * A venue error, as the REAL transport delivers it.
+   *
+   * transport.ts turns an `error` frame correlated to our req_id into a
+   * thrown DerivNewApiError — TRADING_REJECTED for buy/sell, REQUEST_REJECTED
+   * otherwise. Injecting the raw frame as a REPLY was unfaithful: it made the
+   * harness take the receiptless-response path instead of the catch, so the
+   * suite never exercised what a real rejection does.
+   */
+  error: (code: string, op: "buy" | "sell" | "other" = "buy", details?: Record<string, unknown>): Reaction => ({
+    kind: "throw",
+    error: new DerivNewApiError(
+      op === "buy" || op === "sell"
+        ? "DERIV_NEW_API_TRADING_REJECTED"
+        : "DERIV_NEW_API_REQUEST_REJECTED",
+      {
+        derivCode: code,
+        detail: `op=${op}`
+          + (details ? ` fields:[${Object.keys(details).join(",")}]` : ""),
+      },
+    ),
+  }),
+
+  /** The raw error FRAME, for testing the transport itself rather than the
+   *  harness. Not what a harness-level injection should use. */
+  errorFrame: (code: string, details?: Record<string, unknown>) =>
     reply({ error: { code, ...(details ? { details } : {}) } }),
 
   /** A sell receipt. The `sell` block itself is NOT required by the schema. */
@@ -129,6 +160,15 @@ export const V = {
     reply({ proposal_open_contract: { contract_id: 555, profit: 0, current_spot: 617.5, ...over } }),
 
   /** A settled contract, with the venue's own entry/exit. */
+  /** Expired but NOT sold. Deriv can report this, and it is NOT settlement. */
+  expiredUnsold: (over: Record<string, unknown> = {}) =>
+    reply({
+      proposal_open_contract: {
+        contract_id: 555, is_sold: 0, is_expired: 1, is_settleable: 0,
+        status: "open", profit: 0.25, ...over,
+      },
+    }),
+
   settled: (over: Record<string, unknown> = {}) =>
     reply({
       proposal_open_contract: {

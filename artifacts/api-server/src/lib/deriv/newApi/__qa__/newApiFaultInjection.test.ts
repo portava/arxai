@@ -173,10 +173,55 @@ test("both: an ambiguous buy warns of a position AND invents no id", async () =>
 test("both: a rejected buy warns of NOTHING and certifies nothing", async () => {
   // The mirror case. A venue error is a REPLY — the order was adjudicated —
   // so there is no ambiguity to warn about, and equally nothing to certify.
+  //
+  // THIS TEST PREVIOUSLY LIED. Its name claimed the invariant while it
+  // asserted only certified/contractId, never positionLeftOpen — which was
+  // `true`, i.e. the code warned about a position the venue had just refused
+  // to create. A test named for coverage it does not provide is worse than
+  // no test, because it stops anyone looking.
   const { report, log } = await run({ buy: V.error("InsufficientBalance") });
   assert.equal(report.certified, false);
   assert.equal(report.contractId, null);
+  assert.equal(report.positionLeftOpen, false,
+    "a venue-refused order must not raise the open-position alarm");
+  assert.equal(step(report, "buy")!.status, "FAIL",
+    "an adjudicated refusal is a clean no-trade, not UNKNOWN");
   assert.ok(!log.sent.includes("sell"), "must not try to sell a position that never opened");
+});
+
+test("I2: a proven refusal and an unknowable failure are DISTINGUISHABLE", async () => {
+  // These produced byte-identical reports. A venue that answered and refused
+  // read exactly like a socket that vanished mid-order.
+  const refused = await run({ buy: V.error("InsufficientBalance") });
+  const unknown = await run({ buy: { kind: "close-without-reply" } });
+
+  assert.equal(step(refused.report, "buy")!.status, "FAIL");
+  assert.equal(step(unknown.report, "buy")!.status, "UNRESOLVED");
+  assert.equal(refused.report.positionLeftOpen, false);
+  assert.equal(unknown.report.positionLeftOpen, true);
+  assert.notEqual(step(refused.report, "buy")!.detail, step(unknown.report, "buy")!.detail);
+});
+
+test("every documented rejection code is a clean no-trade", async () => {
+  for (const code of ["InsufficientBalance", "MarketIsClosed",
+    "ContractBuyValidationError", "InvalidContractProposal", "PriceMoved"]) {
+    const { report, log } = await run({ buy: V.error(code) });
+    __resetOrderLatchForTests();
+    const buy = step(report, "buy")!;
+    assert.equal(buy.status, "FAIL", `${code} reported as UNKNOWN`);
+    assert.equal(report.positionLeftOpen, false, `${code} raised a false alarm`);
+    // The venue's own code must survive so the operator's next action is
+    // informed — "wait for the session" differs from "add funds".
+    assert.match(buy.detail, new RegExp(code), `${code} was lost from the report`);
+    assert.equal(buy.errorCode, "DERIV_NEW_API_TRADING_REJECTED");
+    assert.ok(!log.sent.includes("sell"));
+  }
+});
+
+test("UNRESOLVED steps keep their machine-readable code", async () => {
+  // Triage on the one state that most needs it used to have prose only.
+  const { report } = await run({ buy: { kind: "close-without-reply" } });
+  assert.ok(step(report, "buy")!.errorCode, "UNRESOLVED dropped its classification");
 });
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -204,8 +249,53 @@ test("requote: a fill ABOVE the quoted ask is still reported at the venue's pric
   assert.equal(report.reconciliation!.agrees, true);
 });
 
-test("requote: a missing ask_price does not become an invented ceiling", async () => {
-  const { log } = await run({ proposal: V.proposal({ ask_price: undefined }) });
-  const buy = log.payloads.find((p) => "buy" in p);
-  if (buy) assert.ok((buy["price"] as number) <= 1, "ceiling exceeded the cap on an unstated ask");
+test("requote: an unstated ask price REFUSES before anything is sent", async () => {
+  // `?? stake` invented a ceiling out of ARX's own intent, and the run
+  // certified GREEN against a quote that never stated a price.
+  const { report, log } = await run({ proposal: V.proposal({ ask_price: undefined }) });
+  assert.equal(report.certified, false);
+  assert.ok(!log.sent.includes("buy"), "sent an order against a priceless quote");
+  assert.equal(report.positionLeftOpen, false);
+  assert.match(step(report, "quote_validate")!.detail, /no readable ask price/);
+});
+
+test("requote: an UNREADABLE ask price refuses too", async () => {
+  for (const junk of ["", "abc", "1,250.00", "1.2.3", null]) {
+    const { report, log } = await run({ proposal: V.proposal({ ask_price: junk }) });
+    __resetOrderLatchForTests();
+    assert.equal(report.certified, false, `accepted ask_price ${JSON.stringify(junk)}`);
+    assert.ok(!log.sent.includes("buy"));
+  }
+  // A numeric STRING is legitimate — the docs conflict on these types — and
+  // must still be accepted, or the refusal would be over-broad.
+  const okRun = await run({ proposal: V.proposal({ ask_price: "0.80" }) });
+  assert.equal(okRun.report.certified, true, JSON.stringify(okRun.report.steps.filter((x) => x.status !== "PASS")));
+});
+
+test("requote: an ask ABOVE the cap refuses rather than silently clamping", async () => {
+  // Clamping sent a doomed order the venue was always going to refuse —
+  // spending a real order to learn what the quote already said.
+  const { report, log } = await run({ proposal: V.proposal({ ask_price: 5.14 }) });
+  assert.equal(report.certified, false);
+  assert.ok(!log.sent.includes("buy"), "sent a clamped order against a 5.14 quote");
+  assert.match(step(report, "quote_validate")!.detail, /above the 1 cap/);
+});
+
+test("I1: EXPIRY is not settlement — an expired unsold contract stays OPEN", async () => {
+  // Deriv can report a contract expired, unsold and not settleable. Treating
+  // expiry as closure cleared the alarm on a position the venue still called
+  // unsold.
+  const { report } = await run({ proposal_open_contract: V.expiredUnsold() });
+  assert.equal(report.positionLeftOpen, true, "expiry cleared the open-position alarm");
+  assert.equal(report.certified, false);
+});
+
+test("I1: is_expired alone, with is_sold absent, still does not settle", async () => {
+  const { report } = await run({
+    proposal_open_contract: { kind: "reply", body: {
+      proposal_open_contract: { contract_id: 555, is_expired: 1, profit: 0.25 },
+    } },
+  });
+  assert.equal(report.positionLeftOpen, true);
+  assert.equal(report.certified, false);
 });
