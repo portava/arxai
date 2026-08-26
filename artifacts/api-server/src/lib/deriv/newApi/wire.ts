@@ -363,6 +363,11 @@ export interface ArxPortfolioEntry {
   underlyingSymbol: string | null;
   contractType: string | null;
   buyPrice: number | null;
+  /** Venue purchase time, epoch seconds, when stated. Needed by restart
+   *  recovery to tell a contract opened by THIS order from one that already
+   *  existed — without it, a real position cannot be dated and therefore
+   *  cannot block an absence conclusion. */
+  purchaseTimeSec: number | null;
 }
 
 /** Malformed rows are SKIPPED, never coerced: reconciliation compares this
@@ -391,6 +396,7 @@ export function normalizePortfolio(msg: unknown): {
         : typeof e["symbol"] === "string" ? e["symbol"] : null,
       contractType: typeof e["contract_type"] === "string" ? e["contract_type"] : null,
       buyPrice: numeric(e["buy_price"]),
+      purchaseTimeSec: numeric(e["purchase_time"]),
     });
   }
   return { contracts, skipped };
