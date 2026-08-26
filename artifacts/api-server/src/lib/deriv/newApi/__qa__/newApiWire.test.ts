@@ -351,3 +351,18 @@ test("an unreadable shortcode is UNKNOWN, never 'not ours'", () => {
   assert.equal(shortcodeMatchesSymbol("MULTUP_R_100_1.00_0", "R_100"), true);
   assert.equal(shortcodeMatchesSymbol("MULTUP_R_50_1.00_0", "R_100"), false);
 });
+
+test("shortcode matching is DELIMITED — a prefix symbol is not a match", () => {
+  // A bare substring test matched R_10 inside an R_100 contract and R_5 inside
+  // R_50, attaching another instrument's transaction as a candidate. Safe in
+  // direction — an over-match blocks absence rather than asserting something
+  // false — but it would suppress a legitimate resolution indefinitely.
+  assert.equal(shortcodeMatchesSymbol("MULTUP_R_100_1.00_0", "R_10"), false);
+  assert.equal(shortcodeMatchesSymbol("MULTUP_R_50_1.00_0", "R_5"), false);
+  // The genuine matches still match, in both directions and case-insensitively.
+  assert.equal(shortcodeMatchesSymbol("MULTUP_R_100_1.00_0", "R_100"), true);
+  assert.equal(shortcodeMatchesSymbol("multdown_r_100_1.00_0", "R_100"), true);
+  assert.equal(shortcodeMatchesSymbol("MULTUP_R_10_1.00_0", "R_100"), false);
+  // And an unreadable shortcode is still UNKNOWN, not a non-match.
+  assert.equal(shortcodeMatchesSymbol("GARBAGE", "R_100"), null);
+});

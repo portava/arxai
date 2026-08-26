@@ -27,7 +27,7 @@ const intent = (over: Partial<DerivOrderIntent> = {}): DerivOrderIntent => ({
 });
 
 const venue = (over: Partial<DerivVenueEvidence> = {}): DerivVenueEvidence => ({
-  openContracts: [], portfolioReadAtMs: T(-1_000), closedInclusive: true,
+  openContracts: [], portfolioReadAtMs: T(-1_000), closedInclusive: true, statementBuys: [],
   lateReplies: [], evidenceComplete: true, ...over,
 });
 

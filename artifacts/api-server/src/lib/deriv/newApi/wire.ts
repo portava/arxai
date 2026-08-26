@@ -203,9 +203,17 @@ export function shortcodeMatchesSymbol(
   underlyingSymbol: string,
 ): boolean | null {
   if (shortcode === null || shortcode.length === 0) return null;
-  const parts = shortcode.toUpperCase().split("_");
-  if (parts.length < 2) return null;
-  return shortcode.toUpperCase().includes(underlyingSymbol.toUpperCase());
+  const upper = shortcode.toUpperCase();
+  if (upper.split("_").length < 2) return null;
+  // DELIMITED, not substring. A bare `includes` matched R_10 inside
+  // MULTUP_R_100_… and R_5 inside R_50 — attaching another instrument's
+  // transaction as a candidate for this order. The direction was conservative
+  // (an over-match blocks absence rather than asserting something false), but
+  // it would suppress a legitimate resolution indefinitely.
+  //
+  // Padding both sides makes the symbol a whole token: "_R_100_" is present in
+  // "_MULTUP_R_100_1.00_0_" and absent from "_MULTUP_R_10_1.00_0_".
+  return `_${upper}_`.includes(`_${underlyingSymbol.toUpperCase()}_`);
 }
 
 export const mapPortfolioRequest = (): { portfolio: 1 } => ({ portfolio: 1 });

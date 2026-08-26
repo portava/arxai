@@ -27,7 +27,7 @@ import {
   type UnknownCommandFacts, type UnknownCommandEvidence,
   type UnknownCommandVerdict, type PositionEvidenceRow, type LateResultEvidenceRow,
 } from "../../live/unknownClassifier.js";
-import type { ArxPortfolioEntry } from "./wire.js";
+import { shortcodeMatchesSymbol, type ArxPortfolioEntry, type ArxStatementBuy } from "./wire.js";
 
 /**
  * What ARX knows about whether the order's bytes left the process.
@@ -168,6 +168,16 @@ export interface DerivVenueEvidence {
    * costs an operator a look, a false "no trade" costs a stranded position.
    */
   closedInclusive: boolean;
+  /**
+   * Buy transactions from a `statement` read — the CLOSED-INCLUSIVE source.
+   *
+   * A statement buy row exists from the moment a buy executes and SURVIVES the
+   * contract closing, which is precisely the evidence a portfolio read cannot
+   * give. Without these rows, `closedInclusive` was a flag asserting a
+   * completeness nothing actually supplied: a caller whose statement FOUND the
+   * buy would still have been told the order never executed.
+   */
+  statementBuys: ArxStatementBuy[];
   /** Late replies recovered from any durable orphan store, for THIS intent. */
   lateReplies: Array<{ contractId: number | null; derivCode: string | null }>;
   /** False when ANY evidence source was unreadable. Blocks absence
@@ -242,6 +252,29 @@ export function toUnknownCommandEvidence(
       openedAt: c.purchaseTimeSec !== null ? new Date(c.purchaseTimeSec * 1000) : null,
       closedAt: null,
     }));
+  // Statement buys join the SAME evidence set. A closed contract appears here
+  // and nowhere else, so omitting them is what made a closed-but-executed
+  // order look like one that never happened.
+  for (const b of venue.statementBuys) {
+    const match = shortcodeMatchesSymbol(b.shortcode, intent.symbol);
+    // null means the row could not be identified — no shortcode, or one that
+    // does not parse. UNKNOWN is kept as a CANDIDATE so it blocks absence.
+    // Dropping it would let an unidentifiable row be reasoned past into a
+    // no-trade conclusion, which is the failure this whole gate exists for.
+    if (match === false) continue;
+    positions.push({
+      brokerTicket: String(b.contractId),
+      sourceCommandId: null,
+      symbol: intent.symbol,
+      side: intent.contractType === "MULTUP" ? "BUY" : "SELL",
+      volume: b.amount !== null ? Math.abs(b.amount) : intent.stake,
+      // transaction_time, NOT purchase_time — the latter is documented
+      // "present only for sell transaction" and is absent on every buy row.
+      openedAt: b.transactionTimeSec !== null ? new Date(b.transactionTimeSec * 1000) : null,
+      closedAt: null,
+    });
+  }
+
   const lateResults: LateResultEvidenceRow[] = venue.lateReplies.map((r) => ({
     reportedOutcome: r.contractId !== null ? "LIVE_FILLED" : null,
     brokerTicket: r.contractId !== null ? String(r.contractId) : null,
@@ -312,6 +345,9 @@ export function recoverDerivIntents(
     const undatedCandidate = venue.openContracts.some(
       (c) => (c.underlyingSymbol === null || c.underlyingSymbol === intent.symbol)
         && c.purchaseTimeSec === null,
+    ) || venue.statementBuys.some(
+      (b) => shortcodeMatchesSymbol(b.shortcode, intent.symbol) !== false
+        && b.transactionTimeSec === null,
     );
     if (undatedCandidate && intent.outcome === null) {
       return {
