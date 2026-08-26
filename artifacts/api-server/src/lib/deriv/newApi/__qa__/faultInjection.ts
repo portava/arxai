@@ -183,6 +183,44 @@ export const V = {
     }),
 
   pong: () => reply({ ping: "pong" }),
+
+  /**
+   * A sell reply with NO receipt.
+   *
+   * Deriv's sell_response marks the `sell` object as NOT required, so this is
+   * a legitimate venue reply — not a malformed one — and must not be reported
+   * as a close.
+   */
+  receiptlessSell: () => reply({ msg_type: "sell" }),
+
+  /**
+   * Transport failure BEFORE the frame reached the socket.
+   *
+   * The only fault class that may claim a clean no-trade. Mirrors what the
+   * real transport throws from its state check and null-socket check.
+   */
+  notSent: (detail = "transport is DISCONNECTED, not WS_READY"): Reaction => ({
+    kind: "throw",
+    error: new DerivNewApiError("DERIV_NEW_API_WS_CONNECT_FAILED", { detail, wireWritten: false }),
+  }),
+
+  /**
+   * Timeout AFTER the frame was written. The venue may have acted on it, so
+   * this can never become a no-trade.
+   */
+  timedOutAfterSend: (): Reaction => ({
+    kind: "throw",
+    error: new DerivNewApiError("DERIV_NEW_API_REQUEST_TIMEOUT", {
+      detail: "no reply within 20000ms", wireWritten: true,
+    }),
+  }),
+
+  /**
+   * A reply ARX cannot parse. Distinct from a venue ERROR: the venue said
+   * something, and ARX could not read it — a protocol fault about the reply,
+   * not an adjudication of the request.
+   */
+  malformed: () => reply({ unexpected_shape: true }),
 } as const;
 
 /** The all-green plan. Tests override the one operation under test. */

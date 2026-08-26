@@ -10,6 +10,7 @@
 
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   runDemoTradeCertification, __resetOrderLatchForTests,
   DEMO_TRADE_AUTHORIZATION,
@@ -662,4 +663,63 @@ test("a buy with no stated price does not imply one", async () => {
 test("expiry is surfaced as NOT settlement wherever it is reported", async () => {
   const { report } = await run({ proposal_open_contract: V.expiredUnsold() });
   assert.match(step(report, "observe")!.detail, /expired=true\(NOT settlement\)/);
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// Fixture fidelity (audit priority 7)
+// ════════════════════════════════════════════════════════════════════════════
+
+test("fixture fidelity: no fixture emits a shape the real transport converts to a throw", () => {
+  // Two infidelities were already found the hard way, and both hid real gaps:
+  // a raw `error` frame delivered as a REPLY (the transport throws), and a
+  // plain Error where the transport throws a typed one. A fixture that can
+  // produce something the boundary cannot is a test of nothing.
+  const src = readFileSync(new URL("./faultInjection.ts", import.meta.url), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  // A venue `error` frame must only ever appear in errorFrame(), which exists
+  // to test the TRANSPORT itself, never in a harness-level reply builder.
+  const replyBuilders = src.slice(src.indexOf("export const V = {"));
+  const errorFrameOnly = replyBuilders
+    .split("errorFrame:")[1]?.split("\n\n")[0] ?? "";
+  const others = replyBuilders.replace(errorFrameOnly, "");
+  assert.ok(!/reply\(\{\s*error:/.test(others),
+    "a builder delivers a venue error frame as a reply; the transport throws instead");
+});
+
+test("fixture fidelity: every thrown fixture error is a typed DerivNewApiError", () => {
+  const src = readFileSync(new URL("./faultInjection.ts", import.meta.url), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  // `throw new Error(...)` would make the harness's classification legitimately
+  // null and mask a dropped error code, which is exactly what happened.
+  const plain = src.match(/kind:\s*"throw"[\s\S]{0,120}?new (\w+)\(/g) ?? [];
+  for (const m of plain) {
+    assert.match(m, /new DerivNewApiError\(/, `untyped throw in a fixture: ${m.slice(0, 80)}`);
+  }
+});
+
+test("the shared constructors cover the transport's whole disposition space", async () => {
+  // One representative per class, all reaching a defined state.
+  const notSent = await run({ buy: V.notSent() });
+  assert.equal(step(notSent.report, "buy")!.status, "FAIL");
+  assert.equal(notSent.report.positionLeftOpen, false);
+
+  const timedOut = await run({ buy: V.timedOutAfterSend() });
+  assert.equal(step(timedOut.report, "buy")!.status, "UNRESOLVED");
+  assert.equal(timedOut.report.positionLeftOpen, true);
+
+  const rejected = await run({ buy: V.error("MarketIsClosed") });
+  assert.equal(step(rejected.report, "buy")!.status, "FAIL");
+  assert.equal(rejected.report.positionLeftOpen, false);
+
+  const malformed = await run({ buy: V.malformed() });
+  assert.equal(step(malformed.report, "buy")!.status, "UNRESOLVED",
+    "an unreadable reply is not evidence the order failed");
+  assert.equal(malformed.report.positionLeftOpen, true);
+
+  const receiptless = await run({
+    sell: V.receiptlessSell(), proposal_open_contract: V.settled(),
+  });
+  assert.equal(step(receiptless.report, "sell")!.status, "UNRESOLVED");
+  // The venue re-read still settles it — the receipt was never the authority.
+  assert.equal(receiptless.report.positionLeftOpen, false);
 });
