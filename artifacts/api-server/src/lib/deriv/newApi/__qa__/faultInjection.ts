@@ -58,11 +58,10 @@ export function injectedTransport(plan: InjectionPlan, log: InjectionLog) {
   const calls: Record<string, number> = {};
   let state: string = "WS_READY";
 
-  const reactionFor = (op: string): Reaction | undefined => {
+  const reactionFor = (op: string, n: number): Reaction | undefined => {
     const script = plan[op];
     if (script === undefined) return undefined;
     if (!Array.isArray(script)) return script;
-    const n = calls[op] ?? 0;
     // Past the end of a script, the LAST reaction repeats — so a test only
     // has to spell out the calls whose behaviour actually differs.
     return script[Math.min(n, script.length - 1)];
@@ -81,12 +80,17 @@ export function injectedTransport(plan: InjectionPlan, log: InjectionLog) {
       const op = Object.keys(payload).find((k) => k !== "req_id" && k !== "subscribe") ?? "unknown";
       log.sent.push(op);
       log.payloads.push(payload);
-      calls[op] = (calls[op] ?? 0) + 1;
+      // Index BEFORE incrementing. The counter used to be bumped first, so
+      // reactionFor saw 1 on the FIRST call and returned the SECOND scripted
+      // reaction — every multi-call script was silently off by one, and a test
+      // scripting [ok, fail] got the failure immediately.
+      const callIndex = calls[op] ?? 0;
+      calls[op] = callIndex + 1;
 
       if (state !== "WS_READY") {
         throw Object.assign(new Error("transport not ready"), { name: "TransportClosed" });
       }
-      const r = reactionFor(op);
+      const r = reactionFor(op, callIndex);
       if (r === undefined) throw new Error(`no injection planned for ${op}`);
 
       switch (r.kind) {

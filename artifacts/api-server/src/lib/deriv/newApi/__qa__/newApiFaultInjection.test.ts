@@ -723,3 +723,51 @@ test("the shared constructors cover the transport's whole disposition space", as
   // The venue re-read still settles it — the receipt was never the authority.
   assert.equal(receiptless.report.positionLeftOpen, false);
 });
+
+// ── D3: a failed closure re-read is not a venue statement (exit review) ────
+
+test("a FAILED closure re-read reports UNKNOWN, not a verdict from stale data", async () => {
+  // The closure read threw, so `openState` retained the STEP-6 observation
+  // taken BEFORE the sell — and the contradiction branch then reported
+  // "the venue reports it NOT SOLD" against a reading that predates the sell,
+  // when the venue had never been successfully asked.
+  const { report } = await run({
+    // First read (observe) succeeds and shows the contract open; the second
+    // (closure) fails.
+    proposal_open_contract: [
+      V.open({ is_sold: 0, status: "open" }),
+      { kind: "throw", error: new DerivNewApiError("DERIV_NEW_API_REQUEST_TIMEOUT", { detail: "no reply" }) },
+    ],
+    sell: V.sell(),
+  });
+  const c = step(report, "confirm_closed")!;
+  assert.equal(c.status, "UNRESOLVED");
+  assert.match(c.detail, /could not be re-read/);
+  assert.ok(!/CONTRADICTION/.test(c.detail),
+    "reported a contradiction against a reading that predates the sell");
+  assert.equal(report.positionLeftOpen, true);
+});
+
+test("a SUCCESSFUL closure re-read still decides normally", async () => {
+  // The guard must not swallow the working path.
+  const { report } = await run({ sell: V.sell(), proposal_open_contract: V.settled() });
+  assert.equal(step(report, "confirm_closed")!.status, "PASS");
+  assert.equal(report.positionLeftOpen, false);
+});
+
+test("the injection fixture's per-call script is not off by one", () => {
+  // It was: the call counter was incremented before the index was read, so the
+  // FIRST call received the SECOND reaction. A test scripting [ok, fail] got
+  // the failure immediately, which silently inverted every multi-call scenario.
+  const log = newLog();
+  const t = injectedTransport({
+    ping: [V.pong(), { kind: "throw", error: new Error("second call") }],
+  }, log)();
+  return (async () => {
+    const first = await (t as { send: (p: Record<string, unknown>) => Promise<unknown> }).send({ ping: 1 });
+    assert.deepEqual(first, { ping: "pong" }, "first call did not get the FIRST reaction");
+    await assert.rejects(
+      () => (t as { send: (p: Record<string, unknown>) => Promise<unknown> }).send({ ping: 1 }),
+      /second call/, "second call did not get the SECOND reaction");
+  })();
+});

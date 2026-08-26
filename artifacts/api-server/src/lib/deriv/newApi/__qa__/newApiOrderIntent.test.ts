@@ -13,6 +13,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   recoverDerivIntents, toUnknownCommandFacts, toUnknownCommandEvidence, checkDuplicateOrder,
+  DERIV_VENUE_TIME_TOLERANCE_MS,
   type DerivOrderIntent, type DerivVenueEvidence, type WriteDisposition,
 } from "../orderIntent.js";
 
@@ -104,7 +105,7 @@ test("an UNDATED open contract escalates — it can be neither attributed nor ru
 test("CRASH after the buy: a LATE reply recovered from durable storage resolves it", async () => {
   // The in-process orphan ledger dies with the process. If a late reply was
   // durably stored before the crash, it is still authoritative afterwards.
-  const r = one(intent(), venue({ lateReplies: [{ contractId: 4242, derivCode: null }] }));
+  const r = one(intent(), venue({ lateReplies: [{ intentId: "i-1", contractId: 4242, derivCode: null }] }));
   assert.equal(r.action, "RESOLVED");
   if (r.action === "RESOLVED") {
     assert.equal(r.verdict.action, "RESOLVE_FILLED");
@@ -169,8 +170,15 @@ test("the write timestamp — not the intent timestamp — dates the order", asy
   // Dating from createdAtMs would let a snapshot taken before the frame ever
   // left be treated as covering the order, which is how a live position gets
   // resolved away as absent.
+  // Asserted as an OFFSET FROM THE WRITE, not as a literal. The window start is
+  // deliberately widened backwards by DERIV_VENUE_TIME_TOLERANCE_MS to absorb
+  // second-granularity venue timestamps and clock skew; pinning the exact value
+  // would test that constant rather than the invariant.
   const f = toUnknownCommandFacts(intent({ createdAtMs: T(-90_000), frameWrittenAtMs: T(-10_000) }));
-  assert.equal(f.sentToMt5At?.getTime(), T(-10_000));
+  assert.equal(f.sentToMt5At?.getTime(), T(-10_000) - DERIV_VENUE_TIME_TOLERANCE_MS);
+  // The invariant: derived from the WRITE, never from the intent timestamp.
+  assert.ok((f.sentToMt5At?.getTime() ?? 0) > T(-90_000),
+    "the window start was derived from createdAtMs, not from the write");
   // And with no confirmed write there is no reference point at all.
   assert.equal(toUnknownCommandFacts(intent({ frameWrittenAtMs: null })).sentToMt5At, null);
 });

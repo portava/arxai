@@ -590,6 +590,8 @@ export async function runDemoTradeCertification(
 
     // 8 — confirm closure from the venue, not from the sell reply.
     let confirmedClosed = false;
+    /** Did the closure re-read actually succeed? Distinct from what it said. */
+    let closureReadOk = false;
     try {
       const req = mapOpenContractRequest(contractId);
       if (req instanceof DerivNewApiError) throw req;
@@ -605,7 +607,22 @@ export async function runDemoTradeCertification(
       }
       confirmedClosed = c.isSettled;
       openState = c;
-    } catch { /* fall through to the honest UNRESOLVED below */ }
+      closureReadOk = true;
+    } catch { /* closureReadOk stays false — see below */ }
+
+    // A FAILED RE-READ IS NOT A VENUE STATEMENT. When the closure read threw,
+    // `openState` silently retained the STEP-6 observation — taken BEFORE the
+    // sell — and the branches below then used it as the venue's current word.
+    // That let a contradiction be reported against a pre-sell reading, i.e.
+    // "the venue reports it NOT SOLD" when the venue was never successfully
+    // asked. The state is unknown; saying so is the only honest answer.
+    if (!closureReadOk) {
+      steps.push(unresolved("confirm_closed",
+        `contract ${contractId}: the venue could not be re-read after the sell, so its `
+        + "current state is UNKNOWN. The earlier observation predates the sell and is "
+        + "not evidence of closure either way. Verify manually."));
+      return report();
+    }
 
     // EVIDENCE PRECEDENCE. The re-read is the venue's statement about the
     // contract's CURRENT state and is strictly later than the receipt, which

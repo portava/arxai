@@ -223,3 +223,144 @@ test("PURITY: the recovery module imports and RUNS with DATABASE_URL unset", asy
     rmSync(outFile, { force: true });
   }
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+// D1 — venue-time truncation and clock skew (exit review, critical)
+// ════════════════════════════════════════════════════════════════════════════
+//
+// Deriv dates contracts in epoch SECONDS. Converting with *1000 floors to the
+// start of that second, so a fill 200ms after the write can date up to 999ms
+// BEFORE it. The classifier's lower bound is a bare `>=`, so the real contract
+// fell outside the window and absence was concluded WITH the trade present.
+//
+// Every earlier fixture pinned NOW to a whole second and put 29-60s between
+// the write and the venue timestamp, so no test could see it.
+
+test("D1: a fill in the SAME SECOND as the write does not become an absence", () => {
+  // The normal case. A Deriv round trip is 50-300ms, so the fill almost always
+  // lands in the same wall-clock second as the write.
+  const writeMs = T(-10 * 60_000) + 750;          // ms=750 within its second
+  const fillSec = Math.floor((writeMs + 200) / 1000);  // 200ms later, SAME second
+  const r = run(
+    crashedIntent({ frameWrittenAtMs: writeMs }),
+    evidence({
+      closedInclusive: true,
+      openContracts: [{
+        contractId: 777, underlyingSymbol: "R_100", contractType: "MULTUP",
+        buyPrice: 1, purchaseTimeSec: fillSec,
+      }],
+    }),
+  );
+  assert.ok(!claimedNoTrade(r),
+    `absence concluded with a live contract in the evidence: ${JSON.stringify(r)}`);
+});
+
+test("D1: a sweep of sub-second write offsets never produces a false absence", () => {
+  // The measured failure was 799/1000. Any single offset would be a weak test.
+  const failures: number[] = [];
+  for (let ms = 0; ms < 1000; ms += 7) {
+    const writeMs = T(-10 * 60_000) + ms;
+    const r = run(
+      crashedIntent({ frameWrittenAtMs: writeMs }),
+      evidence({
+        closedInclusive: true,
+        openContracts: [{
+          contractId: 777, underlyingSymbol: "R_100", contractType: "MULTUP",
+          buyPrice: 1, purchaseTimeSec: Math.floor((writeMs + 200) / 1000),
+        }],
+      }),
+    );
+    if (claimedNoTrade(r)) failures.push(ms);
+  }
+  assert.deepEqual(failures, [], `false absence at write-offset ms: ${failures.join(",")}`);
+});
+
+test("D1: a venue clock running BEHIND ARX does not produce a false absence", () => {
+  // This half needs no truncation at all — any backward skew does it.
+  for (const skewSec of [1, 2, 5, 29]) {
+    const writeMs = T(-10 * 60_000);
+    const r = run(
+      crashedIntent({ frameWrittenAtMs: writeMs }),
+      evidence({
+        closedInclusive: true,
+        openContracts: [{
+          contractId: 777, underlyingSymbol: "R_100", contractType: "MULTUP",
+          buyPrice: 1, purchaseTimeSec: Math.floor(writeMs / 1000) - skewSec,
+        }],
+      }),
+    );
+    assert.ok(!claimedNoTrade(r), `false absence at ${skewSec}s venue clock skew`);
+  }
+});
+
+test("D1: BOTH sources holding the trade still never yields absence", () => {
+  // A complete, closed-inclusive bundle containing the executed trade TWICE.
+  // Absence here would be concluded despite the evidence, not from a gap.
+  const writeMs = T(-10 * 60_000) + 750;
+  const fillSec = Math.floor((writeMs + 200) / 1000);
+  const r = run(crashedIntent({ frameWrittenAtMs: writeMs }), evidence({
+    closedInclusive: true,
+    openContracts: [{
+      contractId: 777, underlyingSymbol: "R_100", contractType: "MULTUP",
+      buyPrice: 1, purchaseTimeSec: fillSec,
+    }],
+    statementBuys: [stmt({ transactionTimeSec: fillSec })],
+  }));
+  assert.ok(!claimedNoTrade(r));
+});
+
+test("D1: the tolerance does NOT swallow a genuinely older contract", () => {
+  // The widened window must stay narrow enough to leave absence provable when
+  // the only candidate predates the order by more than the tolerance.
+  const writeMs = T(-10 * 60_000);
+  const r = run(crashedIntent({ frameWrittenAtMs: writeMs }), evidence({
+    closedInclusive: true,
+    openContracts: [{
+      contractId: 555, underlyingSymbol: "R_100", contractType: "MULTUP",
+      buyPrice: 1, purchaseTimeSec: Math.floor(writeMs / 1000) - 600,  // 10 min earlier
+    }],
+  }));
+  assert.ok(claimedNoTrade(r), "the tolerance widened the window far past its purpose");
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// D2 — cross-intent evidence attribution (exit review, critical)
+// ════════════════════════════════════════════════════════════════════════════
+
+test("D2: one order's LATE RECEIPT never resolves a DIFFERENT order", () => {
+  // recoverDerivIntents takes N intents against ONE evidence bundle. The
+  // lateReplies comment claimed "for THIS intent" while the type carried no
+  // handle, so order A's receipt was offered as evidence for order B — and
+  // would have resolved it FILLED with another order's contract id.
+  const a = crashedIntent({ intentId: "A" });
+  const b = crashedIntent({ intentId: "B" });
+  const out = recoverDerivIntents([a, b], evidence({
+    closedInclusive: true,
+    lateReplies: [{ intentId: "A", contractId: 4242, derivCode: null }],
+  }), { now: NOW });
+
+  const forA = out.find((o) => o.intentId === "A")!;
+  const forB = out.find((o) => o.intentId === "B")!;
+  // A owns the receipt and may resolve from it.
+  assert.equal(forA.action, "RESOLVED");
+  if (forA.action === "RESOLVED") assert.equal(forA.verdict.action, "RESOLVE_FILLED");
+  // B must NOT inherit it.
+  assert.equal(forB.action, "RESOLVED");
+  if (forB.action === "RESOLVED") {
+    assert.notEqual(forB.verdict.action, "RESOLVE_FILLED",
+      "another order's receipt resolved this one");
+  }
+  assert.ok(!JSON.stringify(forB).includes("4242"), "B was attributed A's contract id");
+});
+
+test("D2: a late VENUE REFUSAL is likewise scoped to its own order", () => {
+  const a = crashedIntent({ intentId: "A" });
+  const b = crashedIntent({ intentId: "B" });
+  const out = recoverDerivIntents([a, b], evidence({
+    closedInclusive: true,
+    lateReplies: [{ intentId: "A", contractId: null, derivCode: "InsufficientBalance" }],
+  }), { now: NOW });
+  const forB = out.find((o) => o.intentId === "B")!;
+  assert.ok(!JSON.stringify(forB).includes("InsufficientBalance"),
+    "another order's refusal leaked into this one");
+});

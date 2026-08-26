@@ -36,6 +36,30 @@ import { shortcodeMatchesSymbol, type ArxPortfolioEntry, type ArxStatementBuy } 
  * entire point: the first is venue-adjacent proof that nothing was sent, the
  * second is our own ignorance and must never be read as the first.
  */
+/**
+ * How far BEFORE the frame write a venue timestamp may still be ours.
+ *
+ * Two independent sources of backward error, and the classifier applies its
+ * settle margin only to the UPPER bound:
+ *
+ *   TRUNCATION. Deriv dates contracts in epoch SECONDS (purchase_time,
+ *   transaction_time are integers). Converting with *1000 floors to the start
+ *   of that second, so a fill 200ms after the write can date up to 999ms
+ *   BEFORE it. With a bare `>=` the real contract falls outside the window and
+ *   absence is concluded despite the trade sitting in the evidence bundle.
+ *   Measured across sub-second write offsets: 799 of 1000 produced a false
+ *   RESOLVE_ABSENT with a live contract present.
+ *
+ *   CLOCK SKEW. The venue's clock is not ARX's. Any backward skew produces the
+ *   same effect with no truncation involved at all.
+ *
+ * The value matches the clock-skew bound the read-only certification already
+ * enforces, so it is grounded in a limit ARX independently checks rather than
+ * picked. Widening the window can only ADD candidates, which blocks absence —
+ * the conservative direction.
+ */
+export const DERIV_VENUE_TIME_TOLERANCE_MS = 30_000;
+
 export type WriteDisposition =
   /** Durably recorded before any attempt. No frame was constructed. */
   | "NOT_ATTEMPTED"
@@ -178,8 +202,25 @@ export interface DerivVenueEvidence {
    * buy would still have been told the order never executed.
    */
   statementBuys: ArxStatementBuy[];
-  /** Late replies recovered from any durable orphan store, for THIS intent. */
-  lateReplies: Array<{ contractId: number | null; derivCode: string | null }>;
+  /**
+   * Late replies recovered from a durable orphan store.
+   *
+   * EACH CARRIES THE INTENT IT BELONGS TO. The comment used to say "for THIS
+   * intent" while the type carried no handle at all — and recoverDerivIntents
+   * takes N intents against ONE evidence bundle, so a late receipt for order A
+   * was being offered as evidence for order B and would resolve it FILLED with
+   * another order's contract id. A documented scope that the type cannot
+   * enforce is not a scope.
+   *
+   * The handle is ARX's own intentId, recovered by mapping the reply's req_id
+   * through the durable record. Deriv supplies no client reference, so this is
+   * the only correlation that exists.
+   */
+  lateReplies: Array<{
+    intentId: string;
+    contractId: number | null;
+    derivCode: string | null;
+  }>;
   /** False when ANY evidence source was unreadable. Blocks absence
    *  resolution; does not block resolving a fill from what WAS readable. */
   evidenceComplete: boolean;
@@ -222,7 +263,14 @@ export function toUnknownCommandFacts(intent: DerivOrderIntent): UnknownCommandF
     // Only a CONFIRMED write is a reference point. An unrecorded write cannot
     // date the order, and dating it from createdAtMs would let a snapshot
     // taken before the frame ever left be treated as covering it.
-    sentToMt5At: intent.frameWrittenAtMs !== null ? new Date(intent.frameWrittenAtMs) : null,
+    // Widened backwards by the venue-time tolerance. This is the earliest
+    // instant a venue timestamp could legitimately correspond to this write,
+    // once second-granularity truncation and clock skew are accounted for.
+    // Passing the raw write instant made the comparison exact against a value
+    // that is inherently imprecise.
+    sentToMt5At: intent.frameWrittenAtMs !== null
+      ? new Date(intent.frameWrittenAtMs - DERIV_VENUE_TIME_TOLERANCE_MS)
+      : null,
     pickedByEaAt: null,
     expiresAt: null,
   };
@@ -275,7 +323,11 @@ export function toUnknownCommandEvidence(
     });
   }
 
-  const lateResults: LateResultEvidenceRow[] = venue.lateReplies.map((r) => ({
+  const lateResults: LateResultEvidenceRow[] = venue.lateReplies
+    // Scoped by the type, not by a comment. An unscoped bundle let one order's
+    // receipt resolve another order as FILLED.
+    .filter((r) => r.intentId === intent.intentId)
+    .map((r) => ({
     reportedOutcome: r.contractId !== null ? "LIVE_FILLED" : null,
     brokerTicket: r.contractId !== null ? String(r.contractId) : null,
     fillPrice: null,
