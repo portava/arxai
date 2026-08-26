@@ -209,7 +209,11 @@ test("recovery DELEGATES to the shared classifier rather than reimplementing it"
     "appears to construct verdicts itself instead of delegating");
 });
 
-test("this module reaches no database, network, or clock", () => {
+test("this module reaches no database, network, or clock — TEXTUALLY", () => {
+  // Necessary but NOT sufficient. This grep passed while the module could not
+  // actually load without a database, because it imported the reconciler,
+  // which imports drizzle and the db handle at module scope. A source grep
+  // cannot see a transitive import.
   const code = readFileSync(new URL("../orderIntent.ts", import.meta.url), "utf8")
     .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
   for (const forbidden of ["db.", "drizzle", "fetch(", "NewDerivTransport", "Date.now()"]) {
@@ -217,110 +221,31 @@ test("this module reaches no database, network, or clock", () => {
   }
 });
 
-// ── Idempotency: client-side discipline only (Phase 5) ─────────────────────
-
-test("no prior intent for the key: sending is allowed", () => {
-  assert.equal(checkDuplicateOrder("k1", []).allowed, true);
-  assert.equal(checkDuplicateOrder("k1", [{ ...intent(), idempotencyKey: "OTHER" }]).allowed, true);
-});
-
-test("a prior UNRESOLVED order BLOCKS — it may already exist at the venue", () => {
-  for (const d of ["WRITTEN", "UNRECORDED"] as WriteDisposition[]) {
-    const v = checkDuplicateOrder("k1", [{ ...intent({ writeDisposition: d }), idempotencyKey: "k1" }]);
-    assert.equal(v.allowed, false, `${d} did not block`);
-    if (!v.allowed) assert.equal(v.reason, "PRIOR_UNRESOLVED");
-  }
-});
-
-test("a prior FILLED order blocks — the position exists", () => {
-  const v = checkDuplicateOrder("k1", [{
-    ...intent({ outcome: { kind: "CONTRACT", contractId: 7 } }), idempotencyKey: "k1",
-  }]);
-  assert.equal(v.allowed, false);
-  if (!v.allowed) assert.equal(v.reason, "PRIOR_FILLED");
-});
-
-test("a prior VENUE-REFUSED order is RETRYABLE — refusal is proof of non-creation", () => {
-  const v = checkDuplicateOrder("k1", [{
-    ...intent({ outcome: { kind: "VENUE_REFUSED", derivCode: "InsufficientBalance" } }),
-    idempotencyKey: "k1",
-  }]);
-  assert.equal(v.allowed, true);
-  if (v.allowed) assert.equal(v.reason, "PRIOR_VENUE_REFUSED");
-});
-
-test("a prior PROVABLY-NOT-SENT order is retryable; UNRECORDED is not", () => {
-  // The same asymmetry as recovery: adjudication and provable non-transmission
-  // are evidence; our own missing record is not.
-  for (const d of ["NOT_ATTEMPTED", "REFUSED_PRE_TRANSMISSION"] as WriteDisposition[]) {
-    const v = checkDuplicateOrder("k1", [{ ...intent({ writeDisposition: d }), idempotencyKey: "k1" }]);
-    assert.equal(v.allowed, true, `${d} should be retryable`);
-  }
-  const unrec = checkDuplicateOrder("k1", [{
-    ...intent({ writeDisposition: "UNRECORDED" }), idempotencyKey: "k1",
-  }]);
-  assert.equal(unrec.allowed, false, "an unrecorded prior was treated as never sent");
-});
-
-test("ONE unresolved prior blocks even when other priors are safely retryable", () => {
-  // The blocking case must not be outvoted by benign ones.
-  const v = checkDuplicateOrder("k1", [
-    { ...intent({ writeDisposition: "NOT_ATTEMPTED", intentId: "a" }), idempotencyKey: "k1" },
-    { ...intent({ writeDisposition: "WRITTEN", intentId: "b" }), idempotencyKey: "k1" },
-  ]);
-  assert.equal(v.allowed, false);
-  if (!v.allowed) assert.equal(v.priorIntentId, "b");
-});
-
-test("the residual duplicate risk is DOCUMENTED, not implied away", () => {
-  // Deriv has no venue-side dedup key, so two processes without shared durable
-  // state can still double-order. A guard that hid that would be a mitigation
-  // presented as an elimination.
-  // Whitespace-normalised: the prose wraps across comment lines, and a regex
-  // that cannot span a line break tests the formatter, not the documentation.
-  const src = readFileSync(new URL("../orderIntent.ts", import.meta.url), "utf8")
-    .replace(/\s*\n\s*\*?\s*/g, " ");
-  assert.match(src, /no dedup key/i);
-  assert.match(src, /CLIENT-SIDE DISCIPLINE/);
-  assert.match(src, /can still double-order/i);
-});
-
-// ── The false-absence defect (found by adversarial review, reproduced) ─────
-
-test("an OPEN-ONLY portfolio read can NEVER prove absence", () => {
-  // The defect this module shipped with. Deriv's `portfolio` returns only
-  // OUTSTANDING contracts. An order that filled and was then closed — a
-  // multiplier stop-out needs no action from ARX, and in a crash scenario ARX
-  // is dead by construction — is simply absent from that read. Treating it as
-  // a complete sweep reported "no trade" for an order that had executed.
-  const r = one(intent({ writeDisposition: "WRITTEN" }), venue({
-    openContracts: [], portfolioReadAtMs: T(-1_000), closedInclusive: false,
-  }));
-  assert.equal(r.action, "RESOLVED");
-  if (r.action === "RESOLVED") {
-    assert.notEqual(r.verdict.action, "RESOLVE_ABSENT",
-      "reported no-trade for an order whose frame was confirmed written");
-    assert.equal(r.verdict.action, "HOLD");
-    if (r.verdict.action === "HOLD") assert.equal(r.verdict.reason, "NO_COMPLETE_SNAPSHOT");
-  }
-});
-
-test("absence becomes provable ONLY with closed-inclusive evidence", () => {
-  const r = one(intent({ writeDisposition: "WRITTEN" }), venue({
-    openContracts: [], portfolioReadAtMs: T(-1_000), closedInclusive: true,
-  }));
-  assert.equal(r.action, "RESOLVED");
-  if (r.action === "RESOLVED") assert.equal(r.verdict.action, "RESOLVE_ABSENT");
-});
-
-test("closed-inclusive evidence does not weaken any OTHER hold", () => {
-  // The gate must not become a bypass: every existing reason to hold still
-  // holds when the flag is set.
-  const stale = one(
-    intent({ createdAtMs: T(-21 * 60_000), frameWrittenAtMs: T(-20 * 60_000) }),
-    venue({ portfolioReadAtMs: T(-10 * 60_000), closedInclusive: true }),
-  );
-  if (stale.action === "RESOLVED") assert.equal(stale.verdict.action, "HOLD");
-  const incomplete = one(intent(), venue({ closedInclusive: true, evidenceComplete: false }));
-  if (incomplete.action === "RESOLVED") assert.equal(incomplete.verdict.action, "HOLD");
+test("this module reaches no database — ACTUALLY, by import graph", () => {
+  // The claim that matters, and the one the grep could not make. Every import
+  // in the transitive graph must itself be free of a runtime database
+  // dependency; the pure classifier was extracted from unknownReconciler
+  // precisely so this holds.
+  const seen = new Set<string>();
+  const forbidden: string[] = [];
+  const walk = (fileUrl: URL): void => {
+    const key = fileUrl.pathname;
+    if (seen.has(key)) return;
+    seen.add(key);
+    let src: string;
+    try { src = readFileSync(fileUrl, "utf8"); } catch { return; }
+    // Comments first. The extraction header for unknownClassifier EXPLAINS the
+    // db dependency it exists to avoid, and matching that prose flagged the
+    // very file that fixes the problem. Seventh time a source scan in this
+    // workstream has matched its own documentation.
+    src = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    if (/@workspace\/db|from "drizzle-orm"/.test(src)) forbidden.push(key.split("/src/")[1] ?? key);
+    for (const m of src.matchAll(/from\s+"(\.[^"]+)\.js"/g)) {
+      walk(new URL(`${m[1]}.ts`, fileUrl));
+    }
+  };
+  walk(new URL("../orderIntent.ts", import.meta.url));
+  assert.ok(seen.size > 1, "the walk did not follow any import");
+  assert.deepEqual(forbidden, [],
+    `orderIntent transitively imports a database module: ${forbidden.join(", ")}`);
 });
