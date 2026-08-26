@@ -12,7 +12,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
-  recoverDerivIntents, toUnknownCommandFacts, toUnknownCommandEvidence,
+  recoverDerivIntents, toUnknownCommandFacts, toUnknownCommandEvidence, checkDuplicateOrder,
   type DerivOrderIntent, type DerivVenueEvidence, type WriteDisposition,
 } from "../orderIntent.js";
 
@@ -215,4 +215,72 @@ test("this module reaches no database, network, or clock", () => {
   for (const forbidden of ["db.", "drizzle", "fetch(", "NewDerivTransport", "Date.now()"]) {
     assert.ok(!code.includes(forbidden), `orderIntent reaches ${forbidden}`);
   }
+});
+
+// ── Idempotency: client-side discipline only (Phase 5) ─────────────────────
+
+test("no prior intent for the key: sending is allowed", () => {
+  assert.equal(checkDuplicateOrder("k1", []).allowed, true);
+  assert.equal(checkDuplicateOrder("k1", [{ ...intent(), idempotencyKey: "OTHER" }]).allowed, true);
+});
+
+test("a prior UNRESOLVED order BLOCKS — it may already exist at the venue", () => {
+  for (const d of ["WRITTEN", "UNRECORDED"] as WriteDisposition[]) {
+    const v = checkDuplicateOrder("k1", [{ ...intent({ writeDisposition: d }), idempotencyKey: "k1" }]);
+    assert.equal(v.allowed, false, `${d} did not block`);
+    if (!v.allowed) assert.equal(v.reason, "PRIOR_UNRESOLVED");
+  }
+});
+
+test("a prior FILLED order blocks — the position exists", () => {
+  const v = checkDuplicateOrder("k1", [{
+    ...intent({ outcome: { kind: "CONTRACT", contractId: 7 } }), idempotencyKey: "k1",
+  }]);
+  assert.equal(v.allowed, false);
+  if (!v.allowed) assert.equal(v.reason, "PRIOR_FILLED");
+});
+
+test("a prior VENUE-REFUSED order is RETRYABLE — refusal is proof of non-creation", () => {
+  const v = checkDuplicateOrder("k1", [{
+    ...intent({ outcome: { kind: "VENUE_REFUSED", derivCode: "InsufficientBalance" } }),
+    idempotencyKey: "k1",
+  }]);
+  assert.equal(v.allowed, true);
+  if (v.allowed) assert.equal(v.reason, "PRIOR_VENUE_REFUSED");
+});
+
+test("a prior PROVABLY-NOT-SENT order is retryable; UNRECORDED is not", () => {
+  // The same asymmetry as recovery: adjudication and provable non-transmission
+  // are evidence; our own missing record is not.
+  for (const d of ["NOT_ATTEMPTED", "REFUSED_PRE_TRANSMISSION"] as WriteDisposition[]) {
+    const v = checkDuplicateOrder("k1", [{ ...intent({ writeDisposition: d }), idempotencyKey: "k1" }]);
+    assert.equal(v.allowed, true, `${d} should be retryable`);
+  }
+  const unrec = checkDuplicateOrder("k1", [{
+    ...intent({ writeDisposition: "UNRECORDED" }), idempotencyKey: "k1",
+  }]);
+  assert.equal(unrec.allowed, false, "an unrecorded prior was treated as never sent");
+});
+
+test("ONE unresolved prior blocks even when other priors are safely retryable", () => {
+  // The blocking case must not be outvoted by benign ones.
+  const v = checkDuplicateOrder("k1", [
+    { ...intent({ writeDisposition: "NOT_ATTEMPTED", intentId: "a" }), idempotencyKey: "k1" },
+    { ...intent({ writeDisposition: "WRITTEN", intentId: "b" }), idempotencyKey: "k1" },
+  ]);
+  assert.equal(v.allowed, false);
+  if (!v.allowed) assert.equal(v.priorIntentId, "b");
+});
+
+test("the residual duplicate risk is DOCUMENTED, not implied away", () => {
+  // Deriv has no venue-side dedup key, so two processes without shared durable
+  // state can still double-order. A guard that hid that would be a mitigation
+  // presented as an elimination.
+  // Whitespace-normalised: the prose wraps across comment lines, and a regex
+  // that cannot span a line break tests the formatter, not the documentation.
+  const src = readFileSync(new URL("../orderIntent.ts", import.meta.url), "utf8")
+    .replace(/\s*\n\s*\*?\s*/g, " ");
+  assert.match(src, /no dedup key/i);
+  assert.match(src, /CLIENT-SIDE DISCIPLINE/);
+  assert.match(src, /can still double-order/i);
 });

@@ -79,6 +79,66 @@ export interface DerivOrderIntent {
     | null;
 }
 
+/**
+ * IDEMPOTENCY, AND WHAT IT CANNOT MEAN HERE.
+ *
+ * Deriv's buy_request has no dedup key — its properties are exactly buy,
+ * price, parameters, subscribe, passthrough, req_id. `passthrough` is echoed
+ * back, which buys CORRELATION, not deduplication: the venue will happily
+ * execute two identical buys that carry the same passthrough.
+ *
+ * So idempotency here is CLIENT-SIDE DISCIPLINE, and the residual risk is
+ * real: two ARX processes that do not share durable intent state can still
+ * double-order, and nothing in the venue will stop them. Recording that limit
+ * is the honest form of this feature. Describing this guard as "idempotent
+ * orders" without it would be a mitigation dressed up as an elimination.
+ */
+export type DuplicateVerdict =
+  /** No prior intent for this key, or every prior one provably never reached
+   *  the venue. Sending is safe. */
+  | { allowed: true; reason: "NO_PRIOR_INTENT" | "PRIOR_PROVABLY_NOT_SENT" | "PRIOR_VENUE_REFUSED" }
+  /** A prior order for this key may or does exist. Sending again could double
+   *  the position, and no venue mechanism would prevent it. */
+  | { allowed: false; reason: "PRIOR_UNRESOLVED" | "PRIOR_FILLED"; priorIntentId: string };
+
+/**
+ * Refuse a second order for the same logical intent.
+ *
+ * The key is supplied by the caller and must be derived from the DECISION that
+ * produced the order, not from the order's parameters — two genuinely separate
+ * decisions can legitimately produce identical parameters, and collapsing them
+ * would suppress a real second order.
+ *
+ * A prior VENUE_REFUSED is retryable because a venue refusal is adjudicated
+ * proof no contract was created. A prior UNRECORDED is NOT, for the same
+ * reason it is not recoverable: our ignorance is not the venue's answer.
+ */
+export function checkDuplicateOrder(
+  idempotencyKey: string,
+  priorIntents: Array<DerivOrderIntent & { idempotencyKey?: string }>,
+): DuplicateVerdict {
+  const priors = priorIntents.filter((i) => i.idempotencyKey === idempotencyKey);
+  if (priors.length === 0) return { allowed: true, reason: "NO_PRIOR_INTENT" };
+
+  // A filled prior is the strongest block: the position exists.
+  const filled = priors.find((i) => i.outcome?.kind === "CONTRACT");
+  if (filled) return { allowed: false, reason: "PRIOR_FILLED", priorIntentId: filled.intentId };
+
+  // Anything whose fate is unknown blocks: it MAY have reached the venue.
+  const unresolved = priors.find((i) => i.outcome === null
+    && (i.writeDisposition === "WRITTEN" || i.writeDisposition === "UNRECORDED"));
+  if (unresolved) {
+    return { allowed: false, reason: "PRIOR_UNRESOLVED", priorIntentId: unresolved.intentId };
+  }
+
+  // Every prior was either adjudicated as refused, or provably never sent.
+  const refused = priors.some((i) => i.outcome?.kind === "VENUE_REFUSED");
+  return {
+    allowed: true,
+    reason: refused ? "PRIOR_VENUE_REFUSED" : "PRIOR_PROVABLY_NOT_SENT",
+  };
+}
+
 /** Venue evidence gathered AFTER a restart, before classifying. */
 export interface DerivVenueEvidence {
   /** A COMPLETE portfolio read. Partial reads must not be passed here —
