@@ -101,6 +101,91 @@ price"*, and that — never the quote — is what reconciliation reads.
 - A value the venue did not state is reported as unstated, never defaulted.
 - An UNRESOLVED step keeps its machine-readable error code.
 
+## Surviving a process restart
+
+Everything above holds *within* a process. A crash between "order sent" and
+"outcome known" destroys the orphan ledger, the one-order latch (module state)
+and the transport's `req_id` sequence. Only what was written down beforehand
+survives.
+
+### The subtlety the whole design turns on
+
+**"No record that the frame was written" is NOT proof the order never left.**
+Recording the write is itself inside a crash window — the process can die after
+the socket write and before the record lands. Absence of a write record is
+`UNKNOWN`.
+
+Exactly two things prove no order exists:
+
+| Disposition | Meaning | Class |
+|---|---|---|
+| `NOT_ATTEMPTED` | recorded before any attempt | provable |
+| `REFUSED_PRE_TRANSMISSION` | transport reported `wireWritten === false` | provable |
+| `WRITTEN` | the frame reached the socket | order may exist |
+| `UNRECORDED` | we never recorded what became of it | **ignorance, not evidence** |
+
+### Deriv's evidence is weaker than MT5's
+
+MT5 positions carry `sourceCommandId` — the EA writes the originating command
+back, so a position can be **positively attributed**. Deriv contracts carry no
+client reference at all.
+
+So a contract on our symbol, opened in our window, is a candidate ARX can
+neither confirm nor rule out. The honest verdict is `AMBIGUOUS_POSITION_MATCH`,
+never `FILLED`. An **undated** candidate escalates to a human, because the
+classifier's ambiguity check needs a date and an undated candidate would
+otherwise slip through into a positive-absence verdict — resolving away a
+position that is genuinely open.
+
+Recovery **composes** with `classifyUnknownCommand` rather than duplicating it.
+Two classifiers would drift apart on exactly the judgements that matter most,
+and only one of them has years of CI behind it. The vocabulary is
+MT5-flavoured; the mapping is spelled out in the adapter so the translation is
+auditable rather than implied.
+
+## Protection
+
+Requested protection is now **read back from the venue**, not assumed.
+Previously ARX sent a stop-loss and never verified one was attached — false
+certainty about the one control that bounds a loss.
+
+| Verdict | Meaning |
+|---|---|
+| `CONFIRMED` | the venue attached the requested level |
+| `MISSING` | the venue reported protection and this level is **not in it** |
+| `ALTERED` | the venue attached a different level |
+| `UNSTATED` | the venue said nothing at all |
+
+`MISSING` and `UNSTATED` are deliberately distinct: one is the venue telling us
+a level is absent, the other is the venue telling us nothing. Levels compare in
+whole cents, and junk never becomes a level — a stop-loss read as `0` from an
+empty string would be a catastrophic misreading of "unstated".
+
+`stop_out` — the venue's own forced-close level for a multiplier — is now
+captured. It is a hard floor on the position that ARX previously knew nothing
+about.
+
+## Idempotency, and what it cannot mean here
+
+Deriv's `buy_request` has **no dedup key**. `passthrough` is echoed back, which
+buys correlation, not deduplication — the venue will execute two identical buys
+carrying the same passthrough.
+
+This is therefore **client-side discipline**, and the residual risk is real:
+two ARX processes without shared durable intent state can still double-order,
+and nothing in the venue will stop them.
+
+| Prior intent | Verdict |
+|---|---|
+| filled | **blocks** — the position exists |
+| unresolved (`WRITTEN` or `UNRECORDED`) | **blocks** — it may exist |
+| venue-refused | allows — refusal is adjudicated proof of non-creation |
+| provably not sent | allows |
+
+The key must come from the **decision** that produced the order, never from its
+parameters: two separate decisions can legitimately produce identical
+parameters, and keying on those would suppress a real second order.
+
 ## What still requires live venue evidence
 
 These cannot be settled offline, and none is a plan — each needs explicit
