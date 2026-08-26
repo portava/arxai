@@ -387,8 +387,37 @@ export async function runDemoTradeCertification(
         return report();
       }
       if (ordersPlacedThisProcess > 0) {
-        // The frame reached the wire and nothing adjudicated it. The order may
-        // have executed; only the venue can settle that.
+        // The frame reached the wire and nothing adjudicated it. Before
+        // declaring UNKNOWN, check whether the venue's answer arrived LATE.
+        // A reply carrying our own req_id is provably ours — reqId is
+        // per-instance and monotonic across reconnect, so ids are never
+        // reused — and venue evidence dominates local inference. Discarding
+        // it would turn a recoverable UNKNOWN into a position nobody can find.
+        const late = typeof (transport as { takeOrphanReplies?: unknown }).takeOrphanReplies === "function"
+          ? (transport as unknown as { takeOrphanReplies: () => Array<{ op: string; body: Record<string, unknown>; derivErrorCode: string | null }> }).takeOrphanReplies()
+          : [];
+        const lateBuy = late.find((o) => o.op === "buy");
+        if (lateBuy && lateBuy.derivErrorCode === null) {
+          const p = normalizePurchase(lateBuy.body);
+          if (!(p instanceof DerivNewApiError)) {
+            // Authoritative: the venue reported a contract id for OUR buy.
+            contractId = p.contractId;
+            positionLeftOpen = true;
+            steps.push(unresolved("buy",
+              `${detail} — but a LATE venue receipt for this request confirms contract `
+              + `${p.contractId} EXISTS; close it deliberately`,
+              code));
+            return report();
+          }
+        }
+        if (lateBuy && lateBuy.derivErrorCode !== null) {
+          // The venue refused, late. That is adjudication, so it is a clean
+          // no-trade even though ARX had already given up waiting.
+          steps.push(bad("buy",
+            `${detail} — a LATE venue reply REFUSED this order (${lateBuy.derivErrorCode}); `
+            + "no contract was created", code));
+          return report();
+        }
         steps.push(unresolved("buy",
           `${detail} — the buy frame WAS written to the socket; outcome UNKNOWN, reconcile manually`,
           code));

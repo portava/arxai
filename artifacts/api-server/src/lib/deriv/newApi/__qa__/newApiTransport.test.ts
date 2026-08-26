@@ -315,3 +315,116 @@ test("a validation failure names the offending FIELDS, never their values", asyn
       return true;
     });
 });
+
+// ── Late / orphan replies (audit priority 1) ───────────────────────────────
+//
+// A reply arriving after ARX gave up is still the venue's answer to a question
+// ARX asked. Discarding it turns a recoverable UNKNOWN into a position nobody
+// can find. Adopting one whose ownership cannot be proven would be invention.
+// req_id separates the two: it is per-instance and never reused.
+
+/** A socket whose replies the test releases by hand. */
+function manualSocket() {
+  const h: Record<string, (a?: unknown) => void> = {};
+  const frames: Array<Record<string, unknown>> = [];
+  const factory = (): DerivSocket => {
+    const s: DerivSocket = {
+      send: (d) => { frames.push(JSON.parse(d) as Record<string, unknown>); },
+      close: () => h["close"]?.(),
+      on: (e, cb) => { h[e] = cb; },
+    };
+    queueMicrotask(() => h["open"]?.());
+    return s;
+  };
+  return {
+    factory, frames,
+    deliver: (m: Record<string, unknown>) => h["message"]?.(JSON.stringify(m)),
+    error: () => h["error"]?.(new Error("post-open")),
+    lastReqId: () => frames[frames.length - 1]?.["req_id"] as number,
+  };
+}
+
+test("req_id is MONOTONIC across reconnect — a late reply is attributable", async () => {
+  // The whole orphan design rests on this. If ids reset, a reply could be
+  // attributed to the wrong request and resolving an UNKNOWN from one would
+  // be fabrication rather than evidence.
+  const m = manualSocket();
+  const t = new NewDerivTransport(CONFIG, m.factory, otpFetch());
+  await t.connect("ACC-D1");
+  const p1 = t.send({ ping: 1 }); m.deliver({ req_id: m.lastReqId(), ping: "pong" }); await p1;
+  const before = m.lastReqId();
+  await t.reconnect();
+  const p2 = t.send({ ping: 1 }); m.deliver({ req_id: m.lastReqId(), ping: "pong" }); await p2;
+  assert.ok(m.lastReqId() > before, `req_id went ${before} -> ${m.lastReqId()}; ids could collide`);
+});
+
+test("a LATE reply for a timed-out request is RETAINED, not discarded", async () => {
+  const m = manualSocket();
+  const t = new NewDerivTransport(CONFIG, m.factory, otpFetch());
+  await t.connect("ACC-D1");
+  const inflight = t.send({ buy: "q", price: 1 }).catch((e: DerivNewApiError) => e.code);
+  const id = m.lastReqId();
+  // Force the give-up path the same way a timeout does.
+  t.close();
+  assert.equal(await inflight, "DERIV_NEW_API_WS_CONNECT_FAILED");
+
+  // The venue answers afterwards, carrying a real receipt.
+  m.deliver({ req_id: id, buy: { contract_id: 4242, buy_price: 1 } });
+  const orphans = t.takeOrphanReplies();
+  assert.equal(orphans.length, 1, "authoritative late evidence was dropped");
+  assert.equal(orphans[0]!.op, "buy", "the op must come from what ARX ISSUED, not the reply");
+  assert.equal((orphans[0]!.body["buy"] as { contract_id: number }).contract_id, 4242);
+});
+
+test("a reply for a req_id ARX NEVER issued is discarded, never adopted", async () => {
+  // Adopting it would mean inventing an outcome from a message whose
+  // ownership cannot be established.
+  const m = manualSocket();
+  const t = new NewDerivTransport(CONFIG, m.factory, otpFetch());
+  await t.connect("ACC-D1");
+  m.deliver({ req_id: 999999, buy: { contract_id: 1, buy_price: 1 } });
+  assert.deepEqual(t.takeOrphanReplies(), [], "adopted a reply ARX never asked for");
+});
+
+test("draining orphans is one-shot — the same evidence cannot resolve twice", async () => {
+  const m = manualSocket();
+  const t = new NewDerivTransport(CONFIG, m.factory, otpFetch());
+  await t.connect("ACC-D1");
+  const inflight = t.send({ sell: 555, price: 0 }).catch(() => "gone");
+  const id = m.lastReqId();
+  t.close();
+  await inflight;
+  m.deliver({ req_id: id, sell: { contract_id: 555, sold_for: 1.2 } });
+  assert.equal(t.takeOrphanReplies().length, 1);
+  assert.equal(t.takeOrphanReplies().length, 0, "the same late reply was served twice");
+});
+
+// ── Termination (audit priority 2) ─────────────────────────────────────────
+
+test("a POST-OPEN socket error stops the transport claiming WS_READY", async () => {
+  // Measured before the fix: the state stayed WS_READY over a broken socket,
+  // so canSendTradingRequest() returned true and a BUY could be dispatched
+  // into it. Claiming a readiness ARX cannot substantiate is the
+  // connection-level form of being falsely certain.
+  const m = manualSocket();
+  const t = new NewDerivTransport(CONFIG, m.factory, otpFetch());
+  await t.connect("ACC-D1");
+  assert.equal(t.getState(), "WS_READY");
+  m.error();
+  assert.notEqual(t.getState(), "WS_READY", "still claims readiness over a broken socket");
+  assert.equal(canSendTradingRequest(t.getState()), false, "would still dispatch an order");
+});
+
+test("a post-open error REJECTS in-flight requests instead of leaving them pending", async () => {
+  const m = manualSocket();
+  const t = new NewDerivTransport(CONFIG, m.factory, otpFetch());
+  await t.connect("ACC-D1");
+  let settledWith: string | null = null;
+  const inflight = t.send({ buy: "q", price: 1 })
+    .then(() => { settledWith = "resolved"; })
+    .catch((e: DerivNewApiError) => { settledWith = e.code; });
+  m.error();
+  await inflight;
+  // Before the fix this sat pending for the full 20s request timeout.
+  assert.equal(settledWith, "DERIV_NEW_API_WS_CONNECT_FAILED");
+});

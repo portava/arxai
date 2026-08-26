@@ -39,6 +39,8 @@ export interface InjectionLog {
   payloads: Record<string, unknown>[];
   reconnects: number;
   closed: boolean;
+  /** Orphan replies the test wants the transport to surface afterwards. */
+  orphans: Array<{ reqId: number; op: string; body: Record<string, unknown>; derivErrorCode: string | null }>;
 }
 
 import { DerivNewApiError } from "../errors.js";
@@ -72,6 +74,9 @@ export function injectedTransport(plan: InjectionPlan, log: InjectionLog) {
     getState: () => state,
     getAccountId: () => "VRTC9001",
     close: () => { log.closed = true; },
+    // Mirrors the real transport: drains the retained late replies so a
+    // caller cannot resolve two requests from the same evidence.
+    takeOrphanReplies: () => log.orphans.splice(0, log.orphans.length),
     send: async (payload: Record<string, unknown>): Promise<Record<string, unknown>> => {
       const op = Object.keys(payload).find((k) => k !== "req_id" && k !== "subscribe") ?? "unknown";
       log.sent.push(op);
@@ -107,7 +112,7 @@ export function injectedTransport(plan: InjectionPlan, log: InjectionLog) {
 }
 
 export const newLog = (): InjectionLog =>
-  ({ sent: [], payloads: [], reconnects: 0, closed: false });
+  ({ sent: [], payloads: [], reconnects: 0, closed: false, orphans: [] });
 
 // ── Venue-shaped building blocks ───────────────────────────────────────────
 //

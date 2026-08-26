@@ -299,3 +299,65 @@ test("I1: is_expired alone, with is_sold absent, still does not settle", async (
   assert.equal(report.positionLeftOpen, true);
   assert.equal(report.certified, false);
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+// Late venue evidence resolving an UNKNOWN (audit priority 1)
+// ════════════════════════════════════════════════════════════════════════════
+
+test("a LATE buy receipt rescues an UNKNOWN into a known contract id", async () => {
+  // ARX gave up waiting; the venue answered afterwards. Venue evidence
+  // dominates local inference, so the position becomes findable instead of
+  // staying an UNKNOWN nobody can act on.
+  const log = newLog();
+  log.orphans.push({
+    reqId: 2, op: "buy",
+    body: { buy: { contract_id: 4242, buy_price: 1 } },
+    derivErrorCode: null,
+  });
+  const report = await runDemoTradeCertification(CONFIG, {
+    ...AUTH, observeMs: 0, sleep: async () => {},
+    fetchImpl: fetchDemo,
+    transportFactory: injectedTransport({ ...HAPPY, buy: { kind: "close-without-reply" } }, log),
+  });
+  assert.equal(report.contractId, 4242, "authoritative late evidence was ignored");
+  assert.equal(report.positionLeftOpen, true, "a confirmed position must still be flagged");
+  assert.equal(step(report, "buy")!.status, "UNRESOLVED");
+  assert.match(step(report, "buy")!.detail, /LATE venue receipt/);
+});
+
+test("a LATE venue REFUSAL turns an UNKNOWN into a clean no-trade", async () => {
+  // Adjudication is adjudication whenever it arrives. Holding the alarm open
+  // after the venue has said no is conservative in the wrong direction — it
+  // sends an operator hunting for a contract that was never created.
+  const log = newLog();
+  log.orphans.push({
+    reqId: 2, op: "buy", body: { error: { code: "InsufficientBalance" } },
+    derivErrorCode: "InsufficientBalance",
+  });
+  const report = await runDemoTradeCertification(CONFIG, {
+    ...AUTH, observeMs: 0, sleep: async () => {},
+    fetchImpl: fetchDemo,
+    transportFactory: injectedTransport({ ...HAPPY, buy: { kind: "close-without-reply" } }, log),
+  });
+  assert.equal(step(report, "buy")!.status, "FAIL");
+  assert.equal(report.positionLeftOpen, false);
+  assert.equal(report.contractId, null);
+  assert.match(step(report, "buy")!.detail, /LATE venue reply REFUSED/);
+});
+
+test("a late reply for a DIFFERENT operation never resolves the buy", async () => {
+  // Ownership is proven by the op ARX issued under that id, not by whatever
+  // the reply happens to contain.
+  const log = newLog();
+  log.orphans.push({
+    reqId: 2, op: "ping", body: { buy: { contract_id: 9999, buy_price: 1 } },
+    derivErrorCode: null,
+  });
+  const report = await runDemoTradeCertification(CONFIG, {
+    ...AUTH, observeMs: 0, sleep: async () => {},
+    fetchImpl: fetchDemo,
+    transportFactory: injectedTransport({ ...HAPPY, buy: { kind: "close-without-reply" } }, log),
+  });
+  assert.equal(report.contractId, null, "adopted a receipt from an unrelated request");
+  assert.equal(step(report, "buy")!.status, "UNRESOLVED");
+});

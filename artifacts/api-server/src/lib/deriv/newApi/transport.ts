@@ -29,6 +29,10 @@ export const DERIV_WS_REQUEST_TIMEOUT_MS = 20_000;
  *  a condition to surface, not to hammer. */
 export const DERIV_OTP_MAX_ATTEMPTS = 3;
 
+/** How many issued req_ids stay attributable. Bounds memory on a long-lived
+ *  transport while comfortably covering any in-flight window. */
+export const DERIV_ISSUED_OP_HISTORY = 256;
+
 export type DerivTransportState =
   | "DISCONNECTED"
   | "REST_AUTHENTICATING"
@@ -63,6 +67,23 @@ const defaultSocketFactory: DerivSocketFactory = (url) => {
   };
 };
 
+/**
+ * A venue reply that arrived for a request ARX had already given up on.
+ *
+ * It is AUTHORITATIVE: it carries our own req_id, which is never reused. A
+ * late buy receipt is evidence a position EXISTS, and discarding it turns a
+ * recoverable UNKNOWN into a position nobody can find.
+ */
+export interface OrphanReply {
+  reqId: number;
+  /** The operation ARX issued under this id — not one read off the reply. */
+  op: string;
+  /** The reply body, unmodified. */
+  body: Record<string, unknown>;
+  /** Present when the reply is a venue error rather than a receipt. */
+  derivErrorCode: string | null;
+}
+
 interface Pending {
   /** Which operation this request asked for. */
   op?: string;
@@ -84,6 +105,18 @@ export class NewDerivTransport {
   private accountId: string | null = null;
   private reqId = 0;
   private readonly pending = new Map<number, Pending>();
+  /**
+   * req_id -> operation, retained AFTER the request settles.
+   *
+   * This is what makes a late reply attributable. reqId is per-instance and
+   * MONOTONIC ACROSS RECONNECT (verified by experiment: 2 -> 3 over a
+   * reconnect, no reset), so an id is never reused within a transport and a
+   * reply bearing one we issued is provably ours. Without this map a late
+   * reply cannot be told apart from a reply for an id we never issued, and
+   * the second must never be adopted.
+   */
+  private readonly issuedOps = new Map<number, string>();
+  private readonly orphans: OrphanReply[] = [];
   private lastError: DerivNewApiError | null = null;
 
   constructor(
@@ -211,10 +244,21 @@ export class NewDerivTransport {
       });
       sock.on("message", (raw) => this.onMessage(raw));
       sock.on("error", () => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        reject(new DerivNewApiError("DERIV_NEW_API_WS_CONNECT_FAILED"));
+        if (!settled) {
+          // Pre-open: the dial itself failed.
+          settled = true;
+          clearTimeout(timer);
+          reject(new DerivNewApiError("DERIV_NEW_API_WS_CONNECT_FAILED"));
+          return;
+        }
+        // POST-OPEN. This used to return immediately, leaving the transport
+        // reporting WS_READY over a broken socket — so canSendTradingRequest()
+        // stayed true and a BUY could be dispatched into it. Measured: a
+        // request issued after a post-open error sat pending with the state
+        // still WS_READY. Claiming readiness ARX cannot substantiate is the
+        // connection-level form of being falsely certain.
+        logger.warn({}, "deriv_new_transport_post_open_socket_error");
+        this.onClose();
       });
       sock.on("close", () => this.onClose());
     });
@@ -231,7 +275,13 @@ export class NewDerivTransport {
     const id = msg["req_id"];
     if (typeof id !== "number") return;
     const p = this.pending.get(id);
-    if (!p) return;
+    if (!p) {
+      // The request is no longer pending — it timed out, or the socket closed
+      // and rejected it. The reply is still the venue's answer to a question
+      // ARX asked, and it used to be dropped here with no log and no ledger.
+      this.retainOrphan(id, msg);
+      return;
+    }
     clearTimeout(p.timer);
     this.pending.delete(id);
     const err = msg["error"] as { code?: unknown; details?: unknown } | undefined;
@@ -255,6 +305,40 @@ export class NewDerivTransport {
       return;
     }
     p.resolve(msg);
+  }
+
+  /**
+   * Keep a late reply IF it is provably ours.
+   *
+   * An id ARX never issued is discarded and logged, never adopted: adopting it
+   * would mean inventing an outcome from a message whose ownership cannot be
+   * established, which is exactly the fabrication these invariants forbid.
+   */
+  private retainOrphan(id: number, msg: Record<string, unknown>): void {
+    const op = this.issuedOps.get(id);
+    if (op === undefined) {
+      logger.warn({ reqId: id }, "deriv_new_transport_reply_for_unissued_req_id");
+      return;
+    }
+    const err = msg["error"] as { code?: unknown } | undefined;
+    const derivErrorCode = (err && typeof err === "object" && typeof err.code === "string")
+      ? err.code : null;
+    this.orphans.push({ reqId: id, op, body: msg, derivErrorCode });
+    logger.warn(
+      { reqId: id, op, derivErrorCode, orphanCount: this.orphans.length },
+      "deriv_new_transport_late_reply_retained",
+    );
+  }
+
+  /**
+   * Late replies retained since the last call, oldest first.
+   *
+   * Draining is deliberate: a caller that resolves an UNKNOWN from one of
+   * these has consumed the evidence, and leaving it queued would let a second
+   * caller resolve a different request from the same reply.
+   */
+  takeOrphanReplies(): OrphanReply[] {
+    return this.orphans.splice(0, this.orphans.length);
   }
 
   /** Terminal disconnect: every in-flight request is rejected, never left to
@@ -300,6 +384,13 @@ export class NewDerivTransport {
       // what was ASKED, not lumped under trading.
       const op = Object.keys(payload).find((k) => k !== "req_id" && k !== "subscribe") ?? "unknown";
       this.pending.set(id, { resolve, reject, timer, op });
+      // Retained beyond the request's lifetime so a late reply can be
+      // attributed. Bounded so a long-lived transport cannot grow unbounded.
+      this.issuedOps.set(id, op);
+      if (this.issuedOps.size > DERIV_ISSUED_OP_HISTORY) {
+        const oldest = this.issuedOps.keys().next().value;
+        if (oldest !== undefined) this.issuedOps.delete(oldest);
+      }
       try {
         sock.send(JSON.stringify({ ...payload, req_id: id }));
       } catch {
