@@ -349,6 +349,8 @@ export class NewDerivTransport {
       clearTimeout(p.timer);
       p.reject(new DerivNewApiError("DERIV_NEW_API_WS_CONNECT_FAILED", {
         detail: "socket closed with the request in flight",
+        // In flight means it was written.
+        wireWritten: true,
       }));
     }
     this.pending.clear();
@@ -365,11 +367,15 @@ export class NewDerivTransport {
     if (!canSendTradingRequest(this.state)) {
       throw new DerivNewApiError("DERIV_NEW_API_WS_CONNECT_FAILED", {
         detail: `transport is ${this.state}, not WS_READY`,
+        // Nothing was written. Provable non-transmission.
+        wireWritten: false,
       });
     }
     const sock = this.socket;
     if (!sock) {
-      throw new DerivNewApiError("DERIV_NEW_API_WS_CONNECT_FAILED", { detail: "no socket" });
+      throw new DerivNewApiError("DERIV_NEW_API_WS_CONNECT_FAILED", {
+        detail: "no socket", wireWritten: false,
+      });
     }
     this.reqId += 1;
     const id = this.reqId;
@@ -378,6 +384,8 @@ export class NewDerivTransport {
         this.pending.delete(id);
         reject(new DerivNewApiError("DERIV_NEW_API_REQUEST_TIMEOUT", {
           detail: `no reply within ${DERIV_WS_REQUEST_TIMEOUT_MS}ms`,
+          // The frame WAS written; silence is not evidence of non-execution.
+          wireWritten: true,
         }));
       }, DERIV_WS_REQUEST_TIMEOUT_MS);
       // The operation name is retained so a rejection can be classified by
@@ -396,7 +404,10 @@ export class NewDerivTransport {
       } catch {
         clearTimeout(timer);
         this.pending.delete(id);
-        reject(new DerivNewApiError("DERIV_NEW_API_WS_CONNECT_FAILED", { detail: "send failed" }));
+        // sock.send() threw: the write did not complete.
+        reject(new DerivNewApiError("DERIV_NEW_API_WS_CONNECT_FAILED", {
+          detail: "send failed", wireWritten: false,
+        }));
       }
     });
   }

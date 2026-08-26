@@ -83,6 +83,20 @@ export class DerivNewApiError extends Error {
    *  message. certify reported the code and dropped this, so "OTP response
    *  contained no WebSocket URL" surfaced as a bare PROTOCOL_ERROR. */
   readonly detail: string | null;
+  /**
+   * Did the request's bytes reach the socket?
+   *
+   *   false  provably NOT transmitted — the only fault class that may claim a
+   *          clean no-trade, because non-transmission is provable
+   *   true   written to the socket; the venue may have acted on it
+   *   null   unknown — treated as `true` for safety
+   *
+   * The harness's order counter cannot answer this: it records INTENT before
+   * the write, so a request refused pre-transmission still incremented it. A
+   * buy that never left ARX was consequently reported as "the buy frame WAS
+   * written to the socket", which is simply false.
+   */
+  readonly wireWritten: boolean | null;
 
   constructor(
     code: DerivNewApiErrorCode,
@@ -91,6 +105,7 @@ export class DerivNewApiError extends Error {
       authChallenge?: string | null; bodyShape?: string | null;
       bodySnippet?: string | null;
       elapsedMs?: number | null; causeCode?: string | null;
+      wireWritten?: boolean | null;
     } = {},
   ) {
     // The message is the CLASSIFICATION, never the credential or the venue's
@@ -106,6 +121,7 @@ export class DerivNewApiError extends Error {
     this.elapsedMs = opts.elapsedMs ?? null;
     this.causeCode = opts.causeCode ?? null;
     this.detail = opts.detail ?? null;
+    this.wireWritten = opts.wireWritten ?? null;
   }
 }
 

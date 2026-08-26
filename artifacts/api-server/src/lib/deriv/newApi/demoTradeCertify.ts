@@ -205,6 +205,14 @@ const unresolved = (step: string, detail: string, code?: DerivNewApiErrorCode | 
   // only prose.
   ({ step, status: "UNRESOLVED", detail, errorCode: code ?? null });
 
+/** Drain the transport's retained late replies, if it supports them. */
+function drainOrphans(t: unknown): Array<{ op: string; body: Record<string, unknown>; derivErrorCode: string | null }> {
+  const fn = (t as { takeOrphanReplies?: unknown })?.takeOrphanReplies;
+  return typeof fn === "function"
+    ? (fn as () => Array<{ op: string; body: Record<string, unknown>; derivErrorCode: string | null }>).call(t)
+    : [];
+}
+
 function describe(e: unknown): { detail: string; code: DerivNewApiErrorCode | null } {
   if (e instanceof DerivNewApiError) {
     return {
@@ -386,16 +394,21 @@ export async function runDemoTradeCertification(
         steps.push(bad("buy", `${detail} — venue REFUSED the order; no contract was created`, code));
         return report();
       }
-      if (ordersPlacedThisProcess > 0) {
+      // Provable non-transmission is the ONLY fault class that may claim a
+      // clean no-trade. The order counter cannot establish it — it records
+      // INTENT before the write, so it is >=1 even for a request the transport
+      // refused before touching the socket. Deciding on it produced the
+      // self-contradicting "transport is DISCONNECTED ... the buy frame WAS
+      // written to the socket".
+      const notTransmitted = e instanceof DerivNewApiError && e.wireWritten === false;
+      if (!notTransmitted) {
         // The frame reached the wire and nothing adjudicated it. Before
         // declaring UNKNOWN, check whether the venue's answer arrived LATE.
         // A reply carrying our own req_id is provably ours — reqId is
         // per-instance and monotonic across reconnect, so ids are never
         // reused — and venue evidence dominates local inference. Discarding
         // it would turn a recoverable UNKNOWN into a position nobody can find.
-        const late = typeof (transport as { takeOrphanReplies?: unknown }).takeOrphanReplies === "function"
-          ? (transport as unknown as { takeOrphanReplies: () => Array<{ op: string; body: Record<string, unknown>; derivErrorCode: string | null }> }).takeOrphanReplies()
-          : [];
+        const late = drainOrphans(transport);
         const lateBuy = late.find((o) => o.op === "buy");
         if (lateBuy && lateBuy.derivErrorCode === null) {
           const p = normalizePurchase(lateBuy.body);
@@ -423,9 +436,9 @@ export async function runDemoTradeCertification(
           code));
         positionLeftOpen = true;
       } else {
-        // Refused before a byte left ARX. Non-transmission is provable, so
-        // this is the one fault class that may claim a clean no-trade.
-        steps.push(bad("buy", `${detail} — refused before the order reached the socket`, code));
+        // The transport proved the bytes never left. No order exists.
+        steps.push(bad("buy",
+          `${detail} — the buy frame was NEVER written to the socket; no order was placed`, code));
       }
       return report();
     }
@@ -540,9 +553,28 @@ export async function runDemoTradeCertification(
       // Returning open on that reply reports a closed position as open, which
       // is a false claim even though it errs toward caution.
       sellFailed = true;
-      steps.push(unresolved("sell",
-        `${detail} — the sell did not complete; asking the venue for the contract's actual state`,
-        code));
+      // A late sell receipt is venue evidence too. The orphan drain was only
+      // wired on the buy path, so a receipt arriving milliseconds after the
+      // sell timed out was discarded while ARX went on to describe the
+      // position's fate without it.
+      const lateSell = drainOrphans(transport).find((o) => o.op === "sell");
+      if (lateSell && lateSell.derivErrorCode === null) {
+        const late = normalizeSale(lateSell.body);
+        if (!(late instanceof DerivNewApiError)
+          && (late.contractId === null || late.contractId === contractId)) {
+          proceeds = late.proceeds;
+          sellReceiptSeen = true;
+          steps.push(unresolved("sell",
+            `${detail} — but a LATE venue receipt reports the sale`
+            + `${late.proceeds !== null ? ` for ${late.proceeds}` : ""}; confirming against the venue`,
+            code));
+        }
+      }
+      if (!sellReceiptSeen) {
+        steps.push(unresolved("sell",
+          `${detail} — the sell did not complete; asking the venue for the contract's actual state`,
+          code));
+      }
     }
 
     // 8 — confirm closure from the venue, not from the sell reply.

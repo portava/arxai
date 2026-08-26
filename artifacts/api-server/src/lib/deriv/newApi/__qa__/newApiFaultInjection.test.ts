@@ -15,6 +15,7 @@ import {
   DEMO_TRADE_AUTHORIZATION,
 } from "../demoTradeCertify.js";
 import { injectedTransport, newLog, HAPPY, V, type InjectionPlan } from "./faultInjection.js";
+import { DerivNewApiError } from "../errors.js";
 
 const CONFIG = { appId: "arx-test-app", token: "fixture-not-a-real-token" };
 const AUTH = { authorization: DEMO_TRADE_AUTHORIZATION };
@@ -472,4 +473,149 @@ test("SILENCE and NOT_SOLD are reported differently — they are different facts
   // told which situation they are in.
   assert.equal(absent.report.positionLeftOpen, true);
   assert.equal(notSold.report.positionLeftOpen, true);
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// Partial fill: NOT REPRESENTABLE for a Deriv multiplier (audit priority 4)
+// ════════════════════════════════════════════════════════════════════════════
+//
+// Settled from the published schemas, not from MT5 intuition:
+//
+//   buy_request.schema.json   required: ["buy","price"]. No quantity, size or
+//                             lots field. `price` is documented as "Maximum
+//                             price at which to purchase the contract" — a
+//                             CEILING, which is why ARX's ceiling semantics
+//                             are venue-enforced rather than aspirational.
+//
+//   buy_response.schema.json  the `buy` object requires all nine of
+//                             [balance_after, buy_price, contract_id,
+//                             longcode, payout, purchase_time, shortcode,
+//                             start_time, transaction_id]. There is NO field
+//                             for filled quantity or partial execution.
+//
+// A multiplier position is defined by stake and multiplier, not by lots. The
+// buy is therefore ATOMIC: a contract is created or it is not.
+//
+// Modelling PARTIALLY_FILLED here would invent a state the venue cannot
+// express — which is its own form of false certainty, just pointed at a
+// phantom instead of a fact. liveCommandPipeline models it for MT5 because
+// MT5 CAN partially fill; importing that blindly is what these tests forbid.
+
+test("partial fill: the buy is ATOMIC — contract_id present, or it is not a purchase", async () => {
+  // There is no third outcome to model, so the code must have exactly two.
+  const filled = await run({ buy: V.buy({ contract_id: 555 }) });
+  assert.equal(filled.report.contractId, 555);
+
+  const notFilled = await run({ buy: V.buy({ contract_id: undefined }) });
+  assert.equal(notFilled.report.contractId, null);
+  assert.equal(step(notFilled.report, "buy")!.status, "UNRESOLVED");
+});
+
+test("partial fill: no PARTIALLY_FILLED concept leaks into the Deriv path", async () => {
+  const { readFileSync, readdirSync } = await import("node:fs");
+  const dir = new URL("../", import.meta.url);
+  for (const f of readdirSync(dir).filter((x) => x.endsWith(".ts"))) {
+    const code = readFileSync(new URL(f, dir), "utf8")
+      // Comments EXPLAIN why the concept is absent; matching prose would be a
+      // false failure, the mirror of the comment-trap that produced false
+      // passes earlier in this workstream.
+      .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    assert.ok(!/PARTIALLY_FILLED|partialFill|isPartialFill/.test(code),
+      `${f} models partial fill, which Deriv's multiplier buy cannot express`);
+  }
+});
+
+test("requote: `price` is a venue-enforced CEILING, and the EXECUTED price is read back", async () => {
+  // buy_request documents price as the MAXIMUM. So ARX does not need to
+  // police the fill price itself — but it must report what the venue actually
+  // charged, which is buy_response.buy_price ("Actual effected purchase
+  // price"), never the quote it hoped for.
+  const { report, log } = await run({
+    proposal: V.proposal({ ask_price: 0.9 }),
+    buy: V.buy({ buy_price: 0.87 }),
+    sell: V.sell({ sold_for: 1.12 }),
+    proposal_open_contract: V.settled({ profit: 0.25 }),
+  });
+  const buyPayload = log.payloads.find((p) => "buy" in p)!;
+  assert.equal(buyPayload["price"], 0.9, "the ceiling must be the venue's own ask");
+  assert.equal(report.reconciliation!.buyPrice, 0.87, "must report what the venue charged");
+  assert.equal(report.reconciliation!.agrees, true);
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// Transmission evidence (F20) and late sell receipts (F11)
+// ════════════════════════════════════════════════════════════════════════════
+
+test("a buy that NEVER reached the socket is not described as written", async () => {
+  // The measured defect: frames actually sent were ["proposal"] only, yet the
+  // report read "transport is DISCONNECTED ... the buy frame WAS written to
+  // the socket" — self-contradicting inside one sentence, and false.
+  const { report, log } = await run({
+    buy: { kind: "throw", error: new DerivNewApiError("DERIV_NEW_API_WS_CONNECT_FAILED", {
+      detail: "transport is DISCONNECTED, not WS_READY", wireWritten: false,
+    }) },
+  });
+  const buy = step(report, "buy")!;
+  assert.equal(buy.status, "FAIL", "provable non-transmission is a clean no-trade");
+  assert.equal(report.positionLeftOpen, false, "warned about an order that never left");
+  assert.match(buy.detail, /NEVER written/);
+  assert.ok(!/WAS written/.test(buy.detail), "claimed a write that did not happen");
+  assert.ok(!log.sent.includes("sell"));
+});
+
+test("a buy lost IN FLIGHT is still UNKNOWN — absence of proof is not proof", async () => {
+  // The mirror. wireWritten true (or unknown) must never become a no-trade.
+  for (const wireWritten of [true, null]) {
+    const { report } = await run({
+      buy: { kind: "throw", error: new DerivNewApiError("DERIV_NEW_API_REQUEST_TIMEOUT", {
+        detail: "no reply", wireWritten,
+      }) },
+    });
+    assert.equal(step(report, "buy")!.status, "UNRESOLVED", `wireWritten=${wireWritten}`);
+    assert.equal(report.positionLeftOpen, true);
+  }
+});
+
+test("a LATE sell receipt is consulted before describing the position's fate", async () => {
+  // The orphan drain was wired on the buy path only, so a receipt arriving
+  // just after the sell timed out was discarded while ARX went on to describe
+  // the outcome without it.
+  const log = newLog();
+  log.orphans.push({
+    reqId: 5, op: "sell",
+    body: { sell: { contract_id: 555, sold_for: 1.31 } },
+    derivErrorCode: null,
+  });
+  const report = await runDemoTradeCertification(CONFIG, {
+    ...AUTH, observeMs: 0, sleep: async () => {},
+    fetchImpl: fetchDemo,
+    transportFactory: injectedTransport({
+      ...HAPPY,
+      sell: { kind: "throw", error: new DerivNewApiError("DERIV_NEW_API_REQUEST_TIMEOUT", { detail: "no reply" }) },
+      proposal_open_contract: V.settled({ profit: 0.31 }),
+    }, log),
+  });
+  assert.match(step(report, "sell")!.detail, /LATE venue receipt reports the sale/);
+  assert.equal(report.reconciliation!.sellProceeds, 1.31, "late proceeds were discarded");
+  assert.equal(report.positionLeftOpen, false, "the venue confirmed settlement");
+});
+
+test("a late sell receipt for a DIFFERENT contract is not adopted", async () => {
+  const log = newLog();
+  log.orphans.push({
+    reqId: 5, op: "sell",
+    body: { sell: { contract_id: 888, sold_for: 9.99 } },
+    derivErrorCode: null,
+  });
+  const report = await runDemoTradeCertification(CONFIG, {
+    ...AUTH, observeMs: 0, sleep: async () => {},
+    fetchImpl: fetchDemo,
+    transportFactory: injectedTransport({
+      ...HAPPY,
+      sell: { kind: "throw", error: new DerivNewApiError("DERIV_NEW_API_REQUEST_TIMEOUT", { detail: "no reply" }) },
+      proposal_open_contract: V.open({ is_sold: 0, status: "open" }),
+    }, log),
+  });
+  assert.notEqual(report.reconciliation?.sellProceeds, 9.99);
+  assert.equal(report.positionLeftOpen, true);
 });

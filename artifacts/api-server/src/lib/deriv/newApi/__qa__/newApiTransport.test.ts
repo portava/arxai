@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   NewDerivTransport, canSendTradingRequest, DERIV_PUBLIC_WS_URL,
-  type DerivSocket,
+  DERIV_WS_REQUEST_TIMEOUT_MS, type DerivSocket,
 } from "../transport.js";
 import { DerivNewApiError } from "../errors.js";
 
@@ -427,4 +427,51 @@ test("a post-open error REJECTS in-flight requests instead of leaving them pendi
   await inflight;
   // Before the fix this sat pending for the full 20s request timeout.
   assert.equal(settledWith, "DERIV_NEW_API_WS_CONNECT_FAILED");
+});
+
+test("a pre-transmission refusal is marked NOT WRITTEN; an in-flight loss is WRITTEN", async () => {
+  // The distinction the harness needs to tell a provable no-trade from an
+  // unknowable one. Its own order counter cannot supply it: the counter
+  // records INTENT before the write, so it is >=1 either way.
+  const m = manualSocket();
+  const t = new NewDerivTransport(CONFIG, m.factory, otpFetch());
+  await t.connect("ACC-D1");
+
+  // In flight, then the socket dies: the bytes WERE written.
+  const inflight = t.send({ buy: "q", price: 1 }).catch((e: DerivNewApiError) => e);
+  t.close();
+  const written = await inflight as DerivNewApiError;
+  assert.equal(written.wireWritten, true);
+
+  // Now the transport is closed: a further send is refused before any write.
+  const refused = await t.send({ buy: "q", price: 1 }).catch((e: DerivNewApiError) => e) as DerivNewApiError;
+  assert.equal(refused.wireWritten, false, "a pre-transmission refusal claimed the frame was written");
+});
+
+test("a TIMED-OUT request is marked WRITTEN — silence is not evidence of non-execution", async (t) => {
+  // Must exercise the TIMEOUT path specifically. An earlier version of this
+  // test used close(), which takes the onClose path — so the timeout branch
+  // was never touched and a mutation flipping it stayed green.
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const m = manualSocket();
+    const tr = new NewDerivTransport(CONFIG, m.factory, otpFetch());
+    const connecting = tr.connect("ACC-D1");
+    await Promise.resolve();                 // let the OTP fetch settle
+    t.mock.timers.tick(1);
+    await connecting;
+
+    const before = m.frames.length;
+    const p = tr.send({ buy: "q", price: 1 }).catch((e: DerivNewApiError) => e);
+    assert.equal(m.frames.length, before + 1, "precondition: the frame reached the socket");
+
+    t.mock.timers.tick(DERIV_WS_REQUEST_TIMEOUT_MS + 10);
+    const e = await p as DerivNewApiError;
+    assert.equal(e.code, "DERIV_NEW_API_REQUEST_TIMEOUT");
+    // The frame WAS written. Marking it not-written would let the harness
+    // report a clean no-trade for an order the venue may have executed.
+    assert.equal(e.wireWritten, true, "a written frame was marked not-written");
+  } finally {
+    t.mock.timers.reset();
+  }
 });
