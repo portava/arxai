@@ -11,6 +11,7 @@ import {
   mapProposalRequest, mapBuyRequest, mapSellRequest, mapContractsForRequest,
   mapOpenContractRequest, normalizeProposal, normalizePurchase,
   normalizeOpenContract, normalizePortfolio, normalizeBalance, numeric,
+  normalizeProtection, verifyProtection,
   LEGACY_ONLY_FIELDS,
 } from "../wire.js";
 import { DerivNewApiError } from "../errors.js";
@@ -195,4 +196,104 @@ test("tolerance does NOT extend to junk — absent stays null, never 0", () => {
 test("a string profit does not become a silently-missing profit", () => {
   const c = normalizeOpenContract({ proposal_open_contract: { contract_id: 5, profit: "-2.25" } });
   assert.equal((c as { profit: number | null }).profit, -2.25);
+});
+
+// ── Protection read-back (Phase 5: "protection") ───────────────────────────
+//
+// ARX previously SENT stop-loss/take-profit and never read them back. A level
+// the venue silently dropped or altered would have left ARX certain of a
+// safety mechanism it did not have — false certainty about the one control
+// that bounds a loss.
+
+test("protection is read from the venue's DISPLAY field, not the deprecated one", () => {
+  // Deriv's schema marks order_amount deprecated in favour of the STRING
+  // display_order_amount, so the string wins and the number is a fallback.
+  const p = normalizeProtection({
+    stop_loss: { display_order_amount: "5.50", order_amount: 9.99, order_date: 1 },
+    take_profit: { order_amount: 12.25, order_date: 1 },
+  });
+  assert.equal(p.stopLoss, 5.5, "preferred the deprecated field");
+  assert.equal(p.takeProfit, 12.25, "did not fall back to order_amount");
+  assert.equal(p.reportedByVenue, true);
+});
+
+test("the venue's OWN stop_out is captured — a floor ARX did not know existed", () => {
+  const p = normalizeProtection({ stop_out: { display_order_amount: "-1.00", order_date: 1 } });
+  assert.equal(p.stopOut, -1);
+});
+
+test("SILENCE about protection is UNKNOWN, never 'no protection'", () => {
+  const silent = normalizeProtection(undefined);
+  assert.equal(silent.reportedByVenue, false);
+  assert.equal(silent.stopLoss, null);
+  // The distinction that matters: the venue reporting a limit_order WITHOUT a
+  // stop_loss is a statement; sending no limit_order at all is not.
+  const stated = normalizeProtection({ take_profit: { display_order_amount: "2", order_date: 1 } });
+  assert.equal(stated.reportedByVenue, true);
+  assert.equal(stated.stopLoss, null);
+});
+
+test("a protection level of ZERO is never invented from junk", () => {
+  // A stop-loss read as 0 would be a catastrophic misreading of "unstated".
+  for (const junk of ["", "  ", "abc", null, {}]) {
+    const p = normalizeProtection({ stop_loss: { display_order_amount: junk, order_date: 1 } });
+    assert.equal(p.stopLoss, null, `accepted junk ${JSON.stringify(junk)}`);
+  }
+});
+
+test("verifyProtection: a DROPPED stop-loss is reported MISSING", () => {
+  // The case that matters most. ARX asked for protection, the venue reported
+  // its protection block, and the level is not in it.
+  const v = verifyProtection({ stopLoss: 5 },
+    normalizeProtection({ take_profit: { display_order_amount: "10", order_date: 1 } }));
+  assert.equal(v.length, 1);
+  assert.equal(v[0]!.status, "MISSING");
+});
+
+test("verifyProtection: an ALTERED level is reported with both values", () => {
+  const v = verifyProtection({ stopLoss: 5 },
+    normalizeProtection({ stop_loss: { display_order_amount: "3.00", order_date: 1 } }));
+  assert.equal(v[0]!.status, "ALTERED");
+  if (v[0]!.status === "ALTERED") {
+    assert.equal(v[0]!.requested, 5);
+    assert.equal(v[0]!.actual, 3);
+  }
+});
+
+test("verifyProtection: venue SILENCE is UNSTATED, distinct from MISSING", () => {
+  // Missing means the venue told us and the level is absent. Unstated means
+  // the venue told us nothing. Conflating them would either cry wolf or hide
+  // a genuinely unprotected position.
+  const v = verifyProtection({ stopLoss: 5 }, normalizeProtection(undefined));
+  assert.equal(v[0]!.status, "UNSTATED");
+});
+
+test("verifyProtection: a CONFIRMED level, compared in whole cents", () => {
+  const v = verifyProtection({ stopLoss: 5, takeProfit: 10 },
+    normalizeProtection({
+      stop_loss: { display_order_amount: "5.00", order_date: 1 },
+      take_profit: { display_order_amount: "10.00", order_date: 1 },
+    }));
+  assert.equal(v.length, 2);
+  assert.ok(v.every((x) => x.status === "CONFIRMED"));
+  // A genuine one-cent difference is NOT confirmation.
+  const off = verifyProtection({ stopLoss: 5 },
+    normalizeProtection({ stop_loss: { display_order_amount: "5.01", order_date: 1 } }));
+  assert.equal(off[0]!.status, "ALTERED");
+});
+
+test("verifyProtection reports nothing for a level ARX never requested", () => {
+  // Silence about something we did not ask for is not a finding.
+  const v = verifyProtection({}, normalizeProtection({ stop_loss: { display_order_amount: "5", order_date: 1 } }));
+  assert.deepEqual(v, []);
+});
+
+test("an open contract carries the venue's protection through normalization", () => {
+  const c = normalizeOpenContract({
+    proposal_open_contract: {
+      contract_id: 555, profit: 0,
+      limit_order: { stop_loss: { display_order_amount: "4.25", order_date: 1 } },
+    },
+  });
+  assert.equal((c as { protection: { stopLoss: number | null } }).protection.stopLoss, 4.25);
 });

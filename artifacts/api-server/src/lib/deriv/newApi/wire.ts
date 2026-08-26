@@ -285,6 +285,103 @@ export function normalizeSale(msg: unknown): ArxSale | DerivNewApiError {
  */
 export type SettlementEvidence = "SOLD" | "NOT_SOLD" | "ABSENT" | "UNRECOGNISED";
 
+/**
+ * Protection as the VENUE reports it, not as ARX asked for it.
+ *
+ * Each level is null when Deriv did not state it — and null is UNKNOWN, never
+ * "no protection". Concluding a stop-loss is absent from silence is as wrong
+ * as concluding it is present.
+ */
+export interface ArxContractProtection {
+  stopLoss: number | null;
+  takeProfit: number | null;
+  /** The venue's OWN forced-close level for a multiplier. ARX does not set
+   *  this and previously did not read it, so a hard floor on the position
+   *  existed that ARX knew nothing about. */
+  stopOut: number | null;
+  /** False when the venue sent no limit_order block at all. Distinguishes
+   *  "the venue reported no protection" from "the venue said nothing". */
+  reportedByVenue: boolean;
+}
+
+/**
+ * Read one protection level.
+ *
+ * `order_amount` is DEPRECATED in Deriv's schema in favour of the STRING
+ * `display_order_amount`, so the string is preferred and the deprecated
+ * number is a fallback. Both route through `numeric`, so "" and junk stay
+ * null rather than becoming 0 — a stop-loss of 0 would be a catastrophic
+ * misreading of "unstated".
+ */
+function readProtectionLevel(raw: unknown): number | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const r = raw as Record<string, unknown>;
+  return numeric(r["display_order_amount"]) ?? numeric(r["order_amount"]);
+}
+
+export function normalizeProtection(rawLimitOrder: unknown): ArxContractProtection {
+  if (typeof rawLimitOrder !== "object" || rawLimitOrder === null) {
+    return { stopLoss: null, takeProfit: null, stopOut: null, reportedByVenue: false };
+  }
+  const l = rawLimitOrder as Record<string, unknown>;
+  return {
+    stopLoss: readProtectionLevel(l["stop_loss"]),
+    takeProfit: readProtectionLevel(l["take_profit"]),
+    stopOut: readProtectionLevel(l["stop_out"]),
+    reportedByVenue: true,
+  };
+}
+
+/** What ARX asked for, versus what the venue says it attached. */
+export type ProtectionVerdict =
+  /** The venue confirms the level ARX requested. */
+  | { level: "stopLoss" | "takeProfit"; status: "CONFIRMED"; value: number }
+  /** ARX requested it; the venue reported protection and this level is absent.
+   *  ARX believes it is protected and is NOT. */
+  | { level: "stopLoss" | "takeProfit"; status: "MISSING"; requested: number }
+  /** The venue attached a DIFFERENT level than requested. */
+  | { level: "stopLoss" | "takeProfit"; status: "ALTERED"; requested: number; actual: number }
+  /** The venue said nothing about protection. Unknown, not absent. */
+  | { level: "stopLoss" | "takeProfit"; status: "UNSTATED"; requested: number };
+
+/**
+ * Compare requested protection against the venue's report.
+ *
+ * ARX previously SENT protection and never read it back, so a stop-loss the
+ * venue silently dropped or altered would have left ARX certain of a safety
+ * mechanism it did not have. That is false certainty about the one control
+ * that bounds a loss.
+ *
+ * Compared in whole cents for the same reason reconciliation is: a float
+ * epsilon can accept a genuine one-cent difference.
+ */
+export function verifyProtection(
+  requested: { stopLoss?: number | null; takeProfit?: number | null },
+  reported: ArxContractProtection,
+): ProtectionVerdict[] {
+  const out: ProtectionVerdict[] = [];
+  const check = (level: "stopLoss" | "takeProfit", want: number | null | undefined): void => {
+    if (typeof want !== "number") return;      // not requested: nothing to verify
+    if (!reported.reportedByVenue) {
+      out.push({ level, status: "UNSTATED", requested: want });
+      return;
+    }
+    const actual = reported[level];
+    if (actual === null) {
+      out.push({ level, status: "MISSING", requested: want });
+      return;
+    }
+    if (Math.round(actual * 100) !== Math.round(want * 100)) {
+      out.push({ level, status: "ALTERED", requested: want, actual });
+      return;
+    }
+    out.push({ level, status: "CONFIRMED", value: actual });
+  };
+  check("stopLoss", requested.stopLoss);
+  check("takeProfit", requested.takeProfit);
+  return out;
+}
+
 export interface ArxOpenContract {
   contractId: number;
   /** True ONLY on evidence of a SALE. Expiry alone does not set this. */
@@ -297,6 +394,8 @@ export interface ArxOpenContract {
   venueStatus: string | null;
   /** Expired per the venue. Not settlement — see isSettled. */
   isExpired: boolean;
+  /** Protection as the VENUE reports it. */
+  protection: ArxContractProtection;
   /** The venue's OWN entry/exit for this contract. Schema types both as
    *  ["null","string"], so they route through `numeric`. Null when Deriv did
    *  not state them — never substituted from a quote or a streaming tick. */
@@ -341,6 +440,7 @@ export function normalizeOpenContract(msg: unknown): ArxOpenContract | DerivNewA
     contractId,
     isSettled: settled,
     settlementEvidence,
+    protection: normalizeProtection(r["limit_order"]),
     // The venue's own settleability flag, when stated. Absent is not false.
     isSettleable: r["is_settleable"] === 1 || r["is_settleable"] === true ? true
       : r["is_settleable"] === 0 || r["is_settleable"] === false ? false : null,
