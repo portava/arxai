@@ -20,3 +20,8 @@ export { mt5ConnectionRepo } from "./mt5ConnectionRepo";
 // with the feature path. Inert: writing to it is a side effect of deciding,
 // never a step in deciding.
 export * as eventLogRepo from "./eventLogRepo";
+
+// ── Phase 6 (guided mode) — approval tickets. The atomic dispatch claim lives
+// here: a CAS on state='APPROVED' is what makes "one approval, at most one
+// order" true across processes, where a mutex cannot reach.
+export * as approvalTicketsRepo from "./approvalTicketsRepo";
