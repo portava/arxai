@@ -89,6 +89,7 @@ export const DERIV_REFUSALS = {
   INTENT_NOT_PERSISTED: "DERIV_INTENT_NOT_PERSISTED",
   VENUE_REJECTED: "DERIV_VENUE_REJECTED",
   NO_ORDER_POSSIBLE: "DERIV_NO_ORDER_POSSIBLE",
+  NOT_TRANSMITTED: "DERIV_NOT_TRANSMITTED",
 } as const;
 
 export class DerivExecutionAdapter implements ExecutionAdapter<DerivDeliveryResult> {
@@ -192,7 +193,11 @@ export class DerivExecutionAdapter implements ExecutionAdapter<DerivDeliveryResu
     // the frame reached the wire.
     if (outcome.wireWritten === false) {
       // Proven pre-transmission: the frame never left. Safe to fail closed.
-      throw new Error(`${DERIV_REFUSALS.VENUE_REJECTED}: not transmitted - ${outcome.detail}`);
+      // Its own code (critic finding): the old spelling borrowed the
+      // VENUE_REJECTED prefix, so settlement's adjudication regex classified a
+      // provably-untransmitted frame as a venue decision — SYSTEM_GATE in the
+      // record for something the venue never saw.
+      throw new Error(`${DERIV_REFUSALS.NOT_TRANSMITTED}: ${outcome.detail}`);
     }
 
     // wireWritten true (or unknown, which we treat as true): a frame may be at

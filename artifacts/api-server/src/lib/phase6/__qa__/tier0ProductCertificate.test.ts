@@ -21,7 +21,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { dispatchGuidedTicketForRequest, applyLiveSettlement, type SettlementRepos } from "../guidedDispatchEntry.js";
+import {
+  dispatchGuidedTicketForRequest, applyLiveSettlement, serializeGuidedDispatch,
+  type SettlementRepos,
+} from "../guidedDispatchEntry.js";
 import {
   buildLineageRecord, reconstructAttempt, positionStateForEvent,
   type GuidedLineageRecord,
@@ -609,4 +612,27 @@ test("the intent row is born UNRECORDED — the crash window has no gap", () => 
     "the intent is not born UNRECORDED — a crash mid-flight leaves no footprint");
   assert.ok(!/writeDisposition: "NOT_ATTEMPTED"/.test(block),
     "the intent is born NOT_ATTEMPTED — invisible to hasUnresolvedIntent");
+});
+
+// ── the LIVE serialization rule, driven as real code ──────────────────────
+test("A CAPTURED OUTCOME WINS when the lock's COMMIT fails after the work ran", async () => {
+  // Venue confirmed, settlement committed — then the lock client's COMMIT
+  // throws (connection reaped during the venue round-trip). Reporting
+  // "nothing was sent" here is a falsely-certain claim about a real order.
+  const r = await serializeGuidedDispatch(1, async () => "THE-REAL-OUTCOME",
+    async (_ns, _key, body) => { await body(); throw new Error("COMMIT failed: connection reset"); });
+  assert.deepEqual(r, { acquired: true, value: "THE-REAL-OUTCOME" },
+    "a completed dispatch was reported as not-run because the lock plumbing failed afterwards");
+});
+
+test("a lock failure BEFORE the work ran refuses — unserialized dispatch is untrusted", async () => {
+  const r = await serializeGuidedDispatch(1, async () => "NEVER-RUNS",
+    async () => { throw new Error("could not BEGIN"); });
+  assert.deepEqual(r, { acquired: false });
+});
+
+test("a lost lock without running the work refuses", async () => {
+  const r = await serializeGuidedDispatch(1, async () => "NEVER-RUNS",
+    async () => ({ acquired: false }));
+  assert.deepEqual(r, { acquired: false });
 });

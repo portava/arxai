@@ -80,7 +80,8 @@ export interface GuidedDispatchDeps {
   /** The tier value the SERVER resolved. Never client-supplied. */
   configuredTier: string | null;
   loadActiveConstitution: (userId: number) => Promise<TradingConstitution | null>;
-  loadObservedState: (userId: number) => Promise<ConstitutionObservedState>;
+  /** `instrument` scopes the per-symbol exposure figure to the proposal's own symbol. */
+  loadObservedState: (userId: number, instrument?: string) => Promise<ConstitutionObservedState>;
   loadOwnedTicket: (ticketId: string, userId: number) => Promise<ApprovalTicket | null>;
   /** Re-derived from LIVE state, never echoed back from the ticket. */
   deriveCurrentTerms: (ticket: ApprovalTicket) => Promise<MaterialTradeTerms>;
@@ -190,7 +191,7 @@ export async function dispatchGuidedTicket(
 
   // 2 — the SECOND Constitution evaluation, against current policy and state.
     const constitution = await deps.loadActiveConstitution(args.userId);
-    observed = await deps.loadObservedState(args.userId);
+    observed = await deps.loadObservedState(args.userId, currentTerms.instrument);
     verdict = evaluateConstitution(
     constitution,
       proposalFromTerms(currentTerms, args.marketCategory, args.conditions),
@@ -231,9 +232,22 @@ export async function dispatchGuidedTicket(
 
   // 4 — the atomic claim. At most one dispatcher proceeds past this line.
   const liveCommandId = deps.newLiveCommandId();
-  const claimed = await deps.claimForDispatch({
-    ticketId: ticket.ticketId, userId: args.userId, liveCommandId,
-  });
+  let claimed: unknown;
+  try {
+    claimed = await deps.claimForDispatch({
+      ticketId: ticket.ticketId, userId: args.userId, liveCommandId,
+    });
+  } catch (claimErr) {
+    // The claim UPDATE may have COMMITTED before the connection died, so this
+    // is not a clean loss: the ticket may now be DISPATCHING with no dispatcher.
+    // Nothing has been SENT (the claim is not a send), so saying so is honest —
+    // but the ticket state must be checked, and --verify reports a stranded
+    // DISPATCHING row as a LEDGER GAP rather than non-dispatch (critic finding).
+    const msg = claimErr instanceof Error ? claimErr.message : String(claimErr);
+    return refuse("DISPATCH_CLAIM_LOST",
+      `the dispatch claim's outcome is unknown (${msg.slice(0, 160)}) — nothing was sent; ` +
+      "check the ticket state before retrying");
+  }
   if (!claimed) {
     return refuse("DISPATCH_CLAIM_LOST",
       "another dispatcher already claimed this ticket — exactly one order may result from one approval");
@@ -287,8 +301,15 @@ export async function dispatchGuidedTicket(
     // A tier refusal is the expected Tier 0 outcome: everything upstream ran
     // for real, and only the send was refused.
     const isTierRefusal = msg.includes("TIER_FORBIDS_SEND");
+    // A venue ADJUDICATION is not a gate refusal (critic finding): GATE_REFUSED
+    // reads as "nothing reached the venue", which is false here — the venue
+    // received the order and said no. The distinct kind keeps the ledger's
+    // vocabulary meaning what it says.
+    const isVenueAdjudicated = !isTierRefusal && msg.includes("DERIV_VENUE_REJECTED");
     await deps.recordAudit({
-      kind: isTierRefusal ? "GUIDED_DISPATCH_DRY_RUN" : "GUIDED_DISPATCH_REFUSED",
+      kind: isTierRefusal ? "GUIDED_DISPATCH_DRY_RUN"
+        : isVenueAdjudicated ? "GUIDED_DISPATCH_VENUE_REJECTED"
+          : "GUIDED_DISPATCH_REFUSED",
       userId: args.userId, ticketId: args.ticketId, detail: msg.slice(0, 400),
     });
     return refuse(isTierRefusal ? "TIER_FORBIDS_SEND" : "ADAPTER_REFUSED", msg.slice(0, 400), { claimed: true });

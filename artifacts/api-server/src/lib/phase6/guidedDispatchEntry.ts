@@ -46,6 +46,7 @@ const AUDIT_KIND_TO_EVENT: Readonly<Record<string, GuidedAuditEvent | undefined>
   GUIDED_DISPATCH_INDETERMINATE: "EXECUTION_UNKNOWN",
   GUIDED_DISPATCH_DRY_RUN: "DRY_RUN_REFUSED",
   GUIDED_DISPATCH_REFUSED: "GATE_REFUSED",
+  GUIDED_DISPATCH_VENUE_REJECTED: "VENUE_REJECTED",
   GUIDED_DISPATCH_BLOCKED_CONSTITUTION: "GATE_REFUSED",
   GUIDED_DISPATCH_BLOCKED_POLICY_CHANGE: "GATE_REFUSED",
   GUIDED_DISPATCH_BLOCKED_UNRESOLVED: "GATE_REFUSED",
@@ -80,7 +81,7 @@ const AUDIT_KIND_TO_EVENT: Readonly<Record<string, GuidedAuditEvent | undefined>
  *     that into a definite refusal. Trading on unreadable state is the
  *     inversion this whole layer exists to prevent.
  */
-async function loadGuidedObservedState(userId: number): Promise<ConstitutionObservedState> {
+async function loadGuidedObservedState(userId: number, instrument?: string): Promise<ConstitutionObservedState> {
   const now = new Date();
   const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   const weekStart = new Date(dayStart.getTime() - ((dayStart.getUTCDay() + 6) % 7) * 86_400_000);
@@ -96,6 +97,14 @@ async function loadGuidedObservedState(userId: number): Promise<ConstitutionObse
     return Number(r?.v ?? 0);
   };
 
+  // HONEST RATCHET, stated loudly (critic finding): EXECUTED tickets count as
+  // OPEN until position-close reconciliation exists, because nothing here can
+  // yet PROVE a venue position closed — and assuming closed is the falsely-
+  // certain direction. Under maxSimultaneousPositions=1 this means the surface
+  // REFUSES further trades after the first success until the reconciliation
+  // worker lands. For the Tier 1 certification that is exactly the owner's
+  // "one order, then stop"; for anything beyond it, reconciliation is the
+  // named prerequisite, not a nice-to-have.
   const [openTickets] = await db.select({ n: sql<number>`count(*)` })
     .from(approvalTicketsTable)
     .where(and(
@@ -115,11 +124,16 @@ async function loadGuidedObservedState(userId: number): Promise<ConstitutionObse
       sql`state in ('EXECUTED','DISPATCHING','UNRESOLVED')`,
       gte(approvalTicketsTable.updatedAt, dayStart),
     ));
+  // Per-SYMBOL, as the Constitution field says (critic finding: the first
+  // version summed every symbol's stake against the per-symbol cap, refusing
+  // R_100 because of R_50 exposure — conservative-direction, but the wrong
+  // ceiling wearing the right one's name).
   const [exposure] = await db.select({ v: sql<number>`coalesce(sum(stake_usd), 0)` })
     .from(approvalTicketsTable)
     .where(and(
       eq(approvalTicketsTable.userId, userId),
       sql`state in ('EXECUTED','DISPATCHING','UNRESOLVED')`,
+      ...(instrument ? [eq(approvalTicketsTable.instrument, instrument)] : []),
     ));
 
   return {
@@ -503,6 +517,42 @@ export async function applyLiveSettlement(
 }
 
 /**
+ * The LIVE per-user dispatch serialization, exported with the lock injectable.
+ *
+ * Extracted (third instance of the same lesson this phase): the certificate
+ * spies replace the injectable hook WHOLE, so a mutation that discarded the
+ * captured outcome inside the live implementation survived every test. The
+ * decision — A CAPTURED OUTCOME ALWAYS WINS over lock-plumbing failure — is
+ * the safety logic, and it must be drivable with the real code.
+ *
+ * Why the rule exists: if the dispatch COMPLETES (venue confirmed, settlement
+ * committed on the normal pool) and then the lock client's COMMIT fails — the
+ * connection was reaped during the venue round-trip — reporting "nothing was
+ * sent" would be a falsely-certain claim about a real executed order. The lock
+ * is only serialization; its plumbing failing AFTER the work ran does not
+ * un-happen the work's own committed writes.
+ */
+export async function serializeGuidedDispatch<T>(
+  uid: number,
+  fn: () => Promise<T>,
+  lockImpl: (ns: number, key: number, body: () => Promise<T>) => Promise<{ acquired: boolean; value?: T }> =
+    (ns, key, body) => withTxAdvisoryLock(ns as never, key, () => body()) as never,
+): Promise<{ acquired: boolean; value?: T }> {
+  let inner: { value: T } | null = null;
+  try {
+    const r = await lockImpl(ARX_LOCK_NS.GUIDED_DISPATCH, uid, async () => {
+      const value = await fn();
+      inner = { value };
+      return value;
+    });
+    if (r.acquired) return { acquired: true, value: r.value as T };
+    return inner ? { acquired: true, value: (inner as { value: T }).value } : { acquired: false };
+  } catch {
+    return inner ? { acquired: true, value: (inner as { value: T }).value } : { acquired: false };
+  }
+}
+
+/**
  * Dispatch one approved ticket for one authenticated user.
  *
  * The Deriv dependency resolution happens INSIDE the adapter factory, so a
@@ -515,6 +565,13 @@ export async function dispatchGuidedTicketForRequest(
   overrides: GuidedDispatchOverrides = {},
 ): Promise<GuidedDispatchOutcome> {
   // ── PER-USER SERIALIZATION ──────────────────────────────────────────────
+  // SCALE BOUND (critic finding): the tx-scoped lock holds one dedicated pool
+  // client across the venue round-trip, so N users dispatching in the same
+  // second hold N clients while their inner queries also want clients — at
+  // N >= pool size that deadlocks until timeout. Bounded and acceptable at the
+  // current single-owner deployment; before multi-user Tier 2, the lock scope
+  // must shrink to the pre-send window or the pool must grow past peak
+  // concurrent dispatchers.
   // The unresolved-intent wall and the Constitution's position/trade counts
   // are plain reads: two concurrent dispatches for two different approved
   // tickets could both read "0 outstanding" before either writes (audit,
@@ -522,17 +579,7 @@ export async function dispatchGuidedTicketForRequest(
   // them refuse honestly instead. Non-blocking on purpose: queueing a trade
   // behind another trade is a decision a human should make, not a mutex.
   const serialize = overrides.serializeDispatch
-    ?? (async <T,>(uid: number, fn: () => Promise<T>) => {
-      try {
-        const r = await withTxAdvisoryLock(ARX_LOCK_NS.GUIDED_DISPATCH, uid, () => fn());
-        return r.acquired ? { acquired: true, value: r.value } : { acquired: false };
-      } catch {
-        // The lock INFRASTRUCTURE failed (database unreachable). Refusing is
-        // right — a dispatch that cannot be serialized cannot be trusted not
-        // to race — and nothing has been sent at this point.
-        return { acquired: false };
-      }
-    });
+    ?? (<T,>(uid: number, fn: () => Promise<T>) => serializeGuidedDispatch(uid, fn));
 
   const serialized = await serialize(args.userId, () => dispatchGuidedTicketInner(args, overrides));
   if (!serialized.acquired) {
@@ -556,7 +603,7 @@ async function dispatchGuidedTicketInner(
       toDomainConstitution(await tradingConstitutionRepo.getActiveConstitution(userId))),
 
     loadObservedState: overrides.loadObservedState
-      ?? ((userId) => loadGuidedObservedState(userId)),
+      ?? ((userId, instrument) => loadGuidedObservedState(userId, instrument)),
 
     loadOwnedTicket: overrides.loadOwnedTicket ?? (async (ticketId, userId) =>
       toDomainTicket(await approvalTicketsRepo.findOwnedTicket(ticketId, userId))),
