@@ -136,10 +136,8 @@ test("the sweeper starts, is idempotent, and stops cleanly — TIMERS COUNTED", 
   const realSet = globalThis.setInterval;
   const realClear = globalThis.clearInterval;
   let created = 0, cleared = 0;
-  // @ts-expect-error test double
-  globalThis.setInterval = () => { created++; return { unref: () => ({}) } as never; };
-  // @ts-expect-error test double
-  globalThis.clearInterval = () => { cleared++; };
+  globalThis.setInterval = (() => { created++; return { unref: () => ({}) }; }) as never;
+  globalThis.clearInterval = (() => { cleared++; }) as never;
   try {
     stopGuidedSweeperWorker();
     created = 0; cleared = 0;
