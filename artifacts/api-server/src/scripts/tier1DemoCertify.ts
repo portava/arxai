@@ -54,6 +54,18 @@ function line(c: Check): string {
  *     mistake is a real-money trade. Re-deriving that judgement here would mean
  *     two rules that can drift apart.
  */
+/** Every account the venue reports, normalized. Read-only. */
+async function fetchVenueAccounts() {
+  const config = resolveNewApiConfig();
+  if (typeof config === "string") throw new Error(`DERIV_CONFIG_UNRESOLVED:${config}`);
+  const res = await derivRestRequest<unknown>({
+    method: "GET", path: DERIV_ACCOUNTS_PATH, config, captureBody: true,
+  });
+  const raw = res.body as { accounts?: unknown[] } | unknown[] | null;
+  const list = Array.isArray(raw) ? raw : Array.isArray(raw?.accounts) ? raw.accounts : [];
+  return list.map(normalizeAccount).filter((a): a is NonNullable<typeof a> => a !== null);
+}
+
 async function classifyFromVenue(accountRef: string): Promise<DemoClassification | null> {
   const config = resolveNewApiConfig();
   // resolveNewApiConfig returns EITHER a config or an error code. Refusing on
@@ -90,6 +102,34 @@ async function main(): Promise<void> {
   const accountRef = (argv.find((a) => a.startsWith("--account="))?.split("=")[1] ?? "").trim();
   const userIdRaw = (argv.find((a) => a.startsWith("--user="))?.split("=")[1] ?? "").trim();
   const userId = Number(userIdRaw);
+
+  // DISCOVERY MODE. Without --account there is nothing to check, so listing what
+  // the venue actually reports is more useful than failing a check the operator
+  // has no way to satisfy yet. Read-only; places nothing.
+  if (accountRef === "") {
+    // eslint-disable-next-line no-console
+    console.log("\nNo --account given. Accounts the VENUE reports:\n");
+    try {
+      const accounts = await fetchVenueAccounts();
+      if (accounts.length === 0) {
+        console.log("  (none returned)");   // eslint-disable-line no-console
+      }
+      for (const a of accounts) {
+        const verdict = isRealAccount(a)
+          ? "REAL — refused"
+          : isDemoAccount(a) ? "DEMO — usable" : "UNKNOWN type — refused";
+        // Account id and type only. No balance, no currency, no credential.
+        // eslint-disable-next-line no-console
+        console.log(`  ${a.accountId.padEnd(20)} account_type=${String(a.accountType).padEnd(10)} ${verdict}`);
+      }
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.log(`  could not read accounts: ${e instanceof Error ? e.message.slice(0, 120) : String(e)}`);
+    }
+    // eslint-disable-next-line no-console
+    console.log("\nRe-run with --account=<the DEMO id above> --user=<your arx user id>.\nNO ORDER WAS PLACED.\n");
+    process.exit(1);
+  }
 
   const checks: Check[] = [];
 
