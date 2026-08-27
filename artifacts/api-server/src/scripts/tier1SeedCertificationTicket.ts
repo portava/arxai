@@ -23,7 +23,20 @@
 import { tradingConstitutionRepo, approvalTicketsRepo } from "@workspace/db";
 import { randomUUID } from "node:crypto";
 
-const PROPOSAL_TTL_MS = 15 * 60_000;   // longer than the route's 5m: a human is reading a terminal
+/**
+ * 60 minutes.
+ *
+ * The route's own TTL is 5 minutes, which is right for a scanner proposal
+ * against a live quote. This is a CERTIFICATION ticket read by a human who may
+ * still be starting the dashboard and logging in, and the first attempt expired
+ * before it could be approved. An expiry that runs out mid-procedure teaches
+ * nothing about the expiry logic and wastes a seed.
+ *
+ * It is still bounded, and expiry is still enforced against the DATABASE clock
+ * at both approve and dispatch — this changes how long the human has, not
+ * whether the rule applies.
+ */
+const PROPOSAL_TTL_MS = 60 * 60_000;
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
