@@ -24,7 +24,7 @@ import {
   reconstructAttempt, positionStateLabel,
   type GuidedAuditEvent, type GuidedLineageRecord,
 } from "../lib/phase6/guidedLineage.js";
-import { assertNoSecretLeak } from "../lib/phase6/derivDependencyResolver.js";
+import { assertNoSecretLeak, screenFreeText } from "../lib/phase6/derivDependencyResolver.js";
 
 const router = Router();
 
@@ -73,7 +73,7 @@ function present(records: GuidedLineageRecord[]) {
     events: records.map((r) => ({
       event: r.event,
       occurredAtIso: r.occurredAtIso,
-      detail: r.detail,
+      detail: screenFreeText(r.detail),
       venueContractRef: r.venueContractRef,
     })),
   };
@@ -111,7 +111,7 @@ router.get("/me/guided-journal", requireUser, async (req, res) => {
   const body = {
     entries: recent.map((r) => ({
       intentId: r.intentId, ticketId: r.ticketId, event: r.eventType,
-      occurredAtIso: r.occurredAt.toISOString(), detail: r.detail,
+      occurredAtIso: r.occurredAt.toISOString(), detail: screenFreeText(r.detail),
       constitutionVersion: r.constitutionVersion,
       venueContractRef: r.venueContractRef,
       scannerSignalId: r.scannerSignalId,
@@ -163,7 +163,7 @@ router.get("/me/guided-debrief/:intentId", requireUser, async (req, res) => {
       rubyExplanation: first?.rubyExplanation ?? null,
       constitutionVersion: first?.constitutionVersion ?? null,
       venueContractRef: a.venueContractRef,
-      timeline: records.map((r) => ({ event: r.event, at: r.occurredAtIso, detail: r.detail })),
+      timeline: records.map((r) => ({ event: r.event, at: r.occurredAtIso, detail: screenFreeText(r.detail) })),
     },
   };
   assertNoSecretLeak(body, "guided-debrief response");

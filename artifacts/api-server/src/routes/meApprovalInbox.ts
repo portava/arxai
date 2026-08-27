@@ -37,7 +37,7 @@ import {
   type TradingConstitution,
 } from "@workspace/domain/safety-contracts/tradingConstitution";
 import { randomUUID } from "node:crypto";
-import { assertNoSecretLeak } from "../lib/phase6/derivDependencyResolver.js";
+import { assertNoSecretLeak, screenFreeText } from "../lib/phase6/derivDependencyResolver.js";
 
 const router = Router();
 
@@ -68,7 +68,7 @@ function toWire(t: ApprovalTicketRow) {
     referenceQuote: t.referenceQuote,
     expectedPayoutUsd: t.expectedPayoutUsd,
     scannerSignalId: t.scannerSignalId,
-    rubyExplanation: t.rubyExplanation,
+    rubyExplanation: screenFreeText(t.rubyExplanation),
     riskEvaluation: t.riskEvaluation,
     constitutionVersion: t.constitutionVersion,
     gateVerdicts: t.gateVerdicts,
@@ -84,7 +84,7 @@ function toWire(t: ApprovalTicketRow) {
     createdAt: t.createdAt,
     approvedAt: t.approvedAt,
     rejectedAt: t.rejectedAt,
-    rejectionReason: t.rejectionReason,
+    rejectionReason: screenFreeText(t.rejectionReason),
     rejectionSource: t.rejectionSource,
     venueContractRef: t.venueContractRef,
     /** Intent id is lineage, not a secret — it links ticket to journal. */

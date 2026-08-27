@@ -37,8 +37,11 @@ const SCAN_ROOTS = [
   join(ROOT, "artifacts/trading-dashboard/src"),
 ];
 
-/** The ONE file allowed to invoke a venue adapter's deliver(). */
+/** The files allowed to invoke a venue adapter's deliver():
+ *  the MT5 dispatch pipeline, and the ONE guided composition point (whose
+ *  singularity is itself asserted by the Tier 0 product certificate). */
 const DISPATCH_PIPELINE = "artifacts/api-server/src/lib/live/liveCommandPipeline.ts";
+const GUIDED_COMPOSITION_POINT = "artifacts/api-server/src/lib/phase6/guidedDispatchEntry.ts";
 /** The adapter classes themselves define deliver(); that is not a call site. */
 const ADAPTER_DEFINITIONS = [
   "artifacts/api-server/src/lib/live/executionAdapter.ts",
@@ -75,11 +78,15 @@ export function checkPhase6ExecutionSafety(): CheckResult {
       // ── R1 — direct adapter bypass ────────────────────────────────────
       // Matches an adapter-shaped receiver, not the generic word "deliver":
       // `xAdapter.deliver(` / `derivAdapter.deliver(` / `adapter.deliver(`.
-      const deliverRe = /\b([A-Za-z_$][\w$]*[Aa]dapter)\s*\.\s*deliver\s*\(/g;
+      // Audit H14: the original regex required at least one character BEFORE
+      // "adapter", so a receiver named exactly `adapter` — the most natural
+      // spelling, and the one the guided composition point itself uses — was
+      // invisible. Registry lookups (`REGISTRY[venue].deliver(`) were too.
+      const deliverRe = /\b((?:[A-Za-z_$][\w$]*)?[Aa]dapter|[A-Za-z_$][\w$]*\[[^\]]+\])\s*\.\s*deliver\s*\(/g;
       let m: RegExpExecArray | null;
       while ((m = deliverRe.exec(src)) !== null) {
         deliverSites++;
-        if (path === DISPATCH_PIPELINE) continue;
+        if (path === DISPATCH_PIPELINE || path === GUIDED_COMPOSITION_POINT) continue;
         if (ADAPTER_DEFINITIONS.includes(path)) continue;
         const line = src.slice(0, m.index).split("\n").length;
         violations.push(
@@ -138,7 +145,7 @@ export function checkPhase6ExecutionSafety(): CheckResult {
   }
 
   notes.push(`Scanned ${scanned} file(s) across ${SCAN_ROOTS.length} roots (guards and tests excluded).`);
-  notes.push(`R1 adapter deliver() call sites: ${deliverSites} (allowed: the dispatch pipeline + adapter definitions).`);
+  notes.push(`R1 adapter deliver() call sites: ${deliverSites} (allowed: dispatch pipeline, guided composition point, adapter definitions).`);
   notes.push(`R2 tier-from-environment reads: ${tierEnvSites} (allowed: ${TIER_ENV_READER}).`);
   notes.push(`R3 files touching approvalTicketsRepo: ${ticketRepoFiles}.`);
   notes.push(

@@ -23,7 +23,7 @@ import { DerivExecutionAdapter } from "../deriv/execution/derivExecutionAdapter.
 import { isIndeterminateDelivery } from "../live/executionAdapter.js";
 import {
   approvalTicketsRepo, derivOrderIntentsRepo, tradingConstitutionRepo, guidedAttemptEventsRepo,
-  db, arxLiveArmingTable, globalTradingSettingsTable,
+  db, arxLiveArmingTable, globalTradingSettingsTable, safetyCoreTable,
   liveRiskDisclosureAcceptancesTable, userMasterLiveAccessTable,
 } from "@workspace/db";
 import { eq } from "drizzle-orm";
@@ -74,7 +74,14 @@ async function liveKillSwitchEngaged(userId: number): Promise<boolean> {
     if (arming?.k === true) return true;
     const [settings] = await db.select({ e: globalTradingSettingsTable.emergencyKillSwitch })
       .from(globalTradingSettingsTable).limit(1);
-    return settings?.e !== false;
+    if (settings?.e !== false) return true;
+    // The Phase 1 safety-core switch is a THIRD stop control (audit H7/H13):
+    // an operator engaging it believes ALL order flow is halted, and the MT5
+    // pipeline's own gates do not read it — the guided path being stricter
+    // than MT5 here is deliberate, not parity drift.
+    const [core] = await db.select({ k: safetyCoreTable.killSwitchEngaged })
+      .from(safetyCoreTable).limit(1);
+    return core?.k === true;
   } catch {
     return true;
   }

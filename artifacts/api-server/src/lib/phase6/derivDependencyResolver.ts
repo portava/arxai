@@ -308,3 +308,22 @@ export function assertNoSecretLeak(payload: unknown, where: string): void {
   };
   walk(payload, "$");
 }
+
+/**
+ * Screen ONE free-text field for a read surface.
+ *
+ * Audit H9: a venue-provided rejection string persisted on a ticket could trip
+ * the response screen, and because the screen THROWS, one bad ticket 500'd the
+ * entire inbox list forever — a denial of the whole surface by one row.
+ *
+ * Writes still refuse outright (a credential must never land in the ledger).
+ * Reads WITHHOLD the single offending field and say so, because "this field
+ * was withheld" is honest and recoverable, while a permanently unreadable
+ * inbox is neither.
+ */
+export function screenFreeText(value: string | null | undefined): string | null {
+  if (value === null || value === undefined) return null;
+  return looksLikeSecret(value)
+    ? "[withheld — this text failed the credential screen; see the server log]"
+    : value;
+}
