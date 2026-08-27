@@ -152,3 +152,46 @@ discarded.
 It is not a claim that Phase 6 is safe yet. Tier 0 (dry run) and Tier 1 (single
 approved demo order) each certify separately, and the gate-parity matrix is
 itself under test before any frame is written.
+
+---
+
+## Build state as of 2026-08-27
+
+**Certified and committed** (91 tests, 56/56 mutations killed, 63/63 guards,
+typecheck clean):
+
+| Component | Where |
+|---|---|
+| Venue gate parity + Deriv demo map (18/18) | `lib/domain/src/safety-contracts/{venueGateParity,derivDemoGateParity}.ts` |
+| Personal Trading Constitution | `lib/domain/src/safety-contracts/tradingConstitution.ts` |
+| Approval ticket lifecycle + terms binding | `lib/domain/src/safety-contracts/approvalTicket.ts` |
+| Execution tier | `lib/domain/src/safety-contracts/executionTier.ts` |
+| TTL sweep policy | `lib/domain/src/safety-contracts/guidedTtlPolicy.ts` |
+| Indeterminate delivery outcome | `artifacts/api-server/src/lib/live/executionAdapter.ts` + pipeline branch |
+| DerivExecutionAdapter | `artifacts/api-server/src/lib/deriv/execution/derivExecutionAdapter.ts` |
+| Persistence schema (3 tables) | `lib/db/src/schema/phase6GuidedExecution.ts` |
+
+**NOT yet built — and the honest consequence: the Deriv adapter is not
+reachable from the dispatch pipeline.** Nothing in this phase can place an
+order yet, by construction:
+
+1. **Venue-aware dispatch.** `dispatchLiveCommand` selects its bridge purely
+   from `mt5ConnectionTable` (`liveCommandPipeline.ts:2959-2969`), before the
+   gate evaluator runs. A Deriv-only user has no row there, so `bridge` is null
+   and gates 6-12 fail for the wrong reason. `mt5ExecutionAdapter` is also still
+   the literal named at the single call site (`:3653`), with no venue selection.
+   Both need changing together, and two CI guards pin that call site by raw
+   source text (`wave5Seam.test.ts:128,140,165` and
+   `check-live-dispatch-cas.ts`), so they must be amended in the same change.
+2. **`arx_live_commands` has no venue column** — venue is implied entirely by
+   `bridgeConnectionId` pointing at an MT5 table.
+3. Repositories for the three new tables; the Approval Inbox HTTP routes,
+   OpenAPI entries and UI; the sweeper *worker* (the policy exists, nothing
+   schedules it); position-centre, journal and debrief integration.
+4. **Schema is not applied.** This repo has no migration system; schema lands
+   via owner-run `drizzle-kit push --force`.
+
+**Tier status.** Tier 0 is certified at the adapter boundary — the adapter
+provably refuses before any frame is written, and never persists an intent it
+cannot use. It is NOT certified end-to-end through the pipeline, because the
+pipeline cannot reach the adapter yet. **Zero demo orders have been placed.**
