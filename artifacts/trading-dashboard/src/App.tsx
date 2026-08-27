@@ -129,6 +129,7 @@ const AssistantManual = lazy(() => import("@/pages/assistant-manual"));
 // Build WW — Daily Owner Testing Mode
 const OrdersPage = lazy(() => import("@/pages/orders"));
 const PositionsPage = lazy(() => import("@/pages/positions"));
+const ApprovalInboxPage = lazy(() => import("@/pages/approval-inbox"));
 const MyTradesPage = lazy(() => import("@/pages/my-trades"));
 const TradeDetailPage = lazy(() => import("@/pages/trade-detail"));
 const SniperWatchlistPage = lazy(() => import("@/pages/sniper-watchlist"));
@@ -407,6 +408,7 @@ function Router() {
           <Route path="/data-quality" component={DataQualityPage} />
           <Route path="/orders" component={OrdersPage} />
           <Route path="/positions" component={PositionsPage} />
+          <Route path="/approval-inbox" component={ApprovalInboxPage} />
           <Route path="/my-trades" component={MyTradesPage} />
           <Route path="/my-trades/:tradeKey" component={TradeDetailPage} />
           <Route path="/sniper-watchlist" component={SniperWatchlistPage} />
