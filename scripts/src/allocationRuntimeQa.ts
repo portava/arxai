@@ -267,6 +267,7 @@ async function main(): Promise<void> {
     // reason USER_ALLOCATION_FROZEN. Never SENT_TO_MT5_LIVE.
     const commandId = `qa_lvcmd_${randomUUID()}`;
     await db.insert(arxLiveCommandsTable).values({
+      executionVenue: "MT5_EA_BRIDGE",
       commandId,
       userId: testUser.id,
       bridgeConnectionId: null,
@@ -322,6 +323,7 @@ async function main(): Promise<void> {
     async function seedAndDispatch(commandType: string, suffix: string) {
       const cid = `qa_lvcmd_${suffix}_${randomUUID()}`;
       await db.insert(arxLiveCommandsTable).values({
+      executionVenue: "MT5_EA_BRIDGE",
         commandId: cid, userId: testUser.id,
         bridgeConnectionId: null, accountLogin: null, brokerServer: null,
         accountNumber: "0", commandType, status: "LIVE_APPROVED",

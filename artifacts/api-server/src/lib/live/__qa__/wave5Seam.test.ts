@@ -124,9 +124,49 @@ test("pipeline consumes the interface: adapter import + injected wrap, no direct
       + "(the wrapper now awaits it to attach the venue-neutral transportRef; the mirror-call "
       + "literal check-live-dispatch-cas matches must survive)",
   );
+  // R6 — EVOLVED, NOT RELAXED. This used to pin the literal
+  // `executionAdapter.deliver({`, which was only meaningful while exactly
+  // one venue could ever exist. With a second venue that pin would have to be
+  // deleted, so it is replaced by a strictly stronger invariant:
+  //
+  //   every reachable live execution venue routes through an explicitly
+  //   REGISTERED certified adapter, and unknown venues fail closed.
+  //
+  // The old pin allowed exactly one adapter; this one allows exactly the
+  // registered set and forbids anything reaching a venue outside it.
   assert.ok(
-    pipelineSource.includes("mt5ExecutionAdapter.deliver({"),
-    "the dispatch path must deliver through the adapter",
+    /const executionAdapter = selectExecutionAdapter\(EXECUTION_ADAPTERS, [A-Za-z.]+\);/.test(pipelineSource),
+    "the dispatch path must select its adapter from the registry, by the SERVER-persisted venue",
+  );
+  assert.ok(
+    pipelineSource.includes("executionAdapter.deliver({"),
+    "the dispatch path must deliver through the selected adapter",
+  );
+  assert.ok(
+    !/\bmt5ExecutionAdapter\.deliver\(/.test(pipelineSource),
+    "no venue-specific adapter may be invoked directly — that bypasses venue routing",
+  );
+  // The venue must come from the persisted row, never from a request body: a
+  // client naming its own venue could select a more privileged execution path.
+  assert.ok(
+    /selectExecutionAdapter\(EXECUTION_ADAPTERS, row\.executionVenue\)/.test(pipelineSource),
+    "the venue must be read from the server-persisted command row",
+  );
+  assert.ok(
+    !/selectExecutionAdapter\([^)]*\b(req|args|body|payload)\./.test(pipelineSource),
+    "the venue must never be taken from client-supplied input",
+  );
+  // The registry must be exhaustive over the venue union: a venue with no
+  // registered adapter has to fail the BUILD, not fall back at runtime.
+  assert.ok(
+    /const EXECUTION_ADAPTERS: ExecutionAdapterRegistry = \{/.test(pipelineSource),
+    "the registry must be typed as ExecutionAdapterRegistry (Record<ExecutionVenue, ...>) "
+      + "so an unregistered venue is a compile error",
+  );
+  // And no default may creep back in.
+  assert.ok(
+    !/EXECUTION_ADAPTERS\[[^\]]+\]\s*(\?\?|\|\|)/.test(pipelineSource),
+    "a fallback adapter would reintroduce the default venue the router refuses to have",
   );
   assert.ok(
     !pipelineSource.includes("await enqueueBridgedMt5Command("),
@@ -162,7 +202,7 @@ test("byte-equivalence: enqueueBridgedMt5Command body still owns the unchanged m
 test("source order: CAS claim → adapter deliver → mirror-failure mark-failed semantics intact", () => {
   const dispatchStart = pipelineSource.indexOf("export async function dispatchLiveCommand");
   const casAt = pipelineSource.indexOf("claimLiveCommandForDispatch(", dispatchStart);
-  const deliverAt = pipelineSource.indexOf("mt5ExecutionAdapter.deliver({", dispatchStart);
+  const deliverAt = pipelineSource.indexOf("executionAdapter.deliver({", dispatchStart);
   const bridgeFailedAt = pipelineSource.indexOf('"BRIDGE_ENQUEUE_FAILED"', dispatchStart);
   const unmappedMapAt = pipelineSource.indexOf('"BRIDGE_UNMAPPED_COMMAND_TYPE"', dispatchStart);
   assert.ok(dispatchStart > -1 && casAt > -1 && deliverAt > -1 && bridgeFailedAt > -1 && unmappedMapAt > -1);
@@ -550,7 +590,7 @@ test("the pipeline AWAITS delivery — delivery is not fire-and-forget at the ca
   // spelling, the dispatch path must consume delivery's settled result.
   assert.match(
     pipelineSource,
-    /await mt5ExecutionAdapter\.deliver\(\{/,
-    "the dispatch path must await delivery and use its result",
+    /await executionAdapter\.deliver\(\{/,
+    "the dispatch path must await the SELECTED adapter's delivery and use its settled result",
   );
 });

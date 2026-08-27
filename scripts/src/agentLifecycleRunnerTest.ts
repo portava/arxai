@@ -70,6 +70,7 @@ try {
   {
     const tag = `__RUNNERTEST_${randomUUID()}`;
     await db.insert(arxLiveCommandsTable).values({
+      executionVenue: "MT5_EA_BRIDGE",
       commandId: tag,
       userId: -1, // sentinel, never a real user
       commandType: "OPEN",
@@ -98,6 +99,7 @@ try {
   {
     const tag = `__RUNNERTEST_EXPIRED_${randomUUID()}`;
     await db.insert(arxLiveCommandsTable).values({
+      executionVenue: "MT5_EA_BRIDGE",
       commandId: tag,
       userId: -1,
       commandType: "OPEN",

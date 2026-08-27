@@ -64,6 +64,7 @@ async function seedUser(label: "ADMIN" | "USER"): Promise<{ id: number; cookie: 
 // rows carry the TAG inside command_id so cleanup can delete only ours.
 async function seedLiveCommand(userId: number, phaseTag: string | null): Promise<void> {
   await db.insert(arxLiveCommandsTable).values({
+      executionVenue: "MT5_EA_BRIDGE",
     commandId: `${TAG}_${randomBytes(4).toString("hex")}`,
     userId,
     commandType: "OPEN",

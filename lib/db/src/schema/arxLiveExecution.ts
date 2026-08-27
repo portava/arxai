@@ -135,6 +135,20 @@ export const arxLiveCommandsTable = pgTable("arx_live_commands", {
   side: text("side").notNull(),                          // BUY | SELL
   orderType: text("order_type").notNull(),               // MARKET_BUY | MARKET_SELL | BUY_LIMIT | SELL_LIMIT | BUY_STOP | SELL_STOP | BUY_STOP_LIMIT | SELL_STOP_LIMIT
   requestedVolume: doublePrecision("requested_volume").notNull(),
+  // Phase 6 — the EXECUTION VENUE this command is bound for. Explicit, never
+  // inferred from the symbol.
+  //
+  // The default is a BACKFILL FACT, not a runtime fallback: every row created
+  // before this column existed was bound to an mt5_connection by construction,
+  // because the dispatch path had no other venue. Recording them as
+  // MT5_EA_BRIDGE states something already true.
+  //
+  // It is NOT a licence to omit the venue on a new row. `routeExecutionVenue`
+  // has no default and refuses an absent venue, and the CI guard
+  // check-execution-venue-explicit asserts every writer sets this column
+  // explicitly — so the column default cannot become the back door to the
+  // default the router deliberately refuses to have.
+  executionVenue: text("execution_venue").notNull().default("MT5_EA_BRIDGE"),
   executedVolume: doublePrecision("executed_volume"),
   stopLoss: doublePrecision("stop_loss"),
   takeProfit: doublePrecision("take_profit"),

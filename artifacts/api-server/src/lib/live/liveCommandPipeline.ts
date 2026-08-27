@@ -67,6 +67,8 @@ import {
   type ExecutionAdapter,
   type Mt5DeliveryResult,
 } from "./executionAdapter.js";
+import { selectExecutionAdapter } from "./executionAdapterRegistry.js";
+import type { ExecutionAdapterRegistry } from "./executionAdapterRegistry.js";
 // R2-S4 — the freshness gate's run-row shape is a type-only import (erased at
 // runtime). The VALUE import of reconciliationFreshnessVerdict is dynamic at
 // the gate site: unknownReconciler.ts statically imports this module's pure
@@ -1717,6 +1719,11 @@ export async function createLiveOpsDraft(input: {
   const [row] = await db.insert(arxLiveCommandsTable).values({
     commandId,
     userId: input.userId,
+    // R6 — the venue, stated rather than inherited from the column default.
+    // This path binds an MT5 bridgeConnectionId, so the command IS an MT5
+    // command; saying so explicitly keeps the column default a historical
+    // backfill instead of a silent fallback for anything that forgets.
+    executionVenue: "MT5_EA_BRIDGE",
     bridgeConnectionId: bridge?.id ?? null,
     accountLogin: bridge?.accountNumber ?? null,
     brokerServer: bridge?.brokerName ?? null,
@@ -1897,6 +1904,11 @@ export async function createLiveDraft(
   const [row] = await db.insert(arxLiveCommandsTable).values({
     commandId,
     userId: input.userId,
+    // R6 — the venue, stated rather than inherited from the column default.
+    // This path binds an MT5 bridgeConnectionId, so the command IS an MT5
+    // command; saying so explicitly keeps the column default a historical
+    // backfill instead of a silent fallback for anything that forgets.
+    executionVenue: "MT5_EA_BRIDGE",
     bridgeConnectionId: bridge?.id ?? null,
     accountLogin: bridge?.accountNumber ?? null,
     brokerServer: bridge?.brokerName ?? null,
@@ -3651,15 +3663,31 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
     // so behavior is byte-equivalent; the mirror-failure → mark-failed
     // semantics in the catch stay HERE so every future venue inherits them.
     try {
-      const { mt5CommandId, action: eaAction } = await mt5ExecutionAdapter.deliver({
+      // R6 — venue routing. The adapter is no longer a compile-time literal:
+      // it is selected from the registry by the venue the SERVER persisted on
+      // this command row. `row.executionVenue` is server-written; a
+      // client-supplied venue must never reach here, or a client could name a
+      // more privileged execution path than the server authorized.
+      //
+      // There is NO default venue. selectExecutionAdapter throws
+      // UnroutableVenueError for an absent, empty or unrecognised venue, and
+      // that throw is caught below as a DEFINITE failure — correct, because
+      // nothing can have been transmitted when no adapter was ever chosen.
+      const executionAdapter = selectExecutionAdapter(EXECUTION_ADAPTERS, row.executionVenue);
+      const delivered = await executionAdapter.deliver({
         liveRow: sent,
         bridgeUserId: bridge!.userId!,
         bridgeConnectionId: bridge!.id,
       });
+      // transportRef is the venue-neutral handle. mt5CommandId exists only on
+      // the EA bridge's result, so it is read narrowly rather than destructured
+      // — a second venue has no mailbox row to report.
+      const eaAction = delivered.action;
+      const mt5CommandId = (delivered as { mt5CommandId?: number }).mt5CommandId ?? null;
       logger.warn({
         [PHASE_B_LIVE_LOG_PREFIX]: true,
         event: "LIVE_BRIDGE_ENQUEUED",
-        commandId: args.commandId, mt5CommandId, eaAction,
+        commandId: args.commandId, mt5CommandId, transportRef: delivered.transportRef, eaAction,
         bridgeConnectionId: bridge!.id,
       }, "Phase B live command mirrored into mt5_commands for v1.50 EA pickup");
     } catch (bridgeErr: unknown) {
@@ -4256,6 +4284,8 @@ async function enqueueBridgedMt5Command(opts: {
 // guard's mirror-call literal keeps matching the ONLY place delivery is
 // invoked — which sits, as the guard requires, after the dispatch CAS claim
 // and the race-lost refusal in source order.
+// R6 — still the SOLE MT5 implementation, unchanged, now registered under its
+// venue key rather than named directly at the dispatch call site.
 const mt5ExecutionAdapter: ExecutionAdapter<Mt5DeliveryResult> = new Mt5EaBridgeAdapter(
   // Deliberately `.then(...)` rather than an async/await block: the seam's own
   // test pins that the enqueue helper is never directly awaited in this file,
@@ -4270,6 +4300,36 @@ const mt5ExecutionAdapter: ExecutionAdapter<Mt5DeliveryResult> = new Mt5EaBridge
     bridgeConnectionId: command.bridgeConnectionId,
   }).then((r) => ({ ...r, transportRef: String(r.mt5CommandId) })),
 );
+
+/**
+ * R6 — the venue→adapter registry the dispatch path selects from.
+ *
+ * Typed as Record<ExecutionVenue, ...>, so adding a venue to the union without
+ * registering a certified adapter for it FAILS THE BUILD. That is the property
+ * the old hard-coded literal had for free, kept rather than traded away.
+ *
+ * DERIV_DEMO is intentionally absent from this static registry. Its adapter
+ * needs per-request dependencies — the resolved execution tier, the proven-demo
+ * assertion, the durable intent writer — so it cannot be a module constant
+ * without reading ambient state, which is exactly how a tier or an account
+ * check gets bypassed. It is supplied per dispatch by
+ * `buildExecutionAdapterRegistry`. Until that wiring lands, a DERIV_DEMO
+ * command reaching dispatch throws UnroutableVenueError and fails CLOSED:
+ * no adapter, no frame, no order.
+ */
+const EXECUTION_ADAPTERS: ExecutionAdapterRegistry = {
+  MT5_EA_BRIDGE: mt5ExecutionAdapter,
+  DERIV_DEMO: {
+    venue: "deriv_demo",
+    deliver: () => {
+      throw new Error(
+        "DERIV_DEMO_ADAPTER_NOT_WIRED: the Deriv adapter requires per-request dependencies "
+        + "(execution tier, proven-demo assertion, durable intent writer) and is not available "
+        + "as a module constant. Dispatch fails CLOSED rather than sending without them.",
+      );
+    },
+  },
+};
 
 export type BridgedLiveOutcome =
   | "LIVE_FILLED"

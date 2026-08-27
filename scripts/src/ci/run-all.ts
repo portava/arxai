@@ -4,6 +4,7 @@ import { checkCanPlaceTrades } from "./check-can-place-trades.js";
 import { checkRouteCollisions } from "./check-route-collisions.js";
 import { checkDuplicateTables } from "./check-duplicate-tables.js";
 import { checkVaultMutations } from "./check-vault-mutations.js";
+import { checkExecutionVenueExplicit } from "./check-execution-venue-explicit.js";
 import { checkCrossArtifactImports } from "./check-cross-artifact-imports.js";
 import { checkDomainCircular } from "./check-domain-circular.js";
 import { checkPaperAutopilotIsolation } from "./check-paper-autopilot-isolation.js";
@@ -76,6 +77,7 @@ const checks: Array<() => CheckResult> = [
   checkWorktreeIntegrity,
   checkCanPlaceTrades,
   checkVaultMutations,
+  checkExecutionVenueExplicit,
   checkNoConsole,
   checkRouteCollisions,
   checkDuplicateTables,

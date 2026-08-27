@@ -62,6 +62,7 @@ async function seedFixture(opts: {
   const brokerTicket = `test_ticket_${randomUUID()}`;
 
   await db.insert(arxLiveCommandsTable).values({
+      executionVenue: "MT5_EA_BRIDGE",
     commandId: closeCmdId,
     userId: TEST_USER_ID,
     commandType: "CLOSE_LIVE_POSITION",
