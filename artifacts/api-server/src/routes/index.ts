@@ -61,6 +61,7 @@ import meDemoExecutionRouter from "./meDemoExecution";
 import meDemoCommandsRouter from "./meDemoCommands";
 import meDemoBridgeDebugRouter from "./meDemoBridgeDebug";
 import meDemoPositionsRouter from "./meDemoPositions";
+import meApprovalInboxRouter from "./meApprovalInbox";
 import meLiveRouter from "./meLive";
 import meLiveAccountRouter from "./meLiveAccount";
 import liveTestCycleRouter from "./liveTestCycle";
@@ -301,6 +302,8 @@ router.use(meDemoExecutionRouter);
 router.use(meDemoCommandsRouter);
 router.use(meDemoBridgeDebugRouter);
 router.use(meDemoPositionsRouter);
+// Phase 6 — the Approval Inbox. Per-user only; no admin override.
+router.use(meApprovalInboxRouter);
 router.use(meLiveRouter);
 router.use(meLiveAccountRouter);
 router.use(liveTestCycleRouter);

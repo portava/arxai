@@ -12,6 +12,12 @@ const ROOTS = [
   // the code that actually does the writing. Found by injecting a real UPDATE
   // on tradingConstitutionsTable into a repository and watching the guard pass.
   join(ROOT, "lib/db/src"),
+  // Phase 6 guard-scope audit — scripts/src was unscanned, and 131 files under
+  // it import @workspace/db. An ops or QA script can write anything, and a
+  // one-off "fix the ledger" script is exactly how an append-only table gets
+  // quietly mutated. artifacts/api-server/__qa__ is a sibling of src and was
+  // outside the root for the same reason.
+  join(ROOT, "scripts/src"),
 ];
 
 // Append-only vault tables — UPDATE/DELETE forbidden at the application layer.
@@ -62,6 +68,12 @@ export function checkVaultMutations(): CheckResult {
   for (const root of ROOTS) {
     const files = walk(root);
     for (const f of files) {
+      // scripts/src/ci holds the GUARDS THEMSELVES and their fixtures. A guard
+      // necessarily quotes the pattern it forbids, and its tests necessarily
+      // contain violating strings as test data — scanning them reports the
+      // guard's own documentation as a breach. Excluded deliberately, not
+      // because it is inconvenient: no application DB write lives here.
+      if (rel(f).startsWith("scripts/src/ci/")) continue;
       const src = read(f);
       // Quick filter: file must reference a vault table to be relevant.
       if (!VAULT_TABLES.some((t) => src.includes(t))
@@ -69,7 +81,13 @@ export function checkVaultMutations(): CheckResult {
       const lines = src.split("\n");
       // Look for db.update(VAULT_TABLE) / db.delete(VAULT_TABLE) patterns
       // and chained .update(... vaultTable ...) anywhere in a window.
-      lines.forEach((line, i) => {
+      lines.forEach((rawLine, i) => {
+        // Strip comments FIRST, for BOTH branches below. The raw-SQL branch
+        // already skipped them; the Drizzle-symbol branch did not, so this
+        // guard's own comment describing ".update(auditEventsTable)" was
+        // reported as a violation of itself once the scan roots widened.
+        const line = rawLine.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/, "");
+        if (line.trim() === "") return;
         for (const t of VAULT_TABLES) {
           // Match patterns like: .update(auditEventsTable) or .delete(vaultEventsTable)
           const updateRe = new RegExp(`\\.update\\s*\\(\\s*${t}\\b`);
