@@ -6,6 +6,7 @@ import { bootstrapAdminUser } from "./lib/auth/adminBootstrap";
 import { bootstrapLegacyOwnerDowngrade } from "./lib/auth/legacyOwnerDowngrade";
 import { startStuckCommandWatchdog } from "./lib/mt5/stuckCommandWatchdog";
 import { startUnknownReconcilerWorker } from "./lib/live/unknownReconcilerWorker";
+import { startGuidedSweeperWorker } from "./lib/phase6/guidedSweeperWorker.js";
 import { startMt5FeedStalenessWatchdog } from "./lib/data/mt5FeedStalenessWatchdog";
 import { startPoolViewAnomalyDetector } from "./lib/audit/poolViewAnomalyDetector";
 import { startAgentEcosystemLifecycleRunner } from "./lib/agentEcosystem/lifecycleRunner";
@@ -138,6 +139,13 @@ ensureSafetyCoreInitialized()
       // dispatch freshness gate to be turned on at all (Ruling 10).
       // Opt-out via ARX_UNKNOWN_RECONCILER_ENABLED; disabling is logged loudly.
       startUnknownReconcilerWorker();
+      // Phase 6 — the guided sweeper. sweepExpiredLiveCommands is driven ONLY
+      // by the EA poll, so a venue with no EA (Deriv) would never have its
+      // stale guided tickets expired: they would hold an exposure reservation
+      // and an active-index slot forever. Expires PENDING/APPROVED only —
+      // DISPATCHING and UNRESOLVED may have an order at the venue, and elapsed
+      // time is not evidence about whether they do.
+      startGuidedSweeperWorker();
       // MT5 candle-feed staleness + connectivity watchdog — raises an admin
       // alert when a previously-contributing symbol+timeframe series stops
       // pushing candles for longer than CANDLE_TTL (the chart then silently
