@@ -479,3 +479,4 @@ export * from "./edgeLibrary";
 // ── Multi-broker Phase 0B — tenant-owned, disabled metadata only ────────────
 // Does not replace MT5 bridge state or permit connection/execution behavior.
 export * from "./brokerHubMetadata";
+export * from "./phase6GuidedExecution";

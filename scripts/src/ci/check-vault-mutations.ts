@@ -22,6 +22,11 @@ const VAULT_TABLES = [
   // Blueprint Phase 0 — the owner rulings ledger. Superseding a ruling means
   // appending a new row that names its predecessor, never editing history.
   "ownerDecisionsTable",
+  // Phase 6 — the Personal Trading Constitution. A new version is a NEW ROW
+  // naming the version it supersedes; editing one in place would retroactively
+  // rewrite the rules a user was told governed a trade they already approved.
+  // An approval ticket pins constitutionVersion precisely so that record holds.
+  "tradingConstitutionsTable",
 ];
 
 // Raw-SQL append-only surfaces, keyed by physical table name.
