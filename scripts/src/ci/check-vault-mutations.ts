@@ -4,6 +4,14 @@ import { join } from "node:path";
 const ROOTS = [
   join(ROOT, "artifacts/api-server/src"),
   join(ROOT, "lib/domain/src"),
+  // Phase 6 — lib/db/src was NOT scanned before, which left the guard blind in
+  // the one directory where an append-only violation is most likely to be
+  // written: the repositories are here, and a repository is where an UPDATE
+  // gets added. Every vault table's write path lives under this root, so
+  // omitting it meant the "inviolable invariant" was enforced everywhere except
+  // the code that actually does the writing. Found by injecting a real UPDATE
+  // on tradingConstitutionsTable into a repository and watching the guard pass.
+  join(ROOT, "lib/db/src"),
 ];
 
 // Append-only vault tables — UPDATE/DELETE forbidden at the application layer.

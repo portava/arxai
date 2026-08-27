@@ -25,3 +25,13 @@ export * as eventLogRepo from "./eventLogRepo";
 // here: a CAS on state='APPROVED' is what makes "one approval, at most one
 // order" true across processes, where a mutex cannot reach.
 export * as approvalTicketsRepo from "./approvalTicketsRepo";
+
+// Phase 6 — the Personal Trading Constitution. APPEND-ONLY: a new version is a
+// new row naming the one it supersedes. Registered with the vault-append-only
+// guard, so an UPDATE here fails CI.
+export * as tradingConstitutionRepo from "./tradingConstitutionRepo";
+
+// Phase 6 — durable Deriv order intents. req_id restarts at 0 per transport
+// instance, so after a restart this row is the ONLY thing that can correlate a
+// late reply back to the command that caused it.
+export * as derivOrderIntentsRepo from "./derivOrderIntentsRepo";
