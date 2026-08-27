@@ -84,26 +84,44 @@ async function main(): Promise<void> {
   //      Both probes are rejections by design and change no state — the
   //      endpoint only writes a behaviour record on SUCCESS, and neither probe
   //      carries a valid token. The correct token is never sent or needed.
-  const baseUrl = process.argv.find((a) => a.startsWith("--base-url="))?.split("=")[1];
+  // The app takes its port ENTIRELY from process.env.PORT — there is no
+  // default and it throws without one — so guessing 5000 was wrong. Derive it
+  // from the same variable the server uses when no base URL is given.
+  const envPort = (process.env["PORT"] ?? "").trim();
+  const baseUrl = process.argv.find((a) => a.startsWith("--base-url="))?.split("=")[1]
+    ?? (envPort ? `http://127.0.0.1:${envPort}` : undefined);
   if (!baseUrl) {
-    skip("5. /system/override is fail-closed", "needs --base-url=<running app>");
+    skip("5. override endpoint is fail-closed", "no --base-url and PORT is unset");
   } else {
-    const body = JSON.stringify({ user: "verification", action: "probe" });
+      // routes/index.ts does router.use(systemRouter) with no prefix, and that
+    // aggregate is mounted at "/api" in app.ts — so the endpoint is
+    // /api/system/override. Probing /system/override returned 404, which the
+    // old accept-list read as "not fail-closed": a wrong path reported as a
+    // security finding.
+    const OVERRIDE_PATH = "/api/system/override";
+  const body = JSON.stringify({ user: "verification", action: "probe" });
     const hdrs = { "content-type": "application/json" };
     try {
       // No token at all.
-      const noTok = await fetch(`${baseUrl}/system/override`, { method: "POST", headers: hdrs, body });
+      const noTok = await fetch(`${baseUrl}${OVERRIDE_PATH}`, { method: "POST", headers: hdrs, body });
       // A wrong token. Deliberately not secret-shaped.
-      const badTok = await fetch(`${baseUrl}/system/override`, {
+      const badTok = await fetch(`${baseUrl}${OVERRIDE_PATH}`, {
         method: "POST", body,
         headers: { ...hdrs, "X-Vault-Override-Token": "not-the-token" },
       });
       // 401 = token required and rejected. 503 = endpoint disabled because the
       // env var is unset. Both are fail-closed; 2xx is not.
       const ok = [401, 503].includes(noTok.status) && [401, 503].includes(badTok.status);
-      report("5. /system/override is fail-closed", ok,
-        `no-token -> ${noTok.status}, wrong-token -> ${badTok.status}`
-        + (ok ? " (both rejected)" : " — EXPECTED 401 or 503"));
+      // A 404 is a WRONG PATH, not an open endpoint. Conflating the two turns a
+      // configuration mistake into a false security finding — and, in the other
+      // direction, could hide a real one behind a shrug.
+      const notFound = noTok.status === 404 || badTok.status === 404;
+      report("5. override endpoint is fail-closed", ok,
+        notFound
+          ? `404 at ${OVERRIDE_PATH} — endpoint not mounted there; NOT a verdict on `
+            + "whether it is fail-closed"
+          : `${OVERRIDE_PATH}: no-token -> ${noTok.status}, wrong-token -> ${badTok.status}`
+            + (ok ? " (both rejected)" : " — EXPECTED 401 or 503"));
       // If the token is set, an absent token must NOT yield 503.
       if (vaultSet && noTok.status === 503) {
         report("5b. endpoint enabled when the token is set", false,
