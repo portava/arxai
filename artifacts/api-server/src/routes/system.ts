@@ -6,6 +6,8 @@ import {
   driveGlobalState,
 } from "../lib/safetyCore.js";
 import { logUserOverride } from "../lib/vaultLogger.js";
+import { secretsMatch } from "../lib/secretsMatch.js";
+
 import { scanVaultIntegrity } from "../lib/vaultIntegrity.js";
 import { selectBrokerKind, describeRequiredSecrets, missingRequiredSecrets } from "../lib/broker/secrets.js";
 import { getBrokerProvider } from "../lib/broker/registry.js";
@@ -281,7 +283,7 @@ router.post("/system/override", async (req, res) => {
       return;
     }
     const provided = req.header("X-Vault-Override-Token");
-    if (provided !== expected) {
+    if (!secretsMatch(provided, expected)) {
       res.status(401).json({ error: "Invalid or missing override token" });
       return;
     }
