@@ -32,6 +32,11 @@ import { approvalTicketsRepo, tradingConstitutionRepo } from "@workspace/db";
 type ApprovalTicketRow = NonNullable<Awaited<ReturnType<typeof approvalTicketsRepo.findTicketById>>>;
 import { requireUser } from "../lib/auth/middleware.js";
 import { materialTermsFingerprint } from "@workspace/domain/safety-contracts/approvalTicket";
+import {
+  evaluateConstitution, constitutionIsWellFormed,
+  type TradingConstitution,
+} from "@workspace/domain/safety-contracts/tradingConstitution";
+import { randomUUID } from "node:crypto";
 import { assertNoSecretLeak } from "../lib/phase6/derivDependencyResolver.js";
 
 const router = Router();
@@ -194,6 +199,170 @@ router.post("/me/approval-tickets/:ticketId/dispatch", requireUser, async (req, 
     /** Explicitly told to the client so a dry run is never shown as a trade. */
     dryRun: outcome.refusal === "TIER_FORBIDS_SEND",
   });
+});
+
+/** How long a proposal stays actionable. Short on purpose: a quote goes stale,
+ *  and an approval given against a stale quote is an approval for a trade the
+ *  user did not actually see. */
+const PROPOSAL_TTL_MS = 5 * 60_000;
+
+/**
+ * Propose a guided trade — the FIRST Constitution evaluation.
+ *
+ * The client supplies what it wants to trade. It does NOT supply the intent id,
+ * the expiry, the constitution version, the gate verdicts or the fingerprint:
+ * every one of those is server-derived, because each is something the ticket
+ * ASSERTS rather than something the requester gets to choose.
+ *
+ * A proposal that the Constitution refuses creates NO ticket. An inbox full of
+ * tickets that could never execute trains a user to click through refusals.
+ */
+router.post("/me/approval-tickets", requireUser, async (req, res) => {
+  const userId = getUserId(req);
+  if (userId == null) { res.status(401).json({ error: "AUTH_REQUIRED" }); return; }
+
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const num = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : Number.NaN);
+  const optNum = (v: unknown): number | null =>
+    v === null || v === undefined ? null : (typeof v === "number" && Number.isFinite(v) ? v : Number.NaN);
+
+  const instrument = typeof b["instrument"] === "string" ? b["instrument"] : "";
+  const side = b["side"] === "BUY" || b["side"] === "SELL" ? b["side"] : null;
+  const accountRef = typeof b["accountRef"] === "string" ? b["accountRef"] : "";
+  const broker = typeof b["broker"] === "string" ? b["broker"] : "deriv";
+  const stakeUsd = num(b["stakeUsd"]);
+  const multiplier = num(b["multiplier"]);
+  const stopLossUsd = optNum(b["stopLossUsd"]);
+  const takeProfitUsd = optNum(b["takeProfitUsd"]);
+  const marketCategory = typeof b["marketCategory"] === "string" ? b["marketCategory"] : "";
+
+  if (!instrument || !side || !accountRef || !marketCategory
+      || Number.isNaN(stakeUsd) || Number.isNaN(multiplier)
+      || Number.isNaN(stopLossUsd as number) || Number.isNaN(takeProfitUsd as number)) {
+    res.status(400).json({ error: "INVALID_PROPOSAL" });
+    return;
+  }
+
+  const conRow = await tradingConstitutionRepo.getActiveConstitution(userId);
+  if (!conRow) {
+    // No policy means no permission. Not "no limits".
+    res.status(409).json({ error: "NO_CONSTITUTION", detail: "set a trading constitution first" });
+    return;
+  }
+  const constitution = {
+    constitutionId: conRow.constitutionId, userId: conRow.userId, version: conRow.version,
+    allowedBrokers: conRow.allowedBrokers, allowedAccountRefs: conRow.allowedAccountRefs,
+    allowedInstruments: conRow.allowedInstruments, allowedMarketCategories: conRow.allowedMarketCategories,
+    allowedSessionsUtc: conRow.allowedSessionsUtc,
+    maxRiskPerTradeUsd: conRow.maxRiskPerTradeUsd, maxDailyLossUsd: conRow.maxDailyLossUsd,
+    maxWeeklyLossUsd: conRow.maxWeeklyLossUsd,
+    maxSimultaneousPositions: conRow.maxSimultaneousPositions,
+    maxExposurePerSymbolUsd: conRow.maxExposurePerSymbolUsd, maxTradesPerDay: conRow.maxTradesPerDay,
+    requireStopLoss: conRow.requireStopLoss, requireTakeProfit: conRow.requireTakeProfit,
+    minStakeUsd: conRow.minStakeUsd, maxStakeUsd: conRow.maxStakeUsd,
+    minMultiplier: conRow.minMultiplier, maxMultiplier: conRow.maxMultiplier,
+    lossStreakCooldown: conRow.lossStreakCooldown,
+    forbiddenInstruments: conRow.forbiddenInstruments, forbiddenConditions: conRow.forbiddenConditions,
+    rubyAuthority: conRow.rubyAuthority,
+  } as unknown as TradingConstitution;
+
+  const verdict = evaluateConstitution(
+    constitution,
+    {
+      userId, broker, accountRef, instrument, marketCategory, side,
+      stakeUsd, multiplier, riskUsd: stakeUsd,
+      hasStopLoss: stopLossUsd !== null, hasTakeProfit: takeProfitUsd !== null,
+      conditions: [],
+    },
+    {
+      // Observed state at PROPOSAL time. Zeroes here are honest only because a
+      // fresh guided account has no history; the DISPATCH evaluation re-reads
+      // real state, and that is the one that gates the order.
+      nowIso: new Date().toISOString(),
+      realisedDailyLossUsd: 0, realisedWeeklyLossUsd: 0,
+      openPositionCount: 0, openExposureForSymbolUsd: 0,
+      tradesTakenToday: 0, consecutiveLosses: 0, lastLossAtIso: null,
+    },
+  );
+  if (verdict.decision !== "PERMIT") {
+    res.status(409).json({
+      error: "CONSTITUTION_REFUSED", refusals: verdict.refusals,
+      constitutionVersion: verdict.constitutionVersion,
+    });
+    return;
+  }
+
+  const ticketId = `tkt_${randomUUID()}`;
+  const created = await approvalTicketsRepo.createTicket({
+    ticketId,
+    userId,
+    state: "PENDING",
+    broker, accountRef, instrument, side,
+    stakeUsd, multiplier, stopLossUsd, takeProfitUsd,
+    // Server-derived. A client-chosen intent id could collide with, or
+    // impersonate, another attempt's lineage.
+    intentId: `di_${ticketId}`,
+    expiresAt: new Date(Date.now() + PROPOSAL_TTL_MS),
+    constitutionVersion: conRow.version,
+    gateVerdicts: { constitution: verdict.refusals },
+    gateVerdictsPassed: true,
+    scannerSignalId: typeof b["scannerSignalId"] === "string" ? b["scannerSignalId"] : null,
+    rubyExplanation: typeof b["rubyExplanation"] === "string" ? b["rubyExplanation"] : null,
+    referenceQuote: optNum(b["referenceQuote"]),
+  });
+  send(res, 201, { ticket: toWire(created) });
+});
+
+/**
+ * Set a new Constitution version. APPEND-ONLY: this creates a new row and never
+ * edits the old one, so a ticket that pinned an earlier version keeps meaning
+ * what it meant when the user approved it.
+ */
+router.post("/me/trading-constitution", requireUser, async (req, res) => {
+  const userId = getUserId(req);
+  if (userId == null) { res.status(401).json({ error: "AUTH_REQUIRED" }); return; }
+
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  // Validate with the SAME predicate the evaluator uses. A constitution that
+  // stores but cannot be evaluated would refuse every trade later with
+  // CONSTITUTION_MALFORMED, which reads as a bug rather than as bad input.
+  const candidate = {
+    ...b, constitutionId: `con_${randomUUID()}`, userId, version: 1,
+  } as unknown as TradingConstitution;
+  if (!constitutionIsWellFormed(candidate)) {
+    res.status(400).json({ error: "CONSTITUTION_MALFORMED" });
+    return;
+  }
+
+  const row = await tradingConstitutionRepo.appendConstitutionVersion({
+    userId,
+    createdBy: `user:${userId}`,
+    values: {
+      constitutionId: candidate.constitutionId,
+      allowedBrokers: candidate.allowedBrokers,
+      allowedAccountRefs: candidate.allowedAccountRefs,
+      allowedInstruments: candidate.allowedInstruments,
+      allowedMarketCategories: candidate.allowedMarketCategories,
+      allowedSessionsUtc: candidate.allowedSessionsUtc,
+      maxRiskPerTradeUsd: candidate.maxRiskPerTradeUsd,
+      maxDailyLossUsd: candidate.maxDailyLossUsd,
+      maxWeeklyLossUsd: candidate.maxWeeklyLossUsd,
+      maxSimultaneousPositions: candidate.maxSimultaneousPositions,
+      maxExposurePerSymbolUsd: candidate.maxExposurePerSymbolUsd,
+      maxTradesPerDay: candidate.maxTradesPerDay,
+      requireStopLoss: candidate.requireStopLoss,
+      requireTakeProfit: candidate.requireTakeProfit,
+      minStakeUsd: candidate.minStakeUsd,
+      maxStakeUsd: candidate.maxStakeUsd,
+      minMultiplier: candidate.minMultiplier,
+      maxMultiplier: candidate.maxMultiplier,
+      lossStreakCooldown: candidate.lossStreakCooldown,
+      forbiddenInstruments: candidate.forbiddenInstruments,
+      forbiddenConditions: candidate.forbiddenConditions,
+      rubyAuthority: candidate.rubyAuthority,
+    } as never,
+  });
+  send(res, 201, { constitutionId: row.constitutionId, version: row.version });
 });
 
 /** Read-only: the Constitution version currently governing this user. */
