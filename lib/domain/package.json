@@ -133,7 +133,8 @@
     "./execution-state": "./src/execution-state/index.ts",
     "./safety-contracts/venueGateParity": "./src/safety-contracts/venueGateParity.ts",
     "./safety-contracts/derivDemoGateParity": "./src/safety-contracts/derivDemoGateParity.ts",
-    "./safety-contracts/tradingConstitution": "./src/safety-contracts/tradingConstitution.ts"
+    "./safety-contracts/tradingConstitution": "./src/safety-contracts/tradingConstitution.ts",
+    "./safety-contracts/approvalTicket": "./src/safety-contracts/approvalTicket.ts"
   },
   "scripts": {},
   "dependencies": {

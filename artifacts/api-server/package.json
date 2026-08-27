@@ -57,6 +57,7 @@
     "test:deriv-new-api-certify": "node --import tsx --test --test-force-exit src/lib/deriv/newApi/__qa__/newApiCertify.test.ts",
     "test:deriv-phase5-closure": "node --import tsx --test --test-force-exit src/lib/deriv/newApi/__qa__/newApiPhase5Closure.test.ts",
     "test:deriv-order-intent": "node --import tsx --test --test-force-exit src/lib/deriv/newApi/__qa__/newApiOrderIntent.test.ts",
+    "test:phase6-approval": "node --import tsx --test --test-force-exit src/lib/phase6/__qa__/approvalTicket.test.ts",
     "test:phase6-constitution": "node --import tsx --test --test-force-exit src/lib/phase6/__qa__/tradingConstitution.test.ts",
     "test:override-token-timing": "node --import tsx --test --test-force-exit src/routes/__qa__/overrideTokenTimingSafe.test.ts",
     "test:deriv-evidence": "node --import tsx --test --test-force-exit src/lib/deriv/newApi/__qa__/newApiEvidence.test.ts",

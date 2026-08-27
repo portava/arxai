@@ -10,6 +10,7 @@ export * from "./livePhaseBDispatchGate.js";
 export * from "./venueGateParity.js";
 export * from "./derivDemoGateParity.js";
 export * from "./tradingConstitution.js";
+export * from "./approvalTicket.js";
 export * from "./isLiveBrokerExecutionEnabled.js";
 export * from "./preTradeBrokerGuard.js";
 export * from "./syntheticLiveFloor.js";
