@@ -19,6 +19,7 @@ import { sql } from "drizzle-orm";
 
 const ALLOW_WRITE = process.argv.includes("--allow-write");
 let failures = 0;
+const skipped: string[] = [];
 
 function report(id: string, ok: boolean, detail: string): void {
   if (!ok) failures += 1;
@@ -26,6 +27,10 @@ function report(id: string, ok: boolean, detail: string): void {
   console.log(`  [${ok ? "PASS" : "FAIL"}] ${id.padEnd(52)} ${detail}`);
 }
 function skip(id: string, why: string): void {
+  // Tracked, not just printed. A skipped check is UNVERIFIED, and a summary
+  // that counts only failures reports "ALL CHECKS PASSED" for a run that
+  // proved nothing about it.
+  skipped.push(`${id} (${why})`);
   // eslint-disable-next-line no-console
   console.log(`  [SKIP] ${id.padEnd(52)} ${why}`);
 }
@@ -195,8 +200,17 @@ async function main(): Promise<void> {
     }
   }
 
+  // The summary must never claim more than was actually run.
+  const lines: string[] = [];
+  if (failures > 0) lines.push(`${failures} CHECK(S) FAILED`);
+  if (skipped.length > 0) {
+    lines.push(`${skipped.length} CHECK(S) NOT VERIFIED:`);
+    for (const sk of skipped) lines.push(`   - ${sk}`);
+  }
+  if (failures === 0 && skipped.length === 0) lines.push("ALL CHECKS PASSED");
+  else if (failures === 0) lines.push("All checks that RAN passed — but see the unverified list above.");
   // eslint-disable-next-line no-console
-  console.log(`\n${failures === 0 ? "ALL CHECKS PASSED" : `${failures} CHECK(S) FAILED`}\n`);
+  console.log(`\n${lines.join("\n")}\n`);
   process.exitCode = failures === 0 ? 0 : 1;
 }
 
