@@ -101,8 +101,34 @@ async function classifyFromVenue(accountRef: string): Promise<DemoClassification
 async function verify(userId: number, intentId: string): Promise<void> {
   const rows = await guidedAttemptEventsRepo.listUserAttemptEvents(userId, intentId);
   if (rows.length === 0) {
+    // An empty ledger is NOT proof of non-dispatch (audit C9): lineage writes
+    // are non-fatal by design, so a dropped row leaves the ledger silent while
+    // the ticket and intent rows carry the truth. Cross-check BOTH before
+    // claiming anything — "nothing was dispatched" from a ledger gap is
+    // UNKNOWN laundered into no-trade by the very tool meant to reconcile it.
+    const intent = await derivOrderIntentsRepo.findIntent(intentId);
+    const ticketId = intentId.startsWith("di_") ? intentId.slice(3) : null;
+    const ticket = ticketId ? await approvalTicketsRepo.findOwnedTicket(ticketId, userId) : null;
+    const dispatchEvidence =
+      (intent && intent.writeDisposition !== "NOT_ATTEMPTED")
+      || (ticket && ["DISPATCHING", "UNRESOLVED", "EXECUTED"].includes(ticket.state));
+    if (dispatchEvidence) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `\nLEDGER GAP for ${intentId} — the ledger is empty but dispatch evidence exists:\n` +
+        `  ticket   ${ticket ? ticket.state : "not found"}\n` +
+        `  intent   ${intent ? `${intent.writeDisposition}${intent.resolvedAt ? " (resolved)" : " (UNRESOLVED)"}` : "not found"}\n` +
+        `  venue    ${ticket?.venueContractRef ?? intent?.venueContractRef ?? "none recorded"}\n\n` +
+        `The OUTCOME IS UNKNOWN. Do NOT place another order. Reconcile against the\n` +
+        `venue first, then repair the ledger from the ticket row.\n`,
+      );
+      process.exit(2);
+    }
     // eslint-disable-next-line no-console
-    console.log(`\nNo ledger events for ${intentId}. Nothing was dispatched under this intent.\n`);
+    console.log(
+      `\nNo ledger events for ${intentId}, no intent row past NOT_ATTEMPTED, and no ticket\n` +
+      `beyond APPROVED — nothing reached dispatch under this intent.\n`,
+    );
     process.exit(1);
   }
   const attempt = reconstructAttempt(rows.map((r) => ({

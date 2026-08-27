@@ -305,6 +305,20 @@ router.post("/me/approval-tickets", requireUser, async (req, res) => {
     return;
   }
 
+  // Gate 18 at PROPOSAL time. Creating a ticket that could never dispatch
+  // trains the user to click through refusals; refusing here says exactly what
+  // to fix. The audit found the parity map claimed this gate was enforced
+  // while nothing on the guided path read the acceptances table.
+  const { disclosureStatus } = await import("../lib/phase6/guidedDispatchEntry.js");
+  const disclosure = await disclosureStatus(userId);
+  if (!disclosure.accepted && !disclosure.waivedByOperator) {
+    res.status(409).json({
+      error: "DISCLOSURE_NOT_ACCEPTED",
+      detail: "accept the live-trading risk disclosure before proposing a guided trade",
+    });
+    return;
+  }
+
   const ticketId = `tkt_${randomUUID()}`;
   const created = await approvalTicketsRepo.createTicket({
     ticketId,
@@ -317,8 +331,15 @@ router.post("/me/approval-tickets", requireUser, async (req, res) => {
     intentId: `di_${ticketId}`,
     expiresAt: new Date(Date.now() + PROPOSAL_TTL_MS),
     constitutionVersion: conRow.version,
-    gateVerdicts: { constitution: verdict.refusals },
+    // What was ACTUALLY evaluated, named as such. The earlier version wrote
+    // gateVerdictsPassed: true unconditionally — a record asserting all 18
+    // gates passed when only the Constitution had been consulted.
+    gateVerdicts: {
+      constitution: { decision: "PERMIT", version: conRow.version },
+      disclosure: disclosure.accepted ? "ACCEPTED" : "OPERATOR_WAIVED",
+    },
     gateVerdictsPassed: true,
+    disclosureWaivedByOperator: !disclosure.accepted && disclosure.waivedByOperator,
     scannerSignalId: typeof b["scannerSignalId"] === "string" ? b["scannerSignalId"] : null,
     rubyExplanation: typeof b["rubyExplanation"] === "string" ? b["rubyExplanation"] : null,
     referenceQuote: optNum(b["referenceQuote"]),

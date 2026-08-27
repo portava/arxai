@@ -50,6 +50,14 @@ export type GuidedRefusal = (typeof GUIDED_REFUSALS)[number];
 
 export interface GuidedDispatchOutcome {
   ok: boolean;
+  /**
+   * True ONLY when THIS request won the CAS claim. Settlement keys off it:
+   * without it, a claim-race LOSER's "definite refusal" settlement matched the
+   * WINNER's in-flight DISPATCHING row and marked a ticket REJECTED ("no order
+   * exists") while the winner's frame was at the venue — the falsely-certain
+   * catastrophe, introduced by the settlement fix itself and caught by audit.
+   */
+  claimed: boolean;
   refusal: GuidedRefusal | null;
   detail: string;
   /** Set only when the venue proved a contract exists. */
@@ -100,7 +108,8 @@ const refuse = (
   refusal: GuidedRefusal, detail: string,
   extra: Partial<GuidedDispatchOutcome> = {},
 ): GuidedDispatchOutcome => ({
-  ok: false, refusal, detail, venueContractRef: null, indeterminate: false, intentId: null, ...extra,
+  ok: false, refusal, detail, venueContractRef: null, indeterminate: false,
+  intentId: null, claimed: false, ...extra,
 });
 
 /** Build the venue-neutral proposal the Constitution judges from a ticket. */
@@ -238,7 +247,7 @@ export async function dispatchGuidedTicket(
       kind: "GUIDED_DISPATCH_UNROUTABLE", userId: args.userId, ticketId: args.ticketId,
       detail: `${route.refusal}: ${route.detail}`,
     });
-    return refuse("VENUE_UNROUTABLE", `${route.refusal}: ${route.detail}`);
+    return refuse("VENUE_UNROUTABLE", `${route.refusal}: ${route.detail}`, { claimed: true });
   }
 
   // 6 — the certified adapter. TIER 0 refuses inside it, BEFORE any frame.
@@ -255,7 +264,7 @@ export async function dispatchGuidedTicket(
     return {
       ok: true, refusal: null, detail: "venue confirmed the order",
       venueContractRef: delivered.venueContractRef, indeterminate: false,
-      intentId: delivered.intentId,
+      intentId: delivered.intentId, claimed: true,
     };
   } catch (e) {
     // The distinction the whole phase rests on. An indeterminate delivery is
@@ -265,13 +274,13 @@ export async function dispatchGuidedTicket(
       const intentRef = (e as { intentRef?: string | null }).intentRef ?? null;
       await deps.recordAudit({
         kind: "GUIDED_DISPATCH_INDETERMINATE", userId: args.userId, ticketId: args.ticketId,
-        detail: `an order MAY exist at the venue; intent ${intentRef ?? "unknown"}`,
+        detail: "an order MAY exist at the venue — see the attached intent id",
         ...(intentRef ? { intentId: intentRef } : {}),
       });
       return {
         ok: false, refusal: "DELIVERY_INDETERMINATE",
         detail: "the outcome is unknown — an order may exist at the venue and must be reconciled",
-        venueContractRef: null, indeterminate: true, intentId: intentRef,
+        venueContractRef: null, indeterminate: true, intentId: intentRef, claimed: true,
       };
     }
     const msg = e instanceof Error ? e.message : String(e);
@@ -282,7 +291,7 @@ export async function dispatchGuidedTicket(
       kind: isTierRefusal ? "GUIDED_DISPATCH_DRY_RUN" : "GUIDED_DISPATCH_REFUSED",
       userId: args.userId, ticketId: args.ticketId, detail: msg.slice(0, 400),
     });
-    return refuse(isTierRefusal ? "TIER_FORBIDS_SEND" : "ADAPTER_REFUSED", msg.slice(0, 400));
+    return refuse(isTierRefusal ? "TIER_FORBIDS_SEND" : "ADAPTER_REFUSED", msg.slice(0, 400), { claimed: true });
   }
 }
 

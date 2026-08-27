@@ -65,7 +65,38 @@ async function api(path: string, init?: RequestInit) {
     headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
     ...init,
   });
-  return { status: r.status, body: await r.json().catch(() => ({})) };
+  // Parse failure is reported, never swallowed into {}. For a DISPATCH, an
+  // empty body would fall through every result branch to a certain-sounding
+  // "Not sent." — about a request the server may have completed.
+  let body: unknown = null;
+  let parsed = true;
+  try { body = await r.json(); } catch { parsed = false; }
+  return { status: r.status, body, parsed };
+}
+
+/**
+ * The audit's CRITICAL finding, closed here: the only honest reading of a
+ * dispatch response we cannot parse — or a fetch that died mid-flight — is
+ * UNKNOWN. The request may have reached the server and the order may exist.
+ * Rendering "Not sent." there is the falsely-certain claim that invites the
+ * retry that turns one approval into two positions.
+ */
+function unknownDispatchResult(why: string): DispatchResult {
+  return {
+    ok: false,
+    indeterminate: true,
+    refusal: "OUTCOME_UNREADABLE",
+    detail: `${why} — the outcome is UNKNOWN and an order may exist. Do not retry; refresh and check the ticket state.`,
+    venueContractRef: null,
+    dryRun: false,
+  };
+}
+
+/** A dispatch body counts as readable ONLY when it has the shape we sent. */
+function isDispatchResult(b: unknown): b is DispatchResult {
+  return typeof b === "object" && b !== null
+    && typeof (b as DispatchResult).ok === "boolean"
+    && typeof (b as DispatchResult).indeterminate === "boolean";
 }
 
 const LIVE_STATES = new Set(["PENDING", "APPROVED", "DISPATCHING", "UNRESOLVED"]);
@@ -95,7 +126,8 @@ export default function ApprovalInboxPage() {
 
   const load = useCallback(async () => {
     const { body } = await api("/api/me/approval-tickets");
-    setTickets(Array.isArray(body?.tickets) ? body.tickets : []);
+    const t = (body as { tickets?: unknown } | null)?.tickets;
+    setTickets(Array.isArray(t) ? (t as Ticket[]) : []);
   }, []);
 
   useEffect(() => { void load(); }, [load]);
@@ -110,13 +142,32 @@ export default function ApprovalInboxPage() {
     setBusy(ticketId);
     setError(null);
     try {
-      const { status, body } = await api(`/api/me/approval-tickets/${ticketId}/${action}`, { method: "POST" });
+      const { status, body, parsed } = await api(`/api/me/approval-tickets/${ticketId}/${action}`, { method: "POST" });
       if (action === "dispatch") {
-        setResults((r) => ({ ...r, [ticketId]: body as DispatchResult }));
+        setResults((r) => ({
+          ...r,
+          [ticketId]: parsed && isDispatchResult(body)
+            ? body
+            : unknownDispatchResult("The server's answer could not be read"),
+        }));
       } else if (status >= 400) {
-        setError(typeof body?.error === "string" ? body.error : "The action could not be completed.");
+        const err = (body as { error?: unknown } | null)?.error;
+        setError(typeof err === "string" ? err : "The action could not be completed.");
       }
       await load();
+    } catch {
+      // The fetch itself died — after the request may already have reached the
+      // server. For a dispatch that is the canonical UNKNOWN; for approve or
+      // reject, say the action may not have been recorded rather than nothing.
+      if (action === "dispatch") {
+        setResults((r) => ({
+          ...r,
+          [ticketId]: unknownDispatchResult("The connection failed mid-request"),
+        }));
+      } else {
+        setError("Network problem — the action may not have been recorded. Refresh before retrying.");
+      }
+      try { await load(); } catch { /* the refresh failing must not mask the message above */ }
     } finally {
       setBusy(null);
     }
@@ -285,6 +336,11 @@ export default function ApprovalInboxPage() {
                 <span>{t.side} {t.instrument} · {money(t.stakeUsd)}</span>
                 <span className="text-muted-foreground">
                   {t.state.toLowerCase()}
+                  {/* Settlement moves an EXECUTED ticket here immediately, which
+                      used to take its "Placed" banner with it — the one moment a
+                      confirmation matters most. The venue's own reference stays
+                      visible on the row. */}
+                  {t.venueContractRef ? ` — broker ref ${t.venueContractRef}` : ""}
                   {t.rejectionReason ? ` — ${t.rejectionReason}` : ""}
                 </span>
               </li>

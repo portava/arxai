@@ -130,3 +130,40 @@ test("the UI never references a credential field", () => {
       `the approval inbox references ${forbidden}`);
   }
 });
+
+test("an UNREADABLE dispatch response is rendered as UNKNOWN, never 'Not sent.'", () => {
+  // The audit's CRITICAL: api() swallowed parse failures into {}, act() stored
+  // that as a result, and the final else printed a certain-sounding "Not
+  // sent." about a request the server may have completed. UNKNOWN is the only
+  // honest reading, and the copy must forbid the retry.
+  // Pin the CALL SITE, not the helper's existence — a mutation that stored the
+  // raw body kept both helpers defined and untouched, so existence checks
+  // stayed green while "Not sent." came back.
+  assert.match(SRC, /\[ticketId\]: parsed && isDispatchResult\(body\)/,
+    "the dispatch result is stored without validating its shape");
+  assert.match(SRC, /: unknownDispatchResult\("The server's answer could not be read"\)/,
+    "an unreadable body does not fall back to the UNKNOWN result");
+  const at = SRC.indexOf("function unknownDispatchResult");
+  const block = SRC.slice(at, at + 600);
+  assert.match(block, /indeterminate: true/, "the fallback result is not marked indeterminate");
+  assert.match(block, /may exist/i, "the fallback copy does not say an order may exist");
+  assert.match(block, /Do not retry/i, "the fallback copy does not forbid the retry");
+});
+
+test("a fetch that dies mid-dispatch is caught and rendered as UNKNOWN", () => {
+  // try/finally with no catch let a network failure escape silently and
+  // re-arm the Send button — the canonical double-order setup.
+  const actAt = SRC.indexOf("async function act(");
+  const actBlock = SRC.slice(actAt, SRC.indexOf("\n  }", SRC.indexOf("finally", actAt)));
+  assert.match(actBlock, /catch\s*(\([^)]*\))?\s*\{/,
+    "act() has no catch — a network failure vanishes and re-arms Send");
+  assert.match(actBlock, /unknownDispatchResult\("The connection failed mid-request"\)/,
+    "a mid-flight network failure is not rendered as UNKNOWN");
+  // A rethrow keeps the handler text present but unreachable: the failure
+  // escapes, nothing renders, and Send re-arms — the exact bug, wearing the
+  // fix's own clothes. No throw of any kind belongs in this catch.
+  const catchAt = actBlock.search(/catch\s*(\([^)]*\))?\s*\{/);
+  const catchBlock = actBlock.slice(catchAt, actBlock.indexOf("finally", catchAt));
+  assert.ok(!/\bthrow\b/.test(catchBlock),
+    "act()'s catch rethrows — the network failure still escapes and re-arms Send");
+});

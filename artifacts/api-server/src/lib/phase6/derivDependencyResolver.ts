@@ -250,10 +250,32 @@ const OWN_ID_SHAPE =
  * let a token through. Callers use it to REFUSE writing a field, not to redact
  * silently — silent redaction hides the bug that put a secret there.
  */
+/**
+ * Shapes that are code identifiers, not credentials, when they appear INSIDE a
+ * longer string (an error detail, a log line):
+ *   - the system's own prefixed-UUID ids ("... intent di_tkt_<uuid>");
+ *   - UPPER_SNAKE error codes ("connect: DERIV_NEW_API_WS_CONNECT_FAILED —"),
+ *     several of which are 28+ chars and tripped the opaque-token scan, so an
+ *     EXECUTION_UNKNOWN ledger row was silently dropped and --verify then read
+ *     the empty ledger as "nothing was dispatched" — UNKNOWN laundered into
+ *     no-trade by the tooling (audit C6/C8/C9/C10).
+ * Named secrets (DERIV_API_TOKEN and friends) are checked BEFORE stripping, so
+ * an UPPER_SNAKE spelling of a known secret name still refuses.
+ */
+const OWN_ID_ANYWHERE = /\b(?:[a-z]{2,8}_){1,3}[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
+const UPPER_SNAKE_CODE = /\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/g;
+
 export function looksLikeSecret(value: unknown): boolean {
   if (typeof value !== "string") return false;
   if (OWN_ID_SHAPE.test(value)) return false;
-  return SECRET_SHAPES.some((re) => re.test(value));
+  // Named secrets and header shapes: checked against the ORIGINAL string.
+  if (SECRET_SHAPES[3]!.test(value)) return true;
+  if (SECRET_SHAPES[0]!.test(value) || SECRET_SHAPES[1]!.test(value)) return true;
+  // The opaque-token scan runs on the string with known identifier shapes
+  // removed, so an id or error code inside a sentence cannot trip it — while a
+  // genuine token pasted into a detail still can.
+  const stripped = value.replace(OWN_ID_ANYWHERE, " ").replace(UPPER_SNAKE_CODE, " ");
+  return SECRET_SHAPES[2]!.test(stripped);
 }
 
 /**

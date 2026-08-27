@@ -20,7 +20,11 @@
 // If the certification needs a second order later, that is a deliberate new
 // version of the policy, not a value someone can nudge.
 
-import { tradingConstitutionRepo, approvalTicketsRepo } from "@workspace/db";
+import {
+  tradingConstitutionRepo, approvalTicketsRepo,
+  db, liveRiskDisclosureAcceptancesTable,
+} from "@workspace/db";
+import { eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
 /**
@@ -92,6 +96,40 @@ async function main(): Promise<void> {
     console.log(`Constitution created: v${con.version} (${con.constitutionId})`);
   }
 
+  // ── 1b. the risk disclosure — an EXPLICIT consent act, never assumed ────
+  // The earlier seed stamped gateVerdictsPassed: true with no disclosure on
+  // record: a false assertion of consent. The flag below is the consent act —
+  // the account owner, at their own terminal, stating acceptance. Without it,
+  // and without an existing acceptance row, the seed refuses.
+  const [existingAcceptance] = await db.select({ id: liveRiskDisclosureAcceptancesTable.id })
+    .from(liveRiskDisclosureAcceptancesTable)
+    .where(eq(liveRiskDisclosureAcceptancesTable.userId, userId)).limit(1);
+  if (!existingAcceptance) {
+    if (!argv.includes("--accept-risk-disclosure")) {
+      // eslint-disable-next-line no-console
+      console.error(
+        "\nREFUSED — no risk-disclosure acceptance on record for this user.\n" +
+        "Trading real venues (demo account included) carries risk. If you, the\n" +
+        "account owner, accept the live-trading risk disclosure, re-run with:\n" +
+        "    --accept-risk-disclosure\n" +
+        "NOTHING WAS CREATED.\n",
+      );
+      process.exit(1);
+    }
+    await db.insert(liveRiskDisclosureAcceptancesTable).values({
+      userId,
+      disclosureVersion: "tier1-certification-v1",
+      acceptedText:
+        "I accept the live-trading risk disclosure for guided demo execution: orders are placed at " +
+        "a real venue on a demo account; execution, slippage and venue behaviour are real; an " +
+        "unresolved outcome halts further orders until reconciled.",
+      // No ipAddress/userAgent: this consent was given at a terminal, not a
+      // browser, and fabricating request metadata would be a false record.
+    });
+    // eslint-disable-next-line no-console
+    console.log("Risk disclosure ACCEPTED by explicit flag — recorded (append-only).");
+  }
+
   // ── 2. refuse to create a second live ticket ────────────────────────────
   const existing = await approvalTicketsRepo.listInboxForUser(userId);
   const live = existing.filter((t) =>
@@ -123,7 +161,11 @@ async function main(): Promise<void> {
     intentId: `di_${ticketId}`,
     expiresAt: new Date(Date.now() + PROPOSAL_TTL_MS),
     constitutionVersion: con.version,
-    gateVerdicts: { seededBy: "tier1-certification" },
+    gateVerdicts: {
+      seededBy: "tier1-certification",
+      constitution: { decision: "PERMIT", version: con.version },
+      disclosure: "ACCEPTED",
+    },
     gateVerdictsPassed: true,
     scannerSignalId: "tier1-certification",
     rubyExplanation: "Tier 1 certification order — smallest practical stake, demo account only.",

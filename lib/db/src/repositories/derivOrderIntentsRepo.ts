@@ -74,7 +74,14 @@ export async function markRefusedPreTransmission(
     })
     .where(and(
       eq(derivOrderIntentsTable.intentId, intentId),
-      eq(derivOrderIntentsTable.writeDisposition, "NOT_ATTEMPTED"),
+      // NOT_ATTEMPTED, or UNRECORDED with no venue evidence: the pre-wire
+      // footprint (see guidedDispatchEntry) marks UNRECORDED before the send,
+      // and when the transport then PROVES non-transmission the caller may
+      // honestly resolve it — refusing would lock the user out over an order
+      // that provably does not exist. The venue-ref guard keeps a resolved
+      // contract from ever being "un-happened" this way.
+      sql`${derivOrderIntentsTable.writeDisposition} in ('NOT_ATTEMPTED','UNRECORDED')`,
+      isNull(derivOrderIntentsTable.venueContractRef),
     ))
     .returning();
   return rows[0] ?? null;

@@ -194,6 +194,29 @@ test("the system's OWN ids are NOT secrets — the break that 500'd the inbox", 
   assert.equal(looksLikeSecret("hZk9dPqR3sT5vW7xY1aB3cD5eF7gH9jK"), true, "a PAT-shaped token passed");
 });
 
+test("ids and error codes EMBEDDED IN A SENTENCE are not secrets — the ledger-drop bug", () => {
+  // Audit C6/C8/C10: the INDETERMINATE detail carried "intent di_tkt_<uuid>",
+  // the 43-char run tripped the opaque scan, buildLineageRecord threw, the
+  // (non-fatal) writer dropped the EXECUTION_UNKNOWN row — and --verify then
+  // read the empty ledger as "nothing was dispatched". UNKNOWN laundered into
+  // no-trade by the tooling. Deriv's own error codes are 28+ chars of
+  // UPPER_SNAKE and tripped it too.
+  for (const detail of [
+    "an order MAY exist at the venue; intent di_tkt_3ce69bcf-da83-419b-859a-d963ec1ee7ce",
+    "connect: DERIV_NEW_API_WS_CONNECT_FAILED — transport is CLOSED",
+    "buy_read: DERIV_NEW_API_PROTOCOL_ERROR — outcome is UNKNOWN",
+  ]) {
+    assert.equal(looksLikeSecret(detail), false, `honest detail flagged as a secret: ${detail}`);
+    assert.doesNotThrow(() => assertNoSecretLeak({ detail }, "ledger"));
+  }
+  // The stripping must not open a hole: a genuine token inside a sentence, and
+  // UPPER_SNAKE spellings of the NAMED secrets, still refuse.
+  assert.equal(looksLikeSecret("oops token hZk9dPqR3sT5vW7xY1aB3cD5eF7gH9jK in detail"), true,
+    "a token embedded in a sentence passed");
+  assert.equal(looksLikeSecret("detail mentions VAULT_OVERRIDE_TOKEN somewhere"), true,
+    "a named secret in UPPER_SNAKE was stripped before the named check ran");
+});
+
 test("looksLikeSecret catches credential SHAPES, not just known names", () => {
   // A token renamed on its way into a payload is still a token.
   assert.equal(looksLikeSecret("Bearer abc123def456"), true);

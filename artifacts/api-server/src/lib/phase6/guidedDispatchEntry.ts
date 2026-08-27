@@ -23,7 +23,10 @@ import { DerivExecutionAdapter } from "../deriv/execution/derivExecutionAdapter.
 import { isIndeterminateDelivery } from "../live/executionAdapter.js";
 import {
   approvalTicketsRepo, derivOrderIntentsRepo, tradingConstitutionRepo, guidedAttemptEventsRepo,
+  db, arxLiveArmingTable, globalTradingSettingsTable,
+  liveRiskDisclosureAcceptancesTable, userMasterLiveAccessTable,
 } from "@workspace/db";
+import { eq } from "drizzle-orm";
 import { buildLineageRecord, type GuidedAuditEvent } from "./guidedLineage.js";
 import type { ApprovalTicket, MaterialTradeTerms } from "@workspace/domain/safety-contracts/approvalTicket";
 import type { TradingConstitution, ConstitutionObservedState }
@@ -46,6 +49,54 @@ const AUDIT_KIND_TO_EVENT: Readonly<Record<string, GuidedAuditEvent | undefined>
   GUIDED_DISPATCH_BLOCKED_UNRESOLVED: "GATE_REFUSED",
   GUIDED_DISPATCH_UNROUTABLE: "GATE_REFUSED",
 };
+
+/**
+ * The LIVE per-user + global kill switch, fail-closed.
+ *
+ * The audit found the guided path wired `killSwitchEngaged: async () => false`
+ * — a hard stub. The parity map declared gate 5 EQUIVALENT ("the same engaged
+ * switch blocks both venues") while the switch was never consulted: a user
+ * with the emergency stop engaged could still dispatch a Deriv order. The
+ * parity claim was true on paper and false in the wiring.
+ *
+ * Semantics copied from the MT5 path, not re-derived:
+ *   - per-user: arx_live_arming.killSwitchEngaged === true blocks
+ *     (liveArming.ts:332 reads it the same way);
+ *   - global: emergencyKillSwitch !== false blocks — absent/null counts as
+ *     ENGAGED (approvedTraderLiveState.ts:245, the fail-closed polarity);
+ *   - any read failure counts as ENGAGED. Not being able to read the stop
+ *     button is not permission to trade.
+ */
+async function liveKillSwitchEngaged(userId: number): Promise<boolean> {
+  try {
+    const [arming] = await db.select({ k: arxLiveArmingTable.killSwitchEngaged })
+      .from(arxLiveArmingTable).where(eq(arxLiveArmingTable.userId, userId)).limit(1);
+    if (arming?.k === true) return true;
+    const [settings] = await db.select({ e: globalTradingSettingsTable.emergencyKillSwitch })
+      .from(globalTradingSettingsTable).limit(1);
+    return settings?.e !== false;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Gate 18 — the risk disclosure, consulted for REAL.
+ *
+ * Same audit round: the parity map declared it EQUIVALENT while nothing on the
+ * guided path read the acceptances table. Same query the MT5 pipeline uses
+ * (liveCommandPipeline.ts:114), plus the operator waiver, reported SEPARATELY
+ * so a waiver can never be presented as the user's own consent.
+ */
+export async function disclosureStatus(userId: number): Promise<{ accepted: boolean; waivedByOperator: boolean }> {
+  const [acc] = await db.select({ id: liveRiskDisclosureAcceptancesTable.id })
+    .from(liveRiskDisclosureAcceptancesTable)
+    .where(eq(liveRiskDisclosureAcceptancesTable.userId, userId)).limit(1);
+  const [waiver] = await db.select({ w: userMasterLiveAccessTable.disclosureWaivedAt })
+    .from(userMasterLiveAccessTable)
+    .where(eq(userMasterLiveAccessTable.userId, userId)).limit(1);
+  return { accepted: acc !== undefined, waivedByOperator: waiver?.w != null };
+}
 
 /**
  * The ONE user permitted to use the environment-configured Deriv credential.
@@ -225,6 +276,8 @@ export interface GuidedDispatchOverrides {
   newLiveCommandId?: () => string;
   /** Settlement, injectable so a certificate can observe it without a DB. */
   applySettlement?: (outcome: GuidedDispatchOutcome, ticketId: string) => Promise<void>;
+  /** Gate 18, injectable for certificates. Live default reads the acceptances table. */
+  disclosureStatus?: (userId: number) => Promise<{ accepted: boolean; waivedByOperator: boolean }>;
 }
 
 function buildAdapter(args: {
@@ -260,7 +313,15 @@ function buildAdapter(args: {
         side: args.side,
         stakeUsd: args.stakeUsd,
         multiplier: args.multiplier,
-        writeDisposition: "NOT_ATTEMPTED",
+        // UNRECORDED from birth (audit C5). The adapter persists the intent
+        // immediately before the send; a crash between frame and reply used to
+        // leave NOT_ATTEMPTED — invisible to hasUnresolvedIntent, so nothing
+        // blocked the next order while a real one might be open. Born-UNRECORDED
+        // means the crash window has no gap, and a later PROVEN non-transmission
+        // still resolves it (markRefusedPreTransmission covers UNRECORDED with
+        // no venue ref).
+        writeDisposition: "UNRECORDED",
+        attemptedAt: new Date(),
       });
       return intentId;
     }),
@@ -305,6 +366,11 @@ export async function applyLiveSettlement(
   ticketId: string,
   repos: SettlementRepos,
 ): Promise<void> {
+  // NO CLAIM, NO SETTLEMENT. A claim-race loser's outcome describes ITS OWN
+  // refusal, not the ticket's fate — the winner owns the ticket now, and the
+  // loser settling "REJECTED" onto the winner's DISPATCHING row marked a real
+  // in-flight order as "no order exists". Audit finding C2/C3/C4/C7.
+  if (!o.claimed) return;
   const intentId = o.intentId;
   if (o.ok && o.venueContractRef) {
     await repos.settleDispatchedTicket({
@@ -445,7 +511,7 @@ export async function dispatchGuidedTicketForRequest(
         {
           authenticatedUserId: ticket.userId,
           configuredTier: configuredTier(),
-          killSwitchEngaged: async () => false,
+          killSwitchEngaged: (uid: number) => liveKillSwitchEngaged(uid),
           hasUnresolvedIntent: async () => false,
           // LIVE sources by default. A certificate overrides them; production
           // does not, and previously production got the null stubs — meaning a
@@ -499,6 +565,18 @@ export async function dispatchGuidedTicketForRequest(
     },
   };
 
+  // ── GATE 18, before anything can claim the ticket ───────────────────────
+  // Pre-claim by design: a refusal here leaves the ticket APPROVED, and once
+  // the user accepts the disclosure the same ticket can dispatch.
+  const disclosure = await (overrides.disclosureStatus ?? disclosureStatus)(args.userId);
+  if (!disclosure.accepted && !disclosure.waivedByOperator) {
+    return {
+      ok: false, refusal: "TICKET_AUTHORIZATION_REFUSED",
+      detail: "DISCLOSURE_NOT_ACCEPTED: the live-trading risk disclosure has not been accepted (and no operator waiver exists); nothing was sent",
+      venueContractRef: null, indeterminate: false, intentId: null, claimed: false,
+    };
+  }
+
   const outcome = await dispatchGuidedTicket(
     {
       userId: args.userId,
@@ -530,7 +608,12 @@ export async function dispatchGuidedTicketForRequest(
     }));
 
   try {
-    await applySettlement(outcome, args.ticketId);
+    // The claim gate lives HERE, outside the injectable function, because an
+    // override replaces applyLiveSettlement WHOLE — gate included. A
+    // certificate spy recording "settlements" was therefore recording
+    // claim-less ones too, and the mutation re-arming the loser's settlement
+    // survived. At the call site the gate binds every implementation.
+    if (outcome.claimed) await applySettlement(outcome, args.ticketId);
   } catch (settleErr) {
     // A settlement failure must not rewrite the OUTCOME — the venue result is
     // what it is. Log loudly; the ticket state can be repaired from the ledger.

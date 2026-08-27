@@ -97,6 +97,8 @@ async function drive(over: {
   isDemo?: boolean;
   killSwitch?: boolean;
   breakPersistence?: boolean;
+  disclosure?: "accepted" | "waived" | "none";
+  loseClaim?: boolean;
 } = {}): Promise<{ outcome: Awaited<ReturnType<typeof dispatchGuidedTicketForRequest>>; spy: Spy }> {
   const spy: Spy = { wireWrites: 0, audits: [], claims: 0, intents: 0, settlements: [] };
   const prev = process.env["ARX_EXECUTION_TIER"];
@@ -116,9 +118,16 @@ async function drive(over: {
         loadActiveConstitution: async () => CONSTITUTION,
         deriveCurrentTerms: async (t) => t.terms,
         hasUnresolvedIntent: async () => false,
-        claimForDispatch: async () => { spy.claims++; return { claimed: true }; },
+        claimForDispatch: async () => {
+          spy.claims++;
+          return over.loseClaim ? null : { claimed: true };
+        },
         persistIntent: async () => { spy.intents++; return INTENT; },
         loadObservedState: async () => OBSERVED(),
+        disclosureStatus: async () => ({
+          accepted: (over.disclosure ?? "accepted") === "accepted",
+          waivedByOperator: over.disclosure === "waived",
+        }),
         recordAudit: async (e) => { spy.audits.push(e.kind); },
         applySettlement: async (o) => {
           spy.settlements.push({
@@ -320,6 +329,7 @@ test("with NO transport override, the LIVE path runs and still fabricates nothin
         claimForDispatch: async () => ({ claimed: true }),
         persistIntent: async () => INTENT,
         loadObservedState: async () => OBSERVED(),
+        disclosureStatus: async () => ({ accepted: true, waivedByOperator: false }),
         recordAudit: async () => {},
         depSources: {
           loadConnection: async () => ({ id: 11, ownerUserId: USER, venue: "DERIV_DEMO", credentialHandle: "h" }),
@@ -358,6 +368,7 @@ test("with NO observed state wired, the Constitution refuses on unreadable input
         deriveCurrentTerms: async (t) => t.terms,
         hasUnresolvedIntent: async () => false,
         claimForDispatch: async () => ({ claimed: true }),
+        disclosureStatus: async () => ({ accepted: true, waivedByOperator: false }),
         recordAudit: async () => {},
         buyViaCertifiedTransport: async () => {
           throw new Error("THE TRANSPORT MUST NOT BE REACHED ON UNREADABLE STATE");
@@ -396,6 +407,7 @@ test("a SUCCESSFUL dispatch settles EXECUTED with the venue's reference", async 
         claimForDispatch: async () => ({ claimed: true }),
         persistIntent: async () => INTENT,
         loadObservedState: async () => OBSERVED(),
+        disclosureStatus: async () => ({ accepted: true, waivedByOperator: false }),
         recordAudit: async (e) => {
           spy.audits.push(e.kind);
           if (e.kind === "GUIDED_DISPATCH_EXECUTED") executedEvent = e;
@@ -469,7 +481,7 @@ function settlementSpies() {
 }
 const OUT = (over: Partial<Parameters<typeof applyLiveSettlement>[0]> = {}) => ({
   ok: false, refusal: null, detail: "", venueContractRef: null, indeterminate: false,
-  intentId: INTENT, ...over,
+  intentId: INTENT, claimed: true, ...over,
 } as Parameters<typeof applyLiveSettlement>[0]);
 
 test("LIVE settlement: success -> EXECUTED with ref, intent venue-resolved", async () => {
@@ -506,4 +518,87 @@ test("LIVE settlement: no intent id settles the ticket only — never a phantom 
   const { calls, repos } = settlementSpies();
   await applyLiveSettlement(OUT({ ok: true, venueContractRef: "c1", intentId: null }), TKT, repos);
   assert.deepEqual(calls, ["settle:EXECUTED:c1"]);
+});
+
+test("GATE 18: no disclosure and no waiver refuses BEFORE the claim", async () => {
+  const { outcome, spy } = await drive({ tier: "TIER_1_DEMO_GUIDED", disclosure: "none" });
+  assert.equal(outcome.ok, false);
+  assert.match(outcome.detail, /DISCLOSURE_NOT_ACCEPTED/, `wrong refusal: ${outcome.detail}`);
+  assert.equal(spy.claims, 0, "an unconsented dispatch claimed the ticket");
+  assert.equal(spy.wireWrites, 0, "an unconsented dispatch reached the venue");
+  // Pre-claim by design: the ticket stays APPROVED, so accepting the
+  // disclosure later lets the SAME ticket dispatch.
+  assert.deepEqual(spy.settlements, [], "a pre-claim refusal settled the ticket");
+});
+
+test("GATE 18: an operator waiver permits dispatch but is not the user's consent", async () => {
+  const { spy } = await drive({ tier: "TIER_0_DRY_RUN", disclosure: "waived" });
+  assert.equal(spy.claims, 1, "an operator-waived dispatch was refused at the disclosure wall");
+});
+
+test("the LIVE kill-switch wiring consults the real switch and fails CLOSED", () => {
+  // The audit found `killSwitchEngaged: async () => false` hard-stubbed in the
+  // live wiring while the parity map claimed gate 5 was enforced. Certificate
+  // spies shadow the live default, so this is pinned on stripped source: the
+  // default must call liveKillSwitchEngaged, and that function's read-failure
+  // path must return true — not being able to read the stop button is not
+  // permission to trade.
+  const entry = readFileSync(new URL("../guidedDispatchEntry.ts", import.meta.url), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  assert.ok(!/killSwitchEngaged:\s*async\s*\(\)\s*=>\s*false/.test(entry),
+    "the live kill switch is hard-stubbed to disengaged");
+  assert.match(entry, /killSwitchEngaged:\s*\(uid: number\) => liveKillSwitchEngaged\(uid\)/,
+    "the live wiring does not consult the real kill switch");
+  const fnAt = entry.indexOf("async function liveKillSwitchEngaged");
+  const fn = entry.slice(fnAt, entry.indexOf("\n}", fnAt));
+  assert.match(fn, /arxLiveArmingTable/, "the per-user switch is not read");
+  assert.match(fn, /globalTradingSettingsTable/, "the global emergency switch is not read");
+  assert.match(fn, /!== false/, "the emergency polarity is not fail-closed (absent must count as ENGAGED)");
+  const catchAt = fn.indexOf("catch");
+  assert.ok(catchAt > 0 && /return true/.test(fn.slice(catchAt)),
+    "a read failure does not count as ENGAGED — an unreadable stop button permitted trading");
+});
+
+test("A CLAIM-LOSER'S OUTCOME SETTLES NOTHING — the winner owns the ticket", async () => {
+  // Audit C2/C3/C4/C7: request A wins the CAS and is mid venue round-trip;
+  // request B loses, and B's "definite refusal" settlement matched A's
+  // DISPATCHING row — marking a real in-flight order REJECTED, "no order
+  // exists". claimed:false must be an absolute bar on touching the ticket.
+  const { calls, repos } = settlementSpies();
+  await applyLiveSettlement(OUT({ claimed: false, refusal: "DISPATCH_CLAIM_LOST",
+    detail: "another dispatcher already claimed this ticket" }), TKT, repos);
+  assert.deepEqual(calls, [], "a claim-race loser settled the winner's in-flight ticket");
+});
+
+test("a LOST claim reaches no settlement at all — even a spy's", async () => {
+  // The gate must bind at the call site: an injected settlement (this spy)
+  // replaces applyLiveSettlement wholesale, so a gate inside that function
+  // protects nothing here.
+  const { outcome, spy } = await drive({ tier: "TIER_1_DEMO_GUIDED", loseClaim: true });
+  assert.equal(outcome.refusal, "DISPATCH_CLAIM_LOST");
+  assert.equal(outcome.claimed, false, "a lost claim reported claimed:true — settlement re-armed");
+  assert.deepEqual(spy.settlements, [],
+    "a claim-race loser's outcome reached settlement — the winner's ticket is at risk");
+});
+
+test("the SUCCESS outcome carries claimed:true, or nothing would ever settle", async () => {
+  const { outcome, spy } = await drive({ tier: "TIER_0_DRY_RUN" });
+  assert.equal(outcome.claimed, true, "a post-claim outcome lost its claimed flag");
+  assert.equal(spy.settlements.length, 1);
+});
+
+test("the intent row is born UNRECORDED — the crash window has no gap", () => {
+  // Only reachable live (the certificate injects persistIntent), so pinned on
+  // stripped source: a NOT_ATTEMPTED birth means a crash between frame and
+  // reply leaves no unresolved footprint, and nothing blocks the next order
+  // while a real one may be open (audit C5).
+  const entry = readFileSync(new URL("../guidedDispatchEntry.ts", import.meta.url), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  const at = entry.indexOf("await derivOrderIntentsRepo.createIntent(");
+  assert.ok(at > 0, "the live intent write is gone");
+  const block = entry.slice(at, at + 700);
+  assert.match(block, /writeDisposition: "UNRECORDED"/,
+    "the intent is not born UNRECORDED — a crash mid-flight leaves no footprint");
+  assert.ok(!/writeDisposition: "NOT_ATTEMPTED"/.test(block),
+    "the intent is born NOT_ATTEMPTED — invisible to hasUnresolvedIntent");
 });
