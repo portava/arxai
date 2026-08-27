@@ -69,6 +69,94 @@ export interface ExecutionAdapter<R extends DeliveryResult = DeliveryResult> {
   deliver(command: ExecutionDeliveryCommand): Promise<R>;
 }
 
+/**
+ * The THIRD delivery outcome: the frame may have reached the venue, and nothing
+ * downstream may claim otherwise.
+ *
+ * `deliver()` was binary by design, and for the EA bridge that is exactly right:
+ * delivery there is an INSERT into a local mailbox table, so a failure is
+ * provably pre-transmission and failing the command CLOSED (LIVE_FAILED, release
+ * the exposure reservation) is the honest reading.
+ *
+ * A network venue breaks that assumption. Writing a frame to a socket and then
+ * receiving no reply does NOT mean the order was not placed. Rejecting would
+ * mark LIVE_FAILED, release the exposure reservation for a position that may be
+ * open, and report "no trade" to the user about an order that may be live —
+ * conservative-looking, but falsely certain in the one direction that costs
+ * real money.
+ *
+ * So an adapter that cannot prove non-transmission throws THIS instead. The
+ * pipeline maps it to LIVE_UNKNOWN, HOLDS the reservation, and hands the command
+ * to reconciliation. `Mt5EaBridgeAdapter` never throws it, so the EA path's
+ * behaviour is unchanged.
+ */
+export class IndeterminateDeliveryError extends Error {
+  /**
+   * Brand rather than `instanceof`. A duplicated module instance (two copies of
+   * this file in a bundle, a test double, a re-exported build) breaks
+   * `instanceof` silently, and the failure mode would be an indeterminate
+   * delivery falling through to the generic catch and being recorded as a
+   * definite failure. A property check cannot break that way.
+   */
+  readonly arxIndeterminateDelivery = true as const;
+
+  constructor(
+    readonly venue: string,
+    /** Human-readable, no secrets: this reaches logs and the audit trail. */
+    readonly detail: string,
+    /**
+     * The durable intent reference reconciliation will need to correlate a late
+     * reply back to this command. Null only when the adapter could not persist
+     * one, which is itself worth surfacing.
+     */
+    readonly intentRef: string | null,
+  ) {
+    super(`INDETERMINATE_DELIVERY[${venue}]: ${detail}`);
+    this.name = "IndeterminateDeliveryError";
+  }
+}
+
+/**
+ * Structural check for the third outcome. Deliberately NOT `instanceof` — see
+ * the brand comment above.
+ */
+export function isIndeterminateDelivery(e: unknown): e is IndeterminateDeliveryError {
+  return typeof e === "object" && e !== null
+    && (e as { arxIndeterminateDelivery?: unknown }).arxIndeterminateDelivery === true;
+}
+
+/**
+ * How a delivery failure must be recorded.
+ *
+ * Extracted as a pure function rather than left as an inline `if` in the
+ * pipeline so the routing decision itself is testable with the real code. An
+ * inline branch can only be asserted by scanning source text, and a source scan
+ * cannot tell a live branch from a disabled one — `if (false && ...)` keeps
+ * every string in place while silently routing every indeterminate delivery
+ * into the definite-failure path. That mutation survived a position-based test,
+ * which is why this exists.
+ */
+export type DeliveryFailureRouting =
+  | { kind: "INDETERMINATE"; venue: string; detail: string; intentRef: string | null }
+  | { kind: "DEFINITE_FAILURE" };
+
+/**
+ * Total and default-conservative: anything NOT provably indeterminate routes to
+ * DEFINITE_FAILURE, which is the correct reading for the EA bridge's local
+ * mailbox INSERT and the pre-existing behaviour for every other error.
+ */
+export function routeDeliveryFailure(err: unknown): DeliveryFailureRouting {
+  if (isIndeterminateDelivery(err)) {
+    return {
+      kind: "INDETERMINATE",
+      venue: err.venue,
+      detail: err.detail,
+      intentRef: err.intentRef,
+    };
+  }
+  return { kind: "DEFINITE_FAILURE" };
+}
+
 export const MT5_EA_BRIDGE_VENUE = "mt5_ea_bridge" as const;
 
 /**

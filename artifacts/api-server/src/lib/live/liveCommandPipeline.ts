@@ -63,6 +63,7 @@ import { evaluateEntryDataSufficiency } from "./entryDataSufficiency.js";
 // and R5's Deriv adapter can implement the same seam later.
 import {
   Mt5EaBridgeAdapter,
+  routeDeliveryFailure,
   type ExecutionAdapter,
   type Mt5DeliveryResult,
 } from "./executionAdapter.js";
@@ -3663,6 +3664,58 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
       }, "Phase B live command mirrored into mt5_commands for v1.50 EA pickup");
     } catch (bridgeErr: unknown) {
       const msg = bridgeErr instanceof Error ? bridgeErr.message : String(bridgeErr);
+
+      // R6 — the INDETERMINATE delivery outcome, checked BEFORE the generic
+      // failure routing below.
+      //
+      // The EA bridge cannot reach here: its deliver() is a local mailbox
+      // INSERT, so a throw genuinely proves nothing was transmitted and the
+      // fail-closed handling below is correct. A network venue is different —
+      // a frame written with no reply may well have placed an order. Recording
+      // that as LIVE_FAILED and releasing the reservation would free risk
+      // budget for a position that may be open, and tell the user "no trade"
+      // about an order that may be live.
+      //
+      // So: LIVE_UNKNOWN, reservation HELD, duplicate submission still blocked
+      // by arx_live_commands_idem_active_uq (which covers LIVE_UNKNOWN
+      // precisely so an unconfirmed outcome cannot be retried into a double
+      // order), and resolution left to reconciliation against broker truth.
+      // NOTE the deliberate absence of a releaseReservation call in this
+      // branch — that omission IS the safety property, and it is asserted by
+      // test:phase6-indeterminate.
+      const deliveryRouting = routeDeliveryFailure(bridgeErr);
+      if (deliveryRouting.kind === "INDETERMINATE") {
+        const [unresolved] = await db.update(arxLiveCommandsTable).set({
+          status: "LIVE_UNKNOWN",
+          brokerMessage: msg.slice(0, 400),
+        }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+        await audit({
+          eventType: "LIVE_DISPATCH_INDETERMINATE", severity: "HIGH",
+          userId: args.userId, symbol: row.symbol,
+          message: `Delivery outcome INDETERMINATE at ${deliveryRouting.venue} — an order may exist at the venue`,
+          metadata: {
+            commandId: args.commandId,
+            venue: deliveryRouting.venue,
+            intentRef: deliveryRouting.intentRef,
+            detail: deliveryRouting.detail,
+            reservationHeld: reservationId != null,
+          },
+        });
+        logger.error({
+          [PHASE_B_LIVE_LOG_PREFIX]: true,
+          event: "LIVE_DELIVERY_INDETERMINATE",
+          commandId: args.commandId, venue: deliveryRouting.venue,
+          intentRef: deliveryRouting.intentRef,
+        }, "Delivery indeterminate — command held as LIVE_UNKNOWN, exposure reservation NOT released, awaiting reconciliation");
+        return {
+          ok: false as const,
+          indeterminate: true as const,
+          reason: "LIVE_DELIVERY_INDETERMINATE" as const,
+          command: unresolved,
+          gate: phaseBGate,
+        };
+      }
+
       const reason = msg.startsWith("UNMAPPED_LIVE_COMMAND_TYPE")
         ? "BRIDGE_UNMAPPED_COMMAND_TYPE"
         : "BRIDGE_ENQUEUE_FAILED";
