@@ -130,7 +130,10 @@
     "./risk-correlation": "./src/risk-correlation/index.ts",
     "./expectancy": "./src/expectancy/index.ts",
     "./deriv-contracts": "./src/deriv-contracts/index.ts",
-    "./execution-state": "./src/execution-state/index.ts"
+    "./execution-state": "./src/execution-state/index.ts",
+    "./safety-contracts/venueGateParity": "./src/safety-contracts/venueGateParity.ts",
+    "./safety-contracts/derivDemoGateParity": "./src/safety-contracts/derivDemoGateParity.ts",
+    "./safety-contracts/tradingConstitution": "./src/safety-contracts/tradingConstitution.ts"
   },
   "scripts": {},
   "dependencies": {

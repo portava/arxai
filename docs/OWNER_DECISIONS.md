@@ -416,3 +416,47 @@ REQUOTE between quote and buy. Until those are covered, buy/sell is certified
 for the HAPPY PATH only. All standing holds from Rulings 16 and 17 remain:
 no autonomous execution, no live money, no `DerivExecutionAdapter`, no dispatch
 through the 18-gate path.
+
+---
+
+## Ruling 19 — Phase 6 authorized, including the Deriv execution seam (2026-08-27)
+
+The standing holds recorded at the end of Ruling 18 — "no `DerivExecutionAdapter`,
+no dispatch through the 18-gate path" — are **explicitly lifted for guided and
+demo execution**. Ruling 18's other holds are NOT lifted.
+
+The owner's authorization, in their words: *"AUTHORIZE PHASE 6 — SELF-TRADING
+GUIDED MODE, INCLUDING THE DERIV EXECUTION SEAM."* Authorized to build and wire:
+Personal Trading Constitution; Approval Inbox with expiring tickets;
+`DerivExecutionAdapter`; the existing 18-gate dispatch boundary; guided
+confirm → execute; position/reconciliation integration; journal/debrief
+integration.
+
+**This authorization is for CONTROLLED GUIDED/DEMO EXECUTION.** It is expressly
+NOT authorization for: autonomous trading without user approval; unattended
+order dispatch; real-money/live-account execution; weakening any of the 18
+gates; bypassing risk controls; silently retrying ambiguous orders; or
+converting UNKNOWN into success/failure without venue evidence.
+
+Demo orders are authorized only in the minimum number needed to certify Tier 1,
+on a demo account, at the smallest practical stake, reconciling each before
+placing another, and stopping entirely if any execution state becomes
+UNKNOWN/UNRESOLVED.
+
+Release tiers are explicit and server-authoritative: **Tier 0** dry run (all
+gates and adapter mapping run; transport refuses before send), **Tier 1** demo
+guided execution on an approved unexpired ticket, **Tier 2** demo supervised
+continuous session. **Tier 3 (live guided) and Tier 4 (autonomous) must NOT be
+enabled.** No code path may escalate a tier from the mere presence of an
+environment variable.
+
+Phase 5 remains certified and frozen. If Phase 6 integration exposes a Phase 5
+defect the sequence is: reproduce, add a regression, fix minimally,
+mutation-prove, and document why Phase 5 had to be reopened.
+
+> **Why this entry exists.** An adversarial audit of the Phase 6 design flagged
+> that `docs/PHASE6_GUIDED_EXECUTION_DESIGN.md` claimed owner authorization
+> while this registry still ended at Ruling 18, whose closing line asserts the
+> opposite. The authorization was genuine and given in session; the registry
+> simply had not been updated. Recording it here closes that gap — a design
+> document may not be the only place a lifted hold is written down.
