@@ -110,7 +110,18 @@ async function main(): Promise<void> {
           "503 means the app does not see VAULT_OVERRIDE_TOKEN — redeploy may be pending");
       }
     } catch (e) {
-      report("5. /system/override is fail-closed", false, `probe failed: ${(e as Error).name}`);
+      // "TypeError" alone says nothing actionable. A fetch that cannot connect
+      // is the app not running, which is a different problem from the endpoint
+      // misbehaving — and only one of them is a security finding.
+      const cause = (e as { cause?: { code?: unknown } })?.cause?.code;
+      const unreachable = cause === "ECONNREFUSED" || cause === "ENOTFOUND"
+        || cause === "ECONNRESET" || cause === "UND_ERR_CONNECT_TIMEOUT";
+      report("5. /system/override is fail-closed", false,
+        unreachable
+          ? `app not reachable at ${baseUrl} (${String(cause)}) — start it and re-run; `
+            + "this is NOT evidence the endpoint is open"
+          : `probe failed: ${(e as Error).name}`
+            + (typeof cause === "string" ? `/${cause}` : ""));
     }
   }
 
