@@ -73,6 +73,13 @@ export interface DerivExecutionDeps {
     /** Venue-adjudicated rejection: the venue replied and said no. */
     venueRejection: string | null;
     detail: string;
+    /**
+     * Could an order exist as a result of this attempt? False for everything
+     * up to the proposal phase — a quote request cannot create a contract.
+     * Absent (older callers, certificate spies) is treated as TRUE, the
+     * conservative direction.
+     */
+    orderPossible?: boolean;
   }>;
 }
 
@@ -81,6 +88,7 @@ export const DERIV_REFUSALS = {
   ACCOUNT_NOT_PROVEN_DEMO: "DERIV_ACCOUNT_NOT_PROVEN_DEMO",
   INTENT_NOT_PERSISTED: "DERIV_INTENT_NOT_PERSISTED",
   VENUE_REJECTED: "DERIV_VENUE_REJECTED",
+  NO_ORDER_POSSIBLE: "DERIV_NO_ORDER_POSSIBLE",
 } as const;
 
 export class DerivExecutionAdapter implements ExecutionAdapter<DerivDeliveryResult> {
@@ -149,6 +157,16 @@ export class DerivExecutionAdapter implements ExecutionAdapter<DerivDeliveryResu
     // a DEFINITE failure and may fail closed.
     if (outcome.venueRejection !== null && outcome.venueRejection !== "") {
       throw new Error(`${DERIV_REFUSALS.VENUE_REJECTED}: ${outcome.venueRejection}`);
+    }
+
+    // NO ORDER WAS POSSIBLE — a proposal-phase refusal (unreadable quote, ask
+    // over the approved ceiling, quote request lost). A proposal cannot create
+    // a contract, so this is DEFINITE, whatever happened to the frame. The
+    // audit confirmed these were being mapped to INDETERMINATE: the ticket
+    // settled UNRESOLVED and the user's whole guided surface froze over an
+    // order that provably could not exist.
+    if (outcome.orderPossible === false && (outcome.contractId === null || outcome.contractId.trim() === "")) {
+      throw new Error(`${DERIV_REFUSALS.NO_ORDER_POSSIBLE}: ${outcome.detail}`);
     }
 
     if (outcome.replied === true) {

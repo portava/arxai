@@ -43,6 +43,12 @@ export const ARX_LOCK_NS = {
   // gets { acquired: false,
   USER_ALLOCATION: 0x4152_5804, // keyB = userId. Wave-5 atomic per-user headroom+reservation (lock order USER -> MASTER). } and reports AGENT_ECO_RUNNER_LOCKED.
   AGENT_ECO_RUNNER: 0x4152_5803,
+  // GUIDED_DISPATCH — keyB = userId. Held across ONE guided dispatch (venue
+  // round-trip included), serializing a user's dispatches so two concurrent
+  // requests for DIFFERENT tickets cannot both pass the unresolved-intent and
+  // position-count reads before either writes (Phase 6 audit, TOCTOU class).
+  // Non-blocking: the loser refuses honestly rather than queueing an order.
+  GUIDED_DISPATCH: 0x4152_5806,
 } as const;
 
 export type ArxLockNamespace =

@@ -21,6 +21,7 @@
 import { NewDerivTransport, canSendTradingRequest } from "../newApi/transport.js";
 import { resolveNewApiConfig } from "../newApi/restClient.js";
 import { mapProposalRequest, mapBuyRequest, normalizeProposal, normalizePurchase } from "../newApi/wire.js";
+import type { OrphanReply } from "../newApi/transport.js";
 import { DerivNewApiError } from "../newApi/errors.js";
 import { isAdjudicatedRejection } from "../newApi/demoTradeCertify.js";
 import type { DerivMultiplierContractIntent } from "@workspace/domain/deriv-contracts";
@@ -31,6 +32,20 @@ export interface GuidedBuyOutcome {
   contractId: string | null;
   venueRejection: string | null;
   detail: string;
+  /**
+   * Could an ORDER exist at the venue as a result of this attempt?
+   *
+   * False for everything up to and including the proposal phase: a proposal is
+   * a QUOTE request and cannot create a contract, so even a proposal frame
+   * that reached the wire and went unanswered proves nothing an order could
+   * hide behind. The audit confirmed the adapter was mapping proposal-phase
+   * refusals (unreadable quote, over-ceiling ask) to INDETERMINATE — settling
+   * the ticket UNRESOLVED and freezing the user's whole guided surface over an
+   * order that provably could not exist.
+   *
+   * True from the moment the BUY frame may have been written.
+   */
+  orderPossible: boolean;
 }
 
 export interface GuidedBuyArgs {
@@ -54,7 +69,7 @@ export interface GuidedBuyArgs {
  * error that does not say whether it transmitted has not proved it did not.
  * Defaulting the other way would be conservative-looking and wrong.
  */
-function fromError(e: unknown, phase: string): GuidedBuyOutcome {
+function fromError(e: unknown, phase: string, orderPossible: boolean): GuidedBuyOutcome {
   const err = e instanceof DerivNewApiError ? e : null;
   const provablyNotSent = err?.wireWritten === false;
   const detail = err
@@ -64,7 +79,7 @@ function fromError(e: unknown, phase: string): GuidedBuyOutcome {
   // A venue that ANSWERED our req_id and refused proves both transmission and
   // that no contract exists. That is the one failure we may report as definite.
   if (isAdjudicatedRejection(e)) {
-    return { replied: true, wireWritten: true, contractId: null, venueRejection: detail, detail };
+    return { replied: true, wireWritten: true, contractId: null, venueRejection: detail, detail, orderPossible };
   }
   return {
     replied: false,
@@ -72,6 +87,7 @@ function fromError(e: unknown, phase: string): GuidedBuyOutcome {
     contractId: null,
     venueRejection: null,
     detail,
+    orderPossible,
   };
 }
 
@@ -93,6 +109,7 @@ export async function guidedBuy(args: GuidedBuyArgs): Promise<GuidedBuyOutcome> 
     return {
       replied: false, wireWritten: false, contractId: null, venueRejection: null,
       detail: `config: ${config}`,
+      orderPossible: false,
     };
   }
   const transport = new NewDerivTransport(config);
@@ -102,13 +119,14 @@ export async function guidedBuy(args: GuidedBuyArgs): Promise<GuidedBuyOutcome> 
       await transport.connect(args.accountId);
     } catch (e) {
       // Nothing was sent: the socket never became ready.
-      const o = fromError(e, "connect");
+      const o = fromError(e, "connect", false);
       return { ...o, wireWritten: false };
     }
     if (!canSendTradingRequest(transport.getState())) {
       return {
         replied: false, wireWritten: false, contractId: null, venueRejection: null,
         detail: `connect: transport is ${transport.getState()}, not ready to trade`,
+        orderPossible: false,
       };
     }
 
@@ -131,6 +149,7 @@ export async function guidedBuy(args: GuidedBuyArgs): Promise<GuidedBuyOutcome> 
       return {
         replied: false, wireWritten: false, contractId: null, venueRejection: null,
         detail: `proposal_map: ${proposalReq.code}${proposalReq.detail ? ` — ${proposalReq.detail}` : ""}`,
+        orderPossible: false,
       };
     }
 
@@ -143,11 +162,13 @@ export async function guidedBuy(args: GuidedBuyArgs): Promise<GuidedBuyOutcome> 
         return {
           replied: true, wireWritten: true, contractId: null, venueRejection: null,
           detail: `proposal_read: ${p.code}${p.detail ? ` — ${p.detail}` : ""}`,
+          orderPossible: false,
         };
       }
       quote = p;
     } catch (e) {
-      return fromError(e, "proposal");
+      // A proposal cannot create an order, whatever happened to its frame.
+      return fromError(e, "proposal", false);
     }
 
     // ── validate the quote before spending ────────────────────────────────
@@ -158,6 +179,7 @@ export async function guidedBuy(args: GuidedBuyArgs): Promise<GuidedBuyOutcome> 
       return {
         replied: true, wireWritten: true, contractId: null, venueRejection: null,
         detail: "quote_validate: venue ask is unreadable — refusing rather than guessing a price",
+        orderPossible: false,
       };
     }
     if (quote.askPrice > args.maxStake) {
@@ -165,6 +187,7 @@ export async function guidedBuy(args: GuidedBuyArgs): Promise<GuidedBuyOutcome> 
       return {
         replied: true, wireWritten: true, contractId: null, venueRejection: null,
         detail: `quote_validate: venue quoted ${quote.askPrice}, above the ${args.maxStake} ceiling — refused, nothing bought`,
+        orderPossible: false,
       };
     }
 
@@ -174,6 +197,7 @@ export async function guidedBuy(args: GuidedBuyArgs): Promise<GuidedBuyOutcome> 
       return {
         replied: false, wireWritten: false, contractId: null, venueRejection: null,
         detail: `buy_map: ${buyReq.code}${buyReq.detail ? ` — ${buyReq.detail}` : ""}`,
+        orderPossible: false,
       };
     }
 
@@ -186,6 +210,7 @@ export async function guidedBuy(args: GuidedBuyArgs): Promise<GuidedBuyOutcome> 
         return {
           replied: true, wireWritten: true, contractId: null, venueRejection: null,
           detail: `buy_read: ${purchase.code} — an order was SENT and its outcome is UNKNOWN`,
+          orderPossible: true,
         };
       }
       return {
@@ -193,9 +218,43 @@ export async function guidedBuy(args: GuidedBuyArgs): Promise<GuidedBuyOutcome> 
         contractId: String(purchase.contractId),
         venueRejection: null,
         detail: `bought contract ${purchase.contractId}`,
+        orderPossible: true,
       };
     } catch (e) {
-      return fromError(e, "buy");
+      const base = fromError(e, "buy", true);
+      if (base.venueRejection !== null || base.wireWritten === false) return base;
+      // The frame reached the wire and nothing adjudicated it. Before
+      // declaring UNKNOWN, check whether the venue's answer arrived LATE — the
+      // certified harness does exactly this (demoTradeCertify.ts:403-433). A
+      // reply carrying our own req_id is provably ours, and venue evidence
+      // dominates local inference: discarding it turns a recoverable UNKNOWN
+      // into a position nobody can find.
+      const orphans: OrphanReply[] = (() => {
+        const fn = (transport as { takeOrphanReplies?: () => OrphanReply[] }).takeOrphanReplies;
+        return typeof fn === "function" ? fn.call(transport) : [];
+      })();
+      const lateBuy = orphans.find((o) => o.op === "buy");
+      if (lateBuy && lateBuy.derivErrorCode === null) {
+        const p = normalizePurchase(lateBuy.body);
+        if (!(p instanceof DerivNewApiError)) {
+          return {
+            replied: true, wireWritten: true, contractId: String(p.contractId),
+            venueRejection: null,
+            detail: `${base.detail} — but a LATE venue receipt confirms contract ${p.contractId} EXISTS`,
+            orderPossible: true,
+          };
+        }
+      }
+      if (lateBuy && lateBuy.derivErrorCode !== null) {
+        // The venue refused, late. Adjudication is adjudication.
+        return {
+          replied: true, wireWritten: true, contractId: null,
+          venueRejection: `${base.detail} — a LATE venue reply REFUSED this order (${lateBuy.derivErrorCode})`,
+          detail: `${base.detail} — late venue refusal ${lateBuy.derivErrorCode}`,
+          orderPossible: true,
+        };
+      }
+      return base;
     }
   } finally {
     // Always close. A leaked socket holds the process open and, worse, keeps a

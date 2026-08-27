@@ -17,6 +17,7 @@ import {
 import { resolveDerivDependencies } from "./derivDependencyResolver.js";
 import { resolveExecutionTier } from "@workspace/domain/safety-contracts/executionTier";
 import { guidedBuy } from "../deriv/execution/derivGuidedBuy.js";
+import { ARX_LOCK_NS, withTxAdvisoryLock } from "../concurrency/advisoryLock.js";
 import { fetchAccounts, isDemoAccount, isRealAccount } from "../deriv/newApi/accounts.js";
 import { resolveNewApiConfig } from "../deriv/newApi/restClient.js";
 import { DerivExecutionAdapter } from "../deriv/execution/derivExecutionAdapter.js";
@@ -373,6 +374,13 @@ export interface GuidedDispatchOverrides {
   applySettlement?: (outcome: GuidedDispatchOutcome, ticketId: string) => Promise<void>;
   /** Gate 18, injectable for certificates. Live default reads the acceptances table. */
   disclosureStatus?: (userId: number) => Promise<{ accepted: boolean; waivedByOperator: boolean }>;
+  /**
+   * Per-user dispatch serialization, injectable for certificates (the live
+   * default needs Postgres). The live lock is held across the venue round-trip
+   * so two concurrent dispatches for DIFFERENT tickets cannot both pass the
+   * unresolved-intent and position-count reads before either writes.
+   */
+  serializeDispatch?: <T>(userId: number, fn: () => Promise<T>) => Promise<{ acquired: boolean; value?: T }>;
 }
 
 function buildAdapter(args: {
@@ -506,6 +514,41 @@ export async function dispatchGuidedTicketForRequest(
   args: { userId: number; ticketId: string },
   overrides: GuidedDispatchOverrides = {},
 ): Promise<GuidedDispatchOutcome> {
+  // ── PER-USER SERIALIZATION ──────────────────────────────────────────────
+  // The unresolved-intent wall and the Constitution's position/trade counts
+  // are plain reads: two concurrent dispatches for two different approved
+  // tickets could both read "0 outstanding" before either writes (audit,
+  // PLAUSIBLE TOCTOU). A pg try-advisory-xact-lock keyed by user makes one of
+  // them refuse honestly instead. Non-blocking on purpose: queueing a trade
+  // behind another trade is a decision a human should make, not a mutex.
+  const serialize = overrides.serializeDispatch
+    ?? (async <T,>(uid: number, fn: () => Promise<T>) => {
+      try {
+        const r = await withTxAdvisoryLock(ARX_LOCK_NS.GUIDED_DISPATCH, uid, () => fn());
+        return r.acquired ? { acquired: true, value: r.value } : { acquired: false };
+      } catch {
+        // The lock INFRASTRUCTURE failed (database unreachable). Refusing is
+        // right — a dispatch that cannot be serialized cannot be trusted not
+        // to race — and nothing has been sent at this point.
+        return { acquired: false };
+      }
+    });
+
+  const serialized = await serialize(args.userId, () => dispatchGuidedTicketInner(args, overrides));
+  if (!serialized.acquired) {
+    return {
+      ok: false, refusal: "TICKET_AUTHORIZATION_REFUSED",
+      detail: "another guided dispatch for this user is in progress — nothing was sent; retry after it completes",
+      venueContractRef: null, indeterminate: false, intentId: null, claimed: false,
+    };
+  }
+  return serialized.value as GuidedDispatchOutcome;
+}
+
+async function dispatchGuidedTicketInner(
+  args: { userId: number; ticketId: string },
+  overrides: GuidedDispatchOverrides = {},
+): Promise<GuidedDispatchOutcome> {
   const deps: GuidedDispatchDeps = {
     configuredTier: configuredTier(),
 
@@ -596,7 +639,9 @@ export async function dispatchGuidedTicketForRequest(
           authenticatedUserId: ticket.userId,
           configuredTier: configuredTier(),
           killSwitchEngaged: (uid: number) => liveKillSwitchEngaged(uid),
-          hasUnresolvedIntent: async () => false,
+          // Wired REAL (audit: this was a hard false while the service-level
+          // check was real — the resolver's post-claim re-check was theatre).
+          hasUnresolvedIntent: (uid: number) => derivOrderIntentsRepo.hasUnresolvedIntent(uid),
           // LIVE sources by default. A certificate overrides them; production
           // does not, and previously production got the null stubs — meaning a
           // real dispatch always refused NO_BROKER_CONNECTION.
@@ -648,6 +693,7 @@ export async function dispatchGuidedTicketForRequest(
       return { venueContractRef: r.transportRef, intentId: (r as { intentId: string }).intentId };
     },
   };
+
 
   // ── GATE 18, before anything can claim the ticket ───────────────────────
   // Pre-claim by design: a refusal here leaves the ticket APPROVED, and once

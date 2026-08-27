@@ -128,6 +128,7 @@ async function drive(over: {
           accepted: (over.disclosure ?? "accepted") === "accepted",
           waivedByOperator: over.disclosure === "waived",
         }),
+        serializeDispatch: async <T,>(_uid: number, fn: () => Promise<T>) => ({ acquired: true, value: await fn() }),
         recordAudit: async (e) => { spy.audits.push(e.kind); },
         applySettlement: async (o) => {
           spy.settlements.push({
@@ -330,6 +331,7 @@ test("with NO transport override, the LIVE path runs and still fabricates nothin
         persistIntent: async () => INTENT,
         loadObservedState: async () => OBSERVED(),
         disclosureStatus: async () => ({ accepted: true, waivedByOperator: false }),
+        serializeDispatch: async <T,>(_uid: number, fn: () => Promise<T>) => ({ acquired: true, value: await fn() }),
         recordAudit: async () => {},
         depSources: {
           loadConnection: async () => ({ id: 11, ownerUserId: USER, venue: "DERIV_DEMO", credentialHandle: "h" }),
@@ -372,6 +374,7 @@ test("with NO observed state wired, the product still refuses — never trades b
         hasUnresolvedIntent: async () => false,
         claimForDispatch: async () => ({ claimed: true }),
         disclosureStatus: async () => ({ accepted: true, waivedByOperator: false }),
+        serializeDispatch: async <T,>(_uid: number, fn: () => Promise<T>) => ({ acquired: true, value: await fn() }),
         recordAudit: async () => {},
         buyViaCertifiedTransport: async () => {
           throw new Error("THE TRANSPORT MUST NOT BE REACHED ON UNREADABLE STATE");
@@ -412,6 +415,7 @@ test("a SUCCESSFUL dispatch settles EXECUTED with the venue's reference", async 
         persistIntent: async () => INTENT,
         loadObservedState: async () => OBSERVED(),
         disclosureStatus: async () => ({ accepted: true, waivedByOperator: false }),
+        serializeDispatch: async <T,>(_uid: number, fn: () => Promise<T>) => ({ acquired: true, value: await fn() }),
         recordAudit: async (e) => {
           spy.audits.push(e.kind);
           if (e.kind === "GUIDED_DISPATCH_EXECUTED") executedEvent = e;

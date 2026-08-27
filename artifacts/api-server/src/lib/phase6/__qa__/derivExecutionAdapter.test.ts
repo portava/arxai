@@ -244,3 +244,34 @@ test("the adapter never claims the MT5 EA bridge venue", () => {
   assert.notEqual(DERIV_DEMO_VENUE_LITERAL, "mt5_ea_bridge");
   assert.equal(adapter().a.venue, "deriv_demo");
 });
+
+test("NO ORDER POSSIBLE is a DEFINITE refusal — a proposal cannot create a contract", async () => {
+  // Audit: proposal-phase refusals (unreadable quote, over-ceiling ask) carried
+  // the replied/no-contract/no-rejection shape and were mapped to INDETERMINATE
+  // — settling the ticket UNRESOLVED and freezing the user's guided surface
+  // over an order that provably could not exist.
+  const { a } = adapter({
+    buyViaCertifiedTransport: async () => ({
+      replied: true, wireWritten: true, contractId: null, venueRejection: null,
+      detail: "quote_validate: venue quoted 1.07, above the 1 ceiling — refused, nothing bought",
+      orderPossible: false,
+    }),
+  });
+  await assert.rejects(() => a.deliver(CMD), (e: unknown) => {
+    assert.equal(isIndeterminateDelivery(e), false,
+      "a provably-impossible order was held as UNKNOWN, freezing the user");
+    assert.match((e as Error).message, /NO_ORDER_POSSIBLE/);
+    return true;
+  });
+});
+
+test("an ABSENT orderPossible stays conservative — indeterminate, not definite", async () => {
+  // Older callers and certificate spies omit the field; the default must be
+  // the safe direction (an order MAY exist), never the convenient one.
+  const { a } = adapter({
+    buyViaCertifiedTransport: async () => ({
+      replied: true, wireWritten: true, contractId: null, venueRejection: null, detail: "empty reply",
+    }),
+  });
+  await assert.rejects(() => a.deliver(CMD), (e: unknown) => isIndeterminateDelivery(e));
+});
