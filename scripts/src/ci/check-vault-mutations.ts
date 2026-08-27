@@ -18,6 +18,12 @@ const ROOTS = [
   // quietly mutated. artifacts/api-server/__qa__ is a sibling of src and was
   // outside the root for the same reason.
   join(ROOT, "scripts/src"),
+  // artifacts/api-server/__qa__ is a SIBLING of src, so it fell outside the
+  // root above. It already hosts real mutation code (phase27b-extended-rules.ts
+  // updates and deletes four tables), and it is the established home for
+  // api-server QA scenarios that drive the DB directly. Coverage turned on a
+  // directory choice an author has no reason to think about.
+  join(ROOT, "artifacts/api-server/__qa__"),
 ];
 
 // Append-only vault tables — UPDATE/DELETE forbidden at the application layer.
@@ -41,6 +47,12 @@ const VAULT_TABLES = [
   // rewrite the rules a user was told governed a trade they already approved.
   // An approval ticket pins constitutionVersion precisely so that record holds.
   "tradingConstitutionsTable",
+  // Phase 6 guard-scope audit — both are append-only hash-chained ledgers that
+  // were absent from this list entirely. event_log computes its row_hash IN
+  // POSTGRES and security_events serialises writes under an advisory lock;
+  // mutating either breaks the chain that makes the ledger evidence at all.
+  "eventLogTable",
+  "securityEventsTable",
 ];
 
 // Raw-SQL append-only surfaces, keyed by physical table name.
@@ -56,12 +68,40 @@ const VAULT_TABLES = [
 const APPEND_ONLY_SQL_TABLES = [
   "execution_events",
   "owner_decisions",
+  // The Drizzle-symbol branch only matches the SYMBOL. Raw parameterized SQL is
+  // an established write path here (the guard's own comment above explains why),
+  // so the same edit in raw form was waved through in the same file that would
+  // have been caught in Drizzle form.
+  "trading_constitutions",
+  "event_log",
+  "security_events",
 ];
 
 const FORBIDDEN_OPS = [
   /\.update\s*\(/,
   /\.delete\s*\(/,
 ];
+
+/**
+ * Files allowed to mutate a vault table, each for a NAMED reason.
+ *
+ * A blanket "skip anything called *Test.ts" exclusion would hide a real
+ * violation in any file someone happened to name that way. These three are
+ * listed individually so adding a fourth is a visible, reviewable edit.
+ *
+ * securityChainTest is the important one: it MUTATES a chained row ON PURPOSE
+ * to prove the hash chain detects tampering. A guard that forbade this would
+ * prevent proving the ledger works at all — the guard would be protecting the
+ * chain by making it untestable.
+ */
+const TAMPER_PROOF_HARNESSES: Readonly<Record<string, string>> = {
+  "scripts/src/securityChainTest.ts":
+    "deliberately tampers with a chained row to prove the hash chain detects it, and deletes its own synthetic actor",
+  "scripts/src/eventLogDbTest.ts":
+    "deliberately tampers with a chained row to prove in-Postgres row_hash verification detects it; deletes only its own QA_ rows",
+  "scripts/src/qaSharedBridgeAttachFlow.ts":
+    "QA flow that deletes ONLY the synthetic actor's own security events during teardown",
+};
 
 export function checkVaultMutations(): CheckResult {
   const violations: string[] = [];
@@ -74,10 +114,26 @@ export function checkVaultMutations(): CheckResult {
       // guard's own documentation as a breach. Excluded deliberately, not
       // because it is inconvenient: no application DB write lives here.
       if (rel(f).startsWith("scripts/src/ci/")) continue;
+      if (TAMPER_PROOF_HARNESSES[rel(f)]) continue;
       const src = read(f);
       // Quick filter: file must reference a vault table to be relevant.
       if (!VAULT_TABLES.some((t) => src.includes(t))
           && !APPEND_ONLY_SQL_TABLES.some((t) => src.includes(t))) continue;
+      // Prettier wraps a long call as `db.update(\n  tableSymbol,\n)`, and
+      // `import * as schema` makes `schema.tableSymbol` a valid spelling. Both
+      // are invisible to a per-line regex. Scan the comment-stripped whole file
+      // with a newline-tolerant pattern as well, and de-duplicate against the
+      // per-line findings below.
+      const whole = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+      for (const t of VAULT_TABLES) {
+        const multi = new RegExp(`\\.(update|delete)\\s*\\(\\s*(?:[A-Za-z_$][\\w$]*\\s*\\.\\s*)?${t}\\b`, "g");
+        let mm: RegExpExecArray | null;
+        while ((mm = multi.exec(whole)) !== null) {
+          const lineNo = whole.slice(0, mm.index).split("\n").length;
+          const msg = `${rel(f)}:${lineNo} → ${mm[1]!.toUpperCase()} on vault table ${t} (multiline/aliased form)`;
+          if (!violations.some((v) => v.startsWith(`${rel(f)}:${lineNo} →`))) violations.push(msg);
+        }
+      }
       const lines = src.split("\n");
       // Look for db.update(VAULT_TABLE) / db.delete(VAULT_TABLE) patterns
       // and chained .update(... vaultTable ...) anywhere in a window.

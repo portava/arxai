@@ -142,11 +142,27 @@ export async function dispatchGuidedTicket(
   const tierResolution = resolveExecutionTier(deps.configuredTier);
   const tier = tierResolution.tier;
 
-  const ticket = await deps.loadOwnedTicket(args.ticketId, args.userId);
-  if (!ticket) return refuse("TICKET_AUTHORIZATION_REFUSED", "ticket not found for this user");
+  // Everything from here to the adapter is PRE-TRANSMISSION by construction:
+  // no adapter has been constructed, so no frame can have been written. An
+  // infrastructure failure in this region — an unreachable database, a
+  // malformed row — is therefore a DEFINITE refusal, and converting it to one
+  // is honest.
+  //
+  // The same wrapper around the ADAPTER would NOT be safe: an exception there
+  // may arrive after a frame reached the wire, and calling that a definite
+  // refusal is exactly the falsely-certain claim this phase exists to prevent.
+  // That is why the try below ends before deliverViaAdapter, which has its own
+  // indeterminate-aware handling.
+  let ticket: ApprovalTicket | null | undefined;
+  let currentTerms: MaterialTradeTerms;
+  let observed: ConstitutionObservedState;
+  let verdict: ConstitutionVerdict;
+  try {
+    ticket = await deps.loadOwnedTicket(args.ticketId, args.userId);
+    if (!ticket) return refuse("TICKET_AUTHORIZATION_REFUSED", "ticket not found for this user");
 
-  // 1 — an unresolved intent blocks every new order for this user.
-  if (await deps.hasUnresolvedIntent(args.userId)) {
+    // 1 — an unresolved intent blocks every new order for this user.
+    if (await deps.hasUnresolvedIntent(args.userId)) {
     await deps.recordAudit({
       kind: "GUIDED_DISPATCH_BLOCKED_UNRESOLVED", userId: args.userId, ticketId: args.ticketId,
       detail: "an earlier intent is unresolved; no new order may assume its exposure is absent",
@@ -155,16 +171,21 @@ export async function dispatchGuidedTicket(
       "an earlier execution is unresolved — resolve it before placing another order");
   }
 
-  const currentTerms = await deps.deriveCurrentTerms(ticket);
+    currentTerms = await deps.deriveCurrentTerms(ticket);
 
   // 2 — the SECOND Constitution evaluation, against current policy and state.
-  const constitution = await deps.loadActiveConstitution(args.userId);
-  const observed = await deps.loadObservedState(args.userId);
-  const verdict: ConstitutionVerdict = evaluateConstitution(
+    const constitution = await deps.loadActiveConstitution(args.userId);
+    observed = await deps.loadObservedState(args.userId);
+    verdict = evaluateConstitution(
     constitution,
-    proposalFromTerms(currentTerms, args.marketCategory, args.conditions),
-    observed,
-  );
+      proposalFromTerms(currentTerms, args.marketCategory, args.conditions),
+      observed,
+    );
+  } catch (infraErr) {
+    const detail = infraErr instanceof Error ? infraErr.message : String(infraErr);
+    return refuse("TICKET_AUTHORIZATION_REFUSED",
+      `could not establish dispatch preconditions (nothing was sent): ${detail.slice(0, 300)}`);
+  }
   if (verdict.decision !== "PERMIT") {
     await deps.recordAudit({
       kind: "GUIDED_DISPATCH_BLOCKED_CONSTITUTION", userId: args.userId, ticketId: args.ticketId,

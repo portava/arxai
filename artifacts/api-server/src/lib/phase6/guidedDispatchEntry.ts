@@ -97,6 +97,21 @@ function toDomainConstitution(row: Awaited<ReturnType<typeof tradingConstitution
  * certify nothing.
  */
 export interface GuidedDispatchOverrides {
+  /**
+   * PERSISTENCE substitutes only — never decision logic.
+   *
+   * A certificate may stand in for the database (this environment has none),
+   * but there is deliberately no override for the Constitution evaluator, the
+   * ticket authorization, the CAS semantics or the tier resolver. Those decide,
+   * and a test that could stub them would certify nothing. The DB-bound halves
+   * are certified separately against a live Postgres by approval-ticket-race-db.
+   */
+  loadOwnedTicket?: GuidedDispatchDeps["loadOwnedTicket"];
+  loadActiveConstitution?: GuidedDispatchDeps["loadActiveConstitution"];
+  deriveCurrentTerms?: GuidedDispatchDeps["deriveCurrentTerms"];
+  claimForDispatch?: GuidedDispatchDeps["claimForDispatch"];
+  hasUnresolvedIntent?: GuidedDispatchDeps["hasUnresolvedIntent"];
+  persistIntent?: () => Promise<string>;
   /** Observed account state (daily loss, open positions, ...). */
   loadObservedState?: (userId: number) => Promise<ConstitutionObservedState>;
   /** The venue socket. The ONLY external boundary a certificate may fake. */
@@ -118,6 +133,7 @@ function buildAdapter(args: {
   stakeUsd: number;
   multiplier: number;
   liveCommandId: string;
+  persistIntent?: () => Promise<string>;
   buy: (a: { intentId: string; cmd: unknown }) => Promise<{
     replied: boolean; wireWritten: boolean; contractId: string | null;
     venueRejection: string | null; detail: string;
@@ -127,7 +143,7 @@ function buildAdapter(args: {
     tier: args.tier,
     accountIsProvenDemo: args.accountIsProvenDemo,
     // The durable intent, written BEFORE any frame reaches the wire.
-    persistIntent: async () => {
+    persistIntent: args.persistIntent ?? (async () => {
       const intentId = `di_${args.ticketId}`;
       await derivOrderIntentsRepo.createIntent({
         intentId,
@@ -142,7 +158,7 @@ function buildAdapter(args: {
         writeDisposition: "NOT_ATTEMPTED",
       });
       return intentId;
-    },
+    }),
     buyViaCertifiedTransport: args.buy as never,
   });
 }
@@ -162,8 +178,8 @@ export async function dispatchGuidedTicketForRequest(
   const deps: GuidedDispatchDeps = {
     configuredTier: configuredTier(),
 
-    loadActiveConstitution: async (userId) =>
-      toDomainConstitution(await tradingConstitutionRepo.getActiveConstitution(userId)),
+    loadActiveConstitution: overrides.loadActiveConstitution ?? (async (userId) =>
+      toDomainConstitution(await tradingConstitutionRepo.getActiveConstitution(userId))),
 
     loadObservedState: overrides.loadObservedState ?? (async () => ({
       // Conservative defaults are NOT safe here, so anything the caller has not
@@ -179,21 +195,23 @@ export async function dispatchGuidedTicketForRequest(
       lastLossAtIso: null,
     })),
 
-    loadOwnedTicket: async (ticketId, userId) =>
-      toDomainTicket(await approvalTicketsRepo.findOwnedTicket(ticketId, userId)),
+    loadOwnedTicket: overrides.loadOwnedTicket ?? (async (ticketId, userId) =>
+      toDomainTicket(await approvalTicketsRepo.findOwnedTicket(ticketId, userId))),
 
     // Re-derived from the PERSISTED row, never echoed from the domain object a
     // caller handed in.
-    deriveCurrentTerms: async (ticket) => {
+    deriveCurrentTerms: overrides.deriveCurrentTerms ?? (async (ticket) => {
       const row = await approvalTicketsRepo.findOwnedTicket(ticket.ticketId, ticket.userId);
       const fresh = toDomainTicket(row);
       if (!fresh) throw new Error("TICKET_VANISHED_MID_DISPATCH");
       return fresh.terms;
-    },
+    }),
 
-    hasUnresolvedIntent: (userId) => derivOrderIntentsRepo.hasUnresolvedIntent(userId),
+    hasUnresolvedIntent: overrides.hasUnresolvedIntent
+      ?? ((userId) => derivOrderIntentsRepo.hasUnresolvedIntent(userId)),
 
-    claimForDispatch: (a) => approvalTicketsRepo.claimTicketForDispatch(a),
+    claimForDispatch: overrides.claimForDispatch
+      ?? ((a) => approvalTicketsRepo.claimTicketForDispatch(a)),
 
     venueForTicket: async (ticket) => (ticket.terms.broker === "deriv" ? "DERIV_DEMO" : null),
 
@@ -224,6 +242,19 @@ export async function dispatchGuidedTicketForRequest(
         throw new Error(`DERIV_DEPS_REFUSED:${resolution.refusal}: ${resolution.detail}`);
       }
 
+      // "No transport wired" is a CONFIGURATION fact known before any attempt,
+      // so it must refuse here — definitively, pre-transmission — rather than by
+      // throwing inside the transport. A throw from the transport is correctly
+      // treated as INDETERMINATE (a throw cannot prove non-transmission), and
+      // routing a known-unwired build through that path would strand an exposure
+      // reservation for an order that provably never existed.
+      if (typeof overrides.buyViaCertifiedTransport !== "function") {
+        throw new Error(
+          "DERIV_TRANSPORT_NOT_WIRED: no certified transport is configured for this venue; " +
+          "nothing was sent",
+        );
+      }
+
       const adapter = buildAdapter({
         tier,
         accountIsProvenDemo: resolution.deps.demo.isDemo,
@@ -235,11 +266,8 @@ export async function dispatchGuidedTicketForRequest(
         stakeUsd: ticket.terms.stakeUsd,
         multiplier: ticket.terms.multiplier,
         liveCommandId,
-        buy: overrides.buyViaCertifiedTransport ?? (async () => {
-          // No transport wired. Refuse rather than pretend: a stub that
-          // returned success would fabricate a position.
-          throw new Error("DERIV_TRANSPORT_NOT_WIRED");
-        }),
+        persistIntent: overrides.persistIntent,
+        buy: overrides.buyViaCertifiedTransport,
       });
 
       const r = await adapter.deliver({
