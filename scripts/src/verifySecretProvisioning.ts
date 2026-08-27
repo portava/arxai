@@ -93,10 +93,33 @@ async function main(): Promise<void> {
   // default and it throws without one — so guessing 5000 was wrong. Derive it
   // from the same variable the server uses when no base URL is given.
   const envPort = (process.env["PORT"] ?? "").trim();
-  const baseUrl = process.argv.find((a) => a.startsWith("--base-url="))?.split("=")[1]
+  let baseUrl = process.argv.find((a) => a.startsWith("--base-url="))?.split("=")[1]
     ?? (envPort ? `http://127.0.0.1:${envPort}` : undefined);
+
+  // DISCOVER the port when nothing supplied one. Replit injects PORT into the
+  // RUN process, not into an interactive shell, so a terminal invocation sees
+  // it unset even while the app is happily listening. Probing beats asking the
+  // operator to paste a port they also cannot see.
   if (!baseUrl) {
-    skip("5. override endpoint is fail-closed", "no --base-url and PORT is unset");
+    const candidates = [5000, 3000, 8080, 8081, 4000, 8000];
+    for (const port of candidates) {
+      try {
+        const ctl = new AbortController();
+        const timer = setTimeout(() => ctl.abort(), 700);
+        // Any HTTP answer proves a listener — even a 404. We are locating the
+        // server, not judging the route.
+        await fetch(`http://127.0.0.1:${port}/`, { signal: ctl.signal }).catch(() => { throw new Error("x"); });
+        clearTimeout(timer);
+        baseUrl = `http://127.0.0.1:${port}`;
+        // eslint-disable-next-line no-console
+        console.log(`  [ ok ] discovered a listener on port ${port}`);
+        break;
+      } catch { /* try the next candidate */ }
+    }
+  }
+  if (!baseUrl) {
+    skip("5. override endpoint is fail-closed",
+      "no --base-url, PORT unset, and no listener found on 5000/3000/8080/8081/4000/8000");
   } else {
       // routes/index.ts does router.use(systemRouter) with no prefix, and that
     // aggregate is mounted at "/api" in app.ts — so the endpoint is
