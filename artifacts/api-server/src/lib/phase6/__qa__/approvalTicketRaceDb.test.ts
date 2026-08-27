@@ -30,13 +30,33 @@ const PREFIX = "__qa_ticket_race__";
 const QA_USER = -970601;
 const CONCURRENCY = 12;
 
+// Monotonic within a run. Date.now() alone is NOT enough: several seeds inside
+// one test land in the same millisecond, which collides on the intent_id unique
+// index and produces a failure that looks like a product defect but is not.
+let seq = 0;
+
 function ticketId(tag: string): string {
-  // No Math.random / Date.now in the id itself would be nicer, but uniqueness
-  // across repeated local runs matters more here and this is test-only code.
-  return `${PREFIX}${tag}_${process.pid}_${Date.now()}`;
+  return `${PREFIX}${tag}_${process.pid}_${Date.now()}_${++seq}`;
 }
 
-async function seedTicket(tag: string, state: string, minutesToExpiry = 10): Promise<string> {
+/**
+ * Seed one synthetic ticket.
+ *
+ * `instrument` defaults to a value UNIQUE PER SEED, and that default is the
+ * important part. approval_tickets_active_uq forbids a second ticket in a live
+ * state for the same (user_id, account_ref, instrument) — deliberately, so a
+ * user cannot end up with two live tickets that could each open a position on
+ * the same instrument. Seeding every fixture on one instrument therefore made
+ * the index fire on the fixtures themselves.
+ *
+ * Tests that want to PROVE the index fires pass an explicit shared instrument.
+ */
+async function seedTicket(
+  tag: string,
+  state: string,
+  minutesToExpiry = 10,
+  opts: { instrument?: string } = {},
+): Promise<string> {
   const id = ticketId(tag);
   await db.insert(approvalTicketsTable).values({
     ticketId: id,
@@ -44,7 +64,7 @@ async function seedTicket(tag: string, state: string, minutesToExpiry = 10): Pro
     state,
     broker: "deriv",
     accountRef: "VRTC_QA",
-    instrument: "R_100",
+    instrument: opts.instrument ?? `R_QA_${seq}`,
     side: "BUY",
     stakeUsd: 1,
     multiplier: 100,
@@ -263,11 +283,12 @@ test("an UNRESOLVED ticket keeps its dispatch claim, so it can never be re-dispa
 
 test("the active partial index blocks a second live ticket for the same account+instrument", async () => {
   try {
-    await seedTicket("uq_first", "PENDING");
+    const shared = "R_SHARED_UQ";
+    await seedTicket("uq_first", "PENDING", 10, { instrument: shared });
     let threw = false;
     try {
       // Same QA_USER / accountRef / instrument, also in a live state.
-      await seedTicket("uq_second", "APPROVED");
+      await seedTicket("uq_second", "APPROVED", 10, { instrument: shared });
     } catch {
       threw = true;
     }
@@ -277,4 +298,22 @@ test("the active partial index blocks a second live ticket for the same account+
   } finally {
     await cleanup();
   }
+});
+
+test("a TERMINAL ticket does not block a new one for the same account+instrument", () => {
+  // The index is partial: it covers PENDING/APPROVED/DISPATCHING/UNRESOLVED
+  // only. Once a ticket is rejected, expired or executed, the user must be able
+  // to try again on that instrument. A non-partial index would lock them out of
+  // an instrument permanently after one rejection.
+  return (async () => {
+    try {
+      const shared = "R_TERMINAL_UQ";
+      await seedTicket("term_first", "REJECTED", 10, { instrument: shared });
+      await seedTicket("term_second", "EXPIRED", 10, { instrument: shared });
+      const live = await seedTicket("term_live", "PENDING", 10, { instrument: shared });
+      assert.ok(live, "a terminal ticket blocked a new ticket on the same instrument");
+    } finally {
+      await cleanup();
+    }
+  })();
 });
