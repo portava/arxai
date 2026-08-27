@@ -16,6 +16,9 @@ import {
 } from "./guidedExecutionService.js";
 import { resolveDerivDependencies } from "./derivDependencyResolver.js";
 import { resolveExecutionTier } from "@workspace/domain/safety-contracts/executionTier";
+import { guidedBuy } from "../deriv/execution/derivGuidedBuy.js";
+import { fetchAccounts, isDemoAccount, isRealAccount } from "../deriv/newApi/accounts.js";
+import { resolveNewApiConfig } from "../deriv/newApi/restClient.js";
 import { DerivExecutionAdapter } from "../deriv/execution/derivExecutionAdapter.js";
 import { isIndeterminateDelivery } from "../live/executionAdapter.js";
 import {
@@ -43,6 +46,71 @@ const AUDIT_KIND_TO_EVENT: Readonly<Record<string, GuidedAuditEvent | undefined>
   GUIDED_DISPATCH_BLOCKED_UNRESOLVED: "GATE_REFUSED",
   GUIDED_DISPATCH_UNROUTABLE: "GATE_REFUSED",
 };
+
+/**
+ * The ONE user permitted to use the environment-configured Deriv credential.
+ *
+ * The Deriv connection here is an env-level PAT, not a per-user OAuth grant.
+ * Without this gate, ANY authenticated user would inherit the owner's broker
+ * account — a multi-tenant credential leak wearing the shape of a feature.
+ *
+ * Unset means NOBODY may use it, which is the correct default: an unconfigured
+ * owner is not "everyone".
+ */
+function derivCredentialOwnerUserId(): number | null {
+  const raw = process.env["ARX_DERIV_OWNER_USER_ID"];
+  if (typeof raw !== "string" || raw.trim() === "") return null;
+  const n = Number(raw.trim());
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+/**
+ * Live Deriv dependency sources, built per request.
+ *
+ * The "connection" is the env-configured credential, exposed ONLY to the owner
+ * user. `credentialHandle` is a marker, never the token — the token never
+ * leaves resolveNewApiConfig.
+ */
+function liveDerivDepSources(authenticatedUserId: number) {
+  return {
+    loadConnection: async (userId: number) => {
+      const owner = derivCredentialOwnerUserId();
+      if (owner === null || userId !== owner || userId !== authenticatedUserId) return null;
+      const config = resolveNewApiConfig();
+      if (typeof config === "string") return null;
+      return {
+        id: 1,
+        ownerUserId: userId,
+        venue: "DERIV_DEMO",
+        // A MARKER, not a credential. Nothing downstream can leak what it was
+        // never given.
+        credentialHandle: "env:deriv-new-api",
+      };
+    },
+    loadAccount: async (connectionId: number, accountRef: string) => {
+      const accounts = await fetchAccounts(
+        resolveNewApiConfig() as Exclude<ReturnType<typeof resolveNewApiConfig>, string>);
+      const match = accounts.find((a) => a.accountId === accountRef);
+      return match ? { accountRef: match.accountId, connectionId } : null;
+    },
+    classifyAccount: async (_connectionId: number, accountRef: string) => {
+      const accounts = await fetchAccounts(
+        resolveNewApiConfig() as Exclude<ReturnType<typeof resolveNewApiConfig>, string>);
+      const match = accounts.find((a) => a.accountId === accountRef);
+      if (!match) return null;
+      // A REAL account is reported as explicitly not-demo, never as unknown:
+      // unknown reads as a missing field, real reads as a hazard.
+      if (isRealAccount(match)) {
+        return { isDemo: false, source: "VENUE_ACCOUNT_LIST" as const, evidence: `account_type=${match.accountType}` };
+      }
+      return {
+        isDemo: isDemoAccount(match),
+        source: "VENUE_ACCOUNT_LIST" as const,
+        evidence: `account_type=${match.accountType ?? "absent"}`,
+      };
+    },
+  };
+}
 
 /** The server's tier. Read here, once, from the environment the SERVER owns. */
 function configuredTier(): string | null {
@@ -296,11 +364,12 @@ export async function dispatchGuidedTicketForRequest(
         {
           authenticatedUserId: ticket.userId,
           configuredTier: configuredTier(),
-          loadConnection: async () => null,
-          loadAccount: async () => null,
-          classifyAccount: async () => null,
           killSwitchEngaged: async () => false,
           hasUnresolvedIntent: async () => false,
+          // LIVE sources by default. A certificate overrides them; production
+          // does not, and previously production got the null stubs — meaning a
+          // real dispatch always refused NO_BROKER_CONNECTION.
+          ...liveDerivDepSources(args.userId),
           ...overrides.depSources,
         },
       );
@@ -310,18 +379,6 @@ export async function dispatchGuidedTicketForRequest(
         throw new Error(`DERIV_DEPS_REFUSED:${resolution.refusal}: ${resolution.detail}`);
       }
 
-      // "No transport wired" is a CONFIGURATION fact known before any attempt,
-      // so it must refuse here — definitively, pre-transmission — rather than by
-      // throwing inside the transport. A throw from the transport is correctly
-      // treated as INDETERMINATE (a throw cannot prove non-transmission), and
-      // routing a known-unwired build through that path would strand an exposure
-      // reservation for an order that provably never existed.
-      if (typeof overrides.buyViaCertifiedTransport !== "function") {
-        throw new Error(
-          "DERIV_TRANSPORT_NOT_WIRED: no certified transport is configured for this venue; " +
-          "nothing was sent",
-        );
-      }
 
       const adapter = buildAdapter({
         tier,
@@ -335,7 +392,23 @@ export async function dispatchGuidedTicketForRequest(
         multiplier: ticket.terms.multiplier,
         liveCommandId,
         persistIntent: overrides.persistIntent,
-        buy: overrides.buyViaCertifiedTransport,
+        buy: overrides.buyViaCertifiedTransport ?? (async () => {
+          const r = await guidedBuy({
+            accountId: resolution.deps.accountRef,
+            symbol: ticket.terms.instrument,
+            currency: "USD",
+            side: ticket.terms.side,
+            stake: ticket.terms.stakeUsd,
+            multiplier: ticket.terms.multiplier,
+            ...(ticket.terms.stopLossUsd !== null ? { stopLoss: ticket.terms.stopLossUsd } : {}),
+            ...(ticket.terms.takeProfitUsd !== null ? { takeProfit: ticket.terms.takeProfitUsd } : {}),
+            // The APPROVED stake is the ceiling. The venue's quote may be at or
+            // under it; anything above refuses rather than spending more than
+            // the human authorized.
+            maxStake: ticket.terms.stakeUsd,
+          });
+          return r;
+        }),
       });
 
       const r = await adapter.deliver({

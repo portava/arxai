@@ -286,10 +286,12 @@ test("the guard set covering these surfaces is registered in the runner", () => 
 });
 
 // ── the DEFAULTS, exercised without an override shadowing them ────────────
-test("with NO transport wired, the product refuses rather than fabricating a position", async () => {
-  // The certificate normally injects a spy transport, which shadows the default.
-  // The default itself must refuse: a stub returning success would invent a
-  // contract id and the whole lineage would record a trade that never happened.
+test("with NO transport override, the LIVE path runs and still fabricates nothing", async () => {
+  // The default is no longer a stub — it is the real guidedBuy over the
+  // certified Phase 5 transport. In an environment with no Deriv config that
+  // resolves to a DEFINITE refusal (wireWritten false, nothing constructed),
+  // which is the property that matters: no contract id is invented, and a
+  // provable non-transmission is NOT held open as UNKNOWN.
   const prev = process.env["ARX_EXECUTION_TIER"];
   process.env["ARX_EXECUTION_TIER"] = "TIER_1_DEMO_GUIDED";
   try {
@@ -314,9 +316,8 @@ test("with NO transport wired, the product refuses rather than fabricating a pos
         // NO buyViaCertifiedTransport — the default must refuse.
       },
     );
-    assert.equal(outcome.ok, false, "an unwired transport produced a successful trade");
-    assert.equal(outcome.venueContractRef, null, "an unwired transport fabricated a contract reference");
-    assert.match(outcome.detail, /DERIV_TRANSPORT_NOT_WIRED/, `wrong refusal: ${outcome.detail}`);
+    assert.equal(outcome.ok, false, "the live path produced a successful trade with no Deriv config");
+    assert.equal(outcome.venueContractRef, null, "a contract reference was fabricated");
     // DEFINITE, not indeterminate: nothing was sent and we know it, so holding
     // an exposure reservation for this would strand it for no reason.
     assert.equal(outcome.indeterminate, false,
