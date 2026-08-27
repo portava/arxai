@@ -23,7 +23,8 @@
 // It never places a second order. If one order proves the lifecycle, that is
 // the certification.
 
-import { resolveExecutionTier } from "@workspace/domain/safety-contracts/executionTier";
+import { TIER_1_DEMO_GUIDED } from "@workspace/domain/safety-contracts/executionTier";
+import { resolveConfiguredExecutionTier } from "../lib/phase6/guidedDispatchEntry.js";
 import { demoIsProven, type DemoClassification } from "../lib/phase6/derivDependencyResolver.js";
 import {
   DERIV_ACCOUNTS_PATH, normalizeAccount, isDemoAccount, isRealAccount,
@@ -93,11 +94,15 @@ async function main(): Promise<void> {
   const checks: Check[] = [];
 
   // ── 1. execution tier, resolved by the SAME code the runtime uses ───────
-  const tier = resolveExecutionTier(process.env["ARX_EXECUTION_TIER"] ?? null);
+  // Neither reads the environment nor names a tier literal. Both come from the
+  // single owner of each — guidedDispatchEntry for the value, executionTier for
+  // the vocabulary. The phase6-execution-safety guard caught this harness doing
+  // both directly, which is precisely what that guard exists to prevent.
+  const tier = resolveConfiguredExecutionTier();
   checks.push({
     name: "1. execution tier resolves to TIER_1_DEMO_GUIDED",
-    ok: tier.tier === "TIER_1_DEMO_GUIDED",
-    detail: tier.tier === "TIER_1_DEMO_GUIDED"
+    ok: tier.tier === TIER_1_DEMO_GUIDED,
+    detail: tier.tier === TIER_1_DEMO_GUIDED
       ? "explicit"
       : `resolved ${tier.tier}${tier.denyReason ? ` — ${tier.denyReason}` : ""}`,
   });

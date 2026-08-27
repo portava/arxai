@@ -15,6 +15,7 @@ import {
   type GuidedDispatchDeps, type GuidedDispatchOutcome,
 } from "./guidedExecutionService.js";
 import { resolveDerivDependencies } from "./derivDependencyResolver.js";
+import { resolveExecutionTier } from "@workspace/domain/safety-contracts/executionTier";
 import { DerivExecutionAdapter } from "../deriv/execution/derivExecutionAdapter.js";
 import { isIndeterminateDelivery } from "../live/executionAdapter.js";
 import {
@@ -46,6 +47,19 @@ const AUDIT_KIND_TO_EVENT: Readonly<Record<string, GuidedAuditEvent | undefined>
 /** The server's tier. Read here, once, from the environment the SERVER owns. */
 function configuredTier(): string | null {
   return process.env["ARX_EXECUTION_TIER"] ?? null;
+}
+
+/**
+ * The resolved tier, for callers that need to REPORT it (a pre-flight harness,
+ * a diagnostic) rather than act on it.
+ *
+ * Exported so nothing else has to read the environment. One reader means one
+ * place where "what tier are we at?" is answered, and the
+ * phase6-execution-safety guard keeps it that way — a second reader could
+ * answer differently, including "if the var is set, go live".
+ */
+export function resolveConfiguredExecutionTier(): ReturnType<typeof resolveExecutionTier> {
+  return resolveExecutionTier(configuredTier());
 }
 
 /** Row -> the pure ticket shape. Field by field; never a spread. */

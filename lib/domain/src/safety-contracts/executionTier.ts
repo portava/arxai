@@ -37,6 +37,17 @@ export type ExecutionTier = (typeof EXECUTION_TIERS)[number];
 export const DEFAULT_EXECUTION_TIER: ExecutionTier = "TIER_0_DRY_RUN";
 
 /**
+ * The one demo-guided tier, exported by NAME.
+ *
+ * Callers that need to compare against it import this rather than writing the
+ * literal, so the string exists in exactly one file. The
+ * phase6-execution-safety guard enforces that: a hard-coded tier literal
+ * anywhere else is a second place the vocabulary can drift, and drift here
+ * means a tier check that silently stops matching.
+ */
+export const TIER_1_DEMO_GUIDED: ExecutionTier = "TIER_1_DEMO_GUIDED";
+
+/**
  * Tiers this build refuses to run at, with the reason surfaced in the resolution
  * so a refusal is never silent. Both are held by owner Ruling 19.
  */
