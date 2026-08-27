@@ -167,3 +167,13 @@ test("a fetch that dies mid-dispatch is caught and rendered as UNKNOWN", () => {
   assert.ok(!/\bthrow\b/.test(catchBlock),
     "act()'s catch rethrows — the network failure still escapes and re-arms Send");
 });
+
+test("a 401 is shown as NOT SIGNED IN — never as an empty inbox", () => {
+  // The owner hunted for a missing ticket that was actually a missing session:
+  // load() rendered a 401 identically to "no trades waiting".
+  assert.match(SRC, /status === 401.*setLoadState\("unauthenticated"\)/,
+    "a 401 does not enter the unauthenticated state");
+  assert.match(SRC, /not signed in/i, "the unauthenticated state has no visible message");
+  assert.match(SRC, /loadState === "ready" && live.length === 0/,
+    'the "no trades waiting" line renders without a confirmed-ready load');
+});

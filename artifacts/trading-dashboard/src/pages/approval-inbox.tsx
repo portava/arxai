@@ -124,10 +124,23 @@ export default function ApprovalInboxPage() {
   const [now, setNow] = useState(() => Date.now());
   const [error, setError] = useState<string | null>(null);
 
+  // null = not yet loaded; "unauthenticated" and "error" are their own states.
+  // A 401 used to render as an empty inbox — "no trades waiting" — which sent
+  // the owner hunting for a missing ticket that was actually a missing session.
+  // An auth failure must never be dressed as an empty list.
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "unauthenticated" | "error">("loading");
+
   const load = useCallback(async () => {
-    const { body } = await api("/api/me/approval-tickets");
-    const t = (body as { tickets?: unknown } | null)?.tickets;
-    setTickets(Array.isArray(t) ? (t as Ticket[]) : []);
+    try {
+      const { status, body } = await api("/api/me/approval-tickets");
+      if (status === 401) { setLoadState("unauthenticated"); setTickets([]); return; }
+      if (status >= 400) { setLoadState("error"); return; }
+      const t = (body as { tickets?: unknown } | null)?.tickets;
+      setTickets(Array.isArray(t) ? (t as Ticket[]) : []);
+      setLoadState("ready");
+    } catch {
+      setLoadState("error");
+    }
   }, []);
 
   useEffect(() => { void load(); }, [load]);
@@ -190,7 +203,18 @@ export default function ApprovalInboxPage() {
         <div className="rounded border border-destructive/40 bg-destructive/10 p-3 text-sm">{error}</div>
       )}
 
-      {live.length === 0 && (
+      {loadState === "unauthenticated" && (
+        <div className="rounded border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+          <strong>You are not signed in.</strong> The inbox shows only your own tickets, so sign in
+          to the dashboard first — the certification ticket belongs to the account that seeded it.
+        </div>
+      )}
+      {loadState === "error" && (
+        <div className="rounded border border-destructive/40 bg-destructive/10 p-3 text-sm">
+          The inbox could not be loaded. Refresh; if this persists, the server may still be starting.
+        </div>
+      )}
+      {loadState === "ready" && live.length === 0 && (
         <p className="text-sm text-muted-foreground">No trades are waiting for your decision.</p>
       )}
 
