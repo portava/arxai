@@ -183,7 +183,20 @@ router.post("/me/approval-tickets/:ticketId/dispatch", requireUser, async (req, 
   if (!row) { res.status(404).json({ error: "TICKET_NOT_FOUND" }); return; }
 
   const { dispatchGuidedTicketForRequest } = await import("../lib/phase6/guidedDispatchEntry.js");
-  const outcome = await dispatchGuidedTicketForRequest({ userId, ticketId });
+  let outcome;
+  try {
+    outcome = await dispatchGuidedTicketForRequest({ userId, ticketId });
+  } catch (e) {
+    // An unexpected throw here cannot say whether a frame was sent, so the
+    // response must not claim either way — and must NOT invite a retry.
+    res.status(500).json({
+      ok: false,
+      indeterminate: true,
+      refusal: "DISPATCH_ERROR",
+      detail: "the dispatch failed unexpectedly — do NOT retry; check the ticket state before any further action",
+    });
+    return;
+  }
 
   // An INDETERMINATE outcome is NOT an error and must never be rendered as one.
   // 202 says "accepted, outcome unknown" — a 4xx/5xx would invite a client

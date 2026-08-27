@@ -227,6 +227,23 @@ const SECRET_SHAPES: readonly RegExp[] = [
 ];
 
 /**
+ * The system's OWN identifiers — prefixed UUIDs like `tkt_<uuid>`,
+ * `di_tkt_<uuid>`, `con_<uuid>`, `gc_tkt_<uuid>`.
+ *
+ * WHY THIS EXISTS: the opaque-token heuristic above matches any 28+ run of
+ * [A-Za-z0-9_-], and a prefixed UUID is 40+ characters of exactly that class.
+ * The result in production was that EVERY approval-inbox response threw
+ * SECRET_LEAK_REFUSED on its own ticket id — the inbox 500'd before the owner
+ * ever saw a ticket. Tests missed it because fixtures used short ids like
+ * "di_cert"; real ids are UUIDs. The exemption is deliberately NARROW: the
+ * ENTIRE value must be dot-free prefixes plus one strict 8-4-4-4-12 UUID.
+ * Deriv PATs are unbroken alphanumerics and cannot match this shape, and a
+ * token smuggled NEXT to a UUID still fails the full-string anchor.
+ */
+const OWN_ID_SHAPE =
+  /^(?:[a-z]{2,8}_){1,3}[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
  * True when a value looks like it carries a secret.
  *
  * Conservative by design: it would rather flag an innocent long identifier than
@@ -235,6 +252,7 @@ const SECRET_SHAPES: readonly RegExp[] = [
  */
 export function looksLikeSecret(value: unknown): boolean {
   if (typeof value !== "string") return false;
+  if (OWN_ID_SHAPE.test(value)) return false;
   return SECRET_SHAPES.some((re) => re.test(value));
 }
 

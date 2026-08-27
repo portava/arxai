@@ -120,6 +120,25 @@ export async function resolveWithVenueContract(args: {
 }
 
 /**
+ * Resolve an intent because the VENUE ADJUDICATED a rejection.
+ *
+ * Distinct from resolveAsProvenAbsent on purpose: a rejection is the venue
+ * answering our own req_id with "no" — direct adjudication, stronger evidence
+ * than absence from a closed-inclusive read. Recording it through the absence
+ * path would claim a read that never happened.
+ */
+export async function resolveAsVenueRejected(intentId: string): Promise<DerivOrderIntentRow | null> {
+  const rows = await db.update(derivOrderIntentsTable)
+    .set({ resolvedAt: new Date(), updatedAt: new Date() })
+    .where(and(
+      eq(derivOrderIntentsTable.intentId, intentId),
+      isNull(derivOrderIntentsTable.venueContractRef),
+    ))
+    .returning();
+  return rows[0] ?? null;
+}
+
+/**
  * Resolve an intent as ABSENT — no order exists at the venue.
  *
  * `closedInclusive` is required and must be true. Absence from a read that

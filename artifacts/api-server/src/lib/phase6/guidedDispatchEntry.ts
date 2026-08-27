@@ -223,6 +223,8 @@ export interface GuidedDispatchOverrides {
   depSources?: Partial<Parameters<typeof resolveDerivDependencies>[1]>;
   recordAudit?: GuidedDispatchDeps["recordAudit"];
   newLiveCommandId?: () => string;
+  /** Settlement, injectable so a certificate can observe it without a DB. */
+  applySettlement?: (outcome: GuidedDispatchOutcome, ticketId: string) => Promise<void>;
 }
 
 function buildAdapter(args: {
@@ -264,6 +266,71 @@ function buildAdapter(args: {
     }),
     buyViaCertifiedTransport: args.buy as never,
   });
+}
+
+/** The repo operations settlement needs — injectable so the MAPPING itself is testable. */
+export interface SettlementRepos {
+  settleDispatchedTicket: (a: {
+    ticketId: string; outcome: "EXECUTED" | "UNRESOLVED" | "REJECTED";
+    venueContractRef?: string | null; rejectionReason?: string;
+    rejectionSource?: "USER" | "SYSTEM_PRE_TRANSMISSION" | "SYSTEM_GATE";
+  }) => Promise<unknown>;
+  markUnrecorded: (intentId: string) => Promise<unknown>;
+  resolveWithVenueContract: (a: { intentId: string; venueContractRef: string }) => Promise<unknown>;
+  resolveAsVenueRejected: (intentId: string) => Promise<unknown>;
+  markRefusedPreTransmission: (intentId: string) => Promise<unknown>;
+}
+
+/**
+ * Map a dispatch outcome onto ticket + intent state.
+ *
+ * Exported, with repos injected, because a first version lived inline behind an
+ * overridable hook — so the certificate's spy REPLACED it and a mutation that
+ * gutted the success branch survived every test. The mapping is the safety
+ * logic; the repos are already DB-proven separately. Never let the two be
+ * tested only through each other.
+ *
+ * The rules it encodes:
+ *   - success  -> ticket EXECUTED with the venue's ref; intent attempted then
+ *                 venue-resolved. Before this existed a successful order left
+ *                 the ticket DISPATCHING forever and the REAL exposure was
+ *                 invisible to hasUnresolvedIntent.
+ *   - unknown  -> ticket UNRESOLVED; intent UNRECORDED and left unresolved,
+ *                 which is exactly what blocks every next order.
+ *   - definite -> ticket REJECTED (no-op if no claim happened); the intent
+ *                 resolves by the venue's adjudication or as pre-transmission.
+ */
+export async function applyLiveSettlement(
+  o: GuidedDispatchOutcome,
+  ticketId: string,
+  repos: SettlementRepos,
+): Promise<void> {
+  const intentId = o.intentId;
+  if (o.ok && o.venueContractRef) {
+    await repos.settleDispatchedTicket({
+      ticketId, outcome: "EXECUTED", venueContractRef: o.venueContractRef,
+    });
+    if (intentId) {
+      await repos.markUnrecorded(intentId);
+      await repos.resolveWithVenueContract({ intentId, venueContractRef: o.venueContractRef });
+    }
+    return;
+  }
+  if (o.indeterminate) {
+    await repos.settleDispatchedTicket({ ticketId, outcome: "UNRESOLVED" });
+    if (intentId) await repos.markUnrecorded(intentId);
+    return;
+  }
+  const venueAdjudicated = /DERIV_VENUE_REJECTED/.test(o.detail);
+  await repos.settleDispatchedTicket({
+    ticketId, outcome: "REJECTED",
+    rejectionReason: o.detail.slice(0, 400),
+    rejectionSource: venueAdjudicated ? "SYSTEM_GATE" : "SYSTEM_PRE_TRANSMISSION",
+  });
+  if (intentId) {
+    if (venueAdjudicated) await repos.resolveAsVenueRejected(intentId);
+    else await repos.markRefusedPreTransmission(intentId);
+  }
 }
 
 /**
@@ -323,38 +390,52 @@ export async function dispatchGuidedTicketForRequest(
     newLiveCommandId: overrides.newLiveCommandId ?? (() => `gc_${args.ticketId}`),
 
     recordAudit: overrides.recordAudit ?? (async (event) => {
-      // Persist the forensic record. buildLineageRecord REFUSES a dishonest
-      // row — an UNKNOWN carrying a contract reference, an EXECUTED without
-      // venue evidence, a dry run with a contract, or a credential anywhere in
-      // the payload — so a bad write throws here rather than becoming a
-      // permanent lie in the ledger.
       const eventType = AUDIT_KIND_TO_EVENT[event.kind];
       if (!eventType) return;   // not a lineage-bearing event
-      const record = buildLineageRecord({
-        intentId: `di_${event.ticketId}`,
-        ticketId: event.ticketId,
-        userId: event.userId,
-        liveCommandId: null,
-        event: eventType,
-        occurredAtIso: new Date().toISOString(),
-        constitutionVersion: 0,
-        venueContractRef: null,
-        detail: event.detail,
-        scannerSignalId: null,
-        rubyExplanation: null,
-      });
-      await guidedAttemptEventsRepo.appendGuidedEvent({
-        intentId: record.intentId,
-        ticketId: record.ticketId,
-        userId: record.userId,
-        liveCommandId: record.liveCommandId,
-        eventType: record.event,
-        constitutionVersion: record.constitutionVersion,
-        venueContractRef: record.venueContractRef,
-        scannerSignalId: record.scannerSignalId,
-        rubyExplanation: record.rubyExplanation,
-        detail: record.detail,
-      });
+      try {
+        // buildLineageRecord REFUSES a dishonest row — an UNKNOWN carrying a
+        // contract reference, an EXECUTED without venue evidence, a credential
+        // anywhere in the payload. The EXECUTED path previously hard-coded
+        // venueContractRef: null here, so the honesty check REJECTED every
+        // successful trade's own audit row — the success path threw.
+        const record = buildLineageRecord({
+          intentId: event.intentId ?? `di_${event.ticketId}`,
+          ticketId: event.ticketId,
+          userId: event.userId,
+          liveCommandId: null,
+          event: eventType,
+          occurredAtIso: new Date().toISOString(),
+          constitutionVersion: 0,
+          venueContractRef: event.venueContractRef ?? null,
+          detail: event.detail,
+          scannerSignalId: null,
+          rubyExplanation: null,
+        });
+        await guidedAttemptEventsRepo.appendGuidedEvent({
+          intentId: record.intentId,
+          ticketId: record.ticketId,
+          userId: record.userId,
+          liveCommandId: record.liveCommandId,
+          eventType: record.event,
+          constitutionVersion: record.constitutionVersion,
+          venueContractRef: record.venueContractRef,
+          scannerSignalId: record.scannerSignalId,
+          rubyExplanation: record.rubyExplanation,
+          detail: record.detail,
+        });
+      } catch (auditErr) {
+        // NON-FATAL, deliberately. A ledger failure AFTER the venue accepted an
+        // order must not convert a real position into a 500 — the caller would
+        // read "error" about an order that exists, the exact falsely-uncertain
+        // outcome this phase forbids. The critical facts (EXECUTED + venue ref)
+        // are settled onto the TICKET row separately; a ledger gap is
+        // detectable and repairable, a fabricated failure is not.
+        const { logger } = await import("../logger.js");
+        logger.error(
+          { event: "GUIDED_LINEAGE_WRITE_FAILED", kind: event.kind, ticketId: event.ticketId, err: auditErr },
+          "guided lineage write failed — dispatch outcome is UNAFFECTED; repair the ledger from the ticket row",
+        );
+      }
     }),
 
     deliverViaAdapter: async ({ ticket, tier, liveCommandId }) => {
@@ -418,7 +499,7 @@ export async function dispatchGuidedTicketForRequest(
     },
   };
 
-  return dispatchGuidedTicket(
+  const outcome = await dispatchGuidedTicket(
     {
       userId: args.userId,
       ticketId: args.ticketId,
@@ -427,4 +508,38 @@ export async function dispatchGuidedTicketForRequest(
     },
     deps,
   );
+
+  // ── SETTLEMENT ──────────────────────────────────────────────────────────
+  // Before this existed, nothing ever moved a ticket out of DISPATCHING or an
+  // intent out of NOT_ATTEMPTED — even on success. Two concrete harms:
+  //   - a ticket stuck DISPATCHING holds the active-per-instrument slot
+  //     forever, and the sweeper rightly refuses to touch it;
+  //   - an intent with a REAL contract but no resolution is invisible to
+  //     hasUnresolvedIntent (which looks at WRITTEN/UNRECORDED), so the very
+  //     exposure that must block the next order... did not.
+  // settleDispatchedTicket CASes from DISPATCHING, so pre-claim refusals
+  // (ticket still APPROVED) settle nothing — the attempt below is a no-op for
+  // them, which is correct: an APPROVED ticket a gate refused may be retried.
+  const applySettlement = overrides.applySettlement
+    ?? ((o: GuidedDispatchOutcome, ticketId: string) => applyLiveSettlement(o, ticketId, {
+      settleDispatchedTicket: (a) => approvalTicketsRepo.settleDispatchedTicket(a),
+      markUnrecorded: (i) => derivOrderIntentsRepo.markUnrecorded(i),
+      resolveWithVenueContract: (a) => derivOrderIntentsRepo.resolveWithVenueContract(a),
+      resolveAsVenueRejected: (i) => derivOrderIntentsRepo.resolveAsVenueRejected(i),
+      markRefusedPreTransmission: (i) => derivOrderIntentsRepo.markRefusedPreTransmission(i),
+    }));
+
+  try {
+    await applySettlement(outcome, args.ticketId);
+  } catch (settleErr) {
+    // A settlement failure must not rewrite the OUTCOME — the venue result is
+    // what it is. Log loudly; the ticket state can be repaired from the ledger.
+    const { logger } = await import("../logger.js");
+    logger.error(
+      { event: "GUIDED_SETTLEMENT_FAILED", ticketId: args.ticketId, err: settleErr },
+      "guided settlement failed — outcome reported unchanged; reconcile the ticket row manually",
+    );
+  }
+
+  return outcome;
 }

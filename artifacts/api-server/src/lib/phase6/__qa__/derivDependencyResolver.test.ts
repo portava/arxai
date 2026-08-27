@@ -173,6 +173,27 @@ test("the resolver returns a HANDLE, never a token", async () => {
     `resolved dependencies expose a credential-shaped field: ${keys.join(",")}`);
 });
 
+test("the system's OWN ids are NOT secrets — the break that 500'd the inbox", () => {
+  // Real ids are prefixed UUIDs, 40+ chars of [A-Za-z0-9_-] — which the opaque
+  // -token heuristic matched, so EVERY inbox response threw on its own ticket
+  // id. Fixtures had used short ids like "di_cert" and never saw it. These are
+  // the PRODUCTION shapes and must stay non-secret.
+  for (const id of [
+    "tkt_3ce69bcf-da83-419b-859a-d963ec1ee7ce",
+    "di_tkt_3ce69bcf-da83-419b-859a-d963ec1ee7ce",
+    "gc_tkt_3ce69bcf-da83-419b-859a-d963ec1ee7ce",
+    "con_e111f6ce-16f4-4677-9bd3-d4babe0ed21d",
+  ]) {
+    assert.equal(looksLikeSecret(id), false, `own id flagged as a secret: ${id}`);
+    assert.doesNotThrow(() => assertNoSecretLeak({ intentId: id, ticketId: id }, "wire"),
+      `a response carrying ${id} throws`);
+  }
+  // And the exemption must not open a hole: a PAT beside a UUID stays caught.
+  assert.equal(looksLikeSecret("di_tkt_3ce69bcf-da83-419b-859a-d963ec1ee7ce_hZk9dPqR3sT5vW7xY1aB3cD5eF"), true,
+    "a token smuggled next to a UUID passed as an id");
+  assert.equal(looksLikeSecret("hZk9dPqR3sT5vW7xY1aB3cD5eF7gH9jK"), true, "a PAT-shaped token passed");
+});
+
 test("looksLikeSecret catches credential SHAPES, not just known names", () => {
   // A token renamed on its way into a payload is still a token.
   assert.equal(looksLikeSecret("Bearer abc123def456"), true);

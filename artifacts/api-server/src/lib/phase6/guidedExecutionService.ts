@@ -87,7 +87,13 @@ export interface GuidedDispatchDeps {
   }) => Promise<{ venueContractRef: string; intentId: string }>;
   isIndeterminate: (e: unknown) => boolean;
   newLiveCommandId: () => string;
-  recordAudit: (event: { kind: string; userId: number; ticketId: string; detail: string }) => Promise<void>;
+  recordAudit: (event: {
+    kind: string; userId: number; ticketId: string; detail: string;
+    /** Venue-proven only. Present on EXECUTED; never fabricated elsewhere. */
+    venueContractRef?: string;
+    /** The lineage spine, when the adapter produced one. */
+    intentId?: string;
+  }) => Promise<void>;
 }
 
 const refuse = (
@@ -243,6 +249,8 @@ export async function dispatchGuidedTicket(
     await deps.recordAudit({
       kind: "GUIDED_DISPATCH_EXECUTED", userId: args.userId, ticketId: args.ticketId,
       detail: `venue contract ${delivered.venueContractRef}`,
+      venueContractRef: delivered.venueContractRef,
+      intentId: delivered.intentId,
     });
     return {
       ok: true, refusal: null, detail: "venue confirmed the order",
@@ -258,6 +266,7 @@ export async function dispatchGuidedTicket(
       await deps.recordAudit({
         kind: "GUIDED_DISPATCH_INDETERMINATE", userId: args.userId, ticketId: args.ticketId,
         detail: `an order MAY exist at the venue; intent ${intentRef ?? "unknown"}`,
+        ...(intentRef ? { intentId: intentRef } : {}),
       });
       return {
         ok: false, refusal: "DELIVERY_INDETERMINATE",

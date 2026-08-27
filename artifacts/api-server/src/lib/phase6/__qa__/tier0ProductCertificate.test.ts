@@ -21,7 +21,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { dispatchGuidedTicketForRequest } from "../guidedDispatchEntry.js";
+import { dispatchGuidedTicketForRequest, applyLiveSettlement, type SettlementRepos } from "../guidedDispatchEntry.js";
 import {
   buildLineageRecord, reconstructAttempt, positionStateForEvent,
   type GuidedLineageRecord,
@@ -40,19 +40,28 @@ const OBSERVED = (): ConstitutionObservedState => ({
   consecutiveLosses: 0, lastLossAtIso: null,
 });
 
-interface Spy { wireWrites: number; audits: string[]; claims: number; intents: number }
+interface Spy {
+  wireWrites: number; audits: string[]; claims: number; intents: number;
+  settlements: Array<{ outcome: string; ref: string | null; indeterminate: boolean }>;
+}
 
 // Real fixtures. Only PERSISTENCE is substituted — the Constitution evaluator,
 // ticket authorization, CAS semantics, venue router, tier resolver, dependency
 // resolver and adapter are all the shipped modules.
+// REALISTIC ids, deliberately. The last round of short fixture ids ("di_cert")
+// hid a production break: real prefixed-UUID ids tripped the opaque-token
+// heuristic and every inbox response threw. Fixtures now match production shape.
+const TKT = "tkt_3ce69bcf-da83-419b-859a-d963ec1ee7ce";
+const INTENT = `di_${TKT}`;
+
 const TERMS: MaterialTradeTerms = {
   userId: USER, broker: "deriv", accountRef: "VRTC1234", instrument: "R_100",
   side: "BUY", stakeUsd: 1, multiplier: 100, stopLossUsd: 0.5, takeProfitUsd: 2,
-  intentId: "di_cert",
+  intentId: INTENT,
 };
 
 const TICKET = (): ApprovalTicket => ({
-  ticketId: "tkt_cert", userId: USER, state: "APPROVED", terms: TERMS,
+  ticketId: TKT, userId: USER, state: "APPROVED", terms: TERMS,
   approvedFingerprint: materialTermsFingerprint(TERMS), approvedByUserId: USER,
   createdAtIso: new Date(Date.now() - 60_000).toISOString(),
   expiresAtIso: new Date(Date.now() + 300_000).toISOString(),
@@ -89,7 +98,7 @@ async function drive(over: {
   killSwitch?: boolean;
   breakPersistence?: boolean;
 } = {}): Promise<{ outcome: Awaited<ReturnType<typeof dispatchGuidedTicketForRequest>>; spy: Spy }> {
-  const spy: Spy = { wireWrites: 0, audits: [], claims: 0, intents: 0 };
+  const spy: Spy = { wireWrites: 0, audits: [], claims: 0, intents: 0, settlements: [] };
   const prev = process.env["ARX_EXECUTION_TIER"];
   if (over.tier === undefined) delete process.env["ARX_EXECUTION_TIER"];
   else if (over.tier === null) delete process.env["ARX_EXECUTION_TIER"];
@@ -97,20 +106,26 @@ async function drive(over: {
 
   try {
     const outcome = await dispatchGuidedTicketForRequest(
-      { userId: USER, ticketId: "tkt_cert" },
+      { userId: USER, ticketId: TKT },
       {
         // PERSISTENCE ONLY — see GuidedDispatchOverrides.
         loadOwnedTicket: async (id, uid) => {
           if (over.breakPersistence) throw new Error("database unreachable");
-          return id === "tkt_cert" && uid === USER ? TICKET() : null;
+          return id === TKT && uid === USER ? TICKET() : null;
         },
         loadActiveConstitution: async () => CONSTITUTION,
         deriveCurrentTerms: async (t) => t.terms,
         hasUnresolvedIntent: async () => false,
         claimForDispatch: async () => { spy.claims++; return { claimed: true }; },
-        persistIntent: async () => { spy.intents++; return "di_cert"; },
+        persistIntent: async () => { spy.intents++; return INTENT; },
         loadObservedState: async () => OBSERVED(),
         recordAudit: async (e) => { spy.audits.push(e.kind); },
+        applySettlement: async (o) => {
+          spy.settlements.push({
+            outcome: o.ok ? "EXECUTED" : o.indeterminate ? "UNRESOLVED" : "REJECTED",
+            ref: o.venueContractRef, indeterminate: o.indeterminate,
+          });
+        },
         depSources: {
           loadConnection: async () => ({
             id: 11, ownerUserId: over.connectionOwner ?? USER,
@@ -241,7 +256,7 @@ test("the route never exposes a credential handle or token", () => {
 // ── lineage completeness for a dry run ────────────────────────────────────
 test("a TIER 0 attempt produces a complete, honest lineage", () => {
   const base = {
-    intentId: "di_cert", ticketId: "tkt_cert", userId: USER, liveCommandId: "gc_cert",
+    intentId: "di_cert", ticketId: TKT, userId: USER, liveCommandId: "gc_cert",
     occurredAtIso: NOW(), constitutionVersion: 4, venueContractRef: null,
     scannerSignalId: "sig_1", rubyExplanation: "trend continuation",
   };
@@ -296,14 +311,14 @@ test("with NO transport override, the LIVE path runs and still fabricates nothin
   process.env["ARX_EXECUTION_TIER"] = "TIER_1_DEMO_GUIDED";
   try {
     const outcome = await dispatchGuidedTicketForRequest(
-      { userId: USER, ticketId: "tkt_cert" },
+      { userId: USER, ticketId: TKT },
       {
         loadOwnedTicket: async () => TICKET(),
         loadActiveConstitution: async () => CONSTITUTION,
         deriveCurrentTerms: async (t) => t.terms,
         hasUnresolvedIntent: async () => false,
         claimForDispatch: async () => ({ claimed: true }),
-        persistIntent: async () => "di_cert",
+        persistIntent: async () => INTENT,
         loadObservedState: async () => OBSERVED(),
         recordAudit: async () => {},
         depSources: {
@@ -336,7 +351,7 @@ test("with NO observed state wired, the Constitution refuses on unreadable input
   process.env["ARX_EXECUTION_TIER"] = "TIER_1_DEMO_GUIDED";
   try {
     const outcome = await dispatchGuidedTicketForRequest(
-      { userId: USER, ticketId: "tkt_cert" },
+      { userId: USER, ticketId: TKT },
       {
         loadOwnedTicket: async () => TICKET(),
         loadActiveConstitution: async () => CONSTITUTION,
@@ -358,4 +373,137 @@ test("with NO observed state wired, the Constitution refuses on unreadable input
     if (prev === undefined) delete process.env["ARX_EXECUTION_TIER"];
     else process.env["ARX_EXECUTION_TIER"] = prev;
   }
+});
+
+// ── settlement: the ticket must leave DISPATCHING on every outcome ────────
+test("a SUCCESSFUL dispatch settles EXECUTED with the venue's reference", async () => {
+  // Before settlement existed, nothing moved a ticket out of DISPATCHING or an
+  // intent out of NOT_ATTEMPTED even on success: the ticket held its
+  // active-instrument slot forever, and the real exposure was INVISIBLE to
+  // hasUnresolvedIntent — the very order that must block the next one did not.
+  const prev = process.env["ARX_EXECUTION_TIER"];
+  process.env["ARX_EXECUTION_TIER"] = "TIER_1_DEMO_GUIDED";
+  try {
+    const spy: Spy = { wireWrites: 0, audits: [], claims: 0, intents: 0, settlements: [] };
+    let executedEvent: { venueContractRef?: string; intentId?: string } | undefined;
+    const outcome = await dispatchGuidedTicketForRequest(
+      { userId: USER, ticketId: TKT },
+      {
+        loadOwnedTicket: async () => TICKET(),
+        loadActiveConstitution: async () => CONSTITUTION,
+        deriveCurrentTerms: async (t) => t.terms,
+        hasUnresolvedIntent: async () => false,
+        claimForDispatch: async () => ({ claimed: true }),
+        persistIntent: async () => INTENT,
+        loadObservedState: async () => OBSERVED(),
+        recordAudit: async (e) => {
+          spy.audits.push(e.kind);
+          if (e.kind === "GUIDED_DISPATCH_EXECUTED") executedEvent = e;
+        },
+        applySettlement: async (o) => {
+          spy.settlements.push({
+            outcome: o.ok ? "EXECUTED" : o.indeterminate ? "UNRESOLVED" : "REJECTED",
+            ref: o.venueContractRef, indeterminate: o.indeterminate,
+          });
+        },
+        depSources: {
+          loadConnection: async () => ({ id: 11, ownerUserId: USER, venue: "DERIV_DEMO", credentialHandle: "h" }),
+          loadAccount: async () => ({ accountRef: "VRTC1234", connectionId: 11 }),
+          classifyAccount: async () => ({ isDemo: true, source: "VENUE_ACCOUNT_ATTRIBUTE", evidence: "account_type=demo" }),
+          killSwitchEngaged: async () => false,
+          hasUnresolvedIntent: async () => false,
+        },
+        buyViaCertifiedTransport: async () => ({
+          replied: true, wireWritten: true, contractId: "10548672559", venueRejection: null, detail: "bought",
+        }),
+      },
+    );
+    assert.equal(outcome.ok, true, `success path refused: ${outcome.detail}`);
+    assert.equal(outcome.venueContractRef, "10548672559");
+    assert.deepEqual(spy.settlements, [{ outcome: "EXECUTED", ref: "10548672559", indeterminate: false }],
+      "the ticket was left DISPATCHING after a successful venue order");
+    // And the EXECUTED audit event carried the venue facts, so the real ledger
+    // writer's honesty check accepts the row rather than rejecting the success.
+    assert.ok(spy.audits.includes("GUIDED_DISPATCH_EXECUTED"));
+    assert.equal(executedEvent?.venueContractRef, "10548672559",
+      "the EXECUTED audit event lost the venue reference — the real ledger writer would refuse the row");
+    assert.equal(executedEvent?.intentId, INTENT,
+      "the EXECUTED audit event lost the intent id — lineage would fall back to a derived id");
+  } finally {
+    if (prev === undefined) delete process.env["ARX_EXECUTION_TIER"];
+    else process.env["ARX_EXECUTION_TIER"] = prev;
+  }
+});
+
+test("a DRY RUN settles the ticket too — it must not hold the instrument slot forever", async () => {
+  const { outcome, spy } = await drive({ tier: "TIER_0_DRY_RUN" });
+  assert.equal(outcome.ok, false);
+  assert.deepEqual(spy.settlements, [{ outcome: "REJECTED", ref: null, indeterminate: false }],
+    "a dry-run ticket was left DISPATCHING, blocking the instrument until manual repair");
+});
+
+test("the REAL ledger writer accepts a successful trade's own audit row", () => {
+  // The exact row the success path produces: EXECUTED + realistic ids + venue
+  // ref. This threw twice over before: venueContractRef was hard-coded null
+  // (honesty check refused EXECUTED), and the realistic intent id tripped the
+  // secret heuristic.
+  assert.doesNotThrow(() => buildLineageRecord({
+    intentId: INTENT, ticketId: TKT, userId: USER, liveCommandId: `gc_${TKT}`,
+    event: "EXECUTED", occurredAtIso: NOW(), constitutionVersion: 4,
+    venueContractRef: "10548672559", detail: "venue contract 10548672559",
+    scannerSignalId: "tier1-certification", rubyExplanation: null,
+  }), "the ledger honesty check rejects the success path's own record");
+});
+
+// ── the LIVE settlement mapping, exercised as real code ───────────────────
+function settlementSpies() {
+  const calls: string[] = [];
+  const repos: SettlementRepos = {
+    settleDispatchedTicket: async (a) => { calls.push(`settle:${a.outcome}:${a.venueContractRef ?? a.rejectionSource ?? ""}`); return {}; },
+    markUnrecorded: async (i) => { calls.push(`unrecorded:${i}`); return {}; },
+    resolveWithVenueContract: async (a) => { calls.push(`resolveVenue:${a.venueContractRef}`); return {}; },
+    resolveAsVenueRejected: async (i) => { calls.push(`venueRejected:${i}`); return {}; },
+    markRefusedPreTransmission: async (i) => { calls.push(`preTransmission:${i}`); return {}; },
+  };
+  return { calls, repos };
+}
+const OUT = (over: Partial<Parameters<typeof applyLiveSettlement>[0]> = {}) => ({
+  ok: false, refusal: null, detail: "", venueContractRef: null, indeterminate: false,
+  intentId: INTENT, ...over,
+} as Parameters<typeof applyLiveSettlement>[0]);
+
+test("LIVE settlement: success -> EXECUTED with ref, intent venue-resolved", async () => {
+  // The certificate's spy replaced the inline version of this mapping, so a
+  // mutation gutting the success branch survived. This drives the REAL one.
+  const { calls, repos } = settlementSpies();
+  await applyLiveSettlement(OUT({ ok: true, venueContractRef: "10548672559" }), TKT, repos);
+  assert.deepEqual(calls, [
+    "settle:EXECUTED:10548672559", `unrecorded:${INTENT}`, "resolveVenue:10548672559",
+  ]);
+});
+
+test("LIVE settlement: indeterminate -> UNRESOLVED, intent left blocking", async () => {
+  const { calls, repos } = settlementSpies();
+  await applyLiveSettlement(OUT({ indeterminate: true }), TKT, repos);
+  assert.deepEqual(calls, ["settle:UNRESOLVED:", `unrecorded:${INTENT}`]);
+  assert.ok(!calls.some((c) => c.startsWith("resolveVenue") || c.startsWith("venueRejected") || c.startsWith("preTransmission")),
+    "an indeterminate outcome RESOLVED the intent — nothing would block the next order");
+});
+
+test("LIVE settlement: venue rejection -> REJECTED/SYSTEM_GATE, intent venue-adjudicated", async () => {
+  const { calls, repos } = settlementSpies();
+  await applyLiveSettlement(OUT({ detail: "DERIV_VENUE_REJECTED: InsufficientBalance" }), TKT, repos);
+  assert.deepEqual(calls, ["settle:REJECTED:SYSTEM_GATE", `venueRejected:${INTENT}`]);
+});
+
+test("LIVE settlement: pre-transmission refusal -> REJECTED, intent refused-pre-transmission", async () => {
+  const { calls, repos } = settlementSpies();
+  await applyLiveSettlement(OUT({ detail: "DERIV_DEPS_REFUSED:KILL_SWITCH_ENGAGED: engaged" }), TKT, repos);
+  assert.deepEqual(calls, ["settle:REJECTED:SYSTEM_PRE_TRANSMISSION", `preTransmission:${INTENT}`]);
+});
+
+test("LIVE settlement: no intent id settles the ticket only — never a phantom intent", async () => {
+  const { calls, repos } = settlementSpies();
+  await applyLiveSettlement(OUT({ ok: true, venueContractRef: "c1", intentId: null }), TKT, repos);
+  assert.deepEqual(calls, ["settle:EXECUTED:c1"]);
 });
