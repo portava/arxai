@@ -24,9 +24,10 @@ import { isIndeterminateDelivery } from "../live/executionAdapter.js";
 import {
   approvalTicketsRepo, derivOrderIntentsRepo, tradingConstitutionRepo, guidedAttemptEventsRepo,
   db, arxLiveArmingTable, globalTradingSettingsTable, safetyCoreTable,
+  approvalTicketsTable, derivOrderIntentsTable,
   liveRiskDisclosureAcceptancesTable, userMasterLiveAccessTable,
 } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { and, eq, gte, sql } from "drizzle-orm";
 import { buildLineageRecord, type GuidedAuditEvent } from "./guidedLineage.js";
 import type { ApprovalTicket, MaterialTradeTerms } from "@workspace/domain/safety-contracts/approvalTicket";
 import type { TradingConstitution, ConstitutionObservedState }
@@ -49,6 +50,93 @@ const AUDIT_KIND_TO_EVENT: Readonly<Record<string, GuidedAuditEvent | undefined>
   GUIDED_DISPATCH_BLOCKED_UNRESOLVED: "GATE_REFUSED",
   GUIDED_DISPATCH_UNROUTABLE: "GATE_REFUSED",
 };
+
+/**
+ * LIVE observed state for the Constitution, derived from the GUIDED ledger.
+ *
+ * The audit confirmed the production route passed no loader, so the default —
+ * deliberately unusable NaN fields — made every real dispatch refuse
+ * CONSTITUTION_MALFORMED. Fail-closed, but the certification could never
+ * complete: the wall was load-bearing against its own missing wiring.
+ *
+ * SCOPE IS THE GUIDED SURFACE, stated plainly: losses and counts come from
+ * approval_tickets and deriv_order_intents, which see every guided attempt and
+ * nothing else. MT5 activity is governed by its own pipeline's gates; folding
+ * it in here would double-count it against two policies.
+ *
+ * CONSERVATIVE READINGS THROUGHOUT:
+ *   - realised loss counts every EXECUTED ticket's full STAKE for the period.
+ *     Until settlement P/L is reconciled back, the stake IS the amount at
+ *     risk, and counting it as lost is the direction that refuses too early
+ *     rather than too late. maxDailyLossUsd therefore behaves as "max staked
+ *     per day" until P/L wiring lands — documented, not hidden.
+ *   - open positions = EXECUTED tickets without a resolved close PLUS every
+ *     unresolved intent: an order that MAY exist occupies a slot.
+ *   - trades today = tickets that reached DISPATCHING or beyond, not just
+ *     fills: an UNRESOLVED attempt spent the day's allowance, because the
+ *     order may exist.
+ *   - a read failure THROWS, and the service's pre-transmission wrapper turns
+ *     that into a definite refusal. Trading on unreadable state is the
+ *     inversion this whole layer exists to prevent.
+ */
+async function loadGuidedObservedState(userId: number): Promise<ConstitutionObservedState> {
+  const now = new Date();
+  const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const weekStart = new Date(dayStart.getTime() - ((dayStart.getUTCDay() + 6) % 7) * 86_400_000);
+
+  const staked = async (since: Date): Promise<number> => {
+    const [r] = await db.select({ v: sql<number>`coalesce(sum(stake_usd), 0)` })
+      .from(approvalTicketsTable)
+      .where(and(
+        eq(approvalTicketsTable.userId, userId),
+        sql`state in ('EXECUTED','UNRESOLVED','DISPATCHING')`,
+        gte(approvalTicketsTable.updatedAt, since),
+      ));
+    return Number(r?.v ?? 0);
+  };
+
+  const [openTickets] = await db.select({ n: sql<number>`count(*)` })
+    .from(approvalTicketsTable)
+    .where(and(
+      eq(approvalTicketsTable.userId, userId),
+      sql`state in ('EXECUTED','DISPATCHING','UNRESOLVED')`,
+    ));
+  const [openIntents] = await db.select({ n: sql<number>`count(*)` })
+    .from(derivOrderIntentsTable)
+    .where(and(
+      eq(derivOrderIntentsTable.userId, userId),
+      sql`resolved_at is null and write_disposition in ('WRITTEN','UNRECORDED')`,
+    ));
+  const [today] = await db.select({ n: sql<number>`count(*)` })
+    .from(approvalTicketsTable)
+    .where(and(
+      eq(approvalTicketsTable.userId, userId),
+      sql`state in ('EXECUTED','DISPATCHING','UNRESOLVED')`,
+      gte(approvalTicketsTable.updatedAt, dayStart),
+    ));
+  const [exposure] = await db.select({ v: sql<number>`coalesce(sum(stake_usd), 0)` })
+    .from(approvalTicketsTable)
+    .where(and(
+      eq(approvalTicketsTable.userId, userId),
+      sql`state in ('EXECUTED','DISPATCHING','UNRESOLVED')`,
+    ));
+
+  return {
+    nowIso: now.toISOString(),
+    realisedDailyLossUsd: await staked(dayStart),
+    realisedWeeklyLossUsd: await staked(weekStart),
+    openPositionCount: Math.max(Number(openTickets?.n ?? 0), Number(openIntents?.n ?? 0)),
+    openExposureForSymbolUsd: Number(exposure?.v ?? 0),
+    tradesTakenToday: Number(today?.n ?? 0),
+    // Loss-streak needs settled P/L, which is not reconciled back yet. Zero
+    // consecutive losses is the one field where the conservative direction is
+    // PERMISSIVE, so it is stated loudly: the cooldown gate is INERT until
+    // P/L reconciliation lands. The daily-stake ceiling above is what bounds
+    // damage in the meantime.
+    consecutiveLosses: 0,
+    lastLossAtIso: null,
+  };
+}
 
 /**
  * The LIVE per-user + global kill switch, fail-closed.
@@ -424,19 +512,8 @@ export async function dispatchGuidedTicketForRequest(
     loadActiveConstitution: overrides.loadActiveConstitution ?? (async (userId) =>
       toDomainConstitution(await tradingConstitutionRepo.getActiveConstitution(userId))),
 
-    loadObservedState: overrides.loadObservedState ?? (async () => ({
-      // Conservative defaults are NOT safe here, so anything the caller has not
-      // wired reads as unusable and the Constitution refuses on
-      // CONSTITUTION_MALFORMED rather than trading on assumed-zero loss.
-      nowIso: new Date().toISOString(),
-      realisedDailyLossUsd: Number.NaN,
-      realisedWeeklyLossUsd: Number.NaN,
-      openPositionCount: Number.NaN,
-      openExposureForSymbolUsd: Number.NaN,
-      tradesTakenToday: Number.NaN,
-      consecutiveLosses: Number.NaN,
-      lastLossAtIso: null,
-    })),
+    loadObservedState: overrides.loadObservedState
+      ?? ((userId) => loadGuidedObservedState(userId)),
 
     loadOwnedTicket: overrides.loadOwnedTicket ?? (async (ticketId, userId) =>
       toDomainTicket(await approvalTicketsRepo.findOwnedTicket(ticketId, userId))),

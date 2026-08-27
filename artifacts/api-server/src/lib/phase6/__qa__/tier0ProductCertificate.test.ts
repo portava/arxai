@@ -353,10 +353,13 @@ test("with NO transport override, the LIVE path runs and still fabricates nothin
   }
 });
 
-test("with NO observed state wired, the Constitution refuses on unreadable inputs", async () => {
-  // The default must read as UNUSABLE, not as zero loss. Defaulting to zero
-  // would let a blown account keep trading, which is the inversion the whole
-  // default-deny posture exists to prevent.
+test("with NO observed state wired, the product still refuses — never trades blind", async () => {
+  // The default is now the LIVE guided-ledger loader. In an environment where
+  // that read fails (no database here), the pre-transmission wrapper turns the
+  // throw into a DEFINITE refusal. The property under certification is
+  // unchanged: unreadable account state must refuse, never read as zero loss —
+  // only the refusal now arrives via the infra wrapper instead of a NaN
+  // sentinel, because production needs the real loader to dispatch at all.
   const prev = process.env["ARX_EXECUTION_TIER"];
   process.env["ARX_EXECUTION_TIER"] = "TIER_1_DEMO_GUIDED";
   try {
@@ -377,9 +380,10 @@ test("with NO observed state wired, the Constitution refuses on unreadable input
       },
     );
     assert.equal(outcome.ok, false, "the product traded on unreadable account state");
-    assert.equal(outcome.refusal, "CONSTITUTION_REFUSED",
-      `expected a Constitution refusal on unreadable state, got ${outcome.refusal}: ${outcome.detail}`);
-    assert.match(outcome.detail, /CONSTITUTION_MALFORMED/, `wrong refusal: ${outcome.detail}`);
+    assert.equal(outcome.indeterminate, false,
+      "an unreadable PRE-transmission state was reported as possibly-sent");
+    assert.match(outcome.detail, /nothing was sent|could not establish dispatch preconditions/,
+      `the refusal does not state that nothing was sent: ${outcome.detail}`);
   } finally {
     if (prev === undefined) delete process.env["ARX_EXECUTION_TIER"];
     else process.env["ARX_EXECUTION_TIER"] = prev;
