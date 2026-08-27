@@ -241,3 +241,54 @@ export const derivOrderIntentsTable = pgTable("deriv_order_intents", {
     .on(t.userId, t.writeDisposition)
     .where(sql`resolved_at is null and write_disposition in ('WRITTEN','UNRECORDED')`),
 }));
+
+// ── Guided attempt events ─────────────────────────────────────────────────
+//
+// APPEND-ONLY forensic ledger for one guided attempt. Registered with
+// check-vault-mutations, so an UPDATE or DELETE here fails CI.
+//
+// WHY NOT REUSE execution_events: that ledger is keyed on a NUMERIC command_id
+// belonging to the MT5 live-command path. The guided spine is a TEXT intent id,
+// and forcing one into the other would mean either a lossy cast or a second
+// meaning for an existing column. A separate table keeps both honest.
+//
+// The spine is intent_id: ticket, live command, Deriv intent and this ledger all
+// carry it, so reconstructing an attempt is a lookup rather than a
+// timestamp-correlation exercise — and timestamp correlation is how two
+// concurrent attempts get merged into one story.
+
+export const GUIDED_ATTEMPT_EVENT_TYPES = [
+  "PROPOSAL_CREATED", "USER_APPROVED", "USER_REJECTED", "TICKET_EXPIRED",
+  "DISPATCH_CLAIMED", "DRY_RUN_REFUSED", "GATE_REFUSED", "VENUE_REJECTED",
+  "EXECUTED", "EXECUTION_UNKNOWN", "RECONCILED", "CONTRADICTION",
+] as const;
+export type GuidedAttemptEventType = (typeof GUIDED_ATTEMPT_EVENT_TYPES)[number];
+
+export const guidedAttemptEventsTable = pgTable("guided_attempt_events", {
+  id: serial("id").primaryKey(),
+  /** THE SPINE. Every row of one attempt shares this. */
+  intentId: text("intent_id").notNull(),
+  ticketId: text("ticket_id").notNull(),
+  userId: integer("user_id").notNull(),
+  liveCommandId: text("live_command_id"),
+  eventType: text("event_type").notNull(),
+  /** Monotonic within an attempt. (intent_id, sequence_no) is unique. */
+  sequenceNo: integer("sequence_no").notNull(),
+  constitutionVersion: integer("constitution_version").notNull(),
+  /**
+   * Venue-proven ONLY. Null when nothing proved a contract exists — never an
+   * empty string, never a placeholder. buildLineageRecord refuses to construct
+   * a row that violates this.
+   */
+  venueContractRef: text("venue_contract_ref"),
+  scannerSignalId: text("scanner_signal_id"),
+  rubyExplanation: text("ruby_explanation"),
+  /** Human-readable. Passed through assertNoSecretLeak before it gets here. */
+  detail: text("detail").notNull().default(""),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  intentSeqUq: uniqueIndex("guided_attempt_events_intent_seq_uq").on(t.intentId, t.sequenceNo),
+  intentIdx: index("guided_attempt_events_intent_idx").on(t.intentId),
+  userIdx: index("guided_attempt_events_user_idx").on(t.userId),
+  ticketIdx: index("guided_attempt_events_ticket_idx").on(t.ticketId),
+}));

@@ -53,6 +53,9 @@ const VAULT_TABLES = [
   // mutating either breaks the chain that makes the ledger evidence at all.
   "eventLogTable",
   "securityEventsTable",
+  // Phase 6 — the guided forensic ledger. Mutating a row would rewrite what a
+  // trade attempt actually did, which is the only thing this table is for.
+  "guidedAttemptEventsTable",
 ];
 
 // Raw-SQL append-only surfaces, keyed by physical table name.

@@ -17,10 +17,31 @@ import {
 import { resolveDerivDependencies } from "./derivDependencyResolver.js";
 import { DerivExecutionAdapter } from "../deriv/execution/derivExecutionAdapter.js";
 import { isIndeterminateDelivery } from "../live/executionAdapter.js";
-import { approvalTicketsRepo, derivOrderIntentsRepo, tradingConstitutionRepo } from "@workspace/db";
+import {
+  approvalTicketsRepo, derivOrderIntentsRepo, tradingConstitutionRepo, guidedAttemptEventsRepo,
+} from "@workspace/db";
+import { buildLineageRecord, type GuidedAuditEvent } from "./guidedLineage.js";
 import type { ApprovalTicket, MaterialTradeTerms } from "@workspace/domain/safety-contracts/approvalTicket";
 import type { TradingConstitution, ConstitutionObservedState }
   from "@workspace/domain/safety-contracts/tradingConstitution";
+
+/**
+ * Service audit kinds -> ledger event types.
+ *
+ * Explicit rather than a string cast, so a new audit kind is INVISIBLE to the
+ * ledger until someone decides what it means. Silently coercing an unmapped
+ * kind would write an event whose meaning nobody chose.
+ */
+const AUDIT_KIND_TO_EVENT: Readonly<Record<string, GuidedAuditEvent | undefined>> = {
+  GUIDED_DISPATCH_EXECUTED: "EXECUTED",
+  GUIDED_DISPATCH_INDETERMINATE: "EXECUTION_UNKNOWN",
+  GUIDED_DISPATCH_DRY_RUN: "DRY_RUN_REFUSED",
+  GUIDED_DISPATCH_REFUSED: "GATE_REFUSED",
+  GUIDED_DISPATCH_BLOCKED_CONSTITUTION: "GATE_REFUSED",
+  GUIDED_DISPATCH_BLOCKED_POLICY_CHANGE: "GATE_REFUSED",
+  GUIDED_DISPATCH_BLOCKED_UNRESOLVED: "GATE_REFUSED",
+  GUIDED_DISPATCH_UNROUTABLE: "GATE_REFUSED",
+};
 
 /** The server's tier. Read here, once, from the environment the SERVER owns. */
 function configuredTier(): string | null {
@@ -219,7 +240,40 @@ export async function dispatchGuidedTicketForRequest(
 
     newLiveCommandId: overrides.newLiveCommandId ?? (() => `gc_${args.ticketId}`),
 
-    recordAudit: overrides.recordAudit ?? (async () => { /* wired by the lineage writer */ }),
+    recordAudit: overrides.recordAudit ?? (async (event) => {
+      // Persist the forensic record. buildLineageRecord REFUSES a dishonest
+      // row — an UNKNOWN carrying a contract reference, an EXECUTED without
+      // venue evidence, a dry run with a contract, or a credential anywhere in
+      // the payload — so a bad write throws here rather than becoming a
+      // permanent lie in the ledger.
+      const eventType = AUDIT_KIND_TO_EVENT[event.kind];
+      if (!eventType) return;   // not a lineage-bearing event
+      const record = buildLineageRecord({
+        intentId: `di_${event.ticketId}`,
+        ticketId: event.ticketId,
+        userId: event.userId,
+        liveCommandId: null,
+        event: eventType,
+        occurredAtIso: new Date().toISOString(),
+        constitutionVersion: 0,
+        venueContractRef: null,
+        detail: event.detail,
+        scannerSignalId: null,
+        rubyExplanation: null,
+      });
+      await guidedAttemptEventsRepo.appendGuidedEvent({
+        intentId: record.intentId,
+        ticketId: record.ticketId,
+        userId: record.userId,
+        liveCommandId: record.liveCommandId,
+        eventType: record.event,
+        constitutionVersion: record.constitutionVersion,
+        venueContractRef: record.venueContractRef,
+        scannerSignalId: record.scannerSignalId,
+        rubyExplanation: record.rubyExplanation,
+        detail: record.detail,
+      });
+    }),
 
     deliverViaAdapter: async ({ ticket, tier, liveCommandId }) => {
       // Per-request dependency resolution, INSIDE the adapter path.

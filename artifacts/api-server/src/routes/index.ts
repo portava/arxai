@@ -62,6 +62,7 @@ import meDemoCommandsRouter from "./meDemoCommands";
 import meDemoBridgeDebugRouter from "./meDemoBridgeDebug";
 import meDemoPositionsRouter from "./meDemoPositions";
 import meApprovalInboxRouter from "./meApprovalInbox";
+import meGuidedPositionsRouter from "./meGuidedPositions";
 import meLiveRouter from "./meLive";
 import meLiveAccountRouter from "./meLiveAccount";
 import liveTestCycleRouter from "./liveTestCycle";
@@ -304,6 +305,8 @@ router.use(meDemoBridgeDebugRouter);
 router.use(meDemoPositionsRouter);
 // Phase 6 — the Approval Inbox. Per-user only; no admin override.
 router.use(meApprovalInboxRouter);
+// Phase 6 — guided position centre, journal and debrief. Owner-scoped reads.
+router.use(meGuidedPositionsRouter);
 router.use(meLiveRouter);
 router.use(meLiveAccountRouter);
 router.use(liveTestCycleRouter);

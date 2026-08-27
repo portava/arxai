@@ -35,3 +35,7 @@ export * as tradingConstitutionRepo from "./tradingConstitutionRepo";
 // instance, so after a restart this row is the ONLY thing that can correlate a
 // late reply back to the command that caused it.
 export * as derivOrderIntentsRepo from "./derivOrderIntentsRepo";
+
+// Phase 6 — the guided forensic ledger. APPEND-ONLY and vault-guarded: one
+// intent id reconstructs a whole trade attempt.
+export * as guidedAttemptEventsRepo from "./guidedAttemptEventsRepo";

@@ -57,6 +57,7 @@
     "test:deriv-new-api-certify": "node --import tsx --test --test-force-exit src/lib/deriv/newApi/__qa__/newApiCertify.test.ts",
     "test:deriv-phase5-closure": "node --import tsx --test --test-force-exit src/lib/deriv/newApi/__qa__/newApiPhase5Closure.test.ts",
     "test:deriv-order-intent": "node --import tsx --test --test-force-exit src/lib/deriv/newApi/__qa__/newApiOrderIntent.test.ts",
+    "test:phase6-surfaces": "node --import tsx --test --test-force-exit src/lib/phase6/__qa__/guidedSurfaces.test.ts",
     "test:phase6-tier0-product": "node --import tsx --test --test-force-exit src/lib/phase6/__qa__/tier0ProductCertificate.test.ts",
     "test:phase6-lineage-sweeper": "node --import tsx --test --test-force-exit src/lib/phase6/__qa__/guidedLineageAndSweeper.test.ts",
     "test:phase6-deriv-deps": "node --import tsx --test --test-force-exit src/lib/phase6/__qa__/derivDependencyResolver.test.ts",
