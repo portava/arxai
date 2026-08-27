@@ -26,10 +26,8 @@
 import { TIER_1_DEMO_GUIDED } from "@workspace/domain/safety-contracts/executionTier";
 import { resolveConfiguredExecutionTier } from "../lib/phase6/guidedDispatchEntry.js";
 import { demoIsProven, type DemoClassification } from "../lib/phase6/derivDependencyResolver.js";
-import {
-  DERIV_ACCOUNTS_PATH, normalizeAccount, isDemoAccount, isRealAccount,
-} from "../lib/deriv/newApi/accounts.js";
-import { derivRestRequest, resolveNewApiConfig } from "../lib/deriv/newApi/restClient.js";
+import { fetchAccounts, isDemoAccount, isRealAccount } from "../lib/deriv/newApi/accounts.js";
+import { resolveNewApiConfig } from "../lib/deriv/newApi/restClient.js";
 import { derivOrderIntentsRepo, approvalTicketsRepo } from "@workspace/db";
 
 const AUTH_FLAG = "--i-authorize-one-demo-order";
@@ -54,33 +52,28 @@ function line(c: Check): string {
  *     mistake is a real-money trade. Re-deriving that judgement here would mean
  *     two rules that can drift apart.
  */
-/** Every account the venue reports, normalized. Read-only. */
+/**
+ * Every account the venue reports.
+ *
+ * Delegates to the CERTIFIED Phase 5 fetchAccounts. My first version of this
+ * hand-rolled the envelope parsing and checked only `accounts` and a bare
+ * array — missing the `data` wrapper that Phase 5 already knew Deriv uses (the
+ * same nesting that caused the OTP parsing bug). Worse, it returned an empty
+ * list on an unrecognised shape, so a protocol mismatch printed
+ * "(none returned)" and looked like an empty account book.
+ *
+ * fetchAccounts handles all three shapes and THROWS on an unrecognised one,
+ * which is the honest outcome: not knowing how to read the response is not the
+ * same as there being nothing in it.
+ */
 async function fetchVenueAccounts() {
   const config = resolveNewApiConfig();
   if (typeof config === "string") throw new Error(`DERIV_CONFIG_UNRESOLVED:${config}`);
-  const res = await derivRestRequest<unknown>({
-    method: "GET", path: DERIV_ACCOUNTS_PATH, config, captureBody: true,
-  });
-  const raw = res.body as { accounts?: unknown[] } | unknown[] | null;
-  const list = Array.isArray(raw) ? raw : Array.isArray(raw?.accounts) ? raw.accounts : [];
-  return list.map(normalizeAccount).filter((a): a is NonNullable<typeof a> => a !== null);
+  return fetchAccounts(config);
 }
 
 async function classifyFromVenue(accountRef: string): Promise<DemoClassification | null> {
-  const config = resolveNewApiConfig();
-  // resolveNewApiConfig returns EITHER a config or an error code. Refusing on
-  // the error branch is the point: an unresolvable Deriv config must not be
-  // squeezed past with a cast, because the next thing this function does is
-  // decide whether an account may be traded.
-  if (typeof config === "string") {
-    throw new Error(`DERIV_CONFIG_UNRESOLVED:${config}`);
-  }
-  const res = await derivRestRequest<unknown>({
-    method: "GET", path: DERIV_ACCOUNTS_PATH, config, captureBody: true,
-  });
-  const raw = res.body as { accounts?: unknown[] } | unknown[] | null;
-  const list = Array.isArray(raw) ? raw : Array.isArray(raw?.accounts) ? raw.accounts : [];
-  const accounts = list.map(normalizeAccount).filter((a): a is NonNullable<typeof a> => a !== null);
+  const accounts = await fetchVenueAccounts();
   const match = accounts.find((a) => a.accountId === accountRef);
   if (!match) return null;
 
@@ -112,7 +105,11 @@ async function main(): Promise<void> {
     try {
       const accounts = await fetchVenueAccounts();
       if (accounts.length === 0) {
-        console.log("  (none returned)");   // eslint-disable-line no-console
+        // Genuinely empty, because fetchAccounts throws on a shape it cannot
+        // read. "No accounts" and "I could not read the response" are different
+        // facts and must never print the same way.
+        // eslint-disable-next-line no-console
+        console.log("  the venue returned an account list containing ZERO accounts");
       }
       for (const a of accounts) {
         const verdict = isRealAccount(a)
