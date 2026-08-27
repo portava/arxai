@@ -9,6 +9,7 @@ import {
   Plug, LineChart, Award, ShieldCheck, Search, X, Zap, Wallet, LayoutGrid, Banknote,
   Thermometer, GraduationCap, Flag,
   Calendar as CalendarIcon,
+  ClipboardCheck,
   type LucideIcon,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -130,6 +131,9 @@ const buildNavGroups = (name: string): NavGroup[] => [
     items: [
       { href: "/market-scanner",      label: "Market Scanner", icon: Search },
       { href: "/trade-command-room",  label: "Trade",          icon: Crosshair },
+      // Phase 6 — guided approvals. The page existed but had NO nav entry, so
+      // it was reachable only by typing the URL; the owner could not find it.
+      { href: "/approval-inbox",      label: "Approval Inbox", icon: ClipboardCheck },
       { href: "/live-trading",        label: "Live Trading",   icon: Zap },
       { href: "/ai-command-center",   label: `${name} (AI)`,      icon: Brain },
       { href: "/my-trades",           label: "Open Trades",    icon: Briefcase },

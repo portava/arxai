@@ -72,6 +72,7 @@ function buildCommandPaletteItems(name: string): CommandPaletteItem[] {
   // Records
   { label: "Orders",                     href: "/orders", approvedOnly: true },
   { label: "Positions",                  href: "/positions", approvedOnly: true },
+  { label: "Approval Inbox",             href: "/approval-inbox", approvedOnly: true },
   { label: "Journal",                    href: "/shadow-journal", approvedOnly: true },
   { label: "Scalp Journal",              href: "/scalp-journal", hint: `${name} scalp history & lessons`, approvedOnly: true },
   { label: "Calendar",                   href: "/trading-calendar", approvedOnly: true },
