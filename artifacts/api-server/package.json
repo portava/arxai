@@ -218,7 +218,8 @@
     "test:expiring-keys-admin-route": "node --import tsx --test --test-force-exit src/routes/__qa__/expiringKeysAdminRoute.test.ts",
     "test:pattern-sync": "node --import tsx --test-isolation=none --test --test-force-exit src/lib/patternSync/__qa__/patternSync.test.ts",
     "test:admin-cockpit-route": "node --import tsx --test --test-force-exit src/routes/__qa__/adminCockpitRoute.test.ts",
-    "certify:tier1-demo": "node --import tsx src/scripts/tier1DemoCertify.ts"
+    "certify:tier1-demo": "node --import tsx src/scripts/tier1DemoCertify.ts",
+    "tier1:seed": "node --import tsx src/scripts/tier1SeedCertificationTicket.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

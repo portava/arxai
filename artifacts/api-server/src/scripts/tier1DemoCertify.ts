@@ -28,7 +28,9 @@ import { resolveConfiguredExecutionTier } from "../lib/phase6/guidedDispatchEntr
 import { demoIsProven, type DemoClassification } from "../lib/phase6/derivDependencyResolver.js";
 import { fetchAccounts, isDemoAccount, isRealAccount } from "../lib/deriv/newApi/accounts.js";
 import { resolveNewApiConfig } from "../lib/deriv/newApi/restClient.js";
-import { derivOrderIntentsRepo, approvalTicketsRepo } from "@workspace/db";
+import { derivOrderIntentsRepo, approvalTicketsRepo, guidedAttemptEventsRepo } from "@workspace/db";
+import { reconstructAttempt, positionStateLabel, type GuidedAuditEvent }
+  from "../lib/phase6/guidedLineage.js";
 
 const AUTH_FLAG = "--i-authorize-one-demo-order";
 
@@ -89,8 +91,75 @@ async function classifyFromVenue(accountRef: string): Promise<DemoClassification
   };
 }
 
+/**
+ * Reconcile one attempt after the human pressed Send.
+ *
+ * Reports what is KNOWN, and says so when the answer is "we do not know". An
+ * UNRESOLVED attempt is not a failure and is not a licence to place another
+ * order — it is the one state that must stop the certification.
+ */
+async function verify(userId: number, intentId: string): Promise<void> {
+  const rows = await guidedAttemptEventsRepo.listUserAttemptEvents(userId, intentId);
+  if (rows.length === 0) {
+    // eslint-disable-next-line no-console
+    console.log(`\nNo ledger events for ${intentId}. Nothing was dispatched under this intent.\n`);
+    process.exit(1);
+  }
+  const attempt = reconstructAttempt(rows.map((r) => ({
+    intentId: r.intentId, ticketId: r.ticketId, userId: r.userId,
+    liveCommandId: r.liveCommandId, event: r.eventType as GuidedAuditEvent,
+    occurredAtIso: r.occurredAt.toISOString(), constitutionVersion: r.constitutionVersion,
+    venueContractRef: r.venueContractRef, detail: r.detail,
+    scannerSignalId: r.scannerSignalId, rubyExplanation: r.rubyExplanation,
+  })));
+
+  const intent = await derivOrderIntentsRepo.findIntent(intentId);
+  const ticket = rows[0] ? await approvalTicketsRepo.findOwnedTicket(rows[0].ticketId, userId) : null;
+
+  // eslint-disable-next-line no-console
+  console.log(
+    `\nTIER 1 RECONCILIATION — ${intentId}\n\n` +
+    `  lineage      ${attempt.events.join(" -> ")}\n` +
+    `  state        ${attempt.state} — ${positionStateLabel(attempt.state)}\n` +
+    `  venue ref    ${attempt.venueContractRef ?? "none (nothing proved a contract exists)"}\n` +
+    `  ticket       ${ticket ? ticket.state : "not found"}\n` +
+    `  intent       ${intent ? `${intent.writeDisposition}${intent.resolvedAt ? " (resolved)" : " (UNRESOLVED)"}` : "not found"}\n` +
+    `  complete     ${attempt.complete}\n`,
+  );
+
+  if (attempt.state === "UNRESOLVED" || attempt.state === "RECONCILIATION_REQUIRED") {
+    // eslint-disable-next-line no-console
+    console.log(
+      "STOP. The outcome is not established. An order MAY exist at the venue.\n" +
+      "Do NOT place another order and do NOT retry this one. Resolve through the\n" +
+      "certified Phase 5 reconciliation model first.\n",
+    );
+    process.exit(2);
+  }
+  // eslint-disable-next-line no-console
+  console.log(attempt.complete
+    ? "Attempt is complete and its lineage reconstructs from a single intent id.\n"
+    : "Attempt is not yet complete — no terminal event recorded.\n");
+  process.exit(attempt.complete ? 0 : 1);
+}
+
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
+
+  // --verify runs BEFORE any pre-flight: reconciliation must work even when
+  // pre-flight would now refuse (a spent daily allowance, an expired ticket).
+  // Refusing to report on an order that exists would be the worst outcome here.
+  if (argv.includes("--verify")) {
+    const uid = Number((argv.find((a) => a.startsWith("--user="))?.split("=")[1] ?? "").trim());
+    const iid = (argv.find((a) => a.startsWith("--intent="))?.split("=")[1] ?? "").trim();
+    if (!Number.isInteger(uid) || uid <= 0 || iid === "") {
+      // eslint-disable-next-line no-console
+      console.error("usage: --verify --user=<id> --intent=<intentId>");
+      process.exit(1);
+    }
+    await verify(uid, iid);
+    return;
+  }
   const authorized = argv.includes(AUTH_FLAG);
   const accountRef = (argv.find((a) => a.startsWith("--account="))?.split("=")[1] ?? "").trim();
   const userIdRaw = (argv.find((a) => a.startsWith("--user="))?.split("=")[1] ?? "").trim();
