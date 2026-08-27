@@ -57,6 +57,7 @@
     "test:deriv-new-api-certify": "node --import tsx --test --test-force-exit src/lib/deriv/newApi/__qa__/newApiCertify.test.ts",
     "test:deriv-phase5-closure": "node --import tsx --test --test-force-exit src/lib/deriv/newApi/__qa__/newApiPhase5Closure.test.ts",
     "test:deriv-order-intent": "node --import tsx --test --test-force-exit src/lib/deriv/newApi/__qa__/newApiOrderIntent.test.ts",
+    "test:phase6-tier0-e2e": "node --import tsx --test --test-force-exit src/lib/phase6/__qa__/tier0EndToEnd.test.ts",
     "test:phase6-venue-routing": "node --import tsx --test --test-force-exit src/lib/phase6/__qa__/venueRouting.test.ts",
     "test:phase6-ttl": "node --import tsx --test --test-force-exit src/lib/phase6/__qa__/guidedTtlPolicy.test.ts",
     "test:phase6-deriv-adapter": "node --import tsx --test --test-force-exit src/lib/phase6/__qa__/derivExecutionAdapter.test.ts",
