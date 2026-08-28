@@ -1,0 +1,359 @@
+diff --git a/.replit b/.replit
+index d1bcdda..600805b 100644
+--- a/.replit
++++ b/.replit
+@@ -145,7 +145,12 @@ packages = ["zip"]
+ # (public in git history) and requires rotation. Endpoint fails closed when
+ # unset (503 Override endpoint disabled).
+ ARX_BETA_INVITE_REQUIRED = "true"
+-ARX_LIVE_BROKER_EXECUTION_ENABLED = "true"
++# ARX_LIVE_BROKER_EXECUTION_ENABLED is intentionally NOT set here. It is the
++# server-side half of the two-key live-broker-execution lock (env AND the
++# admin-armed DB flag) and must never be baked into a git-tracked dev config —
++# a workspace with it pre-set has one of the two keys permanently turned. The
++# code fails closed when it is absent. Set it only in Replit Secrets, only on
++# a deployment that is deliberately going live.
+ ARX_LEGACY_OWNER_DEMOTE_EMAIL = "andraie.co@gmail.com"
+ ECONOMIC_CALENDAR_PROVIDER = "fred"
+ CLAUDE_FIX_AGENT_ENABLED = "true"
+diff --git a/artifacts/api-server/package.json b/artifacts/api-server/package.json
+index 9c502f1..63beda1 100644
+--- a/artifacts/api-server/package.json
++++ b/artifacts/api-server/package.json
+@@ -64,6 +64,7 @@
+     "test:phase6-tier0-e2e": "node --import tsx --test --test-force-exit src/lib/phase6/__qa__/tier0EndToEnd.test.ts",
+     "test:phase6-venue-routing": "node --import tsx --test --test-force-exit src/lib/phase6/__qa__/venueRouting.test.ts",
+     "test:phase6-ttl": "node --import tsx --test --test-force-exit src/lib/phase6/__qa__/guidedTtlPolicy.test.ts",
++    "test:phase6-killswitch-release": "node --import tsx --test --test-force-exit src/lib/phase6/__qa__/killSwitchReleasePolicy.test.ts",
+     "test:phase6-deriv-adapter": "node --import tsx --test --test-force-exit src/lib/phase6/__qa__/derivExecutionAdapter.test.ts",
+     "test:phase6-indeterminate": "node --import tsx --test --test-force-exit src/lib/phase6/__qa__/indeterminateDelivery.test.ts",
+     "test:phase6-approval": "node --import tsx --test --test-force-exit src/lib/phase6/__qa__/approvalTicket.test.ts",
+diff --git a/artifacts/api-server/src/lib/phase6/__qa__/killSwitchReleasePolicy.test.ts b/artifacts/api-server/src/lib/phase6/__qa__/killSwitchReleasePolicy.test.ts
+new file mode 100644
+index 0000000..b9df101
+--- /dev/null
++++ b/artifacts/api-server/src/lib/phase6/__qa__/killSwitchReleasePolicy.test.ts
+@@ -0,0 +1,122 @@
++// Phase 6 - kill-switch RELEASE policy.
++//
++// The release doorway exists so Tier 1 guided demo certification is reachable
++// without standing up MT5 shared-live posture. These tests pin the wall the
++// doorway sits in: release is permitted ONLY while every live control is off,
++// each hot control refuses independently, all hot controls are reported
++// together, and an unknown posture reads as HOT, never cold.
++
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import {
++  killSwitchReleaseViolations,
++  postureFromSettingsRow,
++  type KillSwitchReleasePosture,
++} from "../killSwitchReleasePolicy.js";
++
++const COLD: KillSwitchReleasePosture = {
++  platformMode: "OFF",
++  liveEnabled: false,
++  sharedLiveTradingEnabled: false,
++  masterBridgeLiveEnabled: false,
++  liveBrokerExecutionArmed: false,
++  liveBrokerExecutionEnvEnabled: false,
++};
++
++test("fully cold posture permits release (no violations)", () => {
++  assert.deepEqual(killSwitchReleaseViolations(COLD), []);
++});
++
++test("every non-LIVE platform mode is acceptable for release", () => {
++  for (const mode of ["OFF", "UNKNOWN", "DEMO", "SIMULATED"]) {
++    assert.deepEqual(
++      killSwitchReleaseViolations({ ...COLD, platformMode: mode }),
++      [],
++      `platformMode=${mode} should not block release`,
++    );
++  }
++});
++
++test("each hot control refuses release on its own", () => {
++  const hots: Array<[Partial<KillSwitchReleasePosture>, string]> = [
++    [{ platformMode: "LIVE" }, "platformMode is LIVE"],
++    [{ liveEnabled: true }, "liveEnabled is true"],
++    [{ sharedLiveTradingEnabled: true }, "sharedLiveTradingEnabled is true"],
++    [{ masterBridgeLiveEnabled: true }, "masterBridgeLiveEnabled is true"],
++    [{ liveBrokerExecutionArmed: true }, "liveBrokerExecutionArmed is true"],
++    [{ liveBrokerExecutionEnvEnabled: true }, "ARX_LIVE_BROKER_EXECUTION_ENABLED is enabled server-side"],
++  ];
++  for (const [patch, expected] of hots) {
++    const v = killSwitchReleaseViolations({ ...COLD, ...patch });
++    assert.deepEqual(v, [expected]);
++  }
++});
++
++test("all hot controls are reported together, not first-only", () => {
++  const v = killSwitchReleaseViolations({
++    platformMode: "LIVE",
++    liveEnabled: true,
++    sharedLiveTradingEnabled: true,
++    masterBridgeLiveEnabled: true,
++    liveBrokerExecutionArmed: true,
++    liveBrokerExecutionEnvEnabled: true,
++  });
++  assert.equal(v.length, 6);
++});
++
++test("a missing settings row maps to the schema-default cold posture", () => {
++  const p = postureFromSettingsRow(null, false);
++  assert.deepEqual(p, COLD);
++  assert.deepEqual(killSwitchReleaseViolations(p), []);
++});
++
++test("the env switch survives a missing row — env hot means posture hot", () => {
++  const p = postureFromSettingsRow(undefined, true);
++  assert.equal(p.liveBrokerExecutionEnvEnabled, true);
++  assert.deepEqual(killSwitchReleaseViolations(p), [
++    "ARX_LIVE_BROKER_EXECUTION_ENABLED is enabled server-side",
++  ]);
++});
++
++test("null/undefined fields on an EXISTING row resolve HOT, not cold", () => {
++  // A row we cannot prove cold is not cold: every unknown flag reads as
++  // engaged and unknown platformMode reads as LIVE.
++  const p = postureFromSettingsRow({}, false);
++  assert.equal(p.platformMode, "LIVE");
++  assert.equal(p.liveEnabled, true);
++  assert.equal(p.sharedLiveTradingEnabled, true);
++  assert.equal(p.masterBridgeLiveEnabled, true);
++  assert.equal(p.liveBrokerExecutionArmed, true);
++  assert.equal(killSwitchReleaseViolations(p).length, 5);
++});
++
++test("an explicit cold row round-trips to a permitted release", () => {
++  const p = postureFromSettingsRow(
++    {
++      platformMode: "OFF",
++      liveEnabled: false,
++      sharedLiveTradingEnabled: false,
++      masterBridgeLiveEnabled: false,
++      liveBrokerExecutionArmed: false,
++    },
++    false,
++  );
++  assert.deepEqual(killSwitchReleaseViolations(p), []);
++});
++
++test("a live row is hot regardless of the env switch being off", () => {
++  const p = postureFromSettingsRow(
++    {
++      platformMode: "LIVE",
++      liveEnabled: true,
++      sharedLiveTradingEnabled: false,
++      masterBridgeLiveEnabled: false,
++      liveBrokerExecutionArmed: false,
++    },
++    false,
++  );
++  assert.deepEqual(killSwitchReleaseViolations(p), [
++    "platformMode is LIVE",
++    "liveEnabled is true",
++  ]);
++});
+diff --git a/artifacts/api-server/src/lib/phase6/killSwitchReleasePolicy.ts b/artifacts/api-server/src/lib/phase6/killSwitchReleasePolicy.ts
+new file mode 100644
+index 0000000..1f00a18
+--- /dev/null
++++ b/artifacts/api-server/src/lib/phase6/killSwitchReleasePolicy.ts
+@@ -0,0 +1,103 @@
++// Phase 6 — kill-switch RELEASE policy.
++//
++// The global emergency kill switch is born ENGAGED (schema default, and the
++// guided dispatch path additionally treats a MISSING settings row as engaged).
++// Before this module, the only sanctioned release lived inside
++// POST /admin/live-shared/activate-step, whose footgun guard requires full
++// MT5 shared-live posture — routing SHARED_MASTER_MT5, both shared flags on,
++// a master bridge pinned. That guard is correct for a HOT release, and it
++// made the Tier 1 guided demo certification structurally unreachable: no one
++// should have to stand up live MT5 posture to send one $1 demo order.
++//
++// The resolution is NOT to weaken any dispatch-side check. The guided path
++// still refuses while any of its three stop controls is engaged. Instead,
++// release itself gets a second, narrower doorway: an admin may release the
++// switch ONLY while the platform is provably COLD — every control that could
++// route a real-money order is off. A release under that posture cannot enable
++// live execution by itself, because each live surface still has its own
++// independent denials (liveEnabled, platformMode, the DB arm flag, the
++// server-side env switch, and the 16-gate evaluator). A release while ANY of
++// those is hot must still go through the full activate-step ceremony.
++//
++// This module is pure so the policy is testable and mutation-provable without
++// a database.
++
++/** Everything the release decision consults. Caller resolves each field. */
++export type KillSwitchReleasePosture = {
++  platformMode: string;
++  liveEnabled: boolean;
++  sharedLiveTradingEnabled: boolean;
++  masterBridgeLiveEnabled: boolean;
++  liveBrokerExecutionArmed: boolean;
++  /** The server-side env switch, resolved via phaseBConfig — never read here. */
++  liveBrokerExecutionEnvEnabled: boolean;
++};
++
++type SettingsRowSubset = {
++  platformMode?: string | null;
++  liveEnabled?: boolean | null;
++  sharedLiveTradingEnabled?: boolean | null;
++  masterBridgeLiveEnabled?: boolean | null;
++  liveBrokerExecutionArmed?: boolean | null;
++} | null | undefined;
++
++/**
++ * Derive the posture from a settings row. A MISSING row maps to the schema
++ * defaults (platform OFF, everything false) — cold, but the caller must still
++ * CREATE the row engaged and release it as an explicit transition, never
++ * birth it released.
++ *
++ * Unknown/null field values resolve to the HOT reading, not the cold one:
++ * a posture we cannot prove cold is not cold.
++ */
++export function postureFromSettingsRow(
++  row: SettingsRowSubset,
++  envEnabled: boolean,
++): KillSwitchReleasePosture {
++  if (!row) {
++    return {
++      platformMode: "OFF",
++      liveEnabled: false,
++      sharedLiveTradingEnabled: false,
++      masterBridgeLiveEnabled: false,
++      liveBrokerExecutionArmed: false,
++      liveBrokerExecutionEnvEnabled: envEnabled,
++    };
++  }
++  return {
++    platformMode: row.platformMode ?? "LIVE",
++    liveEnabled: row.liveEnabled !== false,
++    sharedLiveTradingEnabled: row.sharedLiveTradingEnabled !== false,
++    masterBridgeLiveEnabled: row.masterBridgeLiveEnabled !== false,
++    liveBrokerExecutionArmed: row.liveBrokerExecutionArmed !== false,
++    liveBrokerExecutionEnvEnabled: envEnabled,
++  };
++}
++
++/**
++ * The cold-posture wall. Empty array = release permitted. Every hot control
++ * is reported, not just the first, so the operator sees the full distance to
++ * cold rather than discovering it one refusal at a time.
++ */
++export function killSwitchReleaseViolations(p: KillSwitchReleasePosture): string[] {
++  const violations: string[] = [];
++  if (p.platformMode === "LIVE") {
++    violations.push("platformMode is LIVE");
++  }
++  if (p.liveEnabled) {
++    violations.push("liveEnabled is true");
++  }
++  if (p.sharedLiveTradingEnabled) {
++    violations.push("sharedLiveTradingEnabled is true");
++  }
++  if (p.masterBridgeLiveEnabled) {
++    violations.push("masterBridgeLiveEnabled is true");
++  }
++  if (p.liveBrokerExecutionArmed) {
++    violations.push("liveBrokerExecutionArmed is true");
++  }
++  if (p.liveBrokerExecutionEnvEnabled) {
++    violations.push("ARX_LIVE_BROKER_EXECUTION_ENABLED is enabled server-side");
++  }
++  return violations;
++}
+diff --git a/artifacts/api-server/src/routes/adminLiveSharedReadiness.ts b/artifacts/api-server/src/routes/adminLiveSharedReadiness.ts
+index 9df3924..037be53 100644
+--- a/artifacts/api-server/src/routes/adminLiveSharedReadiness.ts
++++ b/artifacts/api-server/src/routes/adminLiveSharedReadiness.ts
+@@ -37,6 +37,10 @@ import {
+   LIVE_HEARTBEAT_MAX_AGE_SEC,
+ } from "@workspace/domain/safety-contracts/livePhaseBDispatchGate";
+ import { liveBrokerExecutionEnabled, resolveLiveBrokerExecutionEnabled } from "../lib/live/phaseBConfig.js";
++import {
++  killSwitchReleaseViolations,
++  postureFromSettingsRow,
++} from "../lib/phase6/killSwitchReleasePolicy.js";
+ import { loadAndEvaluateMasterLiveBridgeGate } from "../lib/mt5/masterLiveBridgeGate.js";
+ import {
+   detectCurrentConnectedBridge,
+@@ -753,6 +757,76 @@ router.post("/admin/live-shared/kill-switch", async (req, res) => {
+     return;
+   }
+   const reason = typeof body.reason === "string" && body.reason.length > 0 ? body.reason : "ADMIN_INITIATED";
++
++  // ── RELEASE — the cold-platform doorway ─────────────────────────────────
++  // The activate-step ceremony (full MT5 shared-live posture) remains the
++  // ONLY hot release path. This branch permits release exclusively while the
++  // platform is provably cold — see killSwitchReleasePolicy.ts for why a
++  // cold release cannot enable live execution by itself.
++  if (body.action === "RELEASE") {
++    const envEnabled = liveBrokerExecutionEnabled();
++    const outcome = await db.transaction(async (tx) => {
++      // The settings table is a by-convention singleton with no unique
++      // constraint; serialize with any concurrent bootstrap so two callers
++      // cannot create two rows. Namespace 0x41525807 = "ARX" + 07 (phase 6
++      // uses 0x41525806 for guided dispatch; this is the settings singleton).
++      await tx.execute(sql`select pg_advisory_xact_lock(${0x4152_5807}, ${1})`);
++      let row = (await tx.select().from(globalTradingSettingsTable).limit(1))[0];
++      if (!row) {
++        // Create the fail-closed default row (kill switch ENGAGED) so the
++        // release below is an explicit, audited transition — the row is
++        // never BORN released.
++        row = (await tx.insert(globalTradingSettingsTable)
++          .values({ updatedAt: new Date() }).returning())[0]!;
++      }
++      const posture = postureFromSettingsRow(row, envEnabled);
++      const violations = killSwitchReleaseViolations(posture);
++      if (violations.length > 0) {
++        return { released: false as const, violations };
++      }
++      await tx
++        .update(globalTradingSettingsTable)
++        .set({
++          emergencyKillSwitch: false,
++          killSwitchEngagedAt: null,
++          killSwitchReason: null,
++          updatedAt: new Date(),
++        })
++        .where(eq(globalTradingSettingsTable.id, row.id));
++      await writeAuditOn(tx, {
++        adminId: admin.id,
++        adminRole: admin.role,
++        action: "ADMIN_RELEASED_LIVE_SHARED_KILL_SWITCH",
++        before: {
++          emergencyKillSwitch: row.emergencyKillSwitch,
++          killSwitchEngagedAt: row.killSwitchEngagedAt,
++          killSwitchReason: row.killSwitchReason,
++          posture,
++        },
++        after: {
++          emergencyKillSwitch: false,
++          releaseReason: reason,
++          coldPostureVerified: true,
++        },
++      });
++      return { released: true as const, violations: [] as string[] };
++    });
++    if (!outcome.released) {
++      res.status(409).json({
++        ok: false,
++        error: "COLD_POSTURE_REQUIRED_FOR_RELEASE",
++        violations: outcome.violations,
++        detail:
++          "The kill switch may be released outside the activate-step ceremony only while every " +
++          "live control is off. Releasing while any listed control is hot requires the full " +
++          "shared-live activation flow (POST /api/admin/live-shared/activate-step).",
++      });
++      return;
++    }
++    res.json({ ok: true, killSwitchEngaged: false, reason });
++    return;
++  }
++
+   const settingsRow = (await db.select().from(globalTradingSettingsTable).limit(1))[0];
+   if (!settingsRow) {
+     res.status(500).json({ ok: false, error: "SETTINGS_ROW_MISSING" });

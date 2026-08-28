@@ -1,0 +1,333 @@
+{
+  "accountSuffix": "1092",
+  "accountType": "demo",
+  "artifactVersion": 1,
+  "capturedAtMs": 1787732647779,
+  "config": {
+    "appIdShape": "alphanumeric",
+    "mode": "new",
+    "tokenLength": 68
+  },
+  "probes": [
+    {
+      "arxErrorCode": null,
+      "derivErrorCode": null,
+      "elapsedMs": 45,
+      "frames": [
+        {
+          "atMs": 1787732647371,
+          "direction": "out",
+          "op": "ping",
+          "raw": "{\"ping\":1,\"req_id\":1}",
+          "reqId": 1
+        },
+        {
+          "atMs": 1787732647416,
+          "direction": "in",
+          "op": "ping",
+          "raw": "{\"echo_req\":{\"ping\":1,\"req_id\":1},\"msg_type\":\"ping\",\"ping\":\"pong\",\"req_id\":1}",
+          "reqId": 1
+        }
+      ],
+      "name": "baseline_ping",
+      "nestedKeys": [],
+      "normalizedOk": true,
+      "op": "ping",
+      "outcome": "VENUE_REPLY",
+      "reconnectsSoFar": 0,
+      "replyKeys": [
+        "echo_req",
+        "msg_type",
+        "ping",
+        "req_id"
+      ],
+      "startedAtMs": 1787732647371,
+      "transportStateAfter": "WS_READY",
+      "transportStateBefore": "WS_READY",
+      "unreadableReason": null,
+      "wireWritten": true
+    },
+    {
+      "arxErrorCode": null,
+      "derivErrorCode": null,
+      "elapsedMs": 88,
+      "frames": [
+        {
+          "atMs": 1787732647416,
+          "direction": "out",
+          "op": "proposal",
+          "raw": "{\"proposal\":1,\"underlying_symbol\":\"R_100\",\"contract_type\":\"MULTUP\",\"amount\":1,\"basis\":\"stake\",\"currency\":\"USD\",\"multiplier\":100,\"req_id\":2}",
+          "reqId": 2
+        },
+        {
+          "atMs": 1787732647504,
+          "direction": "in",
+          "op": "proposal",
+          "raw": "{\"echo_req\":{\"amount\":1,\"basis\":\"stake\",\"contract_type\":\"MULTUP\",\"currency\":\"USD\",\"duration_unit\":\"s\",\"multiplier\":100,\"proposal\":1,\"req_id\":2,\"underlying_symbol\":\"R_100\"},\"msg_type\":\"proposal\",\"proposal\":{\"ask_price\":1,\"commission\":0.04,\"contract_details\"…[truncated]",
+          "reqId": 2
+        }
+      ],
+      "name": "valid_proposal",
+      "nestedKeys": [
+        "ask_price",
+        "commission",
+        "contract_details",
+        "date_expiry",
+        "date_start",
+        "id",
+        "limit_order",
+        "longcode",
+        "multiplier",
+        "payout",
+        "spot",
+        "spot_time",
+        "validation_params"
+      ],
+      "normalizedOk": true,
+      "op": "proposal",
+      "outcome": "VENUE_REPLY",
+      "reconnectsSoFar": 0,
+      "replyKeys": [
+        "echo_req",
+        "msg_type",
+        "proposal",
+        "req_id"
+      ],
+      "startedAtMs": 1787732647416,
+      "transportStateAfter": "WS_READY",
+      "transportStateBefore": "WS_READY",
+      "unreadableReason": null,
+      "wireWritten": true
+    },
+    {
+      "arxErrorCode": "DERIV_NEW_API_REQUEST_REJECTED",
+      "derivErrorCode": "InputValidationFailed",
+      "elapsedMs": 37,
+      "frames": [
+        {
+          "atMs": 1787732647505,
+          "direction": "out",
+          "op": "proposal",
+          "raw": "{\"proposal\":1,\"underlying_symbol\":\"R_100\",\"contract_type\":\"NOT_A_CONTRACT\",\"amount\":1,\"basis\":\"stake\",\"currency\":\"USD\",\"multiplier\":100,\"req_id\":3}",
+          "reqId": 3
+        },
+        {
+          "atMs": 1787732647541,
+          "direction": "in",
+          "op": "proposal",
+          "raw": "{\"echo_req\":{\"amount\":1,\"basis\":\"stake\",\"contract_type\":\"NOT_A_CONTRACT\",\"currency\":\"USD\",\"multiplier\":100,\"proposal\":1,\"req_id\":3,\"underlying_symbol\":\"R_100\"},\"error\":{\"code\":\"InputValidationFailed\",\"details\":{\"contract_type\":\"Not in enum list: HIGHER, LO…[truncated]",
+          "reqId": 3
+        }
+      ],
+      "name": "proposal_illegal_contract_type",
+      "nestedKeys": [],
+      "normalizedOk": false,
+      "op": "proposal",
+      "outcome": "VENUE_REJECTION",
+      "reconnectsSoFar": 0,
+      "replyKeys": [],
+      "startedAtMs": 1787732647504,
+      "transportStateAfter": "WS_READY",
+      "transportStateBefore": "WS_READY",
+      "unreadableReason": "op=proposal fields:[contract_type]",
+      "wireWritten": null
+    },
+    {
+      "arxErrorCode": "DERIV_NEW_API_REQUEST_REJECTED",
+      "derivErrorCode": "InputValidationFailed",
+      "elapsedMs": 40,
+      "frames": [
+        {
+          "atMs": 1787732647541,
+          "direction": "out",
+          "op": "proposal",
+          "raw": "{\"proposal\":1,\"underlying_symbol\":\"R_100\",\"currency\":\"USD\",\"req_id\":4}",
+          "reqId": 4
+        },
+        {
+          "atMs": 1787732647581,
+          "direction": "in",
+          "op": "proposal",
+          "raw": "{\"echo_req\":{\"currency\":\"USD\",\"proposal\":1,\"req_id\":4,\"underlying_symbol\":\"R_100\"},\"error\":{\"code\":\"InputValidationFailed\",\"details\":{\"contract_type\":\"Missing property.\"},\"message\":\"Input validation failed: contract_type\"},\"msg_type\":\"proposal\",\"req_id\":4}",
+          "reqId": 4
+        }
+      ],
+      "name": "proposal_missing_required_field",
+      "nestedKeys": [],
+      "normalizedOk": false,
+      "op": "proposal",
+      "outcome": "VENUE_REJECTION",
+      "reconnectsSoFar": 0,
+      "replyKeys": [],
+      "startedAtMs": 1787732647541,
+      "transportStateAfter": "WS_READY",
+      "transportStateBefore": "WS_READY",
+      "unreadableReason": "op=proposal fields:[contract_type]",
+      "wireWritten": null
+    },
+    {
+      "arxErrorCode": "DERIV_NEW_API_REQUEST_REJECTED",
+      "derivErrorCode": "InputValidationFailed",
+      "elapsedMs": 37,
+      "frames": [
+        {
+          "atMs": 1787732647581,
+          "direction": "out",
+          "op": "proposal",
+          "raw": "{\"proposal\":1,\"underlying_symbol\":\"R_100\",\"contract_type\":\"MULTUP\",\"amount\":1,\"basis\":\"stake\",\"currency\":\"USD\",\"multiplier\":100,\"not_a_real_field\":1,\"req_id\":5}",
+          "reqId": 5
+        },
+        {
+          "atMs": 1787732647617,
+          "direction": "in",
+          "op": "proposal",
+          "raw": "{\"echo_req\":{\"amount\":1,\"basis\":\"stake\",\"contract_type\":\"MULTUP\",\"currency\":\"USD\",\"multiplier\":100,\"not_a_real_field\":1,\"proposal\":1,\"req_id\":5,\"underlying_symbol\":\"R_100\"},\"error\":{\"code\":\"InputValidationFailed\",\"details\":{},\"message\":\"Input validation fa…[truncated]",
+          "reqId": 5
+        }
+      ],
+      "name": "proposal_surplus_key",
+      "nestedKeys": [],
+      "normalizedOk": false,
+      "op": "proposal",
+      "outcome": "VENUE_REJECTION",
+      "reconnectsSoFar": 0,
+      "replyKeys": [],
+      "startedAtMs": 1787732647581,
+      "transportStateAfter": "WS_READY",
+      "transportStateBefore": "WS_READY",
+      "unreadableReason": "op=proposal",
+      "wireWritten": null
+    },
+    {
+      "arxErrorCode": "DERIV_NEW_API_REQUEST_REJECTED",
+      "derivErrorCode": "OfferingsInvalidSymbol",
+      "elapsedMs": 69,
+      "frames": [
+        {
+          "atMs": 1787732647618,
+          "direction": "out",
+          "op": "contracts_for",
+          "raw": "{\"contracts_for\":\"NOT_A_SYMBOL\",\"req_id\":6}",
+          "reqId": 6
+        },
+        {
+          "atMs": 1787732647687,
+          "direction": "in",
+          "op": "contracts_for",
+          "raw": "{\"echo_req\":{\"contracts_for\":\"NOT_A_SYMBOL\",\"req_id\":6},\"error\":{\"code\":\"OfferingsInvalidSymbol\",\"message\":\"There's no contract available for this symbol.\",\"subcode\":\"OfferingsInvalidSymbol\"},\"msg_type\":\"contracts_for\",\"req_id\":6}",
+          "reqId": 6
+        }
+      ],
+      "name": "contracts_for_unknown_symbol",
+      "nestedKeys": [],
+      "normalizedOk": false,
+      "op": "contracts_for",
+      "outcome": "VENUE_REJECTION",
+      "reconnectsSoFar": 0,
+      "replyKeys": [],
+      "startedAtMs": 1787732647618,
+      "transportStateAfter": "WS_READY",
+      "transportStateBefore": "WS_READY",
+      "unreadableReason": "op=contracts_for",
+      "wireWritten": null
+    },
+    {
+      "arxErrorCode": "DERIV_NEW_API_REQUEST_REJECTED",
+      "derivErrorCode": "UnrecognisedRequest",
+      "elapsedMs": 34,
+      "frames": [
+        {
+          "atMs": 1787732647687,
+          "direction": "out",
+          "op": "this_operation_does_not_exist",
+          "raw": "{\"this_operation_does_not_exist\":1,\"req_id\":7}",
+          "reqId": 7
+        },
+        {
+          "atMs": 1787732647721,
+          "direction": "in",
+          "op": "this_operation_does_not_exist",
+          "raw": "{\"echo_req\":{\"req_id\":7,\"this_operation_does_not_exist\":1},\"error\":{\"code\":\"UnrecognisedRequest\",\"message\":\"Unrecognised request\",\"subcode\":null},\"msg_type\":\"error\",\"req_id\":7}",
+          "reqId": 7
+        }
+      ],
+      "name": "unknown_operation",
+      "nestedKeys": [],
+      "normalizedOk": false,
+      "op": "this_operation_does_not_exist",
+      "outcome": "VENUE_REJECTION",
+      "reconnectsSoFar": 0,
+      "replyKeys": [],
+      "startedAtMs": 1787732647687,
+      "transportStateAfter": "WS_READY",
+      "transportStateBefore": "WS_READY",
+      "unreadableReason": "op=this_operation_does_not_exist",
+      "wireWritten": null
+    },
+    {
+      "arxErrorCode": null,
+      "derivErrorCode": null,
+      "elapsedMs": 57,
+      "frames": [
+        {
+          "atMs": 1787732647721,
+          "direction": "out",
+          "op": "proposal_open_contract",
+          "raw": "{\"proposal_open_contract\":1,\"contract_id\":1,\"req_id\":8}",
+          "reqId": 8
+        },
+        {
+          "atMs": 1787732647778,
+          "direction": "in",
+          "op": "proposal_open_contract",
+          "raw": "{\"echo_req\":{\"contract_id\":1,\"proposal_open_contract\":1,\"req_id\":8},\"msg_type\":\"proposal_open_contract\",\"proposal_open_contract\":{},\"req_id\":8}",
+          "reqId": 8
+        }
+      ],
+      "name": "open_contract_unknown_id",
+      "nestedKeys": [],
+      "normalizedOk": false,
+      "op": "proposal_open_contract",
+      "outcome": "VENUE_REPLY",
+      "reconnectsSoFar": 0,
+      "replyKeys": [
+        "echo_req",
+        "msg_type",
+        "proposal_open_contract",
+        "req_id"
+      ],
+      "startedAtMs": 1787732647721,
+      "transportStateAfter": "WS_READY",
+      "transportStateBefore": "WS_READY",
+      "unreadableReason": "open contract carried no id",
+      "wireWritten": true
+    }
+  ],
+  "questions": [
+    {
+      "answer": "NOT ANSWERABLE READ-ONLY: a sell receipt exists only as the reply to a sell request, which requires an open contract, which requires a buy.",
+      "answered": false,
+      "id": "Q1",
+      "question": "What exact key/shape does a genuine Deriv sell receipt arrive under?"
+    },
+    {
+      "answer": "NOT SETTLEABLE BY OBSERVATION: observing N sells that carry a receipt cannot prove the venue never omits one. The schema already marks the receipt optional, and ARX already fails safe when it is absent.",
+      "answered": false,
+      "id": "Q2",
+      "question": "Can Deriv produce a successful sell with no usable receipt?"
+    },
+    {
+      "answer": "PARTIAL: the proposal shape a buy prices against is captured, but the venue's behaviour when price moves between proposal and buy requires sending a buy.",
+      "answered": false,
+      "id": "Q3",
+      "question": "What does genuine requote behaviour look like on the wire?"
+    },
+    {
+      "answer": "Captured 5 genuine venue rejection(s): InputValidationFailed, OfferingsInvalidSymbol, UnrecognisedRequest. Buy/sell-specific codes still require an order.",
+      "answered": true,
+      "id": "Q4",
+      "question": "What genuine rejection codes/shapes are returned during execution failures?"
+    }
+  ],
+  "tier": "READ_ONLY"
+}

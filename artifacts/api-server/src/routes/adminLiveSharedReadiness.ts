@@ -37,6 +37,10 @@ import {
   LIVE_HEARTBEAT_MAX_AGE_SEC,
 } from "@workspace/domain/safety-contracts/livePhaseBDispatchGate";
 import { liveBrokerExecutionEnabled, resolveLiveBrokerExecutionEnabled } from "../lib/live/phaseBConfig.js";
+import {
+  killSwitchReleaseViolations,
+  postureFromSettingsRow,
+} from "../lib/phase6/killSwitchReleasePolicy.js";
 import { loadAndEvaluateMasterLiveBridgeGate } from "../lib/mt5/masterLiveBridgeGate.js";
 import {
   detectCurrentConnectedBridge,
@@ -753,6 +757,76 @@ router.post("/admin/live-shared/kill-switch", async (req, res) => {
     return;
   }
   const reason = typeof body.reason === "string" && body.reason.length > 0 ? body.reason : "ADMIN_INITIATED";
+
+  // ── RELEASE — the cold-platform doorway ─────────────────────────────────
+  // The activate-step ceremony (full MT5 shared-live posture) remains the
+  // ONLY hot release path. This branch permits release exclusively while the
+  // platform is provably cold — see killSwitchReleasePolicy.ts for why a
+  // cold release cannot enable live execution by itself.
+  if (body.action === "RELEASE") {
+    const envEnabled = liveBrokerExecutionEnabled();
+    const outcome = await db.transaction(async (tx) => {
+      // The settings table is a by-convention singleton with no unique
+      // constraint; serialize with any concurrent bootstrap so two callers
+      // cannot create two rows. Namespace 0x41525807 = "ARX" + 07 (phase 6
+      // uses 0x41525806 for guided dispatch; this is the settings singleton).
+      await tx.execute(sql`select pg_advisory_xact_lock(${0x4152_5807}, ${1})`);
+      let row = (await tx.select().from(globalTradingSettingsTable).limit(1))[0];
+      if (!row) {
+        // Create the fail-closed default row (kill switch ENGAGED) so the
+        // release below is an explicit, audited transition — the row is
+        // never BORN released.
+        row = (await tx.insert(globalTradingSettingsTable)
+          .values({ updatedAt: new Date() }).returning())[0]!;
+      }
+      const posture = postureFromSettingsRow(row, envEnabled);
+      const violations = killSwitchReleaseViolations(posture);
+      if (violations.length > 0) {
+        return { released: false as const, violations };
+      }
+      await tx
+        .update(globalTradingSettingsTable)
+        .set({
+          emergencyKillSwitch: false,
+          killSwitchEngagedAt: null,
+          killSwitchReason: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(globalTradingSettingsTable.id, row.id));
+      await writeAuditOn(tx, {
+        adminId: admin.id,
+        adminRole: admin.role,
+        action: "ADMIN_RELEASED_LIVE_SHARED_KILL_SWITCH",
+        before: {
+          emergencyKillSwitch: row.emergencyKillSwitch,
+          killSwitchEngagedAt: row.killSwitchEngagedAt,
+          killSwitchReason: row.killSwitchReason,
+          posture,
+        },
+        after: {
+          emergencyKillSwitch: false,
+          releaseReason: reason,
+          coldPostureVerified: true,
+        },
+      });
+      return { released: true as const, violations: [] as string[] };
+    });
+    if (!outcome.released) {
+      res.status(409).json({
+        ok: false,
+        error: "COLD_POSTURE_REQUIRED_FOR_RELEASE",
+        violations: outcome.violations,
+        detail:
+          "The kill switch may be released outside the activate-step ceremony only while every " +
+          "live control is off. Releasing while any listed control is hot requires the full " +
+          "shared-live activation flow (POST /api/admin/live-shared/activate-step).",
+      });
+      return;
+    }
+    res.json({ ok: true, killSwitchEngaged: false, reason });
+    return;
+  }
+
   const settingsRow = (await db.select().from(globalTradingSettingsTable).limit(1))[0];
   if (!settingsRow) {
     res.status(500).json({ ok: false, error: "SETTINGS_ROW_MISSING" });

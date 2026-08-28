@@ -145,7 +145,6 @@ packages = ["zip"]
 # (public in git history) and requires rotation. Endpoint fails closed when
 # unset (503 Override endpoint disabled).
 ARX_BETA_INVITE_REQUIRED = "true"
-ARX_LIVE_BROKER_EXECUTION_ENABLED = "true"
 ARX_LEGACY_OWNER_DEMOTE_EMAIL = "andraie.co@gmail.com"
 ECONOMIC_CALENDAR_PROVIDER = "fred"
 CLAUDE_FIX_AGENT_ENABLED = "true"
