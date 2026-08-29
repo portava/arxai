@@ -1,0 +1,17 @@
+{
+  "name": "@workspace/accounting",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {},
+  "dependencies": {
+    "@workspace/domain": "workspace:*",
+    "@workspace/money": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:"
+  }
+}

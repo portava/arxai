@@ -15,6 +15,7 @@ import { startHeatSnapshotRetentionWorker } from "./lib/timing/heatSnapshotReten
 import { startExpiredKeySweepWorker } from "./lib/registrationKeys/expiredKeySweepWorker";
 import { startExpiringKeysDigestWorker } from "./lib/registrationKeys/expiringKeysDigestWorker";
 import { startMissionDriverWorker } from "./lib/missionDriver.js";
+import { startEconomicReconciliationWorker } from "./lib/accounting/economicReconciliationWorker.js";
 import { computeEnvChecklist, summarizeEnvChecklist } from "./lib/startup/envChecklist";
 import { runStartupReadinessCheck } from "./lib/startup/readinessCheck";
 import { seedCoreAgents } from "./lib/agentEcosystem/seedCoreAgents";
@@ -196,6 +197,14 @@ ensureSafetyCoreInitialized()
       // act time; a driver crash fails safe (mission skipped, positions
       // untouched). Opt-out via ARX_MISSION_DRIVER_ENABLED (logged loudly).
       startMissionDriverWorker();
+      // Economic truth spine (#29/#30/#31) — daily broker-statement
+      // reconciliation: posting-ledger BROKER_CASH vs the broker's reported
+      // balance, verdicts decided by the pure comparison + truth-hierarchy
+      // contract, journaled append-only. SURFACING ONLY — a discrepancy is
+      // audited CRITICAL and never auto-adjusted; a crash pauses the worker
+      // and nothing else. Opt-out via ARX_ECONOMIC_RECONCILIATION_ENABLED
+      // (logged loudly).
+      startEconomicReconciliationWorker();
       // Eagerly bootstrap the Deriv WebSocket so synthetic-index candles
       // (V10/V25/V50/V75/V100, 1Hz variants, Boom/Crash, Step) are ready
       // before the first scanner pass. Non-blocking; lazy ensureConnection
