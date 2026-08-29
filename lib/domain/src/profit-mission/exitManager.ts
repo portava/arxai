@@ -54,7 +54,24 @@ export interface ExitManagerInput {
   partialTaken?: number | null;
   /** Has the stop already been moved to (or beyond) break-even? */
   breakevenDone?: boolean;
-  // ── Honest live signals (default to the SAFE "no anomaly" value) ──
+  /**
+   * Signal keys the caller ATTEMPTED to observe and could not (source down,
+   * no broker reference, insufficient history…). An absent signal below is
+   * ambiguous on its own — it could mean "read, nothing seen" or "never
+   * read" — so a caller that knows the difference states it here. Every name
+   * listed is surfaced as a warning on the returned decision, so a partially
+   * blind evaluation says so instead of reading as an all-clear.
+   *
+   * It changes NO verdict: an unobserved trigger still cannot fire (this
+   * engine can only ever protect or reduce, never open or loosen), it is only
+   * declared. Absent = the caller made no claim about its own blindness.
+   */
+  unobservedSignals?: readonly string[];
+  // ── Honest live signals (absent = NOT OBSERVED, false = observed and calm) ──
+  // NOTE: this engine cannot act on a trigger it was never given, so an absent
+  // signal behaves as "does not fire". That is a limit of the evaluation, not
+  // evidence of calm — declare it via `unobservedSignals` so the decision
+  // carries the blindness instead of implying an all-clear.
   invalidation?: boolean;
   agentDisagreement?: boolean;
   orderFlowReversal?: boolean;
@@ -112,10 +129,20 @@ function favourable(side: "BUY" | "SELL", entry: number, price: number): number 
  */
 export function decideExit(input: ExitManagerInput): ExitDecision {
   const warnings: string[] = [];
+  // Declared blindness comes FIRST so it rides every branch below, including
+  // the price-unknown refusal. An unobserved trigger cannot fire; saying so is
+  // the difference between "nothing was wrong" and "we could not look".
+  const unobserved = (input.unobservedSignals ?? []).filter((s) => typeof s === "string" && s !== "");
+  if (unobserved.length > 0) {
+    warnings.push(
+      `Not observed on this evaluation: ${unobserved.join(", ")} — these triggers could not fire and their silence is not an all-clear.`,
+    );
+  }
   const scalp = input.isScalp === true;
 
   if (!isNum(input.entryPrice) || !isNum(input.currentPrice)) {
     return none("Exit unknown — entry/current price not observed.", [
+      ...warnings,
       "Price inputs missing; no exit action inferred.",
     ]);
   }

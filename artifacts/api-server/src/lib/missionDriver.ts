@@ -66,6 +66,12 @@ import {
   refreshMissionProtection,
 } from "./missionExitManager.js";
 import { refreshMissionRisk, type MissionLiveSignals } from "./missionRiskService.js";
+import {
+  assembleMissionExitSignals,
+  type AssembledMissionExitSignals,
+  type MissionExitSignalKey,
+  type MissionExitSignalResolver,
+} from "./missionExitSignals.js";
 import { resolveMissionPromotionStatus } from "./missionPromotionService.js";
 import { applyMissionTransition } from "./profitMissionJournal.js";
 import type { Phase7Evaluator } from "./missionExecutionQuality.js";
@@ -101,6 +107,19 @@ const DRIVER_SIGNALS: MissionLiveSignals = {
   quoteFresh: true,
 };
 
+/** Every exit signal the assembler can observe — used to report TOTAL blindness
+ *  honestly when the assembly itself fails, instead of an empty bundle that
+ *  would read downstream as "nothing observed and nothing wrong". */
+const ALL_EXIT_SIGNAL_KEYS: readonly MissionExitSignalKey[] = [
+  "invalidation",
+  "structureBreak",
+  "orderFlowReversal",
+  "highImpactNewsImminent",
+  "unstableSpread",
+  "agentDisagreement",
+  "atr",
+];
+
 export interface MissionDriverPassOpts {
   /** Injectable seams — tests only; production always uses the real services. */
   executor?: MissionExecutor;
@@ -115,6 +134,13 @@ export interface MissionDriverPassOpts {
   nowMs?: number;
   /** Restrict the pass to one mission (tests / targeted re-runs). */
   onlyMissionId?: number;
+  /** Injectable exit-signal assembler (tests only; production reads the real
+   *  news / quote / candle / agent-stance sources). */
+  exitSignals?: MissionExitSignalResolver;
+  /** Injectable exit-management seam (tests only). */
+  exitManager?: typeof manageMissionTradeExit;
+  /** Injectable open-draft read (tests only). */
+  loadOpenExitDrafts?: (mission: MissionRow) => Promise<OpenExitDraft[]>;
 }
 
 export interface MissionTickOutcome {
@@ -218,15 +244,25 @@ async function resolveAutoInputs(mission: MissionRow): Promise<AutoApprovalInput
   };
 }
 
-/** Manage protective exits for this mission's executed, still-open drafts. */
-async function manageOpenExits(
-  mission: MissionRow,
-  opts: MissionDriverPassOpts,
-): Promise<number> {
-  // Positions only exist for a live-mode mission; paper/demo record no fills.
-  if (mission.executionMode !== "live") return 0;
-  const openDrafts = await db
-    .select({ draftId: missionTradeDraftsTable.draftId })
+/** One executed-open draft the driver may manage exits for. */
+interface OpenExitDraft {
+  draftId: string;
+  symbol: string;
+  timeframe: string;
+  direction: string;
+  stopLoss: number | null;
+}
+
+/** The default open-draft read (per-user + per-mission scoped). */
+async function loadOpenExitDrafts(mission: MissionRow): Promise<OpenExitDraft[]> {
+  const rows = await db
+    .select({
+      draftId: missionTradeDraftsTable.draftId,
+      symbol: missionTradeDraftsTable.symbol,
+      timeframe: missionTradeDraftsTable.timeframe,
+      direction: missionTradeDraftsTable.direction,
+      stopLoss: missionTradeDraftsTable.stopLoss,
+    })
     .from(missionTradeDraftsTable)
     .where(
       and(
@@ -237,16 +273,88 @@ async function manageOpenExits(
       ),
     )
     .limit(MAX_EXIT_MANAGED_DRAFTS_PER_TICK);
+  return rows.map((r) => ({
+    draftId: r.draftId,
+    symbol: r.symbol,
+    timeframe: r.timeframe,
+    direction: String(r.direction ?? "NONE"),
+    stopLoss: typeof r.stopLoss === "number" && Number.isFinite(r.stopLoss) ? r.stopLoss : null,
+  }));
+}
+
+/**
+ * Manage protective exits for this mission's executed, still-open drafts.
+ *
+ * SIGNALS: an unattended tick reads the REAL exit signals for each position's
+ * own symbol (news risk, live spread vs broker truth, chart structure, order
+ * flow, the mission's own agent stances) via `assembleMissionExitSignals`. It
+ * used to pass `{}`, which left invalidation / structure-break / order-flow /
+ * news / spread undefined on every unattended tick — the automated exit
+ * manager could only ever see price-based triggers. Anything the assembler
+ * cannot read stays ABSENT and is reported as an explicit unavailability, so
+ * the exit decision records that it was blind on that axis instead of behaving
+ * as though the axis were calm. A signal read that fails outright never blocks
+ * exit management: the tick proceeds with whatever was honestly observed, plus
+ * the unavailability record.
+ *
+ * The invalidation reference is the mission's own planned protective level
+ * (the draft's recorded stopLoss) — the thesis level the setup was taken on —
+ * not a later trailed stop, which is protection rather than invalidation.
+ */
+export async function manageOpenExits(
+  mission: MissionRow,
+  opts: MissionDriverPassOpts,
+): Promise<number> {
+  // Positions only exist for a live-mode mission; paper/demo record no fills.
+  if (mission.executionMode !== "live") return 0;
+  const loadDrafts = opts.loadOpenExitDrafts ?? loadOpenExitDrafts;
+  const exitManager = opts.exitManager ?? manageMissionTradeExit;
+  const resolveSignals = opts.exitSignals ?? ((ctx) => assembleMissionExitSignals(ctx));
+  const nowMs = opts.nowMs ?? Date.now();
+  const openDrafts = await loadDrafts(mission);
   let managed = 0;
   for (const d of openDrafts) {
     try {
-      const r = await manageMissionTradeExit(
+      const side: "BUY" | "SELL" = d.direction === "SELL" ? "SELL" : "BUY";
+      // Honest read; a total failure degrades to "observed nothing, and said so"
+      // — never to a fabricated all-clear.
+      let assembled: AssembledMissionExitSignals;
+      try {
+        assembled = await resolveSignals({
+          userId: mission.userId,
+          missionId: mission.id,
+          symbol: d.symbol,
+          side,
+          timeframe: d.timeframe,
+          stopLoss: d.stopLoss,
+          nowMs,
+        });
+      } catch (err) {
+        logger.warn(
+          { err: err instanceof Error ? err.message : String(err), missionId: mission.id, draftId: d.draftId },
+          "mission_driver exit-signal assembly failed (all signals reported unavailable)",
+        );
+        assembled = {
+          signals: {},
+          unavailable: ALL_EXIT_SIGNAL_KEYS.map((signal) => ({
+            signal,
+            source: "mission_exit_signals",
+            reason: "SIGNAL_ASSEMBLY_FAILED",
+          })),
+          observedAtMs: nowMs,
+        };
+      }
+      const r = await exitManager(
         {
           userId: mission.userId,
           missionId: mission.id,
           draftId: d.draftId,
-          signals: {},
-          nowMs: opts.nowMs,
+          signals: { ...assembled.signals, unavailable: assembled.unavailable },
+          nowMs,
+          // AUTONOMY PROVENANCE — this exit is the driver's own unattended
+          // action, so the resulting CLOSE / MODIFY command is stamped SYSTEM
+          // rather than recorded as a command the owner pressed.
+          driverOriginated: true,
         },
         { executor: opts.executor },
       );
@@ -368,6 +476,15 @@ async function tickMission(
             proposalId,
             signals: opts.signals ?? DRIVER_SIGNALS,
             nowMs,
+            // AUTONOMY PROVENANCE — this dispatch is reached on an unattended
+            // tick with no human press anywhere in the chain, so the live
+            // command is stamped SYSTEM and foundation gates #20 (owner-promoted
+            // edge) and #23 (recorded edge capacity) BIND on it. This TIGHTENS
+            // live dispatch on purpose: an unattended entry now refuses without
+            // a promoted edge + a capacity estimate, and the refusal is
+            // journaled with AUTONOMOUS_ENTRY_REFUSAL_NOTE so the owner can see
+            // why. A trade the owner presses themself is unaffected.
+            driverOriginated: true,
           },
           {
             executor: opts.executor,

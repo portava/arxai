@@ -117,6 +117,10 @@ import {
 import { buildFoundationGateInputs } from "./foundationGateInputs.js";
 import { upsertAlertOnce } from "../../routes/meAlerts.js";
 import { type CommandActorType } from "@workspace/domain/security";
+import {
+  classifyDraftActorType,
+  type LiveAutonomousOrigin,
+} from "@workspace/domain/safety-contracts/autonomyProvenance";
 
 // Gap A — Phase B disclosure gate input loader. Returns true iff the user
 // has ANY append-only row in live_risk_disclosure_acceptances. Default-deny.
@@ -1047,6 +1051,17 @@ export interface LiveDraftInput {
   edgeId?: number | null;
   /** Mission attribution for the provenance envelope (additive, optional). */
   missionId?: number | null;
+  /**
+   * AUTONOMY PROVENANCE (foundation gates #20/#23). Set by a producer that
+   * placed this order with NO human press — today only the unattended mission
+   * driver ("MISSION_DRIVER"). It classifies the command's actor as SYSTEM, so
+   * the autonomy gates that demand a promoted edge + a recorded capacity
+   * estimate BIND on it. Absent (every human press, including a user-pressed
+   * mission trade) keeps the USER actor and the documented human exemption.
+   * Additive + tighten-only: the only classification it can produce is a
+   * STRICTER one. See @workspace/domain/safety-contracts/autonomyProvenance.
+   */
+  autonomousOrigin?: LiveAutonomousOrigin | null;
 }
 
 export interface LiveDraftRefusal {
@@ -1681,6 +1696,17 @@ export async function createLiveOpsDraft(input: {
   // Task #28 — ownership linking for auto-managed ops (e.g. Live Test Cycle
   // auto-close). Optional + nullable.
   cycleId?: string | null;
+  // AUTONOMY PROVENANCE (review fix) — stamped by a producer that routes this
+  // CLOSE / MODIFY with NO human press (today: the unattended mission driver's
+  // protective exit). It classifies the command's actor as SYSTEM instead of
+  // USER. This changes NO gate — #20/#23 exempt close/modify by design — but it
+  // stops an unattended exit being RECORDED as the owner's own command, which
+  // is both an audit lie and, at the management-authority arbiter, a claim that
+  // would contend with a genuine owner command at equal rank instead of losing
+  // to it (claimSourceFromActorType: USER → USER_COMMAND, SYSTEM →
+  // AUTOMATED_STRATEGY, and HUMAN_DOMINANCE ranks the human above automation).
+  // Absent for every human press — unchanged.
+  autonomousOrigin?: LiveAutonomousOrigin | null;
   // Task #743 Cluster D — narrow, admin-emergency-close-only kill-switch bypass.
   // When present AND commandType is CLOSE_LIVE_POSITION, the per-user kill switch
   // does NOT block this reduce-risk close. It is funnelled through the SAME
@@ -1732,7 +1758,13 @@ export async function createLiveOpsDraft(input: {
     };
   }
   // AACI Security Phase 3 — stamp the integrity envelope on the ops command too
-  // (close/modify are sensitive live commands). Actor = the per-user owner.
+  // (close/modify are sensitive live commands). Actor = the per-user owner for a
+  // human press; the SAME shared classifier as the entry path stamps SYSTEM when
+  // the producer declared an unattended origin, so an unattended protective exit
+  // is never recorded as a command the owner pressed.
+  const opsActorType: CommandActorType = classifyDraftActorType({
+    autonomousOrigin: input.autonomousOrigin,
+  });
   const opsIntegrity: CommandIntegrityFields = buildCommandIntegrityFields({
     commandId,
     userId: input.userId,
@@ -1745,7 +1777,7 @@ export async function createLiveOpsDraft(input: {
     takeProfit: input.newTakeProfit ?? null,
     payload: opsPayload,
     actorId: input.userId,
-    actorType: "USER",
+    actorType: opsActorType,
   });
   const [row] = await db.insert(arxLiveCommandsTable).values({
     commandId,
@@ -1888,7 +1920,14 @@ export async function createLiveDraft(
   // provenance is never fabricated).
   const isEntryDraft = input.commandType === "PLACE_LIVE_MARKET_ORDER"
     || input.commandType === "PLACE_LIVE_PENDING_ORDER";
-  const draftOriginActorType = input.selfTradeAgentId != null ? "SELF_TRADE_AGENT" as const : "USER" as const;
+  // AUTONOMY PROVENANCE — an order placed with no human press (the unattended
+  // mission driver) is classified SYSTEM, not USER, so foundation gates #20/#23
+  // bind it. Same classifier feeds the integrity envelope's actorType below, so
+  // the envelope and the row can never disagree about who placed the order.
+  const draftOriginActorType = classifyDraftActorType({
+    selfTradeAgentId: input.selfTradeAgentId,
+    autonomousOrigin: input.autonomousOrigin,
+  });
   let provenanceEnvelope: CommandProvenanceEnvelope | null =
     input.provenance != null ? parseCommandProvenanceEnvelope(input.provenance) : null;
   if (provenanceEnvelope == null && isEntryDraft) {
@@ -1968,7 +2007,10 @@ export async function createLiveDraft(
   // HMAC signature) in the SAME insert. Advisory-additive: re-verified before
   // the 16-gate at dispatch. Actor = the per-user owner; SELF_TRADE_AGENT when
   // an agent originated the draft.
-  const draftActorType: CommandActorType = input.selfTradeAgentId != null ? "SELF_TRADE_AGENT" : "USER";
+  // Same classifier as the provenance envelope above: SELF_TRADE_AGENT for an
+  // agent draft, SYSTEM for an unattended (driver-placed) one, USER for a human
+  // press. This is the value foundation gates #20/#23 read at dispatch.
+  const draftActorType: CommandActorType = draftOriginActorType;
   const integrity: CommandIntegrityFields = buildCommandIntegrityFields({
     commandId,
     userId: input.userId,
@@ -3875,7 +3917,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
     // Tamper-evident mirror — best-effort, never throws (cannot affect dispatch).
     await mirrorCriticalEvent({
       eventType: "LIVE_TRADE_COMMAND", severity: "CRITICAL", status: "ATTEMPTED",
-      actorUserId: args.userId, actorType: "USER",
+      // Honest attribution (review fix): the mirror repeats the actor the
+      // command row itself carries — a driver-placed order is mirrored SYSTEM,
+      // not USER. An absent actor stays null (unknown), never a guessed human.
+      actorUserId: args.userId, actorType: row.actorType ?? null,
       affectedObject: `arx_live_commands:${args.commandId}`,
       message: `Live trade command dispatched: ${row.commandType} ${row.symbol} ${row.side}`,
       metadata: { commandId: args.commandId, symbol: row.symbol, side: row.side, commandType: row.commandType, idempotencyKey: idemKey },

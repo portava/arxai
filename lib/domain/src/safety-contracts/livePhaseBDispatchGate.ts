@@ -15,10 +15,14 @@
 // adminAllowNoTakeProfit) + #18 DISCLOSURE_NOT_ACCEPTED + the five
 // FOUNDATION gates: #19 PROVENANCE_UNPROVEN (entry decision-data provenance
 // must be present, tradeable-origin, fresh, and integrity-covered), #20
-// STRATEGY_NOT_LIVE_PROMOTED (entries whose recorded actorType is
-// SELF_TRADE_AGENT or SYSTEM require an owner-pressed LIVE_CANDIDATE
-// production_edges row — see the ACTOR COVERAGE note below for what that does
-// and does not bind today), #21 CAPITAL_TIER_EXCEEDED (per-user
+// STRATEGY_NOT_LIVE_PROMOTED (autonomous entries require an owner-pressed
+// LIVE_CANDIDATE production_edges row; "autonomous" means the command's
+// actor_type is SELF_TRADE_AGENT or SYSTEM — an order placed with NO human
+// press, which includes an order placed by the unattended mission driver on
+// its own tick. A mission trade the owner PRESSES is a USER actor and keeps
+// the human exemption. Origin is classified by
+// ./autonomyProvenance.ts at draft time and is tighten-only: it can move a
+// command from USER to SYSTEM, never the reverse), #21 CAPITAL_TIER_EXCEEDED (per-user
 // capital-tier caps; tighten-only vs existing caps), #22
 // TENANT_CONTEXT_VIOLATION (every tenant-scoped fact must be stamped as read
 // for the command's OWNER; proven cross-tenant leakage refuses every command
@@ -45,16 +49,16 @@
 //        `arx_live_commands.actorType` is SELF_TRADE_AGENT or SYSTEM
 //        (`edgePromotionRequiredForActor` in
 //        `artifacts/api-server/src/lib/live/foundationGateInputs.ts`).
-//        actorType is stamped at draft insert as SELF_TRADE_AGENT only when a
-//        `selfTradeAgentId` is present, and USER otherwise.
-//        *** KNOWN GAP: orders originated by the Profit-Mission driver
-//        (`missionDriver` → `dispatchApprovedDraft` → `executeInstant`, source
-//        "mission") carry NO selfTradeAgentId, so they are stamped USER and #20
-//        records "Not required: human-originated command" and PASSES. A
-//        machine-originated mission entry is therefore NOT bound by edge
-//        promotion today. This is a real coverage hole in the gate, not in this
-//        comment; a sibling branch is fixing the binding. Until that lands, do
-//        not cite #20 as covering "all autonomous entries". ***
+//        actorType is stamped at draft insert from the command's classified
+//        ORIGIN (`./autonomyProvenance.ts`), not merely from the presence of a
+//        `selfTradeAgentId`: an entry placed by the unattended Profit-Mission
+//        driver on its own tick is stamped SYSTEM and IS bound by #20, while a
+//        mission trade the owner presses stays a USER actor. The classifier is
+//        tighten-only (USER → SYSTEM, never the reverse) and fails CLOSED on an
+//        unrecognised origin literal. Consequence to know: a driver-placed live
+//        ENTRY refuses until an edge is owner-promoted and its capacity
+//        recorded — that refusal is the gate working, and it is journaled with
+//        AUTONOMOUS_ENTRY_REFUSAL_NOTE so the reason is legible.
 //   #21 CAPITAL_TIER_EXCEEDED  — binds EVERY live entry regardless of actor.
 //                                Close/modify are exempt.
 //   #22 TENANT_CONTEXT_VIOLATION — its PROVEN-violation branches bind EVERY

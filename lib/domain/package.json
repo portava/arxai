@@ -117,6 +117,7 @@
     "./safety-contracts/liveDispatchGate": "./src/safety-contracts/liveDispatchGate.ts",
     "./safety-contracts/livePhaseBDispatchGate": "./src/safety-contracts/livePhaseBDispatchGate.ts",
     "./safety-contracts/foundationGates": "./src/safety-contracts/foundationGates.ts",
+    "./safety-contracts/autonomyProvenance": "./src/safety-contracts/autonomyProvenance.ts",
     "./safety-contracts/isLiveBrokerExecutionEnabled": "./src/safety-contracts/isLiveBrokerExecutionEnabled.ts",
     "./safety-contracts/preTradeBrokerGuard": "./src/safety-contracts/preTradeBrokerGuard.ts",
     "./safety-contracts/syntheticLiveFloor": "./src/safety-contracts/syntheticLiveFloor.ts",
