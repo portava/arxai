@@ -451,3 +451,25 @@ Article IV: authority "expires unless the evidence remains current."
 - Any change to `lib/domain/src/safety-contracts/**`,
   `lib/live/liveCommandPipeline.ts`, or `lib/phase6/**` invalidates the
   corresponding rows until the suites and guards are re-run.
+
+### Coded review periods (#56, governance-closure build)
+
+The expiry rule above is now CODED, not just written:
+`lib/domain/src/safety-contracts/certificationExpiry.ts` carries a register of
+broker / model / recovery certifications with `certifiedAtIso` + a 90-day
+review period, and three enforcement seams consult it at act time:
+
+- **BROKER** — `dispatchGuidedTicket` refuses a venue-permitting (TIER_1/2)
+  dispatch with `BROKER_CERTIFICATION_LAPSED` while any broker certification
+  is past review. TIER_0 dry-run keeps working (it is the reduction floor and
+  what the recertification harness itself needs).
+- **MODEL** — `evaluatePromotion` refuses every promotion rung while a model
+  certification is lapsed (earned rungs are kept; nothing new climbs).
+- **RECOVERY** — the kill-switch cold-posture release adds a violation while a
+  recovery certification is lapsed (the switch stays engaged).
+
+Lapse can only REDUCE authority. Recertification = re-run the evidence named
+in the register's `evidenceRef`, update `certifiedAtIso` in a reviewed change,
+and record the run in this file. Drill fixtures:
+`artifacts/api-server/src/lib/phase6/__qa__/certificationExpiry.test.ts`
+(`test:certification-expiry`).
