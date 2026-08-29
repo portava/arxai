@@ -205,6 +205,7 @@ import type {
   ClearAlertsResult,
   ClosePaperOrder200,
   ClosePositionBody,
+  ClosePositionResult,
   CoachExplanation,
   CockpitActionResp,
   CockpitAuditLogResp,
@@ -23032,8 +23033,8 @@ export const closePosition = async (
   id: number,
   closePositionBody: ClosePositionBody,
   options?: RequestInit,
-): Promise<LivePosition> => {
-  return customFetch<LivePosition>(getClosePositionUrl(id), {
+): Promise<ClosePositionResult> => {
+  return customFetch<ClosePositionResult>(getClosePositionUrl(id), {
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...options?.headers },

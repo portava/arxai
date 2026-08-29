@@ -12,7 +12,10 @@ import { RubySetupReason } from "@/components/scanner/RubySetupReason";
 import { ScannerTimingBadges, type ScannerTimingContext } from "@/components/scanner/ScannerTimingBadges";
 import { isGoldMode } from "@workspace/domain/market";
 import { ScannerTradeModal } from "@/components/scanner/ScannerTradeModal";
-import { RecentScannerTrades } from "@/components/scanner/RecentScannerTrades";
+import {
+  RecentScannerTrades,
+  RECENT_SCANNER_TRADES_SECTION_DESCRIPTION,
+} from "@/components/scanner/RecentScannerTrades";
 import { MasterLiveAccessBanner } from "@/components/live/MasterLiveAccessGuard";
 import { SelectedMarketPanel } from "@/components/scanner/SelectedMarketPanel";
 import { ScannerDataHealthPanel } from "@/components/scanner/ScannerDataHealthPanel";
@@ -136,6 +139,12 @@ const COHESION_MAX_SYMBOLS = 12;
 // client-supplied role header is sent — role is resolved server-side from the
 // session cookie; a spoofed role header is dead, misleading code on a
 // user-facing page (rejected in production, superseded by the real session).
+// Mirror of liveIntent.ts TESTER_CAPS. The endpoint hard-rejects anything
+// above these, so the UI submits exactly them and says so rather than
+// pretending the capture carries the user's own sizing.
+const TESTER_INTENT_LOT = 0.01;
+const TESTER_INTENT_MAX_LOSS_USD = 5;
+
 async function api(path: string, init?: RequestInit) {
   const r = await fetch(path, {
     headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
@@ -230,6 +239,13 @@ export default function MarketScanner() {
   const [opps, setOpps] = useState<Opp[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  // Non-error outcome banner (currently the operator-review capture result).
+  // Rendered through CompactAlert like every other message on this page — a
+  // native alert() with a raw UPPER_SNAKE enum in it violated the page's own
+  // rule that raw enums never reach users (see BADGE_LABELS above).
+  const [notice, setNotice] = useState<
+    { tone: "info" | "warning"; title: string; description: string } | null
+  >(null);
   // Scan-button cooldown (Task #565). After a successful scan we proactively
   // disable the button for the per-user cooldown window and show a live
   // countdown, so a too-fast retry is prevented up front rather than only
@@ -503,18 +519,39 @@ export default function MarketScanner() {
     }
   }
 
-  async function sendToIntent(o: Opp) {
-    await api("/api/live-intent/submit", {
-      method: "POST",
-      body: JSON.stringify({
-        source: "AI_ASSIST", symbol: o.symbol,
-        direction: o.recommendedAction === "SELL" ? "SELL" : "BUY",
-        lotSize: 0.01, stopLoss: o.stopLoss, takeProfit: o.takeProfit,
-        maxLossUsd: 5, confidenceScore: o.confidenceScore,
-        reasonForTrade: o.reasonForTrade,
-      }),
-    });
-    alert(`Live intent captured for ${o.symbol} (PENDING_MT5_CONNECTION).`);
+  // POST /api/live-intent/submit is a TESTER CAPTURE, not an order. It writes a
+  // live_intents row and a vault event with brokerOrderPlaced:false and never
+  // reaches a broker; the only surface that reads the queue (/live-intent-queue)
+  // is admin-only. So the control is admin-only too, is labelled for what it
+  // does, states the fixed tester caps it submits under (liveIntent.ts
+  // TESTER_CAPS: 0.01 lots / $5 max loss — the server rejects anything larger),
+  // reports the server's own sentence instead of a raw enum in a native alert,
+  // and can no longer throw an unhandled rejection on a 400/403/500.
+  async function captureForOperatorReview(o: Opp) {
+    setErr("");
+    setNotice(null);
+    try {
+      const r = await api("/api/live-intent/submit", {
+        method: "POST",
+        body: JSON.stringify({
+          source: "AI_ASSIST", symbol: o.symbol,
+          direction: o.recommendedAction === "SELL" ? "SELL" : "BUY",
+          lotSize: TESTER_INTENT_LOT, stopLoss: o.stopLoss, takeProfit: o.takeProfit,
+          maxLossUsd: TESTER_INTENT_MAX_LOSS_USD, confidenceScore: o.confidenceScore,
+          reasonForTrade: o.reasonForTrade,
+        }),
+      }) as { reason?: unknown; riskCheckPassed?: unknown } | null;
+      const serverReason = typeof r?.reason === "string" ? r.reason : null;
+      setNotice({
+        tone: r?.riskCheckPassed === false ? "warning" : "info",
+        title: `${o.symbol} captured for operator review — no order was placed`,
+        description:
+          serverReason ??
+          "The capture was recorded. No broker order was placed.",
+      });
+    } catch (e) {
+      reportErr(e);
+    }
   }
 
   const activeUniverse = universes.find((u) => u.id === universe);
@@ -771,9 +808,18 @@ export default function MarketScanner() {
                       <Link href={`/trade-grader?symbol=${o.symbol}`}><Button size="sm" variant="ghost" className="h-6 px-2 text-xs">Grade</Button></Link>
                       <Link href={`/market-replay?symbol=${o.symbol}`}><Button size="sm" variant="ghost" className="h-6 px-2 text-xs">Replay</Button></Link>
                       <Link href="/testing-lab"><Button size="sm" variant="ghost" className="h-6 px-2 text-xs">Backtest</Button></Link>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 px-2 text-xs ml-auto"
+                        title={`Files a tester-capture row for operator review at the fixed tester caps (${TESTER_INTENT_LOT} lots, $${TESTER_INTENT_MAX_LOSS_USD} max loss). No order is placed.`}
+                        onClick={() => void captureForOperatorReview(o)}
+                        data-testid={`scanner-capture-review-${o.symbol}`}
+                      >
+                        <Send className="h-3 w-3 mr-1" />Capture for operator review
+                      </Button>
                     </>
                   )}
-                  <Button size="sm" variant="ghost" className="h-6 px-2 text-xs ml-auto" onClick={() => sendToIntent(o)}><Send className="h-3 w-3 mr-1" />Live Intent</Button>
                 </div>
               </CardContent>
             </Card>
@@ -898,9 +944,22 @@ export default function MarketScanner() {
         />
       )}
 
+      {notice && (
+        <CompactAlert
+          tone={notice.tone}
+          title={notice.title}
+          description={notice.description}
+          testId="scanner-capture-notice"
+        />
+      )}
+
+      {/* The description belongs to the panel, not to this page: CollapsibleSection
+          renders it unconditionally right above <RecentScannerTrades/>, so an
+          inline string here can (and did) contradict the panel one line below it.
+          Import the constant — never re-type the sentence. */}
       <CollapsibleSection
         title="Recent scanner trades"
-        description="Scanner-generated trades will appear here once orders are placed."
+        description={RECENT_SCANNER_TRADES_SECTION_DESCRIPTION}
         storageKey="scanner.recentTrades"
         testId="scanner-recent-trades"
         defaultOpen

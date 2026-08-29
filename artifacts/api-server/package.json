@@ -262,6 +262,8 @@
     "test:daily-loss-limit-basis": "node --import tsx --test --test-force-exit src/lib/riskGovernor/__qa__/dailyLossLimitBasis.test.ts",
     "test:sibling-surface-isolation": "node --import tsx --test --test-force-exit src/routes/__qa__/siblingSurfaceIsolation.test.ts",
     "test:adversarial-isolation": "node --import tsx --test --test-force-exit src/routes/__qa__/adversarialIsolation.test.ts",
+    "test:live-positions-isolation": "node --import tsx --test --test-force-exit src/routes/__qa__/livePositionsIsolation.test.ts",
+    "test:trade-management-isolation": "node --import tsx --test --test-force-exit src/routes/__qa__/tradeManagementIsolation.test.ts",
     "test:netting-authority": "node --import tsx --test --test-force-exit src/lib/live/__qa__/nettingAuthority.test.ts",
     "test:org-hierarchy": "node --import tsx --test --test-force-exit src/lib/institutional/__qa__/orgHierarchy.test.ts",
     "test:lifecycle-roles": "node --import tsx --test --test-force-exit src/lib/security/__qa__/lifecycleRoles.test.ts",

@@ -9834,6 +9834,7 @@ export interface PartialCloseInput {
 
 export interface TradeActionResult {
   success: boolean;
+  simulated?: boolean;
   message: string;
   trade?: Trade;
 }
@@ -11938,6 +11939,11 @@ export interface LivePosition {
   /** @nullable */
   lastSyncedAtIso?: string | null;
 }
+
+export type ClosePositionResult = LivePosition & {
+  /** @nullable */
+  tradeRecordUpdated?: boolean | null;
+};
 
 export interface LivePositionList {
   positions: LivePosition[];

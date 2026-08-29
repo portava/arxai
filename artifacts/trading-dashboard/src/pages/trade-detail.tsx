@@ -378,9 +378,24 @@ export default function TradeDetailPage() {
         </CardContent>
       </Card>
 
+      {/* These four buttons write a TIMELINE NOTE and nothing else. The copy
+          used to claim the product could not place orders at all, and that
+          every stop change had to happen in MT5. Both were false on this very
+          page: Review Close above closes the real position through
+          /api/me/trades/close, and Live Shared → SL/TP Manager changes a live
+          position's stop and target. What is true is narrower — this card has
+          no partial-close and no stop-edit control — so it now says exactly
+          that and links to the controls that do act. */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Actions</CardTitle>
+          <CardTitle className="text-base">Journal actions</CardTitle>
+          <p className="text-xs text-txt-secondary">
+            Each button records a note on this trade's timeline for the AI debrief. None of them
+            sends anything to a broker. To act on the position: use <strong>Review Close</strong> at
+            the top of this page, or{" "}
+            <Link href="/live-shared" className="underline">Live Shared → SL/TP Manager</Link> to
+            change its stop or target.
+          </p>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
           <Button size="sm" variant="outline" data-testid="action-set-alert"
@@ -389,14 +404,14 @@ export default function TradeDetailPage() {
             <BellRing className="mr-1 h-3 w-3" /> Set Alert
           </Button>
           <Button size="sm" variant="outline" data-testid="action-move-stop"
-            onClick={() => setConfirm({ kind: "stop_review_opened", title: "Move stop review?",
-              body: "Stop-loss adjustments must be done in MT5 (or your bridge). This records that you reviewed your stop placement so the AI can debrief later." })}>
-            <Shield className="mr-1 h-3 w-3" /> Move Stop Review
+            onClick={() => setConfirm({ kind: "stop_review_opened", title: "Log a stop review?",
+              body: "Records that you reviewed your stop placement, for the AI debrief. It does NOT move your stop — this page has no stop editor. Change a live stop in Live Shared → SL/TP Manager, or in MT5." })}>
+            <Shield className="mr-1 h-3 w-3" /> Log Stop Review
           </Button>
           <Button size="sm" variant="outline" data-testid="action-partial-close"
-            onClick={() => setConfirm({ kind: "partial_close_review_opened", title: "Partial close review?",
-              body: "Partial closes must execute in MT5. This records a partial-close review on the timeline. ARX cannot place orders." })}>
-            <Scissors className="mr-1 h-3 w-3" /> Partial Close Review
+            onClick={() => setConfirm({ kind: "partial_close_review_opened", title: "Log a partial-close review?",
+              body: "Records a partial-close review on the timeline. It does NOT reduce your position — ARX has no partial-close control for this trade. Review Close (top of page) closes the whole position; a partial reduction must be done in MT5." })}>
+            <Scissors className="mr-1 h-3 w-3" /> Log Partial Close Review
           </Button>
           <Button size="sm" variant="outline" data-testid="action-hold-monitor"
             onClick={() => setConfirm({ kind: "hold_decided", title: "Hold and monitor?",
@@ -508,12 +523,12 @@ export default function TradeDetailPage() {
                 </Button>
                 <Button size="sm" variant="outline" data-testid="exit-plan-review-move-stop"
                   onClick={() => setPlanModal({ kind: "move_stop", title: "Review move-stop suggestion?",
-                    body: "Preview only. ARX never moves broker stops — you must apply the change yourself in MT5 or your broker." })}>
+                    body: "Preview only — this records the review and moves nothing. This page has no stop editor; change a live stop in Live Shared → SL/TP Manager, or in MT5." })}>
                   <Shield className="mr-1 h-3 w-3" /> Review Move Stop
                 </Button>
                 <Button size="sm" variant="outline" data-testid="exit-plan-review-partial-close"
                   onClick={() => setPlanModal({ kind: "partial_close", title: "Review partial close?",
-                    body: "Preview only — ARX cannot place orders. You must execute the partial close yourself in MT5 or your broker." })}>
+                    body: "Preview only — this records the review and reduces nothing. ARX has no partial-close control for this trade; execute the partial close in MT5 or your broker. (ARX can close the WHOLE position — use Review Close at the top of this page.)" })}>
                   <Scissors className="mr-1 h-3 w-3" /> Review Partial Close
                 </Button>
                 {planActionMsg && <span className="ml-2 text-xs text-txt-secondary">{planActionMsg}</span>}
@@ -631,7 +646,7 @@ export default function TradeDetailPage() {
                   <Button size="sm" variant="outline" data-testid="decision-review-partial"
                     onClick={() => setPlanModal({ kind: "partial_close",
                       title: "Review partial close?",
-                      body: "Preview only — ARX cannot place orders. You must execute the partial close yourself in MT5 or your broker." })}>
+                      body: "Preview only — this records the review and reduces nothing. ARX has no partial-close control for this trade; execute the partial close in MT5 or your broker. (ARX can close the WHOLE position — use Review Close at the top of this page.)" })}>
                     <Scissors className="mr-1 h-3 w-3" /> Review Partial Close
                   </Button>
                 )}
@@ -639,7 +654,7 @@ export default function TradeDetailPage() {
                   <Button size="sm" variant="outline" data-testid="decision-review-move-stop"
                     onClick={() => setPlanModal({ kind: "move_stop",
                       title: "Review move-stop suggestion?",
-                      body: "Preview only. ARX never moves broker stops — you must apply the change yourself in MT5 or your broker." })}>
+                      body: "Preview only — this records the review and moves nothing. This page has no stop editor; change a live stop in Live Shared → SL/TP Manager, or in MT5." })}>
                     <Shield className="mr-1 h-3 w-3" /> Review Stop
                   </Button>
                 )}

@@ -249,7 +249,8 @@ export function TradePlanBuilderPanel() {
           {active.executionConfirmationId == null
             ? <ConvertToLiveExecutionButton planId={active.id} isReady={active.status === "READY"} />
             : <div className="rounded-md border border-primary/40 bg-primary/40 p-3 text-sm text-primary">
-                Converted to execution confirmation #{active.executionConfirmationId}. Open the Pre-Trade Confirmation flow to review and confirm.
+                Converted to execution confirmation #{active.executionConfirmationId}. It is recorded for
+                review — there is no in-app screen to confirm it yet, and no order has been placed.
               </div>
           }
         </section>

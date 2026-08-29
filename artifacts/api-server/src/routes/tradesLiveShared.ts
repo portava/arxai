@@ -23,7 +23,7 @@
 //   returned to the caller (the EA can still poll + execute).
 
 import { Router, type Request } from "express";
-import { and, eq, desc } from "drizzle-orm";
+import { and, eq, desc, isNull } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
 import {
   db,
@@ -601,7 +601,21 @@ router.post("/trades/live-shared/positions/:ticket/close", requireUser, async (r
       eq(arxLivePositionsTable.brokerTicket, ticket),
     )).limit(1);
   const pos = rows[0];
-  if (!pos) { res.status(404).json({ error: "POSITION_NOT_FOUND", ...envelope() }); return; }
+  // Answer with the same shape every other refusal on this router uses:
+  // `ok:false` plus a reason the UI can show verbatim. Returning a bare
+  // `error` here made the client render "Close blocked: unknown", because it
+  // reads `primaryReason ?? reason` — an unexplainable dead end on a row the
+  // position table no longer has (already closed, or never a position at all).
+  if (!pos) {
+    res.status(404).json({
+      ok: false,
+      error: "POSITION_NOT_FOUND",
+      reason: "POSITION_NOT_FOUND",
+      primaryReason: `No open live position with ticket ${ticket} is on your account. It may already be closed — refresh the list.`,
+      ...envelope(),
+    });
+    return;
+  }
   const draft = await createLiveOpsDraft({
     userId,
     commandType: "CLOSE_LIVE_POSITION",
@@ -638,7 +652,21 @@ router.post("/trades/live-shared/positions/:ticket/modify", requireUser, async (
       eq(arxLivePositionsTable.brokerTicket, ticket),
     )).limit(1);
   const pos = rows[0];
-  if (!pos) { res.status(404).json({ error: "POSITION_NOT_FOUND", ...envelope() }); return; }
+  // Answer with the same shape every other refusal on this router uses:
+  // `ok:false` plus a reason the UI can show verbatim. Returning a bare
+  // `error` here made the client render "Close blocked: unknown", because it
+  // reads `primaryReason ?? reason` — an unexplainable dead end on a row the
+  // position table no longer has (already closed, or never a position at all).
+  if (!pos) {
+    res.status(404).json({
+      ok: false,
+      error: "POSITION_NOT_FOUND",
+      reason: "POSITION_NOT_FOUND",
+      primaryReason: `No open live position with ticket ${ticket} is on your account. It may already be closed — refresh the list.`,
+      ...envelope(),
+    });
+    return;
+  }
   const draft = await createLiveOpsDraft({
     userId,
     commandType: "MODIFY_LIVE_SLTP",
@@ -685,6 +713,56 @@ function projectCommandForUser<T extends Record<string, unknown> | null | undefi
   }
   return out;
 }
+
+// Project an arx_live_positions row into a strict user-facing DTO. Allowlist,
+// same discipline as USER_COMMAND_KEYS: bridgeConnectionId, accountLogin,
+// brokerServer, reconcile* and the broker-absence evidence columns are
+// operator-only and never leave this projection.
+function projectPositionForUser(p: typeof arxLivePositionsTable.$inferSelect) {
+  return {
+    brokerTicket: p.brokerTicket,
+    symbol: p.symbol,
+    side: p.side,
+    volume: p.volume,
+    entryPrice: p.entryPrice,
+    currentPrice: p.currentPrice,
+    floatingPl: p.floatingPl,
+    stopLoss: p.stopLoss,
+    takeProfit: p.takeProfit,
+    openedAt: p.openedAt ? p.openedAt.toISOString() : null,
+    lastSyncedAt: p.lastSyncedAt ? p.lastSyncedAt.toISOString() : null,
+    managementState: p.managementState,
+    sourceCommandId: p.sourceCommandId,
+  };
+}
+
+// ── GET /positions — the caller's OPEN live positions, read from
+// arx_live_positions: the same table /positions/:ticket/close and
+// /positions/:ticket/modify resolve a ticket against.
+//
+// This exists because the Open Positions list used to be derived from the
+// COMMAND LOG, which is not a position list: a CLOSE_LIVE_POSITION and a
+// MODIFY_LIVE_SLTP row both carry a brokerTicket, nothing retires the original
+// PLACE row when the position closes, so a closed position stayed listed
+// forever and its close command appeared as an extra "open position" with its
+// own Close button. That overstated live exposure and produced Close presses
+// against tickets the position table no longer had.
+router.get("/trades/live-shared/positions", requireUser, async (req, res) => {
+  const userId = uid(req);
+  if (!userId) { res.status(401).json({ error: "AUTH_REQUIRED" }); return; }
+  const rows = await db.select().from(arxLivePositionsTable)
+    .where(and(
+      eq(arxLivePositionsTable.userId, userId),
+      isNull(arxLivePositionsTable.closedAt),
+    ))
+    .orderBy(desc(arxLivePositionsTable.openedAt))
+    .limit(200);
+  res.json({
+    ok: true,
+    positions: rows.map(projectPositionForUser),
+    ...envelope(),
+  });
+});
 
 // ── GET /commands — per-user list (read-only).
 router.get("/trades/live-shared/commands", requireUser, async (req, res) => {

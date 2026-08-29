@@ -5993,7 +5993,7 @@ paths:
           description: Closed position
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/LivePosition" }
+              schema: { $ref: "#/components/schemas/ClosePositionResult" }
 
   /positions/{id}/events:
     get:
@@ -19115,6 +19115,12 @@ components:
       required: [success, message]
       properties:
         success: { type: boolean }
+        # True when the action changed ARX's own record only — no broker order
+        # was sent. The trade-management actions are local-simulation only and
+        # are REFUSED (409 LIVE_TRADE_ACTION_NOT_AVAILABLE) for LIVE rows, so
+        # this is `true` on every 200 they return. Callers MUST render
+        # `message`; a simulated action must never be presented as a fill.
+        simulated: { type: boolean }
         message: { type: string }
         trade:
           $ref: "#/components/schemas/Trade"
@@ -20688,6 +20694,19 @@ components:
         openedAtIso: { type: ["string", "null"] }
         closedAtIso: { type: ["string", "null"] }
         lastSyncedAtIso: { type: ["string", "null"] }
+
+    ClosePositionResult:
+      allOf:
+        - $ref: "#/components/schemas/LivePosition"
+        - type: object
+          properties:
+            # The linked `trades` row is reached through a LOOSE FK on the
+            # position and carries its own ownership predicate, so the write can
+            # legitimately match nothing (a legacy/unowned trade row). null =
+            # the position had no linked trade at all; false = there was one and
+            # it was NOT written. A close that silently skipped the trade record
+            # must not read back as a clean success.
+            tradeRecordUpdated: { type: ["boolean", "null"] }
 
     LivePositionList:
       type: object

@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Briefcase, X, Scissors, ArrowDownToLine, TrendingUp } from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { STATUS_COLORS, directionTone, pnlTone, type StatusTone } from "@/lib/design-tokens";
+import { useProductRole } from "@/hooks/useProductRole";
 
 type Pos = {
   positionId: string; orderId: string; environment: string;
@@ -39,25 +40,81 @@ const STATUS_LABEL: Record<string, string> = {
 };
 const statusLabel = (s: string) => STATUS_LABEL[s] ?? s.replace(/_/g, " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
 
+// Every mutating call below is `requireAdmin` server-side (oms.ts).
+//
+// This helper used to hard-code `x-security-role: ADMIN`, which production
+// ignores (lib/security/middleware.ts) — a normal user resolved to VIEWER, took
+// a 403, and the helper returned `r.json()` without checking `r.ok`. Close,
+// ½ close, Break-even and Trail were silent no-ops: the list reloaded unchanged
+// and nothing said the action had been refused.
+//
+// Now: no spoofed header, `r.ok` is checked, and the server's own error text is
+// thrown so the caller can put it on screen.
 async function api(path: string, init?: RequestInit) {
   const r = await fetch(path, {
-    headers: { "x-security-role": "ADMIN", "content-type": "application/json", ...(init?.headers ?? {}) }, ...init,
+    credentials: "include",
+    headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
+    ...init,
   });
-  return r.json();
+  let body: unknown = null;
+  try { body = await r.json(); } catch { /* non-JSON / empty body */ }
+  if (!r.ok) {
+    const b = body as { error?: unknown; message?: unknown; result?: { reason?: unknown } } | null;
+    const serverMsg =
+      (typeof b?.error === "string" && b.error) ||
+      (typeof b?.message === "string" && b.message) ||
+      (typeof b?.result?.reason === "string" && b.result.reason) ||
+      null;
+    throw new Error(
+      r.status === 403
+        ? `Refused by the server (403): ${serverMsg ?? "Admin or Owner role required for this action."}`
+        : serverMsg ?? `Request failed (${r.status})`,
+    );
+  }
+  return body;
+}
+
+// A position-mutating press is never fired straight off the click. `pending`
+// holds the described action until the user confirms it, so a misclick cannot
+// close a position, and the Trail distance the server will actually receive is
+// shown (and editable) before it is sent — it used to be invented from a
+// hard-coded 1 / 0.001 fallback the user never saw.
+type PendingAction =
+  | { kind: "close"; p: Pos }
+  | { kind: "partial"; p: Pos }
+  | { kind: "breakeven"; p: Pos }
+  | { kind: "trail"; p: Pos; distance: number };
+
+function defaultTrailDistance(p: Pos): number | null {
+  const d = Math.abs(p.entryPrice - (p.stopLoss ?? p.entryPrice));
+  return d > 0 ? d : null;
 }
 
 export default function PositionsPage() {
+  const { isAdmin, isLoading: roleLoading } = useProductRole();
   const [positions, setPositions] = useState<Pos[]>([]);
   const [pnl, setPnl] = useState<Pnl | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [pending, setPending] = useState<PendingAction | null>(null);
+  const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<"OPEN" | "CLOSED" | "INTENT" | "MT5">("OPEN");
 
   async function load() {
-    const [r, s] = await Promise.all([
-      fetch("/api/oms/positions").then((x) => x.json()),
-      fetch("/api/pnl/summary").then((x) => x.json()),
-    ]);
-    setPositions(r.positions ?? []);
-    setPnl(s);
+    try {
+      const [r, s] = await Promise.all([
+        fetch("/api/oms/positions", { credentials: "include" }),
+        fetch("/api/pnl/summary", { credentials: "include" }),
+      ]);
+      if (!r.ok || !s.ok) {
+        setErr(`Could not load positions (HTTP ${!r.ok ? r.status : s.status}). Figures below may be out of date.`);
+        return;
+      }
+      const [rb, sb] = await Promise.all([r.json(), s.json()]);
+      setPositions(rb.positions ?? []);
+      setPnl(sb);
+    } catch (e) {
+      setErr(`Could not load positions: ${e instanceof Error ? e.message : String(e)}. Figures below may be out of date.`);
+    }
   }
   useEffect(() => { void load(); const id = setInterval(load, 3000); return () => clearInterval(id); }, []);
 
@@ -68,12 +125,28 @@ export default function PositionsPage() {
     return [];
   }, [positions, tab]);
 
-  async function closeP(p: Pos) { await api(`/api/oms/positions/${p.positionId}/close`, { method: "POST" }); load(); }
-  async function partial(p: Pos) { await api(`/api/oms/positions/${p.positionId}/partial-close`, { method: "POST", body: JSON.stringify({ fraction: 0.5 }) }); load(); }
-  async function be(p: Pos) { await api(`/api/oms/positions/${p.positionId}/breakeven`, { method: "POST" }); load(); }
-  async function trail(p: Pos) {
-    const dist = Math.abs(p.entryPrice - (p.stopLoss ?? p.entryPrice)) || (p.symbol === "XAUUSD" ? 1 : 0.001);
-    await api(`/api/oms/positions/${p.positionId}/trailing-stop`, { method: "POST", body: JSON.stringify({ distance: dist }) }); load();
+  async function runPending() {
+    if (!pending) return;
+    const { p } = pending;
+    setBusy(true); setErr(null);
+    try {
+      if (pending.kind === "close") {
+        await api(`/api/oms/positions/${p.positionId}/close`, { method: "POST" });
+      } else if (pending.kind === "partial") {
+        await api(`/api/oms/positions/${p.positionId}/partial-close`, { method: "POST", body: JSON.stringify({ fraction: 0.5 }) });
+      } else if (pending.kind === "breakeven") {
+        await api(`/api/oms/positions/${p.positionId}/breakeven`, { method: "POST" });
+      } else {
+        await api(`/api/oms/positions/${p.positionId}/trailing-stop`, { method: "POST", body: JSON.stringify({ distance: pending.distance }) });
+      }
+      setPending(null);
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+      setPending(null);
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -87,6 +160,20 @@ export default function PositionsPage() {
           <p className="text-sm text-muted-foreground">Simulated positions tracked live. Real broker positions route through the MT5 bridge.</p>
         </div>
       </div>
+
+      {err && (
+        <div className="rounded-xl border border-danger/40 bg-danger/10 p-3 text-sm text-danger" data-testid="positions-error">
+          {err}
+        </div>
+      )}
+
+      {!roleLoading && !isAdmin && (
+        <div className="rounded-xl border border-warning/40 bg-warning/10 p-3 text-sm text-warning" data-testid="positions-readonly-note">
+          Read-only view. Close, ½ close, Break-even and Trail require an Admin or Owner session —
+          the server refuses those actions for your role, so the controls are hidden rather than
+          shown as if they would work.
+        </div>
+      )}
 
       {pnl && (
         <div className="grid gap-4 grid-cols-2 md:grid-cols-6">
@@ -149,12 +236,15 @@ export default function PositionsPage() {
                   <Stat small label="SL" value={p.stopLoss ? String(p.stopLoss) : "—"} />
                   <Stat small label="TP" value={p.takeProfit ? String(p.takeProfit) : "—"} />
                 </div>
-                {p.status === "OPEN" && p.environment !== "LIVE_TESTER_INTENT" && (
+                {isAdmin && p.status === "OPEN" && p.environment !== "LIVE_TESTER_INTENT" && (
                   <div className="flex flex-wrap gap-2 border-t border-border/60 pt-2">
-                    <Button size="sm" variant="outline" className="h-7" onClick={() => closeP(p)}><X className="h-3 w-3 mr-1" />Close</Button>
-                    <Button size="sm" variant="outline" className="h-7" onClick={() => partial(p)}><Scissors className="h-3 w-3 mr-1" />½ close</Button>
-                    <Button size="sm" variant="outline" className="h-7" onClick={() => be(p)}><ArrowDownToLine className="h-3 w-3 mr-1" />Break-even</Button>
-                    <Button size="sm" variant="outline" className="h-7" onClick={() => trail(p)}><TrendingUp className="h-3 w-3 mr-1" />Trail</Button>
+                    <Button size="sm" variant="outline" className="h-7" onClick={() => setPending({ kind: "close", p })}><X className="h-3 w-3 mr-1" />Close</Button>
+                    <Button size="sm" variant="outline" className="h-7" onClick={() => setPending({ kind: "partial", p })}><Scissors className="h-3 w-3 mr-1" />½ close</Button>
+                    <Button size="sm" variant="outline" className="h-7" onClick={() => setPending({ kind: "breakeven", p })}><ArrowDownToLine className="h-3 w-3 mr-1" />Break-even</Button>
+                    <Button size="sm" variant="outline" className="h-7"
+                      onClick={() => setPending({ kind: "trail", p, distance: defaultTrailDistance(p) ?? 0 })}>
+                      <TrendingUp className="h-3 w-3 mr-1" />Trail
+                    </Button>
                   </div>
                 )}
                 {p.environment === "LIVE_TESTER_INTENT" && (
@@ -167,6 +257,82 @@ export default function PositionsPage() {
           ))}
         </div>
       )}
+
+      {pending && (
+        <ConfirmActionDialog
+          pending={pending}
+          busy={busy}
+          onDistanceChange={(d) => setPending((cur) => (cur && cur.kind === "trail" ? { ...cur, distance: d } : cur))}
+          onCancel={() => setPending(null)}
+          onConfirm={() => void runPending()}
+        />
+      )}
+    </div>
+  );
+}
+
+// Explicit confirmation for every position-mutating press. States the exact
+// action, the position it applies to, and — for Trail — the stop distance that
+// will be sent, which the user can change before confirming.
+function ConfirmActionDialog({
+  pending, busy, onDistanceChange, onCancel, onConfirm,
+}: {
+  pending: PendingAction;
+  busy: boolean;
+  onDistanceChange: (d: number) => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const { p } = pending;
+  const title = pending.kind === "close" ? "Close this position?"
+    : pending.kind === "partial" ? "Close half of this position?"
+      : pending.kind === "breakeven" ? "Move the stop to break-even?"
+        : "Apply a trailing stop?";
+  const trailInvalid = pending.kind === "trail" && !(pending.distance > 0);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" data-testid="positions-confirm">
+      <div className="w-full max-w-md space-y-3 rounded-xl border border-card-border bg-card p-4 shadow-lg">
+        <div className="text-base font-semibold">{title}</div>
+        <div className="rounded-lg border border-border/60 p-3 text-sm">
+          <div>{p.symbol} · {p.direction} · {p.lotSize} lots</div>
+          <div className="text-xs text-txt-secondary">Entry {p.entryPrice} · Now {p.currentPrice} · SL {p.stopLoss ?? "—"}</div>
+          <div className="text-xs text-txt-muted">Simulated position ({p.environment}) — this does not reach a broker.</div>
+        </div>
+        {pending.kind === "close" && (
+          <p className="text-xs text-txt-secondary">This closes the whole position. There is no undo.</p>
+        )}
+        {pending.kind === "trail" && (
+          <label className="block text-xs text-txt-secondary">
+            Trail distance (price units)
+            {defaultTrailDistance(p) == null && (
+              <span className="block text-warning">
+                No existing stop to measure from — enter the distance you want.
+              </span>
+            )}
+            <input
+              type="number"
+              step="0.00001"
+              min="0"
+              value={pending.distance}
+              onChange={(e) => onDistanceChange(Number(e.target.value))}
+              className="mt-1 w-full rounded border border-border bg-background px-2 py-1 text-sm tabular-nums"
+              data-testid="positions-trail-distance"
+            />
+          </label>
+        )}
+        <div className="flex justify-end gap-2 pt-1">
+          <Button size="sm" variant="outline" disabled={busy} onClick={onCancel}>Cancel</Button>
+          <Button
+            size="sm"
+            variant={pending.kind === "close" ? "destructive" : "default"}
+            disabled={busy || trailInvalid}
+            onClick={onConfirm}
+            data-testid="positions-confirm-yes"
+          >
+            {busy ? "Working…" : "Confirm"}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

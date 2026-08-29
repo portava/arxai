@@ -14,8 +14,29 @@
 //   - REMOVE_STOP_LOSS requires explicit `confirm: true` body field.
 //   - MANUAL_CLOSE     requires explicit `confirm: true` body field.
 //   - We never auto-modify SL/TP; routes only act when the operator calls.
+//   - PER-USER ISOLATION (added in review). Every id-addressed route below is
+//     `requireUser` and reads/writes through `and(eq(id), eq(userId, caller))`.
+//     `live_positions.id` is a sequential serial shared across tenants, and this
+//     router previously resolved rows by id ALONE with no auth middleware at all
+//     (routes/index.ts mounts it unconditionally). That was worse than the same
+//     bug in tradeManagement.ts, because this file REACHES THE BROKER:
+//     PATCH /positions/:id/stop-loss and POST /positions/:id/close call
+//     `queueMt5CommandWithGate("MODIFY" | "CLOSE", { ticket: row.brokerPositionId })`,
+//     and /close also writes `trades.status` and `trades.pnl`. Any signed-in
+//     trader could therefore widen or strip another tenant's stop at the venue,
+//     close their position, and falsify their realized P/L by guessing an
+//     integer. A foreign row — or a legacy row whose user_id is NULL, which
+//     nobody can prove ownership of — answers 404, not 403, so ids stay
+//     non-enumerable.
+//
+//     The one exception is POST /positions/sync. It is not a per-user action:
+//     it reconciles the SERVER-WIDE user_id IS NULL mirror against the single
+//     legacy MT5 connection's mt5_state feed, and mass-updates those rows. It is
+//     ADMIN/OWNER-gated and its response is scoped to the rows it reconciled —
+//     it used to return `select().from(live_positions)` with no predicate, i.e.
+//     every tenant's open positions to any caller.
 
-import { Router } from "express";
+import { Router, type Request, type Response, type NextFunction } from "express";
 import {
   db,
   livePositionsTable,
@@ -33,8 +54,54 @@ import {
 } from "@workspace/domain/live-position";
 import { queueMt5CommandWithGate } from "./mt5";
 import { PNL_DATA_QUALITY_MISSING_CLOSE_FILL } from "../lib/live/realizedPnl.js";
+import { requireUser } from "../lib/auth/middleware.js";
+import { readRoleFromRequest } from "../lib/security/middleware.js";
 
 const router = Router();
+
+// ── per-user isolation ─────────────────────────────────────────────────────
+
+function requireAdmin(req: Request, res: Response, next: NextFunction): void {
+  const role = readRoleFromRequest(req);
+  if (role !== "ADMIN" && role !== "OWNER") {
+    res.status(403).json({ error: "Forbidden", requiredRole: "ADMIN" });
+    return;
+  }
+  next();
+}
+
+/** Ownership predicate. Repeated on every UPDATE, never computed once and reused
+ *  across a read-then-write window, so a row that changed hands (or a race)
+ *  cannot be written by the wrong user. */
+function ownedRow(id: number, userId: number) {
+  return and(eq(livePositionsTable.id, id), eq(livePositionsTable.userId, userId));
+}
+
+/**
+ * Resolve `:id` for the calling user, or answer for it. Returns null when a
+ * response has already been sent.
+ *
+ * A foreign row and a legacy user_id IS NULL row are both 404 — identical to a
+ * missing row from the caller's side. 403 would confirm the id exists.
+ */
+async function resolveOwned(
+  req: Request,
+  res: Response,
+): Promise<{ id: number; userId: number; row: typeof livePositionsTable.$inferSelect } | null> {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: "Invalid id" });
+    return null;
+  }
+  const userId = req.authUser!.id;
+  const rows = await db.select().from(livePositionsTable).where(ownedRow(id, userId)).limit(1);
+  const row = rows[0];
+  if (!row) {
+    res.status(404).json({ error: "Not found" });
+    return null;
+  }
+  return { id, userId, row };
+}
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
@@ -246,16 +313,23 @@ async function syncFromBroker() {
     await appendVault("POSITION_MANUAL_CLOSE", "WARN", row.id, { tradeId: row.tradeId });
   }
 
-  const after = await db.select().from(livePositionsTable).orderBy(desc(livePositionsTable.updatedAt));
+  // Return only what this sync actually reconciled — the user_id IS NULL
+  // mirror. Unscoped, this returned every tenant's live positions to whoever
+  // called /positions/sync.
+  const after = await db.select().from(livePositionsTable)
+    .where(isNull(livePositionsTable.userId))
+    .orderBy(desc(livePositionsTable.updatedAt));
   return after;
 }
 
 // ── routes ─────────────────────────────────────────────────────────────────
 
-// GET /positions — current open positions (non-terminal statuses)
-router.get("/positions", async (req, res) => {
+// GET /positions — the CALLER's current open positions (non-terminal statuses)
+router.get("/positions", requireUser, async (req, res) => {
   try {
-    const all = await db.select().from(livePositionsTable).orderBy(desc(livePositionsTable.updatedAt));
+    const all = await db.select().from(livePositionsTable)
+      .where(eq(livePositionsTable.userId, req.authUser!.id))
+      .orderBy(desc(livePositionsTable.updatedAt));
     const open = all.filter((r) => !POSITION_STATUS_TERMINAL[r.status as LivePositionStatus]);
     res.json({ positions: open.map(serializeLivePosition) });
   } catch (err) {
@@ -265,22 +339,21 @@ router.get("/positions", async (req, res) => {
 });
 
 // GET /positions/:id
-router.get("/positions/:id", async (req, res): Promise<void> => {
+router.get("/positions/:id", requireUser, async (req, res): Promise<void> => {
   try {
-    const id = Number(req.params.id);
-    if (!Number.isFinite(id)) { res.status(400).json({ error: "Invalid id" }); return; }
-    const rows = await db.select().from(livePositionsTable).where(eq(livePositionsTable.id, id)).limit(1);
-    const row = rows[0];
-    if (!row) { res.status(404).json({ error: "Not found" }); return; }
-    res.json(serializeLivePosition(row));
+    const owned = await resolveOwned(req, res);
+    if (!owned) return;
+    res.json(serializeLivePosition(owned.row));
   } catch (err) {
     req.log.error({ err: String(err) }, "GET /positions/:id failed");
     res.status(500).json({ error: "Failed to load position" });
   }
 });
 
-// POST /positions/sync — pull from mt5_state, update live_positions
-router.post("/positions/sync", async (req, res) => {
+// POST /positions/sync — pull from mt5_state, update live_positions.
+// ADMIN/OWNER only: this reconciles the server-wide user_id IS NULL mirror for
+// the single legacy MT5 connection, not the caller's own positions.
+router.post("/positions/sync", requireUser, requireAdmin, async (req, res) => {
   try {
     const after = await syncFromBroker();
     res.json({ syncedAt: new Date().toISOString(), positions: after.map(serializeLivePosition) });
@@ -296,13 +369,12 @@ const SLBody = z.object({
   removeConfirmed: z.boolean().optional(),
   reason: z.string().max(500).optional(),
 });
-router.patch("/positions/:id/stop-loss", async (req, res): Promise<void> => {
+router.patch("/positions/:id/stop-loss", requireUser, async (req, res): Promise<void> => {
   try {
-    const id = Number(req.params.id);
     const body = SLBody.parse(req.body ?? {});
-    const rows = await db.select().from(livePositionsTable).where(eq(livePositionsTable.id, id)).limit(1);
-    const row = rows[0];
-    if (!row) { res.status(404).json({ error: "Not found" }); return; }
+    const owned = await resolveOwned(req, res);
+    if (!owned) return;
+    const { id, userId, row } = owned;
 
     // Inviolable rule: removing SL requires explicit confirmation.
     if (body.stopLoss == null && !body.removeConfirmed) {
@@ -323,7 +395,7 @@ router.patch("/positions/:id/stop-loss", async (req, res): Promise<void> => {
       });
     }
     await db.update(livePositionsTable).set({ stopLoss: body.stopLoss, updatedAt: new Date() })
-      .where(eq(livePositionsTable.id, id));
+      .where(ownedRow(id, userId));
     await appendEvent({ livePositionId: id,
       eventType: body.stopLoss == null ? "SL_REMOVED" : "SL_MOVED",
       severity: body.stopLoss == null ? "DANGER" : "INFO",
@@ -333,7 +405,7 @@ router.patch("/positions/:id/stop-loss", async (req, res): Promise<void> => {
       body.stopLoss == null ? "DANGER" : "INFO", id,
       { tradeId: row.tradeId, oldStopLoss: row.stopLoss, newStopLoss: body.stopLoss, reason: body.reason ?? null });
 
-    const after = await db.select().from(livePositionsTable).where(eq(livePositionsTable.id, id)).limit(1);
+    const after = await db.select().from(livePositionsTable).where(ownedRow(id, userId)).limit(1);
     res.json(serializeLivePosition(after[0]!));
   } catch (err) {
     if (err instanceof z.ZodError) { res.status(400).json({ error: "Invalid body", details: err.issues }); return; }
@@ -344,13 +416,12 @@ router.patch("/positions/:id/stop-loss", async (req, res): Promise<void> => {
 
 // PATCH /positions/:id/take-profit
 const TPBody = z.object({ takeProfit: z.number().nullable(), reason: z.string().max(500).optional() });
-router.patch("/positions/:id/take-profit", async (req, res): Promise<void> => {
+router.patch("/positions/:id/take-profit", requireUser, async (req, res): Promise<void> => {
   try {
-    const id = Number(req.params.id);
     const body = TPBody.parse(req.body ?? {});
-    const rows = await db.select().from(livePositionsTable).where(eq(livePositionsTable.id, id)).limit(1);
-    const row = rows[0];
-    if (!row) { res.status(404).json({ error: "Not found" }); return; }
+    const owned = await resolveOwned(req, res);
+    if (!owned) return;
+    const { id, userId, row } = owned;
 
     if (row.brokerPositionId) {
       await queueMt5CommandWithGate("MODIFY", {
@@ -360,12 +431,12 @@ router.patch("/positions/:id/take-profit", async (req, res): Promise<void> => {
       });
     }
     await db.update(livePositionsTable).set({ takeProfit: body.takeProfit, updatedAt: new Date() })
-      .where(eq(livePositionsTable.id, id));
+      .where(ownedRow(id, userId));
     await appendEvent({ livePositionId: id, eventType: "TP_MOVED", severity: "INFO",
       message: `Operator moved TP ${row.takeProfit} → ${body.takeProfit}`,
       oldValue: { takeProfit: row.takeProfit }, newValue: { takeProfit: body.takeProfit } });
 
-    const after = await db.select().from(livePositionsTable).where(eq(livePositionsTable.id, id)).limit(1);
+    const after = await db.select().from(livePositionsTable).where(ownedRow(id, userId)).limit(1);
     res.json(serializeLivePosition(after[0]!));
   } catch (err) {
     if (err instanceof z.ZodError) { res.status(400).json({ error: "Invalid body", details: err.issues }); return; }
@@ -375,12 +446,11 @@ router.patch("/positions/:id/take-profit", async (req, res): Promise<void> => {
 });
 
 // POST /positions/:id/close-confirmation — returns a verdict the UI must echo back to /close
-router.post("/positions/:id/close-confirmation", async (req, res): Promise<void> => {
+router.post("/positions/:id/close-confirmation", requireUser, async (req, res): Promise<void> => {
   try {
-    const id = Number(req.params.id);
-    const rows = await db.select().from(livePositionsTable).where(eq(livePositionsTable.id, id)).limit(1);
-    const row = rows[0];
-    if (!row) { res.status(404).json({ error: "Not found" }); return; }
+    const owned = await resolveOwned(req, res);
+    if (!owned) return;
+    const { row } = owned;
     if (POSITION_STATUS_TERMINAL[row.status as LivePositionStatus]) {
       res.status(409).json({ error: "Position already terminal", status: row.status });
       return;
@@ -399,13 +469,12 @@ router.post("/positions/:id/close-confirmation", async (req, res): Promise<void>
 
 // POST /positions/:id/close — requires confirm:true
 const CloseBody = z.object({ confirm: z.literal(true), reason: z.string().max(500).optional() });
-router.post("/positions/:id/close", async (req, res): Promise<void> => {
+router.post("/positions/:id/close", requireUser, async (req, res): Promise<void> => {
   try {
-    const id = Number(req.params.id);
     const body = CloseBody.parse(req.body ?? {});
-    const rows = await db.select().from(livePositionsTable).where(eq(livePositionsTable.id, id)).limit(1);
-    const row = rows[0];
-    if (!row) { res.status(404).json({ error: "Not found" }); return; }
+    const owned = await resolveOwned(req, res);
+    if (!owned) return;
+    const { id, userId, row } = owned;
     if (POSITION_STATUS_TERMINAL[row.status as LivePositionStatus]) {
       res.status(409).json({ error: "Position already terminal", status: row.status });
       return;
@@ -418,8 +487,15 @@ router.post("/positions/:id/close", async (req, res): Promise<void> => {
     }
     await db.update(livePositionsTable).set({
       status: "MANUALLY_CLOSED", closedAt: new Date(), updatedAt: new Date(),
-    }).where(eq(livePositionsTable.id, id));
+    }).where(ownedRow(id, userId));
+    // The trade row is reached through a LOOSE FK on the position row, so it
+    // gets its own ownership predicate rather than inheriting the position's.
+    // `tradeRecordUpdated` reports whether it actually matched: a live_position
+    // whose trade row is legacy/unowned must not have its close silently
+    // dropped and reported as a clean success.
+    let tradeRecordUpdated: boolean | null = null;
     if (row.tradeId) {
+      const ownedTrade = and(eq(tradesTable.id, row.tradeId), eq(tradesTable.userId, userId));
       // Derive close result from realized/unrealized PnL — never hardcode loss.
       // If the broker never reported either value, we refuse to invent one:
       // mark pnlStatus="UNKNOWN" + a data-quality flag so Trade Logs renders
@@ -428,12 +504,13 @@ router.post("/positions/:id/close", async (req, res): Promise<void> => {
       const hasTrustedPnl = typeof rawPnl === "number" && Number.isFinite(rawPnl);
       if (hasTrustedPnl) {
         const tradeStatus = rawPnl >= 0 ? "CLOSED_WIN" : "CLOSED_LOSS";
-        await db.update(tradesTable).set({
+        const w = await db.update(tradesTable).set({
           status: tradeStatus, pnl: rawPnl, closedAt: new Date(),
           pnlStatus: "COMPUTED", dataQualityFlag: null,
-        }).where(eq(tradesTable.id, row.tradeId));
+        }).where(ownedTrade).returning({ id: tradesTable.id });
+        tradeRecordUpdated = w.length > 0;
       } else {
-        await db.update(tradesTable).set({
+        const w = await db.update(tradesTable).set({
           status: "CLOSED_LOSS", // status retained as terminal; pnl is null+UNKNOWN
           pnl: null, closedAt: new Date(),
           pnlStatus: "UNKNOWN",
@@ -441,7 +518,14 @@ router.post("/positions/:id/close", async (req, res): Promise<void> => {
           // live-test-cycle uses when the broker close-result didn't carry
           // a usable fill price.
           dataQualityFlag: PNL_DATA_QUALITY_MISSING_CLOSE_FILL,
-        }).where(eq(tradesTable.id, row.tradeId));
+        }).where(ownedTrade).returning({ id: tradesTable.id });
+        tradeRecordUpdated = w.length > 0;
+      }
+      if (tradeRecordUpdated === false) {
+        req.log.warn(
+          { livePositionId: id, tradeId: row.tradeId, userId },
+          "close: linked trade row is not owned by the caller — trade record left untouched",
+        );
       }
     }
     await appendEvent({ livePositionId: id, eventType: "MANUAL_CLOSE", severity: "WARN",
@@ -450,8 +534,8 @@ router.post("/positions/:id/close", async (req, res): Promise<void> => {
     await appendVault("POSITION_MANUAL_CLOSE_BY_USER", "WARN", id,
       { tradeId: row.tradeId, reason: body.reason ?? null });
 
-    const after = await db.select().from(livePositionsTable).where(eq(livePositionsTable.id, id)).limit(1);
-    res.json(serializeLivePosition(after[0]!));
+    const after = await db.select().from(livePositionsTable).where(ownedRow(id, userId)).limit(1);
+    res.json({ ...serializeLivePosition(after[0]!), tradeRecordUpdated });
   } catch (err) {
     if (err instanceof z.ZodError) { res.status(400).json({ error: "Confirmation required", details: err.issues }); return; }
     req.log.error({ err: String(err) }, "POST /positions/:id/close failed");
@@ -460,10 +544,14 @@ router.post("/positions/:id/close", async (req, res): Promise<void> => {
 });
 
 // GET /positions/:id/events — append-only timeline
-router.get("/positions/:id/events", async (req, res): Promise<void> => {
+router.get("/positions/:id/events", requireUser, async (req, res): Promise<void> => {
   try {
-    const id = Number(req.params.id);
-    if (!Number.isFinite(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+    // The timeline is read through the position, so ownership is proven on the
+    // position row first — position_events.user_id is nullable and cannot be
+    // relied on as the predicate.
+    const owned = await resolveOwned(req, res);
+    if (!owned) return;
+    const { id } = owned;
     const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
     const rows = await db.select().from(positionEventsTable)
       .where(eq(positionEventsTable.livePositionId, id))
@@ -489,4 +577,4 @@ router.get("/positions/:id/events", async (req, res): Promise<void> => {
 
 export default router;
 // Suppress unused-import warnings.
-void and; void inArray; void sql;
+void inArray; void sql;

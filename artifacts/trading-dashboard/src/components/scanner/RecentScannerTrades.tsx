@@ -37,6 +37,22 @@ function payloadNum(p: Record<string, unknown> | null, k: string): number | null
 
 // Status tone/label moved to @/lib/statusLabels for cross-surface reuse.
 
+// The one-line description any wrapper (today: the "Recent scanner trades"
+// CollapsibleSection on market-scanner.tsx) must render above this panel.
+//
+// It lives here, next to the fetch, because the wrapper's own copy is what
+// broke: this component was corrected to stop promising live scanner history,
+// while the page's `description=` prop one line above it still read
+// "Scanner-generated trades will appear here once orders are placed." —
+// CollapsibleSection renders `description` unconditionally, so a live-armed
+// trader read the false promise and the correction back to back. Exporting the
+// string makes the two physically the same sentence.
+//
+// It must stay true in EVERY mode, because the wrapper does not know the mode:
+// this panel's only source is /api/me/demo-commands, the DEMO queue.
+export const RECENT_SCANNER_TRADES_SECTION_DESCRIPTION =
+  "Scanner-originated orders recorded in the demo command queue. Live Shared orders are not listed here.";
+
 // Recent Scanner Trades — compact table on the Market Scanner page. Lists
 // commands whose payload.source === "MARKET_SCANNER". Polls every 5s.
 export function RecentScannerTrades() {
@@ -123,8 +139,11 @@ export function RecentScannerTrades() {
      
   }, [showDemoFeed, mode.shouldShowAdminDiagnostics]);
 
+  // The title must name the feed this panel actually reads. For a live-armed,
+  // non-admin trader `showDemoFeed` is false and no fetch runs at all, so
+  // labelling the card "Live Shared" claimed a live feed that does not exist.
   const cardTitle = mode.isLiveShared
-    ? "Recent Scanner Trades — Live Shared"
+    ? (showDemoFeed ? "Recent Scanner Trades — Demo queue" : "Recent Scanner Trades — Demo queue only")
     : mode.isDemo
       ? "Recent Scanner Trades — Demo"
       : mode.isPaper
@@ -166,7 +185,24 @@ export function RecentScannerTrades() {
           <div className="text-xs text-muted-foreground px-3 py-3" data-testid="recent-scanner-trades-empty">
             {showDemoFeed
               ? "No scanner-originated trades yet. Use Buy or Sell on a result card to place one."
-              : "Live Shared scanner trade history will appear here once orders are placed."}
+              : (
+                <>
+                  {/* This panel's only data source is /api/me/demo-commands — the DEMO
+                      queue. A live-armed trader's scanner orders go through the live
+                      command pipeline instead, and the server deliberately redacts the
+                      command's sourcePage from the user projection (tradesLiveShared.ts
+                      USER_COMMAND_KEYS), so there is nothing here to filter scanner
+                      orders by. Saying "history will appear here once orders are placed"
+                      was a promise this panel cannot keep — it would stay empty forever
+                      while the trader wondered whether their orders had been recorded. */}
+                  Scanner trade history is not available in Live Shared mode — this panel only reads the
+                  demo command queue.{" "}
+                  <a href={`${BASE}/live-shared`} className="underline" data-testid="recent-scanner-trades-live-link">
+                    Open Live Shared
+                  </a>{" "}
+                  to see your live orders and open positions.
+                </>
+              )}
           </div>
         )}
         {rows.length > 0 && (

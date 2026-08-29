@@ -1,10 +1,20 @@
 // LiveTradeTicket — TWO modes inside one component (no duplicate pages):
 //
-//   • Standard mode (one-click OFF) — keeps the original modal with the
-//     red "LIVE TRADE — REAL MONEY CAN BE LOST" header, the
-//     "I confirm this live order" checkbox, the required stop-loss
-//     validation, and the explicit Submit button. Unchanged behaviour
-//     for users who have NOT opted in to one-click.
+//   • Standard mode (one-click OFF) — a red-bordered "Trade Ticket" modal with
+//     the account/max-lot strip, the required stop-loss validation (waived only
+//     for owner-unrestricted profiles), a non-blocking no-SL warning, and ONE
+//     final action: "Confirm Buy" / "Confirm Sell". There is NO separate
+//     acknowledgement checkbox and NO second confirmation modal — that press
+//     submits (see :514 below). This is deliberate and is pinned by
+//     scripts/src/liveSingleConfirmTest.ts, which fails the build if a
+//     validate pre-step or an ack checkbox is reintroduced here.
+//
+//     (The header used to describe a red "LIVE TRADE — REAL MONEY CAN BE LOST"
+//     banner and an "I confirm this live order" checkbox as "unchanged
+//     behaviour". Neither exists in this component; the description was stale
+//     and is corrected above. Closing a position still asks for a typed
+//     acknowledgement in ConfirmCloseModal — that is a different surface with
+//     its own contract, not a claim about this one.)
 //
 //   • One-Click mode (one-click ON + master-live access PASS) — renders
 //     a compact terminal-style fast-trade panel: BUY / SELL big buttons,
@@ -511,7 +521,26 @@ export function LiveTradeTicket({
             <AlertTriangle className="h-4 w-4" />
             <AlertTitle>Live trading not armed</AlertTitle>
             <AlertDescription>
-              Open <a href={`${BASE}/live-trading`} className="underline">Live Trading Setup</a> and pass the 15-check gate first.
+              {/* CORRECTION (review): a previous pass replaced "the 15-check
+                  gate" here on the belief that no such count existed. It does.
+                  `armed` above is read from GET /api/me/live/arming, which is
+                  lib/live/liveArming.ts — `evaluateLiveArmingGate` pushes
+                  checks 1..15 (AUTH_OPERATOR … KILL_SWITCH_ACKNOWLEDGED) and
+                  the server's own audit line says "passed all 15 checks".
+                  /live-trading renders exactly those: LiveTradingUnlockCard's
+                  "Pre-arm checklist" is the 14 preArm ones, with SERVER_LIVE_FLAG
+                  shown separately as the dispatch status. So the number is real
+                  and the user can count it on the page we send them to.
+
+                  What the original auditor conflated it with is the SEPARATE
+                  server-side DISPATCH evaluator (the 16/23-gate one behind
+                  GovernancePanel / LiveSharedTradeTicket). That gate is not what
+                  this alert is about — this alert is about ARMING. Naming the
+                  two counts apart is the honest fix; erasing the accurate one
+                  was not. liveArmingGateCount in tradeSurfaceHonesty.test.ts
+                  derives 15 from liveArming.ts so this sentence cannot drift
+                  from the evaluator. */}
+              Open <a href={`${BASE}/live-trading`} className="underline">Live Trading Setup</a> and clear the 15-check arming gate first — 14 pre-arm checks plus the server dispatch status.
             </AlertDescription>
           </Alert>
         )}

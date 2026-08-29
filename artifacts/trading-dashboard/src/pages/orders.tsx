@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { CollapsibleSection } from "@/components/ui/CollapsibleSection";
 import { humanizeReason } from "@/lib/friendlyLabels";
 import { STATUS_COLORS, directionTone, type StatusTone } from "@/lib/design-tokens";
+import { useProductRole } from "@/hooks/useProductRole";
 
 type Order = {
   orderId: string; environment: string; source: string;
@@ -59,15 +60,44 @@ const FILTERS = [
 
 const SELECT_CLASS = "h-9 rounded-md border border-input bg-transparent px-2.5 text-sm shadow-xs outline-none focus:border-ring focus:ring-2 focus:ring-ring/25";
 
+// Every mutating call on this page is `requireAdmin` server-side (oms.ts).
+//
+// This helper used to hard-code `x-security-role: ADMIN`, which production
+// ignores (lib/security/middleware.ts) — a normal user resolved to VIEWER, took
+// a 403, and the helper returned `r.json()` without ever checking `r.ok`. Every
+// handler then called `load()`, the list came back unchanged, and the refusal
+// was invisible: Create order / Fill simulator / Cancel were silent no-ops.
+//
+// Now: no spoofed header, `r.ok` is checked, and the server's own error text is
+// thrown so the caller can show it.
 async function api(path: string, init?: RequestInit) {
   const r = await fetch(path, {
-    headers: { "x-security-role": "ADMIN", "content-type": "application/json", ...(init?.headers ?? {}) }, ...init,
+    credentials: "include",
+    headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
+    ...init,
   });
-  return r.json();
+  let body: unknown = null;
+  try { body = await r.json(); } catch { /* non-JSON / empty body */ }
+  if (!r.ok) {
+    const b = body as { error?: unknown; message?: unknown; result?: { reason?: unknown } } | null;
+    const serverMsg =
+      (typeof b?.error === "string" && b.error) ||
+      (typeof b?.message === "string" && b.message) ||
+      (typeof b?.result?.reason === "string" && b.result.reason) ||
+      null;
+    throw new Error(
+      r.status === 403
+        ? `Refused by the server (403): ${serverMsg ?? "Admin or Owner role required for this action."}`
+        : serverMsg ?? `Request failed (${r.status})`,
+    );
+  }
+  return body;
 }
 
 export default function OrdersPage() {
+  const { isAdmin, isLoading: roleLoading } = useProductRole();
   const [orders, setOrders] = useState<Order[]>([]);
+  const [err, setErr] = useState<string | null>(null);
   const [filter, setFilter] = useState("all");
   const [form, setForm] = useState({
     environment: "DEMO_SIMULATOR", source: "MANUAL",
@@ -77,8 +107,14 @@ export default function OrdersPage() {
   });
 
   async function load() {
-    const r = await fetch("/api/orders?limit=200").then((x) => x.json());
-    setOrders(r.orders ?? []);
+    try {
+      const r = await fetch("/api/orders?limit=200", { credentials: "include" });
+      if (!r.ok) { setErr(`Could not load orders (HTTP ${r.status}). The list below may be out of date.`); return; }
+      const body = await r.json();
+      setOrders(body.orders ?? []);
+    } catch (e) {
+      setErr(`Could not load orders: ${e instanceof Error ? e.message : String(e)}. The list below may be out of date.`);
+    }
   }
   useEffect(() => { void load(); const id = setInterval(load, 5000); return () => clearInterval(id); }, []);
 
@@ -90,18 +126,21 @@ export default function OrdersPage() {
     return orders.filter((o) => o.status === filter);
   }, [orders, filter]);
 
-  async function create() {
-    await api("/api/orders/create", { method: "POST", body: JSON.stringify({ ...form, lotSize: Number(form.lotSize) }) });
-    load();
+  // No mutation reports success on its own. Either the call resolved (and the
+  // reload shows the new state) or the server's refusal is put on screen.
+  async function mutate(run: () => Promise<unknown>) {
+    setErr(null);
+    try {
+      await run();
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
   }
-  async function submit(o: Order) {
-    await api(`/api/orders/${o.orderId}/submit-simulator`, { method: "POST" });
-    load();
-  }
-  async function cancel(o: Order) {
-    await api(`/api/orders/${o.orderId}/cancel`, { method: "POST" });
-    load();
-  }
+
+  const create = () => mutate(() => api("/api/orders/create", { method: "POST", body: JSON.stringify({ ...form, lotSize: Number(form.lotSize) }) }));
+  const submit = (o: Order) => mutate(() => api(`/api/orders/${o.orderId}/submit-simulator`, { method: "POST" }));
+  const cancel = (o: Order) => mutate(() => api(`/api/orders/${o.orderId}/cancel`, { method: "POST" }));
 
   return (
     <div className="mx-auto w-full max-w-[1280px] space-y-6 pb-32 md:pb-6">
@@ -115,6 +154,21 @@ export default function OrdersPage() {
         </div>
       </div>
 
+      {err && (
+        <div className="rounded-xl border border-danger/40 bg-danger/10 p-3 text-sm text-danger" data-testid="orders-error">
+          {err}
+        </div>
+      )}
+
+      {!roleLoading && !isAdmin && (
+        <div className="rounded-xl border border-warning/40 bg-warning/10 p-3 text-sm text-warning" data-testid="orders-readonly-note">
+          Read-only view. Creating, filling and cancelling orders require an Admin or Owner session —
+          the server refuses those actions for your role, so the controls are hidden rather than
+          shown as if they would work.
+        </div>
+      )}
+
+      {isAdmin && (
       <CollapsibleSection
         title="Quick create"
         description="Manually enter an order for the simulator or intent queue."
@@ -136,9 +190,10 @@ export default function OrdersPage() {
           <Input type="number" step="0.0001" value={form.takeProfit} onChange={(e) => setForm({ ...form, takeProfit: Number(e.target.value) })} placeholder="TP" />
           <Input type="number" value={form.riskAmount} onChange={(e) => setForm({ ...form, riskAmount: Number(e.target.value) })} placeholder="risk $" />
           <Input type="number" value={form.confidenceScore} onChange={(e) => setForm({ ...form, confidenceScore: Number(e.target.value) })} placeholder="conf" />
-          <Button onClick={create} className="md:col-span-3"><PlusCircle className="h-4 w-4 mr-1" />Create order</Button>
+          <Button onClick={() => void create()} className="md:col-span-3"><PlusCircle className="h-4 w-4 mr-1" />Create order</Button>
         </div>
       </CollapsibleSection>
+      )}
 
       <div className="flex flex-wrap gap-1.5">
         {FILTERS.map((f) => (
@@ -179,13 +234,13 @@ export default function OrdersPage() {
               {o.riskRewardRatio != null && <span className="text-xs text-txt-muted tabular-nums">RR {o.riskRewardRatio}</span>}
               {o.rejectionReason && <span className="text-xs text-danger">⚠ {humanizeReason(o.rejectionReason)}</span>}
               <span className="ml-auto text-xs text-txt-muted tabular-nums">{new Date(o.createdAt).toLocaleTimeString()}</span>
-              {o.status === "APPROVED_FOR_SIMULATION" && (
-                <Button size="sm" variant="outline" className="h-7" onClick={() => submit(o)}>
+              {isAdmin && o.status === "APPROVED_FOR_SIMULATION" && (
+                <Button size="sm" variant="outline" className="h-7" onClick={() => void submit(o)}>
                   <Send className="h-3 w-3 mr-1" />Fill simulator
                 </Button>
               )}
-              {(o.status === "APPROVED_FOR_SIMULATION" || o.status === "PENDING_MT5_CONNECTION" || o.status === "RISK_CHECK_PENDING") && (
-                <Button size="sm" variant="ghost" className="h-7" onClick={() => cancel(o)}>
+              {isAdmin && (o.status === "APPROVED_FOR_SIMULATION" || o.status === "PENDING_MT5_CONNECTION" || o.status === "RISK_CHECK_PENDING") && (
+                <Button size="sm" variant="ghost" className="h-7" onClick={() => void cancel(o)}>
                   <X className="h-3 w-3 mr-1" />Cancel
                 </Button>
               )}

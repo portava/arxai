@@ -58,6 +58,10 @@ export type LiveSharedExecuteResult = LiveSharedEnvelope & {
   // canonical reason so the ticket can show distinct copy per cause.
   blockingReasonCode?: string | null;
   commandRenderedTerminal?: boolean;
+  // Routing-precondition (409), not-found (404) and input-validation (400)
+  // envelopes carry `error` instead of `reason`. Callers must read it so a
+  // refusal never renders as "unknown".
+  error?: string | null;
 };
 
 export type LiveSharedAccessStatus = {
@@ -67,8 +71,32 @@ export type LiveSharedAccessStatus = {
   message: string | null;
 };
 
+// An OPEN live position, read from arx_live_positions via
+// GET /api/trades/live-shared/positions. This is the ONLY honest source for
+// "what is open at the broker right now" — the command log is a log of
+// intents, not a position list (a CLOSE and a MODIFY command both carry the
+// same brokerTicket, and nothing retires the original PLACE row).
+export type LiveSharedPositionRow = {
+  brokerTicket: string;
+  symbol: string;
+  side: string;
+  volume: number;
+  entryPrice: number;
+  currentPrice: number | null;
+  floatingPl: number | null;
+  stopLoss: number | null;
+  takeProfit: number | null;
+  openedAt: string | null;
+  lastSyncedAt: string | null;
+  managementState: string | null;
+  sourceCommandId: string | null;
+};
+
 export type LiveSharedCommandRow = {
   commandId: string;
+  // The command class. Projected by the server (USER_COMMAND_KEYS) and needed
+  // so a CLOSE_LIVE_POSITION row is never mistaken for an open position.
+  commandType?: string | null;
   status: string;
   symbol: string | null;
   side: string | null;
@@ -181,6 +209,18 @@ export function getMyLiveSharedCommands(limit = 50) {
   return getJson<LiveSharedEnvelope & { commands: LiveSharedCommandRow[] }>(
     `/api/trades/live-shared/commands?limit=${encodeURIComponent(String(limit))}`,
   );
+}
+
+// Open live positions for the calling user (server-scoped by uid(req)). The
+// envelope carries `ok`; on a non-200 the parsed body is `{ok:false,...}` and
+// the caller must render the failure rather than an empty position list.
+export function getMyLiveSharedPositions() {
+  return getJson<LiveSharedEnvelope & {
+    ok?: boolean;
+    error?: string | null;
+    reason?: string | null;
+    positions?: LiveSharedPositionRow[];
+  }>("/api/trades/live-shared/positions");
 }
 
 export function getMyLiveSharedTrades(limit = 50) {

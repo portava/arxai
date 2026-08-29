@@ -50,6 +50,7 @@
     "test:scanner-refresh-affordance": "vitest run src/components/scanner/RefreshAffordance.cross-card.test.ts",
     "test:scanner-outage-banner": "vitest run src/pages/market-scanner.outage-banner.test.tsx",
     "test:synthetic-feed-copy": "vitest run src/lib/humanize.synthetic-feed-copy.test.ts",
+    "test:trade-surface-honesty": "vitest run src/pages/tradeSurfaceHonesty.test.ts src/components/execution/executionLayerMounted.test.ts src/components/scanner/RecentScannerTrades.liveShared.test.tsx src/components/LiveTradeCard.actions.test.tsx",
     "test:symbol-suggest": "vitest run src/lib/symbolRegistry.suggest.test.ts",
     "test:scanner-truth": "vitest run src/lib/scannerTruth.test.ts src/lib/scannerTruthRegression.test.ts src/components/live/TradeHealthPanel.test.tsx src/components/scanner/BroadScanOpportunityMap.test.tsx src/components/scanner/SelectedMarketPanel.test.tsx src/pages/market-scanner.empty-state.test.tsx src/components/scanner/ScannerHeaderSummary.action-timeframe.test.tsx src/components/scanner/RubyChartRead.test.tsx",
     "test:admin-cockpit": "vitest run src/pages/admin/cockpit.render.test.tsx src/pages/admin/cockpit.pattern-sync-containment.test.ts src/components/admin/cockpit/cockpitShared.interaction.test.tsx",

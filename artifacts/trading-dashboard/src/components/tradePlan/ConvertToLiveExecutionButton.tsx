@@ -21,7 +21,10 @@ export function ConvertToLiveExecutionButton({ planId, isReady }: Props) {
       return res.json();
     },
     onSuccess: (data: { executionConfirmationId?: number }) => {
-      setMessage(`Created execution confirmation #${data.executionConfirmationId} (PENDING). Open the Pre-Trade Confirmation flow to review and confirm.`);
+      // The "Pre-Trade Confirmation flow" this used to send the user to is not
+      // mounted anywhere (see components/execution/index.ts), so pointing at it
+      // was a dead end. Say what actually happened instead.
+      setMessage(`Created execution confirmation #${data.executionConfirmationId} (PENDING). It is recorded for review — there is no in-app screen to confirm it yet, and no order has been placed.`);
       qc.invalidateQueries({ queryKey: ["trade-plans"] });
     },
     onError: (e: Error) => setMessage(e.message),
@@ -47,7 +50,8 @@ export function ConvertToLiveExecutionButton({ planId, isReady }: Props) {
         <p className={`mt-2 text-xs ${convert.isError ? "text-danger" : "text-success"}`}>{message}</p>
       )}
       <p className="mt-2 text-xs text-txt-muted">
-        Conversion creates a pending confirmation. Live execution still requires the Safety Core and the Pre-Trade Confirmation flow.
+        Conversion records a pending confirmation only — it places nothing. Live orders are placed from the
+        Live Trading ticket, which runs the server-side dispatch gate on every press.
       </p>
     </div>
   );
