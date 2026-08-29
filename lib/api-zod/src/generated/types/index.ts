@@ -1173,6 +1173,7 @@ export * from "./missionImpactScenario";
 export * from "./missionImpactScenarioLabel";
 export * from "./missionLifecycleActionRequest";
 export * from "./missionMilestoneState";
+export * from "./missionOutcomeCompleteness";
 export * from "./missionPartialPlan";
 export * from "./missionPartialPlanStep";
 export * from "./missionPromotionDecision";

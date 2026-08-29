@@ -5,6 +5,7 @@
  * ARX AI — Analyze. Risk. eXecute. — API
  * OpenAPI spec version: 0.1.0
  */
+import type { MissionOutcomeCompleteness } from "./missionOutcomeCompleteness";
 
 /**
  * Phase 8 milestone / protection-ladder / giveback / daily-goal read. Derived from realised CLOSED profit vs the mission's required profit. STRICTER-ONLY: every field can only tighten risk; nothing here places a trade.
@@ -33,4 +34,7 @@ export interface MissionMilestoneState {
   peakRealisedProfit: number;
   /** Sum of realised P/L across CLOSED mission trades (account currency). */
   realisedProfit: number;
+  /** How complete the realised set behind realisedProfit / peakRealisedProfit is. When complete is false those figures are a FLOOR, not a result, and stopAndLock is HELD until every closed outcome is recorded.
+   */
+  outcomeCompleteness?: MissionOutcomeCompleteness | null;
 }

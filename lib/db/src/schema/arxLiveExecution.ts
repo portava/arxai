@@ -356,6 +356,16 @@ export const arxLivePositionsTable = pgTable("arx_live_positions", {
   // Human/audit-readable evidence string for a broker-absence reconciliation
   // (e.g. "absent across 3 reliable sweeps; first absent 2026-06-07T...").
   reconcileReason: text("reconcile_reason"),
+  // ── Broker-REPORTED close (outcome truth). ALL additive + nullable. ─────────
+  // Set ONLY from an explicit broker/EA close report for this ticket — a close
+  // ARX did not issue (stop-loss, stop-out, manual close at the terminal). These
+  // hold the BROKER's own numbers verbatim; ARX never derives them from the
+  // stop-loss level, the take-profit level, or the last floating P/L. When the
+  // broker reports a close WITHOUT numbers these stay NULL and the mission
+  // outcome is recorded as UNRECONCILED rather than guessed.
+  brokerCloseReportedAt: timestamp("broker_close_reported_at", { withTimezone: true }),
+  brokerClosePrice: doublePrecision("broker_close_price"),
+  brokerRealisedPnl: doublePrecision("broker_realised_pnl"),
   // Capability #44 — manual takeover as a first-class per-position state.
   //   STRATEGY_MANAGED (default) — automated strategy management may act.
   //   MANUAL_CONTROL             — the owner has taken the position over; every

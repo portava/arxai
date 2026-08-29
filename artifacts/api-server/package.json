@@ -26,6 +26,7 @@
     "test:deriv-symbol-feed": "node --import tsx --test --test-force-exit src/lib/data/providers/__qa__/derivSymbolFeedStatus.test.ts",
     "test:live-position-exposure": "node --import tsx --test src/lib/live/__qa__/livePositionExposure.test.ts",
     "test:position-truth": "node --import tsx --test --test-force-exit src/lib/live/__qa__/positionTruthContract.test.ts",
+    "test:outcome-truth": "node --import tsx --test --test-force-exit src/lib/live/__qa__/outcomeTruth.test.ts",
     "test:live-activation-gate": "node --import tsx --test --test-force-exit src/lib/live/__qa__/liveExecutionActivationGate.test.ts",
     "test:allocation-gate": "node --import tsx --test --test-force-exit src/lib/live/__qa__/allocationGate.test.ts",
     "test:emergency-kill-switch-gate": "node --import tsx --test --test-force-exit src/lib/live/__qa__/emergencyKillSwitchPreGate.test.ts",
