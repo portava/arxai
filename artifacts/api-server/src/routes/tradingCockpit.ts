@@ -199,7 +199,30 @@ router.get("/trading-cockpit/summary", async (_req, res) => {
     notifications: {
       unreadAll,
       criticalUnread: criticalUnread.length,
-      criticalSamples: criticalUnread.slice(0, 5).map(a => ({ id: a.id, type: a.type, priority: a.priority, title: a.title, message: a.message, createdAt: a.createdAt })),
+      // CROSS-USER LEAK, closed at the read surface. getCriticalUnread() filters
+      // on read=0 and priority='CRITICAL' only — there is no user scope, because
+      // no producer populates alerts.user_id (it exists and is always NULL; see
+      // docs/API_SURFACE_JUSTIFICATIONS.md). With a live CRITICAL producer
+      // (lib/fundbook/fundControls.ts:549), returning `title` and `message` here
+      // handed one account's alert text — symbols, position ids, realised P/L —
+      // to any other caller. Those two fields are now withheld.
+      //
+      // The count and the type remain system-wide facts shown to an individual
+      // caller. That residue is stated in the payload rather than papered over,
+      // and needs the per-user scoping work to close. Withholding the count too
+      // would be a silent omission: the ACK_CRITICAL next-best-action depends on
+      // it, and a real CRITICAL alert must not disappear.
+      notificationScope: "SYSTEM_WIDE_UNSCOPED" as const,
+      criticalSamples: criticalUnread.slice(0, 5).map(a => ({
+        id: a.id,
+        type: a.type,
+        priority: a.priority,
+        createdAt: a.createdAt,
+        scope: "SYSTEM_WIDE_UNSCOPED" as const,
+        detailWithheld: true as const,
+        detailWithheldReason:
+          "The alerts table is not scoped per user, so alert text is withheld here. Open Notifications for your own alerts.",
+      })),
     },
     autopilot,
     systemHealth,

@@ -4,6 +4,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Briefcase, AlertTriangle, TrendingDown } from "lucide-react";
+// Basis of the dollar figures on this page: whether the posting ledger has been
+// reconciled against the broker's own reported balance. Floating P&L, realized
+// P&L and daily drawdown are rendered here with two decimal places and no
+// qualification; a DISPUTED verdict must be visible next to them.
+import { LedgerBasisStrip } from "@/components/money/LedgerBasisStrip";
 
 export default function Portfolio() {
   const { data: exp, isLoading } = useGetPortfolioExposure({ query: { queryKey: getGetPortfolioExposureQueryKey(), refetchInterval: 10000 } });
@@ -38,6 +43,9 @@ export default function Portfolio() {
         </h2>
         <p className="text-muted-foreground">Risk distribution across markets, strategies, and currencies.</p>
       </div>
+
+      {/* Basis of every dollar figure below: reconciled against the broker, or not. */}
+      <LedgerBasisStrip />
 
       <div className="grid gap-4 md:grid-cols-4">
         <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Open Trades</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold font-mono">{exp.totalOpen}</div></CardContent></Card>

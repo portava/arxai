@@ -4,7 +4,7 @@
 // It implemented 8 proactive safety rules (broker disconnected, position near
 // stop loss, risk lock active, near daily loss limit, …) and had zero callers:
 // no route, no worker, no scheduler. Wiring it looked like the obvious fix and
-// is not, because `alerts` is a GLOBAL table with no userId column, while the
+// is not, because this table is read and written WITHOUT USER SCOPE, while the
 // rules read global tables and embed per-user detail in the message — symbols,
 // live position ids, plan ids, today's realised loss. Those rows are read back
 // by getCriticalUnread(), which reaches any authenticated caller through
@@ -13,9 +13,28 @@
 // precisely the global-scope leak Phase 22C closed when it neutralised
 // routes/alerts.ts.
 //
-// Proactive safety alerts are therefore NOT a delivered capability. Rebuilding
-// them belongs on the per-user surface (routes/meNotifications.ts), which is
-// the canonical successor named by routes/alerts.ts.
+// CORRECTED (review). An earlier version of this note said the `alerts` table
+// "has no userId column". It does: lib/db/src/schema/alerts.ts declares a
+// nullable `user_id`, added by Build L and marked "for future multi-user". The
+// defect is not a missing column, it is an UNUSED one — CreateAlertInput below
+// has no userId field so every producer writes NULL, and getAlerts() /
+// getUnreadCount() / getCriticalUnread() filter on nothing. Stating it as a
+// missing column hid the cheapest remedy from the next maintainer: populate the
+// column that already exists and scope the reads by it. That remedy is a
+// separate piece of work — every existing row is NULL, so a naive
+// `where userId = :caller` would silently hide real alerts, which is worse than
+// the leak it closes.
+//
+// SCOPE OF THE CLAIM. The eight rule-engine rules are not generated — that is
+// what was removed. Alerts as such ARE still produced: 16 live createAlert()
+// call sites across 11 files (fundControls, reconciliationAudit,
+// mt5FeedStalenessWatchdog, onboarding state/whyBlocked, and the
+// tradeManagement / mt5 / newsCalendar / adminBridgeControl / tradePlans /
+// portfolioRisk routes) write rows here, including safety ones such as
+// MT5_DISCONNECTED and CRITICAL fund-control alerts. Saying "nothing generates
+// alerts" would be false. Rebuilding the RULE ENGINE belongs on the per-user
+// surface (routes/meNotifications.ts), which is the canonical successor named
+// by routes/alerts.ts.
 
 import {
   db,

@@ -60,7 +60,9 @@
     "test:surface-consolidation": "vitest run src/knowledge/surfaceConsolidation.test.ts",
     "test:escape-route-page": "vitest run src/pages/escape-route.honesty.test.ts",
     "test:ledger-basis-strip": "vitest run src/components/money/LedgerBasisStrip.test.tsx",
-    "test:unwired-capabilities": "vitest run src/pages/unwiredCapabilities.reachability.test.ts"
+    "test:unwired-capabilities": "vitest run src/pages/unwiredCapabilities.reachability.test.ts",
+    "test:promotion-refusal": "vitest run src/pages/profit-missions.promotion-refusal.test.tsx",
+    "test:authority-grant-press": "vitest run src/pages/authority.grant-press.test.tsx"
   },
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",

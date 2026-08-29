@@ -41,7 +41,23 @@ interface CockpitSummary {
   todayPerformance: { totalTrades: number; wins: number; losses: number; breakEven: number; netPnl: number; winRate: number; dayRating: string };
   openPaperTrades: { id: number; symbol: string; direction: string; lotSize: number; entryPrice: number; stopLoss: number; takeProfit: number; status: string; openedAt: string; profitLoss: number }[];
   coachSummary: { dailyFocus: string; mistakeToAvoid: string[]; setupsToWatch: string[]; setupsToAvoid: string[]; nextBestActions: string[] };
-  notifications: { unreadAll: number; criticalUnread: number; criticalSamples: { id: number; type: string; priority: string; title: string; message: string; createdAt: string }[] };
+  // Alert text (`title`/`message`) is deliberately absent: the alerts table is
+  // not per-user scoped, so the server withholds it rather than hand one
+  // account's alert content to another. See tradingCockpit.ts.
+  notifications: {
+    unreadAll: number;
+    criticalUnread: number;
+    notificationScope?: string;
+    criticalSamples: {
+      id: number;
+      type: string;
+      priority: string;
+      createdAt: string;
+      scope?: string;
+      detailWithheld?: boolean;
+      detailWithheldReason?: string;
+    }[];
+  };
   autopilot: { mode: string; liveTradingAllowed: false; allowedBySession: boolean; allowedByGovernor: boolean; sessionStatus: string; cooldowns: unknown[]; note: string };
   systemHealth: { overallHealth: string; readinessScore: number | null; readinessGrade: string | null; lastReadinessAt: string | null; riskGovernorStatus: string; majorWarnings: { code: string; message: string }[] };
   nextBestAction: CockpitNextAction;
@@ -277,13 +293,30 @@ function AlertsPanel({ s }: { s: CockpitSummary }) {
           <span>Critical: <span className={`font-mono ${n.criticalUnread > 0 ? "text-danger" : ""}`}>{n.criticalUnread}</span></span>
         </div>
         {n.criticalSamples.length === 0 ? (
-          <p className="text-muted-foreground text-xs">No critical alerts. Safety status is clean.</p>
+          // NOT "safety status is clean". These counts come from a table that
+          // no per-user query scopes and that the removed rule engine never
+          // fills; an empty list means nothing has been WRITTEN, not that
+          // nothing is wrong.
+          <p className="text-muted-foreground text-xs" data-testid="cockpit-no-critical-alerts">
+            No critical alerts have been recorded. That is not a statement that nothing is wrong — it means
+            none were written.
+          </p>
         ) : (
-          <ul className="space-y-1">
+          <ul className="space-y-1" data-testid="cockpit-critical-samples">
             {n.criticalSamples.map(a => (
-              <li key={a.id} className="text-xs border-l-2 border-danger pl-2"><span className="font-medium">{a.title}</span> — {a.message}</li>
+              <li key={a.id} className="text-xs border-l-2 border-danger pl-2">
+                <span className="font-medium">{a.type}</span>
+                <span className="text-muted-foreground">
+                  {" "}— {a.detailWithheldReason ?? "Alert text is not shown here."}
+                </span>
+              </li>
             ))}
           </ul>
+        )}
+        {n.criticalSamples.length > 0 && (
+          <p className="text-muted-foreground text-[11px]" data-testid="cockpit-alert-scope-note">
+            These are system-wide alerts, not scoped to your account.
+          </p>
         )}
         <Link href="/notifications"><a className="text-xs underline">Open notifications →</a></Link>
       </CardContent>

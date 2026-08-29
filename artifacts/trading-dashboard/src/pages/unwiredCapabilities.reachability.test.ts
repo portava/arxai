@@ -111,24 +111,57 @@ describe("the mission-promotion blocker is no longer a dead end", () => {
   // missionPromotionService refuses an automation increase with "requires an
   // active owner-pressed authority grant". Before /authority existed there was
   // nowhere to go: the blocker named an action with no destination.
+  //
+  // CORRECTED. This block previously asserted only that profit-missions.tsx
+  // CONTAINED the strings "authority-grant-blocker-link" and href="/authority".
+  // Both were true while the JSX was unreachable: the render condition read
+  // decision.gates from the advisory GET, and that list is the ten fixed gates
+  // evaluateMissionPromotion builds — `authority_grant` is appended only on the
+  // apply path, into decision.failedGates/blockers. A source grep cannot tell a
+  // rendered block from dead code, so the behavioural proof now lives in
+  // profit-missions.promotion-refusal.test.tsx (it mounts MissionTestingLab and
+  // drives the real 200/applied:false payload through it). What remains here is
+  // the structural half only, stated as what it is.
   const src = read("./profit-missions.tsx");
 
-  it("the promotion card links to the authority press when that gate fails", () => {
+  it("the promotion card still declares the authority link and its destination", () => {
     expect(src).toContain("authority-grant-blocker-link");
     expect(src).toContain('href="/authority"');
   });
-  it("it keys off the gate the server actually returns", () => {
-    expect(src).toContain("authority_grant");
+  it("it keys off decision.failedGates/blockers — the ONLY place authority_grant appears", () => {
+    // The advisory `gates` array can never contain it; reading failedGates and
+    // blockers is what makes the block reachable at all.
+    expect(src).toContain('vArr(d, "failedGates")');
+    expect(src).toContain('vArr(d, "blockers")');
+    expect(src).toContain("refusalNamesAuthority");
+  });
+  it("a refused apply (HTTP 200, applied:false) is surfaced rather than swallowed", () => {
+    // A refusal lands in onSuccess, not onError. Before this, onSuccess cleared
+    // the error and re-read the GET: the press did nothing and said nothing.
+    expect(src).toContain("promotion-apply-refusal");
+    expect(src).toContain("setRefusal(readRefusal(result))");
   });
 });
 
 describe("the money surfaces state their basis", () => {
-  it("Account Analytics renders the ledger-vs-broker basis strip", () => {
-    expect(read("./analytics.tsx")).toContain("<LedgerBasisStrip />");
-  });
-  it("My Account renders the ledger-vs-broker basis strip", () => {
-    expect(read("./my-account.tsx")).toContain("<LedgerBasisStrip />");
-  });
+  // Rank 32 named four surfaces that "keep rendering confident dollar figures"
+  // while a CRITICAL DISCREPANCY verdict reaches no human: Analytics, Portfolio,
+  // the Win/Loss Report and the Investor portal. All four are listed here — the
+  // first pass covered only two, so on the other three the original scenario
+  // still reproduced.
+  const MONEY_PAGES: Array<[string, string]> = [
+    ["Account Analytics", "./analytics.tsx"],
+    ["My Account", "./my-account.tsx"],
+    ["Portfolio Exposure", "./portfolio.tsx"],
+    ["Win/Loss Report", "./performance-scorecard.tsx"],
+    ["Investor Portal", "./investor.tsx"],
+  ];
+
+  for (const [label, file] of MONEY_PAGES) {
+    it(`${label} renders the ledger-vs-broker basis strip`, () => {
+      expect(read(file)).toContain("<LedgerBasisStrip />");
+    });
+  }
 });
 
 describe("Bridge Preference tells the truth about a disabled personal bridge", () => {

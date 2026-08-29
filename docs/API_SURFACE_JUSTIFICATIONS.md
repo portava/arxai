@@ -57,8 +57,8 @@ delayed, position near stop loss, trade plan invalidated, risk lock active,
 weekly review ready, approaching daily loss limit, market NO_TRADE — with zero
 callers anywhere in the repository: no route, no worker, no scheduler.
 
-Wiring it as a worker was the obvious move and was rejected. `alerts` is a
-GLOBAL table with no `userId` column; the rules read global tables and put
+Wiring it as a worker was the obvious move and was rejected. `alerts` is read
+and written **without user scope**; the rules read global tables and put
 per-user detail in the message (symbols, live position ids, plan ids, today's
 realised loss), and those rows are read back by `getCriticalUnread()`, which
 reaches any authenticated caller through `POST /api/help/why-blocked`. Firing
@@ -66,11 +66,53 @@ the engine would have leaked one user's open positions and P/L into another
 user's "Why am I blocked?" drawer — the same global-scope leak Phase 22C closed
 when it neutralised `routes/alerts.ts`.
 
-**Consequence, stated plainly: ARX has no proactive safety alerting.** The
-alert surfaces render empty because nothing generates alerts, not because
-nothing is wrong. Rebuilding this belongs on the per-user surface
-(`routes/meNotifications.ts`), the canonical successor named by
-`routes/alerts.ts`.
+**Correction (review, 2026-08-29).** This entry previously said the `alerts`
+table "has no `userId` column". That was false. `lib/db/src/schema/alerts.ts:8`
+declares `userId: integer("user_id")` — nullable, added by Build L, commented
+"for future multi-user". The defect is an **unused** column, not a missing one:
+`CreateAlertInput` (`lib/alerts/alertManager.ts`) has no `userId` field, so every
+producer writes NULL, and `getAlerts()` / `getUnreadCount()` /
+`getCriticalUnread()` filter on nothing. Describing it as absent hid the cheapest
+remedy — populate and filter the column that already exists. That remedy is real
+work, not a one-liner: every existing row is NULL, so a naive
+`where user_id = :caller` would silently hide alerts that are genuinely firing,
+which is worse than the leak it closes. It needs its own change with a backfill
+decision.
+
+**Consequence, stated precisely: ARX has no proactive safety *rule engine*.**
+The eight rules above are never evaluated, so the conditions they watch —
+position near stop loss, trade plan invalidated, approaching the daily loss
+limit — raise nothing.
+
+This is **not** the same as "nothing generates alerts", which this entry also
+used to claim and which is false. Sixteen live `createAlert()` call sites across
+eleven files still write rows to this table, including safety ones:
+`lib/fundbook/fundControls.ts` (CRITICAL), `lib/aaci/reconciliationAudit.ts`,
+`lib/data/mt5FeedStalenessWatchdog.ts`, `lib/onboarding/state.ts`,
+`lib/onboarding/whyBlocked.ts`, and the `tradeManagement`, `mt5` (e.g.
+`MT5_DISCONNECTED`), `newsCalendar`, `adminBridgeControl`, `tradePlans` and
+`portfolioRisk` routes. An empty alert surface therefore does **not** license the
+reading "nothing is wrong" — and, equally, a populated one is not proof the rule
+engine's conditions are being watched.
+
+Because those producers are live and unscoped, `GET /trading-cockpit/summary` no
+longer returns alert `title`/`message` (see the security note below). Rebuilding
+the rule engine belongs on the per-user surface (`routes/meNotifications.ts`),
+the canonical successor named by `routes/alerts.ts`.
+
+### Cross-user alert text — closed at the read surface, not at the table
+
+`GET /api/trading-cockpit/summary` called `getCriticalUnread()` (no user scope)
+and returned the top five rows' `title` and `message` to the caller. With a live
+CRITICAL producer (`lib/fundbook/fundControls.ts:549`), that meant one account's
+alert text reached another account. The route now returns only
+`{ id, type, priority, createdAt }` plus an explicit
+`scope: "SYSTEM_WIDE_UNSCOPED"` and `detailWithheld: true`, and the cockpit page
+says so rather than implying the list is the reader's own.
+
+**This is a mitigation, not a fix.** The count and the alert *type* are still
+system-wide facts shown to an individual caller. Closing that properly requires
+the per-user scoping described above and is not done here.
 
 ## NOT DELIVERED — built, mounted, reachable by no human
 

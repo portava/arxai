@@ -61,6 +61,13 @@ const KIND_LABELS: Record<string, string> = {
   AGENT_AUTONOMY_LEVEL: "Self-trade agent autonomy level",
 };
 
+/** Typed confirmation for the press that widens authority, matching the
+ *  ENABLE / ADVANCE confirmations on admin/governance.tsx and
+ *  admin/engine-drivers.tsx. A grant only permits a later gated raise, so this
+ *  is a deliberation step rather than a last line of defence — but it is still
+ *  a widening press and may not happen on a single unconsidered click. */
+const CONFIRM_PHRASE = "GRANT";
+
 function fmt(iso: string | null): string {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -75,12 +82,31 @@ export default function AuthorityPage() {
   const [busy, setBusy] = useState(false);
 
   // Grant form state.
+  //
+  // maxLevel and days START BLANK ON PURPOSE. They used to be pre-filled "3"
+  // and "7", and the level did not adapt to the selected ladder: picking
+  // AGENT_AUTONOMY_LEVEL (baseline 0) and pressing without editing granted
+  // three levels above baseline that nobody chose. A pre-filled number in a
+  // press that widens authority is a confident default, which this repository
+  // does not do — the same reason admin/edge-capacity.tsx uses blank numeric
+  // fields. Blank is refused by the validation below, so nothing is ever sent
+  // by omission.
   const [kind, setKind] = useState("MISSION_AUTOMATION_LEVEL");
   const [scopeType, setScopeType] = useState("ACCOUNT");
   const [scopeRef, setScopeRef] = useState("");
-  const [maxLevel, setMaxLevel] = useState("3");
-  const [days, setDays] = useState("7");
+  const [maxLevel, setMaxLevel] = useState("");
+  const [days, setDays] = useState("");
   const [reason, setReason] = useState("");
+  const [confirmText, setConfirmText] = useState("");
+
+  // The ladder currently selected in the form, read from the server payload.
+  // Undefined when the read failed or the kind is unknown — the form says so
+  // rather than substituting numbers.
+  const selected = page?.effective.find((e) => e.kind === kind);
+  // The press is armed only when every field was deliberately filled and the
+  // confirmation phrase was typed. Nothing here is pre-satisfied.
+  const armed =
+    maxLevel.trim() !== "" && days.trim() !== "" && confirmText === CONFIRM_PHRASE;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -109,10 +135,13 @@ export default function AuthorityPage() {
 
   async function createGrant() {
     setActionErr("");
+    if (maxLevel.trim() === "") { setActionErr("Choose the maximum level this grant permits — there is no default."); return; }
+    if (days.trim() === "") { setActionErr("Choose how many days this grant lasts — there is no default."); return; }
     const level = Number(maxLevel);
     const dayCount = Number(days);
     if (!Number.isInteger(level)) { setActionErr("Level must be a whole number."); return; }
     if (!Number.isFinite(dayCount) || dayCount <= 0) { setActionErr("Duration must be a positive number of days."); return; }
+    if (confirmText !== CONFIRM_PHRASE) { setActionErr(`Type ${CONFIRM_PHRASE} to confirm this press.`); return; }
     setBusy(true);
     try {
       const expiresAt = new Date(Date.now() + dayCount * 24 * 60 * 60 * 1000).toISOString();
@@ -135,6 +164,9 @@ export default function AuthorityPage() {
         return;
       }
       setReason("");
+      setMaxLevel("");
+      setDays("");
+      setConfirmText("");
       await load();
     } catch (e) {
       setActionErr(`Grant failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -260,21 +292,52 @@ export default function AuthorityPage() {
                   <Input value={scopeRef} onChange={(e) => setScopeRef(e.target.value)} data-testid="input-scope-ref" />
                 </label>
                 <label className="space-y-1 text-sm">
-                  <span className="text-muted-foreground">Maximum level this grant permits</span>
-                  <Input value={maxLevel} onChange={(e) => setMaxLevel(e.target.value)} inputMode="numeric" data-testid="input-max-level" />
+                  <span className="text-muted-foreground">
+                    Maximum level this grant permits (no default — choose one)
+                  </span>
+                  <Input
+                    value={maxLevel}
+                    onChange={(e) => setMaxLevel(e.target.value)}
+                    inputMode="numeric"
+                    placeholder="required"
+                    data-testid="input-max-level"
+                  />
+                  {/* The chosen ladder's own numbers, so the level is picked
+                      against this ladder rather than against a remembered one.
+                      A missing read renders "—", never a stand-in number. */}
+                  <span className="block text-xs text-muted-foreground" data-testid="max-level-ladder-context">
+                    {selected
+                      ? `${KIND_LABELS[selected.kind] ?? selected.kind}: baseline ${selected.baseline}, ceiling now ${selected.accountCeiling}, ladder max ${selected.ladderMax}.`
+                      : "Ladder baseline and maximum — unavailable."}
+                  </span>
                 </label>
                 <label className="space-y-1 text-sm">
                   <span className="text-muted-foreground">
-                    Expires in (days, at most {Math.floor(page.maxGrantDurationMs / (24 * 60 * 60 * 1000))})
+                    Expires in (days, at most {Math.floor(page.maxGrantDurationMs / (24 * 60 * 60 * 1000))}) — no default
                   </span>
-                  <Input value={days} onChange={(e) => setDays(e.target.value)} inputMode="numeric" data-testid="input-grant-days" />
+                  <Input
+                    value={days}
+                    onChange={(e) => setDays(e.target.value)}
+                    inputMode="numeric"
+                    placeholder="required"
+                    data-testid="input-grant-days"
+                  />
                 </label>
                 <label className="space-y-1 text-sm">
                   <span className="text-muted-foreground">Reason (kept in the audit trail)</span>
                   <Input value={reason} onChange={(e) => setReason(e.target.value)} data-testid="input-grant-reason" />
                 </label>
+                <label className="space-y-1 text-sm">
+                  <span className="text-muted-foreground">Type {CONFIRM_PHRASE} to confirm</span>
+                  <Input
+                    value={confirmText}
+                    onChange={(e) => setConfirmText(e.target.value)}
+                    placeholder={CONFIRM_PHRASE}
+                    data-testid="input-grant-confirm"
+                  />
+                </label>
               </div>
-              <Button onClick={() => void createGrant()} disabled={busy} data-testid="button-create-grant">
+              <Button onClick={() => void createGrant()} disabled={busy || !armed} data-testid="button-create-grant">
                 <ShieldCheck className="mr-2 h-4 w-4" /> Press grant
               </Button>
               {actionErr && (
