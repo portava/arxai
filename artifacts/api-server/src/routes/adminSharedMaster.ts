@@ -295,4 +295,59 @@ router.post("/admin/shared-master/unattributed/:id/dismiss", async (req, res) =>
   }
 });
 
+// ── GET /api/admin/shared-master/netting ───────────────────────────────────
+// Capability #49 — netting-effect READ. Runs the pure detector
+// (@workspace/domain live-position/netting) over the OPEN attribution slices
+// of each shared master account and reports, per symbol, the gross/net
+// decomposition, offset (hedged) volume, and whether the offset CROSSES
+// users — the state where one user's position is economically the
+// counterparty of another's on the same broker account.
+//
+// READ-ONLY and honest: a failed read returns a typed 500, never a
+// synthesized empty report; malformed rows surface in `rejectedSlices` with
+// typed reasons (the detector never drops them silently).
+router.get("/admin/shared-master/netting", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const { detectNettingEffects } = await import("@workspace/domain/live-position");
+    const openAttrs = await db.select({
+      sharedMasterAccountId: sharedTradeAttributionTable.sharedMasterAccountId,
+      userId: sharedTradeAttributionTable.userId,
+      symbol: sharedTradeAttributionTable.symbol,
+      side: sharedTradeAttributionTable.side,
+      lotSize: sharedTradeAttributionTable.lotSize,
+      id: sharedTradeAttributionTable.id,
+    }).from(sharedTradeAttributionTable)
+      .where(eq(sharedTradeAttributionTable.status, "open"));
+
+    const byMaster = new Map<number, typeof openAttrs>();
+    for (const a of openAttrs) {
+      const list = byMaster.get(a.sharedMasterAccountId) ?? [];
+      list.push(a);
+      byMaster.set(a.sharedMasterAccountId, list);
+    }
+    const perMaster = [...byMaster.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([sharedMasterAccountId, rows]) => ({
+        sharedMasterAccountId,
+        report: detectNettingEffects(rows.map((r) => ({
+          userId: r.userId,
+          symbol: r.symbol,
+          side: r.side,
+          volumeLots: r.lotSize,
+          ref: `attribution:${r.id}`,
+        }))),
+      }));
+    res.json({
+      ok: true,
+      perMaster,
+      crossUserOffsetDetected: perMaster.some((m) => m.report.crossUserOffsetDetected),
+    });
+  } catch (e) {
+    req.log?.error({ err: e }, "admin_shared_master_netting_read_failed");
+    // Honest failure: no synthesized empty report.
+    res.status(500).json({ ok: false, error: "netting_read_failed" });
+  }
+});
+
 export default router;

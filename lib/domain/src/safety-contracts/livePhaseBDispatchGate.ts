@@ -117,6 +117,39 @@ export interface LivePhaseBGateInput {
   // the waiver. Default-deny: omitted/undefined is treated as NOT waived.
   disclosureWaivedByOperator?: boolean;
 
+  // Capability #52 — compliance-eligibility consult (blueprint §70), evaluated
+  // INSIDE gate #3 (USER_NOT_LIVE_APPROVED): an admin live-approval is not a
+  // complete approval when the compliance gate refuses this user × venue
+  // (COMPLIANCE_HOLD default, READ_ONLY posture, outside-client funds, …).
+  // This is deliberately NOT a new gate key — venue parity dispositions cover
+  // the existing 21 keys, and gate #3 is exactly "is this user approved to
+  // trade live here", which compliance is a component of.
+  //
+  // Omitted/null = NOT evaluated (readiness previews / legacy callers with no
+  // compliance context): gate #3 then behaves exactly as before this field
+  // existed, so no existing caller weakens or changes. The live dispatch
+  // pipeline ALWAYS supplies it (pinned by test:compliance-dispatch-consult);
+  // within a supplied block, `allowed:false` fails gate #3 even when
+  // `userLiveApproved` is true.
+  complianceEligibility?: {
+    /** The compliance gate's verdict for this user × venue. */
+    allowed: boolean;
+    /** Refusal reason codes (ELIGIBILITY_READ_ONLY, ELIGIBILITY_COMPLIANCE_HOLD, …). */
+    reasons: string[];
+    /**
+     * Close-path posture: true ONLY when the dispatch pipeline marked a
+     * REFUSING verdict advisory for a risk-reducing CLOSE_LIVE_POSITION
+     * (complianceDispatchInput.complianceVerdictForCommand). Gate #3 then
+     * records the refusal verbatim in the readout but PASSES — a compliance
+     * hold must never trap an open position (mirrors the kill-switch
+     * emergency-CLOSE exemption and the management-authority advisory
+     * degradation for risk-reducing closes). Never set for entries or
+     * MODIFY_LIVE_SLTP; has no effect on an allowing verdict, and can never
+     * rescue a missing admin approval.
+     */
+    advisoryOnly?: boolean;
+  } | null;
+
   // Foundation gates #19–#21 (provenance / edge-promotion / capital tier).
   // The dispatch pipeline ALWAYS assembles and supplies this block (pinned by
   // test:foundation-gates); within it every unresolvable fact fails CLOSED
@@ -165,9 +198,34 @@ export function evaluateLivePhaseBDispatchGate(
     "User has not passed the 15-check arming gate.");
   else pass("USER_NOT_ARMED_FOR_LIVE");
 
-  // 3. Per-user admin approval
+  // 3. Per-user admin approval + compliance-eligibility consult (capability
+  //    #52). Admin approval alone is not sufficient when a supplied compliance
+  //    verdict refuses; compliance can only ADD a failure here, never turn a
+  //    missing admin approval into a pass.
+  const compliance = input.complianceEligibility ?? null;
   if (!input.userLiveApproved) fail("USER_NOT_LIVE_APPROVED",
     "Admin has not approved this user for live trading.");
+  else if (compliance != null && !compliance.allowed && compliance.advisoryOnly === true)
+    // Risk-reducing CLOSE: the refusal is recorded verbatim but does not
+    // block — a compliance hold must never trap an open position. The
+    // pipeline sets advisoryOnly ONLY for CLOSE_LIVE_POSITION.
+    gates.push({
+      key: "USER_NOT_LIVE_APPROVED",
+      passed: true,
+      detail: `Compliance eligibility REFUSED this user × venue: [${compliance.reasons.join(", ")}] `
+        + "— degraded to ADVISORY for a risk-reducing CLOSE (recorded, not blocking). "
+        + "Entries and SL/TP modifies remain blocked until a review allows.",
+    });
+  else if (compliance != null && !compliance.allowed) fail("USER_NOT_LIVE_APPROVED",
+    `Compliance eligibility gate refused this user × venue: [${compliance.reasons.join(", ")}]. `
+    + "Admin live-approval does not override a compliance refusal.");
+  else if (compliance == null) gates.push({
+    key: "USER_NOT_LIVE_APPROVED",
+    passed: true,
+    detail: "Admin approval present. Compliance eligibility NOT evaluated "
+      + "(no compliance context supplied — readiness preview / legacy caller). "
+      + "Live dispatch always supplies the compliance verdict.",
+  });
   else pass("USER_NOT_LIVE_APPROVED");
 
   // 4. Global live enabled (singleton)

@@ -497,3 +497,6 @@ export * from "./executionPolicyPromotion";
 // Additive-only; applied via docs/migrations-pending/build-product-polish.sql.
 export * from "./authorityGrants";
 export * from "./riskPendingIncreases";
+// ── Institutional hierarchy (capability #50) — org/legal-entity model ──
+// Additive-only; applied via docs/migrations-pending/build-institutional.sql.
+export * from "./institutional";
