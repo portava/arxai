@@ -102,7 +102,7 @@ function Modal({ title, onConfirm, onCancel, busy, children, danger }: ModalProp
             Cancel
           </button>
           <button type="button" onClick={onConfirm} disabled={busy}
-            className={`flex-1 rounded-lg py-2 text-sm font-semibold text-foreground disabled:opacity-50 transition ${danger ? "bg-danger hover:bg-danger/80 border border-danger" : "bg-cyan-700 hover:bg-cyan-600 border border-cyan-600"}`}>
+            className={`flex-1 rounded-lg py-2 text-sm font-semibold text-foreground disabled:opacity-50 transition ${danger ? "bg-danger hover:bg-danger/80 border border-danger" : "bg-ruby/15 hover:bg-ruby border border-ruby"}`}>
             {busy ? "Working…" : "Confirm"}
           </button>
         </div>
@@ -170,7 +170,7 @@ function GhostBadge({ r, onClick }: { r: ReconcileUser | undefined; onClick: () 
       onClick={onClick}
       data-testid="ghost-badge"
       title={`Ghost positions — ${parts.join(", ")}. Genuine open (live exposure): ${r.genuineOpen}. Click to review the individual rows.`}
-      className="inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-semibold bg-amber-900/40 text-amber-300 border border-amber-700/40 hover:bg-amber-800/50 hover:border-amber-600/60 cursor-pointer transition">
+      className="inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-semibold bg-warning/40 text-warning border border-warning/40 hover:bg-warning/50 hover:border-warning/60 cursor-pointer transition">
       👻 {r.reconciledCount} reconciled · {r.genuineOpen} genuine open
     </button>
   );
@@ -186,11 +186,11 @@ function ghostStateBadge(state: string | null) {
   const s = (state ?? "").toUpperCase();
   const map: Record<string, string> = {
     IGNORED: "bg-secondary text-txt-secondary border-border",
-    EXTERNAL: "bg-blue-900/40 text-blue-300 border-blue-700/40",
+    EXTERNAL: "bg-primary/40 text-primary border-primary/40",
     IMPORTED: "bg-success/30 text-success border-success/40",
   };
   return (
-    <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-semibold border ${map[s] ?? "bg-amber-900/40 text-amber-300 border-amber-700/40"}`}>
+    <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-semibold border ${map[s] ?? "bg-warning/40 text-warning border-warning/40"}`}>
       {s || "—"}
     </span>
   );
@@ -241,7 +241,7 @@ function GhostDetailModal({
         ) : (
           <div className="space-y-2">
             {rows.map((row) => (
-              <div key={row.id} className="rounded-md border border-amber-700/30 bg-amber-900/10 p-2.5 text-xs" data-testid={`ghost-row-${row.id}`}>
+              <div key={row.id} className="rounded-md border border-warning/30 bg-warning/10 p-2.5 text-xs" data-testid={`ghost-row-${row.id}`}>
                 <div className="flex items-center gap-2 flex-wrap">
                   {ghostStateBadge(row.reconcileState)}
                   <span className="font-medium text-foreground">{row.symbol}</span>
@@ -269,7 +269,7 @@ function GhostDetailModal({
           These rows are already resolved and read-only here. To resolve a genuinely
           orphaned position (ignore / mark external / import-link / close), open the{" "}
           <a href={`${(import.meta.env.BASE_URL || "/").replace(/\/$/, "")}/admin/bridge-diagnostics`}
-            className="text-cyan-400 hover:text-cyan-300 underline" data-testid="ghost-detail-recon-link">
+            className="text-ruby hover:text-ruby underline" data-testid="ghost-detail-recon-link">
             Reconciliation Center
           </a>.
         </div>
@@ -282,7 +282,7 @@ function GhostDetailModal({
 function StatusBadge({ status, tradingFrozen, aiTradingFrozen }: { status: string; tradingFrozen: boolean; aiTradingFrozen: boolean }) {
   if (status === "frozen") return <span className="text-[10px] rounded px-1.5 py-0.5 bg-danger/40 text-danger border border-danger/40">Frozen</span>;
   if (tradingFrozen)       return <span className="text-[10px] rounded px-1.5 py-0.5 bg-warning/40 text-warning border border-warning/40">Trading Frozen</span>;
-  if (aiTradingFrozen)     return <span className="text-[10px] rounded px-1.5 py-0.5 bg-purple-900/40 text-purple-300 border border-purple-700/40">AI Frozen</span>;
+  if (aiTradingFrozen)     return <span className="text-[10px] rounded px-1.5 py-0.5 bg-premium/40 text-premium border border-premium/40">AI Frozen</span>;
   return <span className="text-[10px] rounded px-1.5 py-0.5 bg-success/40 text-success border border-success/40">Active</span>;
 }
 
@@ -495,7 +495,7 @@ export default function AdminAllocationsPage() {
     : allocs;
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-5 p-4 md:p-6 pb-32 md:pb-6">
+    <div className="mx-auto w-full max-w-6xl space-y-5 pb-32 md:pb-6">
       {/* Header */}
       <div className="rounded-xl border border-border bg-card p-4">
         <h1 className="text-base font-semibold text-foreground mb-1">Bridge Allocations</h1>
@@ -633,7 +633,7 @@ export default function AdminAllocationsPage() {
                   </div>
                   <button type="button" disabled={busy || !master?.available}
                     onClick={() => { setAttachTarget(u); setNote(""); setModal("attach"); }}
-                    className="rounded px-2 py-1 text-[10px] bg-cyan-800/50 text-cyan-200 hover:bg-cyan-700/60 border border-cyan-700/40 disabled:opacity-50">
+                    className="rounded px-2 py-1 text-[10px] bg-ruby/50 text-ruby hover:bg-ruby/60 border border-ruby/40 disabled:opacity-50">
                     Attach
                   </button>
                 </li>
@@ -670,7 +670,7 @@ export default function AdminAllocationsPage() {
                     return (
                       <th key={h} className="px-3 py-2 text-left font-medium whitespace-nowrap">
                         <button type="button" onClick={() => toggleSort(key)}
-                          className={`inline-flex items-center gap-1 hover:text-foreground transition ${active ? "text-cyan-300" : "text-txt-secondary"}`}
+                          className={`inline-flex items-center gap-1 hover:text-foreground transition ${active ? "text-ruby" : "text-txt-secondary"}`}
                           title={`Sort by ${h}`}>
                           {h}
                           <span className="text-[9px] leading-none">{active ? (sortDir === "asc" ? "▲" : "▼") : "↕"}</span>
@@ -693,7 +693,7 @@ export default function AdminAllocationsPage() {
                     <td className="px-3 py-2 text-txt-secondary max-w-[140px] truncate">{a.email ?? `User ${a.userId}`}</td>
                     <td className="px-3 py-2 font-mono text-foreground">${a.totalAllocation.toFixed(2)}</td>
                     <td className="px-3 py-2 font-mono text-txt-secondary">${(a.manualAllocationBalance ?? 0).toFixed(2)}</td>
-                    <td className="px-3 py-2 font-mono text-purple-300">${(a.aiManagedAllocationBalance ?? 0).toFixed(2)}</td>
+                    <td className="px-3 py-2 font-mono text-premium">${(a.aiManagedAllocationBalance ?? 0).toFixed(2)}</td>
                     <td className="px-3 py-2 font-mono text-success">${a.availableBalance.toFixed(2)}</td>
                     <td className="px-3 py-2 font-mono text-warning">${(a.reservedRisk ?? 0).toFixed(2)}</td>
                     <td className={`px-3 py-2 font-mono ${(a.realizedPnl ?? 0) >= 0 ? "text-success" : "text-danger"}`}>
@@ -733,7 +733,7 @@ export default function AdminAllocationsPage() {
                     <td className="px-3 py-2">
                       <div className="flex flex-wrap gap-1">
                         {a.attachment?.attached ? (
-                          <span className="text-[10px] rounded px-1.5 py-0.5 bg-cyan-900/40 text-cyan-300 border border-cyan-700/40">Attached</span>
+                          <span className="text-[10px] rounded px-1.5 py-0.5 bg-ruby/40 text-ruby border border-ruby/40">Attached</span>
                         ) : (
                           <span className="text-[10px] rounded px-1.5 py-0.5 bg-secondary text-txt-secondary border border-border">Not attached</span>
                         )}
@@ -743,7 +743,7 @@ export default function AdminAllocationsPage() {
                             : <span className="text-[10px] rounded px-1.5 py-0.5 bg-warning/40 text-warning border border-warning/40" title={`vBal $${a.attachment.virtualBalance.toFixed(2)}`}>Drift</span>
                         )}
                         {a.attachment?.approvedForMasterLive && (
-                          <span className="text-[10px] rounded px-1.5 py-0.5 bg-violet-900/40 text-violet-300 border border-violet-700/40">Approved</span>
+                          <span className="text-[10px] rounded px-1.5 py-0.5 bg-premium/40 text-premium border border-premium/40">Approved</span>
                         )}
                       </div>
                     </td>
@@ -754,9 +754,9 @@ export default function AdminAllocationsPage() {
                         <button type="button" onClick={() => openModal("remove", a)} className="rounded px-1.5 py-0.5 text-[10px] bg-danger/40 text-danger hover:bg-danger/40 border border-danger/30">-Remove</button>
                         <button type="button" onClick={() => openModal("set", a)} className="rounded px-1.5 py-0.5 text-[10px] bg-secondary text-txt-secondary hover:bg-secondary/80 border border-border">Set</button>
                         <button type="button" onClick={() => openModal("transfer", a)} className="rounded px-1.5 py-0.5 text-[10px] bg-primary/40 text-primary hover:bg-primary/40 border border-primary/30">Transfer</button>
-                        <button type="button" onClick={() => openModal("ai", a)} className="rounded px-1.5 py-0.5 text-[10px] bg-purple-900/40 text-purple-300 hover:bg-purple-800/40 border border-purple-700/30">AI</button>
+                        <button type="button" onClick={() => openModal("ai", a)} className="rounded px-1.5 py-0.5 text-[10px] bg-premium/40 text-premium hover:bg-premium/40 border border-premium/30">AI</button>
                         {a.attachment?.attached && (
-                          <button type="button" onClick={() => openModal("refresh", a)} className="rounded px-1.5 py-0.5 text-[10px] bg-cyan-900/40 text-cyan-300 hover:bg-cyan-800/40 border border-cyan-700/30">Refresh</button>
+                          <button type="button" onClick={() => openModal("refresh", a)} className="rounded px-1.5 py-0.5 text-[10px] bg-ruby/40 text-ruby hover:bg-ruby/40 border border-ruby/30">Refresh</button>
                         )}
                         {a.attachment?.attached && (
                           <button type="button" onClick={() => openModal("detach", a)} className="rounded px-1.5 py-0.5 text-[10px] bg-secondary text-txt-secondary hover:bg-secondary/80 border border-border">Detach</button>

@@ -60,14 +60,14 @@ function severityClass(sev: string): string {
   switch (sev) {
     case "CRITICAL": return "bg-destructive text-destructive-foreground";
     case "DANGER": return "bg-destructive/80 text-destructive-foreground";
-    case "WARN": return "bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 border border-yellow-500/40";
+    case "WARN": return "bg-warning/20 text-warning dark:text-warning border border-warning/40";
     default: return "bg-muted text-muted-foreground";
   }
 }
 
 function linkHealthClass(h: string): string {
-  if (h === "OK") return "bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border border-emerald-500/40";
-  if (h === "DEGRADED") return "bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 border border-yellow-500/40";
+  if (h === "OK") return "bg-success/20 text-success dark:text-success border border-success/40";
+  if (h === "DEGRADED") return "bg-warning/20 text-warning dark:text-warning border border-warning/40";
   return "bg-destructive/20 text-destructive border border-destructive/40";
 }
 
@@ -484,7 +484,7 @@ export default function Emergency() {
 
   if (statusQ.isLoading || !statusQ.data) {
     return (
-      <div className="space-y-4 p-2">
+      <div className="space-y-4">
         <Skeleton className="h-32 w-full" />
         <Skeleton className="h-48 w-full" />
         <Skeleton className="h-72 w-full" />
@@ -495,7 +495,7 @@ export default function Emergency() {
   const status = statusQ.data;
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-300 p-2">
+    <div className="space-y-6 animate-in fade-in duration-300">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">

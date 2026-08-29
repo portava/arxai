@@ -13,7 +13,7 @@ export function PositionRiskWarningBanner({ position }: { position: LivePosition
   return (
     <div className="space-y-1.5">
       {messages.map((m, i) => (
-        <div key={i} className={`rounded-md border px-3 py-2 text-xs ${m.tone === "danger" ? "border-rose-500/40 bg-rose-500/10 text-rose-200" : "border-amber-500/40 bg-amber-500/10 text-amber-200"}`}>
+        <div key={i} className={`rounded-md border px-3 py-2 text-xs ${m.tone === "danger" ? "border-danger/40 bg-danger/10 text-danger" : "border-warning/40 bg-warning/10 text-warning"}`}>
           {m.text}
         </div>
       ))}

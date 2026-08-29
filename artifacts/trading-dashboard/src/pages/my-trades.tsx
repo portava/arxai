@@ -238,7 +238,7 @@ export default function MyTradesPage() {
   }, [cards, sum.totalLots]);
 
   return (
-    <div className="mx-auto w-full max-w-[1280px] space-y-4 p-4 md:p-6 pb-32 md:pb-6">
+    <div className="mx-auto w-full max-w-[1280px] space-y-4 pb-32 md:pb-6">
       {/* Hero */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex items-start gap-3">
@@ -464,10 +464,10 @@ export default function MyTradesPage() {
                               className={cn(
                                 "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-bold",
                                 new Set(["A+", "A", "B"]).has(t.timingGrade)
-                                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
+                                  ? "border-success/40 bg-success/10 text-success"
                                   : t.dangerScore >= 65
-                                    ? "border-rose-500/40 bg-rose-500/10 text-rose-400"
-                                    : "border-amber-500/40 bg-amber-500/10 text-amber-400",
+                                    ? "border-danger/40 bg-danger/10 text-danger"
+                                    : "border-warning/40 bg-warning/10 text-warning",
                               )}
                               title={`Timing: ${t.timingGrade} grade · H:${t.heatScore} D:${t.dangerScore} — advisory only`}
                             >
@@ -493,8 +493,8 @@ export default function MyTradesPage() {
                             <div className={cn(
                               "flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs",
                               isStandDown
-                                ? "border-rose-500/40 bg-rose-500/10 text-rose-400"
-                                : "border-amber-500/40 bg-amber-500/10 text-amber-400",
+                                ? "border-danger/40 bg-danger/10 text-danger"
+                                : "border-warning/40 bg-warning/10 text-warning",
                             )}>
                               <Flame className="h-3 w-3 shrink-0" />
                               <span className="font-semibold">{isStandDown ? "STAND DOWN" : "High Danger"}</span>

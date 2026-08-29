@@ -61,7 +61,7 @@ export function LiveReadinessStatusCard({ showRawCodes = false }: { showRawCodes
     return (
       <Card data-testid="card-live-readiness-status">
         <CardHeader><CardTitle className="text-base">Live readiness</CardTitle></CardHeader>
-        <CardContent className="text-xs text-rose-400">Could not load readiness: {err}</CardContent>
+        <CardContent className="text-xs text-danger">Could not load readiness: {err}</CardContent>
       </Card>
     );
   }
@@ -81,8 +81,8 @@ export function LiveReadinessStatusCard({ showRawCodes = false }: { showRawCodes
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           {livePossible
-            ? <ShieldCheck className="w-4 h-4 text-emerald-400" />
-            : <ShieldAlert className="w-4 h-4 text-amber-400" />}
+            ? <ShieldCheck className="w-4 h-4 text-success" />
+            : <ShieldAlert className="w-4 h-4 text-warning" />}
           {data.plainEnglish.headline}
         </CardTitle>
         <CardDescription>
@@ -92,11 +92,11 @@ export function LiveReadinessStatusCard({ showRawCodes = false }: { showRawCodes
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
         <div className="flex flex-wrap gap-2">
-          <Badge className={livePossible ? "bg-emerald-500/20 text-emerald-300" : "bg-rose-500/20 text-rose-300"}
+          <Badge className={livePossible ? "bg-success/20 text-success" : "bg-danger/20 text-danger"}
             data-testid="badge-live-status">
             Real broker execution: {livePossible ? "available" : "locked"}
           </Badge>
-          <Badge className={data.plainEnglish.demoAvailable ? "bg-emerald-500/20 text-emerald-300" : "bg-slate-500/20 text-slate-300"}
+          <Badge className={data.plainEnglish.demoAvailable ? "bg-success/20 text-success" : "bg-muted text-txt-secondary"}
             data-testid="badge-demo-status">
             <FlaskConical className="w-3 h-3 mr-1" />
             Demo trading: {data.plainEnglish.demoAvailable ? "available" : "off"}

@@ -111,7 +111,7 @@ function StatusBadge({ status, expired }: { status: string; expired?: boolean })
   return (
     <span className="flex items-center gap-1">
       <Badge variant={variant}>{status}</Badge>
-      {expired && status === "PENDING" && <Badge variant="outline" className="text-amber-500 border-amber-500">EXPIRED</Badge>}
+      {expired && status === "PENDING" && <Badge variant="outline" className="text-warning border-warning">EXPIRED</Badge>}
     </span>
   );
 }
@@ -131,7 +131,7 @@ function CopyButton({ text }: { text: string }) {
       className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-muted hover:bg-muted/70 transition-colors"
       title="Copy"
     >
-      {copied ? <CheckCircle className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
+      {copied ? <CheckCircle className="w-3 h-3 text-success" /> : <Copy className="w-3 h-3" />}
       {copied ? "Copied" : "Copy"}
     </button>
   );
@@ -149,13 +149,13 @@ function ExpiryCell({ expiresAt, status }: { expiresAt: string | null; status: s
     return (
       <span className="flex flex-col">
         <span>{ind.dateLabel}</span>
-        <Badge variant="outline" className="w-fit text-red-500 border-red-500">{ind.relativeLabel}</Badge>
+        <Badge variant="outline" className="w-fit text-danger border-danger">{ind.relativeLabel}</Badge>
       </span>
     );
   }
   const toneClass =
-    ind.tone === "danger" ? "text-red-500 border-red-500" :
-    ind.tone === "warning" ? "text-amber-500 border-amber-500" :
+    ind.tone === "danger" ? "text-danger border-danger" :
+    ind.tone === "warning" ? "text-warning border-warning" :
     "text-muted-foreground border-border";
   return (
     <span className="flex flex-col">
@@ -273,7 +273,7 @@ function RegistrationKeysSection() {
   return (
     <div className="space-y-4">
       {!pepperOk && (
-        <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-600">
+        <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
           <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
           <span>
             <b>REGISTRATION_KEY_PEPPER is not set.</b> Key generation and validation will fail until this environment variable is configured.
@@ -351,9 +351,9 @@ function RegistrationKeysSection() {
 
       {/* One-time raw key reveal */}
       {generatedKeys && generatedKeys.length > 0 && (
-        <Card className="border-amber-500/40 bg-amber-500/5">
+        <Card className="border-warning/40 bg-warning/5">
           <CardHeader>
-            <CardTitle className="text-amber-600 flex items-center gap-2">
+            <CardTitle className="text-warning flex items-center gap-2">
               <AlertTriangle className="w-4 h-4" />
               Raw keys are only shown once. Save them now.
             </CardTitle>
@@ -376,11 +376,11 @@ function RegistrationKeysSection() {
       )}
 
       {/* Expiring Soon — in-app twin of the email digest */}
-      <Card className="border-amber-500/40" data-testid="rk-expiring-soon-panel">
+      <Card className="border-warning/40" data-testid="rk-expiring-soon-panel">
         <CardHeader>
           <CardTitle className="flex flex-wrap items-center justify-between gap-2">
             <span className="flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-amber-500" />
+              <AlertTriangle className="w-4 h-4 text-warning" />
               Expiring Soon — next {expiringQuery.data?.windowDays ?? 7} days ({expiringQuery.data?.total ?? 0})
             </span>
             <Button
@@ -401,7 +401,7 @@ function RegistrationKeysSection() {
           {expiringQuery.isLoading ? (
             <div className="text-sm text-muted-foreground">Loading…</div>
           ) : expiringQuery.isError ? (
-            <div className="text-sm text-red-500 py-3 text-center" data-testid="rk-expiring-soon-error">
+            <div className="text-sm text-danger py-3 text-center" data-testid="rk-expiring-soon-error">
               Couldn't load expiring keys{expiringQuery.error instanceof Error ? `: ${expiringQuery.error.message}` : "."}{" "}
               <button type="button" className="underline" onClick={() => expiringQuery.refetch()}>
                 Retry
@@ -426,8 +426,8 @@ function RegistrationKeysSection() {
               </thead>
               <tbody>
                 {expiringQuery.data!.items.map((it) => {
-                  const tone = it.daysLeft <= 1 ? "text-red-500 border-red-500"
-                    : it.daysLeft <= 3 ? "text-amber-500 border-amber-500"
+                  const tone = it.daysLeft <= 1 ? "text-danger border-danger"
+                    : it.daysLeft <= 3 ? "text-warning border-warning"
                     : "text-muted-foreground border-border";
                   return (
                     <tr key={it.id} className="border-t align-top" data-testid={`rk-expiring-row-${it.id}`}>
@@ -530,7 +530,7 @@ function RegistrationKeysSection() {
               ))}
               <button
                 onClick={() => setSoonOnly((v) => !v)}
-                className={`text-xs px-2 py-0.5 rounded border transition-colors ${soonOnly ? "bg-amber-500 text-white border-amber-500" : "border-amber-500/50 text-amber-600 hover:bg-amber-500/10"}`}
+                className={`text-xs px-2 py-0.5 rounded border transition-colors ${soonOnly ? "bg-warning text-white border-warning" : "border-warning/50 text-warning hover:bg-warning/10"}`}
                 data-testid="rk-filter-expiring-soon"
                 title="Show only PENDING keys expiring within 7 days, soonest first"
               >
@@ -739,18 +739,18 @@ export default function AdminBetaControlPage() {
     declineReq.mutate({ id, reason });
   }
 
-  if (isLoading) return <div className="p-4 text-sm">Loading…</div>;
-  if (error) return <div className="p-4 text-sm text-danger">Error: {(error as Error).message}</div>;
+  if (isLoading) return <div className="text-sm">Loading…</div>;
+  if (error) return <div className="text-sm text-danger">Error: {(error as Error).message}</div>;
   if (!data) return null;
 
   return (
-    <div className="space-y-6 p-1 max-w-6xl" data-testid="page-admin-beta-control">
+    <div className="space-y-6 max-w-6xl" data-testid="page-admin-beta-control">
       <div>
         <h1 className="text-2xl font-bold">Beta Control Center</h1>
         <p className="text-sm text-muted-foreground">
           Cohort {data.cohort} · max {data.maxCohortSize} legacy seats ·
-          Gate: {data.inviteGateEnabled ? <span className="text-green-600 font-medium">ENABLED</span> : <span className="text-muted-foreground">off</span>} ·
-          Pepper: {data.registrationKeyPepperConfigured ? <span className="text-green-600 font-medium">configured</span> : <span className="text-amber-500 font-medium">NOT SET</span>}
+          Gate: {data.inviteGateEnabled ? <span className="text-success font-medium">ENABLED</span> : <span className="text-muted-foreground">off</span>} ·
+          Pepper: {data.registrationKeyPepperConfigured ? <span className="text-success font-medium">configured</span> : <span className="text-warning font-medium">NOT SET</span>}
         </p>
       </div>
 
@@ -808,7 +808,7 @@ export default function AdminBetaControlPage() {
             </table>
           )}
           {data.waitlistActive && (joinReqs.data?.pendingCount ?? 0) > 0 && (
-            <p className="mt-2 text-xs text-amber-500" data-testid="join-requests-waitlist-note">
+            <p className="mt-2 text-xs text-warning" data-testid="join-requests-waitlist-note">
               Cohort is at capacity — approving will be refused until a seat frees up.
             </p>
           )}

@@ -41,12 +41,12 @@ export default function LaunchReadinessPage() {
     return () => { cancel = true; };
   }, []);
 
-  if (loading) return <div className="p-6">Loading launch readiness…</div>;
-  if (err) return <div className="p-6 text-danger" data-testid="text-readiness-error">Cannot load: {err}</div>;
+  if (loading) return <div>Loading launch readiness…</div>;
+  if (err) return <div className="text-danger" data-testid="text-readiness-error">Cannot load: {err}</div>;
   if (!data) return null;
 
   return (
-    <div className="p-6 space-y-4" data-testid="page-launch-readiness">
+    <div className="space-y-4" data-testid="page-launch-readiness">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Production Launch Readiness</h1>
         <Badge variant="outline">NODE_ENV={data.modeContext.nodeEnv}</Badge>

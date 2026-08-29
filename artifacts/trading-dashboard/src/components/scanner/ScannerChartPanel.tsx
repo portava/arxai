@@ -2361,7 +2361,7 @@ export function ScannerChartPanel() {
                   data-testid="scanner-chart-ruby-read"
                 >
                   <div className="mb-1 flex items-center justify-between">
-                    <span className="font-semibold text-fuchsia-200">{rubyRead.title}</span>
+                    <span className="font-semibold text-premium">{rubyRead.title}</span>
                     <button
                       type="button"
                       className="rounded p-0.5 text-txt-muted hover:text-foreground"
@@ -2372,7 +2372,7 @@ export function ScannerChartPanel() {
                     </button>
                   </div>
                   {rubyRead.consensus?.headline && (
-                    <div className="mb-1 text-indigo-200">{rubyRead.consensus.headline}</div>
+                    <div className="mb-1 text-primary">{rubyRead.consensus.headline}</div>
                   )}
                   {rubyRead.consensus?.note && (
                     <div className="mb-1 text-muted-foreground">{rubyRead.consensus.note}</div>

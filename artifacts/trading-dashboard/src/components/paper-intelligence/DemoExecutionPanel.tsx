@@ -69,22 +69,22 @@ export function DemoExecutionPanel() {
   const s = status.data;
   const acctPill = s?.accountType ?? "UNKNOWN";
   const acctColor =
-    acctPill === "DEMO" ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/40"
-    : acctPill === "REAL" ? "bg-red-500/15 text-red-300 border-red-500/40"
-    : "bg-yellow-500/15 text-yellow-300 border-yellow-500/40";
+    acctPill === "DEMO" ? "bg-success/15 text-success border-success/40"
+    : acctPill === "REAL" ? "bg-danger/15 text-danger border-danger/40"
+    : "bg-warning/15 text-warning border-warning/40";
 
   const bridgeLabel = !s ? "…" : s.bridgeFresh ? "Connected" : "Stale";
   const bridgeColor = !s ? "" : s.bridgeFresh
-    ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/40"
-    : "bg-yellow-500/15 text-yellow-300 border-yellow-500/40";
+    ? "bg-success/15 text-success border-success/40"
+    : "bg-warning/15 text-warning border-warning/40";
 
   const demoEnabled = !!s?.serverDemoExecutionEnabled;
 
   return (
-    <Card className="border-amber-500/30 bg-card/60">
+    <Card className="border-warning/30 bg-card/60">
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
-          <Beaker className="h-4 w-4 text-amber-400" />
+          <Beaker className="h-4 w-4 text-warning" />
           Demo Execution (MT5 demo accounts only · max 0.01 lot)
         </CardTitle>
       </CardHeader>
@@ -93,24 +93,24 @@ export function DemoExecutionPanel() {
         <div className="flex flex-wrap gap-2 text-xs">
           <span className={`rounded border px-2 py-1 ${bridgeColor}`}>MT5 Bridge: {bridgeLabel}</span>
           <span className={`rounded border px-2 py-1 ${acctColor}`}>Account: {acctPill}</span>
-          <span className="rounded border border-red-500/40 bg-red-500/15 px-2 py-1 text-red-300">
+          <span className="rounded border border-danger/40 bg-danger/15 px-2 py-1 text-danger">
             <Lock className="mr-1 inline h-3 w-3" />Live Execution: Disabled
           </span>
           <span className={`rounded border px-2 py-1 ${
             demoEnabled
-              ? "border-amber-500/40 bg-amber-500/15 text-amber-300"
-              : "border-zinc-500/40 bg-zinc-500/15 text-zinc-300"
+              ? "border-warning/40 bg-warning/15 text-warning"
+              : "border-border/40 bg-muted text-txt-secondary"
           }`}>
             Demo Execution: {demoEnabled ? "Enabled (server-armed)" : "Disabled"}
           </span>
-          <span className="rounded border border-zinc-500/40 bg-zinc-500/10 px-2 py-1 text-zinc-300">
+          <span className="rounded border border-border/40 bg-muted px-2 py-1 text-txt-secondary">
             Max Demo Lot: {s?.maxDemoLot ?? 0.01}
           </span>
         </div>
 
         {/* Server-disabled banner */}
         {!demoEnabled && (
-          <div className="flex items-start gap-2 rounded border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
+          <div className="flex items-start gap-2 rounded border border-warning/30 bg-warning/10 p-3 text-xs text-warning">
             <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
             <div>
               Demo execution is <strong>server-disabled by default</strong>. Set
@@ -123,7 +123,7 @@ export function DemoExecutionPanel() {
         )}
 
         {acctPill === "REAL" && (
-          <div className="flex items-start gap-2 rounded border border-red-500/40 bg-red-500/10 p-3 text-xs text-red-200">
+          <div className="flex items-start gap-2 rounded border border-danger/40 bg-danger/10 p-3 text-xs text-danger">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             Live broker execution is disabled. ARX AI is currently demo-only. This panel will refuse every submission while a REAL account is connected.
           </div>
@@ -188,8 +188,8 @@ export function DemoExecutionPanel() {
         {lastResult && (
           <div className={`rounded border p-3 text-xs ${
             "queued" in lastResult
-              ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
-              : "border-red-500/40 bg-red-500/10 text-red-200"
+              ? "border-success/40 bg-success/10 text-success"
+              : "border-danger/40 bg-danger/10 text-danger"
           }`}>
             {"queued" in lastResult ? (
               <>

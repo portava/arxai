@@ -12,16 +12,16 @@ import { cn } from "@/lib/utils";
 // "Sync unavailable" (muted) and never fabricates a verdict.
 
 const DOT: Record<AaciCohesionTone, string> = {
-  ok: "bg-emerald-400",
-  muted: "bg-zinc-400",
-  warn: "bg-amber-400",
-  danger: "bg-red-400",
+  ok: "bg-success",
+  muted: "bg-muted",
+  warn: "bg-warning",
+  danger: "bg-danger",
 };
 const SHELL: Record<AaciCohesionTone, string> = {
-  ok: "border-emerald-500/40 text-emerald-300 bg-emerald-500/10",
-  muted: "border-zinc-700 text-zinc-300 bg-zinc-800/40",
-  warn: "border-amber-500/40 text-amber-300 bg-amber-500/10",
-  danger: "border-red-500/40 text-red-300 bg-red-500/10",
+  ok: "border-success/40 text-success bg-success/10",
+  muted: "border-border text-txt-secondary bg-muted/40",
+  warn: "border-warning/40 text-warning bg-warning/10",
+  danger: "border-danger/40 text-danger bg-danger/10",
 };
 
 export function AaciSyncChip({

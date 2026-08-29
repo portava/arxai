@@ -81,12 +81,12 @@ export default function OperatorCommandCenter() {
     refetchInterval: 15000,
   });
 
-  if (q.isLoading) return <div className="mx-auto w-full max-w-[1280px] p-6 text-sm text-txt-muted">Loading Operator Command Center…</div>;
+  if (q.isLoading) return <div className="mx-auto w-full max-w-[1280px] text-sm text-txt-muted">Loading Operator Command Center…</div>;
   if (q.isError) {
     const msg = (q.error as Error).message;
     if (msg === "AUTH_REQUIRED") {
       return (
-        <div className="mx-auto w-full max-w-[1280px] p-6">
+        <div className="mx-auto w-full max-w-[1280px]">
           <div className="rounded-2xl border border-border bg-card p-6 text-center">
             <h1 className="text-lg font-semibold">Sign in required</h1>
             <p className="mt-1 text-sm text-txt-muted">Your session has expired. Please sign in again to view the Operator Command Center.</p>
@@ -99,7 +99,7 @@ export default function OperatorCommandCenter() {
     }
     if (msg === "ADMIN_REQUIRED") {
       return (
-        <div className="mx-auto w-full max-w-[1280px] p-6">
+        <div className="mx-auto w-full max-w-[1280px]">
           <div className="rounded-2xl border border-border bg-card p-6 text-center">
             <h1 className="text-lg font-semibold">Admin access required</h1>
             <p className="mt-1 text-sm text-txt-muted">This is an operator control surface. Your account doesn&apos;t have access.</p>
@@ -107,12 +107,12 @@ export default function OperatorCommandCenter() {
         </div>
       );
     }
-    return <div className="mx-auto w-full max-w-[1280px] p-6 text-danger">Failed to load: {msg}</div>;
+    return <div className="mx-auto w-full max-w-[1280px] text-danger">Failed to load: {msg}</div>;
   }
   const d = q.data!;
 
   return (
-    <div className="mx-auto w-full max-w-[1280px] space-y-4 p-4 md:p-6 pb-32 md:pb-6" data-testid="operator-command-center">
+    <div className="mx-auto w-full max-w-[1280px] space-y-4 pb-32 md:pb-6" data-testid="operator-command-center">
       <header className="flex flex-wrap items-baseline justify-between gap-2">
         <div>
           <h1 className="text-2xl font-bold leading-tight">Operator Command Center</h1>

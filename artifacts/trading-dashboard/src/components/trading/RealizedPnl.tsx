@@ -37,11 +37,11 @@ export function RealizedPnl({ trade, size = "md", className }: Props) {
               className="inline-flex items-center gap-1 text-xs italic text-muted-foreground"
               data-testid={`trade-pnl-unavailable-${trade.id}`}
             >
-              <AlertCircle size={12} className="text-amber-500" />
+              <AlertCircle size={12} className="text-warning" />
               P/L unavailable
               {shouldShowAdminDiagnostics && trade.dataQualityFlag ? (
                 <span
-                  className="ml-1 rounded bg-amber-500/10 px-1 py-0.5 font-mono text-[10px] text-amber-500"
+                  className="ml-1 rounded bg-warning/10 px-1 py-0.5 font-mono text-[10px] text-warning"
                   data-testid={`trade-data-quality-flag-${trade.id}`}
                 >
                   {trade.dataQualityFlag}

@@ -77,10 +77,10 @@ export default function TradingReadinessPage() {
   });
 
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-4">
       <header>
-        <h1 className="text-xl font-semibold text-slate-100">Trading readiness</h1>
-        <p className="text-xs text-slate-400">
+        <h1 className="text-xl font-semibold text-foreground">Trading readiness</h1>
+        <p className="text-xs text-txt-secondary">
           Pre-session check across broker, market, news, rules, mindset, and weekly goals.
           Advisory — execution authority remains with the safety layer.
         </p>
@@ -88,11 +88,11 @@ export default function TradingReadinessPage() {
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
         <div className="space-y-3 lg:col-span-2">
-          <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-3">
+          <div className="rounded-lg border border-border bg-muted/40 p-3">
             <label className="block space-y-1 text-xs">
-              <span className="text-slate-400">Session label</span>
+              <span className="text-txt-secondary">Session label</span>
               <input value={sessionName} onChange={(e)=>setSessionName(e.target.value)}
-                className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100" />
+                className="w-full rounded border border-border bg-background px-2 py-1 text-foreground" />
             </label>
           </div>
           <MentalStateCheckIn value={report} onChange={setReport} />
@@ -108,13 +108,13 @@ export default function TradingReadinessPage() {
               <StartTradingButton status={evald.status}
                 disabled={submit.isPending}
                 onProceed={() => submit.mutate()} />
-              {submit.isError && <p className="text-[11px] text-red-400">{(submit.error as Error).message}</p>}
+              {submit.isError && <p className="text-[11px] text-danger">{(submit.error as Error).message}</p>}
             </div>
           )}
           {latest.data && (
-            <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-3 text-[11px]">
-              <div className="mb-1 text-slate-400">Last submitted check</div>
-              <div className="font-mono text-slate-300">
+            <div className="rounded-lg border border-border bg-background/40 p-3 text-[11px]">
+              <div className="mb-1 text-txt-secondary">Last submitted check</div>
+              <div className="font-mono text-txt-secondary">
                 {latest.data.check.status} · {latest.data.check.readinessScore}/100 ·
                 {" "}{safeDate(latest.data.check.createdAt)}
               </div>

@@ -378,7 +378,7 @@ function EcosystemInner() {
       <div key={n.agentKey} style={{ marginLeft: depth * 16 }} className="py-0.5">
         <span className="text-foreground">{n.name}</span>
         <span className="ml-2 text-xs text-txt-muted">{n.department} · {n.rank}</span>
-        {n.isCore && <Badge variant="outline" className="ml-2 border-violet-500/40 text-violet-300">core</Badge>}
+        {n.isCore && <Badge variant="outline" className="ml-2 border-premium/40 text-premium">core</Badge>}
         <span className="ml-2">{statusBadge(n.status)}</span>
         {n.children.map((c) => renderNode(c, depth + 1))}
       </div>
@@ -438,7 +438,7 @@ function EcosystemInner() {
                 <tr key={a.agentKey}
                   className={`cursor-pointer border-t border-border hover:bg-card ${selectedKey === a.agentKey ? "bg-card" : ""}`}
                   onClick={() => setSelectedKey(a.agentKey)} data-testid={`agent-row-${a.agentKey}`}>
-                  <td className="py-1 pr-2 text-foreground">{a.name}{a.isCore && <span className="ml-1 text-violet-400">★</span>}</td>
+                  <td className="py-1 pr-2 text-foreground">{a.name}{a.isCore && <span className="ml-1 text-premium">★</span>}</td>
                   <td className="pr-2 text-txt-muted">{a.department}</td>
                   <td className="pr-2">{statusBadge(a.currentStatus)}</td>
                   <td className="pr-2 text-txt-muted">{a.currentMode}</td>
@@ -461,7 +461,7 @@ function EcosystemInner() {
                 {statusBadge(selected.currentStatus)}
                 <Badge variant="outline" className="border-border text-txt-secondary">{selected.currentRank}</Badge>
                 <Badge variant="outline" className="border-border text-txt-secondary">{selected.currentMode}</Badge>
-                {selected.isCore && <Badge variant="outline" className="border-violet-500/40 text-violet-300">core</Badge>}
+                {selected.isCore && <Badge variant="outline" className="border-premium/40 text-premium">core</Badge>}
               </div>
               <div className="grid grid-cols-3 gap-2 text-xs">
                 {([["Trust", selected.trustScore], ["Quality", selected.qualityScore], ["Speed", selected.speedScore],
@@ -691,7 +691,7 @@ function EcosystemInner() {
                         {t.riskVetoUsed && <Badge variant="outline" className="border-danger/40 text-danger">risk-veto</Badge>}
                         {t.disagreementCourtUsed && <Badge variant="outline" className="border-warning/40 text-warning">court</Badge>}
                         {t.rubySummaryUsed && <Badge variant="outline" className="border-primary/40 text-primary">ruby</Badge>}
-                        {t.predictionLocked && <Badge variant="outline" className="border-violet-500/40 text-violet-300">predict</Badge>}
+                        {t.predictionLocked && <Badge variant="outline" className="border-premium/40 text-premium">predict</Badge>}
                       </div>
                     </td>
                     <td className="pr-2 text-txt-muted">{t.totalGovernanceRuntimeMs}</td>

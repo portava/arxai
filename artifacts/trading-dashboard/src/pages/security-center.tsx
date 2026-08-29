@@ -24,16 +24,16 @@ export default function SecurityCenter() {
     fetch("/api/security/status").then((r) => r.json()).then(setData).catch((e) => setErr(String(e)));
   }, []);
 
-  if (err) return <div className="p-6 text-red-500">Error: {err}</div>;
-  if (!data) return <div className="p-6">Loading…</div>;
+  if (err) return <div className="text-danger">Error: {err}</div>;
+  if (!data) return <div>Loading…</div>;
   const s = data.status;
   const isHealthy = s.criticalFindings.length === 0;
 
   return (
-    <div className="p-6 space-y-6" data-testid="security-center">
+    <div className="space-y-6" data-testid="security-center">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Security Center</h1>
-        <div className={`px-3 py-1 rounded text-sm font-mono ${isHealthy ? "bg-green-600 text-white" : "bg-red-600 text-white"}`}>
+        <div className={`px-3 py-1 rounded text-sm font-mono ${isHealthy ? "bg-success text-white" : "bg-danger text-white"}`}>
           {isHealthy ? "SECURE" : "ATTENTION"}
         </div>
       </div>
@@ -41,8 +41,8 @@ export default function SecurityCenter() {
         <div className="border rounded p-4">
           <h2 className="font-semibold mb-2">Mode & Live Trading</h2>
           <div className="text-sm">App mode: <span className="font-mono">{s.appMode}</span></div>
-          <div className="text-sm">Live trading: <span className="font-mono text-red-600">{s.liveTradingStatus}</span></div>
-          <div className="text-xs text-gray-500 mt-2">No live trading controls are exposed in the UI.</div>
+          <div className="text-sm">Live trading: <span className="font-mono text-danger">{s.liveTradingStatus}</span></div>
+          <div className="text-xs text-txt-muted mt-2">No live trading controls are exposed in the UI.</div>
         </div>
         <div className="border rounded p-4">
           <h2 className="font-semibold mb-2">Auth Status</h2>
@@ -59,23 +59,23 @@ export default function SecurityCenter() {
       </div>
       <div className="border rounded p-4">
         <h2 className="font-semibold mb-2">Critical Findings ({s.criticalFindings.length})</h2>
-        {s.criticalFindings.length === 0 ? <div className="text-sm text-green-600">None.</div> : (
+        {s.criticalFindings.length === 0 ? <div className="text-sm text-success">None.</div> : (
           <ul className="text-sm list-disc ml-6">{s.criticalFindings.map((c) => <li key={c}>{c}</li>)}</ul>
         )}
       </div>
       <div className="border rounded p-4">
         <h2 className="font-semibold mb-2">Warnings ({s.warnings.length})</h2>
-        {s.warnings.length === 0 ? <div className="text-sm text-gray-500">None.</div> : (
+        {s.warnings.length === 0 ? <div className="text-sm text-txt-muted">None.</div> : (
           <ul className="text-sm list-disc ml-6">{s.warnings.map((w) => <li key={w}>{w}</li>)}</ul>
         )}
       </div>
       <div className="border rounded p-4">
         <h2 className="font-semibold mb-2">Recommended Actions</h2>
-        {s.recommendedActions.length === 0 ? <div className="text-sm text-gray-500">No actions.</div> : (
+        {s.recommendedActions.length === 0 ? <div className="text-sm text-txt-muted">No actions.</div> : (
           <ul className="text-sm list-disc ml-6">{s.recommendedActions.map((r) => <li key={r}>{r}</li>)}</ul>
         )}
       </div>
-      <div className="text-xs text-gray-500">Status ID: <span className="font-mono">{s.security_status_id}</span></div>
+      <div className="text-xs text-txt-muted">Status ID: <span className="font-mono">{s.security_status_id}</span></div>
     </div>
   );
 }

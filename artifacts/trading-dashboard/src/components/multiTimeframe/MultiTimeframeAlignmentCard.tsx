@@ -27,15 +27,15 @@ export interface MultiTimeframeReport {
 }
 
 const LABEL_STYLES: Record<MultiTimeframeReport["alignmentLabel"], string> = {
-  STRONG_BULLISH_ALIGNMENT: "bg-green-700 text-white",
-  STRONG_BEARISH_ALIGNMENT: "bg-red-700 text-white",
-  MIXED_ALIGNMENT: "bg-amber-700 text-white",
-  LOWER_TIMEFRAME_CONFLICT: "bg-amber-800 text-amber-100",
-  HIGHER_TIMEFRAME_WARNING: "bg-orange-800 text-orange-100",
-  NO_CLEAR_BIAS: "bg-slate-700 text-slate-200",
+  STRONG_BULLISH_ALIGNMENT: "bg-success/15 text-white",
+  STRONG_BEARISH_ALIGNMENT: "bg-danger/15 text-white",
+  MIXED_ALIGNMENT: "bg-warning/15 text-white",
+  LOWER_TIMEFRAME_CONFLICT: "bg-warning/15 text-warning",
+  HIGHER_TIMEFRAME_WARNING: "bg-warning/15 text-warning",
+  NO_CLEAR_BIAS: "bg-muted text-foreground",
 };
 const TREND_STYLES: Record<Trend, string> = {
-  UP: "text-green-400", DOWN: "text-red-400", SIDEWAYS: "text-slate-400",
+  UP: "text-success", DOWN: "text-danger", SIDEWAYS: "text-txt-secondary",
 };
 
 export function MultiTimeframeAlignmentCard({ symbol }: { symbol: string | null }) {
@@ -67,7 +67,7 @@ export function MultiTimeframeAlignmentCard({ symbol }: { symbol: string | null 
 
   if (!symbol) {
     return (
-      <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-4 text-sm text-slate-400">
+      <div className="rounded-lg border border-border bg-muted/40 p-4 text-sm text-txt-secondary">
         Set a symbol on the plan to enable multi-timeframe analysis.
       </div>
     );
@@ -76,25 +76,25 @@ export function MultiTimeframeAlignmentCard({ symbol }: { symbol: string | null 
   const r = latest.data;
 
   return (
-    <div className="space-y-3 rounded-lg border border-slate-700 bg-slate-900/40 p-4">
+    <div className="space-y-3 rounded-lg border border-border bg-muted/40 p-4">
       <header className="flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-semibold text-slate-100">Multi-Timeframe Alignment</h3>
-          <p className="text-xs text-slate-500">
+          <h3 className="text-sm font-semibold text-foreground">Multi-Timeframe Alignment</h3>
+          <p className="text-xs text-txt-muted">
             {symbol} · {r ? new Date(r.createdAt).toLocaleString() : "no report yet"}
           </p>
         </div>
         <button
           onClick={() => generate.mutate()}
           disabled={generate.isPending}
-          className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
+          className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary disabled:opacity-50"
         >
           {generate.isPending ? "Scanning…" : (r ? "Refresh scan" : "Run scan")}
         </button>
       </header>
 
       {!r && !latest.isLoading && (
-        <p className="text-sm text-slate-400">No report for this symbol yet. Click "Run scan" to generate one.</p>
+        <p className="text-sm text-txt-secondary">No report for this symbol yet. Click "Run scan" to generate one.</p>
       )}
 
       {r && (
@@ -103,11 +103,11 @@ export function MultiTimeframeAlignmentCard({ symbol }: { symbol: string | null 
             <span className={`rounded px-2 py-0.5 text-xs font-semibold ${LABEL_STYLES[r.alignmentLabel]}`}>
               {r.alignmentLabel.replace(/_/g, " ")}
             </span>
-            <span className="text-sm text-slate-300">
-              Alignment <span className="font-semibold text-slate-100">{Math.round(r.alignmentScore)}/100</span>
+            <span className="text-sm text-txt-secondary">
+              Alignment <span className="font-semibold text-foreground">{Math.round(r.alignmentScore)}/100</span>
             </span>
-            <span className="text-sm text-slate-300">
-              Best bias <span className="font-semibold text-slate-100">{r.bestBias}</span>
+            <span className="text-sm text-txt-secondary">
+              Best bias <span className="font-semibold text-foreground">{r.bestBias}</span>
             </span>
           </div>
 
@@ -117,10 +117,10 @@ export function MultiTimeframeAlignmentCard({ symbol }: { symbol: string | null 
               { label: r.middleTimeframe, s: r.middleTrend, tag: "Middle" },
               { label: r.higherTimeframe, s: r.higherTrend, tag: "Higher" },
             ].map((tf) => (
-              <div key={tf.tag} className="rounded-md border border-slate-800 bg-slate-950/60 p-2">
-                <div className="text-[10px] uppercase tracking-wide text-slate-500">{tf.tag} · {tf.label}</div>
+              <div key={tf.tag} className="rounded-md border border-border bg-background/60 p-2">
+                <div className="text-[10px] uppercase tracking-wide text-txt-muted">{tf.tag} · {tf.label}</div>
                 <div className={`text-sm font-semibold ${TREND_STYLES[tf.s.trend]}`}>{tf.s.trend}</div>
-                <div className="text-xs text-slate-400">strength {tf.s.strength}</div>
+                <div className="text-xs text-txt-secondary">strength {tf.s.strength}</div>
               </div>
             ))}
           </div>
@@ -132,7 +132,7 @@ export function MultiTimeframeAlignmentCard({ symbol }: { symbol: string | null 
             bestBias={r.bestBias}
           />
 
-          <p className="rounded-md border border-slate-800 bg-slate-950/40 p-3 text-xs text-slate-300">
+          <p className="rounded-md border border-border bg-background/40 p-3 text-xs text-txt-secondary">
             {r.aiSummary}
           </p>
         </>

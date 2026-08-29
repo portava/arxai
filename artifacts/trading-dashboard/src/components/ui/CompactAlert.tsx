@@ -17,7 +17,7 @@ export interface CompactAlertProps {
 }
 
 const TONE_CLASS: Record<CompactAlertTone, string> = {
-  info:    "border-blue-500/40 bg-blue-500/10 text-blue-300",
+  info:    "border-primary/40 bg-primary/10 text-primary",
   success: "border-success/25 bg-success/10 text-success",
   warning: "border-warning/25 bg-warning/10 text-warning",
   danger:  "border-danger/25 bg-danger/10 text-danger",

@@ -66,64 +66,64 @@ export function StrategyBacktestForm({
   });
 
   return (
-    <div className="space-y-3 rounded-lg border border-slate-700 bg-slate-900/40 p-4">
-      <h3 className="text-sm font-semibold text-slate-100">Run a backtest</h3>
+    <div className="space-y-3 rounded-lg border border-border bg-muted/40 p-4">
+      <h3 className="text-sm font-semibold text-foreground">Run a backtest</h3>
       <div className="grid grid-cols-2 gap-3 text-xs">
         <label className="space-y-1">
-          <span className="text-slate-400">Strategy</span>
+          <span className="text-txt-secondary">Strategy</span>
           <select value={strategyId} onChange={(e) => setStrategyId(e.target.value)}
-            className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100">
+            className="w-full rounded border border-border bg-background px-2 py-1 text-foreground">
             {STRATEGIES.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
         </label>
         <label className="space-y-1">
-          <span className="text-slate-400">Symbol</span>
+          <span className="text-txt-secondary">Symbol</span>
           <select value={symbol} onChange={(e) => setSymbol(e.target.value)}
-            className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100">
+            className="w-full rounded border border-border bg-background px-2 py-1 text-foreground">
             {SYMBOLS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
           </select>
         </label>
         <label className="space-y-1">
-          <span className="text-slate-400">Timeframe</span>
+          <span className="text-txt-secondary">Timeframe</span>
           <select value={timeframe} onChange={(e) => setTimeframe(e.target.value)}
-            className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100">
+            className="w-full rounded border border-border bg-background px-2 py-1 text-foreground">
             {["M1","M5","M15","H1","H4","D1"].map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
         </label>
         <label className="space-y-1">
-          <span className="text-slate-400">Candles</span>
+          <span className="text-txt-secondary">Candles</span>
           <input type="number" min={50} max={5000} value={candleCount} onChange={(e) => setCandleCount(Number(e.target.value))}
-            className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100" />
+            className="w-full rounded border border-border bg-background px-2 py-1 text-foreground" />
         </label>
         <label className="space-y-1">
-          <span className="text-slate-400">Initial balance</span>
+          <span className="text-txt-secondary">Initial balance</span>
           <input type="number" min={100} value={initialBalance} onChange={(e) => setInitialBalance(Number(e.target.value))}
-            className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100" />
+            className="w-full rounded border border-border bg-background px-2 py-1 text-foreground" />
         </label>
         <label className="space-y-1">
-          <span className="text-slate-400">Min confidence</span>
+          <span className="text-txt-secondary">Min confidence</span>
           <input type="number" min={0} max={100} value={minConfidence} onChange={(e) => setMinConfidence(Number(e.target.value))}
-            className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100" />
+            className="w-full rounded border border-border bg-background px-2 py-1 text-foreground" />
         </label>
         <label className="space-y-1">
-          <span className="text-slate-400">History start (optional)</span>
+          <span className="text-txt-secondary">History start (optional)</span>
           <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
-            className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100" />
+            className="w-full rounded border border-border bg-background px-2 py-1 text-foreground" />
         </label>
         <label className="space-y-1">
-          <span className="text-slate-400">History end (optional)</span>
+          <span className="text-txt-secondary">History end (optional)</span>
           <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)}
-            className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100" />
+            className="w-full rounded border border-border bg-background px-2 py-1 text-foreground" />
         </label>
       </div>
-      {rangeIncomplete && <p className="text-[10px] text-amber-400">Set both history dates (or neither).</p>}
-      {rangeInverted && <p className="text-[10px] text-amber-400">History start must be before history end.</p>}
+      {rangeIncomplete && <p className="text-[10px] text-warning">Set both history dates (or neither).</p>}
+      {rangeInverted && <p className="text-[10px] text-warning">History start must be before history end.</p>}
       <button onClick={() => create.mutate()} disabled={create.isPending || rangeIncomplete || rangeInverted}
-        className="w-full rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50">
+        className="w-full rounded-md bg-primary px-3 py-2 text-sm font-semibold text-white hover:bg-primary disabled:opacity-50">
         {create.isPending ? "Running…" : "Run backtest"}
       </button>
-      {create.isError && <p className="text-xs text-red-400">{(create.error as Error).message}</p>}
-      <p className="text-[10px] text-slate-500">Backtests run on real broker history when enough closed bars exist; otherwise a clearly labeled synthetic series is used (never for an explicit date range). Past performance does not guarantee future results.</p>
+      {create.isError && <p className="text-xs text-danger">{(create.error as Error).message}</p>}
+      <p className="text-[10px] text-txt-muted">Backtests run on real broker history when enough closed bars exist; otherwise a clearly labeled synthetic series is used (never for an explicit date range). Past performance does not guarantee future results.</p>
     </div>
   );
 }

@@ -13,14 +13,14 @@ function Card({ label, id, strategy, session, tone }: {
   strategy: string | null | undefined; session: string | null | undefined;
   tone: "good" | "bad";
 }) {
-  const ring = tone === "good" ? "ring-emerald-500/30" : "ring-rose-500/30";
+  const ring = tone === "good" ? "ring-success/30" : "ring-danger/30";
   return (
-    <div className={`rounded-xl border border-zinc-800 bg-zinc-950/50 p-3 ring-1 ${ring}`}>
-      <div className="text-xs uppercase tracking-wide text-zinc-500">{label}</div>
-      <div className="mt-1 text-sm text-zinc-200">
+    <div className={`rounded-xl border border-border bg-background/50 p-3 ring-1 ${ring}`}>
+      <div className="text-xs uppercase tracking-wide text-txt-muted">{label}</div>
+      <div className="mt-1 text-sm text-foreground">
         Trade #{id ?? "—"} · {strategy ?? "—"}
       </div>
-      <div className="text-[11px] text-zinc-500">{session ?? "—"} session</div>
+      <div className="text-[11px] text-txt-muted">{session ?? "—"} session</div>
     </div>
   );
 }

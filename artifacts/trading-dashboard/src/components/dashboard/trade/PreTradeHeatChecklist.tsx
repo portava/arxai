@@ -47,15 +47,15 @@ const NEWS_PHASE_LABELS: Record<string, string> = {
 };
 
 function toneClass(tone: CheckRow["tone"]) {
-  return tone === "pass" ? "text-emerald-400"
-    : tone === "caution" ? "text-amber-400"
-    : tone === "warn" ? "text-rose-400"
+  return tone === "pass" ? "text-success"
+    : tone === "caution" ? "text-warning"
+    : tone === "warn" ? "text-danger"
     : "text-txt-secondary";
 }
 function toneIcon(tone: CheckRow["tone"]) {
-  return tone === "pass" ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
-    : tone === "caution" ? <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-400" />
-    : tone === "warn" ? <XCircle className="h-3.5 w-3.5 shrink-0 text-rose-400" />
+  return tone === "pass" ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-success" />
+    : tone === "caution" ? <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-warning" />
+    : tone === "warn" ? <XCircle className="h-3.5 w-3.5 shrink-0 text-danger" />
     : <Info className="h-3.5 w-3.5 shrink-0 text-txt-muted" />;
 }
 
@@ -109,20 +109,20 @@ export function PreTradeHeatChecklist({ symbol, className }: { symbol: string; c
     {
       label: "Heat",
       value: `${r.heatScore} — ${r.heatState.replace(/_/g, " ").toLowerCase()}`,
-      icon: <Flame className="h-3.5 w-3.5 shrink-0 text-amber-400" />,
+      icon: <Flame className="h-3.5 w-3.5 shrink-0 text-warning" />,
       tone: r.heatScore >= 50 ? "pass" : r.heatScore >= 30 ? "caution" : "neutral",
       detail: `${r.heatSource.explanation}`,
     },
     {
       label: "Tradeability",
       value: `${r.tradeabilityScore} / ${r.edgeScore} edge`,
-      icon: <BarChart3 className="h-3.5 w-3.5 shrink-0 text-blue-400" />,
+      icon: <BarChart3 className="h-3.5 w-3.5 shrink-0 text-primary" />,
       tone: r.tradeabilityScore >= 60 ? "pass" : r.tradeabilityScore >= 40 ? "caution" : "warn",
     },
     {
       label: "News risk",
       value: newsBlocksTrade ? "Blocked" : newsRisk ? NEWS_PHASE_LABELS[r.newsOverlay.phase] ?? r.newsOverlay.phase : "Clear",
-      icon: <AlertTriangle className={cn("h-3.5 w-3.5 shrink-0", newsBlocksTrade ? "text-rose-400" : newsRisk ? "text-amber-400" : "text-emerald-400")} />,
+      icon: <AlertTriangle className={cn("h-3.5 w-3.5 shrink-0", newsBlocksTrade ? "text-danger" : newsRisk ? "text-warning" : "text-success")} />,
       tone: newsBlocksTrade ? "warn" : newsRisk ? "caution" : "pass",
       detail: r.newsOverlay.eventName ? `${r.newsOverlay.eventName}${r.newsOverlay.minutesUntil != null ? ` in ${r.newsOverlay.minutesUntil}m` : ""}` : undefined,
     },
@@ -136,8 +136,8 @@ export function PreTradeHeatChecklist({ symbol, className }: { symbol: string; c
       label: "Entry permission",
       value: PERMISSION_LABELS[r.entryPermission] ?? r.entryPermission,
       icon: PERMISSION_PASS[r.entryPermission]
-        ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
-        : <Clock className="h-3.5 w-3.5 shrink-0 text-amber-400" />,
+        ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-success" />
+        : <Clock className="h-3.5 w-3.5 shrink-0 text-warning" />,
       tone: PERMISSION_PASS[r.entryPermission] ? "pass"
         : r.entryPermission === "STAND_DOWN" ? "warn"
         : "caution",
@@ -145,8 +145,8 @@ export function PreTradeHeatChecklist({ symbol, className }: { symbol: string; c
     {
       label: "Best action",
       value: r.bestAction.replace(/_/g, " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase()),
-      icon: r.bestAction === "BUY" ? <TrendingUp className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
-        : r.bestAction === "SELL" ? <TrendingDown className="h-3.5 w-3.5 shrink-0 text-rose-400" />
+      icon: r.bestAction === "BUY" ? <TrendingUp className="h-3.5 w-3.5 shrink-0 text-success" />
+        : r.bestAction === "SELL" ? <TrendingDown className="h-3.5 w-3.5 shrink-0 text-danger" />
         : <Minus className="h-3.5 w-3.5 shrink-0 text-txt-muted" />,
       tone: (r.bestAction === "BUY" || r.bestAction === "SELL") ? "pass"
         : r.bestAction === "STAND_DOWN" ? "warn"
@@ -155,7 +155,7 @@ export function PreTradeHeatChecklist({ symbol, className }: { symbol: string; c
     {
       label: "Risk mode",
       value: r.dangerScore >= 70 ? "High danger" : r.dangerScore >= 45 ? "Moderate risk" : "Normal",
-      icon: <ShieldAlert className={cn("h-3.5 w-3.5 shrink-0", r.dangerScore >= 70 ? "text-rose-400" : r.dangerScore >= 45 ? "text-amber-400" : "text-emerald-400")} />,
+      icon: <ShieldAlert className={cn("h-3.5 w-3.5 shrink-0", r.dangerScore >= 70 ? "text-danger" : r.dangerScore >= 45 ? "text-warning" : "text-success")} />,
       tone: r.dangerScore >= 70 ? "warn" : r.dangerScore >= 45 ? "caution" : "pass",
       detail: r.trapProbability > 50 ? `Trap probability ${r.trapProbability}%` : undefined,
     },
@@ -174,9 +174,9 @@ export function PreTradeHeatChecklist({ symbol, className }: { symbol: string; c
 
       {/* Low tradeability warning — display only, no blocking */}
       {lowTradeability && (
-        <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/[0.08] px-3 py-2">
-          <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-400 mt-0.5" />
-          <p className="text-xs text-amber-300 leading-snug">
+        <div className="mb-3 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/[0.08] px-3 py-2">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-warning mt-0.5" />
+          <p className="text-xs text-warning leading-snug">
             Low tradeability ({r.tradeabilityScore}) — conditions are not clean for an entry right now.
             This is advisory only; you can still place a trade manually.
           </p>
@@ -185,9 +185,9 @@ export function PreTradeHeatChecklist({ symbol, className }: { symbol: string; c
 
       {/* News blocks warning — display only, no blocking */}
       {newsBlocksTrade && (
-        <div className="mb-3 flex items-start gap-2 rounded-lg border border-rose-500/30 bg-rose-500/[0.08] px-3 py-2">
-          <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-rose-400 mt-0.5" />
-          <p className="text-xs text-rose-300 leading-snug">
+        <div className="mb-3 flex items-start gap-2 rounded-lg border border-danger/30 bg-danger/[0.08] px-3 py-2">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-danger mt-0.5" />
+          <p className="text-xs text-danger leading-snug">
             News event active
             {r.newsOverlay.eventName ? ` (${r.newsOverlay.eventName})` : ""}
             — timing suggests waiting for the market to settle.

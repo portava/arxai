@@ -24,7 +24,7 @@ export default function AlertPreferencesPage() {
     qc.invalidateQueries({ queryKey: getGetAlertPreferencesQueryKey() });
   };
 
-  if (isLoading || !prefs) return <div className="p-6 text-sm text-muted-foreground">Loading preferences…</div>;
+  if (isLoading || !prefs) return <div className="text-sm text-muted-foreground">Loading preferences…</div>;
 
   const toggles: Array<[string, keyof typeof prefs, string]> = [
     ["Market condition alerts",     "marketAlertsEnabled",          "Notify when active plans hit NO_TRADE conditions."],
@@ -38,7 +38,7 @@ export default function AlertPreferencesPage() {
   ];
 
   return (
-    <div className="p-6 space-y-6 max-w-3xl">
+    <div className="space-y-6 max-w-3xl">
       <div>
         <h1 className="text-2xl font-semibold">Alert preferences</h1>
         <p className="text-sm text-muted-foreground">Control which categories generate notifications and set quiet hours. CRITICAL safety alerts cannot be silenced.</p>
@@ -88,7 +88,7 @@ export default function AlertPreferencesPage() {
             <option value="critical">Critical only</option>
           </select>
           {(prefs as { minimumPushSeverity?: string }).minimumPushSeverity === "critical" && (
-            <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-200">
+            <div className="rounded-md border border-warning/40 bg-warning/10 p-3 text-xs text-warning">
               You will only receive push alerts for critical events (live-risk
               emergencies, MT5 disconnects during open live trades, broker
               rejections). Routine watch/warning alerts will still appear

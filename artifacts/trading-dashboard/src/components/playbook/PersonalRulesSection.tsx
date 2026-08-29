@@ -8,9 +8,9 @@ export function PersonalRulesSection({ entries, onToggle }:
   const items = entries.filter((e) => RULE_TYPES.has(e.entryType));
   return (
     <section>
-      <h2 className="mb-2 text-sm font-semibold text-sky-200">📜 Personal rules ({items.length})</h2>
+      <h2 className="mb-2 text-sm font-semibold text-ruby">📜 Personal rules ({items.length})</h2>
       {items.length === 0 ? (
-        <p className="rounded border border-dashed border-slate-700 p-3 text-center text-xs text-slate-500">
+        <p className="rounded border border-dashed border-border p-3 text-center text-xs text-txt-muted">
           No rules added yet. Use the form above.
         </p>
       ) : (

@@ -42,11 +42,11 @@ export function PnlCell({
   if (pnlStatus === "UNKNOWN") {
     const cell = (
       <span className="inline-flex items-center gap-1 text-muted-foreground italic">
-        <AlertCircle size={12} className="text-amber-500" />
+        <AlertCircle size={12} className="text-warning" />
         P/L unavailable
         {shouldShowAdminDiagnostics && dataQualityFlag ? (
           <span
-            className="ml-1 rounded bg-amber-500/10 px-1 py-0.5 font-mono text-[10px] text-amber-500"
+            className="ml-1 rounded bg-warning/10 px-1 py-0.5 font-mono text-[10px] text-warning"
             data-testid={`trade-data-quality-flag-${id}`}
           >
             {dataQualityFlag}
@@ -71,18 +71,18 @@ export function PnlCell({
         </TooltipProvider>
         {showUpgradeHint && (
           <div
-            className="text-[10px] leading-tight text-amber-500"
+            className="text-[10px] leading-tight text-warning"
             data-testid={`trade-ea-upgrade-hint-${id}`}
           >
             EA too old to report close fill —{" "}
             <Link
               href="/mt5-setup"
-              className="underline underline-offset-2 hover:text-amber-400"
+              className="underline underline-offset-2 hover:text-warning"
             >
               upgrade to v1.28
             </Link>
             {shouldShowAdminDiagnostics && (
-              <span className="ml-1 font-mono text-amber-500/70">
+              <span className="ml-1 font-mono text-warning/70">
                 (reported v{reportedEaVersion ?? "null"})
               </span>
             )}
@@ -94,7 +94,7 @@ export function PnlCell({
   return (
     <span
       className={`font-mono font-bold ${
-        (pnl || 0) > 0 ? "text-green-500" : (pnl || 0) < 0 ? "text-destructive" : ""
+        (pnl || 0) > 0 ? "text-success" : (pnl || 0) < 0 ? "text-destructive" : ""
       }`}
     >
       {pnl != null ? formatPnl(pnl) : "-"}

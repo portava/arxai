@@ -189,7 +189,7 @@ export function OpenDemoPositions() {
           </Button>
         </CardHeader>
         <CardContent className="p-0">
-          {err && <div className="text-xs text-rose-400 px-3 py-2">{err}</div>}
+          {err && <div className="text-xs text-danger px-3 py-2">{err}</div>}
           {!err && positions.length === 0 && (
             <div className="text-xs text-muted-foreground px-3 py-3">
               No open demo positions. Submit a demo trade from the Market Scanner to see it here once filled.
@@ -199,7 +199,7 @@ export function OpenDemoPositions() {
           {positions.length > 0 && (
             <div className="overflow-x-auto">
               <table className="w-full text-[11px]">
-                <thead className="text-muted-foreground border-b border-slate-700/60">
+                <thead className="text-muted-foreground border-b border-border/60">
                   <tr>
                     <th className="text-left font-medium px-2 py-1.5">Symbol</th>
                     <th className="text-left font-medium px-2 py-1.5">Side</th>
@@ -218,15 +218,15 @@ export function OpenDemoPositions() {
                   {positions.map((p) => {
                     const pnl = p.floatingPnL ?? 0;
                     return (
-                      <tr key={`${p.brokerTicket ?? "?"}-${p.symbol ?? "?"}`} className="border-b border-slate-800/60 last:border-0">
+                      <tr key={`${p.brokerTicket ?? "?"}-${p.symbol ?? "?"}`} className="border-b border-border/60 last:border-0">
                         <td className="px-2 py-1 font-mono font-semibold">{p.symbol ?? "—"}</td>
-                        <td className={`px-2 py-1 font-mono ${p.side === "BUY" ? "text-emerald-300" : p.side === "SELL" ? "text-rose-300" : ""}`}>
+                        <td className={`px-2 py-1 font-mono ${p.side === "BUY" ? "text-success" : p.side === "SELL" ? "text-danger" : ""}`}>
                           {p.side ?? "—"}
                         </td>
                         <td className="px-2 py-1 font-mono text-right">{p.volume ?? "—"}</td>
                         <td className="px-2 py-1 font-mono text-right">{p.entryPrice ?? "—"}</td>
                         <td className="px-2 py-1 font-mono text-right">{p.currentPrice ?? "—"}</td>
-                        <td className={`px-2 py-1 font-mono text-right ${pnl > 0 ? "text-emerald-300" : pnl < 0 ? "text-rose-300" : ""}`}>
+                        <td className={`px-2 py-1 font-mono text-right ${pnl > 0 ? "text-success" : pnl < 0 ? "text-danger" : ""}`}>
                           {p.floatingPnL != null ? p.floatingPnL.toFixed(2) : "—"}
                         </td>
                         <td className="px-2 py-1 font-mono text-right text-[10px]">{p.stopLoss ?? "—"}</td>
@@ -236,8 +236,8 @@ export function OpenDemoPositions() {
                           <Badge
                             className={`text-[10px] ${
                               p.matchStatus === "MATCHED_TO_ARX_COMMAND"
-                                ? "bg-emerald-500/20 text-emerald-300"
-                                : "bg-amber-500/20 text-amber-200"
+                                ? "bg-success/20 text-success"
+                                : "bg-warning/20 text-warning"
                             }`}
                           >
                             {p.matchStatus === "MATCHED_TO_ARX_COMMAND" ? "ARX" : "ORPHAN"}
@@ -277,25 +277,25 @@ export function OpenDemoPositions() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base">
               Close demo position
-              <span className="ml-1 rounded bg-amber-500/20 px-2 py-0.5 text-[10px] font-semibold text-amber-200">DEMO</span>
+              <span className="ml-1 rounded bg-warning/20 px-2 py-0.5 text-[10px] font-semibold text-warning">DEMO</span>
             </DialogTitle>
           </DialogHeader>
           {closeTarget && (
             <div className="space-y-3 text-sm">
-              <div className="flex items-center gap-1.5 rounded border border-emerald-500/40 bg-emerald-500/5 px-2 py-1.5 text-[11px] text-emerald-200">
+              <div className="flex items-center gap-1.5 rounded border border-success/40 bg-success/5 px-2 py-1.5 text-[11px] text-success">
                 <ShieldCheck className="h-3.5 w-3.5" />
                 Live broker execution is locked. This close goes to your demo broker only.
               </div>
-              <div className="rounded border border-slate-700 bg-slate-900/50 p-3 text-xs font-mono space-y-1">
-                <div className="flex justify-between"><span className="text-slate-400">Symbol</span><span>{closeTarget.symbol}</span></div>
-                <div className="flex justify-between"><span className="text-slate-400">Side</span><span>{closeTarget.side}</span></div>
-                <div className="flex justify-between"><span className="text-slate-400">Volume</span><span>{closeTarget.volume}</span></div>
-                <div className="flex justify-between"><span className="text-slate-400">Ticket</span><span>{closeTarget.brokerTicket}</span></div>
-                <div className="flex justify-between"><span className="text-slate-400">Entry</span><span>{closeTarget.entryPrice ?? "—"}</span></div>
-                <div className="flex justify-between"><span className="text-slate-400">Current</span><span>{closeTarget.currentPrice ?? "—"}</span></div>
+              <div className="rounded border border-border bg-muted/50 p-3 text-xs font-mono space-y-1">
+                <div className="flex justify-between"><span className="text-txt-secondary">Symbol</span><span>{closeTarget.symbol}</span></div>
+                <div className="flex justify-between"><span className="text-txt-secondary">Side</span><span>{closeTarget.side}</span></div>
+                <div className="flex justify-between"><span className="text-txt-secondary">Volume</span><span>{closeTarget.volume}</span></div>
+                <div className="flex justify-between"><span className="text-txt-secondary">Ticket</span><span>{closeTarget.brokerTicket}</span></div>
+                <div className="flex justify-between"><span className="text-txt-secondary">Entry</span><span>{closeTarget.entryPrice ?? "—"}</span></div>
+                <div className="flex justify-between"><span className="text-txt-secondary">Current</span><span>{closeTarget.currentPrice ?? "—"}</span></div>
                 <div className="flex justify-between">
-                  <span className="text-slate-400">Floating P/L</span>
-                  <span className={(closeTarget.floatingPnL ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"}>
+                  <span className="text-txt-secondary">Floating P/L</span>
+                  <span className={(closeTarget.floatingPnL ?? 0) >= 0 ? "text-success" : "text-danger"}>
                     {closeTarget.floatingPnL != null ? closeTarget.floatingPnL.toFixed(2) : "—"}
                   </span>
                 </div>
@@ -305,8 +305,8 @@ export function OpenDemoPositions() {
                 <div
                   className={`rounded border p-2 text-xs ${
                     closeResult.status === "FILLED_DEMO"
-                      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
-                      : "border-rose-500/40 bg-rose-500/10 text-rose-200"
+                      ? "border-success/40 bg-success/10 text-success"
+                      : "border-danger/40 bg-danger/10 text-danger"
                   }`}
                   data-testid="close-result-card"
                 >

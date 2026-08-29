@@ -25,9 +25,9 @@ async function jget(url: string, init?: RequestInit) {
 
 function pill(s: CheckStatus) {
   switch (s) {
-    case "pass": return <Badge className="bg-emerald-500/15 text-emerald-300 border-emerald-500/30"><CheckCircle2 className="w-3 h-3 mr-1" />pass</Badge>;
-    case "fail": return <Badge className="bg-red-500/15 text-red-300 border-red-500/30"><XCircle className="w-3 h-3 mr-1" />fail</Badge>;
-    case "running": return <Badge className="bg-blue-500/15 text-blue-300 border-blue-500/30 animate-pulse">running…</Badge>;
+    case "pass": return <Badge className="bg-success/15 text-success border-success/30"><CheckCircle2 className="w-3 h-3 mr-1" />pass</Badge>;
+    case "fail": return <Badge className="bg-danger/15 text-danger border-danger/30"><XCircle className="w-3 h-3 mr-1" />fail</Badge>;
+    case "running": return <Badge className="bg-primary/15 text-primary border-primary/30 animate-pulse">running…</Badge>;
     default: return <Badge variant="outline" className="text-xs"><Clock className="w-3 h-3 mr-1" />idle</Badge>;
   }
 }
@@ -311,9 +311,9 @@ function TestingControlCenterPageInner() {
 
       {/* MT5-Deferred status banner */}
       {defStatus && (
-        <Card className={`border-2 ${defStatus.deferred ? "border-amber-500/40 bg-amber-500/5" : "border-emerald-500/40 bg-emerald-500/5"}`}>
+        <Card className={`border-2 ${defStatus.deferred ? "border-warning/40 bg-warning/5" : "border-success/40 bg-success/5"}`}>
           <CardContent className="pt-4 flex items-start gap-3">
-            <AlertTriangle className={`w-5 h-5 mt-0.5 ${defStatus.deferred ? "text-amber-400" : "text-emerald-400"}`} />
+            <AlertTriangle className={`w-5 h-5 mt-0.5 ${defStatus.deferred ? "text-warning" : "text-success"}`} />
             <div className="text-sm">
               <p className="font-semibold">{defStatus.systemState}</p>
               <p className="text-muted-foreground">{defStatus.bannerText}</p>
@@ -321,7 +321,7 @@ function TestingControlCenterPageInner() {
                 <span>provider: <code className="font-mono">{defStatus.brokerProvider}</code></span>
                 <span>bridge connected: <code className="font-mono">{String(defStatus.bridgeConnected)}</code></span>
                 <span>account readable: <code className="font-mono">{String(defStatus.accountReadable)}</code></span>
-                <span>live execution: <code className="font-mono text-red-300">locked</code></span>
+                <span>live execution: <code className="font-mono text-danger">locked</code></span>
               </div>
             </div>
           </CardContent>
@@ -331,7 +331,7 @@ function TestingControlCenterPageInner() {
       {/* SECTION A — Available Now */}
       <Card data-testid="section-available-now">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><CheckCircle2 className="w-5 h-5 text-emerald-400" /> A. Available Now (no MT5 needed)</CardTitle>
+          <CardTitle className="flex items-center gap-2"><CheckCircle2 className="w-5 h-5 text-success" /> A. Available Now (no MT5 needed)</CardTitle>
           <CardDescription>{rows.length} checks · {passCount} pass · {failCount} fail · run individually or all at once.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">
@@ -354,7 +354,7 @@ function TestingControlCenterPageInner() {
       {/* SECTION B — Requires MT5 Later */}
       <Card data-testid="section-requires-mt5">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Lock className="w-5 h-5 text-amber-400" /> B. Requires MT5 Later</CardTitle>
+          <CardTitle className="flex items-center gap-2"><Lock className="w-5 h-5 text-warning" /> B. Requires MT5 Later</CardTitle>
           <CardDescription>These checks cannot run until you finish the MT5 desktop/VPS bridge setup. Live-money execution stays locked even after that.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">
@@ -371,11 +371,11 @@ function TestingControlCenterPageInner() {
       </Card>
 
       {/* Hard rules reminder */}
-      <Card className="border border-red-500/30 bg-red-500/5">
+      <Card className="border border-danger/30 bg-danger/5">
         <CardContent className="pt-4 text-sm flex items-start gap-3">
-          <ShieldAlert className="w-5 h-5 text-red-400 mt-0.5" />
+          <ShieldAlert className="w-5 h-5 text-danger mt-0.5" />
           <div>
-            <p className="font-semibold text-red-300">Inviolable rules — even with simulator unlocked.</p>
+            <p className="font-semibold text-danger">Inviolable rules — even with simulator unlocked.</p>
             <ul className="list-disc pl-5 text-muted-foreground text-xs mt-1 space-y-0.5">
               <li>Demo simulator never mutates <code>live_positions</code> or <code>mt5_commands</code>.</li>
               <li>Demo simulator never sends real orders or fakes a broker connection.</li>

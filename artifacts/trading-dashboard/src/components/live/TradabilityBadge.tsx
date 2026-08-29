@@ -28,9 +28,9 @@ export function TradabilityBadge({
   }
 
   const tone =
-    t.mt5Tradable === "yes" ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/40" :
-    t.mt5Tradable === "no"  ? "bg-amber-500/15 text-amber-300 border-amber-500/40" :
-                              "bg-zinc-500/15 text-zinc-300 border-zinc-500/40";
+    t.mt5Tradable === "yes" ? "bg-success/15 text-success border-success/40" :
+    t.mt5Tradable === "no"  ? "bg-warning/15 text-warning border-warning/40" :
+                              "bg-muted text-txt-secondary border-border/40";
 
   return (
     <div className={`flex flex-col gap-1 ${className ?? ""}`}>

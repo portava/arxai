@@ -31,12 +31,12 @@ export interface SkillSuggestion {
 }
 
 export const LEVEL_TONE: Record<SkillLevel, string> = {
-  "Beginner":           "border-slate-700 bg-slate-900/50 text-slate-200",
-  "Developing Trader":  "border-amber-700 bg-amber-950/30 text-amber-100",
-  "Disciplined Trader": "border-sky-700 bg-sky-950/30 text-sky-100",
-  "Consistent Trader":  "border-violet-700 bg-violet-950/30 text-violet-100",
-  "Advanced Trader":    "border-emerald-700 bg-emerald-950/30 text-emerald-100",
-  "Elite Trader":       "border-yellow-600 bg-yellow-950/30 text-yellow-100",
+  "Beginner":           "border-border bg-muted/50 text-foreground",
+  "Developing Trader":  "border-warning/40 bg-warning/30 text-warning",
+  "Disciplined Trader": "border-ruby/40 bg-ruby/30 text-ruby",
+  "Consistent Trader":  "border-premium/40 bg-premium/30 text-premium",
+  "Advanced Trader":    "border-success/40 bg-success/30 text-success",
+  "Elite Trader":       "border-warning bg-warning/30 text-warning",
 };
 export const LEVEL_THRESHOLDS: Record<SkillLevel, number> = {
   "Beginner": 0, "Developing Trader": 30, "Disciplined Trader": 45,

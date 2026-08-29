@@ -10,24 +10,24 @@ import { ClosePositionConfirmModal } from "./ClosePositionConfirmModal";
 export function PositionDetailPanel({ positionId }: { positionId: number }) {
   const { data, isLoading } = useGetLivePosition(positionId, { query: { queryKey: getGetLivePositionQueryKey(positionId), refetchInterval: 5_000 } });
   const [showClose, setShowClose] = useState(false);
-  if (isLoading || !data) return <div className="text-xs text-zinc-500">Loading position…</div>;
+  if (isLoading || !data) return <div className="text-xs text-txt-muted">Loading position…</div>;
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-950/50 p-3">
+      <div className="flex items-center justify-between rounded-xl border border-border bg-background/50 p-3">
         <div>
-          <div className="text-xs uppercase tracking-wide text-zinc-500">{data.symbol}</div>
-          <div className="text-lg font-semibold text-zinc-100">{data.direction} · {data.lotSize}</div>
-          <div className="text-xs text-zinc-500">Entry {data.entryPrice} · Last {data.currentPrice ?? "—"}</div>
+          <div className="text-xs uppercase tracking-wide text-txt-muted">{data.symbol}</div>
+          <div className="text-lg font-semibold text-foreground">{data.direction} · {data.lotSize}</div>
+          <div className="text-xs text-txt-muted">Entry {data.entryPrice} · Last {data.currentPrice ?? "—"}</div>
         </div>
         <button type="button" onClick={() => setShowClose(true)}
-          className="rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-1.5 text-xs font-medium text-rose-200 hover:bg-rose-500/20">
+          className="rounded-md border border-danger/40 bg-danger/10 px-3 py-1.5 text-xs font-medium text-danger hover:bg-danger/20">
           Close position
         </button>
       </div>
       <PositionRiskWarningBanner position={data} />
       <StopLossTakeProfitEditor position={data} />
       <div>
-        <div className="mb-1 text-xs uppercase tracking-wide text-zinc-500">Event timeline</div>
+        <div className="mb-1 text-xs uppercase tracking-wide text-txt-muted">Event timeline</div>
         <PositionEventTimeline positionId={positionId} />
       </div>
       {showClose && <ClosePositionConfirmModal positionId={positionId} onDone={() => setShowClose(false)} />}

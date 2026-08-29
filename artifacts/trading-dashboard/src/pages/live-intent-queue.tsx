@@ -49,7 +49,7 @@ export default function LiveIntentQueuePage() {
   );
 
   return (
-    <div className="mx-auto w-full max-w-[1280px] p-4 md:p-6 pb-32 md:pb-6 space-y-4">
+    <div className="mx-auto w-full max-w-[1280px] pb-32 md:pb-6 space-y-4">
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2"><ListChecks className="w-6 h-6" /> Live Intent Queue</h1>

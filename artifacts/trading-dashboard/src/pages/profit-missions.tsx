@@ -2596,7 +2596,7 @@ export default function ProfitMissionsPage() {
   }, [activeId, missions]);
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4 p-4" data-testid="page-profit-missions">
+    <div className="mx-auto max-w-5xl space-y-4" data-testid="page-profit-missions">
       <div>
         <h1 className="text-2xl font-bold">Profit Mission</h1>
         <p className="text-sm text-muted-foreground">

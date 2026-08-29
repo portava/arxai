@@ -21,40 +21,40 @@ export function BacktestChartPanel({ runId }: { runId: number | null }) {
 
   if (runId == null) {
     return (
-      <p className="rounded border border-dashed border-slate-700 p-6 text-center text-xs text-slate-500">
+      <p className="rounded border border-dashed border-border p-6 text-center text-xs text-txt-muted">
         Select a run to see its equity curve.
       </p>
     );
   }
   if (isLoading) {
-    return <p className="rounded border border-slate-700 bg-slate-900/40 p-6 text-center text-xs text-slate-500">Loading chart…</p>;
+    return <p className="rounded border border-border bg-muted/40 p-6 text-center text-xs text-txt-muted">Loading chart…</p>;
   }
   if (isError || !data) {
-    return <p className="rounded border border-red-900/50 bg-red-950/20 p-6 text-center text-xs text-red-300">Could not load the chart series for this run.</p>;
+    return <p className="rounded border border-danger/50 bg-danger/20 p-6 text-center text-xs text-danger">Could not load the chart series for this run.</p>;
   }
   // Focus-Lock blocked envelope — the run's symbol is no longer ARX-approved.
   if ("blocked" in data && (data as { blocked?: boolean }).blocked) {
-    return <p className="rounded border border-amber-900/50 bg-amber-950/20 p-6 text-center text-xs text-amber-300">This run's market is outside ARX Focus and cannot be charted.</p>;
+    return <p className="rounded border border-warning/50 bg-warning/20 p-6 text-center text-xs text-warning">This run's market is outside ARX Focus and cannot be charted.</p>;
   }
 
   const points = data.equity as EquityPoint[];
   const net = data.finalBalance - data.initialBalance;
   return (
-    <div className="space-y-3 rounded-lg border border-slate-700 bg-slate-900/40 p-3">
+    <div className="space-y-3 rounded-lg border border-border bg-muted/40 p-3">
       <div className="flex items-baseline justify-between">
-        <h3 className="text-sm font-semibold text-slate-100">Equity & drawdown</h3>
-        <span className="rounded bg-slate-800 px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-400">
+        <h3 className="text-sm font-semibold text-foreground">Equity & drawdown</h3>
+        <span className="rounded bg-secondary px-2 py-0.5 text-[10px] uppercase tracking-wide text-txt-secondary">
           {data.label}
         </span>
       </div>
-      <div className="grid gap-2 text-xs text-slate-400 sm:grid-cols-3">
-        <span>Start <span className="font-mono text-slate-200">${data.initialBalance.toFixed(2)}</span></span>
-        <span>End <span className="font-mono text-slate-200">${data.finalBalance.toFixed(2)}</span></span>
-        <span>Net <span className={`font-mono ${net >= 0 ? "text-emerald-400" : "text-red-400"}`}>{net >= 0 ? "+" : ""}{net.toFixed(2)}</span></span>
+      <div className="grid gap-2 text-xs text-txt-secondary sm:grid-cols-3">
+        <span>Start <span className="font-mono text-foreground">${data.initialBalance.toFixed(2)}</span></span>
+        <span>End <span className="font-mono text-foreground">${data.finalBalance.toFixed(2)}</span></span>
+        <span>Net <span className={`font-mono ${net >= 0 ? "text-success" : "text-danger"}`}>{net >= 0 ? "+" : ""}{net.toFixed(2)}</span></span>
       </div>
       <EquityCurveChart points={points} />
       <DrawdownChart points={points} maxDrawdown={data.maxDrawdown} />
-      <p className="text-[10px] text-slate-500">
+      <p className="text-[10px] text-txt-muted">
         Historical simulation only. Past performance does not guarantee future results.
       </p>
     </div>

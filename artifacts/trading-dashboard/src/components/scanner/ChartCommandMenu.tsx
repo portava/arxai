@@ -178,9 +178,9 @@ export function ChartCommandMenu({
 
       {/* ── Ask Ruby (read-only) ────────────────────────────────────────── */}
       <Item
-        icon={<Sparkles className="h-3.5 w-3.5 text-fuchsia-400" />}
+        icon={<Sparkles className="h-3.5 w-3.5 text-premium" />}
         label={`Ask ${name} about this candle`}
-        tone="text-fuchsia-200"
+        tone="text-premium"
         onClick={() => onAskRuby("analyze", anchor.price)}
       />
       <Item
@@ -204,12 +204,12 @@ export function ChartCommandMenu({
         onClick={() => onAskRuby("what-invalidates", anchor.price)}
       />
       <Item
-        icon={<Users className="h-3.5 w-3.5 text-indigo-300" />}
+        icon={<Users className="h-3.5 w-3.5 text-primary" />}
         label="Show agent disagreement"
         onClick={() => onAskRuby("agent-consensus", anchor.price)}
       />
       <Item
-        icon={<ReceiptText className="h-3.5 w-3.5 text-teal-300" />}
+        icon={<ReceiptText className="h-3.5 w-3.5 text-ruby" />}
         label="Save decision receipt"
         onClick={() => onShowReceipt()}
       />

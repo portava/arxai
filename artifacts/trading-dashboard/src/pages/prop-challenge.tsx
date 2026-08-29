@@ -84,30 +84,30 @@ export default function PropChallengePage() {
   });
 
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-4">
       <header className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-slate-100">Prop Firm Challenge Mode</h1>
-          <p className="text-xs text-amber-300">Practice/training only — does not promise funded-account approval or guaranteed profits.</p>
+          <h1 className="text-xl font-semibold text-foreground">Prop Firm Challenge Mode</h1>
+          <p className="text-xs text-warning">Practice/training only — does not promise funded-account approval or guaranteed profits.</p>
         </div>
-        <span className="rounded bg-amber-700 px-3 py-1 text-xs font-bold text-white">SIMULATED</span>
+        <span className="rounded bg-warning/15 px-3 py-1 text-xs font-bold text-white">SIMULATED</span>
       </header>
 
       {!active && (
-        <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-4 space-y-2">
-          <h3 className="text-sm font-semibold text-slate-100">Start a practice challenge</h3>
+        <div className="rounded-lg border border-border bg-muted/40 p-4 space-y-2">
+          <h3 className="text-sm font-semibold text-foreground">Start a practice challenge</h3>
           <div className="grid grid-cols-2 gap-2 text-xs">
-            <label><span className="text-slate-400">Demo account ID</span>
-              <input type="number" value={paperAccountId} onChange={(e)=>setPaperAccountId(Number(e.target.value))} className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100" />
+            <label><span className="text-txt-secondary">Demo account ID</span>
+              <input type="number" value={paperAccountId} onChange={(e)=>setPaperAccountId(Number(e.target.value))} className="w-full rounded border border-border bg-background px-2 py-1 text-foreground" />
             </label>
-            <label><span className="text-slate-400">Challenge name</span>
-              <input value={name} onChange={(e)=>setName(e.target.value)} className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100" />
+            <label><span className="text-txt-secondary">Challenge name</span>
+              <input value={name} onChange={(e)=>setName(e.target.value)} className="w-full rounded border border-border bg-background px-2 py-1 text-foreground" />
             </label>
           </div>
-          <button onClick={()=>create.mutate()} disabled={create.isPending} className="rounded bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-500 disabled:opacity-50">
+          <button onClick={()=>create.mutate()} disabled={create.isPending} className="rounded bg-warning px-3 py-1.5 text-xs font-semibold text-white hover:bg-warning disabled:opacity-50">
             {create.isPending ? "Creating…" : "Start practice challenge"}
           </button>
-          {create.isError && <p className="text-[11px] text-red-400">{(create.error as Error).message}</p>}
+          {create.isError && <p className="text-[11px] text-danger">{(create.error as Error).message}</p>}
         </div>
       )}
 
@@ -116,15 +116,15 @@ export default function PropChallengePage() {
           <PropPassFailBanner status={active.status} reason={active.failureReason} />
           <div className="flex flex-wrap gap-2">
             {active.status === "ACTIVE" && (
-              <button onClick={()=>transition.mutate("PAUSED")} className="rounded bg-amber-700 px-3 py-1 text-xs text-white hover:bg-amber-600">Pause</button>
+              <button onClick={()=>transition.mutate("PAUSED")} className="rounded bg-warning/15 px-3 py-1 text-xs text-white hover:bg-warning">Pause</button>
             )}
             {active.status === "PAUSED" && (
-              <button onClick={()=>transition.mutate("ACTIVE")} className="rounded bg-emerald-700 px-3 py-1 text-xs text-white hover:bg-emerald-600">Resume</button>
+              <button onClick={()=>transition.mutate("ACTIVE")} className="rounded bg-success/15 px-3 py-1 text-xs text-white hover:bg-success">Resume</button>
             )}
             {(active.status === "ACTIVE" || active.status === "PAUSED") && (
-              <button onClick={()=>transition.mutate("CANCELED")} className="rounded bg-slate-700 px-3 py-1 text-xs text-white hover:bg-slate-600">Cancel</button>
+              <button onClick={()=>transition.mutate("CANCELED")} className="rounded bg-muted px-3 py-1 text-xs text-white hover:bg-muted">Cancel</button>
             )}
-            <button onClick={()=>evalQ.refetch()} className="rounded bg-sky-700 px-3 py-1 text-xs text-white hover:bg-sky-600">Re-evaluate</button>
+            <button onClick={()=>evalQ.refetch()} className="rounded bg-ruby/15 px-3 py-1 text-xs text-white hover:bg-ruby">Re-evaluate</button>
           </div>
           {evalQ.data && (
             <>

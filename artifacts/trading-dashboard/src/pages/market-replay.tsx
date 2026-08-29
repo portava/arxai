@@ -14,10 +14,10 @@ type Decision = {
 };
 
 const ACTION_COLORS: Record<string, string> = {
-  BUY: "bg-emerald-500/10 text-emerald-400 border-emerald-500/40",
-  SELL: "bg-rose-500/10 text-rose-400 border-rose-500/40",
-  WAIT: "bg-amber-500/10 text-amber-400 border-amber-500/40",
-  REJECT: "bg-zinc-500/10 text-zinc-400 border-zinc-500/40",
+  BUY: "bg-success/10 text-success border-success/40",
+  SELL: "bg-danger/10 text-danger border-danger/40",
+  WAIT: "bg-warning/10 text-warning border-warning/40",
+  REJECT: "bg-muted text-txt-secondary border-border/40",
 };
 
 export default function MarketReplay() {
@@ -94,7 +94,7 @@ export default function MarketReplay() {
                   <Button variant="outline" onClick={stop} disabled={busy}><Square className="h-4 w-4 mr-1" /> Stop</Button>
                 </>}
           </div>
-          {err && <p className="text-sm text-rose-400 md:col-span-4">{err}</p>}
+          {err && <p className="text-sm text-danger md:col-span-4">{err}</p>}
           {replayId && <p className="text-xs text-muted-foreground md:col-span-4">
             Replay <span className="font-mono">{replayId}</span> · candle {decisions.length} of {total}
           </p>}

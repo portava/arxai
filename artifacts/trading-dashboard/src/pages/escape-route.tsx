@@ -18,9 +18,9 @@ import { LoadingState, EmptyState, ErrorState } from "@/components/ss/States";
  *  and inventing new StatusKinds for page-local labels would pollute it. */
 function Pill({ label, tone }: { label: string; tone: "neutral" | "warning" | "danger" | "positive" }) {
   const cls =
-    tone === "danger" ? "bg-red-500/15 text-red-600 border-red-500/30"
-      : tone === "warning" ? "bg-amber-500/15 text-amber-600 border-amber-500/30"
-        : tone === "positive" ? "bg-emerald-500/15 text-emerald-600 border-emerald-500/30"
+    tone === "danger" ? "bg-danger/15 text-danger border-danger/30"
+      : tone === "warning" ? "bg-warning/15 text-warning border-warning/30"
+        : tone === "positive" ? "bg-success/15 text-success border-success/30"
           : "bg-muted text-muted-foreground border-border";
   return <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${cls}`}>{label}</span>;
 }
@@ -63,7 +63,7 @@ function StepList({ steps }: { steps: Step[] }) {
             <div className="text-sm font-medium">{s.title}</div>
             <div className="text-sm text-muted-foreground">{s.detail}</div>
             {s.usesUnknownValue && (
-              <div className="mt-1 flex items-center gap-1 text-xs text-amber-500">
+              <div className="mt-1 flex items-center gap-1 text-xs text-warning">
                 <AlertTriangle className="h-3 w-3" />
                 A value this step needs has not been reported — the step tells you where to find it yourself.
               </div>
@@ -101,8 +101,8 @@ function ConnectionCardView({ c }: { c: Connection }) {
         </dl>
 
         {c.unavailable.length > 0 && (
-          <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-muted-foreground" data-testid="unavailable-reasons">
-            <div className="mb-1 font-medium text-amber-600">Not everything could be sourced honestly:</div>
+          <div className="rounded-md border border-warning/30 bg-warning/5 p-3 text-xs text-muted-foreground" data-testid="unavailable-reasons">
+            <div className="mb-1 font-medium text-warning">Not everything could be sourced honestly:</div>
             <ul className="list-disc pl-4">
               {c.unavailable.map((u) => <li key={u}>{u}</li>)}
             </ul>
@@ -206,7 +206,7 @@ export default function EscapeRoutePage() {
           {page.connectionsUnavailableReason && (
             <Card>
               <CardContent className="pt-6">
-                <p className="text-sm text-amber-600" data-testid="connections-unavailable">
+                <p className="text-sm text-warning" data-testid="connections-unavailable">
                   {page.connectionsUnavailableReason}
                 </p>
               </CardContent>

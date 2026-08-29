@@ -6,7 +6,7 @@ import { Sparkles } from "lucide-react";
 import { AccessCheckingShell, AccessDeniedCard, SHADOW_ADMIN_DENIED_NOTE, shadowAdminDeniedMessage } from "@/components/access/AdminOnlyGate";
 
 type R = { score: number; label: string; factors: Record<string, number>; realBrokerReadiness: string };
-const LABEL_COLOR: Record<string, string> = { NOT_READY: "bg-rose-500/20 text-rose-400", NEEDS_MORE_TESTING: "bg-amber-500/20 text-amber-400", PAPER_READY: "bg-blue-500/20 text-blue-400", DEMO_READY: "bg-emerald-500/20 text-emerald-400", LIVE_INTENT_READY: "bg-violet-500/20 text-violet-300" };
+const LABEL_COLOR: Record<string, string> = { NOT_READY: "bg-danger/20 text-danger", NEEDS_MORE_TESTING: "bg-warning/20 text-warning", PAPER_READY: "bg-primary/20 text-primary", DEMO_READY: "bg-success/20 text-success", LIVE_INTENT_READY: "bg-premium/20 text-premium" };
 
 const PAGE_ICON = <Sparkles className="h-6 w-6 text-primary" />;
 

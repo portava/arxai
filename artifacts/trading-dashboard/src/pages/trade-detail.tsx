@@ -169,10 +169,10 @@ type MarketContextResponse = {
 };
 
 const severityColor: Record<string, string> = {
-  info: "border-zinc-700 text-zinc-300",
-  watch: "border-blue-700 text-blue-300",
-  warning: "border-amber-700 text-amber-300",
-  urgent: "border-rose-700 text-rose-300",
+  info: "border-border text-txt-secondary",
+  watch: "border-primary/40 text-primary",
+  warning: "border-warning/40 text-warning",
+  urgent: "border-danger/40 text-danger",
 };
 
 export default function TradeDetailPage() {
@@ -289,9 +289,9 @@ export default function TradeDetailPage() {
     const total = 4; // candles, M15/H1/H4, volume
     const have = Math.max(0, total - missing.length);
     const pct = Math.round((have / total) * 100);
-    if (pct >= 75) return { score: pct, label: "Good", color: "text-emerald-300" };
-    if (pct >= 40) return { score: pct, label: "Limited", color: "text-amber-300" };
-    return { score: pct, label: "Insufficient", color: "text-rose-300" };
+    if (pct >= 75) return { score: pct, label: "Good", color: "text-success" };
+    if (pct >= 40) return { score: pct, label: "Limited", color: "text-warning" };
+    return { score: pct, label: "Insufficient", color: "text-danger" };
   }
 
   useEffect(() => {
@@ -304,7 +304,7 @@ export default function TradeDetailPage() {
 
   if (loading) {
     return (
-      <div className="p-6 text-zinc-400 flex items-center gap-2">
+      <div className="p-6 text-txt-secondary flex items-center gap-2">
         <Loader2 className="h-4 w-4 animate-spin" /> Loading trade…
       </div>
     );
@@ -312,10 +312,10 @@ export default function TradeDetailPage() {
 
   if (err || !intel?.ok || !intel.trade) {
     return (
-      <div className="p-6 space-y-2">
+      <div className="space-y-2">
         <Link href="/my-trades"><Button variant="ghost" size="sm"><ArrowLeft className="mr-1 h-3 w-3" /> Back</Button></Link>
         <Card>
-          <CardContent className="flex items-center gap-2 p-6 text-rose-400">
+          <CardContent className="flex items-center gap-2 p-6 text-danger">
             <AlertTriangle className="h-4 w-4" /> {err ?? "Trade not found."}
           </CardContent>
         </Card>
@@ -344,7 +344,7 @@ export default function TradeDetailPage() {
   const age = ageStr(openedAt);
 
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
         <Link href="/my-trades">
           <Button variant="ghost" size="sm"><ArrowLeft className="mr-1 h-3 w-3" /> Back to trades</Button>
@@ -361,19 +361,19 @@ export default function TradeDetailPage() {
             <Badge variant="outline" className="text-[10px] uppercase">{t.routingMode}</Badge>
           </CardTitle>
         </CardHeader>
-        <CardContent className="grid grid-cols-2 gap-2 text-sm text-zinc-400 md:grid-cols-4">
-          <div>Entry: <span className="text-zinc-200">{t.entryPrice ?? "—"}</span></div>
-          <div>Now: <span className="text-zinc-200">{t.currentPrice ?? "—"}</span></div>
-          <div>SL: <span className="text-zinc-200">{t.stopLoss ?? "—"}</span></div>
-          <div>TP: <span className="text-zinc-200">{t.takeProfit ?? "—"}</span></div>
-          <div>P&L: <span className={`${(t.unrealizedPnl ?? 0) > 0 ? "text-emerald-400"
-            : (t.unrealizedPnl ?? 0) < 0 ? "text-rose-400" : "text-zinc-200"}`}>
+        <CardContent className="grid grid-cols-2 gap-2 text-sm text-txt-secondary md:grid-cols-4">
+          <div>Entry: <span className="text-foreground">{t.entryPrice ?? "—"}</span></div>
+          <div>Now: <span className="text-foreground">{t.currentPrice ?? "—"}</span></div>
+          <div>SL: <span className="text-foreground">{t.stopLoss ?? "—"}</span></div>
+          <div>TP: <span className="text-foreground">{t.takeProfit ?? "—"}</span></div>
+          <div>P&L: <span className={`${(t.unrealizedPnl ?? 0) > 0 ? "text-success"
+            : (t.unrealizedPnl ?? 0) < 0 ? "text-danger" : "text-foreground"}`}>
             {t.unrealizedPnl?.toFixed(2) ?? "—"}
           </span>{t.pnlIsEstimate && <Badge variant="outline" className="ml-1 text-[10px]">est.</Badge>}</div>
-          <div>Pips: <span className="text-zinc-200">{s?.pnlPips ?? "—"}</span></div>
-          <div>Peak: <span className="text-zinc-200">{s?.peakPnl?.toFixed?.(2) ?? "—"}</span></div>
-          <div>Giveback: <span className="text-zinc-200">{s?.profitGivebackPercent ?? "—"}%</span></div>
-          <div className="flex items-center gap-1">Age: <Clock className="h-3 w-3 text-zinc-500" /><span className="text-zinc-200">{age}</span></div>
+          <div>Pips: <span className="text-foreground">{s?.pnlPips ?? "—"}</span></div>
+          <div>Peak: <span className="text-foreground">{s?.peakPnl?.toFixed?.(2) ?? "—"}</span></div>
+          <div>Giveback: <span className="text-foreground">{s?.profitGivebackPercent ?? "—"}%</span></div>
+          <div className="flex items-center gap-1">Age: <Clock className="h-3 w-3 text-txt-muted" /><span className="text-foreground">{age}</span></div>
           <div>Data quality: <span className={dq.color}>{dq.score}% ({dq.label})</span></div>
         </CardContent>
       </Card>
@@ -403,14 +403,14 @@ export default function TradeDetailPage() {
               body: "Records 'user decided to hold' on the timeline. AI will keep watching and alert per your preferences." })}>
             <Eye className="mr-1 h-3 w-3" /> Hold and Monitor
           </Button>
-          {actionMsg && <span className="ml-2 text-xs text-zinc-400">{actionMsg}</span>}
+          {actionMsg && <span className="ml-2 text-xs text-txt-secondary">{actionMsg}</span>}
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <Sparkles className="h-4 w-4 text-violet-400" /> AI analysis
+            <Sparkles className="h-4 w-4 text-premium" /> AI analysis
             {s?.recommendedAction && (
               <Badge variant={s.recommendedAction.startsWith("CLOSE") ? "destructive" : "secondary"}>
                 {s.recommendedAction}
@@ -419,14 +419,14 @@ export default function TradeDetailPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
-          <div className="text-zinc-200">{s?.label ?? "—"}</div>
-          <p className="text-zinc-400 leading-snug">{s?.explanation ?? "—"}</p>
+          <div className="text-foreground">{s?.label ?? "—"}</div>
+          <p className="text-txt-secondary leading-snug">{s?.explanation ?? "—"}</p>
           {missing.length > 0 && (
-            <div className="rounded border border-amber-700/40 bg-amber-500/5 p-2 text-xs text-amber-300">
+            <div className="rounded border border-warning/40 bg-warning/5 p-2 text-xs text-warning">
               I don't have: {missing.join(", ")}. Some scores may be limited.
             </div>
           )}
-          <div className="grid grid-cols-2 gap-2 text-xs text-zinc-400 md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2 text-xs text-txt-secondary md:grid-cols-4">
             {[
               ["Continuation", s?.continuationScore],
               ["Pullback", s?.pullbackScore],
@@ -440,9 +440,9 @@ export default function TradeDetailPage() {
               ["MFE", s?.mfe?.toFixed?.(4)],
               ["MAE", s?.mae?.toFixed?.(4)],
             ].map(([k, v]) => (
-              <div key={k as string} className="rounded border border-zinc-800 px-2 py-1">
+              <div key={k as string} className="rounded border border-border px-2 py-1">
                 <div className="text-[10px] uppercase">{k}</div>
-                <div className="text-zinc-200">{v ?? "—"}</div>
+                <div className="text-foreground">{v ?? "—"}</div>
               </div>
             ))}
           </div>
@@ -452,7 +452,7 @@ export default function TradeDetailPage() {
       <Card data-testid="ai-exit-plan-section">
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
-            <Shield className="h-4 w-4 text-emerald-400" /> AI Exit Plan
+            <Shield className="h-4 w-4 text-success" /> AI Exit Plan
             {exitPlan?.tradeEfficiencyScore != null && (
               <Badge variant={exitPlan.tradeEfficiencyScore >= 65 ? "secondary" : exitPlan.tradeEfficiencyScore >= 35 ? "outline" : "destructive"}>
                 Efficiency {exitPlan.tradeEfficiencyScore}/100
@@ -465,17 +465,17 @@ export default function TradeDetailPage() {
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           {!exitPlan ? (
-            <div className="text-zinc-500">Exit plan not available yet.</div>
+            <div className="text-txt-muted">Exit plan not available yet.</div>
           ) : (
             <>
-              <p className="text-zinc-400 leading-snug">{exitPlan.explanation ?? "—"}</p>
+              <p className="text-txt-secondary leading-snug">{exitPlan.explanation ?? "—"}</p>
               {exitPlan.timeWarning && (
-                <div className="rounded border border-amber-700/40 bg-amber-500/5 p-2 text-xs text-amber-300">
+                <div className="rounded border border-warning/40 bg-warning/5 p-2 text-xs text-warning">
                   <Clock className="mr-1 inline h-3 w-3" /> {exitPlan.timeWarning}
                 </div>
               )}
               {exitPlan.dataQuality?.canDeriveLevels === false && (
-                <div className="rounded border border-amber-700/40 bg-amber-500/5 p-2 text-xs text-amber-300">
+                <div className="rounded border border-warning/40 bg-warning/5 p-2 text-xs text-warning">
                   Some levels require entry, stop, and take-profit — partial plan only.
                 </div>
               )}
@@ -490,15 +490,15 @@ export default function TradeDetailPage() {
                   ["Trail stop", exitPlan.trailStopLevel],
                   ["Close urgency", exitPlan.closeUrgencyScore],
                 ].map(([k, v]) => (
-                  <div key={k as string} className="rounded border border-zinc-800 px-2 py-1">
-                    <div className="text-[10px] uppercase text-zinc-500">{k}</div>
-                    <div className="text-zinc-200">{v == null ? "—" : v}</div>
+                  <div key={k as string} className="rounded border border-border px-2 py-1">
+                    <div className="text-[10px] uppercase text-txt-muted">{k}</div>
+                    <div className="text-foreground">{v == null ? "—" : v}</div>
                   </div>
                 ))}
               </div>
-              <div className="rounded border border-zinc-800 p-2 text-xs text-zinc-400">
-                <div><span className="text-rose-300">Invalidation:</span> {exitPlan.invalidationTrigger ?? "—"}</div>
-                <div className="mt-1"><span className="text-emerald-300">Continuation:</span> {exitPlan.continuationTrigger ?? "—"}</div>
+              <div className="rounded border border-border p-2 text-xs text-txt-secondary">
+                <div><span className="text-danger">Invalidation:</span> {exitPlan.invalidationTrigger ?? "—"}</div>
+                <div className="mt-1"><span className="text-success">Continuation:</span> {exitPlan.continuationTrigger ?? "—"}</div>
               </div>
               <div className="flex flex-wrap gap-2">
                 <Button size="sm" variant="outline" data-testid="exit-plan-recalc"
@@ -516,7 +516,7 @@ export default function TradeDetailPage() {
                     body: "Preview only — ARX cannot place orders. You must execute the partial close yourself in MT5 or your broker." })}>
                   <Scissors className="mr-1 h-3 w-3" /> Review Partial Close
                 </Button>
-                {planActionMsg && <span className="ml-2 text-xs text-zinc-400">{planActionMsg}</span>}
+                {planActionMsg && <span className="ml-2 text-xs text-txt-secondary">{planActionMsg}</span>}
               </div>
             </>
           )}
@@ -526,7 +526,7 @@ export default function TradeDetailPage() {
       <Card data-testid="trade-decision-section">
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
-            <Target className="h-4 w-4 text-violet-400" /> Trade Decision
+            <Target className="h-4 w-4 text-premium" /> Trade Decision
             {decision?.decision?.decisionLabel && (
               <Badge
                 variant={
@@ -544,7 +544,7 @@ export default function TradeDetailPage() {
               </Badge>
             )}
             {decision?.decision?.dataQuality?.marketContextQuality && decision.decision.dataQuality.marketContextQuality !== "good" && (
-              <Badge variant="outline" className="border-amber-700/50 text-amber-300 text-[10px]">
+              <Badge variant="outline" className="border-warning/50 text-warning text-[10px]">
                 data: {decision.decision.dataQuality.marketContextQuality}
               </Badge>
             )}
@@ -552,11 +552,11 @@ export default function TradeDetailPage() {
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           {!decision?.ok || !decision.decision ? (
-            <div className="text-zinc-500">Decision unavailable right now.</div>
+            <div className="text-txt-muted">Decision unavailable right now.</div>
           ) : (
             <>
-              <p className="text-zinc-300" data-testid="decision-summary">{decision.decision.reasonSummary}</p>
-              <p className="text-zinc-400 text-xs"><span className="text-zinc-300 font-medium">Why:</span> {decision.decision.mainReason}</p>
+              <p className="text-txt-secondary" data-testid="decision-summary">{decision.decision.reasonSummary}</p>
+              <p className="text-txt-secondary text-xs"><span className="text-txt-secondary font-medium">Why:</span> {decision.decision.mainReason}</p>
 
               <div className="grid grid-cols-3 gap-2 text-xs">
                 {[
@@ -564,17 +564,17 @@ export default function TradeDetailPage() {
                   ["Urgency", decision.decision.urgencyScore],
                   ["Risk", decision.decision.riskScore],
                 ].map(([k, v]) => (
-                  <div key={k as string} className="rounded border border-zinc-800 px-2 py-1 text-center">
-                    <div className="text-[10px] uppercase text-zinc-500">{k}</div>
-                    <div className="text-zinc-200" data-testid={`decision-score-${(k as string).toLowerCase()}`}>{v == null ? "—" : v}</div>
+                  <div key={k as string} className="rounded border border-border px-2 py-1 text-center">
+                    <div className="text-[10px] uppercase text-txt-muted">{k}</div>
+                    <div className="text-foreground" data-testid={`decision-score-${(k as string).toLowerCase()}`}>{v == null ? "—" : v}</div>
                   </div>
                 ))}
               </div>
 
               {decision.decision.supportingReasons.length > 0 && (
-                <div className="rounded border border-zinc-800 p-2 text-xs">
-                  <div className="font-medium text-zinc-200 mb-1">Supporting evidence</div>
-                  <ul className="list-disc pl-4 space-y-1 text-zinc-400">
+                <div className="rounded border border-border p-2 text-xs">
+                  <div className="font-medium text-foreground mb-1">Supporting evidence</div>
+                  <ul className="list-disc pl-4 space-y-1 text-txt-secondary">
                     {decision.decision.supportingReasons.slice(0, 5).map((r, idx) => (
                       <li key={idx}>{r}</li>
                     ))}
@@ -588,17 +588,17 @@ export default function TradeDetailPage() {
                   ["Protect profit", decision.decision.protectProfitLevel],
                   ["Continuation", decision.decision.continuationLevel],
                 ].map(([k, v]) => (
-                  <div key={k as string} className="rounded border border-zinc-800 px-2 py-1">
-                    <div className="text-[10px] uppercase text-zinc-500">{k}</div>
-                    <div className="text-zinc-200">{v == null ? "—" : v}</div>
+                  <div key={k as string} className="rounded border border-border px-2 py-1">
+                    <div className="text-[10px] uppercase text-txt-muted">{k}</div>
+                    <div className="text-foreground">{v == null ? "—" : v}</div>
                   </div>
                 ))}
               </div>
 
               {decision.decision.whatWouldChange.length > 0 && (
-                <div className="rounded border border-zinc-800 p-2 text-xs">
-                  <div className="font-medium text-zinc-200 mb-1">What would change this decision</div>
-                  <ul className="list-disc pl-4 space-y-1 text-zinc-400" data-testid="decision-what-would-change">
+                <div className="rounded border border-border p-2 text-xs">
+                  <div className="font-medium text-foreground mb-1">What would change this decision</div>
+                  <ul className="list-disc pl-4 space-y-1 text-txt-secondary" data-testid="decision-what-would-change">
                     {decision.decision.whatWouldChange.map((r, idx) => (
                       <li key={idx}>{r}</li>
                     ))}
@@ -607,7 +607,7 @@ export default function TradeDetailPage() {
               )}
 
               {decision.decision.dataQuality.missing.length > 0 && (
-                <div className="rounded border border-amber-700/40 bg-amber-500/5 p-2 text-xs text-amber-300">
+                <div className="rounded border border-warning/40 bg-warning/5 p-2 text-xs text-warning">
                   Missing inputs: {decision.decision.dataQuality.missing.slice(0, 6).join(", ")}.
                 </div>
               )}
@@ -672,8 +672,8 @@ export default function TradeDetailPage() {
                     <Shield className="mr-1 h-3 w-3" /> Send to Action Center
                   </Button>
                 )}
-                <span className="text-[10px] text-zinc-500">Decision support only — every action requires your explicit confirmation. Based on available data; not guaranteed.</span>
-                {decisionMsg && <span className="text-xs text-zinc-400">{decisionMsg}</span>}
+                <span className="text-[10px] text-txt-muted">Decision support only — every action requires your explicit confirmation. Based on available data; not guaranteed.</span>
+                {decisionMsg && <span className="text-xs text-txt-secondary">{decisionMsg}</span>}
               </div>
             </>
           )}
@@ -683,7 +683,7 @@ export default function TradeDetailPage() {
       <Card data-testid="market-context-section">
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
-            <Activity className="h-4 w-4 text-sky-400" /> Market Context
+            <Activity className="h-4 w-4 text-ruby" /> Market Context
             {marketCtx?.classification?.label && (
               <Badge variant="outline" className="text-[10px]">{marketCtx.classification.label}</Badge>
             )}
@@ -697,7 +697,7 @@ export default function TradeDetailPage() {
               </Badge>
             )}
             {marketCtx?.context?.dataQuality?.quality && marketCtx.context.dataQuality.quality !== "good" && (
-              <Badge variant="outline" className="border-amber-700/50 text-amber-300 text-[10px]">
+              <Badge variant="outline" className="border-warning/50 text-warning text-[10px]">
                 data: {marketCtx.context.dataQuality.quality}
               </Badge>
             )}
@@ -705,14 +705,14 @@ export default function TradeDetailPage() {
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           {!marketCtx?.ok ? (
-            <div className="text-zinc-500">Live market context is not available right now.</div>
+            <div className="text-txt-muted">Live market context is not available right now.</div>
           ) : marketCtx.context?.dataQuality?.quality === "insufficient" ? (
-            <div className="rounded border border-amber-700/40 bg-amber-500/5 p-2 text-xs text-amber-300">
+            <div className="rounded border border-warning/40 bg-warning/5 p-2 text-xs text-warning">
               Live candle data is not connected for this symbol — no price-action read is possible. Configure a market data provider with candle support to enable this section.
             </div>
           ) : (
             <>
-              <p className="text-zinc-400 leading-snug">{marketCtx.classification?.explanation ?? "—"}</p>
+              <p className="text-txt-secondary leading-snug">{marketCtx.classification?.explanation ?? "—"}</p>
 
               <div className="grid grid-cols-2 gap-2 text-xs md:grid-cols-4">
                 {[
@@ -721,9 +721,9 @@ export default function TradeDetailPage() {
                   ["Trade label", marketCtx.tradeContext?.tradeLabel ?? "—"],
                   ["Source", marketCtx.context?.source ?? "—"],
                 ].map(([k, v]) => (
-                  <div key={k as string} className="rounded border border-zinc-800 px-2 py-1">
-                    <div className="text-[10px] uppercase text-zinc-500">{k}</div>
-                    <div className="text-zinc-200">{v ?? "—"}</div>
+                  <div key={k as string} className="rounded border border-border px-2 py-1">
+                    <div className="text-[10px] uppercase text-txt-muted">{k}</div>
+                    <div className="text-foreground">{v ?? "—"}</div>
                   </div>
                 ))}
               </div>
@@ -739,9 +739,9 @@ export default function TradeDetailPage() {
                   ["Breakout level", marketCtx.keyLevels?.breakoutLevel],
                   ["Key level to watch", marketCtx.keyLevels?.keyLevelToWatch],
                 ].map(([k, v]) => (
-                  <div key={k as string} className="rounded border border-zinc-800 px-2 py-1">
-                    <div className="text-[10px] uppercase text-zinc-500">{k}</div>
-                    <div className="text-zinc-200">{v == null ? "—" : v}</div>
+                  <div key={k as string} className="rounded border border-border px-2 py-1">
+                    <div className="text-[10px] uppercase text-txt-muted">{k}</div>
+                    <div className="text-foreground">{v == null ? "—" : v}</div>
                   </div>
                 ))}
               </div>
@@ -755,9 +755,9 @@ export default function TradeDetailPage() {
                   ["Breakout strength", marketCtx.classification?.scores?.breakoutStrengthScore],
                   ["Trend strength", marketCtx.classification?.scores?.trendStrengthScore],
                 ].map(([k, v]) => (
-                  <div key={k as string} className="rounded border border-zinc-800 px-2 py-1">
-                    <div className="text-[10px] uppercase text-zinc-500">{k}</div>
-                    <div className="text-zinc-200">{v == null ? "—" : v}</div>
+                  <div key={k as string} className="rounded border border-border px-2 py-1">
+                    <div className="text-[10px] uppercase text-txt-muted">{k}</div>
+                    <div className="text-foreground">{v == null ? "—" : v}</div>
                   </div>
                 ))}
               </div>
@@ -765,13 +765,13 @@ export default function TradeDetailPage() {
               {marketCtx.context?.timeframes && (
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
-                    <thead className="text-zinc-500">
+                    <thead className="text-txt-muted">
                       <tr><th className="text-left">TF</th><th className="text-left">Trend</th><th className="text-left">Strength</th><th className="text-left">ATR</th><th className="text-left">Swing H</th><th className="text-left">Swing L</th></tr>
                     </thead>
                     <tbody>
                       {Object.values(marketCtx.context.timeframes).filter((t) => t.available).map((t) => (
-                        <tr key={t.timeframe} className="border-t border-zinc-800">
-                          <td className="py-1 text-zinc-300">{t.timeframe}</td>
+                        <tr key={t.timeframe} className="border-t border-border">
+                          <td className="py-1 text-txt-secondary">{t.timeframe}</td>
                           <td>{t.trendDirection}</td>
                           <td>{t.trendStrengthScore ?? "—"}</td>
                           <td>{t.atr ?? "—"}</td>
@@ -785,22 +785,22 @@ export default function TradeDetailPage() {
               )}
 
               <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                <div className="rounded border border-emerald-700/30 bg-emerald-500/5 p-2 text-xs text-emerald-200">
+                <div className="rounded border border-success/30 bg-success/5 p-2 text-xs text-success">
                   <div className="font-medium">Bullish scenario</div>
-                  <div className="mt-1 text-zinc-300">{marketCtx.tradeContext?.bullishScenario ?? "—"}</div>
+                  <div className="mt-1 text-txt-secondary">{marketCtx.tradeContext?.bullishScenario ?? "—"}</div>
                 </div>
-                <div className="rounded border border-rose-700/30 bg-rose-500/5 p-2 text-xs text-rose-200">
+                <div className="rounded border border-danger/30 bg-danger/5 p-2 text-xs text-danger">
                   <div className="font-medium">Bearish scenario</div>
-                  <div className="mt-1 text-zinc-300">{marketCtx.tradeContext?.bearishScenario ?? "—"}</div>
+                  <div className="mt-1 text-txt-secondary">{marketCtx.tradeContext?.bearishScenario ?? "—"}</div>
                 </div>
               </div>
 
-              <div className="rounded border border-zinc-800 p-2 text-xs text-zinc-300">
-                <div className="font-medium text-zinc-200">Exit / hold review</div>
-                <div className="mt-1 text-zinc-400">{marketCtx.tradeContext?.exitHoldReview ?? "—"}</div>
+              <div className="rounded border border-border p-2 text-xs text-txt-secondary">
+                <div className="font-medium text-foreground">Exit / hold review</div>
+                <div className="mt-1 text-txt-secondary">{marketCtx.tradeContext?.exitHoldReview ?? "—"}</div>
               </div>
 
-              <div className="text-[10px] text-zinc-500">
+              <div className="text-[10px] text-txt-muted">
                 Source: {marketCtx.context?.source ?? "—"} · freshness: {marketCtx.context?.freshness ?? "—"} · session: {marketCtx.context?.session ?? "—"}
                 {marketCtx.context?.asOf && <> · as of {new Date(marketCtx.context.asOf).toLocaleString()}</>}
               </div>
@@ -820,7 +820,7 @@ export default function TradeDetailPage() {
                   }}>
                   {recalcingCtx ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Activity className="mr-1 h-3 w-3" />} Recalculate
                 </Button>
-                {recalcMsg && <span className="text-xs text-zinc-400">{recalcMsg}</span>}
+                {recalcMsg && <span className="text-xs text-txt-secondary">{recalcMsg}</span>}
               </div>
             </>
           )}
@@ -833,14 +833,14 @@ export default function TradeDetailPage() {
         </CardHeader>
         <CardContent className="space-y-2">
           {tradeAlerts.length === 0 ? (
-            <div className="text-sm text-zinc-500">No alerts yet for your trades.</div>
+            <div className="text-sm text-txt-muted">No alerts yet for your trades.</div>
           ) : tradeAlerts.slice(0, 10).map((a) => (
             <div key={a.id} className={`rounded border p-2 text-xs ${severityColor[a.severity] ?? severityColor.info}`}>
               <div className="flex items-center justify-between">
                 <span className="font-medium">{a.title}</span>
                 <span className="text-[10px] uppercase">{a.severity}</span>
               </div>
-              <div className="mt-1 text-zinc-400">{a.message}</div>
+              <div className="mt-1 text-txt-secondary">{a.message}</div>
             </div>
           ))}
         </CardContent>
@@ -848,18 +848,18 @@ export default function TradeDetailPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2"><Clock className="h-4 w-4 text-zinc-400" /> Decision timeline</CardTitle>
+          <CardTitle className="text-base flex items-center gap-2"><Clock className="h-4 w-4 text-txt-secondary" /> Decision timeline</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
           {timeline.length === 0 ? (
-            <div className="text-sm text-zinc-500">No events recorded yet. Alerts and your decisions will appear here.</div>
+            <div className="text-sm text-txt-muted">No events recorded yet. Alerts and your decisions will appear here.</div>
           ) : timeline.slice(0, 30).map((e) => (
-            <div key={e.id} className="rounded border border-zinc-800 p-2 text-xs">
+            <div key={e.id} className="rounded border border-border p-2 text-xs">
               <div className="flex items-center justify-between">
-                <span className="font-medium text-zinc-200">{e.title || e.eventType}</span>
-                <span className="text-[10px] uppercase text-zinc-500">{e.source} · {new Date(e.createdAt).toLocaleString()}</span>
+                <span className="font-medium text-foreground">{e.title || e.eventType}</span>
+                <span className="text-[10px] uppercase text-txt-muted">{e.source} · {new Date(e.createdAt).toLocaleString()}</span>
               </div>
-              {e.message && <div className="mt-1 text-zinc-400">{e.message}</div>}
+              {e.message && <div className="mt-1 text-txt-secondary">{e.message}</div>}
             </div>
           ))}
         </CardContent>
@@ -867,22 +867,22 @@ export default function TradeDetailPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2"><FileCheck className="h-4 w-4 text-violet-400" /> Exit review</CardTitle>
+          <CardTitle className="text-base flex items-center gap-2"><FileCheck className="h-4 w-4 text-premium" /> Exit review</CardTitle>
         </CardHeader>
         <CardContent>
           {!exitReview ? (
-            <div className="text-sm text-zinc-500">No exit review yet. One is created automatically when the trade is closed.</div>
+            <div className="text-sm text-txt-muted">No exit review yet. One is created automatically when the trade is closed.</div>
           ) : (
             <div className="space-y-2 text-sm">
               <div className="flex items-center gap-2">
                 <Badge variant="outline" className="text-[10px] uppercase">{exitReview.status}</Badge>
                 <Badge variant="outline" className="text-[10px]">close: {exitReview.closeMethod}</Badge>
               </div>
-              <div className="grid grid-cols-2 gap-2 text-xs text-zinc-400 md:grid-cols-4">
-                <div>Peak P&L: <span className="text-zinc-200">{exitReview.peakUnrealizedPnl?.toFixed?.(2) ?? "—"}</span></div>
-                <div>Final P&L: <span className="text-zinc-200">{exitReview.finalRealizedPnl?.toFixed?.(2) ?? "—"}</span></div>
-                <div>Giveback: <span className="text-zinc-200">{exitReview.profitGivebackPercent ?? "—"}%</span></div>
-                <div>Alerts fired/acted: <span className="text-zinc-200">{exitReview.aiAlertsFiredCount ?? 0}/{exitReview.aiAlertsActedCount ?? 0}</span></div>
+              <div className="grid grid-cols-2 gap-2 text-xs text-txt-secondary md:grid-cols-4">
+                <div>Peak P&L: <span className="text-foreground">{exitReview.peakUnrealizedPnl?.toFixed?.(2) ?? "—"}</span></div>
+                <div>Final P&L: <span className="text-foreground">{exitReview.finalRealizedPnl?.toFixed?.(2) ?? "—"}</span></div>
+                <div>Giveback: <span className="text-foreground">{exitReview.profitGivebackPercent ?? "—"}%</span></div>
+                <div>Alerts fired/acted: <span className="text-foreground">{exitReview.aiAlertsFiredCount ?? 0}/{exitReview.aiAlertsActedCount ?? 0}</span></div>
               </div>
               {(exitReview.labels ?? []).length > 0 && (
                 <div className="flex flex-wrap gap-1">
@@ -891,7 +891,7 @@ export default function TradeDetailPage() {
                   ))}
                 </div>
               )}
-              {exitReview.closeMethodNote && <div className="text-xs text-zinc-500">{exitReview.closeMethodNote}</div>}
+              {exitReview.closeMethodNote && <div className="text-xs text-txt-muted">{exitReview.closeMethodNote}</div>}
             </div>
           )}
         </CardContent>
@@ -902,7 +902,7 @@ export default function TradeDetailPage() {
           <Card className="max-w-md">
             <CardHeader><CardTitle className="text-base">{planModal.title}</CardTitle></CardHeader>
             <CardContent className="space-y-3">
-              <p className="text-sm text-zinc-400">{planModal.body}</p>
+              <p className="text-sm text-txt-secondary">{planModal.body}</p>
               <div className="flex justify-end gap-2">
                 <Button size="sm" variant="ghost" onClick={() => setPlanModal(null)}>Cancel</Button>
                 <Button size="sm" data-testid="exit-plan-confirm" onClick={async () => {
@@ -935,7 +935,7 @@ export default function TradeDetailPage() {
           <Card className="max-w-md">
             <CardHeader><CardTitle className="text-base">{confirm.title}</CardTitle></CardHeader>
             <CardContent className="space-y-3">
-              <p className="text-sm text-zinc-400">{confirm.body}</p>
+              <p className="text-sm text-txt-secondary">{confirm.body}</p>
               <div className="flex justify-end gap-2">
                 <Button size="sm" variant="ghost" onClick={() => setConfirm(null)}>Cancel</Button>
                 <Button size="sm" data-testid="confirm-yes" onClick={() => { void recordEvent(confirm.kind, confirm.title); setConfirm(null); }}>Confirm</Button>

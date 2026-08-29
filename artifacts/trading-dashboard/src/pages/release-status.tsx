@@ -16,11 +16,11 @@ export default function ReleaseStatus() {
   }, []);
 
   const Pill = ({ ok, label }: { ok: boolean; label: string }) => (
-    <Badge className={ok ? "bg-emerald-500/20 text-emerald-300" : "bg-rose-500/20 text-rose-300"}>{label}: {ok ? "OK" : "NO"}</Badge>
+    <Badge className={ok ? "bg-success/20 text-success" : "bg-danger/20 text-danger"}>{label}: {ok ? "OK" : "NO"}</Badge>
   );
 
   return (
-    <div className="space-y-4 p-1" data-testid="page-release-status">
+    <div className="space-y-4" data-testid="page-release-status">
       <div>
         <h1 className="text-2xl font-bold">Release Status</h1>
         <p className="text-sm text-muted-foreground">Beta Tester Mode Active — all tester workflows are open. Real broker execution requires MT5 bridge connection.</p>
@@ -30,8 +30,8 @@ export default function ReleaseStatus() {
         <Card>
           <CardHeader><CardTitle>Version</CardTitle></CardHeader>
           <CardContent className="flex flex-wrap items-center gap-2 text-sm">
-            <Badge className="bg-cyan-500/20 text-cyan-300 font-mono">{v.version}</Badge>
-            <Badge className="bg-amber-500/20 text-amber-300">{v.stage}</Badge>
+            <Badge className="bg-ruby/20 text-ruby font-mono">{v.version}</Badge>
+            <Badge className="bg-warning/20 text-warning">{v.stage}</Badge>
             <Pill ok={v.fullTesterAccess} label="Full tester access" />
             <Pill ok={v.mt5Deferred} label="MT5 deferred" />
             <Pill ok={!v.realBrokerExecutionAvailable} label="Real broker locked" />
@@ -45,7 +45,7 @@ export default function ReleaseStatus() {
           <CardHeader>
             <CardTitle className="flex items-center gap-3">
               Readiness Score
-              <Badge className={r.readinessScore >= 90 ? "bg-emerald-500/20 text-emerald-300" : r.readinessScore >= 70 ? "bg-amber-500/20 text-amber-300" : "bg-rose-500/20 text-rose-300"}>{r.readinessScore}/100</Badge>
+              <Badge className={r.readinessScore >= 90 ? "bg-success/20 text-success" : r.readinessScore >= 70 ? "bg-warning/20 text-warning" : "bg-danger/20 text-danger"}>{r.readinessScore}/100</Badge>
               <Pill ok={r.releaseReady} label="Release ready" />
             </CardTitle>
           </CardHeader>
@@ -59,8 +59,8 @@ export default function ReleaseStatus() {
               ))}
             </ul>
             {r.criticalIssues.length > 0 && (
-              <div className="mt-4 rounded border border-rose-500/40 bg-rose-500/10 p-3 text-sm">
-                <p className="font-semibold text-rose-300">Critical open issues</p>
+              <div className="mt-4 rounded border border-danger/40 bg-danger/10 p-3 text-sm">
+                <p className="font-semibold text-danger">Critical open issues</p>
                 <ul className="mt-2 space-y-1">{r.criticalIssues.map((c) => <li key={c.feedbackId}>{c.feedbackId} — {c.title}</li>)}</ul>
               </div>
             )}

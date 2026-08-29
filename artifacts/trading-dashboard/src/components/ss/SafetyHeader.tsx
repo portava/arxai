@@ -63,29 +63,29 @@ export function SafetyHeader() {
             Backend execution permission is enforced server-side regardless
             of any label shown here. */}
         <div className="flex md:flex-wrap items-center gap-2 overflow-x-auto no-scrollbar -mx-1 px-1">
-          <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-slate-500/15 text-slate-600 border border-slate-500/30 px-2 py-0.5 font-mono" title="Selected chart symbol">
+          <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-muted text-txt-muted border border-border/30 px-2 py-0.5 font-mono" title="Selected chart symbol">
             <Target className="h-3 w-3" /> {chartSymbol}
           </span>
           {/* T025 — the live/demo/off mode pill was removed here to avoid a
               second live indicator. The single source of truth for account
               mode is now the compact LiveModeBadge chip in the header row. */}
           {mode.isAdminPreviewingUserMode && (
-            <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30 px-2 py-0.5 font-semibold" title="Previewing as user — admin diagnostics hidden">
+            <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-warning/15 text-warning border border-warning/30 px-2 py-0.5 font-semibold" title="Previewing as user — admin diagnostics hidden">
               <Eye className="h-3 w-3" aria-hidden="true" /> Previewing as User
             </span>
           )}
           {unlocks.mt5 && (
-            <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-blue-500/15 text-blue-600 border border-blue-500/30 px-2 py-0.5 font-semibold">
+            <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-primary/15 text-primary border border-primary/30 px-2 py-0.5 font-semibold">
               <Lock className="h-3 w-3" aria-hidden="true" /> Tester Access
             </span>
           )}
           {unlocks.mt5 && defer?.deferred && (
-            <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-amber-500/15 text-amber-600 border border-amber-500/30 px-2 py-0.5 font-semibold" title={defer.bannerText}>
+            <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-warning/15 text-warning border border-warning/30 px-2 py-0.5 font-semibold" title={defer.bannerText}>
               <FlaskConical className="h-3 w-3" aria-hidden="true" /> Simulator
             </span>
           )}
           {chartLive && (
-            <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-emerald-500/15 text-emerald-600 border border-emerald-500/30 px-2 py-0.5 font-semibold">
+            <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-success/15 text-success border border-success/30 px-2 py-0.5 font-semibold">
               <Activity className="h-3 w-3" aria-hidden="true" /> Live Chart
             </span>
           )}
@@ -93,12 +93,12 @@ export function SafetyHeader() {
               real trading path. It must never appear on a LIVE_SHARED
               account's surface; gated to non-live operator/sim sessions. */}
           {unlocks.simulator && simRunning && !mode.isLiveShared && (
-            <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-purple-500/15 text-purple-600 border border-purple-500/30 px-2 py-0.5 font-semibold" title="Internal simulated price engine">
+            <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-premium/15 text-premium border border-premium/30 px-2 py-0.5 font-semibold" title="Internal simulated price engine">
               <FlaskConical className="h-3 w-3" /> Sim Engine
             </span>
           )}
           {unlocks.simulator && intentCount !== null && (
-            <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-cyan-500/15 text-cyan-600 border border-cyan-500/30 px-2 py-0.5 font-semibold" title="Live intents captured (no broker placement)">
+            <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-ruby/15 text-ruby border border-ruby/30 px-2 py-0.5 font-semibold" title="Live intents captured (no broker placement)">
               <Inbox className="h-3 w-3" /> {intentCount} {intentCount === 1 ? "Intent" : "Intents"}
             </span>
           )}

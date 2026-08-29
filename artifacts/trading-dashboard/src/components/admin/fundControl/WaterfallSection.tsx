@@ -179,7 +179,7 @@ export function WaterfallSection() {
                         <Badge variant="outline">{r.periodKey}</Badge>
                         <StatusBadge status={r.status} />
                         {isReversal ? (
-                          <Badge className="bg-amber-500/15 text-amber-400">
+                          <Badge className="bg-warning/15 text-warning">
                             <Undo2 className="mr-1 h-3 w-3" /> Reversal
                             {r.reversalOfRunId != null ? ` of #${r.reversalOfRunId}` : ""}
                           </Badge>
@@ -231,7 +231,7 @@ export function WaterfallSection() {
                       <Field
                         label={`ARX internal (${fmtPct(r.arxSharePct, 0)})`}
                         value={
-                          <span className="inline-flex items-center gap-1 text-violet-300">
+                          <span className="inline-flex items-center gap-1 text-premium">
                             <Lock className="h-3 w-3" /> {fmtMoney(r.arxInternalShare)}
                           </span>
                         }
@@ -240,7 +240,7 @@ export function WaterfallSection() {
                         <Field
                           label={`Trader share (${r.traderSharePct != null ? fmtPct(r.traderSharePct, 0) : "24.5%"})`}
                           value={
-                            <span className="inline-flex items-center gap-1 text-amber-300">
+                            <span className="inline-flex items-center gap-1 text-warning">
                               <Lock className="h-3 w-3" /> {fmtMoney(r.traderShare)}
                             </span>
                           }
@@ -269,7 +269,7 @@ export function WaterfallSection() {
               })}
             </div>
           )}
-          {err ? <p className="mt-2 text-xs text-red-400">{err}</p> : null}
+          {err ? <p className="mt-2 text-xs text-danger">{err}</p> : null}
         </CardContent>
       </Card>
 
@@ -352,7 +352,7 @@ function RunAllocations({ runId }: { runId: number }) {
   if (detailQ.isError) {
     return (
       <p
-        className="mt-3 text-xs text-red-400"
+        className="mt-3 text-xs text-danger"
         data-testid={`waterfall-allocations-error-${runId}`}
       >
         Per-investor allocations could not be loaded. This is a load failure, not

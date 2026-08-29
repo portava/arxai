@@ -9,13 +9,13 @@ export type EnvLabel =
   | "FUTURE_MT5_DEMO" | "FUTURE_MT5_LIVE";
 
 const TONE: Record<EnvLabel, string> = {
-  PAPER:               "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
-  DEMO_SIMULATOR:      "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
-  LIVE_TESTER_INTENT:  "bg-amber-500/15 text-amber-300 border-amber-500/30",
-  SHADOW:              "bg-sky-500/15 text-sky-300 border-sky-500/30",
-  FORWARD_TEST:        "bg-sky-500/15 text-sky-300 border-sky-500/30",
-  FUTURE_MT5_DEMO:     "bg-zinc-500/15 text-zinc-300 border-zinc-500/30",
-  FUTURE_MT5_LIVE:     "bg-zinc-500/15 text-zinc-300 border-zinc-500/30",
+  PAPER:               "bg-success/15 text-success border-success/30",
+  DEMO_SIMULATOR:      "bg-success/15 text-success border-success/30",
+  LIVE_TESTER_INTENT:  "bg-warning/15 text-warning border-warning/30",
+  SHADOW:              "bg-ruby/15 text-ruby border-ruby/30",
+  FORWARD_TEST:        "bg-ruby/15 text-ruby border-ruby/30",
+  FUTURE_MT5_DEMO:     "bg-muted text-txt-secondary border-border/30",
+  FUTURE_MT5_LIVE:     "bg-muted text-txt-secondary border-border/30",
 };
 
 export function EnvironmentBadge({ env, className }: { env: EnvLabel; className?: string }) {

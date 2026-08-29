@@ -47,8 +47,8 @@ export default function Portfolio() {
       </div>
 
       {warns && warns.length > 0 ? (
-        <Card className="border-yellow-500/30 bg-yellow-500/5">
-          <CardHeader className="pb-3"><CardTitle className="text-base flex items-center gap-2"><AlertTriangle className="text-yellow-500" size={18}/> Correlation Warnings</CardTitle></CardHeader>
+        <Card className="border-warning/30 bg-warning/5">
+          <CardHeader className="pb-3"><CardTitle className="text-base flex items-center gap-2"><AlertTriangle className="text-warning" size={18}/> Correlation Warnings</CardTitle></CardHeader>
           <CardContent className="space-y-2">
             {warns.map((w, i) => (
               <div key={i} className="flex items-start gap-2 text-sm" data-testid={`correlation-warning-${i}`}>

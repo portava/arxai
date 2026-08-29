@@ -156,7 +156,7 @@ export default function MT5BridgePage() {
 
   if (checking) {
     return (
-      <div className="mx-auto w-full max-w-[1280px] space-y-4 p-4 md:p-6 pb-32 md:pb-6">
+      <div className="mx-auto w-full max-w-[1280px] space-y-4 pb-32 md:pb-6">
         <Skeleton className="h-12 w-64" />
         <Skeleton className="h-16 w-full" />
         <div className="grid gap-4 lg:grid-cols-2">
@@ -181,7 +181,7 @@ export default function MT5BridgePage() {
   if (openTrades != null) activity.push({ time: lastSync, event: "Position sync completed", tone: "success", chip: "Success" });
 
   return (
-    <div className="mx-auto w-full max-w-[1280px] space-y-4 p-4 md:p-6 pb-32 md:pb-6" data-testid="page-mt5-bridge">
+    <div className="mx-auto w-full max-w-[1280px] space-y-4 pb-32 md:pb-6" data-testid="page-mt5-bridge">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-start gap-3">
           <span className="mt-0.5 grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/25">

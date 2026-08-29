@@ -16,13 +16,13 @@ export function PropChallengeProgressCard({ summary }: { summary: Summary | null
     { l: "Trades", v: `${summary.tradeCount}` },
   ];
   return (
-    <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-4">
-      <h3 className="mb-2 text-sm font-semibold text-slate-100">Challenge progress</h3>
+    <div className="rounded-lg border border-border bg-muted/40 p-4">
+      <h3 className="mb-2 text-sm font-semibold text-foreground">Challenge progress</h3>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 text-xs">
         {cells.map((c) => (
-          <div key={c.l} className="rounded border border-slate-800 bg-slate-950/40 p-2">
-            <div className="text-[10px] uppercase tracking-wide text-slate-500">{c.l}</div>
-            <div className="font-mono text-slate-100">{c.v}</div>
+          <div key={c.l} className="rounded border border-border bg-background/40 p-2">
+            <div className="text-[10px] uppercase tracking-wide text-txt-muted">{c.l}</div>
+            <div className="font-mono text-foreground">{c.v}</div>
           </div>
         ))}
       </div>

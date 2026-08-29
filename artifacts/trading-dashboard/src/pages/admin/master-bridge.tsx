@@ -232,7 +232,7 @@ export default function AdminMasterBridgePage() {
   useEffect(() => { void refresh(); }, []);
 
   return (
-    <div className="mx-auto w-full max-w-[1280px] p-4 md:p-6 pb-32 md:pb-6 space-y-4" data-testid="page-admin-master-bridge">
+    <div className="mx-auto w-full max-w-[1280px] pb-32 md:pb-6 space-y-4" data-testid="page-admin-master-bridge">
       <MainBridgeCurrentConnectedCard />
       <LiveGatesDiagnosticPanel />
       <MasterLiveUserAccessTable />

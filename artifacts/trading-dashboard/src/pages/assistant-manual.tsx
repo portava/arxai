@@ -34,13 +34,13 @@ export default function AssistantManualPage() {
   }, []);
 
   if (gate === "loading") {
-    return <div className="p-6 text-sm text-zinc-400" data-testid="assistant-manual-loading">Loading…</div>;
+    return <div className="text-sm text-txt-secondary" data-testid="assistant-manual-loading">Loading…</div>;
   }
   if (gate === "denied" || gate === "error") {
     return (
-      <div className="p-6 max-w-2xl" data-testid="assistant-manual-denied">
+      <div className="max-w-2xl" data-testid="assistant-manual-denied">
         <h1 className="text-xl font-semibold mb-2">Assistant App Manual</h1>
-        <p className="text-sm text-zinc-400">
+        <p className="text-sm text-txt-secondary">
           The full diagnostic manual is restricted to TESTER, ADMIN, and OWNER roles. Sign in with a higher-permission account to view it.
         </p>
       </div>
@@ -48,20 +48,20 @@ export default function AssistantManualPage() {
   }
 
   return (
-    <div className="p-6 space-y-6" data-testid="assistant-manual">
+    <div className="space-y-6" data-testid="assistant-manual">
       <header>
         <h1 className="text-2xl font-semibold">ARX Assistant Manual</h1>
-        <p className="text-sm text-zinc-400">
+        <p className="text-sm text-txt-secondary">
           Internal manual generated from the compiled knowledge index. Read-only diagnostics — never enables live trading or bypasses any safety lock.
         </p>
-        <p className="text-xs text-zinc-500 mt-1">
+        <p className="text-xs text-txt-muted mt-1">
           {items.length} compiled items · audit score <span className="font-mono">{audit.score}/100</span> · {GLOSSARY.length} glossary terms · {WALKTHROUGHS.length} walkthroughs
         </p>
       </header>
 
-      <section data-testid="manual-overview" className="rounded border border-zinc-800 p-4">
+      <section data-testid="manual-overview" className="rounded border border-border p-4">
         <h2 className="font-medium mb-2">What is ARX AI?</h2>
-        <p className="text-sm text-zinc-300">
+        <p className="text-sm text-txt-secondary">
           ARX AI is a demo-first trading command center built around three disciplines: Analyze, Risk, eXecute.
           Every screen reflects one of those three. The bot operates in demo mode by default and never sends
           real broker orders unless a separately-configured MT5 bridge is enabled — and even then, server-side locks
@@ -73,22 +73,22 @@ export default function AssistantManualPage() {
         const subset = items.filter((i) => i.type === sec.type);
         if (!subset.length) return null;
         return (
-          <section key={sec.type} data-testid={`manual-section-${sec.type}`} className="rounded border border-zinc-800 p-4">
-            <h2 className="font-medium mb-2">{sec.label} <span className="text-xs text-zinc-500">({subset.length})</span></h2>
+          <section key={sec.type} data-testid={`manual-section-${sec.type}`} className="rounded border border-border p-4">
+            <h2 className="font-medium mb-2">{sec.label} <span className="text-xs text-txt-muted">({subset.length})</span></h2>
             <ul className="space-y-2">
               {subset.map((it) => (
                 <li key={it.id} className="text-sm">
                   <div className="flex items-baseline gap-2">
-                    <span className="font-mono text-xs text-zinc-500">{it.id}</span>
+                    <span className="font-mono text-xs text-txt-muted">{it.id}</span>
                     <span className="font-medium">{it.title}</span>
                     {it.completeness < 0.5 && (
-                      <span className="text-[10px] uppercase rounded bg-amber-900/40 text-amber-300 px-1.5 py-0.5">draft</span>
+                      <span className="text-[10px] uppercase rounded bg-warning/40 text-warning px-1.5 py-0.5">draft</span>
                     )}
                   </div>
-                  <p className="text-zinc-300">{it.explanation}</p>
-                  {it.safetyNote && <p className="text-xs text-amber-300 mt-1">Safety: {it.safetyNote}</p>}
+                  <p className="text-txt-secondary">{it.explanation}</p>
+                  {it.safetyNote && <p className="text-xs text-warning mt-1">Safety: {it.safetyNote}</p>}
                   {it.relatedRoutes.length > 0 && (
-                    <p className="text-xs text-zinc-500 mt-1">Related: {it.relatedRoutes.join(", ")}</p>
+                    <p className="text-xs text-txt-muted mt-1">Related: {it.relatedRoutes.join(", ")}</p>
                   )}
                 </li>
               ))}
@@ -97,21 +97,21 @@ export default function AssistantManualPage() {
         );
       })}
 
-      <section data-testid="manual-glossary" className="rounded border border-zinc-800 p-4">
-        <h2 className="font-medium mb-2">Glossary <span className="text-xs text-zinc-500">({GLOSSARY.length})</span></h2>
+      <section data-testid="manual-glossary" className="rounded border border-border p-4">
+        <h2 className="font-medium mb-2">Glossary <span className="text-xs text-txt-muted">({GLOSSARY.length})</span></h2>
         <dl className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 text-sm">
           {GLOSSARY.map((g) => (
             <div key={g.id}>
               <dt className="font-medium">{g.term}</dt>
-              <dd className="text-zinc-300">{g.definition}</dd>
+              <dd className="text-txt-secondary">{g.definition}</dd>
             </div>
           ))}
         </dl>
       </section>
 
-      <section data-testid="manual-limits" className="rounded border border-zinc-800 p-4">
+      <section data-testid="manual-limits" className="rounded border border-border p-4">
         <h2 className="font-medium mb-2">Assistant limits</h2>
-        <ul className="list-disc pl-5 text-sm text-zinc-300 space-y-1">
+        <ul className="list-disc pl-5 text-sm text-txt-secondary space-y-1">
           <li>Cannot enable live trading or place real broker orders.</li>
           <li>Cannot reveal env vars, secrets, API keys, or broker credentials.</li>
           <li>Cannot change your role or bypass server-enforced permissions.</li>

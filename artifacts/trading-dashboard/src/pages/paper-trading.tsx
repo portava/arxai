@@ -7,13 +7,13 @@ import {
 export default function PaperTradingPage() {
   const [accountId, setAccountId] = useState<number | null>(null);
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-4">
       <header className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-slate-100">Demo Trading Sandbox</h1>
-          <p className="text-xs text-amber-300">All orders here are simulated. Never sent to a live broker.</p>
+          <h1 className="text-xl font-semibold text-foreground">Demo Trading Sandbox</h1>
+          <p className="text-xs text-warning">All orders here are simulated. Never sent to a live broker.</p>
         </div>
-        <span className="rounded bg-amber-700 px-3 py-1 text-xs font-bold text-white">SIMULATED</span>
+        <span className="rounded bg-warning/15 px-3 py-1 text-xs font-bold text-white">SIMULATED</span>
       </header>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="space-y-3 lg:col-span-1">

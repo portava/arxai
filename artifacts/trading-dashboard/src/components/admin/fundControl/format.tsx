@@ -113,11 +113,11 @@ export function ErrorState({
 }) {
   return (
     <div
-      className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-red-500/40 bg-red-500/5 p-10 text-center"
+      className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-danger/40 bg-danger/5 p-10 text-center"
       data-testid={testid}
     >
-      <AlertTriangle className="h-8 w-8 text-red-400" />
-      <p className="text-sm font-semibold text-red-400">{title}</p>
+      <AlertTriangle className="h-8 w-8 text-danger" />
+      <p className="text-sm font-semibold text-danger">{title}</p>
       <p className="max-w-md text-sm text-muted-foreground">{body}</p>
       {onRetry ? (
         <Button variant="outline" size="sm" onClick={onRetry} disabled={busy} data-testid="button-retry">
@@ -129,22 +129,22 @@ export function ErrorState({
 }
 
 const STATUS_CLASS: Record<string, string> = {
-  ACTIVE: "bg-emerald-500/15 text-emerald-400",
-  APPROVED: "bg-emerald-500/15 text-emerald-400",
-  SETTLED: "bg-emerald-500/15 text-emerald-400",
-  RESOLVED: "bg-emerald-500/15 text-emerald-400",
-  OPEN: "bg-amber-500/15 text-amber-400",
-  PENDING_APPROVAL: "bg-amber-500/15 text-amber-400",
-  PENDING: "bg-amber-500/15 text-amber-400",
-  REQUESTED: "bg-amber-500/15 text-amber-400",
-  REVIEWING: "bg-amber-500/15 text-amber-400",
-  INVESTIGATING: "bg-sky-500/15 text-sky-400",
-  UNDER_REVIEW: "bg-sky-500/15 text-sky-400",
-  REJECTED: "bg-red-500/15 text-red-400",
-  CRITICAL: "bg-red-500/15 text-red-400",
-  HIGH: "bg-orange-500/15 text-orange-400",
-  MEDIUM: "bg-yellow-500/15 text-yellow-400",
-  LOW: "bg-blue-500/15 text-blue-400",
+  ACTIVE: "bg-success/15 text-success",
+  APPROVED: "bg-success/15 text-success",
+  SETTLED: "bg-success/15 text-success",
+  RESOLVED: "bg-success/15 text-success",
+  OPEN: "bg-warning/15 text-warning",
+  PENDING_APPROVAL: "bg-warning/15 text-warning",
+  PENDING: "bg-warning/15 text-warning",
+  REQUESTED: "bg-warning/15 text-warning",
+  REVIEWING: "bg-warning/15 text-warning",
+  INVESTIGATING: "bg-ruby/15 text-ruby",
+  UNDER_REVIEW: "bg-ruby/15 text-ruby",
+  REJECTED: "bg-danger/15 text-danger",
+  CRITICAL: "bg-danger/15 text-danger",
+  HIGH: "bg-warning/15 text-warning",
+  MEDIUM: "bg-warning/15 text-warning",
+  LOW: "bg-primary/15 text-primary",
   CANCELLED: "bg-muted text-muted-foreground",
   DISMISSED: "bg-muted text-muted-foreground",
   SUPERSEDED: "bg-muted text-muted-foreground",
@@ -194,10 +194,10 @@ export function FreshnessBadge({
 }) {
   const f = (freshness ?? "MISSING").toUpperCase();
   const map: Record<string, { cls: string; label: string }> = {
-    FRESH: { cls: "bg-emerald-500/15 text-emerald-400", label: "Live" },
-    DELAYED: { cls: "bg-amber-500/15 text-amber-400", label: "Delayed" },
-    STALE: { cls: "bg-red-500/15 text-red-400", label: "Stale" },
-    UNDER_REVIEW: { cls: "bg-sky-500/15 text-sky-400", label: "Under review" },
+    FRESH: { cls: "bg-success/15 text-success", label: "Live" },
+    DELAYED: { cls: "bg-warning/15 text-warning", label: "Delayed" },
+    STALE: { cls: "bg-danger/15 text-danger", label: "Stale" },
+    UNDER_REVIEW: { cls: "bg-ruby/15 text-ruby", label: "Under review" },
     MISSING: { cls: "bg-muted text-muted-foreground", label: "Unavailable" },
   };
   const m = map[f] ?? map.MISSING;
@@ -222,7 +222,7 @@ export function PnlValue({
   currency?: string;
 }) {
   if (value == null || Number.isNaN(value)) return <span className="tabular-nums">—</span>;
-  const cls = value > 0 ? "text-emerald-400" : value < 0 ? "text-red-400" : "";
+  const cls = value > 0 ? "text-success" : value < 0 ? "text-danger" : "";
   const sign = value > 0 ? "+" : "";
   return (
     <span className={`tabular-nums ${cls}`}>
@@ -320,7 +320,7 @@ export function ReasonDialog({
               autoFocus
             />
             {!reasonValid && reason.length > 0 ? (
-              <p className="text-xs text-red-400">A reason of at least 3 characters is required.</p>
+              <p className="text-xs text-danger">A reason of at least 3 characters is required.</p>
             ) : null}
           </div>
           {withNote ? (

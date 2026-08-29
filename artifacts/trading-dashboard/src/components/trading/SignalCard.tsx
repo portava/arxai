@@ -106,7 +106,7 @@ export function SignalCard({
 }
 
 function Level({ label, value, tone }: { label: string; value: number | null | undefined; tone?: "bullish" | "bearish" }) {
-  const colorClass = tone === "bullish" ? "text-emerald-400" : tone === "bearish" ? "text-rose-400" : "text-foreground";
+  const colorClass = tone === "bullish" ? "text-success" : tone === "bearish" ? "text-danger" : "text-foreground";
   return (
     <div className="text-center">
       <div className="text-[9px] uppercase tracking-wider text-muted-foreground">{label}</div>

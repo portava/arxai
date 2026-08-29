@@ -27,16 +27,16 @@ type LiveCmd = {
 };
 
 const STATUS_TONE: Record<string, string> = {
-  LIVE_DRAFT: "bg-slate-500/20 text-slate-300",
-  LIVE_CONFIRMATION_REQUIRED: "bg-amber-500/20 text-amber-300",
-  LIVE_APPROVED: "bg-amber-500/20 text-amber-200",
-  SENT_TO_MT5_LIVE: "bg-sky-500/20 text-sky-300",
-  LIVE_FILLED: "bg-emerald-500/20 text-emerald-300",
-  LIVE_REJECTED: "bg-rose-500/20 text-rose-300",
-  LIVE_FAILED: "bg-rose-500/20 text-rose-300",
-  LIVE_BLOCKED: "bg-rose-500/25 text-rose-200 border border-rose-500/50",
-  LIVE_CANCELLED: "bg-zinc-500/20 text-zinc-300",
-  LIVE_CLOSED: "bg-zinc-500/20 text-zinc-300",
+  LIVE_DRAFT: "bg-muted text-txt-secondary",
+  LIVE_CONFIRMATION_REQUIRED: "bg-warning/20 text-warning",
+  LIVE_APPROVED: "bg-warning/20 text-warning",
+  SENT_TO_MT5_LIVE: "bg-ruby/20 text-ruby",
+  LIVE_FILLED: "bg-success/20 text-success",
+  LIVE_REJECTED: "bg-danger/20 text-danger",
+  LIVE_FAILED: "bg-danger/20 text-danger",
+  LIVE_BLOCKED: "bg-danger/25 text-danger border border-danger/50",
+  LIVE_CANCELLED: "bg-muted text-txt-secondary",
+  LIVE_CLOSED: "bg-muted text-txt-secondary",
 };
 
 function fmt(t: string | null | undefined) {
@@ -73,7 +73,7 @@ export function RecentLiveCommands() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-xs text-muted-foreground border-b border-zinc-800">
+                <tr className="text-left text-xs text-muted-foreground border-b border-border">
                   <th className="py-2 pr-2">Status</th>
                   <th className="py-2 pr-2">Symbol</th>
                   <th className="py-2 pr-2">Side</th>
@@ -88,7 +88,7 @@ export function RecentLiveCommands() {
               </thead>
               <tbody>
                 {items.map((c) => (
-                  <tr key={c.commandId} className="border-b border-zinc-900" data-testid={`live-cmd-${c.commandId}`}>
+                  <tr key={c.commandId} className="border-b border-border" data-testid={`live-cmd-${c.commandId}`}>
                     <td className="py-2 pr-2"><Badge className={STATUS_TONE[c.status] ?? ""}>{c.status}</Badge></td>
                     <td className="py-2 pr-2 font-mono">{c.symbol}</td>
                     <td className="py-2 pr-2">{c.side}</td>
@@ -97,7 +97,7 @@ export function RecentLiveCommands() {
                     <td className="py-2 pr-2 text-xs">{c.sourcePage}</td>
                     <td className="py-2 pr-2 font-mono">{c.brokerTicket ?? "—"}</td>
                     <td className="py-2 pr-2">{c.fillPrice ?? "—"}</td>
-                    <td className="py-2 pr-2 text-xs text-rose-300/80 max-w-xs truncate" title={c.rejectionReason ?? ""}>
+                    <td className="py-2 pr-2 text-xs text-danger/80 max-w-xs truncate" title={c.rejectionReason ?? ""}>
                       {c.rejectionReason ?? "—"}
                     </td>
                     <td className="py-2 pr-2 text-xs text-muted-foreground">{fmt(c.createdAt)}</td>

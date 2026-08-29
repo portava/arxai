@@ -70,23 +70,23 @@ type MarketDataStatus = {
 
 function freshnessBadgeColor(state: MarketDataStatus["freshnessState"]): string {
   switch (state) {
-    case "FRESH": return "bg-emerald-500/80 text-white";
-    case "STALE": return "bg-rose-500/80 text-white";
-    case "ERROR": return "bg-rose-600 text-white";
-    case "NEVER_FETCHED": return "bg-amber-500/70 text-white";
-    case "UNAVAILABLE": return "bg-zinc-500/80 text-white";
-    default: return "bg-zinc-500/80 text-white";
+    case "FRESH": return "bg-success/80 text-white";
+    case "STALE": return "bg-danger/80 text-white";
+    case "ERROR": return "bg-danger text-white";
+    case "NEVER_FETCHED": return "bg-warning/70 text-white";
+    case "UNAVAILABLE": return "bg-muted text-white";
+    default: return "bg-muted text-white";
   }
 }
 
 /** Tone for a resolved data verdict. Only "Live" reads as good. */
 function verdictColor(verdict: string): string {
   switch (verdict) {
-    case "Live": return "bg-emerald-500/20 text-emerald-400";
-    case "Delayed": return "bg-amber-500/20 text-amber-400";
-    case "Stale": return "bg-rose-500/20 text-rose-400";
-    case "Historical only": return "bg-zinc-500/20 text-zinc-300";
-    default: return "bg-rose-500/20 text-rose-400";
+    case "Live": return "bg-success/20 text-success";
+    case "Delayed": return "bg-warning/20 text-warning";
+    case "Stale": return "bg-danger/20 text-danger";
+    case "Historical only": return "bg-muted text-txt-secondary";
+    default: return "bg-danger/20 text-danger";
   }
 }
 
@@ -190,7 +190,7 @@ export default function MarketHealthPage() {
             {mds && <Badge className={freshnessBadgeColor(mds.freshnessState)}>{mds.freshnessState}</Badge>}
             {mds?.rateLimitStatus?.limited && (
               <Badge
-                className="bg-amber-500/80 text-white"
+                className="bg-warning/80 text-white"
                 data-testid="badge-provider-rate-limited"
                 title={
                   mds.rateLimitStatus.retryAfterMs != null
@@ -219,12 +219,12 @@ export default function MarketHealthPage() {
                 <div className="flex justify-between gap-2"><span className="text-muted-foreground">Stale now</span><span>{mds.stale ? "yes" : "no"}</span></div>
               </div>
               {mds.unavailableReason && (
-                <div className="rounded-md border border-rose-500/30 bg-rose-500/10 p-2 text-rose-300">
+                <div className="rounded-md border border-danger/30 bg-danger/10 p-2 text-danger">
                   <span className="font-semibold">Unavailable reason:</span> {mds.unavailableReason}
                 </div>
               )}
               {mds.lastError && mds.freshnessState !== "FRESH" && (
-                <div className="text-amber-300 break-words">
+                <div className="text-warning break-words">
                   <span className="font-semibold">Last error:</span> {mds.lastError}
                   {mds.lastErrorAt && <span className="text-muted-foreground"> ({ageString(mds.lastErrorAt)})</span>}
                 </div>
@@ -237,8 +237,8 @@ export default function MarketHealthPage() {
       </Card>
 
       {isError && (
-        <Card className="border-rose-500/40">
-          <CardContent className="py-3 text-sm text-rose-300">
+        <Card className="border-danger/40">
+          <CardContent className="py-3 text-sm text-danger">
             Feed truth could not be read for {symbol}. Nothing is shown rather than a guessed verdict.
           </CardContent>
         </Card>

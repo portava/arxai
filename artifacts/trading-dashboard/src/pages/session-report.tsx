@@ -52,7 +52,7 @@ export default function SessionReport() {
   }
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Session Report</h1>
@@ -63,7 +63,7 @@ export default function SessionReport() {
             <option value="">Select session…</option>
             {sessions.map(s => <option key={s.paper_session_id} value={s.paper_session_id}>{s.paper_session_id} ({s.status})</option>)}
           </select>
-          <button onClick={() => void generate()} disabled={!selected || busy} className="px-4 py-2 rounded bg-slate-900 text-white">
+          <button onClick={() => void generate()} disabled={!selected || busy} className="px-4 py-2 rounded bg-card text-white">
             {busy ? "Generating…" : "Generate report"}
           </button>
         </div>
@@ -82,7 +82,7 @@ export default function SessionReport() {
           </div>
           <div className="rounded border p-4">
             <div className="font-semibold">Rule violations ({report.rule_violations.length})</div>
-            {report.rule_violations.length === 0 ? <div className="text-emerald-600 text-sm">None.</div>
+            {report.rule_violations.length === 0 ? <div className="text-success text-sm">None.</div>
               : <ul className="list-disc pl-5 text-sm">{report.rule_violations.map((v,i)=><li key={i}>{v.code}: limit {v.limit} actual {v.actual}</li>)}</ul>}
           </div>
           <div className="rounded border p-4">

@@ -499,7 +499,7 @@ export default function StrategySettings() {
                 {isDirty && (
                   <Badge
                     variant="outline"
-                    className="text-amber-500 border-amber-500/40 text-[10px] animate-pulse"
+                    className="text-warning border-warning/40 text-[10px] animate-pulse"
                   >
                     Unsaved changes
                   </Badge>

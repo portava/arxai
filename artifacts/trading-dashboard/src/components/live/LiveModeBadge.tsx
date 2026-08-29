@@ -40,7 +40,7 @@ export function LiveModeBadge({ compact = false }: { compact?: boolean }) {
         href={`${BASE}/live-trading`}
         className={cn(
           "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-semibold uppercase tracking-wide border",
-          "bg-rose-500/15 border-rose-500/40 text-rose-300 hover:bg-rose-500/25 transition-colors",
+          "bg-danger/15 border-danger/40 text-danger hover:bg-danger/25 transition-colors",
         )}
         data-testid="live-mode-badge"
         title="Live trading kill switch is engaged"
@@ -53,7 +53,7 @@ export function LiveModeBadge({ compact = false }: { compact?: boolean }) {
   if (mode.isLoading || !mode.envelope) {
     return (
       <span
-        className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium tracking-wide border bg-slate-500/10 border-slate-500/30 text-slate-400"
+        className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium tracking-wide border bg-muted border-border/30 text-txt-secondary"
         data-testid="live-mode-badge"
       >
         <Lock className="h-3 w-3" /> …
@@ -70,7 +70,7 @@ export function LiveModeBadge({ compact = false }: { compact?: boolean }) {
         href={`${BASE}/live-trading`}
         className={cn(
           "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-bold tracking-wide border",
-          "bg-amber-500/15 border-amber-500/50 text-amber-300 hover:bg-amber-500/25 transition-colors",
+          "bg-warning/15 border-warning/50 text-warning hover:bg-warning/25 transition-colors",
         )}
         data-testid="live-mode-badge"
         title={mode.cleanBlockedReason}
@@ -87,7 +87,7 @@ export function LiveModeBadge({ compact = false }: { compact?: boolean }) {
         href={`${BASE}/live-shared`}
         className={cn(
           "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-bold tracking-wide border",
-          "bg-red-500/15 border-red-500/60 text-red-300 hover:bg-red-500/25 transition-colors",
+          "bg-danger/15 border-danger/60 text-danger hover:bg-danger/25 transition-colors",
         )}
         data-testid="live-mode-badge"
         title={mode.cleanUserMessage}
@@ -104,7 +104,7 @@ export function LiveModeBadge({ compact = false }: { compact?: boolean }) {
         href={`${BASE}/live-trading`}
         className={cn(
           "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-semibold tracking-wide border",
-          "bg-blue-500/10 border-blue-500/30 text-blue-300 hover:bg-blue-500/15 transition-colors",
+          "bg-primary/10 border-primary/30 text-primary hover:bg-primary/15 transition-colors",
         )}
         data-testid="live-mode-badge"
         title={mode.cleanUserMessage}
@@ -119,7 +119,7 @@ export function LiveModeBadge({ compact = false }: { compact?: boolean }) {
 
   return (
     <span
-      className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-semibold tracking-wide border bg-slate-500/10 border-slate-500/30 text-slate-300"
+      className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-semibold tracking-wide border bg-muted border-border/30 text-txt-secondary"
       data-testid="live-mode-badge"
       title={mode.cleanUserMessage}
     >

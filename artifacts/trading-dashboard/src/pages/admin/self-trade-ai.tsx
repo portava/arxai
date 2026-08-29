@@ -114,8 +114,8 @@ function fmtTime(s: string | null | undefined): string {
 // ── Foundation banner (honest execution status) ──────────────────────────────
 function FoundationBanner() {
   return (
-    <Alert className="border-cyan-500/30 bg-cyan-500/5">
-      <ShieldAlert className="h-4 w-4 text-cyan-300" />
+    <Alert className="border-ruby/30 bg-ruby/5">
+      <ShieldAlert className="h-4 w-4 text-ruby" />
       <AlertTitle>Foundation phase — observation &amp; control only</AlertTitle>
       <AlertDescription className="text-xs text-muted-foreground">
         Agents can be created, funded, configured, and governed here, but autonomous
@@ -134,8 +134,8 @@ function PhasePlaceholder({
 }: { icon: React.ReactNode; title: string; phase: string; children: React.ReactNode }) {
   return (
     <div className="space-y-3">
-      <Alert className="border-cyan-500/30 bg-cyan-500/5">
-        <ShieldAlert className="h-4 w-4 text-cyan-300" />
+      <Alert className="border-ruby/30 bg-ruby/5">
+        <ShieldAlert className="h-4 w-4 text-ruby" />
         <AlertTitle>{title} — arrives in {phase}</AlertTitle>
         <AlertDescription className="text-xs text-muted-foreground">{children}</AlertDescription>
       </Alert>
@@ -240,8 +240,8 @@ function AgentDetailPanel({ agentId }: { agentId: number }) {
       </div>
 
       {unfunded && (
-        <Alert className="border-amber-500/30 bg-amber-500/5">
-          <ShieldAlert className="h-4 w-4 text-amber-300" />
+        <Alert className="border-warning/30 bg-warning/5">
+          <ShieldAlert className="h-4 w-4 text-warning" />
           <AlertTitle>Unfunded</AlertTitle>
           <AlertDescription className="text-xs text-muted-foreground">This agent has no capital and cannot be activated for trading. Fund it first.</AlertDescription>
         </Alert>
@@ -587,8 +587,8 @@ function KillSwitchesSection() {
 
   return (
     <div className="space-y-3">
-      <Card className="border-rose-500/30 bg-rose-500/5">
-        <CardHeader><CardTitle className="text-sm text-rose-300">Kill switches</CardTitle><CardDescription className="text-xs">Immediately halts the targeted scope (global / per-agent / per-strategy / per-symbol / news). Reason required and audited.</CardDescription></CardHeader>
+      <Card className="border-danger/30 bg-danger/5">
+        <CardHeader><CardTitle className="text-sm text-danger">Kill switches</CardTitle><CardDescription className="text-xs">Immediately halts the targeted scope (global / per-agent / per-strategy / per-symbol / news). Reason required and audited.</CardDescription></CardHeader>
         <CardContent className="space-y-2">
           <div className="grid gap-2 md:grid-cols-3">
             <div>
@@ -811,7 +811,7 @@ function DecisionCard({ d }: { d: SelfTradeDecision }) {
     checks,
   });
   return (
-    <Card className={blockingFail ? "border-rose-500/30" : undefined}>
+    <Card className={blockingFail ? "border-danger/30" : undefined}>
       <CardHeader className="pb-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2">
@@ -883,8 +883,8 @@ function LiveDecisionsTab() {
   const decisions = (data.decisions ?? []) as SelfTradeDecision[];
   return (
     <div className="space-y-3">
-      <Alert className="border-cyan-500/30 bg-cyan-500/5">
-        <ShieldAlert className="h-4 w-4 text-cyan-300" />
+      <Alert className="border-ruby/30 bg-ruby/5">
+        <ShieldAlert className="h-4 w-4 text-ruby" />
         <AlertTitle>Shadow decisions — no orders placed</AlertTitle>
         <AlertDescription className="text-xs text-muted-foreground">
           Each refresh evaluates every funded / active agent against its allowed symbols through the
@@ -959,8 +959,8 @@ function VolatilityMatrixTab() {
   const decoupled = (data.decoupledPairs ?? []) as SelfTradeVolatilityPair[];
   return (
     <div className="space-y-3">
-      <Alert className="border-cyan-500/30 bg-cyan-500/5">
-        <Waves className="h-4 w-4 text-cyan-300" />
+      <Alert className="border-ruby/30 bg-ruby/5">
+        <Waves className="h-4 w-4 text-ruby" />
         <AlertTitle>Volatility relationships — real candles only</AlertTitle>
         <AlertDescription className="text-xs text-muted-foreground">
           Per-symbol direction / momentum and pairwise correlation, lead-lag, and decoupling are
@@ -1001,8 +1001,8 @@ function VolatilityMatrixTab() {
           </Card>
 
           {decoupled.length > 0 && (
-            <Card className="border-amber-500/30 bg-amber-500/5">
-              <CardHeader className="pb-2"><CardTitle className="text-sm text-amber-300">Decoupled pairs</CardTitle><CardDescription className="text-xs">Historically correlated pairs now running opposite — alerted into My Alerts.</CardDescription></CardHeader>
+            <Card className="border-warning/30 bg-warning/5">
+              <CardHeader className="pb-2"><CardTitle className="text-sm text-warning">Decoupled pairs</CardTitle><CardDescription className="text-xs">Historically correlated pairs now running opposite — alerted into My Alerts.</CardDescription></CardHeader>
               <CardContent className="p-0">
                 <Table>
                   <TableHeader><TableRow><TableHead>Pair</TableHead><TableHead className="text-right">Corr</TableHead><TableHead className="text-right">Recent</TableHead><TableHead>Leader</TableHead><TableHead className="text-right">Lag</TableHead><TableHead>Note</TableHead></TableRow></TableHeader>
@@ -1107,8 +1107,8 @@ function AutonomousExecutionTab() {
 
   return (
     <div className="space-y-3">
-      <Alert className="border-cyan-500/30 bg-cyan-500/5">
-        <Rocket className="h-4 w-4 text-cyan-300" />
+      <Alert className="border-ruby/30 bg-ruby/5">
+        <Rocket className="h-4 w-4 text-ruby" />
         <AlertTitle>Autonomous live execution</AlertTitle>
         <AlertDescription className="text-xs text-muted-foreground">
           Approved decisions from funded, <span className="font-semibold text-foreground">ACTIVE</span>, LIVE-mode agents with
@@ -1127,7 +1127,7 @@ function AutonomousExecutionTab() {
         <StatCard label="Real fills today" value={String(counts.filledToday)} tone="bullish" sub="counted from fills only" />
       </div>
 
-      <Card className="border-cyan-500/20">
+      <Card className="border-ruby/20">
         <CardHeader>
           <CardTitle className="text-sm">Run autonomous cycle</CardTitle>
           <CardDescription className="text-xs">
@@ -1157,7 +1157,7 @@ function AutonomousExecutionTab() {
             </Button>
           </div>
           {runCycle.isError && (
-            <p className="text-xs text-rose-300">
+            <p className="text-xs text-danger">
               Cycle failed. {(runCycle.error as { message?: string } | undefined)?.message ?? "The run-cycle endpoint refused."}
             </p>
           )}
@@ -1226,12 +1226,12 @@ function AutonomousExecutionTab() {
                       <TableCell>
                         <Tone tone={execStatusTone(e.status)}>{e.status}</Tone>
                         {!isFill(e) && (e.status === "DISPATCHED" || e.status === "PENDING_TICKET") && (
-                          <span className="ml-1 text-[10px] text-amber-300/80">not a fill</span>
+                          <span className="ml-1 text-[10px] text-warning/80">not a fill</span>
                         )}
                       </TableCell>
                       <TableCell className="text-xs">{e.brokerTicket ?? "—"}</TableCell>
                       <TableCell className="text-right text-xs">{e.fillPrice ?? "—"}</TableCell>
-                      <TableCell className={`text-right text-xs ${e.realizedPnl != null ? (e.realizedPnl >= 0 ? "text-emerald-400" : "text-rose-400") : ""}`}>
+                      <TableCell className={`text-right text-xs ${e.realizedPnl != null ? (e.realizedPnl >= 0 ? "text-success" : "text-danger") : ""}`}>
                         {e.realizedPnl != null ? usd(e.realizedPnl) : "—"}
                       </TableCell>
                       <TableCell className="max-w-[14rem] truncate text-xs text-muted-foreground">{e.blockReason ?? "—"}</TableCell>
@@ -1280,7 +1280,7 @@ function SelfTradeAiInner() {
   return (
     <div className="mx-auto w-full max-w-6xl space-y-4 p-3 md:p-6">
       <div className="flex items-center gap-3">
-        <div className="rounded-xl bg-cyan-500/10 p-2"><Bot className="h-6 w-6 text-cyan-300" /></div>
+        <div className="rounded-xl bg-ruby/10 p-2"><Bot className="h-6 w-6 text-ruby" /></div>
         <div>
           <h1 className="text-xl font-bold">Self-Trade AI — Control Room</h1>
           <p className="text-xs text-muted-foreground">Funded autonomous trading-agent fleet · operator control &amp; observability</p>

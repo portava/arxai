@@ -95,7 +95,7 @@ export default function PaperTestingLaunch() {
               <dl className="text-sm grid grid-cols-2 gap-x-3 gap-y-1">
                 <dt className="text-muted-foreground">Score</dt><dd className="tabular-nums">{pre.oo.score} ({pre.oo.grade})</dd>
                 <dt className="text-muted-foreground">Demo allowed</dt><dd>{String(pre.oo.canProceedToPaperTesting)}</dd>
-                <dt className="text-muted-foreground">Live allowed</dt><dd className="text-red-600 font-semibold">false</dd>
+                <dt className="text-muted-foreground">Live allowed</dt><dd className="text-danger font-semibold">false</dd>
               </dl>
             </CardContent>
           </Card>
@@ -133,15 +133,15 @@ export default function PaperTestingLaunch() {
                 actions={pre.hardBlocks.length === 0 && <StatusPill status="SAFE_TO_PAPER_TEST" size="xs" />}
               />
               {pre.hardBlocks.length === 0
-                ? <p className="text-sm text-emerald-600">None — safe to start.</p>
-                : <ul className="list-disc pl-5 text-sm text-red-600 space-y-0.5">{pre.hardBlocks.map((b,i)=><li key={i}><span className="font-mono text-xs">[{b.source}]</span> {b.code} — {b.message}</li>)}</ul>}
+                ? <p className="text-sm text-success">None — safe to start.</p>
+                : <ul className="list-disc pl-5 text-sm text-danger space-y-0.5">{pre.hardBlocks.map((b,i)=><li key={i}><span className="font-mono text-xs">[{b.source}]</span> {b.code} — {b.message}</li>)}</ul>}
             </CardContent>
           </Card>
           {pre.warnings.length > 0 && (
             <Card className="md:col-span-2">
               <CardContent className="pt-4">
                 <SectionHeader title={`Warnings (${pre.warnings.length})`} />
-                <ul className="list-disc pl-5 text-sm text-amber-600 space-y-0.5">{pre.warnings.map((b,i)=><li key={i}><span className="font-mono text-xs">[{b.source}]</span> {b.code} — {b.message}</li>)}</ul>
+                <ul className="list-disc pl-5 text-sm text-warning space-y-0.5">{pre.warnings.map((b,i)=><li key={i}><span className="font-mono text-xs">[{b.source}]</span> {b.code} — {b.message}</li>)}</ul>
               </CardContent>
             </Card>
           )}

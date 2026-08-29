@@ -44,29 +44,29 @@ export default function TraderSkillPage() {
   const p = profile.data?.profile ?? null;
 
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-slate-100">Trader skill profile</h1>
-          <p className="text-xs text-slate-400">
+          <h1 className="text-xl font-semibold text-foreground">Trader skill profile</h1>
+          <p className="text-xs text-txt-secondary">
             Process-quality benchmark. Higher levels do NOT predict future profit.
           </p>
         </div>
         <button onClick={() => calc.mutate()} disabled={calc.isPending}
-          className="rounded bg-violet-600 px-3 py-1 text-xs font-semibold text-white hover:bg-violet-500 disabled:opacity-40">
+          className="rounded bg-premium px-3 py-1 text-xs font-semibold text-white hover:bg-premium disabled:opacity-40">
           {calc.isPending ? "Recalculating…" : "Recalculate"}
         </button>
       </header>
 
       {!p ? (
-        <div className="rounded border border-dashed border-slate-700 p-6 text-center text-xs text-slate-400">
+        <div className="rounded border border-dashed border-border p-6 text-center text-xs text-txt-secondary">
           Building your first profile…
         </div>
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-3">
             <SkillLevelBadge level={p.skillLevel} total={p.totalScore} size="lg" />
-            <span className="text-[11px] text-slate-500">
+            <span className="text-[11px] text-txt-muted">
               updated {new Date(p.updatedAt).toLocaleString()}
             </span>
           </div>
@@ -81,22 +81,22 @@ export default function TraderSkillPage() {
           </div>
 
           <section>
-            <h3 className="mb-2 text-sm font-semibold text-slate-200">Level history</h3>
+            <h3 className="mb-2 text-sm font-semibold text-foreground">Level history</h3>
             {(history.data?.history.length ?? 0) === 0 ? (
-              <p className="rounded border border-dashed border-slate-700 p-3 text-center text-[11px] text-slate-500">
+              <p className="rounded border border-dashed border-border p-3 text-center text-[11px] text-txt-muted">
                 No level changes yet.
               </p>
             ) : (
               <ul className="space-y-1.5">
                 {(history.data?.history ?? []).map((h) => (
-                  <li key={h.id} className="rounded border border-slate-700 bg-slate-900/40 p-2 text-xs">
+                  <li key={h.id} className="rounded border border-border bg-muted/40 p-2 text-xs">
                     <div className="flex items-center gap-2">
                       <SkillLevelBadge level={h.previousLevel as TraderSkillProfile["skillLevel"]} size="sm" />
-                      <span className="text-slate-500">→</span>
+                      <span className="text-txt-muted">→</span>
                       <SkillLevelBadge level={h.newLevel as TraderSkillProfile["skillLevel"]} size="sm" />
-                      <span className="ml-auto text-[10px] text-slate-500">{new Date(h.createdAt).toLocaleString()}</span>
+                      <span className="ml-auto text-[10px] text-txt-muted">{new Date(h.createdAt).toLocaleString()}</span>
                     </div>
-                    <p className="mt-1 text-[11px] text-slate-300">{h.reason}</p>
+                    <p className="mt-1 text-[11px] text-txt-secondary">{h.reason}</p>
                   </li>
                 ))}
               </ul>

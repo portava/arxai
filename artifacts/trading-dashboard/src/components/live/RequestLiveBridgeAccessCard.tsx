@@ -50,11 +50,11 @@ type AccessResponse = {
 };
 
 const STATE_META: Record<RequestState, { label: string; badge: string; Icon: React.ComponentType<{ className?: string }>; }> = {
-  NOT_REQUESTED: { label: "Not requested", badge: "bg-slate-500/20 text-slate-300", Icon: ShieldAlert },
-  PENDING:       { label: "Pending review", badge: "bg-amber-500/30 text-amber-200", Icon: Clock },
-  APPROVED:      { label: "Approved", badge: "bg-emerald-500/30 text-emerald-200", Icon: CheckCircle2 },
-  DENIED:        { label: "Not approved", badge: "bg-rose-500/30 text-rose-200", Icon: XCircle },
-  REVOKED:       { label: "Access revoked", badge: "bg-rose-600/30 text-rose-200", Icon: XCircle },
+  NOT_REQUESTED: { label: "Not requested", badge: "bg-muted text-txt-secondary", Icon: ShieldAlert },
+  PENDING:       { label: "Pending review", badge: "bg-warning/30 text-warning", Icon: Clock },
+  APPROVED:      { label: "Approved", badge: "bg-success/30 text-success", Icon: CheckCircle2 },
+  DENIED:        { label: "Not approved", badge: "bg-danger/30 text-danger", Icon: XCircle },
+  REVOKED:       { label: "Access revoked", badge: "bg-danger/30 text-danger", Icon: XCircle },
 };
 
 export function RequestLiveBridgeAccessCard() {
@@ -119,7 +119,7 @@ export function RequestLiveBridgeAccessCard() {
     <Card data-testid="card-request-live-bridge">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <ShieldCheck className="w-4 h-4 text-emerald-400" />
+          <ShieldCheck className="w-4 h-4 text-success" />
           Live Trading Access
           <Badge className={meta.badge}>
             <Icon className="w-3 h-3 mr-1" />
@@ -133,8 +133,8 @@ export function RequestLiveBridgeAccessCard() {
       </CardHeader>
       <CardContent className="space-y-3">
         {state === "APPROVED" && (
-          <Alert className="border-emerald-600/40 bg-emerald-600/10" data-testid="alert-approved-live-bridge">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+          <Alert className="border-success/40 bg-success/10" data-testid="alert-approved-live-bridge">
+            <CheckCircle2 className="w-4 h-4 text-success" />
             <AlertTitle>Live Bridge Access: Approved</AlertTitle>
             <AlertDescription className="text-xs space-y-1">
               <div>
@@ -145,7 +145,7 @@ export function RequestLiveBridgeAccessCard() {
               <ul className="text-[11px] space-y-0.5 pt-1">
                 <li>
                   <span className="text-muted-foreground">Default Mode:</span>{" "}
-                  <span className="text-emerald-300 font-medium" data-testid="text-default-trading-mode">
+                  <span className="text-success font-medium" data-testid="text-default-trading-mode">
                     {data?.defaultTradingMode === "LIVE_SHARED_BRIDGE" ? "Live Shared Bridge" : "Demo"}
                   </span>
                 </li>
@@ -165,8 +165,8 @@ export function RequestLiveBridgeAccessCard() {
         )}
 
         {state === "PENDING" && (
-          <Alert className="border-amber-500/40 bg-amber-500/10">
-            <Clock className="w-4 h-4 text-amber-300" />
+          <Alert className="border-warning/40 bg-warning/10">
+            <Clock className="w-4 h-4 text-warning" />
             <AlertTitle>Your request is pending review</AlertTitle>
             <AlertDescription className="text-xs">
               Submitted{" "}
@@ -179,8 +179,8 @@ export function RequestLiveBridgeAccessCard() {
         )}
 
         {state === "DENIED" && (
-          <Alert className="border-rose-500/40 bg-rose-500/10">
-            <XCircle className="w-4 h-4 text-rose-300" />
+          <Alert className="border-danger/40 bg-danger/10">
+            <XCircle className="w-4 h-4 text-danger" />
             <AlertTitle>Your request was not approved</AlertTitle>
             <AlertDescription className="text-xs">
               {data?.request?.deniedReason ?? "Please contact support if you have questions."}
@@ -189,8 +189,8 @@ export function RequestLiveBridgeAccessCard() {
         )}
 
         {state === "REVOKED" && (
-          <Alert className="border-rose-500/40 bg-rose-500/10">
-            <XCircle className="w-4 h-4 text-rose-300" />
+          <Alert className="border-danger/40 bg-danger/10">
+            <XCircle className="w-4 h-4 text-danger" />
             <AlertTitle>Your live bridge access was revoked</AlertTitle>
             <AlertDescription className="text-xs">
               {data?.request?.revokedReason ?? "Please contact support if you have questions."}
@@ -203,7 +203,7 @@ export function RequestLiveBridgeAccessCard() {
             <DialogTrigger asChild>
               <Button
                 size="lg"
-                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white"
+                className="w-full bg-success hover:bg-success text-white"
                 data-testid="btn-request-live-bridge"
               >
                 <Send className="w-4 h-4 mr-2" />
@@ -253,7 +253,7 @@ export function RequestLiveBridgeAccessCard() {
                 <Button
                   onClick={() => mutation.mutate()}
                   disabled={!ackRisk || mutation.isPending}
-                  className="bg-emerald-600 hover:bg-emerald-500 text-white"
+                  className="bg-success hover:bg-success text-white"
                   data-testid="btn-confirm-request"
                 >
                   {mutation.isPending ? "Submitting…" : "Submit Request"}

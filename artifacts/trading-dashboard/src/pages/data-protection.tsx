@@ -22,7 +22,7 @@ export default function DataProtection() {
   };
 
   return (
-    <div className="p-6 space-y-6" data-testid="data-protection">
+    <div className="space-y-6" data-testid="data-protection">
       <h1 className="text-2xl font-bold">Data Protection</h1>
 
       <div className="border rounded p-4">
@@ -32,8 +32,8 @@ export default function DataProtection() {
 
       <div className="border rounded p-4">
         <h2 className="font-semibold mb-2">Account Masking Demo</h2>
-        <div className="text-sm">Account ID <span className="font-mono">1234567890</span> → masked as <span className="font-mono text-green-600">****7890</span></div>
-        <div className="text-sm">Token <span className="font-mono">sk_live_ABCDEFGHIJK</span> → <span className="font-mono text-green-600">sk_****REDACTED</span></div>
+        <div className="text-sm">Account ID <span className="font-mono">1234567890</span> → masked as <span className="font-mono text-success">****7890</span></div>
+        <div className="text-sm">Token <span className="font-mono">sk_live_ABCDEFGHIJK</span> → <span className="font-mono text-success">sk_****REDACTED</span></div>
       </div>
 
       <div className="border rounded p-4">
@@ -43,7 +43,7 @@ export default function DataProtection() {
 
       <div className="border rounded p-4">
         <h2 className="font-semibold mb-2">Exports (redacted)</h2>
-        <button onClick={runExport} disabled={busy} className="px-3 py-1 bg-blue-600 text-white rounded text-sm disabled:opacity-50" data-testid="run-export">
+        <button onClick={runExport} disabled={busy} className="px-3 py-1 bg-primary text-white rounded text-sm disabled:opacity-50" data-testid="run-export">
           {busy ? "Working…" : "Create redacted export"}
         </button>
         <div className="mt-3 text-xs space-y-1">

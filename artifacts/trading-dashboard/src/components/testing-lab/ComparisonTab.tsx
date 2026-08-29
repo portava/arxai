@@ -132,7 +132,7 @@ export function ComparisonTab({ strategyId }: { strategyId?: string }) {
   if (!hasData) {
     return (
       <div className="pt-2">
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-txt-secondary">
           No comparison data yet{strategyId ? ` for ${strategyId}` : ""}. Run a backtest and a
           forward test, then return here to compare historical vs live behaviour.
         </p>
@@ -148,8 +148,8 @@ export function ComparisonTab({ strategyId }: { strategyId?: string }) {
           {strategyId ? ` — ${strategyId}` : ""}.
         </p>
         <Badge className={
-          driftTone === "warn" ? "bg-amber-500/20 text-amber-300"
-            : driftTone === "ok" ? "bg-emerald-500/20 text-emerald-300"
+          driftTone === "warn" ? "bg-warning/20 text-warning"
+            : driftTone === "ok" ? "bg-success/20 text-success"
               : ""
         }>{driftLabel}</Badge>
       </div>
@@ -182,9 +182,9 @@ export function ComparisonTab({ strategyId }: { strategyId?: string }) {
         <CardHeader><CardTitle className="text-base">Equity overlay</CardTitle></CardHeader>
         <CardContent className="space-y-3">
           <div className="flex flex-wrap items-center gap-3 text-xs">
-            <label className="flex items-center gap-1 text-slate-400">
+            <label className="flex items-center gap-1 text-txt-secondary">
               Curve A
-              <select className="rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-200"
+              <select className="rounded border border-border bg-background px-2 py-1 text-foreground"
                 value={runA ?? ""} onChange={(e) => setRunA(e.target.value ? Number(e.target.value) : null)}>
                 <option value="">— none —</option>
                 {allRuns.map((r) => (
@@ -192,9 +192,9 @@ export function ComparisonTab({ strategyId }: { strategyId?: string }) {
                 ))}
               </select>
             </label>
-            <label className="flex items-center gap-1 text-slate-400">
+            <label className="flex items-center gap-1 text-txt-secondary">
               Curve B
-              <select className="rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-200"
+              <select className="rounded border border-border bg-background px-2 py-1 text-foreground"
                 value={runB ?? ""} onChange={(e) => setRunB(e.target.value ? Number(e.target.value) : null)}>
                 <option value="">— none —</option>
                 {allRuns.map((r) => (
@@ -202,13 +202,13 @@ export function ComparisonTab({ strategyId }: { strategyId?: string }) {
                 ))}
               </select>
             </label>
-            <label className="flex items-center gap-1 text-slate-400">
+            <label className="flex items-center gap-1 text-txt-secondary">
               <input type="checkbox" checked={includeForward} onChange={(e) => setIncludeForward(e.target.checked)} />
               Forward (shadow, R)
             </label>
           </div>
           <ComparisonOverlayChart series={overlaySeries} />
-          <p className="text-[10px] text-slate-500">
+          <p className="text-[10px] text-txt-muted">
             Backtest curves are account-currency growth; the forward curve is
             cumulative R. Each line is labeled with its unit — they are not merged
             into one magnitude.
@@ -219,7 +219,7 @@ export function ComparisonTab({ strategyId }: { strategyId?: string }) {
       <Card>
         <CardHeader><CardTitle className="text-base">{nameHint()} recommendation</CardTitle></CardHeader>
         <CardContent>
-          <p className="text-sm text-slate-300">{recommendation}</p>
+          <p className="text-sm text-txt-secondary">{recommendation}</p>
         </CardContent>
       </Card>
     </div>
@@ -233,8 +233,8 @@ function nameHint(): string {
 function Row({ label, value, muted }: { label: string; value: string; muted?: boolean }) {
   return (
     <div className="flex items-center justify-between">
-      <span className="text-slate-400">{label}</span>
-      <span className={muted ? "text-xs text-slate-500" : "font-mono text-slate-100"}>{value}</span>
+      <span className="text-txt-secondary">{label}</span>
+      <span className={muted ? "text-xs text-txt-muted" : "font-mono text-foreground"}>{value}</span>
     </div>
   );
 }

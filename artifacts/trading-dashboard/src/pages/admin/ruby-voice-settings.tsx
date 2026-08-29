@@ -288,7 +288,7 @@ export default function AdminRubyVoiceSettings() {
                         <div className="mt-2 text-[11px] text-txt-secondary font-mono">
                           model: <span className="text-foreground">{health.data!.providers.openai.activeModel}</span>
                           {health.data!.providers.openai.activeModelSupportsStyle
-                            ? <Badge className="ml-2 bg-violet-500/15 text-violet-300 border border-violet-500/30 text-[10px]">style-aware</Badge>
+                            ? <Badge className="ml-2 bg-premium/15 text-premium border border-premium/30 text-[10px]">style-aware</Badge>
                             : <Badge className="ml-2 bg-secondary text-txt-secondary border border-border text-[10px]">no style</Badge>}
                         </div>
                       )}
@@ -562,7 +562,7 @@ export default function AdminRubyVoiceSettings() {
                       <div>model: <span className="text-foreground">{e.openaiModel ?? "—"}</span></div>
                       <div>
                         style: {e.styleApplied
-                          ? <span className="text-violet-300">applied</span>
+                          ? <span className="text-premium">applied</span>
                           : <span className="text-txt-muted">—</span>}
                       </div>
                       <div>

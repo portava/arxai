@@ -34,19 +34,19 @@ export function ConvertToLiveExecutionButton({ planId, isReady }: Props) {
         onClick={() => convert.mutate()}
         disabled={!isReady || convert.isPending}
         className={`inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-semibold ${
-          isReady ? "bg-indigo-600 text-white hover:bg-indigo-500" : "cursor-not-allowed bg-slate-700 text-slate-400"
+          isReady ? "bg-primary text-white hover:bg-primary" : "cursor-not-allowed bg-muted text-txt-secondary"
         }`}
       >
         <Rocket className="h-4 w-4" />
         {convert.isPending ? "Converting…" : "Convert to Live Execution"}
       </button>
       {!isReady && (
-        <p className="mt-2 text-xs text-slate-500">Run validate and pass all checks to enable conversion.</p>
+        <p className="mt-2 text-xs text-txt-muted">Run validate and pass all checks to enable conversion.</p>
       )}
       {message && (
-        <p className={`mt-2 text-xs ${convert.isError ? "text-red-400" : "text-green-400"}`}>{message}</p>
+        <p className={`mt-2 text-xs ${convert.isError ? "text-danger" : "text-success"}`}>{message}</p>
       )}
-      <p className="mt-2 text-xs text-slate-500">
+      <p className="mt-2 text-xs text-txt-muted">
         Conversion creates a pending confirmation. Live execution still requires the Safety Core and the Pre-Trade Confirmation flow.
       </p>
     </div>

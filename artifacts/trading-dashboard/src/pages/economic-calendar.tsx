@@ -110,7 +110,7 @@ function openRubyLiveChat() {
 const IMPACT_TONE: Record<ImpactLevel, { text: string; dot: string; chip: string; label: string }> = {
   CRITICAL: { text: "text-[#E11D48]", dot: "bg-[#E11D48]", chip: "border-[#E11D48]/40 bg-[#E11D48]/10 text-[#E11D48]", label: "Critical" },
   HIGH:     { text: "text-warning",   dot: "bg-warning",   chip: "border-warning/40 bg-warning/10 text-warning",       label: "High" },
-  MEDIUM:   { text: "text-yellow-400",dot: "bg-yellow-400",chip: "border-yellow-400/40 bg-yellow-400/10 text-yellow-400", label: "Medium" },
+  MEDIUM:   { text: "text-warning",dot: "bg-warning",chip: "border-warning/40 bg-warning/10 text-warning", label: "Medium" },
   LOW:      { text: "text-primary",   dot: "bg-primary",   chip: "border-primary/40 bg-primary/10 text-primary",       label: "Low" },
 };
 const IMPACT_RANK: Record<ImpactLevel, number> = { LOW: 1, MEDIUM: 2, HIGH: 3, CRITICAL: 4 };
@@ -169,11 +169,11 @@ function EventTimingHeat({ affectedSymbols }: { affectedSymbols: string[] }) {
   if (!results || results.length === 0) return null;
 
   const permColor: Record<string, string> = {
-    GO: "border-emerald-500/40 bg-emerald-500/10 text-emerald-400",
-    WAIT_FOR_ENTRY: "border-amber-500/40 bg-amber-500/10 text-amber-400",
-    WAIT_NEWS: "border-orange-500/40 bg-orange-500/10 text-orange-400",
-    NO_TRADE: "border-rose-500/40 bg-rose-500/10 text-rose-400",
-    STAND_DOWN: "border-rose-600/50 bg-rose-600/15 text-rose-300",
+    GO: "border-success/40 bg-success/10 text-success",
+    WAIT_FOR_ENTRY: "border-warning/40 bg-warning/10 text-warning",
+    WAIT_NEWS: "border-warning/40 bg-warning/10 text-warning",
+    NO_TRADE: "border-danger/40 bg-danger/10 text-danger",
+    STAND_DOWN: "border-danger/50 bg-danger/15 text-danger",
   };
   return (
     <div className="mt-2 rounded-lg border border-border/50 bg-background/30 p-2">
@@ -342,7 +342,7 @@ export default function EconomicCalendarPage() {
     const next = upcoming[0] ?? null;
     const maxRank = dayEvents.reduce((m, e) => Math.max(m, IMPACT_RANK[e.impactLevel]), 0);
     const overall = maxRank >= 4 ? "Critical" : maxRank === 3 ? "High" : maxRank === 2 ? "Medium" : maxRank === 1 ? "Low" : "Low";
-    const overallTone = maxRank >= 4 ? "text-[#E11D48]" : maxRank === 3 ? "text-warning" : maxRank === 2 ? "text-yellow-400" : "text-primary";
+    const overallTone = maxRank >= 4 ? "text-[#E11D48]" : maxRank === 3 ? "text-warning" : maxRank === 2 ? "text-warning" : "text-primary";
     const affected = next?.affectedSymbols ?? [];
     return { count: dayEvents.length, critical, high, next, overall, overallTone, affected };
   }, [allEvents]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -380,7 +380,7 @@ export default function EconomicCalendarPage() {
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   return (
-    <div className="mx-auto w-full max-w-[1280px] space-y-4 p-4 md:p-6 pb-32 md:pb-6">
+    <div className="mx-auto w-full max-w-[1280px] space-y-4 pb-32 md:pb-6">
       {/* Hero */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex items-start gap-3">
@@ -419,30 +419,30 @@ export default function EconomicCalendarPage() {
       {!providerStatus.isLoading && providerStatus.data && (
         providerStatus.data.configured ? (
           providerStatus.data.connected ? (
-            <div className="flex items-center gap-2 rounded-xl border border-emerald-500/25 bg-emerald-500/5 px-4 py-2.5 text-xs text-emerald-400">
-              <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_4px_1px_rgba(52,211,153,0.4)]" />
+            <div className="flex items-center gap-2 rounded-xl border border-success/25 bg-success/5 px-4 py-2.5 text-xs text-success">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-success shadow-[0_0_4px_1px_rgba(52,211,153,0.4)]" />
               <span className="font-semibold">{providerLabel(providerStatus.data.provider)} connected</span>
-              <span className="text-emerald-600">·</span>
-              <span className="text-emerald-600">
+              <span className="text-success">·</span>
+              <span className="text-success">
                 {providerStatus.data.eventCount} event{providerStatus.data.eventCount !== 1 ? "s" : ""} in window
                 {providerStatus.data.lastFetchAt && ` · fetched ${new Date(providerStatus.data.lastFetchAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}
               </span>
             </div>
           ) : (
-            <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-2.5 text-xs text-amber-300">
+            <div className="rounded-xl border border-warning/30 bg-warning/5 px-4 py-2.5 text-xs text-warning">
               <span className="font-semibold">{providerLabel(providerStatus.data.provider)} is configured but the last fetch failed.</span>{" "}
               Calendar events below are from the local database (last Sync). Click "Sync events" to retry.
               {providerStatus.data.lastErrorMessage && (
-                <span className="block mt-1 font-mono text-amber-500/70">{providerStatus.data.lastErrorMessage}</span>
+                <span className="block mt-1 font-mono text-warning/70">{providerStatus.data.lastErrorMessage}</span>
               )}
             </div>
           )
         ) : (
-          <div className="rounded-xl border border-slate-600/40 bg-slate-800/30 px-4 py-2.5 text-xs text-slate-400">
-            <span className="font-semibold text-slate-300">No live calendar provider configured.</span>{" "}
+          <div className="rounded-xl border border-border/40 bg-muted/30 px-4 py-2.5 text-xs text-txt-secondary">
+            <span className="font-semibold text-txt-secondary">No live calendar provider configured.</span>{" "}
             Events shown below are manually-synced only. Configure an economic calendar provider to
             enable live data. The absence of an event is{" "}
-            <span className="font-semibold text-slate-200">not an all-clear</span>.
+            <span className="font-semibold text-foreground">not an all-clear</span>.
           </div>
         )
       )}
@@ -472,7 +472,7 @@ export default function EconomicCalendarPage() {
                   <span className={cn("grid h-12 w-12 place-items-center rounded-full ring-1",
                     summary.overall === "Critical" ? "bg-[#E11D48]/15 text-[#E11D48] ring-[#E11D48]/30"
                     : summary.overall === "High" ? "bg-warning/15 text-warning ring-warning/30"
-                    : summary.overall === "Medium" ? "bg-yellow-400/15 text-yellow-400 ring-yellow-400/30"
+                    : summary.overall === "Medium" ? "bg-warning/15 text-warning ring-warning/30"
                     : "bg-primary/15 text-primary ring-primary/30")}>
                     <ShieldAlert className="h-6 w-6" />
                   </span>
@@ -623,10 +623,10 @@ export default function EconomicCalendarPage() {
                             SETTLED: "Market settled",
                           };
                           const phaseColor: Record<string, string> = {
-                            PRE_EVENT: "border-amber-500/40 bg-amber-500/10 text-amber-400",
-                            AT_EVENT: "border-rose-500/40 bg-rose-500/10 text-rose-400",
-                            POST_EVENT: "border-orange-500/40 bg-orange-500/10 text-orange-400",
-                            SETTLED: "border-emerald-500/40 bg-emerald-500/10 text-emerald-400",
+                            PRE_EVENT: "border-warning/40 bg-warning/10 text-warning",
+                            AT_EVENT: "border-danger/40 bg-danger/10 text-danger",
+                            POST_EVENT: "border-warning/40 bg-warning/10 text-warning",
+                            SETTLED: "border-success/40 bg-success/10 text-success",
                           };
                           if (!phase && !hasSurprise) return null;
                           return (
@@ -640,8 +640,8 @@ export default function EconomicCalendarPage() {
                               {hasSurprise && (
                                 <span className={cn(
                                   "inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-semibold",
-                                  surpNumer! > 0 ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
-                                    : "border-rose-500/40 bg-rose-500/10 text-rose-400",
+                                  surpNumer! > 0 ? "border-success/40 bg-success/10 text-success"
+                                    : "border-danger/40 bg-danger/10 text-danger",
                                 )}>
                                   Surprise: {surpNumer! > 0 ? "+" : ""}{surpNumer!.toFixed(2)}
                                 </span>

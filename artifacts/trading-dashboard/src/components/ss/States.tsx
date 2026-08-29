@@ -77,7 +77,7 @@ export function BlockedState({
   className?: string;
 }) {
   return (
-    <Alert variant="destructive" className={cn("bg-red-500/5 border-red-500/30", className)} role="alert">
+    <Alert variant="destructive" className={cn("bg-danger/5 border-danger/30", className)} role="alert">
       <ShieldAlert className="h-4 w-4" aria-hidden="true" />
       <AlertTitle className="flex items-center gap-2">
         <span>{what}</span>

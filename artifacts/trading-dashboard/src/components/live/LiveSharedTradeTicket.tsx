@@ -495,9 +495,9 @@ export function LiveSharedTradeTicket({
   // Render
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg border-red-500/40" data-testid="live-shared-trade-ticket">
+      <DialogContent className="sm:max-w-lg border-danger/40" data-testid="live-shared-trade-ticket">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-red-300">
+          <DialogTitle className="flex items-center gap-2 text-danger">
             <Zap className="h-5 w-5" /> LIVE SHARED-ACCOUNT TRADE
             <OneClickArmedBadge className="ml-auto" />
           </DialogTitle>
@@ -512,9 +512,9 @@ export function LiveSharedTradeTicket({
         {/* Admin-previewing-as-user — preview-only banner. Disables the
             entire submit path; no /execute is issued. */}
         {isPreviewing && (
-          <Alert className="border-sky-500/40 bg-sky-500/5" data-testid="live-shared-preview-banner">
-            <Eye className="h-4 w-4 text-sky-300" />
-            <AlertTitle className="text-sky-200">Preview mode</AlertTitle>
+          <Alert className="border-ruby/40 bg-ruby/5" data-testid="live-shared-preview-banner">
+            <Eye className="h-4 w-4 text-ruby" />
+            <AlertTitle className="text-ruby">Preview mode</AlertTitle>
             <AlertDescription className="text-xs">
               You're previewing this ticket as a user. Execution is disabled
               in preview — no real or test order will be created. Exit user
@@ -553,7 +553,7 @@ export function LiveSharedTradeTicket({
                   <Input value={symbol} onChange={(e) => { setSymbol(e.target.value.toUpperCase()); setSymbolError(null); setBrokerSymbol(null); setExecResult(null); setLiveOutcome(null); outcomeRunRef.current += 1; }}
                     data-testid="ls-symbol" disabled={actionsLocked} />
                   {symbolError && (
-                    <div className="mt-1 text-xs text-rose-400" data-testid="ls-symbol-error">{symbolError}</div>
+                    <div className="mt-1 text-xs text-danger" data-testid="ls-symbol-error">{symbolError}</div>
                   )}
                   {brokerSymbol && brokerSymbol !== symbol && (
                     <div className="mt-1 text-xs text-muted-foreground">Broker symbol: <span className="font-mono text-foreground">{brokerSymbol}</span></div>
@@ -565,7 +565,7 @@ export function LiveSharedTradeTicket({
                     onChange={(e) => setVolume(e.target.value)} data-testid="ls-volume" disabled={actionsLocked} />
                 </div>
                 <div>
-                  <Label>Stop loss {slRequired ? <span className="text-rose-400">*</span> : <span className="text-muted-foreground text-xs">(optional)</span>}</Label>
+                  <Label>Stop loss {slRequired ? <span className="text-danger">*</span> : <span className="text-muted-foreground text-xs">(optional)</span>}</Label>
                   <Input type="number" step="0.0001" value={stopLoss}
                     onChange={(e) => setSL(e.target.value)} data-testid="ls-sl" disabled={actionsLocked} />
                 </div>
@@ -577,8 +577,8 @@ export function LiveSharedTradeTicket({
               </div>
 
               {/* Advisory SL/TP suggestion — ATR-based, editable, non-binding. */}
-              <div className="flex items-center justify-between gap-2 rounded border border-sky-500/30 bg-sky-500/5 px-2 py-1.5">
-                <div className="text-[11px] text-sky-200/90 min-w-0">
+              <div className="flex items-center justify-between gap-2 rounded border border-ruby/30 bg-ruby/5 px-2 py-1.5">
+                <div className="text-[11px] text-ruby/90 min-w-0">
                   {suggestLoading
                     ? "Reading the market to suggest SL/TP…"
                     : suggestion
@@ -601,7 +601,7 @@ export function LiveSharedTradeTicket({
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="h-7 text-xs text-sky-300 hover:text-sky-200"
+                    className="h-7 text-xs text-ruby hover:text-ruby"
                     onClick={() => { setSL(String(suggestion.suggestedStopLoss)); setTP(String(suggestion.suggestedTakeProfit)); }}
                     disabled={actionsLocked}
                     data-testid="ls-apply-suggestion"
@@ -619,7 +619,7 @@ export function LiveSharedTradeTicket({
               )}
               {rubyExplanationSummary && (
                 <Alert>
-                  <AlertTitle className="text-amber-300">{name} note</AlertTitle>
+                  <AlertTitle className="text-warning">{name} note</AlertTitle>
                   <AlertDescription className="text-xs">{rubyExplanationSummary}</AlertDescription>
                 </Alert>
               )}
@@ -632,7 +632,7 @@ export function LiveSharedTradeTicket({
             </div>
 
             {/* Order summary — informational, not a confirmation step. */}
-            <div className="grid grid-cols-2 gap-2 text-[11px] font-mono bg-zinc-900/50 border border-zinc-800 rounded p-2">
+            <div className="grid grid-cols-2 gap-2 text-[11px] font-mono bg-muted/50 border border-border rounded p-2">
               <div>symbol <span className="text-foreground">{intent.symbol}</span></div>
               <div>side <span className="text-foreground">{intent.side}</span></div>
               <div>volume <span className="text-foreground">{Number.isFinite(intent.volume) ? intent.volume : "—"}</span></div>
@@ -661,9 +661,9 @@ export function LiveSharedTradeTicket({
             {/* Non-blocking feed-honesty notice (chart you're acting on isn't a
                 live broker feed). NEVER gates Confirm or one-click. */}
             {!isPreviewing && feedWarning && (
-              <Alert className="border-amber-500/40 bg-amber-500/5" data-testid="ls-feed-warning">
-                <AlertTriangle className="h-4 w-4 text-amber-300" />
-                <AlertDescription className="text-xs text-amber-200">
+              <Alert className="border-warning/40 bg-warning/5" data-testid="ls-feed-warning">
+                <AlertTriangle className="h-4 w-4 text-warning" />
+                <AlertDescription className="text-xs text-warning">
                   <span className="font-semibold">{feedWarning.warningTitle}.</span> {feedWarning.warningDetail}
                 </AlertDescription>
               </Alert>
@@ -671,25 +671,25 @@ export function LiveSharedTradeTicket({
 
             {/* Non-blocking exit-protection warning (SL/TP blank). */}
             {!isPreviewing && exitProtectionWarning && (
-              <Alert className="border-amber-500/40 bg-amber-500/5" data-testid="ls-exit-protection-warning">
-                <AlertTriangle className="h-4 w-4 text-amber-300" />
-                <AlertDescription className="text-xs text-amber-200">{exitProtectionWarning}</AlertDescription>
+              <Alert className="border-warning/40 bg-warning/5" data-testid="ls-exit-protection-warning">
+                <AlertTriangle className="h-4 w-4 text-warning" />
+                <AlertDescription className="text-xs text-warning">{exitProtectionWarning}</AlertDescription>
               </Alert>
             )}
 
             {/* Non-blocking Ruby bias-mismatch warning. */}
             {!isPreviewing && rubyBiasMismatch && (
-              <Alert className="border-amber-500/40 bg-amber-500/5" data-testid="ls-ruby-bias-warning">
-                <AlertTriangle className="h-4 w-4 text-amber-300" />
-                <AlertDescription className="text-xs text-amber-200">{rubyBiasMismatch}</AlertDescription>
+              <Alert className="border-warning/40 bg-warning/5" data-testid="ls-ruby-bias-warning">
+                <AlertTriangle className="h-4 w-4 text-warning" />
+                <AlertDescription className="text-xs text-warning">{rubyBiasMismatch}</AlertDescription>
               </Alert>
             )}
 
             {/* Armed one-click banner — shown when auto-confirm is active. */}
             {!isPreviewing && armedOneClick?.armed && (
-              <Alert className="border-emerald-500/40 bg-emerald-500/5 py-2" data-testid="ls-armed-banner">
-                <Zap className="h-3.5 w-3.5 text-emerald-400" />
-                <AlertDescription className="text-xs text-emerald-200">
+              <Alert className="border-success/40 bg-success/5 py-2" data-testid="ls-armed-banner">
+                <Zap className="h-3.5 w-3.5 text-success" />
+                <AlertDescription className="text-xs text-success">
                   One-click armed — order submits automatically when ready.
                 </AlertDescription>
               </Alert>
@@ -709,7 +709,7 @@ export function LiveSharedTradeTicket({
                   {confirmLabel}
                 </Button>
                 {!busy && disabledReason && (
-                  <div className="text-xs text-rose-300" data-testid="ls-confirm-disabled-reason">{disabledReason}</div>
+                  <div className="text-xs text-danger" data-testid="ls-confirm-disabled-reason">{disabledReason}</div>
                 )}
               </div>
             )}
@@ -717,14 +717,14 @@ export function LiveSharedTradeTicket({
             {/* Execute result — clean copy + admin drawer for raw fields. */}
             {execResult && (
               <Alert
-                className={execVisuallyOk ? "border-emerald-700/40 bg-emerald-950/30" : ""}
+                className={execVisuallyOk ? "border-success/40 bg-success/30" : ""}
                 variant={execVisuallyOk ? "default" : "destructive"}
                 data-testid="ls-exec-result"
               >
                 {execVisuallyOk
-                  ? <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                  ? <CheckCircle2 className="h-4 w-4 text-success" />
                   : <AlertTriangle className="h-4 w-4" />}
-                <AlertTitle className={execVisuallyOk ? "text-emerald-200" : ""}>
+                <AlertTitle className={execVisuallyOk ? "text-success" : ""}>
                   {execTitle}
                 </AlertTitle>
                 <AlertDescription className="text-xs space-y-1">
@@ -792,7 +792,7 @@ export function LiveSharedTradeTicket({
                     </div>
                   )}
                   {execResult.ok && execResult.commandRenderedTerminal === false && (
-                    <div className="text-amber-300">
+                    <div className="text-warning">
                       Server-side automatic remediation failed; ops will investigate.
                     </div>
                   )}

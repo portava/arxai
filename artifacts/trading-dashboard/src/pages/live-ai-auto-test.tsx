@@ -89,27 +89,27 @@ const OUTCOME_COPY: Record<Outcome, { label: string; detail: string; tone: strin
   AUDIT_CAPTURED: {
     label: "Intent submitted for audit/planning validation",
     detail: "The backend captured this intent for audit only. accepted=false by design — NO broker order was placed.",
-    tone: "text-sky-300",
+    tone: "text-ruby",
   },
   REJECTED_BY_RISK: {
     label: "Rejected by tester risk check",
     detail: "The server-side tester caps refused this intent. Nothing was captured as ready and no order was placed.",
-    tone: "text-amber-300",
+    tone: "text-warning",
   },
   FORBIDDEN: {
     label: "Access denied",
     detail: "The backend refused this request (401/403). This harness requires an authorized session.",
-    tone: "text-red-300",
+    tone: "text-danger",
   },
   BACKEND_ERROR: {
     label: "Backend error",
     detail: "The intent endpoint returned an error. No intent was captured.",
-    tone: "text-red-300",
+    tone: "text-danger",
   },
   NETWORK_ERROR: {
     label: "Network failure",
     detail: "Could not reach the backend. No intent was captured.",
-    tone: "text-red-300",
+    tone: "text-danger",
   },
 };
 
@@ -186,7 +186,7 @@ export default function LiveAiAutoTestPage() {
   const cooldownRemaining = cooldownUntil ? Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 60000)) : 0;
 
   return (
-    <div className="container mx-auto py-4 px-3 md:px-6 space-y-4 max-w-[1600px]">
+    <div className="container mx-auto py-4 space-y-4 max-w-[1600px]">
       <div>
         <h1 className="text-2xl font-bold flex items-center gap-2"><Bot className="w-6 h-6" /> Live-Intent Test Harness</h1>
         <p className="text-sm text-muted-foreground">
@@ -194,11 +194,11 @@ export default function LiveAiAutoTestPage() {
         </p>
       </div>
 
-      <Card className="border-sky-500/30 bg-sky-500/5" data-testid="audit-only-banner">
+      <Card className="border-ruby/30 bg-ruby/5" data-testid="audit-only-banner">
         <CardContent className="pt-4 flex items-start gap-2 text-sm">
-          <FlaskConical className="w-4 h-4 mt-0.5 text-sky-400" />
+          <FlaskConical className="w-4 h-4 mt-0.5 text-ruby" />
           <div>
-            <p className="font-semibold text-sky-300">Admin/dev test harness — audit-only, no broker execution</p>
+            <p className="font-semibold text-ruby">Admin/dev test harness — audit-only, no broker execution</p>
             <p className="text-xs text-muted-foreground mt-1">
               Intents submitted here go to an audit-only endpoint that always returns <span className="font-mono">accepted=false</span> and
               never places a broker order, touches the live pipeline, or bypasses any execution gate. Directions alternate
@@ -208,11 +208,11 @@ export default function LiveAiAutoTestPage() {
         </CardContent>
       </Card>
 
-      <Card className="border-red-500/30 bg-red-500/5">
+      <Card className="border-danger/30 bg-danger/5">
         <CardContent className="pt-4 flex items-start gap-2 text-sm">
-          <ShieldAlert className="w-4 h-4 mt-0.5 text-red-500" />
+          <ShieldAlert className="w-4 h-4 mt-0.5 text-danger" />
           <div>
-            <p className="font-semibold text-red-300">Tester caps (server-enforced)</p>
+            <p className="font-semibold text-danger">Tester caps (server-enforced)</p>
             <ul className="text-xs text-muted-foreground list-disc pl-5 mt-1">
               <li>max 1 test intent per session, max 3 per day</li>
               <li>max lot 0.01 · max loss/intent $5 · stop-loss required</li>
@@ -251,7 +251,7 @@ export default function LiveAiAutoTestPage() {
               <div className="rounded border border-border p-2"><div className="text-muted-foreground">MT5 connected</div><div className="font-mono">{String(lastResult?.mt5Connected ?? perm?.testerAccess?.mt5Connected ?? false)}</div></div>
             </div>
             {defStatus?.deferred && (
-              <div className="text-[11px] text-amber-300">{defStatus.bannerText}</div>
+              <div className="text-[11px] text-warning">{defStatus.bannerText}</div>
             )}
           </CardContent>
         </Card>
@@ -287,7 +287,7 @@ export default function LiveAiAutoTestPage() {
             <div key={i} className="text-[11px] font-mono border-b border-border/30 py-1">
               <span className="text-muted-foreground">{new Date(d.ts).toLocaleTimeString()}</span> · <span>{d.action}</span> · {d.symbol}
               {d.outcome && <> · <span className={OUTCOME_COPY[d.outcome].tone}>{OUTCOME_COPY[d.outcome].label}</span></>}
-              {d.status && <> · status=<span className="text-amber-300">{d.status}</span></>}
+              {d.status && <> · status=<span className="text-warning">{d.status}</span></>}
               {d.reason && <> · {d.reason}</>}
             </div>
           ))}

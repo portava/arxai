@@ -53,7 +53,7 @@ export function OneClickArmedBadge({ className }: { className?: string }) {
             data-testid="one-click-armed-badge"
             aria-label="One-click trading armed — manage in MT5 Setup"
           >
-            <Badge className="gap-1 bg-amber-600 text-[10px] font-semibold text-white hover:bg-amber-700">
+            <Badge className="gap-1 bg-warning text-[10px] font-semibold text-white hover:bg-warning/15">
               <Zap className="h-3 w-3" />
               One-click armed
             </Badge>

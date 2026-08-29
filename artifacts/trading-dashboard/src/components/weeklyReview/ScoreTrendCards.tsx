@@ -13,10 +13,10 @@ export function ScoreTrendCards({ r }: { r: WeeklyReview }) {
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
       {AREAS.map(({ key, label }) => {
         const v = t[key] ?? 0;
-        const tone = v > 0 ? "text-emerald-300" : v < 0 ? "text-rose-300" : "text-zinc-300";
+        const tone = v > 0 ? "text-success" : v < 0 ? "text-danger" : "text-txt-secondary";
         return (
-          <div key={key} className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-3">
-            <div className="text-[10px] uppercase tracking-wide text-zinc-500">{label}</div>
+          <div key={key} className="rounded-lg border border-border bg-background/50 p-3">
+            <div className="text-[10px] uppercase tracking-wide text-txt-muted">{label}</div>
             <div className={`text-lg font-semibold ${tone}`}>{v > 0 ? `+${v}` : v}</div>
           </div>
         );

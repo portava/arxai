@@ -29,8 +29,8 @@ function extractCurrencies(symbol: string): string[] {
 }
 
 const IMPACT_COLOR: Record<string, string> = {
-  CRITICAL: "bg-red-600/30 text-red-200 border border-red-500/60 animate-pulse",
-  HIGH: "bg-orange-600/25 text-orange-200 border border-orange-500/60",
+  CRITICAL: "bg-danger/30 text-danger border border-danger/60 animate-pulse",
+  HIGH: "bg-warning/25 text-warning border border-warning/60",
 };
 
 export function EventImpactBadge({

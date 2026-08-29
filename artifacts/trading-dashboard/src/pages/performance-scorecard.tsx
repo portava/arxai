@@ -87,7 +87,7 @@ export default function PerformanceScorecard() {
   const pnlTone = (n: number) => (n > 0 ? "text-success" : n < 0 ? "text-danger" : "text-txt-secondary");
 
   return (
-    <div className="mx-auto w-full max-w-[1280px] space-y-4 p-4 md:p-6 pb-32 md:pb-6">
+    <div className="mx-auto w-full max-w-[1280px] space-y-4 pb-32 md:pb-6">
       {/* Hero */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex items-start gap-3">
@@ -237,10 +237,10 @@ export default function PerformanceScorecard() {
 
           {/* Heat Intelligence — shown only when real data exists */}
           {heatReport && !heatReport.honestEmpty && (
-            <div className="rounded-2xl border border-orange-400/20 bg-card p-4">
+            <div className="rounded-2xl border border-warning/20 bg-card p-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Thermometer className="h-4 w-4 text-orange-400" />
+                  <Thermometer className="h-4 w-4 text-warning" />
                   <h3 className="text-sm font-semibold">Heat Intelligence (Last {heatReport.windowDays ?? 1}d)</h3>
                 </div>
                 <button onClick={() => navigate("/market-heat-map")} className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
@@ -266,14 +266,14 @@ export default function PerformanceScorecard() {
                 {heatReport.bestWindow && (
                   <div className="rounded-xl border border-border bg-secondary/40 p-2.5">
                     <div className="text-[11px] text-txt-muted">Best Entry Window</div>
-                    <div className="mt-1 font-mono text-base font-bold text-emerald-400">{heatReport.bestWindow.symbol}</div>
+                    <div className="mt-1 font-mono text-base font-bold text-success">{heatReport.bestWindow.symbol}</div>
                     <div className="text-[11px] text-txt-muted">grade {heatReport.bestWindow.grade} · heat {heatReport.bestWindow.heatScore}</div>
                   </div>
                 )}
                 <div className="rounded-xl border border-border bg-secondary/40 p-2.5">
                   <div className="text-[11px] text-txt-muted">Heat Flags</div>
                   <div className="mt-1 flex items-center gap-1.5">
-                    <Flame className="h-4 w-4 text-orange-400" />
+                    <Flame className="h-4 w-4 text-warning" />
                     <span className="text-base font-bold">{(heatReport.missedMoveEvents?.length ?? 0) + (heatReport.falseHeatEvents?.length ?? 0)}</span>
                   </div>
                   <div className="text-[11px] text-txt-muted">{heatReport.missedMoveEvents?.length ?? 0} exhausted · {heatReport.falseHeatEvents?.length ?? 0} false heat</div>
@@ -287,7 +287,7 @@ export default function PerformanceScorecard() {
                       <span key={sym.symbol} className="inline-flex items-center gap-1 rounded border border-border bg-secondary/60 px-2 py-0.5 text-[11px]">
                         <span className="font-mono font-medium">{sym.symbol}</span>
                         <span className="text-txt-muted">·</span>
-                        <span className="text-orange-400">{sym.avgHeat}</span>
+                        <span className="text-warning">{sym.avgHeat}</span>
                         <span className="text-txt-muted">{sym.bestGrade}</span>
                       </span>
                     ))}

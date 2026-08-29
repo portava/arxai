@@ -2004,14 +2004,14 @@ export default function AdminInvestorsPage() {
 
   if (selected != null) {
     return (
-      <div className="mx-auto mt-6 max-w-5xl px-2">
+      <div className="mx-auto mt-6 max-w-5xl">
         <InvestorDetail userId={selected} onBack={() => setSelected(null)} />
       </div>
     );
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-5 p-4 md:p-6 pb-32 md:pb-6" data-testid="admin-investors">
+    <div className="mx-auto w-full max-w-6xl space-y-5 pb-32 md:pb-6" data-testid="admin-investors">
       <div className="flex items-center gap-3">
         <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/15 text-primary">
           <Users className="h-6 w-6" />

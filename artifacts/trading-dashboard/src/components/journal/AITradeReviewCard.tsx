@@ -9,25 +9,25 @@ export function AITradeReviewCard({ entry }: { entry: RichJournalEntry }) {
   } });
   const r = entry.aiReview;
   return (
-    <div className="space-y-2 rounded-xl border border-zinc-800 bg-zinc-950/50 p-3">
+    <div className="space-y-2 rounded-xl border border-border bg-background/50 p-3">
       <div className="flex items-center justify-between">
-        <div className="text-xs uppercase tracking-wide text-zinc-500">AI Trade Review</div>
+        <div className="text-xs uppercase tracking-wide text-txt-muted">AI Trade Review</div>
         <button type="button" onClick={() => gen.mutate({ id: entry.id })} disabled={gen.isPending}
-          className="rounded-md border border-zinc-700 bg-zinc-900 px-2 py-0.5 text-[11px] text-zinc-200 hover:bg-zinc-800 disabled:opacity-50">
+          className="rounded-md border border-border bg-card px-2 py-0.5 text-[11px] text-foreground hover:bg-secondary disabled:opacity-50">
           {r ? "Regenerate" : gen.isPending ? "Generating…" : "Generate"}
         </button>
       </div>
-      {!r && <div className="text-xs text-zinc-500">No review yet.</div>}
+      {!r && <div className="text-xs text-txt-muted">No review yet.</div>}
       {r && (
         <>
-          <p className="text-sm text-zinc-200">{r.summary}</p>
+          <p className="text-sm text-foreground">{r.summary}</p>
           <div className="grid gap-1.5 text-xs">
-            <div><span className="text-zinc-500">Discipline · </span><span className="text-zinc-300">{r.discipline}</span></div>
-            <div><span className="text-zinc-500">Execution · </span><span className="text-zinc-300">{r.execution}</span></div>
-            <div><span className="text-zinc-500">Emotional · </span><span className="text-zinc-300">{r.emotional}</span></div>
+            <div><span className="text-txt-muted">Discipline · </span><span className="text-txt-secondary">{r.discipline}</span></div>
+            <div><span className="text-txt-muted">Execution · </span><span className="text-txt-secondary">{r.execution}</span></div>
+            <div><span className="text-txt-muted">Emotional · </span><span className="text-txt-secondary">{r.emotional}</span></div>
           </div>
           {(r.suggestedFocus?.length ?? 0) > 0 && (
-            <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-200">
+            <div className="rounded-md border border-warning/40 bg-warning/10 p-2 text-xs text-warning">
               Focus next: {(r.suggestedFocus ?? []).join(", ")}
             </div>
           )}

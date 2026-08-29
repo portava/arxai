@@ -83,9 +83,9 @@ function HealthBanner() {
     <Card>
       <CardContent className="flex flex-wrap items-center gap-3 py-4">
         {ready ? (
-          <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+          <CheckCircle2 className="h-5 w-5 text-success" />
         ) : (
-          <XCircle className="h-5 w-5 text-amber-500" />
+          <XCircle className="h-5 w-5 text-warning" />
         )}
         <span className="text-sm font-medium">
           {ready
@@ -361,8 +361,8 @@ export default function AdminAiFixAgentPage() {
           </p>
         </div>
 
-        <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+        <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
+          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
           <span>
             Advisory only. Patch suggestions are <strong>dry-run</strong> — review and apply changes
             yourself. Paste-in text is redacted server-side before it reaches the model.

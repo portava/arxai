@@ -148,17 +148,17 @@ function StatChip({ label, ok, locked, testId }: { label: string; ok: boolean; l
     <div
       data-testid={testId}
       className={`rounded-md border px-2 py-1.5 flex flex-col items-center gap-0.5 ${
-        ok ? "border-emerald-500/40 bg-emerald-500/5" : "border-muted bg-muted/20"
+        ok ? "border-success/40 bg-success/5" : "border-muted bg-muted/20"
       }`}
     >
       <div className="font-medium">{label}</div>
       <div className="flex items-center gap-1">
         {ok ? (
-          <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+          <CheckCircle2 className="h-3 w-3 text-success" />
         ) : locked ? (
           <ShieldAlert className="h-3 w-3 text-muted-foreground" />
         ) : (
-          <AlertTriangle className="h-3 w-3 text-amber-500" />
+          <AlertTriangle className="h-3 w-3 text-warning" />
         )}
         <span className="text-[11px] text-muted-foreground">
           {ok ? "Ready" : locked ? "Locked" : "Not ready"}

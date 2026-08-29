@@ -52,9 +52,9 @@ export function LiveKillSwitchButton() {
   const killed = !!arming.data?.arming?.killSwitchEngaged;
 
   return (
-    <Card className="border-rose-500/40">
+    <Card className="border-danger/40">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-rose-300">
+        <CardTitle className="flex items-center gap-2 text-danger">
           <ShieldAlert className="h-5 w-5" /> Emergency Live Kill Switch
         </CardTitle>
         <CardDescription>
@@ -78,7 +78,7 @@ export function LiveKillSwitchButton() {
           <Button
             variant="destructive"
             size="lg"
-            className="w-full sm:w-auto bg-rose-600 hover:bg-rose-700 text-white font-bold uppercase tracking-wide"
+            className="w-full sm:w-auto bg-danger hover:bg-danger/15 text-white font-bold uppercase tracking-wide"
             onClick={() => setOpen(true)}
             data-testid="btn-engage-kill"
           >
@@ -90,7 +90,7 @@ export function LiveKillSwitchButton() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="text-rose-300">Confirm kill switch</DialogTitle>
+            <DialogTitle className="text-danger">Confirm kill switch</DialogTitle>
             <DialogDescription>
               This disables every NEW live trade. Existing open positions remain
               open — close them manually on this page or in MT5.

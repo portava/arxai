@@ -238,8 +238,8 @@ export default function FinalLiveTestPage() {
     );
   }
 
-  if (loadErr) return <div className="p-6 text-danger text-sm">Failed to load: {loadErr}</div>;
-  if (!state)  return <div className="p-6 text-txt-secondary text-sm">Loading readiness state…</div>;
+  if (loadErr) return <div className="text-danger text-sm">Failed to load: {loadErr}</div>;
+  if (!state)  return <div className="text-txt-secondary text-sm">Loading readiness state…</div>;
 
   const A = state.panelA_currentConnectedBridge;
   const B = state.panelB_masterLiveGates;
@@ -323,7 +323,7 @@ export default function FinalLiveTestPage() {
   };
 
   return (
-    <div className="mx-auto max-w-3xl space-y-5 p-4 pb-16">
+    <div className="mx-auto max-w-3xl space-y-5 pb-16">
       {/* Header */}
       <div className="rounded-xl border border-danger/40 bg-danger/10 p-4">
         <div className="flex items-center gap-2 mb-1">

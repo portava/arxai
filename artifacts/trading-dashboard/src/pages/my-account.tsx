@@ -133,7 +133,7 @@ export default function MyAccountPage() {
 
   if (q.isLoading) {
     return (
-      <div className="p-6 space-y-4" data-testid="my-account-loading">
+      <div className="space-y-4" data-testid="my-account-loading">
         <Skeleton className="h-8 w-40" />
         <Skeleton className="h-32 w-full" />
         <Skeleton className="h-32 w-full" />
@@ -142,7 +142,7 @@ export default function MyAccountPage() {
   }
   if (q.error || !q.data) {
     return (
-      <div className="p-6">
+      <div>
         <Card className="rounded-2xl border-border bg-card">
           <CardContent className="flex items-center gap-2 py-6 text-sm text-txt-secondary">
             <AlertCircle className="h-4 w-4" /> Could not load your account view.
@@ -156,7 +156,7 @@ export default function MyAccountPage() {
   const pnlClass = (v: number) => v > 0 ? "text-success" : v < 0 ? "text-danger" : "";
 
   return (
-    <div className="mx-auto w-full max-w-[1100px] space-y-4 p-4 md:p-6 pb-32 md:pb-6" data-testid="my-account-page">
+    <div className="mx-auto w-full max-w-[1100px] space-y-4 pb-32 md:pb-6" data-testid="my-account-page">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-start gap-3">
           <span className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/25">

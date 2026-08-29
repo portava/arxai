@@ -16,7 +16,7 @@ export default function BacktestLegacyRedirect() {
     navigate("/testing-lab", { replace: true });
   }, [navigate]);
   return (
-    <div className="flex min-h-[40vh] flex-col items-center justify-center gap-2 text-slate-400">
+    <div className="flex min-h-[40vh] flex-col items-center justify-center gap-2 text-txt-secondary">
       <p className="text-sm">Redirecting to Testing Lab…</p>
     </div>
   );

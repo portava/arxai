@@ -302,7 +302,7 @@ export function LiveSharedAccountPanel() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-xl md:text-2xl font-semibold flex items-center gap-2">
-            {isLive ? <ShieldCheck className="h-6 w-6 text-emerald-500" /> : <Shield className="h-6 w-6 text-muted-foreground" />}
+            {isLive ? <ShieldCheck className="h-6 w-6 text-success" /> : <Shield className="h-6 w-6 text-muted-foreground" />}
             Live Shared Account
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
@@ -570,7 +570,7 @@ export function LiveSharedAccountPanel() {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <ShieldCheck className="h-4 w-4 text-emerald-500" />
+                  <ShieldCheck className="h-4 w-4 text-success" />
                   First Live Test Mode (OWNER only)
                 </CardTitle>
                 <CardDescription>
@@ -616,7 +616,7 @@ export function LiveSharedAccountPanel() {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <ShieldAlert className="h-4 w-4 text-red-500" />
+                  <ShieldAlert className="h-4 w-4 text-danger" />
                   Live Test Cycle (OWNER only)
                 </CardTitle>
                 <CardDescription>
@@ -717,7 +717,7 @@ export function LiveSharedAccountPanel() {
               <div><div className="text-xs text-muted-foreground">Open lots</div><div className="text-2xl font-mono">{data.openExposure.totalOpenLots.toFixed(2)}</div></div>
               <div><div className="text-xs text-muted-foreground">Open positions</div><div className="text-2xl font-mono">{data.openExposure.openPositionsCount}</div></div>
               <div><div className="text-xs text-muted-foreground">Floating P/L (USD)</div>
-                <div className={`text-2xl font-mono ${data.openExposure.totalFloatingPlUsd < 0 ? "text-red-500" : "text-emerald-500"}`}>
+                <div className={`text-2xl font-mono ${data.openExposure.totalFloatingPlUsd < 0 ? "text-danger" : "text-success"}`}>
                   {data.openExposure.totalFloatingPlUsd.toFixed(2)}
                 </div></div>
             </CardContent>
@@ -763,7 +763,7 @@ export function LiveSharedAccountPanel() {
         <TabsContent value="kill" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-red-500 flex items-center gap-2">
+              <CardTitle className="text-danger flex items-center gap-2">
                 <ShieldAlert className="h-5 w-5" /> Emergency kill switch
               </CardTitle>
               <CardDescription>
@@ -848,9 +848,9 @@ function OwnerUnrestrictedLiveBanner() {
   });
   if (!q.data?.ok || !q.data.isOwnerUnrestricted) return null;
   return (
-    <Alert className="border-amber-500/40 bg-amber-500/5">
-      <ShieldAlert className="h-4 w-4 text-amber-400" />
-      <AlertTitle className="text-amber-300">Owner unrestricted live profile active</AlertTitle>
+    <Alert className="border-warning/40 bg-warning/5">
+      <ShieldAlert className="h-4 w-4 text-warning" />
+      <AlertTitle className="text-warning">Owner unrestricted live profile active</AlertTitle>
       <AlertDescription className="text-xs">
         Active risk template: <strong>{q.data.templateName}</strong>.
         App-level caps (symbol allowlist, per-symbol lot, daily-loss USD,
@@ -945,7 +945,7 @@ function SharedBridgePoolCard() {
             <div><div className="text-xs text-muted-foreground">Total allocated</div>
               <div className="text-xl font-mono">${pool.totalAllocated.toFixed(2)}</div></div>
             <div><div className="text-xs text-muted-foreground">Available</div>
-              <div className={`text-xl font-mono ${pool.isOverAllocated ? "text-red-500" : "text-emerald-500"}`}>
+              <div className={`text-xl font-mono ${pool.isOverAllocated ? "text-danger" : "text-success"}`}>
                 ${available.toFixed(2)}
               </div></div>
             <div><div className="text-xs text-muted-foreground">Free margin</div>
@@ -955,11 +955,11 @@ function SharedBridgePoolCard() {
             <div><div className="text-xs text-muted-foreground">Total reserved risk</div>
               <div className="font-mono">${(pool.totalReservedRisk ?? 0).toFixed(2)}</div></div>
             <div><div className="text-xs text-muted-foreground">Allocation deficit</div>
-              <div className={`font-mono ${(pool.allocationDeficit ?? 0) > 0 ? "text-red-500" : ""}`}>
+              <div className={`font-mono ${(pool.allocationDeficit ?? 0) > 0 ? "text-danger" : ""}`}>
                 ${(pool.allocationDeficit ?? 0).toFixed(2)}
               </div></div>
             <div><div className="text-xs text-muted-foreground">Floating P/L (users)</div>
-              <div className={`font-mono ${pool.totalUserUnrealizedPnl < 0 ? "text-red-500" : "text-emerald-500"}`}>
+              <div className={`font-mono ${pool.totalUserUnrealizedPnl < 0 ? "text-danger" : "text-success"}`}>
                 ${pool.totalUserUnrealizedPnl.toFixed(2)}
               </div></div>
             <div><div className="text-xs text-muted-foreground">Snapshot</div>
@@ -1094,7 +1094,7 @@ function SingleUserReduceButton({ onDone }: { onDone: () => void }) {
   const realizedPl = selected?.realizedPnl ?? 0;
   const coveredFloor = selected ? selected.totalAllocation - realizedPl : 0;
   const wouldStrandExposure = !!selected && validNumber && openCount > 0 && newTotalNum < coveredFloor;
-  const plColor = floatingPl > 0 ? "text-emerald-500" : floatingPl < 0 ? "text-red-500" : "";
+  const plColor = floatingPl > 0 ? "text-success" : floatingPl < 0 ? "text-danger" : "";
   return (
     <AlertDialog open={open} onOpenChange={(o) => {
       setOpen(o);
@@ -1162,7 +1162,7 @@ function SingleUserReduceButton({ onDone }: { onDone: () => void }) {
           />
           {wouldStrandExposure && (
             <div
-              className="text-xs text-amber-600 dark:text-amber-400 border border-amber-500/40 rounded px-2 py-1"
+              className="text-xs text-warning dark:text-warning border border-warning/40 rounded px-2 py-1"
               data-testid="reduce-single-exposure-warning"
             >
               Warning: ${newTotalNum.toFixed(2)} is below ${coveredFloor.toFixed(2)} while
@@ -1171,7 +1171,7 @@ function SingleUserReduceButton({ onDone }: { onDone: () => void }) {
             </div>
           )}
           {resultMsg && (
-            <div className="text-xs text-red-500" data-testid="reduce-single-result">{resultMsg}</div>
+            <div className="text-xs text-danger" data-testid="reduce-single-result">{resultMsg}</div>
           )}
         </div>
         <AlertDialogFooter>

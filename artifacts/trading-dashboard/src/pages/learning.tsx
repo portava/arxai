@@ -43,9 +43,9 @@ export default function Learning() {
       </div>
 
       {data.warning ? (
-        <Card className="border-yellow-500/30 bg-yellow-500/5">
+        <Card className="border-warning/30 bg-warning/5">
           <CardContent className="pt-6 flex items-start gap-3">
-            <AlertCircle className="text-yellow-500 shrink-0 mt-0.5" size={20} />
+            <AlertCircle className="text-warning shrink-0 mt-0.5" size={20} />
             <p className="text-sm">{data.warning}</p>
           </CardContent>
         </Card>
@@ -53,14 +53,14 @@ export default function Learning() {
 
       <div className="grid gap-6 md:grid-cols-2">
         <Card>
-          <CardHeader><CardTitle className="flex items-center gap-2 text-base"><TrendingUp className="text-green-500" size={18}/> Best Strategies</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="flex items-center gap-2 text-base"><TrendingUp className="text-success" size={18}/> Best Strategies</CardTitle></CardHeader>
           <CardContent>
             {data.bestStrategies.length === 0 ? <p className="text-sm text-muted-foreground">No data yet.</p> : (
               <div className="space-y-2">
                 {data.bestStrategies.map((s) => (
                   <div key={s.strategy} className="flex items-center justify-between p-2 rounded border border-border/50">
                     <div><div className="text-sm font-medium">{s.strategy}</div><div className="text-xs text-muted-foreground">{s.trades} trades</div></div>
-                    <div className="text-right"><div className="font-mono text-sm text-green-500">{s.winRate.toFixed(0)}%</div><div className="text-xs font-mono">${s.pnl.toFixed(2)}</div></div>
+                    <div className="text-right"><div className="font-mono text-sm text-success">{s.winRate.toFixed(0)}%</div><div className="text-xs font-mono">${s.pnl.toFixed(2)}</div></div>
                   </div>
                 ))}
               </div>
@@ -91,7 +91,7 @@ export default function Learning() {
               <div className="space-y-2">
                 {data.bestSymbols.map((s) => (
                   <div key={s.symbol} className="flex items-center justify-between text-sm font-mono">
-                    <span>{s.symbol}</span><span className="text-green-500">{s.winRate.toFixed(0)}% • ${s.pnl.toFixed(2)}</span>
+                    <span>{s.symbol}</span><span className="text-success">{s.winRate.toFixed(0)}% • ${s.pnl.toFixed(2)}</span>
                   </div>
                 ))}
               </div>
@@ -106,7 +106,7 @@ export default function Learning() {
               <div className="space-y-2">
                 {data.bestSessions.map((s) => (
                   <div key={s.session} className="flex items-center justify-between text-sm font-mono">
-                    <span className="capitalize">{s.session}</span><span className="text-green-500">{s.winRate.toFixed(0)}% • ${s.pnl.toFixed(2)}</span>
+                    <span className="capitalize">{s.session}</span><span className="text-success">{s.winRate.toFixed(0)}% • ${s.pnl.toFixed(2)}</span>
                   </div>
                 ))}
               </div>
@@ -115,7 +115,7 @@ export default function Learning() {
         </Card>
 
         <Card>
-          <CardHeader><CardTitle className="flex items-center gap-2 text-base"><AlertCircle className="text-yellow-500" size={18}/> Common Mistakes</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="flex items-center gap-2 text-base"><AlertCircle className="text-warning" size={18}/> Common Mistakes</CardTitle></CardHeader>
           <CardContent>
             {data.commonMistakes.length === 0 ? <p className="text-sm text-muted-foreground">None detected.</p> : (
               <div className="space-y-2">

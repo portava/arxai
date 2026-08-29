@@ -32,12 +32,12 @@ type Decision = {
 type Lock = { code: string; tripped: boolean; reason?: string };
 
 const MODE_COLOR: Record<string, string> = {
-  OFF: "bg-zinc-500/20 text-zinc-300",
-  OBSERVE_ONLY: "bg-blue-500/20 text-blue-400",
-  AI_ASSIST: "bg-cyan-500/20 text-cyan-400",
-  DEMO_AUTO_SIMULATOR: "bg-emerald-500/20 text-emerald-400",
-  LIVE_INTENT_AUTO_TESTER: "bg-amber-500/20 text-amber-400",
-  FUTURE_MT5_LIVE_AUTO_LOCKED: "bg-purple-500/20 text-purple-400",
+  OFF: "bg-muted text-txt-secondary",
+  OBSERVE_ONLY: "bg-primary/20 text-primary",
+  AI_ASSIST: "bg-ruby/20 text-ruby",
+  DEMO_AUTO_SIMULATOR: "bg-success/20 text-success",
+  LIVE_INTENT_AUTO_TESTER: "bg-warning/20 text-warning",
+  FUTURE_MT5_LIVE_AUTO_LOCKED: "bg-premium/20 text-premium",
 };
 
 async function api(path: string, init?: RequestInit) {
@@ -143,16 +143,16 @@ export default function AutopilotControlCenter() {
           <Bot className="h-6 w-6 text-primary" />
           <h1 className="text-2xl font-bold">AI Autopilot Control Center</h1>
         </div>
-        <Card className="border-amber-500/40 bg-amber-500/10">
+        <Card className="border-warning/40 bg-warning/10">
           <CardContent className="p-4 flex items-start gap-3">
-            <ShieldAlert className="h-5 w-5 text-amber-400 mt-0.5 shrink-0" />
+            <ShieldAlert className="h-5 w-5 text-warning mt-0.5 shrink-0" />
             <div>
-              <p className="text-sm font-medium text-amber-300">
+              <p className="text-sm font-medium text-warning">
                 {roleDenied
                   ? "Access denied — Admin or Owner role required to view the Autopilot Control Center."
                   : loadError}
               </p>
-              <p className="text-xs text-amber-400/70 mt-1">
+              <p className="text-xs text-warning/70 mt-1">
                 This control center is restricted to Admin and Owner sessions. The autopilot runs
                 in SIMULATOR mode only — no live broker execution.
               </p>
@@ -182,8 +182,8 @@ export default function AutopilotControlCenter() {
       </div>
 
       {s?.killSwitchEngaged && (
-        <Card className="border-rose-500/40 bg-rose-500/10">
-          <CardContent className="p-3 text-rose-300 text-sm flex items-center gap-2">
+        <Card className="border-danger/40 bg-danger/10">
+          <CardContent className="p-3 text-danger text-sm flex items-center gap-2">
             <AlertOctagon className="h-4 w-4" />Kill switch is engaged — autopilot cannot start.
           </CardContent>
         </Card>
@@ -267,8 +267,8 @@ export default function AutopilotControlCenter() {
                 <span>risk {d.riskScore}</span>
                 <span>mh {d.marketHealth}</span><span>news {d.newsRisk}</span><span>session {d.sessionRisk}</span>
               </div>
-              {d.rulesPassed.length > 0 && <div className="text-emerald-400">✓ {d.rulesPassed.join(", ")}</div>}
-              {d.rulesFailed.length > 0 && <div className="text-rose-400">✗ {d.rulesFailed.join(", ")}</div>}
+              {d.rulesPassed.length > 0 && <div className="text-success">✓ {d.rulesPassed.join(", ")}</div>}
+              {d.rulesFailed.length > 0 && <div className="text-danger">✗ {d.rulesFailed.join(", ")}</div>}
               <div className="text-muted-foreground">Next: {d.nextAction}</div>
               <div className="flex gap-1 pt-1">
                 {d.action === "ASK_USER_APPROVAL" && (

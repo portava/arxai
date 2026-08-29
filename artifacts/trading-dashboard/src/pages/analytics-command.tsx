@@ -47,22 +47,22 @@ export default function AnalyticsCommandCenter() {
   const s = snap.data?.snapshot ?? null;
 
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-4">
       <header className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h1 className="text-xl font-semibold text-slate-100">Analytics Command Center</h1>
-          <p className="text-xs text-slate-400">
+          <h1 className="text-xl font-semibold text-foreground">Analytics Command Center</h1>
+          <p className="text-xs text-txt-secondary">
             Institutional-style process analytics. Past performance does not predict future results.
           </p>
         </div>
         <button onClick={() => generate.mutate()} disabled={generate.isPending}
-          className="rounded bg-sky-600 px-3 py-1 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-40">
+          className="rounded bg-ruby px-3 py-1 text-xs font-semibold text-white hover:bg-ruby disabled:opacity-40">
           {generate.isPending ? "Computing…" : "Recompute snapshot"}
         </button>
       </header>
 
       {!s ? (
-        <p className="rounded border border-dashed border-slate-700 p-6 text-center text-xs text-slate-500">
+        <p className="rounded border border-dashed border-border p-6 text-center text-xs text-txt-muted">
           Computing your first analytics snapshot…
         </p>
       ) : (
@@ -91,7 +91,7 @@ export default function AnalyticsCommandCenter() {
           <EmotionalTrendGraph trend={emo.data?.trend ?? []} />
 
           <section>
-            <h3 className="mb-2 text-sm font-semibold text-slate-200">Strategy Analytics</h3>
+            <h3 className="mb-2 text-sm font-semibold text-foreground">Strategy Analytics</h3>
             <StrategyAnalyticsTable rows={strat.data?.strategies ?? []} />
           </section>
 
@@ -102,7 +102,7 @@ export default function AnalyticsCommandCenter() {
             <Highlight label="Weakest market condition"   v={s.weakestMarketCondition} tone="red" />
           </section>
 
-          <p className="text-[10px] italic text-slate-500">
+          <p className="text-[10px] italic text-txt-muted">
             Analytics summarize historical behavior and outcomes. Past performance does not predict future results.
           </p>
         </>
@@ -112,16 +112,16 @@ export default function AnalyticsCommandCenter() {
 }
 
 function Stat({ label, v, tone }: { label: string; v: string; tone?: "emerald"|"red" }) {
-  const t = tone === "emerald" ? "text-emerald-300" : tone === "red" ? "text-red-300" : "text-slate-100";
+  const t = tone === "emerald" ? "text-success" : tone === "red" ? "text-danger" : "text-foreground";
   return (
-    <div className="rounded border border-slate-700 bg-slate-900/50 p-2 text-center">
-      <div className="text-[10px] uppercase tracking-wide text-slate-400">{label}</div>
+    <div className="rounded border border-border bg-muted/50 p-2 text-center">
+      <div className="text-[10px] uppercase tracking-wide text-txt-secondary">{label}</div>
       <div className={`text-base font-bold ${t}`}>{v}</div>
     </div>
   );
 }
 function Highlight({ label, v, tone }: { label: string; v: string | null; tone: "emerald"|"red" }) {
-  const t = tone === "emerald" ? "border-emerald-700 bg-emerald-950/30 text-emerald-100" : "border-red-700 bg-red-950/30 text-red-100";
+  const t = tone === "emerald" ? "border-success/40 bg-success/30 text-success" : "border-danger/40 bg-danger/30 text-danger";
   return (
     <div className={`rounded border p-3 ${t}`}>
       <div className="text-[10px] uppercase tracking-wide opacity-80">{label}</div>

@@ -59,14 +59,14 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
 function GateRow({ ok, label, detail }: { ok: boolean; label: string; detail: string }) {
   return (
     <div className="flex items-start gap-3 py-1.5">
-      <span className={`mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold ${ok ? "bg-emerald-500/20 text-emerald-400" : "bg-amber-500/20 text-amber-400"}`}>
+      <span className={`mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold ${ok ? "bg-success/20 text-success" : "bg-warning/20 text-warning"}`}>
         {ok ? "✓" : "!"}
       </span>
       <div className="flex-1">
         <div className="text-sm text-foreground">{label}</div>
         <div className="text-xs text-muted-foreground">{detail}</div>
       </div>
-      <Badge variant="outline" className={`text-[10px] ${ok ? "border-emerald-500/40 text-emerald-300" : "border-amber-500/40 text-amber-300"}`}>
+      <Badge variant="outline" className={`text-[10px] ${ok ? "border-success/40 text-success" : "border-warning/40 text-warning"}`}>
         {ok ? "PASS" : "BLOCKED"}
       </Badge>
     </div>
@@ -143,14 +143,14 @@ export default function ProtectiveAutoClosePage() {
   return (
     <div className="space-y-4 max-w-4xl">
       {/* HEADER */}
-      <Card className="bg-zinc-900 border-zinc-800">
+      <Card className="bg-card border-border">
         <CardHeader className="pb-3">
           <CardTitle className="text-white text-base flex items-center gap-2">
             {effectiveStatus === "ALERT_ONLY"
-              ? <ShieldOff className="h-4 w-4 text-amber-400" />
-              : <Shield className="h-4 w-4 text-emerald-400" />}
+              ? <ShieldOff className="h-4 w-4 text-warning" />
+              : <Shield className="h-4 w-4 text-success" />}
             Protective Auto-Close
-            <Badge variant="outline" className={effectiveStatus === "ALERT_ONLY" ? "border-amber-500/40 text-amber-300" : "border-emerald-500/40 text-emerald-300"}>
+            <Badge variant="outline" className={effectiveStatus === "ALERT_ONLY" ? "border-warning/40 text-warning" : "border-success/40 text-success"}>
               {effectiveStatus}
             </Badge>
           </CardTitle>
@@ -162,9 +162,9 @@ export default function ProtectiveAutoClosePage() {
             Saving preferences does <strong>not</strong> unlock execution by itself.
           </p>
           {effectiveStatus === "ALERT_ONLY" && (
-            <div className="rounded border border-amber-500/30 bg-amber-500/10 p-3 flex gap-2">
-              <AlertTriangle className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
-              <div className="text-amber-100 text-xs">
+            <div className="rounded border border-warning/30 bg-warning/10 p-3 flex gap-2">
+              <AlertTriangle className="h-4 w-4 text-warning mt-0.5 shrink-0" />
+              <div className="text-warning text-xs">
                 <strong>Alert Only</strong> — the AI can warn you, but cannot close this trade.
                 At least one gate below is BLOCKED.
               </div>
@@ -174,15 +174,15 @@ export default function ProtectiveAutoClosePage() {
       </Card>
 
       {/* GATES */}
-      <Card className="bg-zinc-900 border-zinc-800">
+      <Card className="bg-card border-border">
         <CardHeader className="pb-2"><CardTitle className="text-white text-sm">Required gates</CardTitle></CardHeader>
-        <CardContent className="divide-y divide-zinc-800">
+        <CardContent className="divide-y divide-border">
           {gates.map((g) => <GateRow key={g.label} {...g} />)}
         </CardContent>
       </Card>
 
       {/* SETTINGS */}
-      <Card className="bg-zinc-900 border-zinc-800">
+      <Card className="bg-card border-border">
         <CardHeader className="pb-3"><CardTitle className="text-white text-sm">Your preferences</CardTitle></CardHeader>
         <CardContent className="space-y-4 text-sm">
           <div className="flex items-center justify-between gap-4">
@@ -194,7 +194,7 @@ export default function ProtectiveAutoClosePage() {
           </div>
 
           {effectiveEnabled && (
-            <label className="flex items-start gap-2 rounded border border-amber-500/30 bg-amber-500/5 p-3 cursor-pointer">
+            <label className="flex items-start gap-2 rounded border border-warning/30 bg-warning/5 p-3 cursor-pointer">
               <input
                 type="checkbox"
                 className="mt-1"
@@ -202,7 +202,7 @@ export default function ProtectiveAutoClosePage() {
                 onChange={(e) => setAcknowledged(e.target.checked)}
                 data-testid="checkbox-pac-acknowledge"
               />
-              <span className="text-xs text-amber-100">
+              <span className="text-xs text-warning">
                 I understand the AI may close or partially close my trades under my pre-authorized policy when I am inactive
                 <strong> and</strong> every gate above passes. I accept that no auto-close fires until ARX unlocks live execution.
               </span>
@@ -214,14 +214,14 @@ export default function ProtectiveAutoClosePage() {
               <label className="text-xs text-muted-foreground mb-1 block">Inactivity threshold (min)</label>
               <Input type="number" min={1} max={360} value={effectiveThreshold}
                 onChange={(e) => setPendingThreshold(Math.max(1, Math.min(360, parseInt(e.target.value, 10) || 1)))}
-                className="bg-zinc-800 border-zinc-700 text-white" data-testid="input-pac-threshold" />
+                className="bg-secondary border-border text-white" data-testid="input-pac-threshold" />
             </div>
             <div>
               <label className="text-xs text-muted-foreground mb-1 block">Mode</label>
               <select
                 value={effectiveMode}
                 onChange={(e) => setPendingMode(e.target.value as Mode)}
-                className="w-full bg-zinc-800 border border-zinc-700 text-white rounded px-2 py-2 text-sm"
+                className="w-full bg-secondary border border-border text-white rounded px-2 py-2 text-sm"
                 data-testid="select-pac-mode"
               >
                 <option value="ALERT_ONLY">ALERT_ONLY (warn me — never close)</option>
@@ -232,7 +232,7 @@ export default function ProtectiveAutoClosePage() {
           </div>
 
           {saveMsg && (
-            <div className="text-xs rounded border border-zinc-800 bg-zinc-950/60 p-2 text-foreground/80" data-testid="text-pac-save-msg">{saveMsg}</div>
+            <div className="text-xs rounded border border-border bg-background/60 p-2 text-foreground/80" data-testid="text-pac-save-msg">{saveMsg}</div>
           )}
 
           <div className="flex flex-wrap gap-2">
@@ -263,7 +263,7 @@ export default function ProtectiveAutoClosePage() {
           </div>
 
           <div className="text-xs text-muted-foreground italic">
-            Activity: <strong className={act.status === "UNKNOWN" ? "text-amber-300" : act.status === "INACTIVE" ? "text-emerald-300" : "text-foreground"}>{act.status}</strong> — {act.reason}
+            Activity: <strong className={act.status === "UNKNOWN" ? "text-warning" : act.status === "INACTIVE" ? "text-success" : "text-foreground"}>{act.status}</strong> — {act.reason}
           </div>
         </CardContent>
       </Card>

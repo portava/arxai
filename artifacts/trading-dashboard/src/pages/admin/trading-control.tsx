@@ -204,7 +204,7 @@ export default function AdminTradingControlPage() {
   const suspendedCount = users.filter((u) => u.permissions?.suspended).length;
 
   return (
-    <div className="mx-auto w-full max-w-[1280px] space-y-5 p-4 md:p-6 pb-32 md:pb-6">
+    <div className="mx-auto w-full max-w-[1280px] space-y-5 pb-32 md:pb-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Admin Trading Control</h1>

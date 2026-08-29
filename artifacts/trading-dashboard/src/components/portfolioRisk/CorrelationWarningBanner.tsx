@@ -36,10 +36,10 @@ export function CorrelationWarningBanner() {
   if (reports.length === 0) return null;
   const hasCritical = reports.some((r) => r.riskLevel === "CRITICAL");
   return (
-    <div className={`rounded-md border p-3 text-sm ${hasCritical ? "border-red-700 bg-red-950/60 text-red-100 animate-pulse" : "border-orange-700 bg-orange-950/40 text-orange-100"}`}>
+    <div className={`rounded-md border p-3 text-sm ${hasCritical ? "border-danger/40 bg-danger/60 text-danger animate-pulse" : "border-warning/40 bg-warning/40 text-warning"}`}>
       <div className="flex items-center justify-between">
         <div className="font-semibold">⚠ Correlated exposure detected</div>
-        <button onClick={() => refresh.mutate()} className="rounded bg-slate-800/80 px-2 py-0.5 text-[10px] font-semibold text-slate-100 hover:bg-slate-700">
+        <button onClick={() => refresh.mutate()} className="rounded bg-muted/80 px-2 py-0.5 text-[10px] font-semibold text-foreground hover:bg-muted">
           Re-scan
         </button>
       </div>

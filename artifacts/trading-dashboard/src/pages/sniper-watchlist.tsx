@@ -28,10 +28,10 @@ type WatchItem = {
 };
 
 const tierStyle: Record<string, string> = {
-  urgent: "border-rose-700 bg-rose-500/5 text-rose-300",
-  warning: "border-amber-700 bg-amber-500/5 text-amber-300",
-  watch: "border-blue-700 bg-blue-500/5 text-blue-300",
-  info: "border-zinc-700 bg-zinc-500/5 text-zinc-300",
+  urgent: "border-danger/40 bg-danger/5 text-danger",
+  warning: "border-warning/40 bg-warning/5 text-warning",
+  watch: "border-primary/40 bg-primary/5 text-primary",
+  info: "border-border bg-muted text-txt-secondary",
 };
 
 export default function SniperWatchlistPage() {
@@ -101,7 +101,7 @@ export default function SniperWatchlistPage() {
                   <CardTitle className="flex items-center justify-between text-sm">
                     <div className="flex items-center gap-2">
                       {it.side === "BUY" ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                      <span className="text-zinc-100">{it.symbol}</span>
+                      <span className="text-foreground">{it.symbol}</span>
                       <Badge variant="outline" className="text-[10px]">{it.side} · {it.lotSize}</Badge>
                       <Badge variant="outline" className="text-[10px] uppercase">{it.urgencyTier}</Badge>
                     </div>
@@ -113,18 +113,18 @@ export default function SniperWatchlistPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-1 text-xs">
-                  <div className="grid grid-cols-2 gap-1 text-zinc-400 md:grid-cols-4">
-                    <div>P&L: <span className="text-zinc-100">{it.unrealizedPnl?.toFixed?.(2) ?? "—"}</span></div>
-                    <div>Peak: <span className="text-zinc-100">{it.peakPnl?.toFixed?.(2) ?? "—"}</span></div>
-                    <div>Giveback: <span className="text-zinc-100">{it.profitGivebackPercent ?? "—"}%</span></div>
-                    <div>Urgency: <span className="text-zinc-100">{it.closeUrgencyScore ?? "—"}</span></div>
+                  <div className="grid grid-cols-2 gap-1 text-txt-secondary md:grid-cols-4">
+                    <div>P&L: <span className="text-foreground">{it.unrealizedPnl?.toFixed?.(2) ?? "—"}</span></div>
+                    <div>Peak: <span className="text-foreground">{it.peakPnl?.toFixed?.(2) ?? "—"}</span></div>
+                    <div>Giveback: <span className="text-foreground">{it.profitGivebackPercent ?? "—"}%</span></div>
+                    <div>Urgency: <span className="text-foreground">{it.closeUrgencyScore ?? "—"}</span></div>
                   </div>
                   <div className="flex flex-wrap gap-1 pt-1">
                     {it.reasons.map((r) => (
                       <Badge key={r} variant="outline" className="text-[10px]">{r}</Badge>
                     ))}
                   </div>
-                  {it.label && <div className="pt-1 text-zinc-300">{it.label}</div>}
+                  {it.label && <div className="pt-1 text-txt-secondary">{it.label}</div>}
                 </CardContent>
               </Card>
             </Link>

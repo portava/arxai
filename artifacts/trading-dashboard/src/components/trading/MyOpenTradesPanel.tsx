@@ -68,11 +68,11 @@ function actionBadgeVariant(action: string | null | undefined): "default" | "des
 }
 
 function urgencyColor(score: number | null | undefined): string {
-  if (score == null) return "text-zinc-400";
-  if (score >= 80) return "text-rose-400";
-  if (score >= 60) return "text-amber-400";
-  if (score >= 40) return "text-yellow-400";
-  return "text-emerald-400";
+  if (score == null) return "text-txt-secondary";
+  if (score >= 80) return "text-danger";
+  if (score >= 60) return "text-warning";
+  if (score >= 40) return "text-warning";
+  return "text-success";
 }
 
 function alignVariant(a: MarketCtxBadge["trendAlignment"]): "default" | "destructive" | "secondary" | "outline" {
@@ -116,7 +116,7 @@ function TradeMarketContextBadge({ card }: { card: OpenCard }) {
   }, [card.id]);
   if (unavailable) {
     return (
-      <div className="rounded border border-zinc-800 bg-zinc-900/30 px-2 py-1 text-[11px] text-zinc-500"
+      <div className="rounded border border-border bg-muted/30 px-2 py-1 text-[11px] text-txt-muted"
            data-testid={`market-ctx-${card.id}`}>
         Live market context unavailable for this symbol.
       </div>
@@ -125,7 +125,7 @@ function TradeMarketContextBadge({ card }: { card: OpenCard }) {
   if (!ctx) return null;
   return (
     <div className="flex flex-wrap items-center gap-1 text-[10px]" data-testid={`market-ctx-${card.id}`}>
-      <Badge variant="outline" className="border-zinc-700">
+      <Badge variant="outline" className="border-border">
         {ctx.primaryTimeframe ?? "TF?"} · {ctx.classificationLabel ?? "—"}
       </Badge>
       {ctx.tradeLabel && (
@@ -134,7 +134,7 @@ function TradeMarketContextBadge({ card }: { card: OpenCard }) {
         </Badge>
       )}
       {ctx.dataQuality && ctx.dataQuality !== "good" && (
-        <Badge variant="outline" className="border-amber-700/50 text-amber-300">
+        <Badge variant="outline" className="border-warning/50 text-warning">
           data: {ctx.dataQuality}
         </Badge>
       )}
@@ -157,19 +157,19 @@ type DecisionResponse = {
 };
 
 function decisionTone(label: string): { variant: "default" | "secondary" | "destructive" | "outline"; cls: string } {
-  if (/invalidated/i.test(label)) return { variant: "destructive", cls: "border-rose-700/60" };
-  if (/exit risk|review full close|invalidation near/i.test(label)) return { variant: "destructive", cls: "border-rose-700/40" };
-  if (/protect profit|review partial close|move stop|trail stop|hold but monitor/i.test(label)) return { variant: "secondary", cls: "border-amber-700/50 text-amber-200" };
-  if (/^hold$|healthy pullback|continuation still valid/i.test(label)) return { variant: "default", cls: "border-emerald-700/40 text-emerald-200" };
-  if (/data insufficient/i.test(label)) return { variant: "outline", cls: "border-zinc-700 text-zinc-400" };
-  return { variant: "outline", cls: "border-zinc-700" };
+  if (/invalidated/i.test(label)) return { variant: "destructive", cls: "border-danger/60" };
+  if (/exit risk|review full close|invalidation near/i.test(label)) return { variant: "destructive", cls: "border-danger/40" };
+  if (/protect profit|review partial close|move stop|trail stop|hold but monitor/i.test(label)) return { variant: "secondary", cls: "border-warning/50 text-warning" };
+  if (/^hold$|healthy pullback|continuation still valid/i.test(label)) return { variant: "default", cls: "border-success/40 text-success" };
+  if (/data insufficient/i.test(label)) return { variant: "outline", cls: "border-border text-txt-secondary" };
+  return { variant: "outline", cls: "border-border" };
 }
 
 function urgencyBadgeColor(u: number | null): string {
-  if (u == null) return "text-zinc-400";
-  if (u >= 80) return "text-rose-300";
-  if (u >= 60) return "text-amber-300";
-  return "text-zinc-300";
+  if (u == null) return "text-txt-secondary";
+  if (u >= 80) return "text-danger";
+  if (u >= 60) return "text-warning";
+  return "text-txt-secondary";
 }
 
 function DecisionOverlay({ card, onReviewClose }: { card: OpenCard; onReviewClose: () => void }) {
@@ -195,7 +195,7 @@ function DecisionOverlay({ card, onReviewClose }: { card: OpenCard; onReviewClos
   if (unavailable) return null;
   if (!dec) {
     return (
-      <div className="rounded border border-zinc-800 bg-zinc-900/30 px-2 py-1 text-[11px] text-zinc-500"
+      <div className="rounded border border-border bg-muted/30 px-2 py-1 text-[11px] text-txt-muted"
            data-testid={`decision-loading-${card.id}`}>
         Loading decision…
       </div>
@@ -204,18 +204,18 @@ function DecisionOverlay({ card, onReviewClose }: { card: OpenCard; onReviewClos
   const tone = decisionTone(dec.decisionLabel);
   const reviewIsClose = /^REVIEW_CLOSE$/i.test(dec.suggestedButton);
   return (
-    <div className="rounded border border-zinc-800 bg-zinc-900/40 p-2 text-xs space-y-1.5"
+    <div className="rounded border border-border bg-muted/40 p-2 text-xs space-y-1.5"
          data-testid={`decision-overlay-${card.id}`}>
       <div className="flex items-center justify-between gap-2">
         <Badge variant={tone.variant} className={`text-[10px] ${tone.cls}`}>
           {dec.decisionLabel}
         </Badge>
-        <span className="text-[10px] text-zinc-500">
+        <span className="text-[10px] text-txt-muted">
           urg <span className={urgencyBadgeColor(dec.urgencyScore)}>{dec.urgencyScore ?? "—"}</span>
-          {" · "}conf <span className="text-zinc-300">{dec.confidenceScore ?? "—"}</span>
+          {" · "}conf <span className="text-txt-secondary">{dec.confidenceScore ?? "—"}</span>
         </span>
       </div>
-      <p className="text-zinc-400 leading-snug">{dec.reasonSummary}</p>
+      <p className="text-txt-secondary leading-snug">{dec.reasonSummary}</p>
       {reviewIsClose && (
         <Button
           size="sm" variant="destructive" className="h-7 w-full text-[11px]"
@@ -247,34 +247,34 @@ function TradeIntelOverlay({ card }: { card: OpenCard }) {
 
   if (!intel) {
     return (
-      <div className="rounded border border-zinc-800 bg-zinc-900/30 p-2 text-xs text-zinc-500">
+      <div className="rounded border border-border bg-muted/30 p-2 text-xs text-txt-muted">
         <Sparkles className="mr-1 inline h-3 w-3" /> Loading AI insight…
       </div>
     );
   }
   return (
-    <div className="rounded border border-zinc-800 bg-zinc-900/40 p-2 text-xs space-y-1">
+    <div className="rounded border border-border bg-muted/40 p-2 text-xs space-y-1">
       <div className="flex items-center justify-between">
-        <span className="flex items-center gap-1 text-zinc-300">
-          <Sparkles className="h-3 w-3 text-violet-400" /> {intel.label ?? "—"}
+        <span className="flex items-center gap-1 text-txt-secondary">
+          <Sparkles className="h-3 w-3 text-premium" /> {intel.label ?? "—"}
         </span>
         <Badge variant={actionBadgeVariant(intel.recommendedAction)} className="text-[10px]">
           {intel.recommendedAction ?? "—"}
         </Badge>
       </div>
-      <div className="flex items-center gap-3 text-zinc-400">
+      <div className="flex items-center gap-3 text-txt-secondary">
         <span>Urgency: <span className={urgencyColor(intel.closeUrgencyScore)}>
           {intel.closeUrgencyScore ?? "—"}
         </span></span>
         {intel.peakPnl != null && (
-          <span>Peak: <span className="text-zinc-200">{intel.peakPnl.toFixed(2)}</span></span>
+          <span>Peak: <span className="text-foreground">{intel.peakPnl.toFixed(2)}</span></span>
         )}
         {intel.profitGivebackPercent != null && (
-          <span>Giveback: <span className="text-zinc-200">{intel.profitGivebackPercent}%</span></span>
+          <span>Giveback: <span className="text-foreground">{intel.profitGivebackPercent}%</span></span>
         )}
       </div>
       {intel.explanation && (
-        <p className="text-zinc-500 leading-snug">{intel.explanation}</p>
+        <p className="text-txt-muted leading-snug">{intel.explanation}</p>
       )}
     </div>
   );
@@ -309,7 +309,7 @@ export function MyOpenTradesPanel() {
   if (loading) {
     return (
       <Card>
-        <CardContent className="flex items-center gap-2 p-6 text-zinc-400">
+        <CardContent className="flex items-center gap-2 p-6 text-txt-secondary">
           <Loader2 className="h-4 w-4 animate-spin" /> Loading open trades…
         </CardContent>
       </Card>
@@ -319,7 +319,7 @@ export function MyOpenTradesPanel() {
   if (err) {
     return (
       <Card>
-        <CardContent className="flex items-center gap-2 p-6 text-rose-400">
+        <CardContent className="flex items-center gap-2 p-6 text-danger">
           <AlertTriangle className="h-4 w-4" /> Could not load open trades: {err}
         </CardContent>
       </Card>
@@ -331,39 +331,39 @@ export function MyOpenTradesPanel() {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 text-sm text-zinc-400">
-          <Badge variant="outline" className="border-zinc-700">
+        <div className="flex items-center gap-2 text-sm text-txt-secondary">
+          <Badge variant="outline" className="border-border">
             {data?.routingMode === "SHARED_MASTER_MT5" ? "Shared master" : "Your broker"}
           </Badge>
-          <Badge variant="outline" className="border-zinc-700 uppercase">
+          <Badge variant="outline" className="border-border uppercase">
             {data?.accountType ?? "unknown"}
           </Badge>
-          <Badge variant="outline" className="border-zinc-700">
+          <Badge variant="outline" className="border-border">
             {data?.tradingMode ?? "—"}
           </Badge>
           {data?.bannerLabel && (
-            <span className="text-xs text-zinc-500">{data.bannerLabel}</span>
+            <span className="text-xs text-txt-muted">{data.bannerLabel}</span>
           )}
         </div>
       </div>
 
       {cards.length === 0 ? (
         <Card>
-          <CardContent className="p-6 text-zinc-400">
+          <CardContent className="p-6 text-txt-secondary">
             No open trades right now.
           </CardContent>
         </Card>
       ) : (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           {cards.map((c) => (
-            <Card key={c.id} className="border-zinc-800">
+            <Card key={c.id} className="border-border">
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center justify-between text-base">
                   <span className="flex items-center gap-2">
                     {c.side === "BUY" ? (
-                      <TrendingUp className="h-4 w-4 text-emerald-400" />
+                      <TrendingUp className="h-4 w-4 text-success" />
                     ) : (
-                      <TrendingDown className="h-4 w-4 text-rose-400" />
+                      <TrendingDown className="h-4 w-4 text-danger" />
                     )}
                     {c.symbol}
                     <Badge variant="outline" className="ml-1 text-xs">
@@ -376,27 +376,27 @@ export function MyOpenTradesPanel() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2 text-sm">
-                <div className="grid grid-cols-2 gap-2 text-zinc-400">
-                  <div>Entry: <span className="text-zinc-200">{c.entryPrice ?? "—"}</span></div>
-                  <div>Now: <span className="text-zinc-200">{c.currentPrice ?? "—"}</span></div>
-                  <div>SL: <span className="text-zinc-200">{c.stopLoss ?? "—"}</span></div>
-                  <div>TP: <span className="text-zinc-200">{c.takeProfit ?? "—"}</span></div>
+                <div className="grid grid-cols-2 gap-2 text-txt-secondary">
+                  <div>Entry: <span className="text-foreground">{c.entryPrice ?? "—"}</span></div>
+                  <div>Now: <span className="text-foreground">{c.currentPrice ?? "—"}</span></div>
+                  <div>SL: <span className="text-foreground">{c.stopLoss ?? "—"}</span></div>
+                  <div>TP: <span className="text-foreground">{c.takeProfit ?? "—"}</span></div>
                 </div>
                 {c.waitingForSync ? (
-                  <div className="flex items-center gap-2 rounded bg-amber-500/10 px-2 py-1 text-xs text-amber-300">
+                  <div className="flex items-center gap-2 rounded bg-warning/10 px-2 py-1 text-xs text-warning">
                     <Loader2 className="h-3 w-3 animate-spin" /> Confirmed at broker — awaiting first MT5 price sync; live P&L not yet available.
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">
                     <span className={`text-lg font-semibold ${
-                      (c.unrealizedPnl ?? 0) > 0 ? "text-emerald-400"
-                        : (c.unrealizedPnl ?? 0) < 0 ? "text-rose-400" : "text-zinc-300"
+                      (c.unrealizedPnl ?? 0) > 0 ? "text-success"
+                        : (c.unrealizedPnl ?? 0) < 0 ? "text-danger" : "text-txt-secondary"
                     }`} data-testid={`pnl-${c.id}`}>
                       {(c.unrealizedPnl ?? 0) >= 0 ? "+" : ""}
                       {(c.unrealizedPnl ?? 0).toFixed(2)}
                     </span>
                     {c.pnlPercent !== null && (
-                      <span className="text-xs text-zinc-400">({c.pnlPercent}%)</span>
+                      <span className="text-xs text-txt-secondary">({c.pnlPercent}%)</span>
                     )}
                     {c.pnlIsEstimate && (
                       <Badge variant="outline" className="text-[10px]">est.</Badge>
@@ -404,7 +404,7 @@ export function MyOpenTradesPanel() {
                   </div>
                 )}
                 {c.brokerLabelMasked && (
-                  <div className="text-xs text-zinc-500">via {c.brokerLabelMasked}</div>
+                  <div className="text-xs text-txt-muted">via {c.brokerLabelMasked}</div>
                 )}
                 {!c.waitingForSync && <TradeMarketContextBadge card={c} />}
                 <div className="text-[10px]">

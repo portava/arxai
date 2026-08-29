@@ -122,7 +122,7 @@ export default function BotControl() {
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium">State:</span>
                 <div className={`px-3 py-1 rounded-md text-xs font-bold uppercase tracking-wider font-mono ${
-                  localStatus.isRunning ? (localStatus.isPaused ? "bg-yellow-500/20 text-yellow-500" : "bg-green-500/20 text-green-500") : "bg-muted text-muted-foreground"
+                  localStatus.isRunning ? (localStatus.isPaused ? "bg-warning/20 text-warning" : "bg-success/20 text-success") : "bg-muted text-muted-foreground"
                 }`}>
                   {localStatus.isRunning ? (localStatus.isPaused ? "PAUSED" : "RUNNING") : "STOPPED"}
                 </div>
@@ -156,7 +156,7 @@ export default function BotControl() {
                 <SelectContent>
                   <SelectItem value="Conservative">Conservative</SelectItem>
                   <SelectItem value="Balanced">Balanced</SelectItem>
-                  <SelectItem value="Aggressive" className="text-orange-500">Aggressive</SelectItem>
+                  <SelectItem value="Aggressive" className="text-warning">Aggressive</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -202,7 +202,7 @@ export default function BotControl() {
             <Button 
               variant={localStatus.isRunning && !localStatus.isPaused ? "secondary" : "default"}
               size="lg"
-              className={!localStatus.isRunning || localStatus.isPaused ? "bg-green-600 hover:bg-green-700 text-white" : ""}
+              className={!localStatus.isRunning || localStatus.isPaused ? "bg-success hover:bg-success/15 text-white" : ""}
               onClick={() => handleUpdate({ isRunning: true, isPaused: false })}
               disabled={updateBotStatus.isPending || (localStatus.isRunning && !localStatus.isPaused)}
             >
@@ -212,7 +212,7 @@ export default function BotControl() {
             <Button 
               variant="outline"
               size="lg"
-              className={localStatus.isPaused ? "bg-yellow-500/20 text-yellow-500 border-yellow-500/50" : ""}
+              className={localStatus.isPaused ? "bg-warning/20 text-warning border-warning/50" : ""}
               onClick={() => handleUpdate({ isPaused: !localStatus.isPaused })}
               disabled={!localStatus.isRunning || updateBotStatus.isPending}
             >

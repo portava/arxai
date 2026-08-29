@@ -66,27 +66,27 @@ function computeArmState(gate: GateResp["gate"] | undefined, isArmed: boolean): 
 function StatusBanner({ state, preArmFailed }: { state: ArmState; preArmFailed: number }) {
   const map: Record<ArmState, { cls: string; label: string; sub: string }> = {
     KILL_SWITCH_ACTIVE: {
-      cls: "bg-red-700/40 border-red-500 text-red-100",
+      cls: "bg-danger/40 border-danger text-danger",
       label: "KILL SWITCH ACTIVE",
       sub: "Live broker dispatch is force-disabled. Release the kill switch before re-arming.",
     },
     ARMED: {
-      cls: "bg-emerald-700/30 border-emerald-500 text-emerald-100",
+      cls: "bg-success/30 border-success text-success",
       label: "LIVE BROKER EXECUTION ENABLED",
       sub: "Live orders will dispatch to the broker. Kill switch overrides this state.",
     },
     READY_TO_ARM: {
-      cls: "bg-amber-700/30 border-amber-500 text-amber-100",
+      cls: "bg-warning/30 border-warning text-warning",
       label: "READY TO ARM — EA READY / SERVER DISPATCH OFF",
       sub: "All pre-arm checks pass. Server dispatch is OFF (safe default). Admin must arm to enable broker orders.",
     },
     LOCKED: {
-      cls: "bg-rose-900/30 border-rose-500/60 text-rose-100",
+      cls: "bg-danger/30 border-danger/60 text-danger",
       label: `LOCKED — ${preArmFailed} pre-arm check(s) failing`,
       sub: "Resolve the pre-arm checklist below before live trading can be armed.",
     },
     EVALUATING: {
-      cls: "bg-zinc-800/60 border-zinc-700 text-zinc-300",
+      cls: "bg-muted/60 border-border text-txt-secondary",
       label: "EVALUATING…",
       sub: "Fetching live readiness state from the server.",
     },
@@ -105,9 +105,9 @@ function DetectedValueRow({
 }: { label: string; value: string | null; onCopyExact: () => void; testId: string }) {
   return (
     <div className="flex items-center justify-between gap-2 text-xs">
-      <span className="text-zinc-400 shrink-0">{label}</span>
+      <span className="text-txt-secondary shrink-0">{label}</span>
       <div className="flex items-center gap-1 min-w-0">
-        <code className="font-mono text-zinc-200 truncate" data-testid={`${testId}-value`}>
+        <code className="font-mono text-foreground truncate" data-testid={`${testId}-value`}>
           {value ?? "—"}
         </code>
         <Button
@@ -244,12 +244,12 @@ export function LiveTradingUnlockCard() {
   const dispatchCheck = gate?.checks?.find((c) => c.key === "SERVER_LIVE_FLAG");
 
   return (
-    <Card className="border-red-500/30 overflow-hidden" data-testid="live-unlock-card">
+    <Card className="border-danger/30 overflow-hidden" data-testid="live-unlock-card">
       <CardHeader>
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="min-w-0">
             <CardTitle className="flex items-center gap-2">
-              <Zap className="h-5 w-5 text-red-400" /> Live Trading Unlock
+              <Zap className="h-5 w-5 text-danger" /> Live Trading Unlock
             </CardTitle>
             <CardDescription>
               Pre-arm checks must pass. Server dispatch arms separately (admin-only).
@@ -257,15 +257,15 @@ export function LiveTradingUnlockCard() {
             </CardDescription>
           </div>
           {isArmed
-            ? <Badge className="bg-red-500/20 text-red-300 border border-red-500/50" data-testid="live-armed-badge">LIVE ARMED</Badge>
+            ? <Badge className="bg-danger/20 text-danger border border-danger/50" data-testid="live-armed-badge">LIVE ARMED</Badge>
             : <Badge variant="outline" data-testid="live-disarmed-badge">DISARMED</Badge>}
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
         <StatusBanner state={armState} preArmFailed={gate?.preArmFailedCount ?? 0} />
 
-        <Alert className="border-red-500/40 bg-red-500/10">
-          <AlertTriangle className="h-4 w-4 text-red-400" />
+        <Alert className="border-danger/40 bg-danger/10">
+          <AlertTriangle className="h-4 w-4 text-danger" />
           <AlertTitle>This is real money territory</AlertTitle>
           <AlertDescription>
             Live trading sends orders to a real broker account. Losses are permanent.
@@ -274,10 +274,10 @@ export function LiveTradingUnlockCard() {
         </Alert>
 
         {/* Detected bridge values — operator copies these into the inputs below. */}
-        <div className="rounded-md border border-zinc-800 bg-zinc-950/50 p-3 space-y-1.5"
+        <div className="rounded-md border border-border bg-background/50 p-3 space-y-1.5"
              data-testid="detected-bridge">
-          <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-300 mb-1">
-            <ShieldAlert className="h-3.5 w-3.5 text-amber-400" />
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-txt-secondary mb-1">
+            <ShieldAlert className="h-3.5 w-3.5 text-warning" />
             Detected from your freshest non-revoked LIVE bridge
           </div>
           <DetectedValueRow label="MT5 account #" value={detected.accountNumber}
@@ -339,7 +339,7 @@ export function LiveTradingUnlockCard() {
 
         <div>
           <Label htmlFor="lt-phrase">
-            Type exactly: <span className="font-mono font-bold text-red-300">{CONFIRM_PHRASE}</span>
+            Type exactly: <span className="font-mono font-bold text-danger">{CONFIRM_PHRASE}</span>
           </Label>
           <Input id="lt-phrase" value={confirmationPhrase}
             onChange={(e) => setPhrase(e.target.value)}
@@ -347,7 +347,7 @@ export function LiveTradingUnlockCard() {
             data-testid="input-confirm-phrase" />
           {/* Admin-only phrase debug — server omits phraseDebug for non-admins. */}
           {phraseDebug && (
-            <div className="mt-1 text-[11px] text-zinc-500 font-mono" data-testid="phrase-debug">
+            <div className="mt-1 text-[11px] text-txt-muted font-mono" data-testid="phrase-debug">
               [admin debug] received {phraseDebug.receivedLength} chars
               {phraseDebug.isEmpty ? " (EMPTY)" : ""} · expected {phraseDebug.expectedLength}
               {" · "}match-after-trim={String(phraseDebug.matchedAfterTrim)}
@@ -357,22 +357,22 @@ export function LiveTradingUnlockCard() {
 
         {/* Server dispatch status — shown separately, NOT in the locked count. */}
         {dispatchCheck && (
-          <div className="rounded-md border border-zinc-800 bg-zinc-950/50 p-3"
+          <div className="rounded-md border border-border bg-background/50 p-3"
                data-testid="server-dispatch-status">
             <div className="flex items-center gap-2 text-sm">
-              <Power className={`h-4 w-4 ${gate?.serverDispatchEnabled ? "text-emerald-400" : "text-amber-400"}`} />
+              <Power className={`h-4 w-4 ${gate?.serverDispatchEnabled ? "text-success" : "text-warning"}`} />
               <span className="font-semibold">Server dispatch:</span>
-              <span className={gate?.serverDispatchEnabled ? "text-emerald-300" : "text-amber-300"}>
+              <span className={gate?.serverDispatchEnabled ? "text-success" : "text-warning"}>
                 {gate?.serverDispatchEnabled ? "On — live orders will be sent to the broker" : "Off — waiting on admin to enable"}
               </span>
             </div>
-            <div className="text-xs text-zinc-500 mt-0.5">
+            <div className="text-xs text-txt-muted mt-0.5">
               Kill switch overrides both states. Server dispatch is admin-controlled.
             </div>
           </div>
         )}
 
-        <div className="rounded-md border border-zinc-800 bg-zinc-950/50 p-3" data-testid="live-checklist">
+        <div className="rounded-md border border-border bg-background/50 p-3" data-testid="live-checklist">
           <div className="flex items-center justify-between mb-2">
             <div className="text-sm font-semibold">Pre-arm checklist</div>
             <div className="text-xs text-muted-foreground">
@@ -383,28 +383,28 @@ export function LiveTradingUnlockCard() {
             {preArmChecks.map((c) => (
               <li key={c.id} className="flex items-start gap-2 text-sm" data-testid={`check-${c.key}`}>
                 {c.passed
-                  ? <CheckCircle2 className="h-4 w-4 mt-0.5 text-emerald-400 shrink-0" />
-                  : <XCircle className="h-4 w-4 mt-0.5 text-rose-400 shrink-0" />}
+                  ? <CheckCircle2 className="h-4 w-4 mt-0.5 text-success shrink-0" />
+                  : <XCircle className="h-4 w-4 mt-0.5 text-danger shrink-0" />}
                 <div className="min-w-0 break-words flex-1">
-                  <div className={c.passed ? "text-zinc-200" : "text-zinc-100"}>
-                    <span className="text-xs text-zinc-500 mr-1.5">#{c.id}</span>{c.label}
+                  <div className={c.passed ? "text-foreground" : "text-foreground"}>
+                    <span className="text-xs text-txt-muted mr-1.5">#{c.id}</span>{c.label}
                   </div>
                   {!c.passed && c.reason && (
-                    <div className="text-xs text-rose-300/80 mt-0.5 break-words"
+                    <div className="text-xs text-danger/80 mt-0.5 break-words"
                          data-testid={`reason-${c.key}`}>{c.reason}</div>
                   )}
                   {/* Admin-only per-character debug for #12. phraseDebug is
                       admin-only so we use its presence as the admin signal. */}
                   {c.key === "ACCOUNT_BROKER_CONFIRMED" && phraseDebug && (
-                    <div className="mt-1 rounded border border-zinc-800 bg-zinc-950 p-2 text-[10px] font-mono text-zinc-400 space-y-0.5"
+                    <div className="mt-1 rounded border border-border bg-background p-2 text-[10px] font-mono text-txt-secondary space-y-0.5"
                          data-testid="account-broker-debug">
                       <div>[admin debug] hidden chars made visible:</div>
-                      <div>account  received: <span className="text-zinc-200">{asLiteral(accountNumber)}</span></div>
-                      <div>account  expected: <span className="text-zinc-200">{asLiteral(detected.accountNumber ?? "")}</span></div>
-                      <div>broker   received: <span className="text-zinc-200">{asLiteral(brokerConfirmed)}</span></div>
-                      <div>broker   expected: <span className="text-zinc-200">{asLiteral(detected.brokerName ?? "")}</span></div>
-                      <div>server   received: <span className="text-zinc-200">{asLiteral(serverConfirmed)}</span></div>
-                      <div>server   expected: <span className="text-zinc-200">{asLiteral(detected.serverName ?? "")}</span></div>
+                      <div>account  received: <span className="text-foreground">{asLiteral(accountNumber)}</span></div>
+                      <div>account  expected: <span className="text-foreground">{asLiteral(detected.accountNumber ?? "")}</span></div>
+                      <div>broker   received: <span className="text-foreground">{asLiteral(brokerConfirmed)}</span></div>
+                      <div>broker   expected: <span className="text-foreground">{asLiteral(detected.brokerName ?? "")}</span></div>
+                      <div>server   received: <span className="text-foreground">{asLiteral(serverConfirmed)}</span></div>
+                      <div>server   expected: <span className="text-foreground">{asLiteral(detected.serverName ?? "")}</span></div>
                     </div>
                   )}
                 </div>

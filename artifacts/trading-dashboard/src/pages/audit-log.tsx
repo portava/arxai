@@ -75,7 +75,7 @@ export default function AuditLogPage({ defaultTab = "audit" as TabKey }: { defau
   const activeBlurb = TABS.find((t) => t.key === tab)?.blurb ?? "";
 
   return (
-    <div className="space-y-4 p-4" data-testid="page-audit-log">
+    <div className="space-y-4" data-testid="page-audit-log">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Records</h1>

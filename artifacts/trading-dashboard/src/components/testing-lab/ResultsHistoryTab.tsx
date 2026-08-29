@@ -68,11 +68,11 @@ export function ResultsHistoryTab({ strategyId }: { strategyId?: string }) {
         <CardHeader><CardTitle className="text-base">Backtest runs</CardTitle></CardHeader>
         <CardContent>
           {runs.length === 0 ? (
-            <p className="text-xs text-slate-500">No backtest runs yet.</p>
+            <p className="text-xs text-txt-muted">No backtest runs yet.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
-                <thead className="text-slate-400">
+                <thead className="text-txt-secondary">
                   <tr>
                     <th className="py-1 pr-3">Strategy</th>
                     <th className="py-1 pr-3">Symbol</th>
@@ -84,22 +84,22 @@ export function ResultsHistoryTab({ strategyId }: { strategyId?: string }) {
                     <th className="py-1 pr-3">Readiness</th>
                   </tr>
                 </thead>
-                <tbody className="font-mono text-slate-200">
+                <tbody className="font-mono text-foreground">
                   {runs.map((r) => {
                     const rd = readiness(r);
                     return (
-                      <tr key={r.id} className="border-t border-slate-800">
+                      <tr key={r.id} className="border-t border-border">
                         <td className="py-1 pr-3">{r.strategyId}</td>
                         <td className="py-1 pr-3">{r.symbol}</td>
                         <td className="py-1 pr-3">{r.timeframe}</td>
                         <td className="py-1 pr-3">{r.totalTrades}</td>
                         <td className="py-1 pr-3">{(r.winRate * 100).toFixed(0)}%</td>
                         <td className="py-1 pr-3">{r.profitFactor >= 999 ? "∞" : r.profitFactor.toFixed(2)}</td>
-                        <td className={`py-1 pr-3 ${r.netProfitLoss >= 0 ? "text-emerald-400" : "text-red-400"}`}>{r.netProfitLoss.toFixed(2)}</td>
+                        <td className={`py-1 pr-3 ${r.netProfitLoss >= 0 ? "text-success" : "text-danger"}`}>{r.netProfitLoss.toFixed(2)}</td>
                         <td className="py-1 pr-3">
                           <Badge className={
-                            rd.tone === "ready" ? "bg-emerald-500/20 text-emerald-300"
-                              : rd.tone === "warn" ? "bg-amber-500/20 text-amber-300"
+                            rd.tone === "ready" ? "bg-success/20 text-success"
+                              : rd.tone === "warn" ? "bg-warning/20 text-warning"
                                 : ""
                           }>{rd.label}</Badge>
                         </td>
@@ -117,12 +117,12 @@ export function ResultsHistoryTab({ strategyId }: { strategyId?: string }) {
         <CardHeader><CardTitle className="text-base">Forward test summary</CardTitle></CardHeader>
         <CardContent className="text-sm">
           {fwdTracked === 0 ? (
-            <p className="text-xs text-slate-500">No forward-test results yet.</p>
+            <p className="text-xs text-txt-muted">No forward-test results yet.</p>
           ) : (
             <div className="grid gap-1 sm:grid-cols-3">
-              <span className="text-slate-400">Tracked: <span className="font-mono text-slate-100">{fwdTracked}</span></span>
-              <span className="text-slate-400">Win rate: <span className="font-mono text-slate-100">{fwd?.winRate}%</span></span>
-              <span className="text-slate-400">Avg R: <span className="font-mono text-slate-100">{fwd?.avgR}</span></span>
+              <span className="text-txt-secondary">Tracked: <span className="font-mono text-foreground">{fwdTracked}</span></span>
+              <span className="text-txt-secondary">Win rate: <span className="font-mono text-foreground">{fwd?.winRate}%</span></span>
+              <span className="text-txt-secondary">Avg R: <span className="font-mono text-foreground">{fwd?.avgR}</span></span>
             </div>
           )}
         </CardContent>

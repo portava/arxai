@@ -63,7 +63,7 @@ function Boolean({ label, value, bad, expected }: { label: string; value: boolea
   const isOk = expected !== undefined ? value === expected : (bad ? !value : value);
   return <Card><CardContent className="p-4">
     <p className="text-xs text-muted-foreground uppercase">{label}</p>
-    <Badge className={isOk ? "bg-emerald-500/20 text-emerald-400 mt-1" : "bg-rose-500/20 text-rose-400 mt-1"}>
+    <Badge className={isOk ? "bg-success/20 text-success mt-1" : "bg-danger/20 text-danger mt-1"}>
       {value ? "yes" : "no"}
     </Badge>
   </CardContent></Card>;

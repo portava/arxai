@@ -17,10 +17,10 @@ const WINDOW_LABEL: Record<string, string> = {
 };
 
 const BIAS_TONE: Record<string, string> = {
-  BULLISH: "text-emerald-300",
-  BEARISH: "text-rose-300",
-  MIXED: "text-amber-300",
-  INSUFFICIENT_DATA: "text-slate-400",
+  BULLISH: "text-success",
+  BEARISH: "text-danger",
+  MIXED: "text-warning",
+  INSUFFICIENT_DATA: "text-txt-secondary",
 };
 
 export function HistoricalCheckPanel({ symbol, timeframe = "1d", defaultOpen = false }: Props) {
@@ -39,7 +39,7 @@ export function HistoricalCheckPanel({ symbol, timeframe = "1d", defaultOpen = f
 
   return (
     <div
-      className="rounded border border-slate-700 bg-slate-900/50 p-2 text-xs"
+      className="rounded border border-border bg-muted/50 p-2 text-xs"
       data-testid="historical-check-panel"
     >
       <button
@@ -47,7 +47,7 @@ export function HistoricalCheckPanel({ symbol, timeframe = "1d", defaultOpen = f
         className="flex w-full items-center justify-between"
         onClick={() => setOpen((v) => !v)}
       >
-        <span className="flex items-center gap-1.5 text-slate-300">
+        <span className="flex items-center gap-1.5 text-txt-secondary">
           <Clock className="h-3 w-3" />
           Historical Check
           {result?.bias && (
@@ -56,22 +56,22 @@ export function HistoricalCheckPanel({ symbol, timeframe = "1d", defaultOpen = f
             </span>
           )}
           {result?.bias?.confidence && (
-            <span className="ml-1 text-slate-500">
+            <span className="ml-1 text-txt-muted">
               ({result.bias.confidence.toLowerCase()} confidence · {result.bias.sampleSize}/5)
             </span>
           )}
         </span>
-        {open ? <ChevronDown className="h-3 w-3 text-slate-400" /> : <ChevronRight className="h-3 w-3 text-slate-400" />}
+        {open ? <ChevronDown className="h-3 w-3 text-txt-secondary" /> : <ChevronRight className="h-3 w-3 text-txt-secondary" />}
       </button>
 
       {open && (
         <div className="mt-2 space-y-1.5">
           {mut.isPending && !result && (
-            <div className="text-slate-400">Loading same-time comparison…</div>
+            <div className="text-txt-secondary">Loading same-time comparison…</div>
           )}
 
           {failed && (
-            <div className="flex items-start gap-1 text-amber-300">
+            <div className="flex items-start gap-1 text-warning">
               <AlertCircle className="mt-0.5 h-3 w-3" />
               <span>Historical data is temporarily unavailable.</span>
             </div>
@@ -79,24 +79,24 @@ export function HistoricalCheckPanel({ symbol, timeframe = "1d", defaultOpen = f
 
           {result && (
             <>
-              <div className="text-slate-400">{result.bias.explanation}</div>
+              <div className="text-txt-secondary">{result.bias.explanation}</div>
 
               <div className="grid grid-cols-5 gap-1 pt-1">
                 {result.windows.map((w) => (
                   <div
                     key={w.label}
-                    className="rounded border border-slate-700 bg-slate-900 p-1 text-center"
+                    className="rounded border border-border bg-card p-1 text-center"
                     title={w.unavailableReason ?? ""}
                   >
-                    <div className="text-[10px] text-slate-500">{WINDOW_LABEL[w.label] ?? w.label}</div>
+                    <div className="text-[10px] text-txt-muted">{WINDOW_LABEL[w.label] ?? w.label}</div>
                     {w.available && w.direction ? (
                       <div
                         className={`text-xs font-semibold ${
                           w.direction === "UP"
-                            ? "text-emerald-300"
+                            ? "text-success"
                             : w.direction === "DOWN"
-                            ? "text-rose-300"
-                            : "text-slate-300"
+                            ? "text-danger"
+                            : "text-txt-secondary"
                         }`}
                       >
                         {w.direction === "UP" ? "▲" : w.direction === "DOWN" ? "▼" : "—"}
@@ -108,37 +108,37 @@ export function HistoricalCheckPanel({ symbol, timeframe = "1d", defaultOpen = f
                         )}
                       </div>
                     ) : (
-                      <div className="text-[10px] text-slate-500">unavailable</div>
+                      <div className="text-[10px] text-txt-muted">unavailable</div>
                     )}
                   </div>
                 ))}
               </div>
 
               {result.setupSummary.sampleSize > 0 && (
-                <div className="mt-1 grid grid-cols-4 gap-1 rounded border border-slate-700 bg-slate-900 p-1 text-[10px]">
+                <div className="mt-1 grid grid-cols-4 gap-1 rounded border border-border bg-card p-1 text-[10px]">
                   <div>
-                    <div className="text-slate-500">Sample</div>
-                    <div className="font-mono text-slate-200">{result.setupSummary.sampleSize}/5</div>
+                    <div className="text-txt-muted">Sample</div>
+                    <div className="font-mono text-foreground">{result.setupSummary.sampleSize}/5</div>
                   </div>
                   <div>
-                    <div className="text-slate-500">Win rate</div>
-                    <div className="font-mono text-slate-200">
+                    <div className="text-txt-muted">Win rate</div>
+                    <div className="font-mono text-foreground">
                       {result.setupSummary.winRate != null
                         ? `${result.setupSummary.winRate.toFixed(0)}%`
                         : "—"}
                     </div>
                   </div>
                   <div>
-                    <div className="text-slate-500">Avg move</div>
-                    <div className="font-mono text-slate-200">
+                    <div className="text-txt-muted">Avg move</div>
+                    <div className="font-mono text-foreground">
                       {result.setupSummary.avgMovePct != null
                         ? `${result.setupSummary.avgMovePct.toFixed(2)}%`
                         : "—"}
                     </div>
                   </div>
                   <div>
-                    <div className="text-slate-500">Worst</div>
-                    <div className="font-mono text-rose-300">
+                    <div className="text-txt-muted">Worst</div>
+                    <div className="font-mono text-danger">
                       {result.setupSummary.worstDrawdownPct != null
                         ? `${result.setupSummary.worstDrawdownPct.toFixed(2)}%`
                         : "—"}
@@ -148,12 +148,12 @@ export function HistoricalCheckPanel({ symbol, timeframe = "1d", defaultOpen = f
               )}
 
               {result.dataQuality.coverageWarnings.length > 0 && (
-                <div className="pt-1 text-[10px] text-slate-500">
+                <div className="pt-1 text-[10px] text-txt-muted">
                   Some windows unavailable — bias is based on {result.bias.sampleSize} of 5 comparisons.
                 </div>
               )}
 
-              <div className="pt-1 text-[10px] text-slate-500">
+              <div className="pt-1 text-[10px] text-txt-muted">
                 Decision support only — not a buy or sell signal.
               </div>
             </>

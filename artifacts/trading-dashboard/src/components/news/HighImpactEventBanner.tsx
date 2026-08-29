@@ -23,8 +23,8 @@ export function HighImpactEventBanner() {
   if (events.length === 0) return null;
   const hasCritical = events.some((e) => e.impactLevel === "CRITICAL");
   const cls = hasCritical
-    ? "border-red-700 bg-red-950/60 text-red-100 animate-pulse"
-    : "border-orange-700 bg-orange-950/40 text-orange-100";
+    ? "border-danger/40 bg-danger/60 text-danger animate-pulse"
+    : "border-warning/40 bg-warning/40 text-warning";
   return (
     <div className={`rounded-md border p-3 text-sm ${cls}`}>
       <div className="font-semibold">⚠ {hasCritical ? "Critical" : "High-impact"} economic event{events.length > 1 ? "s" : ""} within 1 hour</div>

@@ -33,29 +33,29 @@ export function ForwardChartPanel() {
   }, []);
 
   if (error) {
-    return <p className="rounded border border-red-900/50 bg-red-950/20 p-6 text-center text-xs text-red-300">Could not load the forward chart series.</p>;
+    return <p className="rounded border border-danger/50 bg-danger/20 p-6 text-center text-xs text-danger">Could not load the forward chart series.</p>;
   }
   if (!data) {
-    return <p className="rounded border border-slate-700 bg-slate-900/40 p-6 text-center text-xs text-slate-500">Loading chart…</p>;
+    return <p className="rounded border border-border bg-muted/40 p-6 text-center text-xs text-txt-muted">Loading chart…</p>;
   }
 
   const points = data.equity as EquityPoint[];
   return (
-    <div className="space-y-3 rounded-lg border border-slate-700 bg-slate-900/40 p-3">
+    <div className="space-y-3 rounded-lg border border-border bg-muted/40 p-3">
       <div className="flex items-baseline justify-between">
-        <h3 className="text-sm font-semibold text-slate-100">Equity (R) & drawdown</h3>
-        <span className="rounded bg-slate-800 px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-400">
+        <h3 className="text-sm font-semibold text-foreground">Equity (R) & drawdown</h3>
+        <span className="rounded bg-secondary px-2 py-0.5 text-[10px] uppercase tracking-wide text-txt-secondary">
           {data.label}
         </span>
       </div>
-      <div className="grid gap-2 text-xs text-slate-400 sm:grid-cols-4">
-        <span>Tracked <span className="font-mono text-slate-200">{data.summary.tracked}</span></span>
-        <span>Realised <span className={`font-mono ${data.realizedR >= 0 ? "text-emerald-400" : "text-red-400"}`}>{data.realizedR >= 0 ? "+" : ""}{data.realizedR}R</span></span>
-        <span>Max DD <span className="font-mono text-red-300">{data.maxDrawdownR}R</span></span>
-        <span>Open <span className="font-mono text-slate-200">{data.openTrackingCount}</span></span>
+      <div className="grid gap-2 text-xs text-txt-secondary sm:grid-cols-4">
+        <span>Tracked <span className="font-mono text-foreground">{data.summary.tracked}</span></span>
+        <span>Realised <span className={`font-mono ${data.realizedR >= 0 ? "text-success" : "text-danger"}`}>{data.realizedR >= 0 ? "+" : ""}{data.realizedR}R</span></span>
+        <span>Max DD <span className="font-mono text-danger">{data.maxDrawdownR}R</span></span>
+        <span>Open <span className="font-mono text-foreground">{data.openTrackingCount}</span></span>
       </div>
       {points.length === 0 ? (
-        <p className="rounded border border-dashed border-slate-700 p-6 text-center text-xs text-slate-500">
+        <p className="rounded border border-dashed border-border p-6 text-center text-xs text-txt-muted">
           No closed forward-test outcomes yet.
         </p>
       ) : (
@@ -64,7 +64,7 @@ export function ForwardChartPanel() {
           <DrawdownChart points={points} maxDrawdown={data.maxDrawdownR} />
         </>
       )}
-      <p className="text-[10px] text-slate-500">
+      <p className="text-[10px] text-txt-muted">
         Observed shadow performance in R-multiples. Floating (unrealised) P/L is
         not marked-to-market here. No live orders are placed.
       </p>

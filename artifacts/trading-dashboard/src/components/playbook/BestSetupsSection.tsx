@@ -8,9 +8,9 @@ export function BestSetupsSection({ entries, onToggle }:
   const items = entries.filter((e) => BEST_TYPES.has(e.entryType));
   return (
     <section>
-      <h2 className="mb-2 text-sm font-semibold text-emerald-200">✓ Best setups & strengths ({items.length})</h2>
+      <h2 className="mb-2 text-sm font-semibold text-success">✓ Best setups & strengths ({items.length})</h2>
       {items.length === 0 ? (
-        <p className="rounded border border-dashed border-slate-700 p-3 text-center text-xs text-slate-500">
+        <p className="rounded border border-dashed border-border p-3 text-center text-xs text-txt-muted">
           No best setups yet — accept AI suggestions or add a strength manually.
         </p>
       ) : (

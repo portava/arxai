@@ -40,7 +40,7 @@ export default function AdminIssues() {
     : s === "medium" ? "bg-primary/20 text-primary" : "bg-secondary/20 text-txt-secondary";
 
   return (
-    <div className="space-y-4 p-1" data-testid="page-admin-issues">
+    <div className="space-y-4" data-testid="page-admin-issues">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h1 className="text-2xl font-bold">Issue Tracker</h1>
@@ -67,7 +67,7 @@ export default function AdminIssues() {
                 <Badge className="font-mono text-[10px]">{i.feedbackId}</Badge>
                 <Badge variant="outline">{i.category}</Badge>
                 <Badge className={sevTone(i.severity)}>{i.severity}</Badge>
-                <Badge className="bg-violet-500/20 text-violet-300 font-mono">{i.priority}</Badge>
+                <Badge className="bg-premium/20 text-premium font-mono">{i.priority}</Badge>
                 <Badge className={tone(i.status)}>{i.status}</Badge>
                 <span className="ml-auto text-[10px] font-normal text-muted-foreground">{new Date(i.createdAt).toLocaleString()}</span>
               </CardTitle>

@@ -39,13 +39,13 @@ export default function FeedbackCenter() {
   }
 
   return (
-    <div className="space-y-4 p-1 max-w-2xl" data-testid="page-feedback-center">
+    <div className="space-y-4 max-w-2xl" data-testid="page-feedback-center">
       <div>
         <h1 className="text-2xl font-bold">Feedback Center</h1>
         <p className="text-sm text-muted-foreground">File a bug, feature idea, or workflow issue. We never collect secrets, MT5 tokens, or API keys.</p>
       </div>
       <Card>
-        <CardHeader><CardTitle className="flex items-center gap-2">New report <Badge className="bg-amber-500/20 text-amber-300">BETA</Badge></CardTitle></CardHeader>
+        <CardHeader><CardTitle className="flex items-center gap-2">New report <Badge className="bg-warning/20 text-warning">BETA</Badge></CardTitle></CardHeader>
         <CardContent className="space-y-3 text-sm">
           <label className="block">Title<input className="mt-1 w-full rounded border bg-background px-2 py-1.5" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} data-testid="fb-title" /></label>
           <div className="grid grid-cols-2 gap-3">

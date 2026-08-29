@@ -21,7 +21,7 @@ export function ReconnectButton() {
       type="button"
       onClick={() => mut.mutate({ data: { reason: "operator-initiated from dashboard" } })}
       disabled={mut.isPending}
-      className="inline-flex items-center gap-2 rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:bg-zinc-800 disabled:opacity-50"
+      className="inline-flex items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-secondary disabled:opacity-50"
     >
       {mut.isPending ? "Reconnecting…" : status === "ok" ? "Queued ✓" : status === "err" ? "Failed — retry" : "Reconnect broker"}
     </button>

@@ -25,10 +25,10 @@ import {
 
 function toneClass(tone: SignalTone): string {
   switch (tone) {
-    case "good": return "text-emerald-300 border-emerald-500/40";
-    case "caution": return "text-amber-300 border-amber-500/40";
-    case "bad": return "text-rose-300 border-rose-500/40";
-    default: return "text-zinc-300 border-zinc-600/40";
+    case "good": return "text-success border-success/40";
+    case "caution": return "text-warning border-warning/40";
+    case "bad": return "text-danger border-danger/40";
+    default: return "text-txt-secondary border-border/40";
   }
 }
 
@@ -62,10 +62,10 @@ function SignalChip({
       <Tooltip>
         <TooltipTrigger asChild>
           <span
-            className="inline-flex cursor-help items-center gap-1 text-zinc-600"
+            className="inline-flex cursor-help items-center gap-1 text-txt-muted"
             data-testid={`${testid}-not-consulted`}
           >
-            <span className="uppercase tracking-wide text-zinc-600">{label}</span>
+            <span className="uppercase tracking-wide text-txt-muted">{label}</span>
             <span className="italic">not consulted</span>
           </span>
         </TooltipTrigger>
@@ -79,7 +79,7 @@ function SignalChip({
     <Tooltip>
       <TooltipTrigger asChild>
         <span className="inline-flex cursor-help items-center gap-1" data-testid={testid}>
-          <span className="uppercase tracking-wide text-zinc-500">{label}</span>
+          <span className="uppercase tracking-wide text-txt-muted">{label}</span>
           <Badge
             variant="outline"
             className={`h-4 px-1 text-[9px] ${toneClass(tone ?? "neutral")}`}
@@ -158,7 +158,7 @@ export function SetupSignalStrip({
   return (
     <TooltipProvider delayDuration={150}>
       <div
-        className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded border border-zinc-700/40 bg-zinc-900/30 px-2 py-1.5 text-[10px]"
+        className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded border border-border/40 bg-muted/30 px-2 py-1.5 text-[10px]"
         data-testid={`${testIdPrefix}-strip`}
       >
         {chips}

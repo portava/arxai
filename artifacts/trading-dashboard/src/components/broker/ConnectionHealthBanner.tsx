@@ -6,8 +6,8 @@ export function ConnectionHealthBanner() {
   if (!data) return null;
   if (data.status === "CONNECTED") return null;
   const tone = data.severity === "DANGER"
-    ? "border-rose-500/40 bg-rose-500/10 text-rose-200"
-    : "border-amber-500/40 bg-amber-500/10 text-amber-200";
+    ? "border-danger/40 bg-danger/10 text-danger"
+    : "border-warning/40 bg-warning/10 text-warning";
   return (
     <div className={`rounded-lg border px-3 py-2 text-sm ${tone}`}>
       <div className="font-semibold">{data.status.replace(/_/g, " ")}</div>

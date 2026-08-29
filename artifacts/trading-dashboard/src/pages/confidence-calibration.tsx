@@ -6,7 +6,7 @@ import { Gauge } from "lucide-react";
 import { AccessCheckingShell, AccessDeniedCard, SHADOW_ADMIN_DENIED_NOTE, shadowAdminDeniedMessage } from "@/components/access/AdminOnlyGate";
 
 type Cal = { totalSample: number; label: string; buckets: Array<{ bucket: string; sample: number; winRate: number; avgR: number }> };
-const LABEL_COLOR: Record<string, string> = { WELL_CALIBRATED: "bg-emerald-500/20 text-emerald-400", OVERCONFIDENT: "bg-rose-500/20 text-rose-400", UNDERCONFIDENT: "bg-amber-500/20 text-amber-400", RANDOM_CONFIDENCE: "bg-slate-500/20 text-slate-300", NEEDS_MORE_DATA: "bg-slate-500/20 text-slate-300" };
+const LABEL_COLOR: Record<string, string> = { WELL_CALIBRATED: "bg-success/20 text-success", OVERCONFIDENT: "bg-danger/20 text-danger", UNDERCONFIDENT: "bg-warning/20 text-warning", RANDOM_CONFIDENCE: "bg-muted text-txt-secondary", NEEDS_MORE_DATA: "bg-muted text-txt-secondary" };
 
 const PAGE_ICON = <Gauge className="h-6 w-6 text-primary" />;
 

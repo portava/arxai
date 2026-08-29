@@ -27,17 +27,17 @@ export function WeeklyReviewPanel() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-base font-semibold text-zinc-100">Weekly performance review</h2>
+        <h2 className="text-base font-semibold text-foreground">Weekly performance review</h2>
         <button type="button" disabled={gen.isPending}
           onClick={() => gen.mutate({ data: {} })}
-          className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs text-zinc-200 hover:bg-zinc-800 disabled:opacity-50">
+          className="rounded-md border border-border bg-card px-3 py-1 text-xs text-foreground hover:bg-secondary disabled:opacity-50">
           {gen.isPending ? "Generating…" : "Generate / refresh this week"}
         </button>
       </div>
 
-      {isLoading && <div className="text-xs text-zinc-500">Loading…</div>}
+      {isLoading && <div className="text-xs text-txt-muted">Loading…</div>}
       {!isLoading && !review && (
-        <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-6 text-center text-sm text-zinc-400">
+        <div className="rounded-lg border border-border bg-background/50 p-6 text-center text-sm text-txt-secondary">
           No weekly review yet. Generate one to summarise this week.
         </div>
       )}

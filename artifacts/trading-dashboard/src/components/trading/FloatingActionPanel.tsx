@@ -85,9 +85,9 @@ function FabAction({
 }: { label: string; icon: React.ComponentType<{ size?: number }>; onClick?: () => void; href?: string; tone?: "neutral" | "info" | "warning" | "danger" }) {
   const toneClass = {
     neutral: "bg-card text-foreground hover:bg-muted",
-    info: "bg-cyan-500/15 text-cyan-300 hover:bg-cyan-500/25 border-cyan-500/30",
-    warning: "bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 border-amber-500/30",
-    danger: "bg-red-500/15 text-red-300 hover:bg-red-500/25 border-red-500/30",
+    info: "bg-ruby/15 text-ruby hover:bg-ruby/25 border-ruby/30",
+    warning: "bg-warning/15 text-warning hover:bg-warning/25 border-warning/30",
+    danger: "bg-danger/15 text-danger hover:bg-danger/25 border-danger/30",
   }[tone];
 
   const inner = (

@@ -121,10 +121,10 @@ export default function AdminLiveSharedActivationPage() {
   const checklist = useChecklist(readiness);
 
   return (
-    <div className="container mx-auto py-4 px-3 md:px-6 space-y-3 max-w-[1400px]">
+    <div className="container mx-auto py-4 space-y-3 max-w-[1400px]">
       <div className="flex items-center gap-2 flex-wrap">
         <h1 className="text-2xl font-bold flex items-center gap-2">
-          <ShieldAlert className="h-6 w-6 text-amber-400" /> Live Shared — Activation
+          <ShieldAlert className="h-6 w-6 text-warning" /> Live Shared — Activation
         </h1>
         <ModeChip readiness={readiness} />
         <Button size="sm" variant="outline" className="ml-auto" disabled={busy} onClick={loadReadiness} data-testid="act-refresh">
@@ -233,10 +233,10 @@ function ActivationStateBanner({ readiness }: { readiness: ReadinessResp | null 
   const { state, preArmFailures } = computeArmState(readiness);
   if (state === "KILL_SWITCH_ACTIVE") {
     return (
-      <Alert className="py-3 border-rose-500/60 bg-rose-500/10" data-testid="banner-kill-switch">
-        <ShieldAlert className="h-4 w-4 text-rose-400" />
-        <AlertTitle className="text-sm text-rose-200">KILL SWITCH ACTIVE — LIVE ORDERS BLOCKED</AlertTitle>
-        <AlertDescription className="text-xs text-rose-200/80">
+      <Alert className="py-3 border-danger/60 bg-danger/10" data-testid="banner-kill-switch">
+        <ShieldAlert className="h-4 w-4 text-danger" />
+        <AlertTitle className="text-sm text-danger">KILL SWITCH ACTIVE — LIVE ORDERS BLOCKED</AlertTitle>
+        <AlertDescription className="text-xs text-danger/80">
           The emergency kill switch overrides every other state. New live dispatches
           are refused. Release the kill switch (Wizard step 9) once you've confirmed
           the cause of the engage event.
@@ -247,10 +247,10 @@ function ActivationStateBanner({ readiness }: { readiness: ReadinessResp | null 
   }
   if (state === "LIVE_BROKER_EXECUTION_ENABLED") {
     return (
-      <Alert className="py-3 border-emerald-500/60 bg-emerald-500/10" data-testid="banner-armed">
-        <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-        <AlertTitle className="text-sm text-emerald-200">LIVE BROKER EXECUTION ENABLED</AlertTitle>
-        <AlertDescription className="text-xs text-emerald-200/80">
+      <Alert className="py-3 border-success/60 bg-success/10" data-testid="banner-armed">
+        <CheckCircle2 className="h-4 w-4 text-success" />
+        <AlertTitle className="text-sm text-success">LIVE BROKER EXECUTION ENABLED</AlertTitle>
+        <AlertDescription className="text-xs text-success/80">
           Server is armed for live dispatch. Every dispatch still re-validates the
           16 Phase B gates at the moment of execution. Use the Disarm button below
           to fail-closed immediately.
@@ -260,10 +260,10 @@ function ActivationStateBanner({ readiness }: { readiness: ReadinessResp | null 
   }
   if (state === "READY_TO_ARM") {
     return (
-      <Alert className="py-3 border-amber-500/60 bg-amber-500/10" data-testid="banner-ready-to-arm">
-        <AlertCircle className="h-4 w-4 text-amber-400" />
-        <AlertTitle className="text-sm text-amber-200">EA READY / SERVER DISPATCH OFF — READY TO ARM</AlertTitle>
-        <AlertDescription className="text-xs text-amber-200/80">
+      <Alert className="py-3 border-warning/60 bg-warning/10" data-testid="banner-ready-to-arm">
+        <AlertCircle className="h-4 w-4 text-warning" />
+        <AlertTitle className="text-sm text-warning">EA READY / SERVER DISPATCH OFF — READY TO ARM</AlertTitle>
+        <AlertDescription className="text-xs text-warning/80">
           The live EA is connected, fresh, and healthy. Server live broker execution
           is OFF — this is the safe default. Confirm bridge identity (account /
           broker / server), type the activation phrase, then click Arm Live Execution.
@@ -272,10 +272,10 @@ function ActivationStateBanner({ readiness }: { readiness: ReadinessResp | null 
     );
   }
   return (
-    <Alert className="py-3 border-rose-500/40 bg-rose-500/10" data-testid="banner-locked">
-      <ShieldAlert className="h-4 w-4 text-rose-400" />
-      <AlertTitle className="text-sm text-rose-200">LOCKED — pre-arm safety checks failing</AlertTitle>
-      <AlertDescription className="text-xs text-rose-200/80">
+    <Alert className="py-3 border-danger/40 bg-danger/10" data-testid="banner-locked">
+      <ShieldAlert className="h-4 w-4 text-danger" />
+      <AlertTitle className="text-sm text-danger">LOCKED — pre-arm safety checks failing</AlertTitle>
+      <AlertDescription className="text-xs text-danger/80">
         <div>The following pre-arm checks must pass before the server can be armed:</div>
         <ul className="list-disc list-inside mt-1 space-y-0.5">
           {preArmFailures.map((f) => <li key={f} className="font-mono text-[11px]">{f}</li>)}
@@ -289,23 +289,23 @@ function ModeChip({ readiness }: { readiness: ReadinessResp | null }) {
   if (!readiness) return <Badge variant="outline">loading…</Badge>;
   const { state } = computeArmState(readiness);
   if (state === "KILL_SWITCH_ACTIVE") {
-    return <Badge className="bg-rose-500/15 text-rose-300 border border-rose-500/40" data-testid="mode-chip-kill">KILL SWITCH ACTIVE</Badge>;
+    return <Badge className="bg-danger/15 text-danger border border-danger/40" data-testid="mode-chip-kill">KILL SWITCH ACTIVE</Badge>;
   }
   if (state === "LIVE_BROKER_EXECUTION_ENABLED") {
-    return <Badge className="bg-emerald-500/15 text-emerald-300 border border-emerald-500/40" data-testid="mode-chip-armed">LIVE BROKER EXECUTION ENABLED</Badge>;
+    return <Badge className="bg-success/15 text-success border border-success/40" data-testid="mode-chip-armed">LIVE BROKER EXECUTION ENABLED</Badge>;
   }
   if (state === "READY_TO_ARM") {
-    return <Badge className="bg-amber-500/15 text-amber-200 border border-amber-500/40" data-testid="mode-chip-ready-to-arm">EA READY / SERVER DISPATCH OFF</Badge>;
+    return <Badge className="bg-warning/15 text-warning border border-warning/40" data-testid="mode-chip-ready-to-arm">EA READY / SERVER DISPATCH OFF</Badge>;
   }
-  return <Badge variant="outline" className="border-rose-500/40 text-rose-300" data-testid="mode-chip-locked">LOCKED</Badge>;
+  return <Badge variant="outline" className="border-danger/40 text-danger" data-testid="mode-chip-locked">LOCKED</Badge>;
 }
 
 function row(label: string, value: React.ReactNode, ok?: boolean) {
   return (
     <div className="flex items-center gap-2 text-xs py-0.5">
-      {ok === true && <CheckCircle2 className="h-3 w-3 text-emerald-400" />}
-      {ok === false && <XCircle className="h-3 w-3 text-rose-400" />}
-      {ok === undefined && <AlertCircle className="h-3 w-3 text-zinc-500" />}
+      {ok === true && <CheckCircle2 className="h-3 w-3 text-success" />}
+      {ok === false && <XCircle className="h-3 w-3 text-danger" />}
+      {ok === undefined && <AlertCircle className="h-3 w-3 text-txt-muted" />}
       <span className="text-muted-foreground">{label}</span>
       <span className="ml-auto font-mono">{value ?? "—"}</span>
     </div>
@@ -404,7 +404,7 @@ function ChecklistCard({ items }: { items: Check[] }) {
     </CardHeader><CardContent className="space-y-1">
       {items.map(i => (
         <div key={i.id} className="flex items-center gap-2 text-xs">
-          {i.ok ? <CheckCircle2 className="h-3 w-3 text-emerald-400" /> : <XCircle className="h-3 w-3 text-rose-400" />}
+          {i.ok ? <CheckCircle2 className="h-3 w-3 text-success" /> : <XCircle className="h-3 w-3 text-danger" />}
           <span>{i.label}</span>
           {i.detail && <span className="text-muted-foreground ml-auto font-mono text-[10px]">{i.detail}</span>}
         </div>
@@ -487,27 +487,27 @@ function ArmExecutionCard({
           </div>
         </div>
         {state === "LOCKED" && (
-          <Alert className="py-2 border-rose-500/40 bg-rose-500/10">
-            <AlertTitle className="text-xs text-rose-200">Pre-arm checks failing — Arm disabled.</AlertTitle>
-            <AlertDescription className="text-[11px] text-rose-200/80">Resolve the failing checks in the checklist above, then return here.</AlertDescription>
+          <Alert className="py-2 border-danger/40 bg-danger/10">
+            <AlertTitle className="text-xs text-danger">Pre-arm checks failing — Arm disabled.</AlertTitle>
+            <AlertDescription className="text-[11px] text-danger/80">Resolve the failing checks in the checklist above, then return here.</AlertDescription>
           </Alert>
         )}
         {state === "KILL_SWITCH_ACTIVE" && (
-          <Alert className="py-2 border-rose-500/60 bg-rose-500/10">
-            <AlertTitle className="text-xs text-rose-200">Kill switch active — Arm refused.</AlertTitle>
-            <AlertDescription className="text-[11px] text-rose-200/80">Release the kill switch (Wizard step 9) before arming.</AlertDescription>
+          <Alert className="py-2 border-danger/60 bg-danger/10">
+            <AlertTitle className="text-xs text-danger">Kill switch active — Arm refused.</AlertTitle>
+            <AlertDescription className="text-[11px] text-danger/80">Release the kill switch (Wizard step 9) before arming.</AlertDescription>
           </Alert>
         )}
         {state === "LIVE_BROKER_EXECUTION_ENABLED" && (
-          <Alert className="py-2 border-emerald-500/60 bg-emerald-500/10">
-            <AlertTitle className="text-xs text-emerald-200">Currently ARMED.</AlertTitle>
-            <AlertDescription className="text-[11px] text-emerald-200/80">Use Disarm below to fail-closed immediately. Audit row is written.</AlertDescription>
+          <Alert className="py-2 border-success/60 bg-success/10">
+            <AlertTitle className="text-xs text-success">Currently ARMED.</AlertTitle>
+            <AlertDescription className="text-[11px] text-success/80">Use Disarm below to fail-closed immediately. Audit row is written.</AlertDescription>
           </Alert>
         )}
         {state === "READY_TO_ARM" && (
-          <Alert className="py-2 border-amber-500/60 bg-amber-500/10">
-            <AlertTitle className="text-xs text-amber-200">Ready to arm.</AlertTitle>
-            <AlertDescription className="text-[11px] text-amber-200/80">
+          <Alert className="py-2 border-warning/60 bg-warning/10">
+            <AlertTitle className="text-xs text-warning">Ready to arm.</AlertTitle>
+            <AlertDescription className="text-[11px] text-warning/80">
               Type the phrase and the detected account / broker / server exactly (trim-matched) to enable.
             </AlertDescription>
           </Alert>
@@ -520,7 +520,7 @@ function ArmExecutionCard({
         </div>
         <div className="flex flex-wrap gap-2">
           <Button data-testid="arm-button" disabled={busy === "arm"} onClick={arm}
-            className="bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-40">
+            className="bg-success hover:bg-success text-white disabled:opacity-40">
             {busy === "arm" ? "Arming…" : "Arm live execution"}
           </Button>
           <Button data-testid="disarm-button" variant="destructive"
@@ -528,7 +528,7 @@ function ArmExecutionCard({
             {busy === "disarm" ? "Disarming…" : "Disarm"}
           </Button>
         </div>
-        {msg && <div className="text-xs font-mono text-amber-300" data-testid="arm-msg">{msg}</div>}
+        {msg && <div className="text-xs font-mono text-warning" data-testid="arm-msg">{msg}</div>}
       </CardContent>
     </Card>
   );
@@ -632,7 +632,7 @@ function ActivationWizard({
         </div>
         <div>
           <Label className="text-xs">Detected master bridge — confirm to proceed</Label>
-          <div className="border border-zinc-800/60 rounded p-2 space-y-1 text-[11px]">
+          <div className="border border-border/60 rounded p-2 space-y-1 text-[11px]">
             <div className="flex items-center gap-2">
               <span className="text-muted-foreground w-16">Account</span>
               <span className="font-mono" data-testid="detected-account">{detectedAccount ?? "—"}</span>
@@ -659,24 +659,24 @@ function ActivationWizard({
             </div>
           </div>
           {!detectedAccount && (
-            <div className="text-[10px] text-amber-300 mt-1">
+            <div className="text-[10px] text-warning mt-1">
               No live EA detected — earlier checklist gates will block activation.
             </div>
           )}
-          {copyMsg && <div className="text-[10px] text-emerald-300 mt-1" data-testid="copy-msg">{copyMsg}</div>}
+          {copyMsg && <div className="text-[10px] text-success mt-1" data-testid="copy-msg">{copyMsg}</div>}
         </div>
       </div>
-      {msg && <div className="text-xs font-mono text-amber-300">{msg}</div>}
+      {msg && <div className="text-xs font-mono text-warning">{msg}</div>}
       <ol className="space-y-1.5">
         {WIZARD_STEPS.map((s, idx) => {
           const ok = s.checks.length === 0 ? null : s.checks.every(checkOk);
           const prevOk = idx === 0 || WIZARD_STEPS.slice(0, idx).every(p =>
             p.checks.length === 0 || p.checks.every(checkOk));
           return (
-            <li key={s.id} className="flex items-center gap-2 text-xs border border-zinc-800/40 rounded p-2">
-              {ok === true && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />}
-              {ok === false && <XCircle className="h-3.5 w-3.5 text-rose-400" />}
-              {ok === null && <AlertCircle className="h-3.5 w-3.5 text-zinc-500" />}
+            <li key={s.id} className="flex items-center gap-2 text-xs border border-border/40 rounded p-2">
+              {ok === true && <CheckCircle2 className="h-3.5 w-3.5 text-success" />}
+              {ok === false && <XCircle className="h-3.5 w-3.5 text-danger" />}
+              {ok === null && <AlertCircle className="h-3.5 w-3.5 text-txt-muted" />}
               <span className={prevOk ? "" : "text-muted-foreground"}>{s.label}</span>
               <span className="ml-auto flex gap-1">
                 {s.id === "routing" && <Button size="sm" variant="outline" disabled={!allConfirmOk || !prevOk || busy != null} onClick={() => call({ accountRoutingMode: "SHARED_MASTER_MT5" }, "routing")} data-testid="wiz-routing">Apply</Button>}
@@ -739,7 +739,7 @@ function UsersTab({ readiness }: { readiness: ReadinessResp | null }) {
       {rows.length === 0 && <div className="text-xs text-muted-foreground italic">none</div>}
       <ul className="space-y-1 text-xs">
         {rows.map(u => (
-          <li key={u.userId} className="flex items-center gap-2 border-b border-zinc-800/40 py-1">
+          <li key={u.userId} className="flex items-center gap-2 border-b border-border/40 py-1">
             <Badge variant={u.approved ? "default" : "outline"} className="text-[10px]">{u.status}</Badge>
             <span className="font-mono">{u.email ?? `user#${u.userId}`}</span>
             <span className="text-muted-foreground hidden sm:inline">maxLot {String(u.maxLot ?? "—")} · maxPos {u.maxOpenPositions ?? "—"} · cap ${String(u.dailyLossLimitUsd ?? "—")}</span>
@@ -810,8 +810,8 @@ function CommandsTab() {
         </div>
       )}
 
-      <details className="text-xs border border-zinc-800/60 rounded p-2">
-        <summary className="cursor-pointer text-amber-300">Cancel stale queued commands</summary>
+      <details className="text-xs border border-border/60 rounded p-2">
+        <summary className="cursor-pointer text-warning">Cancel stale queued commands</summary>
         <div className="mt-2 flex flex-wrap items-end gap-2">
           <div><Label className="text-[10px]">Older than (min)</Label>
             <Input className="h-8 w-24" type="number" value={staleMins} onChange={e => setStaleMins(Number(e.target.value) || 15)} data-testid="stale-mins" /></div>
@@ -819,17 +819,17 @@ function CommandsTab() {
             <Input className="h-8 font-mono" value={stalePhrase} onChange={e => setStalePhrase(e.target.value)} placeholder={required} data-testid="stale-phrase" /></div>
           <Button size="sm" variant="destructive" disabled={stalePhrase !== required || busy} onClick={cancelStale} data-testid="stale-cancel">Cancel stale</Button>
         </div>
-        {msg && <div className="mt-1 text-amber-300 font-mono text-[10px]">{msg}</div>}
+        {msg && <div className="mt-1 text-warning font-mono text-[10px]">{msg}</div>}
       </details>
 
       <ul className="space-y-1 text-xs">
         {(data?.rows ?? []).map(r => (
-          <li key={r.id} className="flex items-center gap-2 border-b border-zinc-800/40 py-1">
+          <li key={r.id} className="flex items-center gap-2 border-b border-border/40 py-1">
             <Badge variant={r.status === "LIVE_BLOCKED" || r.status === "LIVE_REJECTED" ? "destructive" : "outline"} className="text-[10px]">{r.status}</Badge>
             <span className="font-mono">u#{r.userId} {r.symbol ?? "—"} {r.side ?? ""} {String(r.requestedVolume ?? "")}</span>
-            {r.brokerTicket && <span className="font-mono text-emerald-300">#{r.brokerTicket}</span>}
+            {r.brokerTicket && <span className="font-mono text-success">#{r.brokerTicket}</span>}
             {r.rejectionReason && (
-              <details className="text-rose-300"><summary className="cursor-pointer">why?</summary>
+              <details className="text-danger"><summary className="cursor-pointer">why?</summary>
                 <div className="font-mono text-[10px] mt-1">{r.rejectionReason}</div>
               </details>
             )}
@@ -865,7 +865,7 @@ function SmokeTab() {
           <ul className="space-y-1 text-xs">
             {data.checks.map(c => (
               <li key={c.id} className="flex items-center gap-2">
-                {c.pass ? <CheckCircle2 className="h-3 w-3 text-emerald-400" /> : <XCircle className="h-3 w-3 text-rose-400" />}
+                {c.pass ? <CheckCircle2 className="h-3 w-3 text-success" /> : <XCircle className="h-3 w-3 text-danger" />}
                 <span>{c.label}</span>
                 <span className="ml-auto font-mono text-[10px] text-muted-foreground">{c.detail}</span>
               </li>
@@ -933,7 +933,7 @@ function MicroTestTab({ readiness }: { readiness: ReadinessResp | null }) {
           The endpoints route through the current session, so the operator must be an APPROVED master-live user
           themselves. Per-user isolation is preserved — there is no admin <code>asUserId</code> override.
           Cannot bypass any of the 16 gates, kill switch, env hard-kill, or per-user limits.
-          {noApproved && <span className="block mt-1 text-rose-300">No approved users on the system yet.</span>}
+          {noApproved && <span className="block mt-1 text-danger">No approved users on the system yet.</span>}
         </AlertDescription>
       </Alert>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -948,7 +948,7 @@ function MicroTestTab({ readiness }: { readiness: ReadinessResp | null }) {
           <Input className="h-8 font-mono" value={phrase} onChange={e => setPhrase(e.target.value)} placeholder={REQUIRED_QUEUE} data-testid="micro-phrase" /></div>
         <Button size="sm" variant="destructive" disabled={busy || !canExec} onClick={execute} data-testid="micro-execute"><Zap className="h-3 w-3 mr-1" /> Queue micro test</Button>
       </div>
-      {msg && <div className="text-xs font-mono text-amber-300">{msg}</div>}
+      {msg && <div className="text-xs font-mono text-warning">{msg}</div>}
     </CardContent></Card>
   );
 }
@@ -972,7 +972,7 @@ function RollbackTab({ onDone, setActionMsg }: { onDone: () => void; setActionMs
     } finally { setBusy(false); }
   }
   return (
-    <Card><CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><RotateCcw className="h-4 w-4 text-rose-400" /> Emergency rollback</CardTitle></CardHeader><CardContent className="space-y-2">
+    <Card><CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><RotateCcw className="h-4 w-4 text-danger" /> Emergency rollback</CardTitle></CardHeader><CardContent className="space-y-2">
       <Alert variant="destructive" className="py-2"><AlertTitle className="text-xs">Engages kill switch, disables shared live, cancels queued commands the EA hasn't picked up.</AlertTitle>
         <AlertDescription className="text-[11px]">Audit logs, trade history, demo/paper, already-picked commands are preserved.</AlertDescription>
       </Alert>
@@ -992,7 +992,7 @@ function AuditTab({ readiness }: { readiness: ReadinessResp | null }) {
     <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Recent admin actions (last 50)</CardTitle></CardHeader><CardContent>
       <ul className="space-y-1 text-xs">
         {readiness.recentAudit.map(a => (
-          <li key={a.id} className="flex items-center gap-2 border-b border-zinc-800/40 py-1">
+          <li key={a.id} className="flex items-center gap-2 border-b border-border/40 py-1">
             <Badge variant="outline" className="text-[10px]">{a.adminRole}</Badge>
             <span className="font-mono">{a.action}</span>
             <span className="ml-auto text-[10px] text-muted-foreground">admin#{a.adminId} · {a.createdAt ?? ""}</span>

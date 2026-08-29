@@ -8,11 +8,11 @@ interface Props {
 }
 
 const RISK_TONE: Record<string, string> = {
-  none: "text-emerald-300",
-  low: "text-emerald-300",
-  medium: "text-amber-300",
-  high: "text-orange-300",
-  critical: "text-rose-300",
+  none: "text-success",
+  low: "text-success",
+  medium: "text-warning",
+  high: "text-warning",
+  critical: "text-danger",
 };
 
 const REC_LABEL: Record<string, string> = {
@@ -23,10 +23,10 @@ const REC_LABEL: Record<string, string> = {
 };
 
 const BIAS_TONE: Record<string, string> = {
-  bullish: "text-emerald-300",
-  bearish: "text-rose-300",
-  mixed: "text-amber-300",
-  unclear: "text-slate-400",
+  bullish: "text-success",
+  bearish: "text-danger",
+  mixed: "text-warning",
+  unclear: "text-txt-secondary",
 };
 
 export function NewsRiskCheckPanel({ symbol, defaultOpen = false }: Props) {
@@ -50,10 +50,10 @@ export function NewsRiskCheckPanel({ symbol, defaultOpen = false }: Props) {
       <div
         className={`rounded border p-2 text-xs flex items-start gap-1.5 ${
           result.riskLevel === "critical"
-            ? "border-rose-600 bg-rose-950/40 text-rose-200"
+            ? "border-danger bg-danger/40 text-danger"
             : result.riskLevel === "high"
-            ? "border-orange-600 bg-orange-950/40 text-orange-200"
-            : "border-amber-600 bg-amber-950/30 text-amber-200"
+            ? "border-warning bg-warning/40 text-warning"
+            : "border-warning bg-warning/30 text-warning"
         }`}
         data-testid="news-risk-gate"
       >
@@ -71,7 +71,7 @@ export function NewsRiskCheckPanel({ symbol, defaultOpen = false }: Props) {
       </div>
     )}
     <div
-      className="rounded border border-slate-700 bg-slate-900/50 p-2 text-xs"
+      className="rounded border border-border bg-muted/50 p-2 text-xs"
       data-testid="news-risk-check-panel"
     >
       <button
@@ -79,7 +79,7 @@ export function NewsRiskCheckPanel({ symbol, defaultOpen = false }: Props) {
         className="flex w-full items-center justify-between"
         onClick={() => setOpen((v) => !v)}
       >
-        <span className="flex items-center gap-1.5 text-slate-300">
+        <span className="flex items-center gap-1.5 text-txt-secondary">
           <Newspaper className="h-3 w-3" />
           News Risk Check
           {result && (
@@ -87,23 +87,23 @@ export function NewsRiskCheckPanel({ symbol, defaultOpen = false }: Props) {
               <span className={`ml-1 font-semibold uppercase ${RISK_TONE[result.riskLevel]}`}>
                 · {result.riskLevel}
               </span>
-              <span className="ml-1 text-slate-500">
+              <span className="ml-1 text-txt-muted">
                 ({REC_LABEL[result.recommendation] ?? result.recommendation})
               </span>
             </>
           )}
         </span>
-        {open ? <ChevronDown className="h-3 w-3 text-slate-400" /> : <ChevronRight className="h-3 w-3 text-slate-400" />}
+        {open ? <ChevronDown className="h-3 w-3 text-txt-secondary" /> : <ChevronRight className="h-3 w-3 text-txt-secondary" />}
       </button>
 
       {open && (
         <div className="mt-2 space-y-1.5">
           {mut.isPending && !result && (
-            <div className="text-slate-400">Checking news + event risk…</div>
+            <div className="text-txt-secondary">Checking news + event risk…</div>
           )}
 
           {failed && (
-            <div className="flex items-start gap-1 text-amber-300">
+            <div className="flex items-start gap-1 text-warning">
               <AlertTriangle className="mt-0.5 h-3 w-3" />
               <span>News intelligence is temporarily unavailable.</span>
             </div>
@@ -111,22 +111,22 @@ export function NewsRiskCheckPanel({ symbol, defaultOpen = false }: Props) {
 
           {result && (
             <>
-              <div className="text-slate-300">{result.warningSummary}</div>
+              <div className="text-txt-secondary">{result.warningSummary}</div>
 
               <div className="grid grid-cols-3 gap-1 pt-1">
-                <div className="rounded border border-slate-700 bg-slate-900 p-1">
-                  <div className="text-[10px] text-slate-500">Bias</div>
+                <div className="rounded border border-border bg-card p-1">
+                  <div className="text-[10px] text-txt-muted">Bias</div>
                   <div className={`font-semibold ${BIAS_TONE[result.bias]}`}>
                     {result.bias}
                   </div>
                 </div>
-                <div className="rounded border border-slate-700 bg-slate-900 p-1">
-                  <div className="text-[10px] text-slate-500">Timing</div>
-                  <div className="font-mono text-slate-200">{result.timing}</div>
+                <div className="rounded border border-border bg-card p-1">
+                  <div className="text-[10px] text-txt-muted">Timing</div>
+                  <div className="font-mono text-foreground">{result.timing}</div>
                 </div>
-                <div className="rounded border border-slate-700 bg-slate-900 p-1">
-                  <div className="text-[10px] text-slate-500">Headlines</div>
-                  <div className="font-mono text-slate-200">
+                <div className="rounded border border-border bg-card p-1">
+                  <div className="text-[10px] text-txt-muted">Headlines</div>
+                  <div className="font-mono text-foreground">
                     {result.dataSources.headlines.connected
                       ? result.dataSources.headlines.count
                       : "—"}
@@ -135,15 +135,15 @@ export function NewsRiskCheckPanel({ symbol, defaultOpen = false }: Props) {
               </div>
 
               {result.upcomingEvent && (
-                <div className="rounded border border-slate-700 bg-slate-900 p-1.5">
-                  <div className="text-[10px] text-slate-500">Next event</div>
-                  <div className="text-slate-200">
+                <div className="rounded border border-border bg-card p-1.5">
+                  <div className="text-[10px] text-txt-muted">Next event</div>
+                  <div className="text-foreground">
                     {result.upcomingEvent.title}{" "}
-                    <span className="text-slate-500">
+                    <span className="text-txt-muted">
                       ({result.upcomingEvent.currency} · {result.upcomingEvent.impact})
                     </span>
                   </div>
-                  <div className="text-[10px] text-slate-500">
+                  <div className="text-[10px] text-txt-muted">
                     {result.upcomingEvent.minutesUntil >= 0
                       ? `in ${result.upcomingEvent.minutesUntil}m`
                       : `${Math.abs(result.upcomingEvent.minutesUntil)}m ago`}
@@ -153,29 +153,29 @@ export function NewsRiskCheckPanel({ symbol, defaultOpen = false }: Props) {
 
               {result.recentHeadlines.length > 0 && (
                 <div className="space-y-0.5">
-                  <div className="text-[10px] text-slate-500">Recent headlines</div>
+                  <div className="text-[10px] text-txt-muted">Recent headlines</div>
                   {result.recentHeadlines.slice(0, 3).map((h, i) => (
-                    <div key={i} className="text-[11px] text-slate-300 leading-snug">
+                    <div key={i} className="text-[11px] text-txt-secondary leading-snug">
                       · {h.headline}{" "}
-                      <span className="text-slate-500">— {h.source}</span>
+                      <span className="text-txt-muted">— {h.source}</span>
                     </div>
                   ))}
                 </div>
               )}
 
               {!result.dataSources.headlines.connected && (
-                <div className="text-[10px] text-slate-500">
+                <div className="text-[10px] text-txt-muted">
                   News feed not configured — relying on scheduled-event risk only.
                 </div>
               )}
 
               {!result.dataSources.calendar.connected && (
-                <div className="text-[10px] text-slate-500">
+                <div className="text-[10px] text-txt-muted">
                   Live economic-calendar provider not configured.
                 </div>
               )}
 
-              <div className="pt-1 text-[10px] text-slate-500">
+              <div className="pt-1 text-[10px] text-txt-muted">
                 Decision support only — not a buy or sell signal.
               </div>
             </>

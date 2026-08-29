@@ -48,19 +48,19 @@ function ChecklistRow({ item }: { item: ChecklistItem }) {
   const { unlocked, unlock } = useFeatureUnlock(item.feature);
   return (
     <li
-      className="flex items-start gap-3 p-3 rounded border border-zinc-800/80 bg-zinc-900/30"
+      className="flex items-start gap-3 p-3 rounded border border-border/80 bg-muted/30"
       data-testid={`checklist-${item.feature}`}
     >
       <div className="mt-0.5">
         {unlocked ? (
-          <Check size={18} className="text-emerald-400" />
+          <Check size={18} className="text-success" />
         ) : (
-          <Circle size={18} className="text-zinc-500" />
+          <Circle size={18} className="text-txt-muted" />
         )}
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-semibold text-zinc-100">{item.title}</div>
-        <div className="text-xs text-zinc-400 mt-0.5">{item.body}</div>
+        <div className="text-sm font-semibold text-foreground">{item.title}</div>
+        <div className="text-xs text-txt-secondary mt-0.5">{item.body}</div>
       </div>
       {!unlocked && (
         <Button
@@ -89,7 +89,7 @@ export function GettingStartedChecklist() {
           <CardTitle className="text-sm font-semibold uppercase tracking-wider">
             Welcome to {ARX_BRAND.name}
           </CardTitle>
-          <p className="text-xs text-zinc-400 mt-1">
+          <p className="text-xs text-txt-secondary mt-1">
             {done === 0
               ? "Nothing is connected yet. Pick a step to begin."
               : `${done} of ${total} steps complete.`}
@@ -113,7 +113,7 @@ export function GettingStartedChecklist() {
             <ChecklistRow key={item.feature} item={item} />
           ))}
         </ul>
-        <p className="text-[11px] text-zinc-500 mt-4 leading-relaxed">
+        <p className="text-[11px] text-txt-muted mt-4 leading-relaxed">
           Note: this checklist is a UI convenience layer for first-load
           discoverability. The real security boundary is enforced on the
           backend — every private account request requires an authenticated

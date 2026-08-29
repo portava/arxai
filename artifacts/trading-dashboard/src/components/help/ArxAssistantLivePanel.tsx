@@ -983,23 +983,23 @@ export function ArxAssistantLivePanel() {
   // loop because there isn't one.
   const statusPill = useMemo(() => {
     switch (status) {
-      case "thinking":  return { label: `${name} is thinking`,  cls: "bg-amber-500/20 text-amber-200 border-amber-500/40", pulse: true };
-      case "streaming": return { label: `${name} is typing`,   cls: "bg-cyan-500/20 text-cyan-200 border-cyan-500/40", pulse: true };
-      case "tool":      return { label: `${name} is checking`, cls: "bg-violet-500/20 text-violet-200 border-violet-500/40", pulse: true };
-      case "recording": return { label: "Recording…",  cls: "bg-rose-500/20 text-danger border-rose-500/40", pulse: true };
-      case "listening": return { label: "Sending voice message…", cls: "bg-emerald-500/20 text-emerald-200 border-emerald-500/40", pulse: true };
-      case "realtime":  return { label: realtime.isMuted ? `${name} is on standby` : `${name} is listening`, cls: "bg-fuchsia-500/20 text-ruby border-fuchsia-500/40", pulse: !realtime.isMuted };
-      case "speaking":  return { label: `${name} is speaking…`,   cls: "bg-cyan-500/20 text-cyan-200 border-cyan-500/40", pulse: true };
-      case "error":     return { label: `${name} is reconnecting`, cls: "bg-red-500/20 text-danger border-red-500/40", pulse: true };
+      case "thinking":  return { label: `${name} is thinking`,  cls: "bg-warning/20 text-warning border-warning/40", pulse: true };
+      case "streaming": return { label: `${name} is typing`,   cls: "bg-ruby/20 text-ruby border-ruby/40", pulse: true };
+      case "tool":      return { label: `${name} is checking`, cls: "bg-premium/20 text-premium border-premium/40", pulse: true };
+      case "recording": return { label: "Recording…",  cls: "bg-danger/20 text-danger border-danger/40", pulse: true };
+      case "listening": return { label: "Sending voice message…", cls: "bg-success/20 text-success border-success/40", pulse: true };
+      case "realtime":  return { label: realtime.isMuted ? `${name} is on standby` : `${name} is listening`, cls: "bg-premium/20 text-ruby border-premium/40", pulse: !realtime.isMuted };
+      case "speaking":  return { label: `${name} is speaking…`,   cls: "bg-ruby/20 text-ruby border-ruby/40", pulse: true };
+      case "error":     return { label: `${name} is reconnecting`, cls: "bg-danger/20 text-danger border-danger/40", pulse: true };
       default: {
         // When typed-reply TTS is reading the answer aloud the overall status
         // is "idle" but the user is hearing speech — surface "Ruby is
         // speaking…" so the badge matches what they hear. Once it ends the
         // flow returns to idle; the mic is never auto-restarted.
         if (tts.state === "speaking") {
-          return { label: `${name} is speaking…`, cls: "bg-cyan-500/20 text-cyan-200 border-cyan-500/40", pulse: true };
+          return { label: `${name} is speaking…`, cls: "bg-ruby/20 text-ruby border-ruby/40", pulse: true };
         }
-        return { label: "Tap to record", cls: "bg-emerald-500/20 text-emerald-200 border-emerald-500/40", pulse: false };
+        return { label: "Tap to record", cls: "bg-success/20 text-success border-success/40", pulse: false };
       }
     }
   }, [status, realtime.isMuted, tts.state, name]);
@@ -1021,8 +1021,8 @@ export function ArxAssistantLivePanel() {
           "fixed z-50 rounded-full shadow-lg transition-all",
           "bottom-20 right-4 md:bottom-6 md:right-6",
           "h-14 w-14 flex items-center justify-center",
-          "bg-gradient-to-br from-cyan-500 to-emerald-500 text-zinc-950",
-          "hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300",
+          "bg-gradient-to-br from-ruby to-success text-foreground",
+          "hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ruby",
         )}
         data-testid="arx-assistant-trigger"
         aria-label={open ? `Close ${name} assistant` : `Open ${name} assistant`}
@@ -1166,7 +1166,7 @@ export function ArxAssistantLivePanel() {
                       className="w-full flex items-center gap-2 px-3 py-2 text-left text-foreground hover:bg-secondary disabled:opacity-50"
                       data-testid="arx-menu-clear-chat"
                     >
-                      <Eraser className="h-3.5 w-3.5 text-amber-300" />
+                      <Eraser className="h-3.5 w-3.5 text-warning" />
                       Clear current chat
                     </button>
                     <div className="my-1 border-t border-border" />
@@ -1328,7 +1328,7 @@ export function ArxAssistantLivePanel() {
                 <button
                   onClick={() => void loadBriefing({ refresh: true })}
                   disabled={briefingLoading}
-                  className="flex items-center gap-1 text-[10px] text-txt-secondary hover:text-cyan-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex items-center gap-1 text-[10px] text-txt-secondary hover:text-ruby disabled:opacity-50 disabled:cursor-not-allowed"
                   aria-label="Refresh briefing"
                   title="Refresh briefing"
                 >
@@ -1345,7 +1345,7 @@ export function ArxAssistantLivePanel() {
                     onClick={() => void sendText(s.prompt)}
                     disabled={status === "thinking" || status === "streaming"}
                     className={cn(
-                      "rounded-full border border-border bg-card px-2.5 py-1 text-[11px] text-foreground hover:border-cyan-500 hover:text-cyan-200",
+                      "rounded-full border border-border bg-card px-2.5 py-1 text-[11px] text-foreground hover:border-ruby hover:text-ruby",
                       "disabled:opacity-50 disabled:cursor-not-allowed",
                     )}
                   >
@@ -1411,7 +1411,7 @@ export function ArxAssistantLivePanel() {
                     "h-9 w-9 rounded-full flex items-center justify-center border",
                     realtime.isMuted
                       ? "border-border bg-card text-txt-secondary"
-                      : "border-fuchsia-500/60 bg-fuchsia-500/10 text-ruby animate-pulse",
+                      : "border-premium/60 bg-premium/10 text-ruby animate-pulse",
                   )}
                   aria-label={realtime.isMuted ? "Unmute Realtime mic" : "Mute Realtime mic"}
                   data-testid="arx-realtime-mute"
@@ -1447,8 +1447,8 @@ export function ArxAssistantLivePanel() {
               className={cn(
                 "h-9 w-9 rounded-full flex items-center justify-center border",
                 micActive
-                  ? "border-emerald-500/60 bg-emerald-500/10 text-success animate-pulse"
-                  : "border-border bg-card text-foreground hover:text-ruby hover:border-cyan-500",
+                  ? "border-success/60 bg-success/10 text-success animate-pulse"
+                  : "border-border bg-card text-foreground hover:text-ruby hover:border-ruby",
               )}
               aria-label={status === "recording" ? "Stop and send voice message" : "Record voice message"}
               data-testid="arx-mic-toggle"
@@ -1475,7 +1475,7 @@ export function ArxAssistantLivePanel() {
             <Button
               type="submit"
               disabled={!input.trim() || status === "thinking" || status === "streaming" || status === "recording" || status === "listening"}
-              className="h-9 px-3 bg-cyan-500 text-zinc-950 hover:bg-cyan-400"
+              className="h-9 px-3 bg-ruby text-foreground hover:bg-ruby"
               data-testid="arx-send"
             >
               {status === "thinking" || status === "streaming"
@@ -1619,7 +1619,7 @@ function VoicePicker({ onClose }: { onClose: () => void }) {
               <div className="space-y-1">
                 {serverFemale.map(v => (
                   <button key={v.id} type="button" onClick={() => selectVoice(v.id, v.provider)}
-                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between gap-2 border transition ${selected === v.id ? "bg-cyan-500/20 text-ruby border-cyan-500/40" : "text-foreground hover:bg-secondary border-transparent"}`}>
+                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between gap-2 border transition ${selected === v.id ? "bg-ruby/20 text-ruby border-ruby/40" : "text-foreground hover:bg-secondary border-transparent"}`}>
                     <div className="min-w-0">
                       <div className="font-medium truncate">{v.label}</div>
                       <div className="text-txt-muted text-[10px]">{v.accent} · {v.note}</div>
@@ -1636,7 +1636,7 @@ function VoicePicker({ onClose }: { onClose: () => void }) {
               <div className="space-y-1">
                 {serverMale.map(v => (
                   <button key={v.id} type="button" onClick={() => selectVoice(v.id, v.provider)}
-                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between gap-2 border transition ${selected === v.id ? "bg-cyan-500/20 text-ruby border-cyan-500/40" : "text-foreground hover:bg-secondary border-transparent"}`}>
+                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between gap-2 border transition ${selected === v.id ? "bg-ruby/20 text-ruby border-ruby/40" : "text-foreground hover:bg-secondary border-transparent"}`}>
                     <div className="min-w-0">
                       <div className="font-medium truncate">{v.label}</div>
                       <div className="text-txt-muted text-[10px]">{v.accent} · {v.note}</div>
@@ -1661,7 +1661,7 @@ function VoicePicker({ onClose }: { onClose: () => void }) {
                 <div className="space-y-1">
                   {(list as typeof browserVoices).map(v => (
                     <button key={v.name} type="button" onClick={() => selectVoice(v.name, "browser")}
-                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between gap-2 border transition ${selected === v.name ? "bg-cyan-500/20 text-ruby border-cyan-500/40" : "text-foreground hover:bg-secondary border-transparent"}`}>
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between gap-2 border transition ${selected === v.name ? "bg-ruby/20 text-ruby border-ruby/40" : "text-foreground hover:bg-secondary border-transparent"}`}>
                       <div className="min-w-0">
                         <div className="font-medium truncate">{v.name.replace(/ Online.*$/, "").replace(/Microsoft |Google /, "")}</div>
                         {"accent" in v && <div className="text-txt-muted text-[10px]">{(v as {accent:string}).accent}</div>}
@@ -1754,10 +1754,10 @@ function MessageBubble({ m }: { m: ChatMessage }) {
                   className={cn(
                     "inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5",
                     t.status === "error"
-                      ? "border-red-500/40 text-danger bg-danger/10"
+                      ? "border-danger/40 text-danger bg-danger/10"
                       : t.status === "ok"
                       ? "border-success/40 text-success bg-success/10"
-                      : "border-violet-500/40 text-violet-200 bg-violet-500/10",
+                      : "border-premium/40 text-premium bg-premium/10",
                   )}
                 >
                   <Wrench className="h-2.5 w-2.5" />
@@ -1820,12 +1820,12 @@ function MessageBubble({ m }: { m: ChatMessage }) {
 // Shown next to the suggestion chips; advisory only, never a gate.
 // Renders nothing when data is unavailable (honest empty, fail-open).
 const TIMING_CHIP_COLOR: Record<string, string> = {
-  "A+": "border-emerald-500/40 bg-emerald-500/10 text-emerald-400",
-  "A":  "border-emerald-500/40 bg-emerald-500/10 text-emerald-400",
-  "B":  "border-blue-500/40 bg-blue-500/10 text-blue-400",
-  "C":  "border-amber-500/40 bg-amber-500/10 text-amber-400",
-  "D":  "border-orange-500/40 bg-orange-500/10 text-orange-400",
-  "F":  "border-rose-500/40 bg-rose-500/10 text-rose-400",
+  "A+": "border-success/40 bg-success/10 text-success",
+  "A":  "border-success/40 bg-success/10 text-success",
+  "B":  "border-primary/40 bg-primary/10 text-primary",
+  "C":  "border-warning/40 bg-warning/10 text-warning",
+  "D":  "border-warning/40 bg-warning/10 text-warning",
+  "F":  "border-danger/40 bg-danger/10 text-danger",
 };
 function RubyTimingChip({ symbol }: { symbol: string }) {
   const q = useGetTimingBrain(symbol, {}, {
@@ -1838,7 +1838,7 @@ function RubyTimingChip({ symbol }: { symbol: string }) {
   });
   if (!q.data) return null;
   const r = q.data;
-  const colorClass = TIMING_CHIP_COLOR[r.timingGrade as string] ?? "border-zinc-500/40 bg-zinc-500/10 text-zinc-400";
+  const colorClass = TIMING_CHIP_COLOR[r.timingGrade as string] ?? "border-border/40 bg-muted text-txt-secondary";
   const permLabel: Record<string, string> = {
     GO: "GO", WAIT_FOR_ENTRY: "Wait", WAIT_NEWS: "News", NO_TRADE: "Skip", STAND_DOWN: "Stand down",
   };

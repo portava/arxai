@@ -9,14 +9,14 @@ export function EmotionalStateTracker({
         const value = k === "before" ? before : after;
         return (
           <div key={k}>
-            <div className="mb-1 text-xs uppercase tracking-wide text-zinc-500">Emotion {k}</div>
+            <div className="mb-1 text-xs uppercase tracking-wide text-txt-muted">Emotion {k}</div>
             <div className="flex flex-wrap gap-1">
               {STATES.map((s) => (
                 <button key={s} type="button"
                   onClick={() => onChange({ before: k === "before" ? s : before, after: k === "after" ? s : after })}
                   className={`rounded-full px-2 py-0.5 text-[10px] ring-1 ${
-                    value === s ? "bg-violet-500/25 text-violet-100 ring-violet-500/50"
-                                : "bg-zinc-900 text-zinc-400 ring-zinc-700 hover:text-zinc-200"
+                    value === s ? "bg-premium/25 text-premium ring-premium/50"
+                                : "bg-card text-txt-secondary ring-border hover:text-foreground"
                   }`}>
                   {s}
                 </button>

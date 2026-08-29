@@ -1,16 +1,16 @@
 type Status = "READY"|"CAUTION"|"NOT_READY"|"LOCKED";
 const grad: Record<Status, string> = {
-  READY:     "from-emerald-600 to-emerald-400 text-emerald-50",
-  CAUTION:   "from-amber-600 to-amber-400 text-amber-50",
-  NOT_READY: "from-orange-700 to-orange-500 text-orange-50",
-  LOCKED:    "from-red-800 to-red-600 text-red-50",
+  READY:     "from-success to-success text-success",
+  CAUTION:   "from-warning to-warning text-warning",
+  NOT_READY: "from-warning/15 to-warning text-warning",
+  LOCKED:    "from-danger/15 to-danger text-danger",
 };
 export function ReadinessScoreCard({ score, status }: { score: number; status: Status }) {
   return (
-    <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-4">
+    <div className="rounded-lg border border-border bg-muted/40 p-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-slate-100">Readiness score</h3>
-        <span className="text-[10px] uppercase tracking-wide text-slate-500">advisory</span>
+        <h3 className="text-sm font-semibold text-foreground">Readiness score</h3>
+        <span className="text-[10px] uppercase tracking-wide text-txt-muted">advisory</span>
       </div>
       <div className={`mt-2 rounded-lg bg-gradient-to-br p-4 text-center ${grad[status]}`}>
         <div className="text-4xl font-bold">{score}</div>

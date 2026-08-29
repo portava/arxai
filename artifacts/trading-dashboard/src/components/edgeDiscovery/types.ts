@@ -29,9 +29,9 @@ export interface EdgeWarning {
 }
 
 export const STATUS_TONE: Record<EdgeReport["status"], string> = {
-  STRONG_EDGE:       "border-emerald-700 bg-emerald-950/30 text-emerald-100",
-  DEVELOPING_EDGE:   "border-sky-700 bg-sky-950/30 text-sky-100",
-  WEAK_EDGE:         "border-amber-700 bg-amber-950/30 text-amber-100",
-  NO_EDGE:           "border-red-700 bg-red-950/30 text-red-100",
-  INSUFFICIENT_DATA: "border-slate-700 bg-slate-900/40 text-slate-300",
+  STRONG_EDGE:       "border-success/40 bg-success/30 text-success",
+  DEVELOPING_EDGE:   "border-ruby/40 bg-ruby/30 text-ruby",
+  WEAK_EDGE:         "border-warning/40 bg-warning/30 text-warning",
+  NO_EDGE:           "border-danger/40 bg-danger/30 text-danger",
+  INSUFFICIENT_DATA: "border-border bg-muted/40 text-txt-secondary",
 };

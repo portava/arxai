@@ -160,7 +160,7 @@ export default function AuditCenterPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-[1280px] p-4 md:p-6 pb-32 md:pb-6 space-y-5" data-testid="page-audit-center">
+    <div className="mx-auto w-full max-w-[1280px] pb-32 md:pb-6 space-y-5" data-testid="page-audit-center">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">

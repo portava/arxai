@@ -5,10 +5,10 @@ import { CheckCircle2, XCircle, Clock, ShieldX, Hourglass } from "lucide-react";
 
 const STATUS_META: Record<string, { icon: React.ComponentType<{ size?: number; className?: string }>; tone: string; label: string }> = {
   PENDING:   { icon: Clock,        tone: "text-muted-foreground", label: "Pending" },
-  CONFIRMED: { icon: CheckCircle2, tone: "text-blue-400",         label: "Confirmed" },
-  EXECUTED:  { icon: CheckCircle2, tone: "text-green-500",        label: "Executed" },
+  CONFIRMED: { icon: CheckCircle2, tone: "text-primary",         label: "Confirmed" },
+  EXECUTED:  { icon: CheckCircle2, tone: "text-success",        label: "Executed" },
   CANCELLED: { icon: XCircle,      tone: "text-muted-foreground", label: "Cancelled" },
-  REJECTED:  { icon: ShieldX,      tone: "text-red-500",          label: "Rejected" },
+  REJECTED:  { icon: ShieldX,      tone: "text-danger",          label: "Rejected" },
   EXPIRED:   { icon: Hourglass,    tone: "text-muted-foreground", label: "Expired" },
 };
 

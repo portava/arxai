@@ -24,10 +24,10 @@ interface DayDetailResp { day: { date: string; stats: any; trades: any[] } }
 
 function dayColor(d: CalendarDay) {
   switch (d.day_status) {
-    case "WINNING_DAY": return "bg-emerald-500/15 border-emerald-500/40 text-emerald-300";
-    case "LOSING_DAY":  return "bg-rose-500/15 border-rose-500/40 text-rose-300";
-    case "BREAK_EVEN_DAY": return "bg-amber-500/15 border-amber-500/40 text-amber-300";
-    default: return "bg-slate-700/20 border-slate-700/40 text-slate-400";
+    case "WINNING_DAY": return "bg-success/15 border-success/40 text-success";
+    case "LOSING_DAY":  return "bg-danger/15 border-danger/40 text-danger";
+    case "BREAK_EVEN_DAY": return "bg-warning/15 border-warning/40 text-warning";
+    default: return "bg-muted/20 border-border/40 text-txt-secondary";
   }
 }
 
@@ -154,7 +154,7 @@ export default function TradingCalendarPage() {
             type="month"
             value={month}
             onChange={(e) => setMonth(e.target.value)}
-            className="bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-sm"
+            className="bg-card border border-border rounded-md px-3 py-2 text-sm"
             data-testid="input-month"
           />
           {!isLive && (
@@ -169,13 +169,13 @@ export default function TradingCalendarPage() {
       {cal.data && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Net P&L (month)</CardTitle></CardHeader>
-            <CardContent><div className={`text-xl font-bold ${cal.data.calendar.total_pnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{cal.data.calendar.total_pnl.toFixed(2)}</div></CardContent></Card>
+            <CardContent><div className={`text-xl font-bold ${cal.data.calendar.total_pnl >= 0 ? "text-success" : "text-danger"}`}>{cal.data.calendar.total_pnl.toFixed(2)}</div></CardContent></Card>
           <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Total Trades</CardTitle></CardHeader>
             <CardContent><div className="text-xl font-bold">{cal.data.calendar.total_trades}</div></CardContent></Card>
           <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Winning Days</CardTitle></CardHeader>
-            <CardContent><div className="text-xl font-bold text-emerald-400">{cal.data.calendar.winning_days}</div></CardContent></Card>
+            <CardContent><div className="text-xl font-bold text-success">{cal.data.calendar.winning_days}</div></CardContent></Card>
           <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Losing Days</CardTitle></CardHeader>
-            <CardContent><div className="text-xl font-bold text-rose-400">{cal.data.calendar.losing_days}</div></CardContent></Card>
+            <CardContent><div className="text-xl font-bold text-danger">{cal.data.calendar.losing_days}</div></CardContent></Card>
         </div>
       )}
 
@@ -240,28 +240,28 @@ export default function TradingCalendarPage() {
             {day.isLoading ? <Skeleton className="h-32 w-full" /> : day.data ? (
               <div className="space-y-3">
                 <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-sm">
-                  <div><div className="text-muted-foreground text-xs">Net P&L</div><div className={`font-bold ${day.data.day.stats.net_pnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{day.data.day.stats.net_pnl.toFixed(2)}</div></div>
+                  <div><div className="text-muted-foreground text-xs">Net P&L</div><div className={`font-bold ${day.data.day.stats.net_pnl >= 0 ? "text-success" : "text-danger"}`}>{day.data.day.stats.net_pnl.toFixed(2)}</div></div>
                   <div><div className="text-muted-foreground text-xs">Trades</div><div className="font-bold">{day.data.day.stats.total_trades}</div></div>
                   <div><div className="text-muted-foreground text-xs">Win Rate</div><div className="font-bold">{day.data.day.stats.win_rate.toFixed(1)}%</div></div>
                   <div><div className="text-muted-foreground text-xs">Profit Factor</div><div className="font-bold">{day.data.day.stats.profit_factor}</div></div>
                   <div><div className="text-muted-foreground text-xs">Day Rating</div><div className="font-bold">{day.data.day.stats.day_rating}</div></div>
                 </div>
-                {day.data.day.stats.top_lesson && <div className="text-sm italic text-amber-300">📖 {day.data.day.stats.top_lesson}</div>}
+                {day.data.day.stats.top_lesson && <div className="text-sm italic text-warning">📖 {day.data.day.stats.top_lesson}</div>}
                 <div className="space-y-2">
                   {day.data.day.trades.length === 0 && <div className="text-muted-foreground text-sm">No trades on this day.</div>}
                   {day.data.day.trades.map((t: any) => (
-                    <div key={t.trade_id} className="border border-slate-700 rounded p-3 text-sm" data-testid={`trade-row-${t.trade_id}`}>
+                    <div key={t.trade_id} className="border border-border rounded p-3 text-sm" data-testid={`trade-row-${t.trade_id}`}>
                       <div className="flex items-center justify-between">
                         <div className="font-semibold">#{t.trade_id} {t.symbol} <Badge variant="outline">{t.action}</Badge> <Badge>{t.status}</Badge></div>
-                        <div className={`font-bold ${t.pnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{t.pnl.toFixed(2)}</div>
+                        <div className={`font-bold ${t.pnl >= 0 ? "text-success" : "text-danger"}`}>{t.pnl.toFixed(2)}</div>
                       </div>
                       <div className="text-xs text-muted-foreground mt-1">
                         decision_id: {t.decision_id ?? "—"} · entry: {t.entry_price} · exit: {t.exit_price ?? "—"} · SL: {t.stop_loss} · TP: {t.take_profit}
                       </div>
                       {t.decision && <div className="text-xs mt-1">AA: {t.decision.action} (conf {t.decision.confidence}, risk {t.decision.risk_score}, window {t.decision.trade_window_status})</div>}
-                      {t.debrief && <div className="text-xs mt-1 text-blue-300">BB lesson: {t.debrief.lesson}</div>}
-                      {t.learning && <div className="text-xs text-purple-300">CC: {t.learning.lesson}</div>}
-                      {t.ai_followed_own_decision === false && <div className="text-xs text-amber-300">⚠️ AI did not follow its own decision</div>}
+                      {t.debrief && <div className="text-xs mt-1 text-primary">BB lesson: {t.debrief.lesson}</div>}
+                      {t.learning && <div className="text-xs text-premium">CC: {t.learning.lesson}</div>}
+                      {t.ai_followed_own_decision === false && <div className="text-xs text-warning">⚠️ AI did not follow its own decision</div>}
                     </div>
                   ))}
                 </div>

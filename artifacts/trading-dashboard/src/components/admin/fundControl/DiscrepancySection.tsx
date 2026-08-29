@@ -82,9 +82,9 @@ export function DiscrepancySection() {
         <div className="flex flex-wrap items-center gap-2 text-sm">
           {overview ? (
             <>
-              <Badge className="bg-amber-500/15 text-amber-400">open {fmtInt(overview.openCount)}</Badge>
-              <Badge className="bg-red-500/15 text-red-400">critical {fmtInt(overview.criticalOpenCount)}</Badge>
-              <Badge className="bg-sky-500/15 text-sky-400">investigating {fmtInt(overview.investigatingCount)}</Badge>
+              <Badge className="bg-warning/15 text-warning">open {fmtInt(overview.openCount)}</Badge>
+              <Badge className="bg-danger/15 text-danger">critical {fmtInt(overview.criticalOpenCount)}</Badge>
+              <Badge className="bg-ruby/15 text-ruby">investigating {fmtInt(overview.investigatingCount)}</Badge>
               <span className="text-xs text-muted-foreground">
                 {overview.lastRunAt ? `Last run ${fmtTimeAgo(overview.lastRunAt)}` : "No run recorded"}
               </span>
@@ -127,7 +127,7 @@ export function DiscrepancySection() {
         </Select>
       </div>
 
-      {err ? <p className="text-xs text-red-400">{err}</p> : null}
+      {err ? <p className="text-xs text-danger">{err}</p> : null}
 
       {listQ.isLoading ? (
         <Skeleton className="h-48 w-full" />

@@ -70,7 +70,7 @@ export function RubyDraftReadPanel({
       data-testid="ruby-draft-read-panel"
     >
       <div className="flex items-center gap-2">
-        <Sparkles className="h-3.5 w-3.5 text-fuchsia-400" />
+        <Sparkles className="h-3.5 w-3.5 text-premium" />
         <span className="font-semibold text-foreground">Ask {name} (read-only)</span>
         <span className="ml-auto flex items-center gap-1 rounded bg-success/10 px-1.5 py-0.5 text-[10px] text-success">
           <ShieldCheck className="h-3 w-3" /> read-only
@@ -86,7 +86,7 @@ export function RubyDraftReadPanel({
             onClick={() => ask(it.key)}
             className={`rounded border px-2 py-1 text-[10px] transition-colors disabled:opacity-50 ${
               active === it.key
-                ? "border-fuchsia-500/60 bg-fuchsia-500/10 text-fuchsia-200"
+                ? "border-premium/60 bg-premium/10 text-premium"
                 : "border-border bg-card/40 text-txt-secondary hover:border-border"
             }`}
             data-testid={`ruby-draft-intent-${it.key}`}

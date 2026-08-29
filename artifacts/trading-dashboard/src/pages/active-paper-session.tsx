@@ -39,7 +39,7 @@ export default function ActivePaperSession() {
   }
 
   if (!s) return (
-    <div className="p-6 space-y-2">
+    <div className="space-y-2">
       <h1 className="text-2xl font-bold">Active Demo Session</h1>
       <p className="text-sm text-muted-foreground">No active session. Start one from <a className="underline" href="/demo-testing-launch">Demo Testing Launch</a>.</p>
     </div>
@@ -48,16 +48,16 @@ export default function ActivePaperSession() {
   const elapsedMin = s.started_at ? Math.round((Date.now() - Date.parse(s.started_at))/60_000) : 0;
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Active Demo Session</h1>
           <p className="text-sm text-muted-foreground">{s.paper_session_id}</p>
         </div>
         <div className="flex gap-2">
-          <span className="px-2 py-1 rounded bg-emerald-100 text-emerald-800 text-xs">{s.status}</span>
-          <span className="px-2 py-1 rounded bg-blue-100 text-blue-800 text-xs">PAPER_ONLY</span>
-          <span className="px-2 py-1 rounded bg-red-100 text-red-800 text-xs">LIVE DISABLED</span>
+          <span className="px-2 py-1 rounded bg-success/10 text-success text-xs">{s.status}</span>
+          <span className="px-2 py-1 rounded bg-primary/10 text-primary text-xs">PAPER_ONLY</span>
+          <span className="px-2 py-1 rounded bg-danger/10 text-danger text-xs">LIVE DISABLED</span>
         </div>
       </div>
 
@@ -74,20 +74,20 @@ export default function ActivePaperSession() {
 
       <div className="flex gap-2">
         {s.status === "ACTIVE" && (
-          <button onClick={() => void action("pause", "manual pause")} disabled={busy} className="px-4 py-2 rounded bg-amber-500 text-white">Pause</button>
+          <button onClick={() => void action("pause", "manual pause")} disabled={busy} className="px-4 py-2 rounded bg-warning text-white">Pause</button>
         )}
         {s.status === "PAUSED" && (
-          <button onClick={() => void action("resume", "manual resume")} disabled={busy} className="px-4 py-2 rounded bg-emerald-600 text-white">Resume</button>
+          <button onClick={() => void action("resume", "manual resume")} disabled={busy} className="px-4 py-2 rounded bg-success text-white">Resume</button>
         )}
         {(s.status === "ACTIVE" || s.status === "PAUSED") && (
-          <button onClick={() => void action("end", "manual end")} disabled={busy} className="px-4 py-2 rounded bg-red-600 text-white">End session</button>
+          <button onClick={() => void action("end", "manual end")} disabled={busy} className="px-4 py-2 rounded bg-danger text-white">End session</button>
         )}
       </div>
 
       {s.activeWarnings.length > 0 && (
         <div className="rounded border p-4">
           <div className="font-semibold">Active warnings ({s.activeWarnings.length})</div>
-          <ul className="list-disc pl-5 text-sm text-amber-700">{s.activeWarnings.map((w,i)=><li key={i}>[{w.source}] {w.code} — {w.message}</li>)}</ul>
+          <ul className="list-disc pl-5 text-sm text-warning">{s.activeWarnings.map((w,i)=><li key={i}>[{w.source}] {w.code} — {w.message}</li>)}</ul>
         </div>
       )}
 

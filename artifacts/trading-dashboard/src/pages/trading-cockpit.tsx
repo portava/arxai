@@ -61,11 +61,11 @@ async function postJSON<T>(path: string, body: unknown = {}, headers: Record<str
 function StatusBadge({ status }: { status?: string }) {
   const s = (status ?? "UNKNOWN").toUpperCase();
   const tone = s === "PASS" || s === "PASS_WITH_WARNINGS" || s === "PAPER_ALLOWED" || s === "PAPER_CAUTION" || s === "ACTIVE" || s === "OK"
-    ? "bg-green-500/15 text-green-700 dark:text-green-400 border-green-500/30"
+    ? "bg-success/15 text-success dark:text-success border-success/30"
     : s === "PAPER_PAUSED" || s === "PAUSED" || s === "WATCH_ONLY" || s === "DEGRADED"
-    ? "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30"
+    ? "bg-warning/15 text-warning dark:text-warning border-warning/30"
     : s === "FAIL" || s === "BLOCKED" || s === "LOCKED" || s === "UNSAFE"
-    ? "bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/30"
+    ? "bg-danger/15 text-danger dark:text-danger border-danger/30"
     : "bg-muted text-muted-foreground border-border";
   return <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-mono border ${tone}`}>{s}</span>;
 }
@@ -76,20 +76,20 @@ function SafetyHeader({ s }: { s: CockpitSummary }) {
   return (
     <div className="sticky top-0 z-20 -mx-4 px-4 py-3 bg-background/95 backdrop-blur border-b">
       <div className="flex flex-wrap items-center gap-2">
-        <Badge className="bg-blue-500/15 text-blue-700 dark:text-blue-400 border-blue-500/30 hover:bg-blue-500/20" variant="outline">DEMO ONLY</Badge>
-        <Badge className="bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/30 hover:bg-red-500/20" variant="outline">LIVE TRADING DISABLED</Badge>
+        <Badge className="bg-primary/15 text-primary dark:text-primary border-primary/30 hover:bg-primary/20" variant="outline">DEMO ONLY</Badge>
+        <Badge className="bg-danger/15 text-danger dark:text-danger border-danger/30 hover:bg-danger/20" variant="outline">LIVE TRADING DISABLED</Badge>
         <AaciSyncChip symbol={bareSymbol(chartSym)} />
         <span className="text-xs text-muted-foreground hidden sm:inline">|</span>
         <span className="text-xs text-muted-foreground">Readiness</span><StatusBadge status={s.readiness.status} />
         <span className="text-xs text-muted-foreground">Risk</span><StatusBadge status={s.riskGovernor.overallStatus} />
         <span className="text-xs text-muted-foreground">Security</span>
         {s.security.rolesSeeded && s.security.forbiddenLocked
-          ? <Badge variant="outline" className="bg-green-500/15 text-green-700 dark:text-green-400 border-green-500/30">OK</Badge>
-          : <Badge variant="outline" className="bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30">WARN</Badge>}
+          ? <Badge variant="outline" className="bg-success/15 text-success dark:text-success border-success/30">OK</Badge>
+          : <Badge variant="outline" className="bg-warning/15 text-warning dark:text-warning border-warning/30">WARN</Badge>}
         <span className="text-xs text-muted-foreground">Session</span>
         <StatusBadge status={s.activeSession?.status ?? "NONE"} />
         {critical && (
-          <Badge className="bg-red-600 text-white animate-pulse ml-1" variant="default">
+          <Badge className="bg-danger text-white animate-pulse ml-1" variant="default">
             <AlertTriangle className="h-3 w-3 mr-1" />{s.notifications.criticalUnread} CRITICAL ALERT{s.notifications.criticalUnread === 1 ? "" : "S"}
           </Badge>
         )}
@@ -119,7 +119,7 @@ function PrimaryActionCard({ s, onAction, busy }: { s: CockpitSummary; onAction:
     onAction("start");
   };
   return (
-    <Card className={blocked ? "border-red-500/40" : "border-primary/30"}>
+    <Card className={blocked ? "border-danger/40" : "border-primary/30"}>
       <CardHeader className="pb-3">
         <CardTitle className="text-base flex items-center gap-2">
           <Target className="h-4 w-4" />Recommended next step
@@ -142,7 +142,7 @@ function PrimaryActionCard({ s, onAction, busy }: { s: CockpitSummary; onAction:
           )}
         </div>
         {s.warnings.length > 0 && (
-          <ul className="text-xs text-amber-700 dark:text-amber-400 list-disc pl-5 space-y-0.5">
+          <ul className="text-xs text-warning dark:text-warning list-disc pl-5 space-y-0.5">
             {s.warnings.slice(0, 3).map((w, i) => <li key={i}>{w}</li>)}
           </ul>
         )}
@@ -178,11 +178,11 @@ function ActiveSessionPanel({ s }: { s: CockpitSummary }) {
           <div><div className="text-[10px] uppercase text-muted-foreground">Timeframes</div><div className="font-mono text-xs">{a.timeframes.join(", ") || "—"}</div></div>
           <div><div className="text-[10px] uppercase text-muted-foreground">Elapsed</div><div className="font-mono text-xs">{elapsedMin} min</div></div>
           <div><div className="text-[10px] uppercase text-muted-foreground">Trades</div><div className="font-mono text-xs">{a.paperTradesOpened} open / {a.paperTradesClosed} closed</div></div>
-          <div><div className="text-[10px] uppercase text-muted-foreground">Net P&L (cents)</div><div className={`font-mono text-xs ${a.netPnl > 0 ? "text-green-600" : a.netPnl < 0 ? "text-red-600" : ""}`}>{a.netPnl}</div></div>
+          <div><div className="text-[10px] uppercase text-muted-foreground">Net P&L (cents)</div><div className={`font-mono text-xs ${a.netPnl > 0 ? "text-success" : a.netPnl < 0 ? "text-danger" : ""}`}>{a.netPnl}</div></div>
           <div><div className="text-[10px] uppercase text-muted-foreground">Win rate</div><div className="font-mono text-xs">{a.winRate}%</div></div>
         </div>
         {a.activeWarnings.length > 0 && (
-          <ul className="text-xs text-amber-700 dark:text-amber-400 list-disc pl-5">
+          <ul className="text-xs text-warning dark:text-warning list-disc pl-5">
             {a.activeWarnings.map((w, i) => <li key={i}>{w.message}</li>)}
           </ul>
         )}
@@ -214,7 +214,7 @@ function OpenTradesPanel({ s }: { s: CockpitSummary }) {
                     <td className="px-2 py-1 text-right font-mono">{o.entryPrice}</td>
                     <td className="px-2 py-1 text-right font-mono hidden sm:table-cell">{o.stopLoss}</td>
                     <td className="px-2 py-1 text-right font-mono hidden sm:table-cell">{o.takeProfit}</td>
-                    <td className={`px-2 py-1 text-right font-mono ${o.profitLoss > 0 ? "text-green-600" : o.profitLoss < 0 ? "text-red-600" : ""}`}>{o.profitLoss}</td>
+                    <td className={`px-2 py-1 text-right font-mono ${o.profitLoss > 0 ? "text-success" : o.profitLoss < 0 ? "text-danger" : ""}`}>{o.profitLoss}</td>
                   </tr>
                 ))}
               </tbody>
@@ -229,7 +229,7 @@ function OpenTradesPanel({ s }: { s: CockpitSummary }) {
 function TodayPerfPanel({ s }: { s: CockpitSummary }) {
   const t = s.todayPerformance;
   const Icon = t.dayRating === "GREEN" ? TrendingUp : t.dayRating === "RED" ? TrendingDown : Minus;
-  const tone = t.dayRating === "GREEN" ? "text-green-600" : t.dayRating === "RED" ? "text-red-600" : "text-muted-foreground";
+  const tone = t.dayRating === "GREEN" ? "text-success" : t.dayRating === "RED" ? "text-danger" : "text-muted-foreground";
   return (
     <Card>
       <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><Icon className={`h-4 w-4 ${tone}`} />Today's performance</CardTitle></CardHeader>
@@ -274,14 +274,14 @@ function AlertsPanel({ s }: { s: CockpitSummary }) {
       <CardContent className="text-sm space-y-2">
         <div className="flex gap-3 text-xs">
           <span>Unread: <span className="font-mono">{n.unreadAll}</span></span>
-          <span>Critical: <span className={`font-mono ${n.criticalUnread > 0 ? "text-red-600" : ""}`}>{n.criticalUnread}</span></span>
+          <span>Critical: <span className={`font-mono ${n.criticalUnread > 0 ? "text-danger" : ""}`}>{n.criticalUnread}</span></span>
         </div>
         {n.criticalSamples.length === 0 ? (
           <p className="text-muted-foreground text-xs">No critical alerts. Safety status is clean.</p>
         ) : (
           <ul className="space-y-1">
             {n.criticalSamples.map(a => (
-              <li key={a.id} className="text-xs border-l-2 border-red-500 pl-2"><span className="font-medium">{a.title}</span> — {a.message}</li>
+              <li key={a.id} className="text-xs border-l-2 border-danger pl-2"><span className="font-medium">{a.title}</span> — {a.message}</li>
             ))}
           </ul>
         )}
@@ -299,8 +299,8 @@ function AutopilotPanel({ s }: { s: CockpitSummary }) {
       <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><Bot className="h-4 w-4" />Demo autopilot</CardTitle></CardHeader>
       <CardContent className="text-sm space-y-2">
         <div className="flex flex-wrap gap-2">
-          <Badge variant="outline" className="bg-blue-500/15 text-blue-700 border-blue-500/30">{a.mode}</Badge>
-          <Badge variant="outline" className={allowed ? "bg-green-500/15 text-green-700 border-green-500/30" : "bg-muted"}>{allowed ? "ALLOWED" : "GATED OFF"}</Badge>
+          <Badge variant="outline" className="bg-primary/15 text-primary border-primary/30">{a.mode}</Badge>
+          <Badge variant="outline" className={allowed ? "bg-success/15 text-success border-success/30" : "bg-muted"}>{allowed ? "ALLOWED" : "GATED OFF"}</Badge>
         </div>
         <div className="text-xs grid grid-cols-2 gap-2">
           <div><div className="text-[10px] uppercase text-muted-foreground">Session</div><div className="font-mono">{a.sessionStatus}</div></div>
@@ -325,7 +325,7 @@ function HealthPanel({ s }: { s: CockpitSummary }) {
           <div><div className="text-[10px] uppercase text-muted-foreground">Last check</div><div className="font-mono text-[10px]">{h.lastReadinessAt ? new Date(h.lastReadinessAt).toLocaleTimeString() : "—"}</div></div>
         </div>
         {h.majorWarnings.length > 0 && (
-          <ul className="text-xs text-amber-700 dark:text-amber-400 list-disc pl-5">
+          <ul className="text-xs text-warning dark:text-warning list-disc pl-5">
             {h.majorWarnings.slice(0, 3).map((w, i) => <li key={i}>{w.message}</li>)}
           </ul>
         )}
@@ -425,18 +425,18 @@ export default function TradingCockpit() {
   useEffect(() => { document.title = "Trading Cockpit — DEMO ONLY"; }, []);
 
   if (isLoading) {
-    return <div className="p-4 space-y-3"><Skeleton className="h-12 w-full" /><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{[0,1,2,3,4,5].map(i => <Skeleton key={i} className="h-44 w-full" />)}</div></div>;
+    return <div className="space-y-3"><Skeleton className="h-12 w-full" /><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{[0,1,2,3,4,5].map(i => <Skeleton key={i} className="h-44 w-full" />)}</div></div>;
   }
   if (error || !data) {
-    return <div className="p-4"><Alert variant="destructive"><AlertTitle>Cockpit unavailable</AlertTitle><AlertDescription className="text-xs">Unable to read cockpit summary. Existing safety rules remain in force; live trading remains DISABLED.</AlertDescription></Alert></div>;
+    return <div><Alert variant="destructive"><AlertTitle>Cockpit unavailable</AlertTitle><AlertDescription className="text-xs">Unable to read cockpit summary. Existing safety rules remain in force; live trading remains DISABLED.</AlertDescription></Alert></div>;
   }
   const s = data.summary;
 
   return (
-    <div className="space-y-4 px-1 sm:px-0 pb-8">
+    <div className="space-y-4 pb-8">
       <SafetyHeader s={s} />
       <div className="px-1 sm:px-0">
-        <h1 className="text-xl font-bold flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-green-600" />Trading Cockpit</h1>
+        <h1 className="text-xl font-bold flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-success" />Trading Cockpit</h1>
         <p className="text-xs text-muted-foreground">One clean place to operate the paper-only system. No live execution controls live here — and they never will.</p>
       </div>
       {actionMsg && <Alert><AlertDescription className="text-xs">{actionMsg}</AlertDescription></Alert>}

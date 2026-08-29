@@ -189,7 +189,7 @@ function FeeSettingsForm({
         >
           {changedCount === 0 ? "No changes" : `Review ${changedCount} change${changedCount === 1 ? "" : "s"}`}
         </Button>
-        {err ? <p className="text-xs text-red-400">{err}</p> : null}
+        {err ? <p className="text-xs text-danger">{err}</p> : null}
       </div>
 
       <TierTable title="Deposit speed tiers" tiers={depositTiers} />
@@ -260,7 +260,7 @@ function TierTable({ title, tiers }: { title: string; tiers: CapitalSpeedTier[] 
                     <TableCell>{t.requiresDisclosure ? "Required" : "—"}</TableCell>
                     <TableCell>
                       {t.active ? (
-                        <Badge className="bg-emerald-500/15 text-emerald-400">Active</Badge>
+                        <Badge className="bg-success/15 text-success">Active</Badge>
                       ) : (
                         <Badge className="bg-muted text-muted-foreground">Inactive</Badge>
                       )}

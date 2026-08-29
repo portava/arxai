@@ -41,10 +41,10 @@ function CopyButton({ value, label }: { value: string; label: string }) {
 
 function FieldRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between gap-3 py-1 border-b border-slate-800/60 last:border-0">
-      <div className="text-slate-400 text-xs">{label}</div>
+    <div className="flex items-center justify-between gap-3 py-1 border-b border-border/60 last:border-0">
+      <div className="text-txt-secondary text-xs">{label}</div>
       <div className="flex items-center gap-2 min-w-0">
-        <code className="font-mono text-xs text-slate-200 truncate max-w-[260px]" title={value}>
+        <code className="font-mono text-xs text-foreground truncate max-w-[260px]" title={value}>
           {value}
         </code>
         <CopyButton value={value} label={label} />
@@ -67,14 +67,14 @@ export function CopyLiveEaInputsCard() {
   if (isLoading) {
     return (
       <Card data-testid="copy-live-ea-inputs-card">
-        <CardContent className="p-6 text-sm text-slate-400">Loading EA inputs…</CardContent>
+        <CardContent className="p-6 text-sm text-txt-secondary">Loading EA inputs…</CardContent>
       </Card>
     );
   }
   if (error || !data) {
     return (
       <Card data-testid="copy-live-ea-inputs-card">
-        <CardContent className="p-6 text-sm text-red-300">Failed to load EA inputs.</CardContent>
+        <CardContent className="p-6 text-sm text-danger">Failed to load EA inputs.</CardContent>
       </Card>
     );
   }
@@ -83,7 +83,7 @@ export function CopyLiveEaInputsCard() {
     <Card data-testid="copy-live-ea-inputs-card">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <KeyRound className="w-4 h-4 text-amber-300" />
+          <KeyRound className="w-4 h-4 text-warning" />
           Copy Live EA Inputs
         </CardTitle>
         <CardDescription>
@@ -95,30 +95,30 @@ export function CopyLiveEaInputsCard() {
         <FieldRow label="ServerBaseUrl" value={data.serverBaseUrl} />
         <FieldRow label="Heartbeat endpoint" value={data.heartbeatEndpoint} />
         <FieldRow label="Header name" value={data.bridgeTokenHeader} />
-        <div className="flex items-center justify-between gap-3 py-1 border-b border-slate-800/60">
-          <div className="text-slate-400 text-xs">Bridge token (last 4)</div>
+        <div className="flex items-center justify-between gap-3 py-1 border-b border-border/60">
+          <div className="text-txt-secondary text-xs">Bridge token (last 4)</div>
           <div className="flex items-center gap-2">
-            <code className="font-mono text-xs text-slate-200">
+            <code className="font-mono text-xs text-foreground">
               {data.tokenLast4 ? `…${data.tokenLast4}` : "no connection"}
             </code>
             {data.bridgeConnectionId != null && (
-              <span className="text-xs text-slate-500">bridge #{data.bridgeConnectionId}</span>
+              <span className="text-xs text-txt-muted">bridge #{data.bridgeConnectionId}</span>
             )}
           </div>
         </div>
 
         <div className="pt-2 space-y-1">
-          <div className="text-xs uppercase tracking-wider text-slate-400">Required EA Inputs (defaults)</div>
+          <div className="text-xs uppercase tracking-wider text-txt-secondary">Required EA Inputs (defaults)</div>
           {Object.entries(data.requiredEaInputs).map(([k, v]) => (
             <div key={k} className="flex justify-between py-0.5">
-              <span className="text-slate-400">{k}</span>
-              <code className="font-mono text-xs text-slate-200">{String(v)}</code>
+              <span className="text-txt-secondary">{k}</span>
+              <code className="font-mono text-xs text-foreground">{String(v)}</code>
             </div>
           ))}
         </div>
 
-        <div className="text-xs text-slate-500 pt-1">{data.rawTokenPolicy}</div>
-        <div className="text-xs text-amber-300/80">{data.note}</div>
+        <div className="text-xs text-txt-muted pt-1">{data.rawTokenPolicy}</div>
+        <div className="text-xs text-warning/80">{data.note}</div>
       </CardContent>
     </Card>
   );

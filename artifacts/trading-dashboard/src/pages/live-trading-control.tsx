@@ -102,14 +102,14 @@ export default function LiveTradingControl() {
     readiness?.liveTradingEligible ? "ready" : "locked";
 
   const bannerStyles = {
-    locked: "bg-red-600 text-white",
-    ready: "bg-yellow-500 text-black",
-    armed: "bg-black border-2 border-red-500 text-red-400",
-    loading: "bg-gray-600 text-white",
+    locked: "bg-danger text-white",
+    ready: "bg-warning text-black",
+    armed: "bg-black border-2 border-danger text-danger",
+    loading: "bg-muted text-white",
   } as const;
 
   return (
-    <div className="p-6 space-y-4 max-w-7xl mx-auto">
+    <div className="space-y-4 max-w-7xl mx-auto">
       <div className={`p-4 rounded-lg font-bold text-lg ${bannerStyles[banner]}`}>
         {banner === "locked" && "🔒 LIVE TRADING LOCKED — kill switch active or readiness blockers present"}
         {banner === "ready" && "⚠️ MICRO-LIVE READY — not armed. No real money at risk yet."}
@@ -117,7 +117,7 @@ export default function LiveTradingControl() {
         {banner === "loading" && "Loading..."}
       </div>
 
-      <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3 text-sm text-yellow-900">
+      <div className="bg-warning/10 border-l-4 border-warning p-3 text-sm text-warning">
         <strong>Live trading is paused.</strong> The live broker placement layer is intentionally locked
         in this build, so even an armed, approved trade card cannot reach a real broker from here.
         <div className="mt-1 text-[10px] font-mono opacity-60">Technical: BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED</div>
@@ -127,7 +127,7 @@ export default function LiveTradingControl() {
         <div className="bg-card border rounded-lg p-4">
           <h3 className="font-semibold text-sm text-muted-foreground">CURRENT MODE</h3>
           <p className="text-2xl font-bold mt-1">{state?.mode ?? "—"}</p>
-          <p className="text-xs mt-1">Armed: <span className={state?.armed ? "text-red-600 font-bold" : "text-emerald-600"}>{String(state?.armed)}</span></p>
+          <p className="text-xs mt-1">Armed: <span className={state?.armed ? "text-danger font-bold" : "text-success"}>{String(state?.armed)}</span></p>
         </div>
         <div className="bg-card border rounded-lg p-4">
           <h3 className="font-semibold text-sm text-muted-foreground">READINESS</h3>
@@ -136,7 +136,7 @@ export default function LiveTradingControl() {
         </div>
         <div className="bg-card border rounded-lg p-4">
           <h3 className="font-semibold text-sm text-muted-foreground">KILL SWITCH</h3>
-          <p className={`text-2xl font-bold mt-1 ${state?.killSwitchActive ? "text-red-600" : "text-emerald-600"}`}>
+          <p className={`text-2xl font-bold mt-1 ${state?.killSwitchActive ? "text-danger" : "text-success"}`}>
             {state?.killSwitchActive ? "ACTIVE" : "OFF"}
           </p>
           <p className="text-xs mt-1 truncate">{state?.killSwitchReason ?? "no reason logged"}</p>
@@ -148,9 +148,9 @@ export default function LiveTradingControl() {
           <h3 className="font-semibold mb-2">Blockers ({readiness?.blockers.length ?? 0})</h3>
           {readiness?.blockers.length ? (
             <ul className="text-sm space-y-1">
-              {readiness.blockers.map((b, i) => <li key={i} className="text-red-600">• {b}</li>)}
+              {readiness.blockers.map((b, i) => <li key={i} className="text-danger">• {b}</li>)}
             </ul>
-          ) : <p className="text-sm text-emerald-600">No blockers.</p>}
+          ) : <p className="text-sm text-success">No blockers.</p>}
         </div>
         <div className="bg-card border rounded-lg p-4">
           <h3 className="font-semibold mb-2">Required actions ({readiness?.requiredActions.length ?? 0})</h3>
@@ -171,18 +171,18 @@ export default function LiveTradingControl() {
         />
         <div className="flex gap-2 flex-wrap">
           <button disabled={busy} onClick={() => action("arm", { confirmationPhrase: phrase, mode: "MICRO_LIVE" })}
-            className="px-4 py-2 bg-yellow-500 text-black rounded font-bold disabled:opacity-50">
+            className="px-4 py-2 bg-warning text-black rounded font-bold disabled:opacity-50">
             ARM MICRO-LIVE
           </button>
           <button disabled={busy} onClick={() => action("disarm", { reason: "manual" })}
-            className="px-4 py-2 bg-emerald-600 text-white rounded font-bold disabled:opacity-50">
+            className="px-4 py-2 bg-success text-white rounded font-bold disabled:opacity-50">
             DISARM (return to DEMO_ONLY)
           </button>
         </div>
       </div>
 
-      <div className="bg-card border-2 border-red-500 rounded-lg p-4 space-y-3">
-        <h3 className="font-semibold text-red-600">Emergency Kill Switch</h3>
+      <div className="bg-card border-2 border-danger rounded-lg p-4 space-y-3">
+        <h3 className="font-semibold text-danger">Emergency Kill Switch</h3>
         <input
           type="text" value={killReason} onChange={(e) => setKillReason(e.target.value)}
           placeholder="Reason for kill switch (min 4 chars)"
@@ -190,11 +190,11 @@ export default function LiveTradingControl() {
         />
         <div className="flex gap-2 flex-wrap">
           <button disabled={busy} onClick={() => action("kill-switch", { reason: killReason })}
-            className="px-4 py-2 bg-red-600 text-white rounded font-bold disabled:opacity-50">
+            className="px-4 py-2 bg-danger text-white rounded font-bold disabled:opacity-50">
             🛑 ENGAGE KILL SWITCH
           </button>
           <button disabled={busy} onClick={() => action("reset-kill-switch", { reason: killReason || "post-investigation reset" })}
-            className="px-4 py-2 bg-gray-700 text-white rounded font-bold disabled:opacity-50">
+            className="px-4 py-2 bg-muted text-white rounded font-bold disabled:opacity-50">
             Reset Kill Switch (ADMIN, requires readiness)
           </button>
         </div>
@@ -221,7 +221,7 @@ export default function LiveTradingControl() {
               {approvals.map(a => (
                 <tr key={a.approvalId} className="border-b">
                   <td className="font-mono">{a.approvalId.slice(0, 12)}…</td>
-                  <td><span className="px-2 py-0.5 rounded bg-gray-100">{a.status}</span></td>
+                  <td><span className="px-2 py-0.5 rounded bg-muted">{a.status}</span></td>
                   <td>{a.symbol}</td><td>{a.direction}</td>
                   <td>{a.lotSize}</td><td>{a.riskPercent}%</td><td>{a.confidenceScore}</td>
                 </tr>
@@ -237,7 +237,7 @@ export default function LiveTradingControl() {
           {audit.map(e => (
             <div key={e.eventId} className="flex gap-2 border-b pb-1">
               <span className="text-muted-foreground">{new Date(e.createdAt).toISOString().slice(11, 19)}</span>
-              <span className={`font-bold ${e.severity === "CRITICAL" ? "text-red-600" : e.severity === "HIGH" ? "text-orange-600" : e.severity === "WARNING" ? "text-yellow-600" : "text-emerald-600"}`}>
+              <span className={`font-bold ${e.severity === "CRITICAL" ? "text-danger" : e.severity === "HIGH" ? "text-warning" : e.severity === "WARNING" ? "text-warning" : "text-success"}`}>
                 [{e.severity}]
               </span>
               <span className="font-bold">{e.eventType}</span>
@@ -248,7 +248,7 @@ export default function LiveTradingControl() {
       </div>
 
       {lastResult && (
-        <div className="bg-gray-100 border rounded-lg p-3 text-xs font-mono break-all">
+        <div className="bg-muted border rounded-lg p-3 text-xs font-mono break-all">
           <strong>Last action result:</strong> {lastResult}
         </div>
       )}

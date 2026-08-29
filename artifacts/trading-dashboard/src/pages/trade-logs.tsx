@@ -27,7 +27,7 @@ export default function TradeLogs() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "OPEN": return <Badge variant="outline" className="text-primary border-primary/50">OPEN</Badge>;
-      case "CLOSED_WIN": return <Badge className="bg-green-500/20 text-green-500 hover:bg-green-500/30 border-none">WIN</Badge>;
+      case "CLOSED_WIN": return <Badge className="bg-success/20 text-success hover:bg-success/30 border-none">WIN</Badge>;
       case "CLOSED_LOSS": return <Badge className="bg-destructive/20 text-destructive hover:bg-destructive/30 border-none">LOSS</Badge>;
       case "CANCELLED": return <Badge variant="secondary">CANCELLED</Badge>;
       default: return <Badge variant="outline">{status}</Badge>;
@@ -94,7 +94,7 @@ export default function TradeLogs() {
                 </TableCell>
                 <TableCell className="font-mono font-bold">{trade.symbol}</TableCell>
                 <TableCell>
-                  <span className={`flex items-center gap-1 font-mono text-xs ${trade.direction === 'BUY' ? 'text-green-500' : 'text-destructive'}`}>
+                  <span className={`flex items-center gap-1 font-mono text-xs ${trade.direction === 'BUY' ? 'text-success' : 'text-destructive'}`}>
                     {trade.direction === 'BUY' ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
                     {trade.direction}
                   </span>
@@ -102,7 +102,7 @@ export default function TradeLogs() {
                 <TableCell className="font-mono">{trade.lot}</TableCell>
                 <TableCell className="text-right font-mono">{formatPrice(trade.entryPrice)}</TableCell>
                 <TableCell className="text-right font-mono text-destructive">{formatPrice(trade.stopLoss)}</TableCell>
-                <TableCell className="text-right font-mono text-green-500">{formatPrice(trade.takeProfit)}</TableCell>
+                <TableCell className="text-right font-mono text-success">{formatPrice(trade.takeProfit)}</TableCell>
                 <TableCell>{getStatusBadge(trade.status)}</TableCell>
                 <TableCell className="text-right">
                   {renderPnlCell(trade)}
