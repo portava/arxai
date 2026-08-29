@@ -16,10 +16,16 @@ import {
   weeklyPerformanceReviewsTable, tradingRuleContractsTable,
   tradingRuleViolationsTable, vaultEventsTable,
 } from "@workspace/db";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod/v4";
+import { requireUser } from "../lib/auth/middleware.js";
 
 const router = Router();
+
+/** Authenticated caller id — `requireUser` gates every /mentor/* route. */
+function uid(req: import("express").Request): number {
+  return req.authUser!.id;
+}
 const MENTOR_DISCLAIMER =
   "Your AI mentor guides BEHAVIOR — discipline, focus, what to work on. It does NOT predict or promise profit, and it CANNOT override the safety system, risk locks, or trade authorization gates.";
 
@@ -49,15 +55,31 @@ const GenerateBody = z.object({
 });
 
 // ── Context loader (READ-ONLY across 7 systems) ────────────────────────────
-async function loadContext() {
+// ISOLATION: `userId` is required — every one of the seven reads below feeds
+// text the mentor presents as "your" skill, "your" mistakes, "your" violated
+// rules. There is no honest unscoped variant of this briefing.
+async function loadContext(userId: number) {
   const [skill, debriefs, edges, readiness, reviews, contracts, violations] = await Promise.all([
-    db.select().from(traderSkillProfilesTable).orderBy(desc(traderSkillProfilesTable.updatedAt)).limit(1),
-    db.select().from(postTradeDebriefsTable).orderBy(desc(postTradeDebriefsTable.id)).limit(20),
-    db.select().from(edgeDiscoveryReportsTable).orderBy(desc(edgeDiscoveryReportsTable.confidenceScore)).limit(20),
-    db.select().from(tradingReadinessChecksTable).orderBy(desc(tradingReadinessChecksTable.id)).limit(1),
-    db.select().from(weeklyPerformanceReviewsTable).orderBy(desc(weeklyPerformanceReviewsTable.createdAt)).limit(1),
-    db.select().from(tradingRuleContractsTable).limit(20),
-    db.select().from(tradingRuleViolationsTable).orderBy(desc(tradingRuleViolationsTable.id)).limit(20),
+    db.select().from(traderSkillProfilesTable)
+      .where(eq(traderSkillProfilesTable.userId, userId))
+      .orderBy(desc(traderSkillProfilesTable.updatedAt)).limit(1),
+    db.select().from(postTradeDebriefsTable)
+      .where(eq(postTradeDebriefsTable.userId, userId))
+      .orderBy(desc(postTradeDebriefsTable.id)).limit(20),
+    db.select().from(edgeDiscoveryReportsTable)
+      .where(eq(edgeDiscoveryReportsTable.userId, userId))
+      .orderBy(desc(edgeDiscoveryReportsTable.confidenceScore)).limit(20),
+    db.select().from(tradingReadinessChecksTable)
+      .where(eq(tradingReadinessChecksTable.userId, userId))
+      .orderBy(desc(tradingReadinessChecksTable.id)).limit(1),
+    db.select().from(weeklyPerformanceReviewsTable)
+      .where(eq(weeklyPerformanceReviewsTable.userId, userId))
+      .orderBy(desc(weeklyPerformanceReviewsTable.createdAt)).limit(1),
+    db.select().from(tradingRuleContractsTable)
+      .where(eq(tradingRuleContractsTable.userId, userId)).limit(20),
+    db.select().from(tradingRuleViolationsTable)
+      .where(eq(tradingRuleViolationsTable.userId, userId))
+      .orderBy(desc(tradingRuleViolationsTable.id)).limit(20),
   ]);
   const recentMistakes = debriefs
     .map((d) => d.biggestMistake).filter((m): m is string => !!m && m.length > 0).slice(0, 5);
@@ -276,14 +298,16 @@ function pickOneRule(ctx: Ctx): string {
 }
 
 // ── POST /mentor/sessions — generate a new session ─────────────────────────
-router.post("/mentor/sessions", async (req, res): Promise<void> => {
+router.post("/mentor/sessions", requireUser, async (req, res): Promise<void> => {
   try {
+    const userId = uid(req);
     const b = GenerateBody.parse(req.body ?? {});
-    const ctx = await loadContext();
+    const ctx = await loadContext(userId);
     const sessionType = detectSessionType(ctx, b.sessionType, b.relatedTradeId);
     const composed = compose(sessionType, ctx);
 
     const ins = await db.insert(aiMentorSessionsTable).values({
+      userId,
       sessionType,
       skillLevel: ctx.skill?.skillLevel ?? "Beginner",
       mainFocus: composed.mainFocus,
@@ -297,6 +321,7 @@ router.post("/mentor/sessions", async (req, res): Promise<void> => {
     const items: typeof mentorActionItemsTable.$inferSelect[] = [];
     for (const a of composed.actions) {
       const r = await db.insert(mentorActionItemsTable).values({
+        userId,
         mentorSessionId: session.id,
         actionTitle: a.title, actionDescription: a.description,
       }).returning();
@@ -316,28 +341,35 @@ router.post("/mentor/sessions", async (req, res): Promise<void> => {
 });
 
 // ── GET /mentor/sessions/latest ────────────────────────────────────────────
-router.get("/mentor/sessions/latest", async (_req, res): Promise<void> => {
+router.get("/mentor/sessions/latest", requireUser, async (req, res): Promise<void> => {
+  const userId = uid(req);
   const session = (await db.select().from(aiMentorSessionsTable)
+    .where(eq(aiMentorSessionsTable.userId, userId))
     .orderBy(desc(aiMentorSessionsTable.createdAt)).limit(1))[0] ?? null;
   if (!session) { ok(res, { session: null, actionItems: [] }); return; }
   const items = await db.select().from(mentorActionItemsTable)
-    .where(eq(mentorActionItemsTable.mentorSessionId, session.id));
+    .where(and(
+      eq(mentorActionItemsTable.mentorSessionId, session.id),
+      eq(mentorActionItemsTable.userId, userId),
+    ));
   ok(res, { session, actionItems: items });
 });
 
 // ── GET /mentor/sessions ───────────────────────────────────────────────────
-router.get("/mentor/sessions", async (req, res): Promise<void> => {
+router.get("/mentor/sessions", requireUser, async (req, res): Promise<void> => {
   const raw = Number(req.query["limit"]);
   const limit = Number.isFinite(raw) ? Math.max(1, Math.min(raw, 100)) : 25;
   const rows = await db.select().from(aiMentorSessionsTable)
+    .where(eq(aiMentorSessionsTable.userId, uid(req)))
     .orderBy(desc(aiMentorSessionsTable.createdAt)).limit(limit);
   ok(res, { sessions: rows });
 });
 
 // ── GET /mentor/action-items ───────────────────────────────────────────────
-router.get("/mentor/action-items", async (req, res): Promise<void> => {
+router.get("/mentor/action-items", requireUser, async (req, res): Promise<void> => {
   const status = typeof req.query["status"] === "string" ? req.query["status"] : null;
   const all = await db.select().from(mentorActionItemsTable)
+    .where(eq(mentorActionItemsTable.userId, uid(req)))
     .orderBy(desc(mentorActionItemsTable.createdAt)).limit(200);
   ok(res, { actionItems: status ? all.filter((a) => a.status === status) : all });
 });
@@ -346,14 +378,19 @@ router.get("/mentor/action-items", async (req, res): Promise<void> => {
 const PatchBody = z.object({
   status: z.enum(["PENDING", "IN_PROGRESS", "DONE", "SKIPPED"]),
 });
-router.patch("/mentor/action-items/:id", async (req, res): Promise<void> => {
+router.patch("/mentor/action-items/:id", requireUser, async (req, res): Promise<void> => {
   try {
     const id = Number(req.params["id"]);
     if (!Number.isFinite(id)) { fail(res, 400, "Invalid id"); return; }
     const body = PatchBody.parse(req.body ?? {});
+    // Ownership is part of the WHERE clause: a foreign action-item id updates
+    // zero rows and answers 404.
     const upd = await db.update(mentorActionItemsTable)
       .set({ status: body.status, updatedAt: new Date() })
-      .where(eq(mentorActionItemsTable.id, id))
+      .where(and(
+        eq(mentorActionItemsTable.id, id),
+        eq(mentorActionItemsTable.userId, uid(req)),
+      ))
       .returning();
     if (upd.length === 0) { fail(res, 404, "Not found"); return; }
     await vaultMentor("MENTOR_ACTION_STATUS",

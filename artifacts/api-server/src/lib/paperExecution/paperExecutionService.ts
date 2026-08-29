@@ -67,22 +67,36 @@ async function logExec(args: {
   }
 }
 
-async function getActivePaperAccount(explicitId?: number) {
+// ISOLATION: a paper account belongs to ONE trader. An explicit id is only
+// honoured when that account is actually owned by the caller — otherwise a
+// caller could execute into somebody else's sandbox by guessing an integer.
+async function getActivePaperAccount(userId: number, explicitId?: number) {
   if (explicitId != null) {
     const rows = await db.select().from(paperAccountsTable)
-      .where(eq(paperAccountsTable.id, explicitId)).limit(1);
+      .where(and(eq(paperAccountsTable.id, explicitId),
+                 eq(paperAccountsTable.userId, userId))).limit(1);
     return rows[0] ?? null;
   }
   const rows = await db.select().from(paperAccountsTable)
-    .where(eq(paperAccountsTable.isActive, 1)).limit(1);
+    .where(and(eq(paperAccountsTable.userId, userId),
+               eq(paperAccountsTable.isActive, 1)))
+    .orderBy(desc(paperAccountsTable.id)).limit(1);
   return rows[0] ?? null;
 }
 
-async function ensurePaperAccount(): Promise<{ id: number; equity: number }> {
-  const existing = await getActivePaperAccount();
+// The account MUST carry its owner. Created unowned, the Risk Governor could
+// never find equity to apply the trader's configured daily-loss percentage to,
+// so it reported dailyLossLimitBasis="UNKNOWN" and — correctly, given what it
+// could see — hard-blocked the trader out of their own paper account.
+async function ensurePaperAccount(userId: number, explicitId?: number): Promise<{ id: number; equity: number }> {
+  const existing = await getActivePaperAccount(userId, explicitId);
   if (existing) return { id: existing.id, equity: existing.equity };
+  if (explicitId != null) {
+    throw new Error(`paper account ${explicitId} does not exist or is not owned by this trader`);
+  }
   // Create a default sandbox account so EE can always run.
   const ins = await db.insert(paperAccountsTable).values({
+    userId,
     accountName: "Build EE Sandbox",
     startingBalance: PAPER_DEFAULTS.defaultEquity,
     currentBalance: PAPER_DEFAULTS.defaultEquity,
@@ -106,8 +120,9 @@ function applySimulatedFill(action: "BUY" | "SELL", md: {
 export async function executePaperFromDecision(
   decision: TradeDecision,
   decisionId: number | null,
-  opts: ExecuteFromDecisionOpts = {},
+  opts: ExecuteFromDecisionOpts,
 ): Promise<PaperExecutionResult> {
+  const userId = opts.userId;
   const executionId = `exec_${randomUUID()}`;
   const symbol = decision.symbol;
   const action = decision.action;
@@ -118,12 +133,18 @@ export async function executePaperFromDecision(
 
   // ── Build HH gate: Risk Governor must allow paper trading ──
   try {
-    const gate = await gateForPaperTrade();
+    // The gate MUST be scoped to the trader whose trade this is. Called with
+    // no identity, collectMetrics() summed EVERY user's closed paper orders
+    // into dailyPnl and returned dailyLossLimitBasis="UNKNOWN" — which trips
+    // the (correct) DAILY_LOSS_LIMIT_UNKNOWN fail-closed block, so on any day
+    // the platform's aggregate paper P&L was negative, every user's execution
+    // was rejected.
+    const gate = await gateForPaperTrade(userId);
     if (!gate.allowed) {
       log.warn({ governorStatus: gate.status, governorId: gate.governorId, reasons: gate.reasons },
         "Build EE: paper trade BLOCKED by Risk Governor");
       return persistRejection({
-        executionId, decisionId, symbol, action, decision,
+        executionId, userId, decisionId, symbol, action, decision,
         reason: `RISK_GOVERNOR_BLOCK[${gate.status}]: ${gate.reasons[0] ?? "blocked"}`,
         warnings: gate.reasons,
       });
@@ -131,7 +152,7 @@ export async function executePaperFromDecision(
   } catch (e) {
     log.error({ err: String(e).slice(0, 200) }, "Build EE: governor gate threw — failing CLOSED (paper trade rejected)");
     return persistRejection({
-      executionId, decisionId, symbol, action, decision,
+      executionId, userId, decisionId, symbol, action, decision,
       reason: `RISK_GOVERNOR_GATE_ERROR: ${String(e).slice(0, 160)}`,
       warnings: ["RISK_GOVERNOR_GATE_ERROR: governor evaluation failed; defaulting to fail-closed"],
     });
@@ -139,6 +160,10 @@ export async function executePaperFromDecision(
 
   // ── Idempotency: short-circuit if a paper execution already exists for this decision ──
   if (decisionId != null) {
+    // idempotency lookup on the UNIQUE decision_id, and the decision itself
+    // was already proven to belong to this caller by
+    // loadDecisionFromLog(decisionId, userId). Not a listing.
+    // isolation-ok: see the note directly above.
     const dup = await db.select().from(paperExecutionsTable)
       .where(eq(paperExecutionsTable.decisionId, decisionId)).limit(1);
     if (dup[0]) {
@@ -155,9 +180,20 @@ export async function executePaperFromDecision(
   }
 
   // Account + caps
-  const acct = await ensurePaperAccount();
+  let acct: { id: number; equity: number };
+  try {
+    acct = await ensurePaperAccount(userId, opts.paperAccountId);
+  } catch (e) {
+    return persistRejection({
+      executionId, userId, decisionId, symbol, action, decision,
+      reason: `PAPER_ACCOUNT_UNAVAILABLE: ${String(e).slice(0, 160)}`,
+      warnings: ["PAPER_ACCOUNT_UNAVAILABLE: no paper account owned by this trader matched the request"],
+    });
+  }
   const allOpen = await db.select().from(paperOrdersTable)
-    .where(and(eq(paperOrdersTable.paperAccountId, acct.id), eq(paperOrdersTable.status, "OPEN")));
+    .where(and(eq(paperOrdersTable.userId, userId),
+               eq(paperOrdersTable.paperAccountId, acct.id),
+               eq(paperOrdersTable.status, "OPEN")));
   const openSameSymbolDir = allOpen.filter((o) => o.symbol === symbol && o.direction === action).length;
 
   // ── Eligibility ──
@@ -175,7 +211,7 @@ export async function executePaperFromDecision(
 
   if (!eligibility.ok) {
     return persistRejection({
-      executionId, decisionId, symbol, action,
+      executionId, userId, decisionId, symbol, action,
       decision,
       reason: eligibility.reason ?? "rejected",
       warnings: eligibility.warnings,
@@ -194,7 +230,7 @@ export async function executePaperFromDecision(
   const ddCritical = blockers.find((b) => b.severity === "CRITICAL" || b.severity === "HIGH");
   if (ddCritical) {
     return persistRejection({
-      executionId, decisionId, symbol, action, decision,
+      executionId, userId, decisionId, symbol, action, decision,
       reason: `DD market-data blocker at fill time: ${ddCritical.reason}`,
       warnings: [...eligibility.warnings, ...snapshot.dataQuality.warnings],
       mdSnapshot: snapshot,
@@ -214,7 +250,7 @@ export async function executePaperFromDecision(
   const tpOk = action === "BUY" ? takeProfit > fillPrice : takeProfit < fillPrice;
   if (!slOk || !tpOk) {
     return persistRejection({
-      executionId, decisionId, symbol, action, decision,
+      executionId, userId, decisionId, symbol, action, decision,
       reason: `SL/TP geometry invalid for filled price ${fillPrice}: SL=${stopLoss} TP=${takeProfit}`,
       warnings: eligibility.warnings, mdSnapshot: snapshot,
     });
@@ -231,7 +267,7 @@ export async function executePaperFromDecision(
 
   if (!(positionSize > 0)) {
     return persistRejection({
-      executionId, decisionId, symbol, action, decision,
+      executionId, userId, decisionId, symbol, action, decision,
       reason: `Position sizing returned zero: ${sizing.reason}`,
       warnings: eligibility.warnings, mdSnapshot: snapshot,
     });
@@ -239,6 +275,7 @@ export async function executePaperFromDecision(
 
   // ── Insert paper_orders (Build Q table — single source of truth for open positions) ──
   const orderIns = await db.insert(paperOrdersTable).values({
+    userId,
     paperAccountId: acct.id,
     symbol, direction: action, orderType: "MARKET",
     lotSize: positionSize,
@@ -275,6 +312,7 @@ export async function executePaperFromDecision(
   let execRow;
   try {
     const ins = await db.insert(paperExecutionsTable).values({
+      userId,
       executionId, decisionId: decisionId!, orderId: order.id,
       symbol, action, status: "PAPER_OPENED",
       fillType, executionMode: "PAPER",
@@ -297,10 +335,16 @@ export async function executePaperFromDecision(
   } catch (err) {
     // Race-condition idempotency — another caller inserted concurrently.
     log.warn({ err: String(err) }, "Build EE: paper_executions insert collision, returning existing row");
+    // same UNIQUE decision_id idempotency key as above, on the
+    // concurrent-insert path.
+    // isolation-ok: see the note directly above.
     const racy = (await db.select().from(paperExecutionsTable)
       .where(eq(paperExecutionsTable.decisionId, decisionId!)).limit(1))[0];
     if (racy) {
       // Roll back our just-created paper_orders row to keep the system clean.
+      // keyed by order.id, the primary key of the row this call inserted
+      // moments ago with `userId`.
+      // isolation-ok: see the note directly above.
       await db.update(paperOrdersTable).set({ status: "CANCELLED", updatedAt: new Date() })
         .where(eq(paperOrdersTable.id, order.id))
         .catch(() => {});
@@ -338,6 +382,7 @@ function sanitizeDecisionForJson(d: TradeDecision): Record<string, unknown> {
 
 async function persistRejection(args: {
   executionId: string;
+  userId: number;
   decisionId: number | null;
   symbol: string;
   action: "BUY" | "SELL" | "HOLD";
@@ -353,6 +398,7 @@ async function persistRejection(args: {
   if (args.decisionId != null) {
     try {
       const ins = await db.insert(paperExecutionsTable).values({
+        userId: args.userId,
         executionId: args.executionId,
         decisionId: args.decisionId,
         orderId: null,
@@ -383,6 +429,9 @@ async function persistRejection(args: {
       row = ins[0]!;
     } catch (err) {
       // If unique violation on decisionId, fetch existing.
+      // unique-violation recovery on the decision_id key this call just
+      // attempted to insert.
+      // isolation-ok: see the note directly above.
       const existing = (await db.select().from(paperExecutionsTable)
         .where(eq(paperExecutionsTable.decisionId, args.decisionId)).limit(1))[0];
       if (existing) row = existing;
@@ -459,14 +508,21 @@ function materializeResult(
 /* ── Helpers callable by routes ────────────────────────────────────────── */
 
 export async function getPaperExecutionByDecisionId(decisionId: number) {
+  // keyed by the UNIQUE decision_id the caller already owns — the only caller
+  // is the autopilot cycle that created that decision.
+  // isolation-ok: see the note directly above.
   const rows = await db.select().from(paperExecutionsTable)
     .where(eq(paperExecutionsTable.decisionId, decisionId)).limit(1);
   return rows[0] ?? null;
 }
 
-export async function loadDecisionFromLog(decisionId: number): Promise<TradeDecision | null> {
+// ISOLATION: a decision may only be executed by the trader it was produced
+// for. Unscoped, /paper-execution/from-decision would open a paper order in
+// the caller's account from a stranger's decision.
+export async function loadDecisionFromLog(decisionId: number, userId: number): Promise<TradeDecision | null> {
   const rows = await db.select().from(tradeDecisionLogsTable)
-    .where(eq(tradeDecisionLogsTable.id, decisionId)).limit(1);
+    .where(and(eq(tradeDecisionLogsTable.id, decisionId),
+               eq(tradeDecisionLogsTable.userId, userId))).limit(1);
   if (!rows[0]) return null;
   // The full decision object was logged in tradeDecisionLogsTable.decisionJson
   // by the AA orchestrator (see persistDecision in routes/tradeDecision.ts).
@@ -474,15 +530,17 @@ export async function loadDecisionFromLog(decisionId: number): Promise<TradeDeci
   return (json && typeof json === "object" ? json as TradeDecision : null);
 }
 
-export async function listOpenPaperExecutions(limit = 50) {
+export async function listOpenPaperExecutions(userId: number, limit = 50) {
   return db.select().from(paperExecutionsTable)
-    .where(eq(paperExecutionsTable.status, "PAPER_OPENED"))
+    .where(and(eq(paperExecutionsTable.userId, userId),
+               eq(paperExecutionsTable.status, "PAPER_OPENED")))
     .orderBy(desc(paperExecutionsTable.createdAt))
     .limit(limit);
 }
 
-export async function listPaperExecutions(limit = 50) {
+export async function listPaperExecutions(userId: number, limit = 50) {
   return db.select().from(paperExecutionsTable)
+    .where(eq(paperExecutionsTable.userId, userId))
     .orderBy(desc(paperExecutionsTable.createdAt))
     .limit(limit);
 }

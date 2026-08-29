@@ -50,6 +50,17 @@ export interface PositionSizingResult {
 }
 
 export interface ExecuteFromDecisionOpts {
+  /**
+   * OWNER of this paper trade. REQUIRED.
+   *
+   * Everything downstream is per-trader: the Risk Governor gate derives the
+   * daily loss limit from THIS user's risk_settings and paper-account equity,
+   * the open-trade caps count THIS user's orders, and the resulting
+   * paper_orders row is read back by analytics/skill/coach with an
+   * `eq(paperOrdersTable.userId, …)` predicate. Called without it, the gate
+   * summed every user's P&L and every order landed unowned.
+   */
+  userId: number;
   // If provided, use this paper account; else pick the active one.
   paperAccountId?: number;
   // If true, allow taking the trade even with a same-symbol+direction

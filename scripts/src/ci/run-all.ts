@@ -21,7 +21,7 @@ import { checkOneClickConcurrency } from "./check-one-click-concurrency.js";
 import { checkLiveDispatchCas } from "./check-live-dispatch-cas.js";
 import { checkOneClickArmRoutesThroughGate } from "./check-one-click-arm-routes-through-gate.js";
 import { checkScannerSelectedMarket } from "./check-scanner-selected-market.js";
-import { checkPerUserIsolationMeRoutes } from "./perUserIsolationMeRoutes.js";
+import { checkPerUserIsolationMeRoutes, checkPerUserIsolationScopedSurfaces } from "./perUserIsolationMeRoutes.js";
 import {
   checkModernDemoDispatchUsesRouting,
   checkMasterBridgeLiveLocked,
@@ -101,6 +101,7 @@ const checks: Array<() => CheckResult> = [
   checkOneClickArmRoutesThroughGate,
   checkScannerSelectedMarket,
   checkPerUserIsolationMeRoutes,
+  checkPerUserIsolationScopedSurfaces,
   checkModernDemoDispatchUsesRouting,
   checkMasterBridgeLiveLocked,
   checkMasterBridgeSecretsNotLeaked,

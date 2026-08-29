@@ -15,6 +15,7 @@ import { getCriticalUnread, getUnreadCount } from "../lib/alerts/alertManager.js
 import { scrub } from "../lib/security/redact.js";
 import { runHealthCheck } from "../lib/systemHealth/health.js";
 import { logger } from "../lib/logger.js";
+import { requireUser } from "../lib/auth/middleware.js";
 
 const router: IRouter = Router();
 
@@ -54,14 +55,18 @@ function pickNextBestAction(args: {
   return { code: "START", label: "Safe to start a new paper session", cta: "Start Paper Session", severity: "INFO" };
 }
 
-router.get("/trading-cockpit/summary", async (_req, res) => {
+router.get("/trading-cockpit/summary", requireUser, async (req, res) => {
   const generatedAt = new Date().toISOString();
+  // Per-user isolation: the cockpit shows THIS trader's active paper session
+  // and THIS trader's governor. It used to read whichever ACTIVE session and
+  // whichever risk-settings row existed on the instance.
+  const userId = req.authUser!.id;
 
   const preFallback = { paperTestingAllowed: false, hardBlocks: [{ source: "QQ", code: "PREFLIGHT_ERROR", message: "preflight unavailable" }], warnings: [] as { source: string; code: string; message: string }[], generatedAt } as unknown as Awaited<ReturnType<typeof preflight>>;
   const [pre, active, gov, gate, criticalUnread, unreadAll] = await Promise.all([
-    safeCall("preflight", () => preflight(), preFallback),
-    safeCall("activeSession", () => getActiveSession(), null),
-    safeCall("governor", () => evaluateGovernor(), null),
+    safeCall("preflight", () => preflight(userId), preFallback),
+    safeCall("activeSession", () => getActiveSession(userId), null),
+    safeCall("governor", () => evaluateGovernor({ userId }), null),
     safeCall("readinessGate", () => getGateStatus(), null as Awaited<ReturnType<typeof getGateStatus>> | null),
     safeCall("criticalUnread", () => getCriticalUnread(), [] as Awaited<ReturnType<typeof getCriticalUnread>>),
     safeCall("unreadAll", () => getUnreadCount(), 0),

@@ -9,8 +9,14 @@ import {
 } from "../lib/onboarding/state.js";
 import { ONBOARDING_STEPS, REQUIRED_ACK_KEYS, type AckKey } from "../lib/onboarding/steps.js";
 import { scrub } from "../lib/security/redact.js";
+import { requireUser } from "../lib/auth/middleware.js";
 
 const router: IRouter = Router();
+
+/** Authenticated caller id — `requireUser` gates every stateful route below. */
+function uid(req: import("express").Request): number {
+  return req.authUser!.id;
+}
 const DISCLAIMER = "Build RR — Guided Onboarding + Smart Help. Education only. Never places trades, never enables live trading, never calls MT5, never modifies canPlaceTrades, never exposes secrets, never recommends live trading.";
 
 function envelope(payload: Record<string, unknown>) {
@@ -25,59 +31,60 @@ function envelope(payload: Record<string, unknown>) {
   }) as Record<string, unknown>;
 }
 
-router.get("/onboarding/status", async (_req, res) => {
-  const status = await getStatus();
+router.get("/onboarding/status", requireUser, async (req, res) => {
+  const status = await getStatus(uid(req));
   res.json(envelope({ status: status as unknown as Record<string, unknown> }));
 });
 
-router.get("/onboarding/steps", (_req, res) => {
+// Static catalogue only — the same step list for every caller, no state read.
+router.get("/onboarding/steps", requireUser, (_req, res) => {
   res.json(envelope({ steps: ONBOARDING_STEPS, totalSteps: ONBOARDING_STEPS.length, requiredAcks: REQUIRED_ACK_KEYS }));
 });
 
-router.post("/onboarding/start", async (_req, res) => {
-  const row = await startOnboarding();
+router.post("/onboarding/start", requireUser, async (req, res) => {
+  const row = await startOnboarding(uid(req));
   res.json(envelope({ result: { ok: true, status: row.status, currentStep: row.currentStep, onboardingId: row.onboardingId } }));
 });
 
 const StepBody = z.object({ stepId: z.string().min(1) });
-router.post("/onboarding/complete-step", async (req, res) => {
+router.post("/onboarding/complete-step", requireUser, async (req, res) => {
   const p = StepBody.safeParse(req.body);
   if (!p.success) { res.status(400).json(envelope({ error: "INVALID_BODY" })); return; }
   try {
-    const row = await completeStep(p.data.stepId);
+    const row = await completeStep(uid(req), p.data.stepId);
     res.json(envelope({ result: { ok: true, stepId: p.data.stepId, status: row.status, currentStep: row.currentStep, completedSteps: row.completedSteps } }));
   } catch (e) {
     res.status(400).json(envelope({ error: String((e as Error).message) }));
   }
 });
 
-router.post("/onboarding/skip-step", async (req, res) => {
+router.post("/onboarding/skip-step", requireUser, async (req, res) => {
   const p = StepBody.safeParse(req.body);
   if (!p.success) { res.status(400).json(envelope({ error: "INVALID_BODY" })); return; }
   try {
-    const row = await skipStep(p.data.stepId);
+    const row = await skipStep(uid(req), p.data.stepId);
     res.json(envelope({ result: { ok: true, stepId: p.data.stepId, status: row.status, currentStep: row.currentStep, skippedSteps: row.skippedSteps } }));
   } catch (e) {
     res.status(400).json(envelope({ error: String((e as Error).message) }));
   }
 });
 
-router.post("/onboarding/complete", async (_req, res) => {
-  const row = await completeOnboarding();
+router.post("/onboarding/complete", requireUser, async (req, res) => {
+  const row = await completeOnboarding(uid(req));
   res.json(envelope({ result: { ok: true, status: row.status, walkthroughCompleted: row.walkthroughCompleted } }));
 });
 
-router.post("/onboarding/reset", async (_req, res) => {
-  const row = await resetOnboarding();
+router.post("/onboarding/reset", requireUser, async (req, res) => {
+  const row = await resetOnboarding(uid(req));
   res.json(envelope({ result: { ok: true, status: row.status } }));
 });
 
 const AckBody = z.object({ key: z.enum(REQUIRED_ACK_KEYS as unknown as [AckKey, ...AckKey[]]) });
-router.post("/onboarding/acknowledge", async (req, res) => {
+router.post("/onboarding/acknowledge", requireUser, async (req, res) => {
   const p = AckBody.safeParse(req.body);
   if (!p.success) { res.status(400).json(envelope({ error: "INVALID_ACK_KEY", allowed: REQUIRED_ACK_KEYS })); return; }
   try {
-    const row = await acknowledge(p.data.key);
+    const row = await acknowledge(uid(req), p.data.key);
     res.json(envelope({
       result: {
         ok: true, key: p.data.key,
@@ -96,7 +103,7 @@ router.post("/onboarding/acknowledge", async (req, res) => {
   }
 });
 
-router.post("/onboarding/demo", async (_req, res) => {
+router.post("/onboarding/demo", requireUser, async (_req, res) => {
   res.json(envelope({
     demo: {
       flow: ["start", "ack-live-disabled", "safety-header", "readiness-check", "preflight", "complete"],
@@ -106,8 +113,8 @@ router.post("/onboarding/demo", async (_req, res) => {
   }));
 });
 
-router.get("/onboarding/events", async (_req, res) => {
-  const events = await listEvents(50);
+router.get("/onboarding/events", requireUser, async (req, res) => {
+  const events = await listEvents(uid(req), 50);
   res.json(envelope({ events: events as unknown as Record<string, unknown>[] }));
 });
 

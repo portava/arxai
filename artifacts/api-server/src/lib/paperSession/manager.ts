@@ -83,6 +83,29 @@ export const DEFAULT_GOALS: SessionGoals = {
   notes: "",
 };
 
+// ── Units ────────────────────────────────────────────────────────────────────
+// `paper_sessions.net_pnl` / `paper_session_trade_links.pnl` are stored in
+// CENTS (integer columns). `SessionRules.maxSessionLoss` and
+// `maxDailyPaperLoss` are DOLLARS. Every comparison between the two must go
+// through these two converters — nothing else in this file may mix the units.
+export const usdToCents = (usd: number): number => Math.round(usd * 100);
+export const centsToUsd = (cents: number): number => cents / 100;
+
+/**
+ * Has a session's net P&L breached its session loss limit?
+ *
+ * The ONE place the two units meet. `netPnlCents` is the stored
+ * `paper_sessions.net_pnl` (integer cents, negative when down);
+ * `maxSessionLossUsd` is `SessionRules.maxSessionLoss` (dollars, positive).
+ *
+ * The bug this replaces compared them directly, so a $150 session limit
+ * tripped at −$1.50 — the first losing paper trade ended the session, and the
+ * report then printed "limit 150 actual 15000" on one line.
+ */
+export function sessionLossLimitBreached(netPnlCents: number, maxSessionLossUsd: number): boolean {
+  return netPnlCents <= -usdToCents(maxSessionLossUsd);
+}
+
 export interface PreflightResult {
   paperTestingAllowed: boolean;
   hardBlocks: Array<{ source: string; code: string; message: string }>;
@@ -124,7 +147,12 @@ export interface SessionEnvelope {
 
 // ── Preflight ────────────────────────────────────────────────────────────────
 
-export async function preflight(): Promise<PreflightResult> {
+// `userId` scopes the Risk Governor read to the caller's own limits. It is
+// optional because preflight is also called from instance-level readiness
+// surfaces that have no single owner; when omitted the governor falls back to
+// its documented conservative defaults and says so (RISK_LIMITS_UNSCOPED),
+// rather than adopting whichever user's limits happen to sort last.
+export async function preflight(userId?: number | null): Promise<PreflightResult> {
   const hardBlocks: PreflightResult["hardBlocks"] = [];
   const warnings: PreflightResult["warnings"] = [];
 
@@ -157,7 +185,7 @@ export async function preflight(): Promise<PreflightResult> {
   // HH Risk Governor
   let hh = { status: "UNKNOWN", paperTradingAllowed: false, liveTradingAllowed: false as const, canPlaceLiveTrade: false as const };
   try {
-    const e = await evaluateGovernor({ persist: false });
+    const e = await evaluateGovernor({ persist: false, userId: userId ?? null });
     hh = {
       status: e.overallStatus,
       paperTradingAllowed: e.paperTradingAllowed,
@@ -270,23 +298,35 @@ function rowToEnvelope(row: typeof paperSessionsTable.$inferSelect): SessionEnve
 
 // ── Lifecycle ────────────────────────────────────────────────────────────────
 
-export async function getActiveSession(): Promise<SessionEnvelope | null> {
+// PER-USER ISOLATION: every function below takes the owning `userId` and puts
+// it in the WHERE clause. Before this, the session dropdown listed EVERY
+// user's paper sessions and selecting one rendered that stranger's net P&L,
+// win rate, rule violations and coach summary. A session id the caller does
+// not own now reads exactly like one that does not exist.
+export async function getActiveSession(userId: number): Promise<SessionEnvelope | null> {
   const rows = await db.select().from(paperSessionsTable)
-    .where(eq(paperSessionsTable.status, "ACTIVE"))
+    .where(and(
+      eq(paperSessionsTable.userId, userId),
+      eq(paperSessionsTable.status, "ACTIVE"),
+    ))
     .orderBy(desc(paperSessionsTable.startedAt))
     .limit(1);
   return rows[0] ? rowToEnvelope(rows[0]) : null;
 }
 
-export async function getSessionById(paperSessionId: string): Promise<SessionEnvelope | null> {
+export async function getSessionById(userId: number, paperSessionId: string): Promise<SessionEnvelope | null> {
   const rows = await db.select().from(paperSessionsTable)
-    .where(eq(paperSessionsTable.paperSessionId, paperSessionId))
+    .where(and(
+      eq(paperSessionsTable.userId, userId),
+      eq(paperSessionsTable.paperSessionId, paperSessionId),
+    ))
     .limit(1);
   return rows[0] ? rowToEnvelope(rows[0]) : null;
 }
 
-export async function listSessions(limit = 20) {
+export async function listSessions(userId: number, limit = 20) {
   const rows = await db.select().from(paperSessionsTable)
+    .where(eq(paperSessionsTable.userId, userId))
     .orderBy(desc(paperSessionsTable.createdAt))
     .limit(Math.min(limit, 100));
   return rows.map(rowToEnvelope);
@@ -299,15 +339,17 @@ export interface StartArgs {
   sessionRules?: Partial<SessionRules>;
 }
 
-export async function startSession(args: StartArgs = {}): Promise<{ status: "ACTIVE" | "BLOCKED"; session: SessionEnvelope; reason?: string }> {
-  // Reject if another ACTIVE session exists.
-  const active = await getActiveSession();
+export async function startSession(userId: number, args: StartArgs = {}): Promise<{ status: "ACTIVE" | "BLOCKED"; session: SessionEnvelope; reason?: string }> {
+  // Reject if THIS USER already has an ACTIVE session. (The single-ACTIVE
+  // invariant is per trader, not per instance — one trader's live session must
+  // not block every other trader from starting one.)
+  const active = await getActiveSession(userId);
   if (active) {
     await emit(active.paper_session_id, "START_REJECTED", "Cannot start a second session while one is ACTIVE", "WARNING");
     return { status: "BLOCKED", session: active, reason: "Another paper session is already ACTIVE" };
   }
 
-  const pre = await preflight();
+  const pre = await preflight(userId);
   const goals: SessionGoals = { ...DEFAULT_GOALS, ...(args.sessionGoals ?? {}) };
   const rules: SessionRules = { ...DEFAULT_RULES, ...(args.sessionRules ?? {}), liveTradingAllowed: false };
   const symbols = args.symbols ?? ["Volatility 75 Index"];
@@ -316,6 +358,7 @@ export async function startSession(args: StartArgs = {}): Promise<{ status: "ACT
 
   if (!pre.paperTestingAllowed) {
     const [row] = await db.insert(paperSessionsTable).values({
+      userId,
       paperSessionId, status: "BLOCKED",
       symbols, timeframes,
       sessionGoals: goals, sessionRules: rules, preflightStatus: pre,
@@ -330,6 +373,7 @@ export async function startSession(args: StartArgs = {}): Promise<{ status: "ACT
   }
 
   const [row] = await db.insert(paperSessionsTable).values({
+    userId,
     paperSessionId, status: "ACTIVE",
     startedAt: new Date(),
     symbols, timeframes,
@@ -346,46 +390,49 @@ export async function startSession(args: StartArgs = {}): Promise<{ status: "ACT
   return { status: "ACTIVE", session: rowToEnvelope(row) };
 }
 
-export async function pauseSession(paperSessionId: string, reason = "manual pause"): Promise<{ ok: boolean; session: SessionEnvelope | null; reason?: string }> {
-  const cur = await getSessionById(paperSessionId);
+export async function pauseSession(userId: number, paperSessionId: string, reason = "manual pause"): Promise<{ ok: boolean; session: SessionEnvelope | null; reason?: string }> {
+  const cur = await getSessionById(userId, paperSessionId);
   if (!cur) return { ok: false, session: null, reason: "session not found" };
   if (cur.status !== "ACTIVE") return { ok: false, session: cur, reason: `cannot pause ${cur.status} session` };
-  await db.update(paperSessionsTable).set({ status: "PAUSED", updatedAt: new Date() }).where(eq(paperSessionsTable.paperSessionId, paperSessionId));
+  await db.update(paperSessionsTable).set({ status: "PAUSED", updatedAt: new Date() })
+    .where(and(eq(paperSessionsTable.userId, userId), eq(paperSessionsTable.paperSessionId, paperSessionId)));
   await emit(paperSessionId, "PAUSED", `Session paused: ${reason}`, "INFO");
   await notify(paperSessionId, "INFO", "Paper session paused", reason);
-  return { ok: true, session: await getSessionById(paperSessionId) };
+  return { ok: true, session: await getSessionById(userId, paperSessionId) };
 }
 
-export async function resumeSession(paperSessionId: string): Promise<{ ok: boolean; session: SessionEnvelope | null; reason?: string }> {
-  const cur = await getSessionById(paperSessionId);
+export async function resumeSession(userId: number, paperSessionId: string): Promise<{ ok: boolean; session: SessionEnvelope | null; reason?: string }> {
+  const cur = await getSessionById(userId, paperSessionId);
   if (!cur) return { ok: false, session: null, reason: "session not found" };
   if (cur.status !== "PAUSED") return { ok: false, session: cur, reason: `cannot resume ${cur.status} session` };
   // Single-ACTIVE invariant: refuse if some other session is already ACTIVE.
-  const otherActive = await getActiveSession();
+  const otherActive = await getActiveSession(userId);
   if (otherActive && otherActive.paper_session_id !== paperSessionId) {
     await emit(paperSessionId, "RESUME_REJECTED", `Another ACTIVE session exists (${otherActive.paper_session_id})`, "WARNING");
     return { ok: false, session: cur, reason: `Another paper session ${otherActive.paper_session_id} is already ACTIVE` };
   }
   // Re-check safety before resume.
-  const pre = await preflight();
+  const pre = await preflight(userId);
   if (!pre.paperTestingAllowed) {
     await emit(paperSessionId, "RESUME_REJECTED", `Cannot resume — preflight failed: ${pre.hardBlocks.map(b => b.code).join(", ")}`, "HIGH", { hardBlocks: pre.hardBlocks });
     return { ok: false, session: cur, reason: `Preflight failed: ${pre.hardBlocks.map(b => b.message).join("; ")}` };
   }
-  await db.update(paperSessionsTable).set({ status: "ACTIVE", preflightStatus: pre, updatedAt: new Date() }).where(eq(paperSessionsTable.paperSessionId, paperSessionId));
+  await db.update(paperSessionsTable).set({ status: "ACTIVE", preflightStatus: pre, updatedAt: new Date() })
+    .where(and(eq(paperSessionsTable.userId, userId), eq(paperSessionsTable.paperSessionId, paperSessionId)));
   await emit(paperSessionId, "RESUMED", "Session resumed after preflight re-check passed", "INFO");
   await notify(paperSessionId, "INFO", "Paper session resumed", "Safety checks passed.");
-  return { ok: true, session: await getSessionById(paperSessionId) };
+  return { ok: true, session: await getSessionById(userId, paperSessionId) };
 }
 
-export async function endSession(paperSessionId: string, reason = "manual end"): Promise<{ ok: boolean; session: SessionEnvelope | null; reason?: string }> {
-  const cur = await getSessionById(paperSessionId);
+export async function endSession(userId: number, paperSessionId: string, reason = "manual end"): Promise<{ ok: boolean; session: SessionEnvelope | null; reason?: string }> {
+  const cur = await getSessionById(userId, paperSessionId);
   if (!cur) return { ok: false, session: null, reason: "session not found" };
   if (cur.status === "ENDED") return { ok: true, session: cur };
-  await db.update(paperSessionsTable).set({ status: "ENDED", endedAt: new Date(), updatedAt: new Date() }).where(eq(paperSessionsTable.paperSessionId, paperSessionId));
+  await db.update(paperSessionsTable).set({ status: "ENDED", endedAt: new Date(), updatedAt: new Date() })
+    .where(and(eq(paperSessionsTable.userId, userId), eq(paperSessionsTable.paperSessionId, paperSessionId)));
   await emit(paperSessionId, "ENDED", `Session ended: ${reason}`, "INFO");
   await notify(paperSessionId, "INFO", "Paper session ended", `Session ${paperSessionId} ended. Generate report.`);
-  return { ok: true, session: await getSessionById(paperSessionId) };
+  return { ok: true, session: await getSessionById(userId, paperSessionId) };
 }
 
 // ── EE / FF enforcement contract (read-only — does NOT modify EE/FF) ─────────
@@ -397,13 +444,17 @@ export interface EnforcementResult {
   sessionStatus: SessionStatus | "NONE";
 }
 
-export async function checkSessionAllowsPaperTrade(opts: { symbol?: string } = {}): Promise<EnforcementResult> {
-  const cur = await getActiveSession();
+export async function checkSessionAllowsPaperTrade(userId: number, opts: { symbol?: string } = {}): Promise<EnforcementResult> {
+  const cur = await getActiveSession(userId);
   if (!cur) return { allowed: false, reason: "no ACTIVE session", sessionId: null, sessionStatus: "NONE" };
   if (cur.status !== "ACTIVE") return { allowed: false, reason: `session ${cur.status}`, sessionId: cur.paper_session_id, sessionStatus: cur.status };
   if (!cur.sessionRules.allowManualPaperTrades) return { allowed: false, reason: "session rules disallow manual paper trades", sessionId: cur.paper_session_id, sessionStatus: cur.status };
   if (cur.paperTradesOpened >= cur.sessionRules.maxPaperTrades) return { allowed: false, reason: `max paper trades reached (${cur.sessionRules.maxPaperTrades})`, sessionId: cur.paper_session_id, sessionStatus: cur.status };
-  if (cur.netPnl <= -cur.sessionRules.maxSessionLoss) return { allowed: false, reason: `session loss limit hit (${cur.sessionRules.maxSessionLoss})`, sessionId: cur.paper_session_id, sessionStatus: cur.status };
+  // UNITS: paper_sessions.net_pnl is CENTS; sessionRules.maxSessionLoss is
+  // DOLLARS (DEFAULT_RULES = 150). Comparing them directly tripped this guard
+  // at -$1.50 instead of -$150 — a paper session was blocked on essentially
+  // the first losing trade. Convert once, here, at the boundary.
+  if (sessionLossLimitBreached(cur.netPnl, cur.sessionRules.maxSessionLoss)) return { allowed: false, reason: `session loss limit hit ($${cur.sessionRules.maxSessionLoss.toFixed(2)})`, sessionId: cur.paper_session_id, sessionStatus: cur.status };
   // Consecutive-loss check: walk closed CLOSE links in chronological order, count trailing LOSS streak.
   const closedRows = await db.select().from(paperSessionTradeLinksTable)
     .where(and(eq(paperSessionTradeLinksTable.paperSessionId, cur.paper_session_id), eq(paperSessionTradeLinksTable.action, "CLOSE")))
@@ -428,13 +479,14 @@ export async function checkSessionAllowsPaperTrade(opts: { symbol?: string } = {
   return { allowed: true, reason: "session allows paper trade", sessionId: cur.paper_session_id, sessionStatus: cur.status };
 }
 
-export async function checkSessionAllowsAutopilot(): Promise<EnforcementResult> {
-  const cur = await getActiveSession();
+export async function checkSessionAllowsAutopilot(userId: number): Promise<EnforcementResult> {
+  const cur = await getActiveSession(userId);
   if (!cur) return { allowed: false, reason: "no ACTIVE session — autopilot must not open trades", sessionId: null, sessionStatus: "NONE" };
   if (cur.status !== "ACTIVE") return { allowed: false, reason: `session ${cur.status}`, sessionId: cur.paper_session_id, sessionStatus: cur.status };
   if (!cur.sessionRules.allowPaperAutopilot) return { allowed: false, reason: "session rules disallow autopilot", sessionId: cur.paper_session_id, sessionStatus: cur.status };
   if (cur.paperTradesOpened >= cur.sessionRules.maxPaperTrades) return { allowed: false, reason: "max paper trades reached", sessionId: cur.paper_session_id, sessionStatus: cur.status };
-  if (cur.netPnl <= -cur.sessionRules.maxSessionLoss) return { allowed: false, reason: "session loss limit hit", sessionId: cur.paper_session_id, sessionStatus: cur.status };
+  // Same cents-vs-dollars conversion as checkSessionAllowsPaperTrade.
+  if (sessionLossLimitBreached(cur.netPnl, cur.sessionRules.maxSessionLoss)) return { allowed: false, reason: "session loss limit hit", sessionId: cur.paper_session_id, sessionStatus: cur.status };
   return { allowed: true, reason: "session allows autopilot", sessionId: cur.paper_session_id, sessionStatus: cur.status };
 }
 
@@ -451,9 +503,9 @@ export interface LinkArgs {
   pnl?: number;
 }
 
-export async function linkTradeToActiveSession(args: LinkArgs) {
+export async function linkTradeToActiveSession(userId: number, args: LinkArgs) {
   try {
-    const cur = await getActiveSession();
+    const cur = await getActiveSession(userId);
     if (!cur) return { linked: false, reason: "no ACTIVE session" };
     await db.insert(paperSessionTradeLinksTable).values({
       paperSessionId: cur.paper_session_id,
@@ -466,7 +518,7 @@ export async function linkTradeToActiveSession(args: LinkArgs) {
     if (args.action === "OPEN") {
       await db.update(paperSessionsTable)
         .set({ paperTradesOpened: sql`${paperSessionsTable.paperTradesOpened} + 1`, updatedAt: new Date() })
-        .where(eq(paperSessionsTable.paperSessionId, cur.paper_session_id));
+        .where(and(eq(paperSessionsTable.userId, userId), eq(paperSessionsTable.paperSessionId, cur.paper_session_id)));
     } else if (args.action === "CLOSE") {
       const delta = args.pnl ?? 0;
       await db.update(paperSessionsTable)
@@ -475,7 +527,7 @@ export async function linkTradeToActiveSession(args: LinkArgs) {
           netPnl: sql`${paperSessionsTable.netPnl} + ${delta}`,
           updatedAt: new Date(),
         })
-        .where(eq(paperSessionsTable.paperSessionId, cur.paper_session_id));
+        .where(and(eq(paperSessionsTable.userId, userId), eq(paperSessionsTable.paperSessionId, cur.paper_session_id)));
     }
     await emit(cur.paper_session_id, "TRADE_LINKED", `${args.action ?? "LINK"} linked: trade=${args.tradeId ?? ""} debrief=${args.debriefId ?? ""} learning=${args.learningEventId ?? ""}`, "INFO", args as Record<string, unknown>);
     return { linked: true, paperSessionId: cur.paper_session_id };
@@ -484,13 +536,21 @@ export async function linkTradeToActiveSession(args: LinkArgs) {
   }
 }
 
-export async function listSessionTrades(paperSessionId: string) {
+// The trade-link and event tables key on paper_session_id and carry no user
+// column of their own, so ownership is proven by first resolving the session
+// through the user-scoped getSessionById(). A session the caller does not own
+// yields an empty list, never a stranger's trades or events.
+export async function listSessionTrades(userId: number, paperSessionId: string) {
+  const owned = await getSessionById(userId, paperSessionId);
+  if (!owned) return [];
   return db.select().from(paperSessionTradeLinksTable)
     .where(eq(paperSessionTradeLinksTable.paperSessionId, paperSessionId))
     .orderBy(desc(paperSessionTradeLinksTable.createdAt));
 }
 
-export async function listSessionEvents(paperSessionId: string, limit = 100) {
+export async function listSessionEvents(userId: number, paperSessionId: string, limit = 100) {
+  const owned = await getSessionById(userId, paperSessionId);
+  if (!owned) return [];
   return db.select().from(paperSessionEventsTable)
     .where(eq(paperSessionEventsTable.paperSessionId, paperSessionId))
     .orderBy(desc(paperSessionEventsTable.createdAt))
@@ -512,6 +572,8 @@ export interface SessionReport {
   break_even: number;
   net_pnl: number;
   win_rate: number;
+  /** Each entry carries `unit` so `limit` and `actual` are never read in
+   *  different scales (this is where "limit 150 actual 15000" came from). */
   rule_violations: Array<Record<string, unknown>>;
   mistakes_detected: Array<Record<string, unknown>>;
   lessons_generated: Array<Record<string, unknown>>;
@@ -523,10 +585,10 @@ export interface SessionReport {
   generatedAt: string;
 }
 
-export async function generateSessionReport(paperSessionId: string): Promise<SessionReport | null> {
-  const cur = await getSessionById(paperSessionId);
+export async function generateSessionReport(userId: number, paperSessionId: string): Promise<SessionReport | null> {
+  const cur = await getSessionById(userId, paperSessionId);
   if (!cur) return null;
-  const trades = await listSessionTrades(paperSessionId);
+  const trades = await listSessionTrades(userId, paperSessionId);
   const closed = trades.filter(t => t.action === "CLOSE");
   const wins = closed.filter(t => t.result === "WIN").length;
   const losses = closed.filter(t => t.result === "LOSS").length;
@@ -537,12 +599,16 @@ export async function generateSessionReport(paperSessionId: string): Promise<Ses
   const endMs = cur.ended_at ? Date.parse(cur.ended_at) : Date.now();
   const durationMinutes = startMs ? Math.max(0, Math.round((endMs - startMs) / 60_000)) : 0;
 
+  // `netPnl` here is the sum of paper_session_trade_links.pnl — CENTS.
+  // `maxSessionLoss` is DOLLARS. Both sides of every comparison and every
+  // reported pair are expressed in ONE unit, named by `unit`.
+  const netPnlUsd = centsToUsd(netPnl);
   const ruleViolations: Array<Record<string, unknown>> = [];
-  if (cur.paperTradesOpened > cur.sessionRules.maxPaperTrades) ruleViolations.push({ code: "MAX_TRADES_EXCEEDED", limit: cur.sessionRules.maxPaperTrades, actual: cur.paperTradesOpened });
-  if (-netPnl > cur.sessionRules.maxSessionLoss) ruleViolations.push({ code: "SESSION_LOSS_EXCEEDED", limit: cur.sessionRules.maxSessionLoss, actual: -netPnl });
-  if (durationMinutes > cur.sessionRules.maxSessionMinutes) ruleViolations.push({ code: "SESSION_DURATION_EXCEEDED", limit: cur.sessionRules.maxSessionMinutes, actual: durationMinutes });
+  if (cur.paperTradesOpened > cur.sessionRules.maxPaperTrades) ruleViolations.push({ code: "MAX_TRADES_EXCEEDED", limit: cur.sessionRules.maxPaperTrades, actual: cur.paperTradesOpened, unit: "trades" });
+  if (sessionLossLimitBreached(netPnl, cur.sessionRules.maxSessionLoss)) ruleViolations.push({ code: "SESSION_LOSS_EXCEEDED", limit: cur.sessionRules.maxSessionLoss, actual: Number((-netPnlUsd).toFixed(2)), unit: "USD" });
+  if (durationMinutes > cur.sessionRules.maxSessionMinutes) ruleViolations.push({ code: "SESSION_DURATION_EXCEEDED", limit: cur.sessionRules.maxSessionMinutes, actual: durationMinutes, unit: "minutes" });
 
-  const coachSummary = `Paper-only session ${paperSessionId}: ${closed.length} closed trades (${wins}W/${losses}L/${breakEven}BE), net $${(netPnl/100).toFixed(2)}, win rate ${winRate}%. Live trading remains DISABLED.`;
+  const coachSummary = `Paper-only session ${paperSessionId}: ${closed.length} closed trades (${wins}W/${losses}L/${breakEven}BE), net $${netPnlUsd.toFixed(2)}, win rate ${winRate}%. Live trading remains DISABLED.`;
   const nextBestActions: string[] = [];
   if (winRate < 50 && closed.length >= 2) nextBestActions.push("Review setups in BB debriefs — focus on quality over quantity");
   if (ruleViolations.length > 0) nextBestActions.push(`Address ${ruleViolations.length} rule violation(s) before next session`);
@@ -581,7 +647,11 @@ export async function generateSessionReport(paperSessionId: string): Promise<Ses
   };
 }
 
-export async function getLatestReport(paperSessionId: string): Promise<SessionReport | null> {
+export async function getLatestReport(userId: number, paperSessionId: string): Promise<SessionReport | null> {
+  // Reports key only on paper_session_id, so ownership is proven through the
+  // user-scoped session lookup first.
+  const owned = await getSessionById(userId, paperSessionId);
+  if (!owned) return null;
   const rows = await db.select().from(paperSessionReportsTable)
     .where(eq(paperSessionReportsTable.paperSessionId, paperSessionId))
     .orderBy(desc(paperSessionReportsTable.createdAt))

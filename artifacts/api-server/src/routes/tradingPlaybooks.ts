@@ -11,8 +11,10 @@ import {
   weeklyPerformanceReviewsTable as weeklyReviewsTable,
   vaultEventsTable,
 } from "@workspace/db";
-import { desc, eq, and } from "drizzle-orm";
+import { desc, eq, and, or, not, like, isNull } from "drizzle-orm";
 import { z } from "zod/v4";
+import { requireUser } from "../lib/auth/middleware.js";
+import { TESTER_SEED_STRATEGY_PREFIX } from "../lib/testerData/tags.js";
 
 const router = Router();
 const PLAYBOOK_DISCLAIMER =
@@ -205,18 +207,29 @@ function bumpEvidence(map: Map<string, { count: number; trades: Set<number>; deb
   map.set(key, cur);
 }
 
-router.post("/playbooks/:id/suggest", async (req, res): Promise<void> => {
+router.post("/playbooks/:id/suggest", requireUser, async (req, res): Promise<void> => {
   try {
+    const userId = req.authUser!.id;
     const id = Number(req.params["id"]);
     if (!Number.isFinite(id)) { fail(res, 400, "Invalid id"); return; }
     const pb = (await db.select().from(tradingPlaybooksTable)
       .where(eq(tradingPlaybooksTable.id, id)).limit(1))[0];
     if (!pb) { fail(res, 404, "Playbook not found"); return; }
 
+    // The suggestions are presented as "derived from your own trading data",
+    // so the evidence must be this user's own rows — and never the fabricated
+    // tester demo-seed journal rows (see lib/testerData/tags.ts).
+    const notSeeded = or(
+      isNull(tradeJournalTable.strategy),
+      not(like(tradeJournalTable.strategy, `${TESTER_SEED_STRATEGY_PREFIX}%`)),
+    );
     const [journals, debriefs, reviews, existing] = await Promise.all([
-      db.select().from(tradeJournalTable).limit(500),
-      db.select().from(postTradeDebriefsTable).limit(500),
-      db.select().from(weeklyReviewsTable).limit(50),
+      db.select().from(tradeJournalTable)
+        .where(and(eq(tradeJournalTable.userId, userId), notSeeded)).limit(500),
+      db.select().from(postTradeDebriefsTable)
+        .where(eq(postTradeDebriefsTable.userId, userId)).limit(500),
+      db.select().from(weeklyReviewsTable)
+        .where(eq(weeklyReviewsTable.userId, userId)).limit(50),
       db.select().from(playbookEntriesTable).where(eq(playbookEntriesTable.playbookId, id)),
     ]);
     const existingTitles = new Set(existing.map((e) => e.title.trim().toLowerCase()));

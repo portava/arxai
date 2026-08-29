@@ -348,6 +348,9 @@ export async function runAutoDebrief(
   let inserted: typeof postTradeDebriefsTable.$inferSelect;
   try {
     const insRows = await db.insert(postTradeDebriefsTable).values({
+      // Per-user isolation: the debrief inherits the paper order's owner so
+      // every downstream per-user read (skill, analytics, coach) can scope it.
+      userId: trade.userId ?? null,
       tradeId: trade.id,
       decisionId: trade.decisionId ?? null,
       // Map BREAKEVEN/CANCELLED into result column (text, no enum constraint).
@@ -414,10 +417,22 @@ export async function runAutoDebrief(
   // 10. Trigger analytics snapshot (best-effort, non-fatal).
   let snapshotId: number | null = null;
   try {
-    const computed = await computeSnapshot();
-    const snapIns = await db.insert(analyticsSnapshotsTable).values(computed).returning({ id: analyticsSnapshotsTable.id });
-    snapshotId = snapIns[0]?.id ?? null;
-    log.info({ snapshotId, totalTrades: computed.totalTrades }, "analytics snapshot generated");
+    // Per-user isolation: an analytics snapshot is a per-trader aggregate. An
+    // unowned (legacy) paper order has no trader to attribute it to, so we
+    // skip rather than persist an instance-wide row that would then be shown
+    // to somebody as "your" performance.
+    if (trade.userId == null) {
+      const msg = "Analytics snapshot skipped: paper order has no user_id — refusing to write an unscoped snapshot.";
+      warnings.push(msg);
+      log.warn({ orderId: trade.id }, msg);
+    } else {
+      const computed = await computeSnapshot(trade.userId);
+      const snapIns = await db.insert(analyticsSnapshotsTable)
+        .values({ ...computed, userId: trade.userId })
+        .returning({ id: analyticsSnapshotsTable.id });
+      snapshotId = snapIns[0]?.id ?? null;
+      log.info({ snapshotId, totalTrades: computed.totalTrades }, "analytics snapshot generated");
+    }
   } catch (err) {
     const msg = `Analytics snapshot failed (non-fatal): ${String(err).slice(0, 200)}`;
     warnings.push(msg);
