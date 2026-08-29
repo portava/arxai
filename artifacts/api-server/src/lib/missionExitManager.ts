@@ -699,6 +699,24 @@ export async function manageMissionTradeExit(
   });
   if (!match) return { ok: false, kind: "no_open_position" };
 
+  // Lazy draft→fill backfill: a position matched via commandId whose draft is
+  // still missing its broker ticket gets the ticket stamped now (best-effort,
+  // additive column write) so the close hook can resolve this trade later even
+  // if the fill-time backfill was missed.
+  if (draft.brokerTicket == null && match.brokerTicket) {
+    await db
+      .update(missionTradeDraftsTable)
+      .set({ brokerTicket: match.brokerTicket, updatedAt: new Date(nowMs) })
+      .where(
+        and(
+          eq(missionTradeDraftsTable.draftId, draft.draftId),
+          eq(missionTradeDraftsTable.userId, args.userId),
+          isNull(missionTradeDraftsTable.brokerTicket),
+        ),
+      )
+      .catch(() => undefined);
+  }
+
   const side: "BUY" | "SELL" = String(match.side).toUpperCase() === "SELL" ? "SELL" : "BUY";
   const position: MissionExitOpenPosition = {
     brokerTicket: match.brokerTicket,

@@ -36,6 +36,8 @@ export * from "./missedProfit.js";
 export * from "./compounding.js";
 // Phase 9 — Testing Lab integration, drift detector & promotion gates.
 export * from "./missionAutomation.js";
+// F-build — pure driver tick planner (decides; the api-server worker composes).
+export * from "./missionDriverPlan.js";
 export * from "./missionTestingLab.js";
 export * from "./missionDriftDetector.js";
 export * from "./missionPromotionGate.js";

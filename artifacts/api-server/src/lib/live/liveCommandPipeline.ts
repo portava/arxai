@@ -4714,6 +4714,35 @@ export async function recordLiveCommandResult(args: {
     }
   }
 
+  // F-build — draft→fill linkage at OPEN. When a PLACE order fills (fully or
+  // partially) with a broker ticket, backfill that ticket onto the executed
+  // Profit-Mission draft that dispatched this command (matched by commandId).
+  // Best-effort + idempotent, a pure additive column write: no-op for
+  // non-mission commands, never an execution path, and never allowed to
+  // disturb the fill-confirmation result.
+  if (
+    (effectiveOutcome === "LIVE_FILLED" || effectiveOutcome === "LIVE_PARTIALLY_FILLED")
+    && args.brokerTicket
+    && (row.commandType === "PLACE_LIVE_MARKET_ORDER" || row.commandType === "PLACE_LIVE_PENDING_ORDER")
+  ) {
+    try {
+      const { backfillMissionDraftBrokerTicket } = await import("../missionExecution.js");
+      await backfillMissionDraftBrokerTicket({
+        userId: args.userId,
+        commandId: args.commandId,
+        brokerTicket: args.brokerTicket,
+        nowMs: now.getTime(),
+      });
+    } catch (e) {
+      logger.error({
+        [PHASE_B_LIVE_LOG_PREFIX]: true,
+        event: "MISSION_DRAFT_FILL_LINK_FAILED",
+        commandId: args.commandId, brokerTicket: args.brokerTicket,
+        error: e instanceof Error ? e.message : String(e),
+      }, "failed to link broker fill to mission draft (advisory) — non-fatal");
+    }
+  }
+
   // Task #28 (T003) — forced reconciliation of position close. When a
   // CLOSE_LIVE_POSITION command fills, the broker has truly closed the
   // position, so stamp the matching arx_live_positions row's `closedAt`

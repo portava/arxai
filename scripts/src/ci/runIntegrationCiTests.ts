@@ -259,6 +259,28 @@ export const INTEGRATION_LANE_TESTS: readonly IntegrationLaneTest[] = [
   // 403s a USER, 200s + audits an ADMIN, and leaks no broker secrets. Imports
   // @workspace/db via the router, so it lives here.
   { pkg: "@workspace/api-server", script: "test:mission-phase9-route" },
+  // F-build — mission driver worker proof. Runs the REAL driver pass against a
+  // real DB with SPY executor/simulated-executor/scan seams: proves unattended
+  // timeframe expiry + emergency pause (no page open), that level 2 is NEVER
+  // auto-advanced (block journaled, no executor call), that an EARNED level-3
+  // demo mission auto-approves + dispatches onto the SIMULATED recorder only
+  // (live executor untouched, `sim:` commandId persisted), that a live-auto
+  // level without explicit enablement is held with honest reasons, and that a
+  // live dispatch persists the draft→fill commandId linkage on the draft row.
+  // Imports @workspace/db via the driver, so it lives here.
+  { pkg: "@workspace/api-server", script: "test:mission-driver-worker" },
+  // F-build review fix — the consent-critical paper→demo→live lifecycle proven
+  // BEHAVIORALLY (the honest-labelling suite only greps for reason-code
+  // strings). Executes the full refusal matrix of applyMissionExecutionMode
+  // against a real DB (stepwise-skip, explicit confirm, certificate + live
+  // master-switch independence incl. env-AND-db semantics with the DB arm
+  // asserted OFF, level-3 live refusal, guardrail ceiling vs the prospective
+  // live account, live-auto opt-in) plus downgrade-kills-liveAutoEnabled, and
+  // the PATCH /execution-mode + POST /start routes (401/404/400/409 contracts,
+  // the journaled draft→pending_approval→running walk, idempotent re-start,
+  // frozen terminal states). Imports @workspace/db via the router, so it
+  // lives here.
+  { pkg: "@workspace/api-server", script: "test:mission-execution-mode" },
   // Task #799 — Testing Lab + Profit Mission end-to-end smoke. Boots the REAL
   // backtestRuns + profitMissions routers on loopback (real db, no mocked
   // internals) and locks the two key user flows: a deterministic POST

@@ -85,6 +85,7 @@ import {
   buildMissionCertificate,
   acceptMissionCertificate,
 } from "../lib/missionCertificateService.js";
+import { applyMissionExecutionMode } from "../lib/missionExecutionModeService.js";
 import {
   buildMissionDailyBriefing,
   buildMissionEodReview,
@@ -910,12 +911,6 @@ export function sendDispatchFailure(
     case "no_direction":
       res.status(409).json({ error: "This draft has no directional setup to execute." });
       return;
-    case "non_live":
-      res.status(409).json({
-        error: `This mission runs in ${result.executionMode} mode — the live broker is never contacted.`,
-        executionMode: result.executionMode,
-      });
-      return;
     case "mission_blocked":
       res.status(409).json({
         error: "Mission risk gate blocked this execution.",
@@ -975,6 +970,7 @@ router.post(
     res.json({
       ok: true,
       commandId: result.commandId ?? null,
+      executionMode: result.executionMode,
       draft: projectDraft(result.draft, Date.now()),
     });
   },
@@ -1184,6 +1180,111 @@ router.patch("/profit-missions/:id/automation-level", requireUser, async (req, r
     liveAutoEnabled: result.liveAutoEnabled,
     decision: result.decision,
   });
+});
+
+// ── Execution mode — gated paper → demo → live lifecycle (fail-closed) ──────
+//
+// F-build. Upgrades are stepwise and explicitly confirmed; stepping to LIVE
+// additionally requires the accepted Mission Risk Certificate + the platform
+// live master switch (env AND db) + a live-capable automation level. Changing
+// the mode never places a trade and never relaxes a gate — dispatch still runs
+// the full gated path in every mode. Downgrades are always allowed.
+router.patch("/profit-missions/:id/execution-mode", requireUser, async (req, res): Promise<void> => {
+  const userId = req.authUser!.id;
+  const id = parseId(req, res);
+  if (id == null) return;
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const ctx = await resolvePromotionContext(req, userId);
+  const result = await applyMissionExecutionMode({
+    userId,
+    missionId: id,
+    targetMode: b.mode,
+    confirm: b.confirm === true,
+    ctx,
+    ip: req.ip ?? null,
+    ua: req.get("user-agent") ?? null,
+  });
+  if (!result.ok) {
+    switch (result.kind) {
+      case "not_found":
+        res.status(404).json({ error: "Mission not found" });
+        return;
+      case "invalid_mode":
+        res.status(400).json({ error: "mode must be one of paper | demo | live" });
+        return;
+      case "terminal":
+        res.status(409).json({ error: "Mission is in a terminal state and cannot change execution mode" });
+        return;
+      case "blocked":
+        res.status(409).json({
+          error: "Execution-mode change blocked.",
+          blockReasons: result.blockReasons,
+        });
+        return;
+    }
+  }
+  res.json({ applied: result.applied, executionMode: result.executionMode, reasons: result.reasons });
+});
+
+// ── Start — activate a drafted mission (state-machine moves only) ────────────
+//
+// Walks the mission through the legal draft → pending_approval → running edges
+// via the SAME journaled transition service as pause/resume/cancel. Starting a
+// mission places no trade: it only makes the mission eligible for the gated
+// scan/draft/approve/dispatch loop (and, at auto levels, the driver's ticks —
+// which re-check every gate at act time).
+router.post("/profit-missions/:id/start", requireUser, async (req, res): Promise<void> => {
+  const userId = req.authUser!.id;
+  const id = parseId(req, res);
+  if (id == null) return;
+  const row = await ownMission(userId, id);
+  if (!row) {
+    res.status(404).json({ error: "Mission not found" });
+    return;
+  }
+  if (!isMissionStatus(row.status)) {
+    res.status(409).json({ error: "Cannot start mission from an unrecognized state" });
+    return;
+  }
+  if (row.status === "running") {
+    res.json(serialize(row, assess(row, Date.now())));
+    return;
+  }
+  const now = Date.now();
+  const a = assess(row, now);
+  const snapshot = {
+    math: a.math,
+    feasibility: a.feasibility,
+    probability: a.probability,
+    currentValue: row.currentValue,
+    asOf: new Date(now).toISOString(),
+  };
+  // Legal path only: draft → pending_approval → running (each edge validated
+  // by the state machine and journaled). paused → running uses the resume edge.
+  const hops: Array<{ to: MissionStatus; message: string }> =
+    row.status === "draft"
+      ? [
+          { to: "pending_approval", message: "Mission submitted for start." },
+          { to: "running", message: "Mission started by user." },
+        ]
+      : [{ to: "running", message: "Mission started by user." }];
+  let current = row;
+  for (const hop of hops) {
+    const result = await applyMissionTransition({
+      userId,
+      missionId: id,
+      toStatus: hop.to,
+      eventType: "status_changed",
+      message: hop.message,
+      snapshot: { ...snapshot, status: hop.to },
+    });
+    if (!result.ok) {
+      res.status(409).json({ error: `Cannot start mission from state '${current.status}'` });
+      return;
+    }
+    current = result.row;
+  }
+  res.json(serialize(current, assess(current, Date.now())));
 });
 
 // ── Certificate — fetch content (GET) / accept append-only (POST) ───────────
