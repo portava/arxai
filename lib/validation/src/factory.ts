@@ -29,6 +29,7 @@ import { sharpe, skewness, kurtosis, stdev } from "./stats.js";
 import { cpcvSplits, type CpcvOptions } from "./cpcv.js";
 import { deflatedSharpe, type DeflatedSharpeResult } from "./deflatedSharpe.js";
 import { estimatePbo, type PboResult } from "./pbo.js";
+import type { CostEvidence } from "./costModel.js";
 
 /** Thresholds a candidate must clear. Every one is a veto. */
 export interface ValidationThresholds {
@@ -76,6 +77,18 @@ export interface SignedValidationReport {
   /** SHA-256 over the canonical report — chains it into the Black Box. */
   reportHash: string;
   prevHash: string;
+  /**
+   * The cost evidence this family was evaluated under, or null for a
+   * gross-only run (in which case every candidate carries the
+   * NET_OF_COSTS_REQUIRED veto and there are no survivors).
+   *
+   * Deliberately OUTSIDE the hashed body: the body's shape is frozen because
+   * edgePromotion.ts (api-server) verifies reports by structurally mirroring
+   * `finalise`'s canonical body, and the enforcement itself lives in the
+   * hashed verdicts. The cost model is separately hash-stamped by
+   * `evidence.modelHash` and chained by the transfer-proof harness.
+   */
+  costs: CostEvidence | null;
   detail: string;
 }
 
@@ -115,14 +128,38 @@ export function validateFamily(
      * niche-selection trials — choosing where to look is itself multiplicity.
      */
     chargedTrials?: number;
+    /**
+     * REQUIRED FOR CERTIFICATION. The evidence that every trial's returns are
+     * NET of the CostSlippageModel (spread + slippage + commission — see
+     * costModel.ts `netReturns`). When absent, or structurally hollow (a zero
+     * per-side cost, a malformed model hash), every candidate is vetoed with
+     * NET_OF_COSTS_REQUIRED: a gross-only evaluation can measure, but it
+     * cannot certify — a gross "edge" smaller than its own round-trip cost is
+     * a loss wearing a plus sign.
+     */
+    costs?: CostEvidence;
   },
 ): SignedValidationReport {
   const thresholds = opts.thresholds ?? DEFAULT_THRESHOLDS;
   const prevHash = opts.prevHash ?? "0".repeat(64);
   const nTrials = opts.chargedTrials ?? trials.length;
 
+  // The gross-only check names WHY the evidence fails, so the veto string in
+  // the report explains itself instead of demanding archaeology.
+  const costs = opts.costs ?? null;
+  const grossOnlyReason =
+    costs === null
+      ? "no cost evidence supplied"
+      : costs.applied !== true
+        ? "cost evidence not marked applied"
+        : !(costs.perSideCostFrac > 0)
+          ? `zero/invalid perSideCostFrac (${costs.perSideCostFrac}) — a zero-cost model is gross in disguise`
+          : !/^[0-9a-f]{64}$/.test(costs.modelHash)
+            ? "cost model hash is not a sha256"
+            : null;
+
   if (trials.length === 0) {
-    return finalise(familyKey, 0, thresholds, [], prevHash, "NO_TRIALS");
+    return finalise(familyKey, 0, thresholds, [], prevHash, costs, "NO_TRIALS");
   }
 
   const inSampleSharpes = trials.map((t) => sharpe(t.returns));
@@ -149,6 +186,9 @@ export function validateFamily(
     });
 
     // Every veto is absolute; they are ANDed, never averaged.
+    if (grossOnlyReason !== null) {
+      vetoes.push(`NET_OF_COSTS_REQUIRED (${grossOnlyReason})`);
+    }
     if (!(oosSharpe > 0)) {
       vetoes.push(`CPCV_OOS_NOT_POSITIVE (${oosSharpe.toFixed(4)})`);
     }
@@ -179,6 +219,7 @@ export function validateFamily(
     thresholds,
     candidates,
     prevHash,
+    grossOnlyReason === null ? costs : null,
     pboResult.detail,
   );
 }
@@ -189,6 +230,7 @@ function finalise(
   thresholds: ValidationThresholds,
   candidates: CandidateReport[],
   prevHash: string,
+  costs: CostEvidence | null,
   detail: string,
 ): SignedValidationReport {
   const survivors = candidates.filter((c) => c.verdict === "PASS");
@@ -216,7 +258,11 @@ function finalise(
     survivors,
     reportHash,
     prevHash,
-    detail: `${survivors.length}/${candidates.length} survived. ${detail}`,
+    costs,
+    detail:
+      `${survivors.length}/${candidates.length} survived` +
+      (costs === null ? " (GROSS-ONLY: nothing can certify)" : " (net of costs)") +
+      `. ${detail}`,
   };
 }
 

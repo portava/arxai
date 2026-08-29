@@ -1,8 +1,9 @@
 // Cross-package canonicalization parity.
 //
-// `stableStringify` is implemented independently in THREE packages —
+// `stableStringify` is implemented independently in FOUR packages —
 // @workspace/discovery (pre-registration hashes), @workspace/features
-// (the tamper-evident event chain), and @workspace/risk (sizing determinism).
+// (the tamper-evident event chain), @workspace/risk (sizing determinism), and
+// @workspace/validation (cost-model hashes + transfer-proof chain rows).
 // They are deliberately NOT consolidated: these are independently-versioned
 // research packages and coupling them would add a dependency edge for a
 // ten-line function.
@@ -15,16 +16,21 @@
 // It also pins the bigint case specifically: discovery and risk used to fall
 // through to JSON.stringify, which THROWS on a bigint — and @workspace/money
 // represents every amount as bigint minor units, so a Money value reaching
-// either hasher crashed the caller. All three now match features' encoding.
+// either hasher crashed the caller. Every copy now matches features' encoding.
 import { stableStringify as discoveryStringify } from "@workspace/discovery";
 import { stableStringify as featuresStringify } from "@workspace/features";
 import { stableStringify as riskStringify } from "@workspace/risk";
+import { stableStringify as validationStringify } from "@workspace/validation";
 import { isEntrypoint, type CiTestResultLike } from "./ci/inProcessAppHarness.js";
 
 const IMPLS: ReadonlyArray<readonly [string, (v: unknown) => string]> = [
   ["discovery", discoveryStringify],
   ["features", featuresStringify],
   ["risk", riskStringify],
+  // C7/C8: cost-model hashes and transfer-proof pre-registration/chain rows
+  // canonicalize through validation's own copy; the transfer-proof chain is
+  // only verifiable by @workspace/features if these two agree byte-for-byte.
+  ["validation", validationStringify],
 ];
 
 /** Values chosen to exercise every branch: ordering, absence, non-finite,
@@ -55,7 +61,7 @@ export async function run(): Promise<CiTestResultLike> {
   const pass = (m: string) => { passes += 1; console.log(`  ✓ ${m}`); };
   const fail = (m: string) => { failures += 1; console.log(`  ✗ ${m}`); };
 
-  console.log("\nstableStringifyParityTest — three packages, one canonicalization\n");
+  console.log("\nstableStringifyParityTest — four packages, one canonicalization\n");
 
   for (const [label, value] of CORPUS) {
     const rendered = IMPLS.map(([name, fn]) => {
@@ -64,7 +70,7 @@ export async function run(): Promise<CiTestResultLike> {
     });
     const distinct = new Set(rendered.map(([, out]) => out));
     if (distinct.size === 1 && !rendered[0]![1].startsWith("THREW:")) {
-      pass(`${label} → all three agree`);
+      pass(`${label} → all four agree`);
     } else {
       fail(`${label} → DIVERGED: ${JSON.stringify(rendered)}`);
     }

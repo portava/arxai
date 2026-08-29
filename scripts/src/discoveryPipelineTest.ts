@@ -36,7 +36,7 @@ import {
   type TrialOutcome,
   type ValidationPort,
 } from "@workspace/discovery";
-import { validateFamily } from "@workspace/validation";
+import { validateFamily, buildCostModel, netReturns, costEvidence } from "@workspace/validation";
 import { isEntrypoint, type CiTestResultLike } from "./ci/inProcessAppHarness.js";
 
 /** mulberry32 — seeded, so a failure is reproducible from the seed alone. */
@@ -71,15 +71,30 @@ function gaussian(rnd: () => number): () => number {
  * real thing in so the end-to-end path is genuinely exercised rather than being
  * validated by a stub that agrees with it.
  */
+// C7: the factory refuses gross-only certification, so the port nets every
+// trial through the declared V75 cost model first. Trial outcomes carry only a
+// return series (no position path), so the CONSERVATIVE schedule applies: a
+// full round trip charged on every observation — the upper bound on turnover.
+const V75_COST_MODEL = buildCostModel({
+  instrument: "Volatility 75 Index",
+  instrumentClass: "synthetic",
+  venue: "deriv",
+});
+
 const REAL_PORT: ValidationPort = {
   validateFamily(familyKey, trials, chargedTrials) {
     const r = validateFamily(
       familyKey,
-      trials.map((t) => ({ key: t.key, familyKey: t.familyKey, returns: t.returns })),
+      trials.map((t) => ({
+        key: t.key,
+        familyKey: t.familyKey,
+        returns: netReturns(t.returns, V75_COST_MODEL, { kind: "roundTripPerObservation", size: 1 }).net,
+      })),
       {
         cpcv: { nGroups: 6, p: 2, horizon: 5, embargo: 5 },
         pboBlocks: 10,
         chargedTrials,
+        costs: costEvidence(V75_COST_MODEL, "roundTripPerObservation"),
       },
     );
     return {
