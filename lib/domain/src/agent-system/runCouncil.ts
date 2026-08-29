@@ -33,6 +33,10 @@ import { agentDebate } from "./debate/agentDebate.engine";
 import { runRedTeam } from "./debate/redTeam.agent";
 import { runBlueTeam } from "./debate/blueTeam.agent";
 import { disagreementScore } from "./debate/disagreementScore.engine";
+import {
+  diversityAdjustedDisagreementScore,
+  type DiversityWeights,
+} from "./debate/evidenceDiversity.engine";
 
 import { tradeJudge } from "./judge/tradeJudge.engine";
 import { explainDecision } from "./judge/decisionExplanation.engine";
@@ -97,7 +101,20 @@ const AGENT_DATA_SOURCES: Record<string, AgentDataSourceId[]> = {
 /** TTL of an agent opinion in ms. After this, the vote is stale. */
 const COUNCIL_OPINION_TTL_MS = 30_000;
 
-export function runCouncil(snap: AgentSystemSnapshot, decisionId: string): CouncilRunArtifact {
+export interface RunCouncilOptions {
+  /** Historical evidence-diversity weights (from persisted per-agent stance
+   *  records). When present, correlated agents' convictions are DISCOUNTED in
+   *  the disagreement score — the discount can only RAISE disagreement (add
+   *  caution). Absent → the classic unadjusted score (no fabricated
+   *  correlation). */
+  diversityWeights?: DiversityWeights | null;
+}
+
+export function runCouncil(
+  snap: AgentSystemSnapshot,
+  decisionId: string,
+  opts: RunCouncilOptions = {},
+): CouncilRunArtifact {
   // 1. Run all 12 agents (FACTS → INTERPRETATIONS).
   const verdicts: AgentVerdict[] = [
     riskAgent(snap),
@@ -211,7 +228,10 @@ export function runCouncil(snap: AgentSystemSnapshot, decisionId: string): Counc
   const debate = agentDebate(verdicts);
   const redTeam = runRedTeam(snap, verdicts, snap.setup.direction);
   const blueTeam = runBlueTeam(snap, verdicts, snap.setup.direction);
-  const dis = disagreementScore(verdicts);
+  const diversityView = opts.diversityWeights
+    ? diversityAdjustedDisagreementScore(verdicts, opts.diversityWeights)
+    : null;
+  const dis = diversityView ?? disagreementScore(verdicts);
   const conflictSeverity = classifyConflict(dis.score01, debate.conflicts.length);
 
   // 6. Judge — synthesize into proposed decision (existing engine).
@@ -294,6 +314,15 @@ export function runCouncil(snap: AgentSystemSnapshot, decisionId: string): Counc
     staleGuard,
     redTeam, blueTeam,
     disagreementScore01: dis.score01,
+    ...(diversityView
+      ? {
+          diversity: {
+            applied: diversityView.adjustmentApplied,
+            unadjustedScore01: diversityView.unadjustedScore01,
+            clusters: opts.diversityWeights?.clusters ?? [],
+          },
+        }
+      : {}),
     conflictSeverity,
     decision: baseDecision,
     blockerHierarchy,
