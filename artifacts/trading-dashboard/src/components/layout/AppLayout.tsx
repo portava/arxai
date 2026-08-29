@@ -5,7 +5,7 @@ import {
   AlertOctagon, Brain, BookOpen, Settings, FlaskConical, Sparkles,
   ChevronLeft, ChevronRight, ChevronDown, Target, FileText, Bell, Heart, Lock, Database, ShieldAlert,
   ListChecks, Briefcase, GitMerge, HelpCircle, User, Users, Crosshair,
-  ScrollText, Trophy, Eye, Swords, Gauge, TrendingUp, NotebookPen, BarChart3,
+  ScrollText, Trophy, Eye, Gauge, NotebookPen, BarChart3,
   Plug, LineChart, Award, ShieldCheck, Search, X, Zap, Wallet, LayoutGrid, Banknote,
   Thermometer, GraduationCap, Flag,
   Calendar as CalendarIcon,
@@ -80,8 +80,8 @@ const buildSearchAliases = (name: string): Record<string, { aliases?: string[]; 
   "/help": { aliases: ["help", "support", "faq"], description: "Help and documentation" },
   "/emergency": { aliases: ["emergency", "stop", "panic", "kill switch"], description: "Emergency stop — halts all trading" },
   "/autopilot-control-center": { aliases: ["autopilot", "auto", "bot"], description: "Autopilot control center" },
-  "/testing-lab": { aliases: ["testing lab", "backtest", "backtesting", "forward test", "forward testing", "strategy testing", "history test", "comparison"], description: "Backtest, forward test, compare, and review strategy results" },
-  "/news-risk": { aliases: ["news", "events", "risk news"], description: "News and macro risk events" },
+  "/testing-lab": { aliases: ["testing lab", "backtest", "backtesting", "forward test", "forward testing", "strategy testing", "history test", "comparison", "shadow mode", "tournament", "strategy promotion"], description: "Backtest, forward test, compare, and review strategy results (admin: shadow / tournament / promotion tabs)" },
+  "/economic-calendar": { aliases: ["calendar", "economic calendar", "news", "events", "news risk", "risk news"], description: "Economic calendar with the News Risk tab" },
   "/prop-firm-mode": { aliases: ["prop firm", "challenge", "ftmo"], description: "Prop firm mode rules" },
   "/orders": { aliases: ["order ticket", "manual trade", "ticket"], description: "Manual order ticket" },
   "/broker-readonly": { aliases: ["broker", "broker readonly"], description: "Broker connection (read-only)" },
@@ -148,13 +148,15 @@ const buildNavGroups = (name: string): NavGroup[] => [
     items: [
       { href: "/live-chart",        label: "Live Market Chart", icon: Activity },
       { href: "/watchlists",        label: "Watchlist",         icon: Eye },
-      // Manual Ticket + News Risk back onto requireAdmin-only mutations
-      // (oms.ts order routes, marketDataLayer.ts news-risk event CRUD).
+      // Manual Ticket backs onto requireAdmin-only mutations (oms.ts order
+      // routes).
       { href: "/orders",            label: "Manual Ticket",     icon: ListChecks, adminOnly: true },
       { href: "/mt5-setup",         label: "MT5 Setup",         icon: Plug },
       { href: "/market-heat-map",   label: "Market Heat Map",   icon: Thermometer },
+      // News Risk is a tab of the Economic Calendar now (item E). Its old
+      // adminOnly flag was a leftover from the retired simulator CRUD — the
+      // folded surface reads only ungated endpoints, so no admin gate here.
       { href: "/economic-calendar", label: "Economic Calendar", icon: CalendarIcon },
-      { href: "/news-risk",         label: "News Risk",         icon: Bell, adminOnly: true },
     ],
   },
   {
@@ -207,12 +209,11 @@ const buildNavGroups = (name: string): NavGroup[] => [
       { href: "/market-health",            label: "Market Bias",            icon: LineChart },
       { href: "/strategy-lab",             label: "Strategy Lab",           icon: FlaskConical },
       { href: "/autopilot-control-center", label: "Autopilot",              icon: Bot, adminOnly: true },
-      { href: "/shadow-mode",              label: "Shadow Mode",            icon: Eye, adminOnly: true  },
+      // Shadow Mode / Strategy Tournament / Strategy Promotion are Testing Lab
+      // tabs now (item C) — one entry, admin-only tab triggers inside the page.
       { href: "/shadow-journal",           label: "Shadow Journal",         icon: NotebookPen, adminOnly: true },
       { href: "/testing-lab",              label: "Testing Lab",            icon: FlaskConical },
       { href: "/market-replay",            label: "Market Replay",          icon: FlaskConical, adminOnly: true },
-      { href: "/strategy-tournament",      label: "Strategy Tournament",    icon: Swords, adminOnly: true  },
-      { href: "/strategy-promotion",       label: "Strategy Promotion",     icon: TrendingUp, adminOnly: true  },
       { href: "/confidence-calibration",   label: "Confidence Calibration", icon: Gauge, adminOnly: true  },
       { href: "/brain",                    label: "Brain Analysis",         icon: Brain },
       { href: "/edge-discovery",           label: "Edge Discovery",         icon: Sparkles },

@@ -7,11 +7,13 @@ const router = Router();
 
 // NOTE (Theme G-CUT): the sweep listed BOTH legacy /news routes as "no frontend
 // consumer". That is true of /news/risk, which is deleted here — but NOT of
-// /news/calendar, which backs two live surfaces via useGetEconomicCalendar:
-// the Economic Calendar page (pages/calendar.tsx) and the cockpit's critical
-// events card (CockpitCards.tsx). Theme H5 also names the Economic Calendar as
-// the calendar surface to KEEP, so cutting this route would have broken the
-// very page the consolidation preserves. It stays.
+// /news/calendar, which still backs the cockpit's critical events card
+// (CockpitCards.tsx) via useGetEconomicCalendar. The other consumer — the
+// legacy pages/calendar.tsx list — was retired in the surface consolidation
+// (/calendar now redirects to the unified /economic-calendar, which Theme H5
+// names as the calendar surface to KEEP). Cut this route only after
+// CockpitCards is repointed to the unified endpoint (an openapi + codegen
+// ripple). Until then it stays, honest-or-empty.
 router.get("/news/calendar", async (req, res) => {
   try {
     const q = GetEconomicCalendarQueryParams.parse({

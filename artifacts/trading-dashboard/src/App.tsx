@@ -68,7 +68,6 @@ const AnalyticsCommand = lazy(() => import("@/pages/analytics-command"));
 const Analytics = lazy(() => import("@/pages/analytics"));
 const Emergency = lazy(() => import("@/pages/emergency"));
 const Learning = lazy(() => import("@/pages/learning"));
-const Calendar = lazy(() => import("@/pages/calendar"));
 const TradingCalendar = lazy(() => import("@/pages/trading-calendar"));
 const AICommandCenter = lazy(() => import("@/pages/ai-command-center"));
 const TraderCoach = lazy(() => import("@/pages/trader-coach"));
@@ -138,10 +137,9 @@ const RiskCommandCenter = lazy(() => import("@/pages/risk-command-center"));
 const ProfitMissions = lazy(() => import("@/pages/profit-missions"));
 const RiskEventsPage = lazy(() => import("@/pages/risk-events"));
 const PropFirmModePage = lazy(() => import("@/pages/prop-firm-mode"));
-const ShadowModePage = lazy(() => import("@/pages/shadow-mode"));
-const StrategyTournamentPage = lazy(() => import("@/pages/strategy-tournament"));
+// Shadow Mode / Strategy Tournament / Strategy Promotion are Testing Lab tabs
+// now (surface consolidation item C) — their old standalone routes redirect.
 const ConfidenceCalibrationPage = lazy(() => import("@/pages/confidence-calibration"));
-const StrategyPromotionPage = lazy(() => import("@/pages/strategy-promotion"));
 const AiReadinessScorePage = lazy(() => import("@/pages/ai-readiness-score"));
 const ShadowJournalPage = lazy(() => import("@/pages/shadow-journal"));
 const ScalpJournalPage = lazy(() => import("@/pages/scalp-journal"));
@@ -290,7 +288,10 @@ function Router() {
           <Route path="/activity" component={ActivityTimeline} />
           <Route path="/reports" component={Reports} />
           <Route path="/learning" component={Learning} />
-          <Route path="/calendar" component={Calendar} />
+          {/* The legacy /calendar page (thin list over /news/calendar) is
+              retired — the unified Economic Calendar is the ONE calendar
+              surface (Theme H5). Old bookmarks land there. */}
+          <Route path="/calendar"><Redirect to="/economic-calendar" /></Route>
           <Route path="/trading-calendar" component={TradingCalendar} />
           <Route path="/ai-command-center" component={AICommandCenter} />
           <Route path="/trader-coach" component={TraderCoach} />
@@ -417,11 +418,14 @@ function Router() {
           <Route path="/profit-missions" component={ProfitMissions} />
           <Route path="/risk-events" component={RiskEventsPage} />
           <Route path="/prop-firm-mode" component={PropFirmModePage} />
-          <Route path="/shadow-mode" component={ShadowModePage} />
+          {/* Folded into the unified Testing Lab (item C): old deep links keep
+              working via redirects, and the tab components keep their
+              admin-role pre-check + honest denied card. */}
+          <Route path="/shadow-mode"><Redirect to="/testing-lab?tab=shadow" /></Route>
           <Route path="/forward-testing"><Redirect to="/testing-lab?tab=forward" /></Route>
-          <Route path="/strategy-tournament" component={StrategyTournamentPage} />
+          <Route path="/strategy-tournament"><Redirect to="/testing-lab?tab=tournament" /></Route>
           <Route path="/confidence-calibration" component={ConfidenceCalibrationPage} />
-          <Route path="/strategy-promotion" component={StrategyPromotionPage} />
+          <Route path="/strategy-promotion"><Redirect to="/testing-lab?tab=promotion" /></Route>
           <Route path="/ai-readiness-score" component={AiReadinessScorePage} />
           <Route path="/shadow-journal" component={ShadowJournalPage} />
 

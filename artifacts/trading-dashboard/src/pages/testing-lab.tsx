@@ -3,6 +3,15 @@
 // (backtest-runs vs forward-testing/shadow); only the UI is unified behind tabs.
 // A page-level strategy selector is shared across the tabs so the chosen
 // strategy persists when switching tabs.
+//
+// Surface consolidation item C: the standalone Shadow Mode, Strategy
+// Tournament and Strategy Promotion pages are folded in as tabs too. Their
+// backing routes (routes/shadowMode.ts) are ALL requireAdmin, so the three
+// tab triggers render only for an ADMIN/OWNER session — an approved non-admin
+// trader never sees a tab that would 403 (the render-then-403 defect Theme H
+// fixed in the nav). The tab components themselves keep their cached-role
+// pre-check + honest AccessDeniedCard, so a deep link (?tab=shadow) stays
+// honest for everyone. Server requireAdmin remains the authority.
 
 import { useState } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -11,8 +20,12 @@ import { ForwardTestingTab } from "@/components/testing-lab/ForwardTestingTab";
 import { ComparisonTab } from "@/components/testing-lab/ComparisonTab";
 import { ResultsHistoryTab } from "@/components/testing-lab/ResultsHistoryTab";
 import { TESTING_STRATEGIES } from "@/lib/testingStrategies";
+import { useProductRole } from "@/hooks/useProductRole";
+import ShadowMode from "@/pages/shadow-mode";
+import StrategyTournament from "@/pages/strategy-tournament";
+import StrategyPromotion from "@/pages/strategy-promotion";
 
-const TABS = ["backtesting", "forward", "comparison", "history"] as const;
+const TABS = ["backtesting", "forward", "comparison", "history", "shadow", "tournament", "promotion"] as const;
 type TabKey = (typeof TABS)[number];
 
 function initialTab(): TabKey {
@@ -24,6 +37,11 @@ function initialTab(): TabKey {
 export default function TestingLab() {
   const [strategyId, setStrategyId] = useState<string>(TESTING_STRATEGIES[0]);
   const [tab, setTab] = useState<TabKey>(initialTab);
+  // Trigger visibility only — the shadow/tournament/promotion components carry
+  // their own role pre-check and denied card. While the role is still
+  // resolving the admin triggers stay hidden (hidden ≠ denied; a resolved
+  // admin session gets them on the next render).
+  const { isAdmin } = useProductRole();
 
   return (
     <div className="space-y-4 p-4">
@@ -54,6 +72,13 @@ export default function TestingLab() {
           <TabsTrigger value="forward">Forward Testing</TabsTrigger>
           <TabsTrigger value="comparison">Comparison</TabsTrigger>
           <TabsTrigger value="history">Strategy Results</TabsTrigger>
+          {isAdmin && (
+            <>
+              <TabsTrigger value="shadow">Shadow Mode</TabsTrigger>
+              <TabsTrigger value="tournament">Tournament</TabsTrigger>
+              <TabsTrigger value="promotion">Promotion</TabsTrigger>
+            </>
+          )}
         </TabsList>
         <TabsContent value="backtesting">
           <BacktestingTab strategyId={strategyId} onStrategyChange={setStrategyId} />
@@ -66,6 +91,17 @@ export default function TestingLab() {
         </TabsContent>
         <TabsContent value="history">
           <ResultsHistoryTab strategyId={strategyId} />
+        </TabsContent>
+        {/* Admin strategy-research surfaces — each component self-gates on the
+            cached role and renders an honest denied card on a deep link. */}
+        <TabsContent value="shadow">
+          <ShadowMode />
+        </TabsContent>
+        <TabsContent value="tournament">
+          <StrategyTournament />
+        </TabsContent>
+        <TabsContent value="promotion">
+          <StrategyPromotion />
         </TabsContent>
       </Tabs>
     </div>
