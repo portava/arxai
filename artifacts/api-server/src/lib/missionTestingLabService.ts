@@ -22,6 +22,9 @@ import {
 import {
   summarizeMissionTest,
   labelForKind,
+  evidenceBasisFor,
+  describeEvidenceBasis,
+  type PromotionEvidenceBasis,
   type MissionTestKind,
   type MissionTestMetrics,
   type MissionTestSummary,
@@ -65,6 +68,8 @@ export interface MissionTestResultDto {
   headline: string;
   notes: string[];
   promotionEligible: boolean;
+  /** What the underlying trades were — SIMULATED, BROKER_RECONCILED, or MIXED. */
+  evidenceBasis: PromotionEvidenceBasis;
   createdAt: string;
 }
 
@@ -148,8 +153,17 @@ function projectResult(row: typeof missionTestResultsTable.$inferSelect): Missio
     headline: typeof blob.headline === "string" ? blob.headline : "",
     notes: Array.isArray(blob.notes) ? (blob.notes as string[]) : [],
     promotionEligible: blob.promotionEligible === true,
+    // An older row with no recorded basis reads UNSTATED — never assumed proven.
+    evidenceBasis: isEvidenceBasis(blob.evidenceBasis) ? blob.evidenceBasis : "UNSTATED",
     createdAt: row.createdAt.toISOString(),
   };
+}
+
+const EVIDENCE_BASES: ReadonlySet<string> = new Set([
+  "NONE", "SIMULATED", "BROKER_RECONCILED", "MIXED", "UNSTATED",
+]);
+function isEvidenceBasis(v: unknown): v is PromotionEvidenceBasis {
+  return typeof v === "string" && EVIDENCE_BASES.has(v);
 }
 
 async function persistTestResult(args: {
@@ -161,7 +175,12 @@ async function persistTestResult(args: {
   timeframe: string;
   metrics: MissionTestMetrics;
   summary: MissionTestSummary;
+  /** What the underlying closed trades were. Persisted so a record earned on
+   *  modelled paper/demo fills is never read as broker-proven performance. */
+  evidenceBasis?: PromotionEvidenceBasis;
 }): Promise<MissionTestResultDto> {
+  const evidenceBasis: PromotionEvidenceBasis =
+    args.evidenceBasis ?? (args.kind === "BACKTEST" ? "SIMULATED" : "UNSTATED");
   const inserted = await db
     .insert(missionTestResultsTable)
     .values({
@@ -177,8 +196,9 @@ async function persistTestResult(args: {
       metricsJson: {
         metrics: args.metrics,
         headline: args.summary.headline,
-        notes: args.summary.notes,
+        notes: [...args.summary.notes, describeEvidenceBasis(evidenceBasis)],
         promotionEligible: args.summary.promotionEligible,
+        evidenceBasis,
       },
       isVerified: args.summary.promotionEligible,
     })
@@ -262,11 +282,19 @@ export interface AggregateForwardArgs {
 }
 
 /**
- * Aggregate a FORWARD result from the mission's OWN executed-and-closed drafts —
- * real realised outcomes only. Never fabricates a forward record: with zero closed
- * trades it still writes an honest empty result with a small-sample warning. The
- * result label keeps it honest (paper/demo/live forward), and a small sample is
- * flagged so the promotion gate will not count it as satisfied.
+ * Aggregate a FORWARD result from the mission's OWN executed-and-closed drafts.
+ * Never fabricates a forward record: with zero closed trades it still writes an
+ * honest empty result with a small-sample warning, and a small sample is flagged
+ * so the promotion gate will not count it as satisfied.
+ *
+ * TWO KINDS OF FORWARD EVIDENCE, both real, never blended into one money figure:
+ *   - broker-reconciled closes (`pnl` + `closedAt`) from a LIVE mission, and
+ *   - SIMULATED closes (`sim_pnl` + `sim_closed_at`) from a paper/demo mission,
+ *     modelled from real quotes by the fill simulator.
+ * A paper/demo mission produces only the second kind — which is exactly what
+ * "forward (paper / demo / live)" has always meant. The persisted result records
+ * the basis so a forward record earned on modelled fills can never be read as
+ * broker-proven performance.
  */
 export async function aggregateMissionForward(args: AggregateForwardArgs): Promise<TestingLabResult> {
   const mission = await loadOwnedMission(args.userId, args.missionId);
@@ -275,8 +303,12 @@ export async function aggregateMissionForward(args: AggregateForwardArgs): Promi
   const rows = await db
     .select({
       pnl: missionTradeDraftsTable.pnl,
+      simPnl: missionTradeDraftsTable.simPnl,
       rMultiple: missionTradeDraftsTable.rMultiple,
+      simRMultiple: missionTradeDraftsTable.simRMultiple,
       closedAt: missionTradeDraftsTable.closedAt,
+      simClosedAt: missionTradeDraftsTable.simClosedAt,
+      simulated: missionTradeDraftsTable.simulated,
       symbol: missionTradeDraftsTable.symbol,
       timeframe: missionTradeDraftsTable.timeframe,
       agentKey: missionTradeDraftsTable.agentKey,
@@ -291,7 +323,22 @@ export async function aggregateMissionForward(args: AggregateForwardArgs): Promi
     )
     .orderBy(missionTradeDraftsTable.closedAt);
 
-  const closed = rows.filter((r) => r.closedAt != null && r.pnl != null && Number.isFinite(r.pnl));
+  // Normalize each row onto ONE of the two families — never both. A simulated
+  // row reads its `sim_*` columns; a broker row reads its reconciled columns.
+  const closed = rows
+    .map((r) => {
+      const useSim = r.simulated === true;
+      const pnl = useSim ? r.simPnl : r.pnl;
+      const closedAt = useSim ? r.simClosedAt : r.closedAt;
+      const rMultiple = useSim ? r.simRMultiple : r.rMultiple;
+      return { ...r, pnl, closedAt, rMultiple, isSimulated: useSim };
+    })
+    .filter((r) => r.closedAt != null && r.pnl != null && Number.isFinite(r.pnl))
+    .sort((a, b) => (a.closedAt as Date).getTime() - (b.closedAt as Date).getTime());
+  const forwardEvidenceBasis = evidenceBasisFor({
+    simulatedCount: closed.filter((r) => r.isSimulated).length,
+    brokerReconciledCount: closed.filter((r) => !r.isSimulated).length,
+  });
   const startingAmount = mission.startingAmount > 0 ? mission.startingAmount : 0;
 
   let winning = 0;
@@ -343,6 +390,7 @@ export async function aggregateMissionForward(args: AggregateForwardArgs): Promi
   const result = await persistTestResult({
     userId: args.userId, missionId: args.missionId, kind: "FORWARD",
     strategyKey, symbol, timeframe, metrics, summary,
+    evidenceBasis: forwardEvidenceBasis,
   });
   return { ok: true, result };
 }

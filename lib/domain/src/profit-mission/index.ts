@@ -41,6 +41,8 @@ export * from "./missionDriverPlan.js";
 export * from "./missionTestingLab.js";
 export * from "./missionDriftDetector.js";
 export * from "./missionPromotionGate.js";
+// Honest paper/demo fill simulation (real quotes only; simulated is labelled).
+export * from "./missionFillSimulation.js";
 export * from "./missionRiskCertificate.js";
 export * from "./missionBriefing.js";
 export * from "./missionLearningLoop.js";

@@ -75,8 +75,29 @@ export function assess(row: MissionRow, nowMs: number): MissionAssessment {
   return { math, feasibility, probability };
 }
 
+/**
+ * Which books a mission's money figures are on. A `live` mission's currentValue
+ * / realised profit is broker-reconciled money; a paper/demo mission's is a
+ * SIMULATED total, summed from fills modelled against real quotes. The two are
+ * never blended, and every read surface states which one it is showing.
+ */
+export type MissionAccountingBasis = "SIMULATED" | "BROKER_RECONCILED";
+
+/** PURE — `live` and only `live` is money. */
+export function accountingBasisFor(executionMode: string | null | undefined): MissionAccountingBasis {
+  return (executionMode ?? "").trim().toLowerCase() === "live" ? "BROKER_RECONCILED" : "SIMULATED";
+}
+
+/** The honesty label every surface shows beside a mission money figure. */
+export function accountingLabelFor(basis: MissionAccountingBasis): string {
+  return basis === "SIMULATED"
+    ? "SIMULATED — modelled from real quotes on a paper/demo mission, not broker-reconciled money"
+    : "Broker-reconciled realised money";
+}
+
 /** Project a row + assessment into the public ProfitMission DTO. */
 export function serialize(row: MissionRow, a: MissionAssessment) {
+  const accountingBasis = accountingBasisFor(row.executionMode);
   return {
     id: row.id,
     userId: row.userId,
@@ -84,6 +105,10 @@ export function serialize(row: MissionRow, a: MissionAssessment) {
     targetAmount: row.targetAmount,
     requiredProfit: row.requiredProfit,
     currentValue: row.currentValue,
+    // The honesty label for `currentValue` (and every derived math figure).
+    accountingBasis,
+    currentValueSimulated: accountingBasis === "SIMULATED",
+    accountingLabel: accountingLabelFor(accountingBasis),
     timeframeStart: row.timeframeStart.toISOString(),
     timeframeEnd: row.timeframeEnd.toISOString(),
     timeframeAmount: row.timeframeAmount ?? null,
@@ -122,9 +147,13 @@ export interface MissionPulseExtras {
 
 /** Project a row + assessment + resolved extras into the pulse/refresh DTO. */
 export function serializePulse(row: MissionRow, a: MissionAssessment, extras: MissionPulseExtras) {
+  const accountingBasis = accountingBasisFor(row.executionMode);
   return {
     id: row.id,
     currentValue: row.currentValue,
+    accountingBasis,
+    currentValueSimulated: accountingBasis === "SIMULATED",
+    accountingLabel: accountingLabelFor(accountingBasis),
     math: a.math,
     feasibility: a.feasibility,
     probability: a.probability,

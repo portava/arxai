@@ -14,27 +14,20 @@
 //     If it blocks, no order is attempted and the draft stays `approved`. The
 //     real per-user governor + 23-gate live dispatch still run unconditionally
 //     inside `executeInstant` — the mission gate can only ADD strictness.
-//   - DEMO/PAPER never touch the live broker, and they are NOT gate-checked to
-//     the same depth as live. Be precise about which chain each mode runs:
-//       * BOTH modes run the MISSION-LAYER chain in this file: the probation
-//         verdict, the additive mission gate (`composeMissionGate`), the Phase 7
-//         pre-checks, and the single-flight CAS claim.
-//       * ONLY `live` then calls `executor` → `executeInstant` → the live
-//         command pipeline → the 23-gate Phase B evaluator + the per-user
-//         governor + the env/db master switch. NONE of those run for
-//         paper/demo.
-//       * `paper`/`demo` instead call `recordSimulatedMissionDispatch`, which
-//         writes an audit row + a journal event and RETURNS. It never reaches
-//         the live pipeline, so no pipeline pre-gate, no governor and no
-//         Phase B gate is ever evaluated for a simulated dispatch.
-//     Nothing is fabricated in exchange: no fill, price, ticket or P/L is
-//     invented. The draft is marked executed with a `sim:` command id and
-//     nothing more — which also means a simulated draft never acquires a
-//     position, never closes, and never produces a realised result (see the
-//     note on `recordSimulatedMissionDispatch`).
-//     INTEGRATOR NOTE: the sibling branch `fix/demo-ladder` may change this
-//     behaviour. This comment describes the code as it stands on
-//     `fix/honest-copy`; re-check it when the two are merged.
+//   - DEMO/PAPER never touch the live broker. Be precise about WHICH chain:
+//     a non-live mission runs the MISSION-LAYER chain (probation verdict,
+//     composeMissionGate, Phase 7 pre-checks, single-flight CAS) — and ONLY
+//     `live` then reaches the live command pipeline, the 23-gate Phase B
+//     evaluator, the per-user governor and the env/db master switch. NONE of
+//     those run for paper/demo. Having run the mission-layer chain it then
+//     dispatches through the SIMULATED executor, which never calls the live
+//     pipeline. The default simulated executor (`simulateMissionFill`) models a
+//     fill priced from the market-data router's REAL quote at decision time and
+//     writes it into the row's `sim_*` column family tagged `simulated = true`;
+//     no quote means NO FILL and an honest `NO_FILL_NO_QUOTE` rejection that
+//     releases the claim. No price is ever invented, and a simulated outcome
+//     never touches a broker-reconciled column, so it can never enter an
+//     economic posting or a live realised total.
 //   - Per-user / per-mission isolation: mission + draft are loaded `FOR UPDATE`
 //     scoped by (id, userId); the executed-flip is a CAS on the still-approved
 //     row inside one transaction (fail-closed).
@@ -121,10 +114,13 @@ export type MissionSimulatedExecutor = (args: {
 }) => Promise<InstantTradeResult>;
 
 /**
- * Default simulated dispatch recorder. HONESTY: this records that the intent
- * PASSED every mission-side gate and was accepted into the mission's journal —
- * it does not simulate a market, a fill, or an outcome, so no realised P/L can
- * ever originate here. The live broker is never contacted.
+ * Intent-only simulated dispatch recorder — SUPERSEDED as the default by
+ * `simulateMissionFill` (missionSimulatedFills.ts), which models an honest fill
+ * from a REAL router quote. This one records that the intent PASSED every
+ * mission-side gate and nothing more: it never produced an outcome, which is
+ * exactly why a paper/demo mission could never progress or complete and why the
+ * promotion ladder's demo evidence had no source. Retained as an injectable
+ * no-outcome seam for tests that want a dispatch without a modelled fill.
  */
 export const recordSimulatedMissionDispatch: MissionSimulatedExecutor = async (args) => {
   const commandId = `sim:${args.executionMode}:${args.draft.draftId}:${args.nowMs}`;
@@ -444,7 +440,12 @@ export async function dispatchApprovedDraft(
   // them. No broker is contacted and nothing is fabricated either way.
   const executionMode: "paper" | "demo" | "live" =
     mission.executionMode === "live" ? "live" : mission.executionMode === "demo" ? "demo" : "paper";
-  const simulatedExecutor = opts.simulatedExecutor ?? recordSimulatedMissionDispatch;
+  // Resolved only on the non-live branch. The lazy import keeps missionExecution
+  // free of a runtime edge to missionSimulatedFills (which imports this file's
+  // MissionSimulatedExecutor type), and keeps the live path untouched.
+  const resolveSimulatedExecutor = async (): Promise<MissionSimulatedExecutor> =>
+    opts.simulatedExecutor ??
+    (await import("./missionSimulatedFills.js")).simulateMissionFill;
 
   // ── Phase 7 pre-checks (additive, stricter-only) BEFORE the single-flight ────
   // claim. Layered ON TOP of the mission gate + the real per-user governor +
@@ -560,7 +561,7 @@ export async function dispatchApprovedDraft(
           ip: args.ip,
           ua: args.ua,
         })
-      : await simulatedExecutor({
+      : await (await resolveSimulatedExecutor())({
           userId: args.userId,
           missionId: args.missionId,
           executionMode,
@@ -597,7 +598,7 @@ export async function dispatchApprovedDraft(
     await journalMissionEvent({
       missionId: args.missionId,
       type: "draft_execution_rejected",
-      message: `Live dispatch rejected for ${draft.symbol} ${draft.direction}: ${result.primaryReason ?? result.error}. Draft remains approved.${autonomyNote}`,
+      message: `${executionMode === "live" ? "Live dispatch" : `Simulated (${executionMode}) dispatch`} rejected for ${draft.symbol} ${draft.direction}: ${result.primaryReason ?? result.error}. Draft remains approved.`,
       metadata: {
         draftId: draft.draftId,
         error: result.error,
@@ -638,11 +639,12 @@ export async function dispatchApprovedDraft(
     message:
       executionMode === "live"
         ? `Draft dispatched to live execution for ${draft.symbol} ${draft.direction}.`
-        : `Draft dispatched through the gated path (${executionMode}) for ${draft.symbol} ${draft.direction} — no broker contact.`,
+        : `Draft dispatched through the gated path (${executionMode}) for ${draft.symbol} ${draft.direction} — SIMULATED, no broker contact.`,
     metadata: {
       draftId: draft.draftId,
       commandId: result.commandId ?? null,
       executionMode,
+      simulated: executionMode !== "live",
       source: "mission",
     },
   });

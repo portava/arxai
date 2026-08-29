@@ -39,7 +39,7 @@
 //   * Opt-out via ARX_MISSION_DRIVER_ENABLED (default enabled — the ladder
 //     itself is what gates autonomy per mission; a level-2 mission is never
 //     advanced into a trade by this worker). Disabling is logged loudly.
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import {
   db,
   profitMissionsTable,
@@ -65,6 +65,10 @@ import {
   manageMissionTradeExit,
   refreshMissionProtection,
 } from "./missionExitManager.js";
+import {
+  runMissionSimulatedExitPass,
+  type MissionQuoteReader,
+} from "./missionSimulatedFills.js";
 import { refreshMissionRisk, type MissionLiveSignals } from "./missionRiskService.js";
 import {
   assembleMissionExitSignals,
@@ -124,6 +128,8 @@ export interface MissionDriverPassOpts {
   /** Injectable seams — tests only; production always uses the real services. */
   executor?: MissionExecutor;
   simulatedExecutor?: MissionSimulatedExecutor;
+  /** Deterministic quote source for the simulated exit sweep (tests only). */
+  quoteReader?: MissionQuoteReader;
   phase7Evaluator?: Phase7Evaluator;
   scan?: (args: {
     userId: number;
@@ -253,7 +259,17 @@ interface OpenExitDraft {
   stopLoss: number | null;
 }
 
-/** The default open-draft read (per-user + per-mission scoped). */
+/**
+ * The default open-draft read (per-user + per-mission scoped).
+ *
+ * `simulated = false` is LOAD-BEARING, not hygiene: a simulated draft is flipped
+ * to `executed` by the shared CAS and its broker-reconciled `closed_at` stays
+ * NULL by design, so without this predicate every simulated row a promoted
+ * mission carries would match and permanently occupy all
+ * MAX_EXIT_MANAGED_DRAFTS_PER_TICK slots, starving a genuine LIVE open position
+ * of protective exit management. Ordering is pinned so slot allocation is
+ * deterministic (oldest open first) rather than physical row order.
+ */
 async function loadOpenExitDrafts(mission: MissionRow): Promise<OpenExitDraft[]> {
   const rows = await db
     .select({
@@ -269,9 +285,11 @@ async function loadOpenExitDrafts(mission: MissionRow): Promise<OpenExitDraft[]>
         eq(missionTradeDraftsTable.missionId, mission.id),
         eq(missionTradeDraftsTable.userId, mission.userId),
         eq(missionTradeDraftsTable.status, "executed"),
+        eq(missionTradeDraftsTable.simulated, false),
         isNull(missionTradeDraftsTable.closedAt),
       ),
     )
+    .orderBy(asc(missionTradeDraftsTable.id))
     .limit(MAX_EXIT_MANAGED_DRAFTS_PER_TICK);
   return rows.map((r) => ({
     draftId: r.draftId,
@@ -369,6 +387,37 @@ export async function manageOpenExits(
   return managed;
 }
 
+/**
+ * Close a paper/demo mission's OPEN SIMULATED positions against REAL current
+ * quotes. This is what makes a non-live mission progress at all: before it,
+ * nothing ever wrote an outcome for a simulated draft, so a paper/demo mission's
+ * value was frozen forever, it could never complete, and the promotion gate's
+ * demo evidence had no producible source. Nothing here contacts a broker, and
+ * no broker-reconciled column is ever written.
+ *
+ * Runs BEFORE the protection read so a close lands in the SAME tick's progress
+ * (and can complete the mission) instead of a tick later.
+ */
+async function sweepSimulatedExits(
+  mission: MissionRow,
+  opts: MissionDriverPassOpts,
+): Promise<number> {
+  if (mission.executionMode === "live") return 0;
+  const nowMs = opts.nowMs ?? Date.now();
+  const pass = await runMissionSimulatedExitPass(
+    {
+      userId: mission.userId,
+      missionId: mission.id,
+      // A finished mission window marks open simulated positions out at the real
+      // current quote rather than stranding them open forever.
+      missionEnded: nowMs >= mission.timeframeEnd.getTime(),
+      nowMs,
+    },
+    { quoteReader: opts.quoteReader },
+  );
+  return pass.closed;
+}
+
 /** One mission's tick. Composes the plan over the existing gated services. */
 async function tickMission(
   mission: MissionRow,
@@ -386,6 +435,9 @@ async function tickMission(
     blockReasons: [],
     error: null,
   };
+
+  // ── Simulated positions close FIRST so this tick's protection read sees them.
+  outcome.exitsManaged = await sweepSimulatedExits(mission, opts);
 
   // ── Honest risk + protection reads (change-only journaling inside). ────────
   const risk = await refreshMissionRisk({
@@ -421,7 +473,7 @@ async function tickMission(
 
   // ── Protective steps always run first. ─────────────────────────────────────
   if (plan.steps.includes("manage_exits")) {
-    outcome.exitsManaged = await manageOpenExits(mission, opts);
+    outcome.exitsManaged += await manageOpenExits(mission, opts);
   }
   // refresh_protection already ran above (it is the honest read the plan used);
   // a target stop+lock flipped the mission to `completed` inside that call.

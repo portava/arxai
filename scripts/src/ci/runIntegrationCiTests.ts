@@ -378,6 +378,18 @@ export const INTEGRATION_LANE_TESTS: readonly IntegrationLaneTest[] = [
   // writes NO enable audit row, and strict per-user isolation. Imports
   // @workspace/db via the router, so it lives in the integration lane.
   { pkg: "@workspace/api-server", script: "test:one-click-consent-audit" },
+  // fix/demo-ladder — the paper/demo mission lifecycle end to end against a real
+  // DB, with a deterministic quote stub standing in for the market-data router
+  // (the simulator under test is the REAL one). Proves a paper mission fills at
+  // the real quote price tagged `simulated`, that a DOWN feed produces
+  // NO_FILL_NO_QUOTE and releases the claim, that the position closes on the
+  // same exit logic against a real subsequent quote, that no simulated row ever
+  // reaches `pnl`/`closedAt`, a live realised sum, or an economic posting, that
+  // the mission progresses and COMPLETES on the SIMULATED basis, that simulated
+  // closed drafts unlock the promotion ladder (labelled SIMULATED), and that
+  // demo→live is refused without the ladder's evidence bar. Imports
+  // @workspace/db, so it lives in the integration lane.
+  { pkg: "@workspace/api-server", script: "test:mission-demo-ladder" },
 ] as const;
 
 /** Stable `<pkg>::<script>` keys, the same shape the wiring guard uses. */

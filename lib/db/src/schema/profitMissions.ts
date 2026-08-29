@@ -327,6 +327,35 @@ export const missionTradeDraftsTable = pgTable("mission_trade_drafts", {
   resultJson:        jsonb("result_json"),           // exit decision + capture verdict snapshot
   closedAt:          timestamp("closed_at", { withTimezone: true }),
 
+  // ── Paper/demo SIMULATED outcome — accounted SEPARATELY from broker truth ────
+  //   A paper/demo mission never contacts a broker, so it can never produce the
+  //   broker-reconciled columns above. Its outcome lands HERE instead, in its own
+  //   column family, and `simulated` tags the row unmistakably at row level.
+  //
+  //   THE SEPARATION IS STRUCTURAL, NOT A FILTER: a simulated row's `pnl`,
+  //   `r_multiple`, `closed_at`, `captured_profit` and `missed_profit` stay NULL
+  //   FOREVER. Every existing consumer of realised money (mission realised stats,
+  //   compounding, economic postings, ROI/champion/flywheel workers, the forward
+  //   test aggregator's money legs) keys off `closed_at`/`pnl`, so a simulated
+  //   outcome is incapable of reaching a live realised figure or an economic
+  //   posting even if a future caller forgets to filter. Writers must never
+  //   populate both families on one row.
+  //
+  //   `sim_json` carries the modelling assumptions and the REAL quote the fill
+  //   was priced from (provider, timestamp, bid/ask), so no reader can mistake a
+  //   simulated outcome for execution truth.
+  simulated:         boolean("simulated").notNull().default(false),
+  simEntryPrice:     doublePrecision("sim_entry_price"),
+  simExitPrice:      doublePrecision("sim_exit_price"),
+  simPnl:            doublePrecision("sim_pnl"),        // MODELLED P/L, never money
+  simRMultiple:      doublePrecision("sim_r_multiple"),
+  simMfe:            doublePrecision("sim_mfe"),
+  simMae:            doublePrecision("sim_mae"),
+  simExitReason:     text("sim_exit_reason"),
+  simJson:           jsonb("sim_json"),                 // assumptions + quote provenance
+  simOpenedAt:       timestamp("sim_opened_at", { withTimezone: true }),
+  simClosedAt:       timestamp("sim_closed_at", { withTimezone: true }),
+
   createdAt:         timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt:         timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   expiresAt:         timestamp("expires_at", { withTimezone: true }),

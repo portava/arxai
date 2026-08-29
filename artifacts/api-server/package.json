@@ -285,7 +285,10 @@
     "test:opportunity-spine": "node --import tsx --test --test-force-exit src/lib/__qa__/opportunitySpineDomain.test.ts",
     "test:flywheel-case-reward": "node --import tsx --test --test-force-exit src/lib/flywheel/__qa__/flywheelCaseReward.test.ts",
     "test:flywheel-posterior-bandit": "node --import tsx --test --test-force-exit src/lib/flywheel/__qa__/flywheelPosteriorBandit.test.ts",
-    "test:flywheel-ope-ledger": "node --import tsx --test --test-force-exit src/lib/flywheel/__qa__/flywheelOpeLedger.test.ts"
+    "test:flywheel-ope-ledger": "node --import tsx --test --test-force-exit src/lib/flywheel/__qa__/flywheelOpeLedger.test.ts",
+    "test:mission-demo-ladder-domain": "node --import tsx --test --test-force-exit src/lib/__qa__/missionDemoLadderDomain.test.ts",
+    "test:mission-demo-ladder": "node --import tsx --test --test-force-exit src/lib/__qa__/missionDemoLadder.test.ts",
+    "test:mission-demo-ladder-guards": "node --import tsx --test --test-force-exit src/lib/__qa__/missionDemoLadderGuards.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
