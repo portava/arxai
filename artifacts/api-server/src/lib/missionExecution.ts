@@ -145,6 +145,47 @@ export interface DispatchApprovedDraftArgs {
   driverOriginated?: boolean;
 }
 
+/**
+ * PURE — build the ONE mission ENTRY intent (source "mission"), shared by the
+ * live and the simulated leg.
+ *
+ * AUTONOMY PROVENANCE, and why this is a function rather than an inline object
+ * literal (review fix): `autonomousOrigin` is the single load-bearing hop of
+ * the whole gate-binding chain — delete that one property and a driver-placed
+ * entry is classified USER again and gates #20/#23 stand down, silently, on a
+ * tree that still compiles. As an inline literal that hop could only be pinned
+ * by a source-text match, which a same-named line elsewhere in the file
+ * satisfied. Here it is a pure, IO-free function the suite CALLS: removing the
+ * property turns the assertion red for the reason it exists.
+ *
+ * A driver tick reached the dispatcher with no human press, so the intent says
+ * so and the live command is stamped SYSTEM. A user press leaves the origin
+ * null and the command stays a USER actor — unchanged, tighten-only.
+ */
+export function buildMissionEntryIntent(args: {
+  missionId: number;
+  direction: "BUY" | "SELL";
+  symbol: string;
+  lot: number | null;
+  stopLoss: number | null;
+  takeProfit: number | null;
+  /** True ONLY on the unattended mission driver's own tick. */
+  driverOriginated?: boolean;
+}): Omit<InstantTradeIntent, "accountMode"> {
+  const autonomousOrigin: LiveAutonomousOrigin | null =
+    args.driverOriginated === true ? "MISSION_DRIVER" : null;
+  return {
+    source: "mission",
+    missionId: args.missionId,
+    action: args.direction,
+    symbol: args.symbol,
+    volume: args.lot ?? undefined,
+    stopLoss: args.stopLoss,
+    takeProfit: args.takeProfit,
+    autonomousOrigin,
+  };
+}
+
 export interface DispatchApprovedDraftOpts {
   executor?: MissionExecutor;
   /** Injectable simulated executor for paper/demo — defaults to the recorder. */
@@ -418,21 +459,16 @@ export async function dispatchApprovedDraft(
   // ── The ONE intent shape (source "mission"), shared by live + simulated. ─────
   // Only a LIVE mission ever gains the live accountMode; the simulated leg
   // receives the identical intent WITHOUT any account-mode claim.
-  // AUTONOMY PROVENANCE — a driver tick reached here with no human press, so
-  // the intent says so and the live command is stamped SYSTEM (gates #20/#23
-  // bind). A user press leaves it null and the command stays a USER actor.
-  const autonomousOrigin: LiveAutonomousOrigin | null =
-    args.driverOriginated === true ? "MISSION_DRIVER" : null;
-  const baseIntent: Omit<InstantTradeIntent, "accountMode"> = {
-    source: "mission",
+  const baseIntent = buildMissionEntryIntent({
     missionId: args.missionId,
-    action: draft.direction,
+    direction: draft.direction,
     symbol: draft.symbol,
-    volume: draft.lot ?? undefined,
+    lot: draft.lot,
     stopLoss: draft.stopLoss,
     takeProfit: draft.takeProfit,
-    autonomousOrigin,
-  };
+    driverOriginated: args.driverOriginated,
+  });
+  const autonomousOrigin: LiveAutonomousOrigin | null = baseIntent.autonomousOrigin ?? null;
 
   await auditMission({
     userId: args.userId,

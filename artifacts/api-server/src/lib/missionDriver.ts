@@ -348,6 +348,10 @@ export async function manageOpenExits(
           draftId: d.draftId,
           signals: { ...assembled.signals, unavailable: assembled.unavailable },
           nowMs,
+          // AUTONOMY PROVENANCE — this exit is the driver's own unattended
+          // action, so the resulting CLOSE / MODIFY command is stamped SYSTEM
+          // rather than recorded as a command the owner pressed.
+          driverOriginated: true,
         },
         { executor: opts.executor },
       );

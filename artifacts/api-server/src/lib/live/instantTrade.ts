@@ -572,7 +572,12 @@ async function executeClose(args: {
     if (intent.closeVolume < full) closeVolume = intent.closeVolume;
   }
 
-  const r = await closeOnePosition({ userId, position: row, closeVolume });
+  const r = await closeOnePosition({
+    userId,
+    position: row,
+    closeVolume,
+    autonomousOrigin: intent.autonomousOrigin ?? null,
+  });
   await writeAudit({
     userId, action: r.ok ? "INSTANT_CLOSE_ACCEPTED" : "INSTANT_CLOSE_REJECTED", ip, ua,
     metadata: {
@@ -639,6 +644,9 @@ async function executeModify(args: {
     newStopLoss: intent.newStopLoss ?? (row.stopLoss != null ? Number(row.stopLoss) : null),
     newTakeProfit: intent.newTakeProfit ?? (row.takeProfit != null ? Number(row.takeProfit) : null),
     sourcePage: `INSTANT_MODIFY_${intent.source.toUpperCase()}`,
+    // Honest actor attribution on an UNATTENDED protective modify (review fix):
+    // absent for a human press, so nothing changes on the user path.
+    autonomousOrigin: intent.autonomousOrigin ?? null,
   });
   if (!("ok" in draft) || draft.ok !== true) {
     const d = draft as { reason?: string; primaryReason?: string };
@@ -675,6 +683,9 @@ async function closeOnePosition(args: {
   // When set (PARTIAL_CLOSE), reduce only this many lots via the SAME
   // CLOSE_LIVE_POSITION draft. Must already be validated as > 0 and < full.
   closeVolume?: number;
+  // Honest actor attribution on an UNATTENDED protective close (review fix):
+  // absent for a human press, so nothing changes on the user path.
+  autonomousOrigin?: LiveAutonomousOrigin | null;
 }): Promise<InstantTradeResult> {
   const { userId, position, closeVolume } = args;
   if (!position.brokerTicket) return { ok: false, httpStatus: 400, error: "POSITION_MISSING_BROKER_TICKET" };
@@ -686,6 +697,7 @@ async function closeOnePosition(args: {
     side: position.side as "BUY" | "SELL",
     volume: closeVolume ?? Number(position.volume),
     sourcePage: "INSTANT_CLOSE",
+    autonomousOrigin: args.autonomousOrigin ?? null,
   });
   if (!("ok" in draft) || draft.ok !== true) {
     const d = draft as { reason?: string; primaryReason?: string };

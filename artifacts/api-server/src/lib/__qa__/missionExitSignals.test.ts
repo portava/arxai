@@ -33,7 +33,7 @@ const {
   meanTrueRange,
   closedBeyondStop,
   orderFlowAgainst,
-  structureOpposes,
+  structureBrokeAgainst,
   agentsDisagree,
   unstableSpreadFrom,
   UNSTABLE_SPREAD_MULTIPLE,
@@ -116,10 +116,30 @@ function quoteOk(bid: number, ask: number) {
 function candlesOk(candles: Candle[]) {
   return {
     ok: true,
+    verdict: "SERVE",
+    reason: null,
     symbol: "EURUSD",
     assetClass: "forex",
+    intendedVenue: "mt5",
     candles,
     primaryProvider: "mt5_broker",
+    attempts: [],
+    userMessage: "",
+    adminDetail: "",
+  } as never;
+}
+
+/** The decision-grade refusal: the EXECUTION broker's own feed could not serve. */
+function candlesWait(reason: string) {
+  return {
+    ok: false,
+    verdict: "WAIT",
+    reason,
+    symbol: "EURUSD",
+    assetClass: "forex",
+    intendedVenue: "mt5",
+    candles: [],
+    primaryProvider: null,
     attempts: [],
     userMessage: "",
     adminDetail: "",
@@ -162,11 +182,41 @@ test("orderFlowAgainst needs enough bars; a mixed window is not a reversal", () 
   assert.equal(orderFlowAgainst({ side: "SELL", candles: risingCandles() }), true);
 });
 
-test("structureOpposes only counts a DIRECTIONAL bias pointing the other way", () => {
-  assert.equal(structureOpposes({ side: "BUY", bias: "Bearish" }), true);
-  assert.equal(structureOpposes({ side: "BUY", bias: "Bullish" }), false);
-  assert.equal(structureOpposes({ side: "BUY", bias: "Range-bound" }), false);
-  assert.equal(structureOpposes({ side: "SELL", bias: "Bullish" }), true);
+test("structureBreak is a BREAK EVENT, not a directional lean", () => {
+  // Review fix: `structureBreak` maps in decideExit to an UNCONDITIONAL full
+  // CLOSE of a live position, so it must mean what its reason string says. It
+  // used to be "the chart bias points the other way" — the condition
+  // chartStructure itself reports as a counter-trend CAUTION — which closed a
+  // deliberately counter-trend position on the first unattended tick.
+  // A break is now a CLOSED bar beyond the level the position depended on.
+
+  // Persistent decline: each bar closes below the whole prior window → broken.
+  assert.equal(structureBrokeAgainst({ side: "BUY", candles: fallingCandles() }), true);
+  assert.equal(structureBrokeAgainst({ side: "SELL", candles: risingCandles() }), true);
+  // The same series does NOT break the position that agrees with it.
+  assert.equal(structureBrokeAgainst({ side: "SELL", candles: fallingCandles() }), false);
+  assert.equal(structureBrokeAgainst({ side: "BUY", candles: risingCandles() }), false);
+
+  // A BUY holding inside its recent range is NOT a break, however the chart
+  // "leans" — this is the exact case that used to trigger a full close.
+  const chop: Candle[] = [];
+  for (let i = 0; i < 40; i++) {
+    const open = 100 + (i % 2 === 0 ? 0.4 : -0.4);
+    const close = 100 + (i % 2 === 0 ? -0.4 : 0.4);
+    chop.push({
+      time: new Date(NOW - (40 - i) * 60_000).toISOString(),
+      open, high: 100.6, low: 99.4, close,
+    });
+  }
+  assert.equal(structureBrokeAgainst({ side: "BUY", candles: chop }), false);
+
+  // …and one decisive close below that range IS a break.
+  const broken = [...chop];
+  broken.push({ time: new Date(NOW).toISOString(), open: 99.5, high: 99.6, low: 98.0, close: 98.2 });
+  assert.equal(structureBrokeAgainst({ side: "BUY", candles: broken }), true);
+
+  // Not enough history is null — never a fabricated "structure intact".
+  assert.equal(structureBrokeAgainst({ side: "BUY", candles: risingCandles(5) }), null);
 });
 
 test("agentsDisagree: abstentions are not disagreement; a split is", () => {
@@ -194,7 +244,7 @@ test("an unattended assembly with live sources populates every signal", async ()
   assert.deepEqual(r.unavailable, [], "nothing should be unavailable when every source answers");
   assert.equal(r.signals.highImpactNewsImminent, true);
   assert.equal(r.signals.unstableSpread, false);
-  assert.equal(r.signals.structureBreak, true, "a falling series opposes a BUY");
+  assert.equal(r.signals.structureBreak, true, "a persistent decline breaks a BUY's structure");
   assert.equal(r.signals.orderFlowReversal, true);
   assert.equal(r.signals.invalidation, false, "price is still above the stop");
   assert.equal(r.signals.agentDisagreement, true);
@@ -252,6 +302,51 @@ test("a failed candle read blinds FOUR signals honestly and none of them default
       `${key} must record unavailability`,
     );
   }
+});
+
+test("a decision-grade WAIT blinds the candle signals and carries the venue's OWN reason", async () => {
+  // Review fix: these signals end in a real broker CLOSE, so they read the
+  // EXECUTION broker's feed (`routeCandlesForDecision`), never the display
+  // fallback chain. A stale execution feed is declared blindness — it is NOT
+  // silently replaced with a fresh-looking series from another venue.
+  const r = await assembleMissionExitSignals(
+    ctx,
+    allSourcesOk({ candles: async () => candlesWait("MT5_BROKER_HISTORY_STALE") }),
+  );
+  for (const key of ["structureBreak", "invalidation", "orderFlowReversal", "atr"]) {
+    assert.equal(key in r.signals, false, `${key} must be absent, not calm`);
+    assert.ok(
+      r.unavailable.some(
+        (u) =>
+          u.signal === key
+          && u.reason === "MT5_BROKER_HISTORY_STALE"
+          && u.source === "market_data_router:candles_for_decision",
+      ),
+      `${key} must name the execution feed's own refusal`,
+    );
+  }
+});
+
+test("SOURCE PIN: the exit-signal candle read is decision-grade, never the display chain", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { fileURLToPath } = await import("node:url");
+  const path = (await import("node:path")).default;
+  const src = readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), "../missionExitSignals.ts"),
+    "utf8",
+  );
+  assert.match(src, /routeCandlesForDecision/);
+  // Code only — the header comment names the display router to explain why it
+  // is NOT used here, and that sentence must stay readable.
+  const code = src
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("//") && !line.trim().startsWith("*"))
+    .join("\n");
+  assert.equal(
+    /\brouteCandles\b(?!ForDecision)/.test(code),
+    false,
+    "the display-grade router must not feed an execution decision",
+  );
 });
 
 test("a position with no stop has no invalidation reference — recorded, not assumed safe", async () => {

@@ -25,6 +25,15 @@
 //     Nothing is inferred from a model, a cache of a guess, or a default.
 //   * Read-only. Nothing here places, modifies, or closes anything.
 //
+// DECISION-GRADE FEED (review fix): the candle-derived signals here can end in
+// a real broker CLOSE, so they are read with `routeCandlesForDecision`, NOT the
+// display-grade `routeCandles` fallback chain. The router's own contract is
+// that a decision surface must never ride a silently substituted venue: when
+// the EXECUTION broker's feed is stale or absent the answer is WAIT. A WAIT
+// here blinds the four candle-derived signals HONESTLY (each recorded
+// unavailable with the router's own refusal reason) rather than closing a live
+// position on a series borrowed from another venue.
+//
 // Per-user isolation: the broker spec read and the agent-stance read are both
 // scoped by the owning userId; the quote/candle/news reads are market-wide
 // public feeds and carry no tenant data.
@@ -32,7 +41,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import { db, arxSymbolSpecsTable, missionProposalsTable } from "@workspace/db";
 import type { Candle } from "./data/types.js";
-import { routeQuote, routeCandles } from "./data/marketDataRouter.js";
+import { routeQuote, routeCandlesForDecision } from "./data/marketDataRouter.js";
 import { getNewsIntelligence } from "./news/newsIntelligenceService.js";
 import { analyzeChartStructure, STRUCTURE_MIN_CLOSED_BARS } from "./assistant/chartStructure.js";
 import { logger } from "./logger.js";
@@ -112,6 +121,12 @@ export const UNSTABLE_SPREAD_MULTIPLE = 3;
  */
 export const ORDER_FLOW_LOOKBACK_BARS = 3;
 /**
+ * Bars whose swing high/low define the structure a break is measured against.
+ * Matches the structural window the chart analyzer itself reads from, so
+ * "structure broke" means the same thing here as it does on the chart.
+ */
+export const STRUCTURE_BREAK_LOOKBACK_BARS = 20;
+/**
  * Agent stances older than this are STALE: the mission scan that produced them
  * no longer describes the market, so disagreement is reported unavailable
  * rather than asserted from an old opinion.
@@ -122,7 +137,8 @@ export const AGENT_STANCE_MAX_AGE_MS = 30 * 60 * 1000;
 
 export interface MissionExitSignalSources {
   quote?: typeof routeQuote;
-  candles?: typeof routeCandles;
+  /** Decision-grade candle read — the EXECUTION broker's feed or WAIT. */
+  candles?: typeof routeCandlesForDecision;
   news?: typeof getNewsIntelligence;
   /** Per-user broker spec read: point size + the broker's reported spread. */
   brokerSpec?: (userId: number, symbol: string) => Promise<{
@@ -212,16 +228,47 @@ export function orderFlowAgainst(args: {
 }
 
 /**
- * PURE — does the structural read oppose the open position? Only a DIRECTIONAL
- * bias that points the other way counts. "Mixed" / "Range-bound" / "No clear
- * edge" are an honest observation that structure is NOT broken against the
- * trade, so they return false, not null.
+ * PURE — did the last CLOSED bar close BEYOND the structural level the open
+ * position depended on? For a BUY that is a close below the swing low of the
+ * preceding `lookback` bars; for a SELL, a close above their swing high.
+ *
+ * WHY THIS SHAPE (review fix): `structureBreak` maps in `decideExit` to an
+ * UNCONDITIONAL full CLOSE of a live position on an unattended tick, with the
+ * reason "Market structure broke against the trade". That sentence has to be
+ * TRUE. It was previously derived from a plain directional chart bias pointing
+ * the other way — the very condition `chartStructure` itself reports as a
+ * CAUTION ("that is a counter-trend bet"), not an invalidation. A deliberately
+ * counter-trend position would have been closed at the broker on the first
+ * unattended tick purely for being counter-trend.
+ *
+ * A BREAK is an EVENT, not a lean: it is the analyzer's own stated invalidation
+ * ("a decisive close below <support> breaks the bullish read") measured against
+ * real bars. Null — never false — when there is not enough history or a bar is
+ * unreadable: an unmeasurable structure is never reported intact.
  */
-export function structureOpposes(args: {
+export function structureBrokeAgainst(args: {
   side: "BUY" | "SELL";
-  bias: string;
-}): boolean {
-  return args.side === "BUY" ? args.bias === "Bearish" : args.bias === "Bullish";
+  candles: Candle[];
+  lookback?: number;
+}): boolean | null {
+  const lookback = args.lookback ?? STRUCTURE_BREAK_LOOKBACK_BARS;
+  if (lookback < 2) return null;
+  const c = args.candles;
+  if (c.length < lookback + 1) return null;
+  // The structure is read from the bars BEFORE the one being judged, so the
+  // breaking bar can never define the level it is being measured against.
+  const prior = c.slice(-(lookback + 1), -1);
+  const last = c[c.length - 1];
+  if (last == null || !isNum(last.close)) return null;
+  let swingLow = Infinity;
+  let swingHigh = -Infinity;
+  for (const bar of prior) {
+    if (!isNum(bar.high) || !isNum(bar.low)) return null;
+    if (bar.low < swingLow) swingLow = bar.low;
+    if (bar.high > swingHigh) swingHigh = bar.high;
+  }
+  if (!Number.isFinite(swingLow) || !Number.isFinite(swingHigh)) return null;
+  return args.side === "BUY" ? last.close < swingLow : last.close > swingHigh;
 }
 
 /**
@@ -313,7 +360,7 @@ export async function assembleMissionExitSignals(
   sources: MissionExitSignalSources = {},
 ): Promise<AssembledMissionExitSignals> {
   const quoteFn = sources.quote ?? routeQuote;
-  const candlesFn = sources.candles ?? routeCandles;
+  const candlesFn = sources.candles ?? routeCandlesForDecision;
   const newsFn = sources.news ?? getNewsIntelligence;
   const specFn = sources.brokerSpec ?? defaultBrokerSpec;
   const stancesFn = sources.agentStances ?? defaultAgentStances;
@@ -387,9 +434,18 @@ export async function assembleMissionExitSignals(
   // One candle read feeds four derivations; when it fails, ALL FOUR are
   // recorded unavailable rather than any of them defaulting to calm.
   let candles: Candle[] | null = null;
+  let candleRefusal: string | null = null;
   try {
-    const c = await candlesFn(ctx.symbol, ctx.timeframe, EXIT_SIGNAL_CANDLE_LIMIT);
-    candles = c.ok && Array.isArray(c.candles) && c.candles.length > 0 ? c.candles : null;
+    const c = await candlesFn(ctx.symbol, ctx.timeframe, { limit: EXIT_SIGNAL_CANDLE_LIMIT });
+    if (c.ok && Array.isArray(c.candles) && c.candles.length > 0) {
+      candles = c.candles;
+    } else {
+      // A decision-grade WAIT: the EXECUTION broker's own feed could not serve
+      // this read. Carry the router's refusal code through verbatim so the
+      // journal says WHY the tick was blind, not merely that it was.
+      candles = null;
+      candleRefusal = typeof c.reason === "string" && c.reason !== "" ? c.reason : null;
+    }
   } catch (err) {
     logger.warn(
       { err: err instanceof Error ? err.message : String(err), symbol: ctx.symbol },
@@ -399,19 +455,32 @@ export async function assembleMissionExitSignals(
   }
 
   if (candles == null) {
-    blind("structureBreak", "market_data_router:candles", "CANDLES_UNAVAILABLE");
-    blind("invalidation", "market_data_router:candles", "CANDLES_UNAVAILABLE");
-    blind("orderFlowReversal", "market_data_router:candles", "CANDLES_UNAVAILABLE");
-    blind("atr", "market_data_router:candles", "CANDLES_UNAVAILABLE");
+    const source = "market_data_router:candles_for_decision";
+    const reason = candleRefusal ?? "CANDLES_UNAVAILABLE";
+    blind("structureBreak", source, reason);
+    blind("invalidation", source, reason);
+    blind("orderFlowReversal", source, reason);
+    blind("atr", source, reason);
   } else {
-    // structureBreak — the deterministic chart-structure read on the position's
-    // own timeframe. `dataQuality: "insufficient"` is the analyzer refusing to
-    // invent structure; we pass that refusal straight through.
+    // structureBreak — a CLOSED bar beyond the structural level the position
+    // depended on (see `structureBrokeAgainst`). The chart analyzer is consulted
+    // ONLY as the sufficiency oracle: `dataQuality: "insufficient"` is it
+    // refusing to read structure at all, and that refusal passes straight
+    // through. Its directional BIAS is deliberately NOT used — an opposing bias
+    // is a counter-trend caution, not a break, and mapping it to an
+    // unconditional full close would close a legitimately counter-trend
+    // position on the first unattended tick. (That is also why no `htfBias` is
+    // fetched here: nothing in this derivation reads the bias it would soften.)
     const read = analyzeChartStructure(candles);
     if (read.dataQuality !== "ok" || candles.length < STRUCTURE_MIN_CLOSED_BARS) {
       blind("structureBreak", "chart_structure", "INSUFFICIENT_STRUCTURE_HISTORY");
     } else {
-      signals.structureBreak = structureOpposes({ side: ctx.side, bias: read.bias });
+      const broke = structureBrokeAgainst({ side: ctx.side, candles });
+      if (broke == null) {
+        blind("structureBreak", "chart_structure", "INSUFFICIENT_STRUCTURE_HISTORY");
+      } else {
+        signals.structureBreak = broke;
+      }
     }
 
     // invalidation — a CLOSED bar beyond the position's own protective stop.
@@ -435,7 +504,7 @@ export async function assembleMissionExitSignals(
     // net adverse move over the window.
     const flow = orderFlowAgainst({ side: ctx.side, candles });
     if (flow == null) {
-      blind("orderFlowReversal", "market_data_router:candles", "INSUFFICIENT_ORDER_FLOW_BARS");
+      blind("orderFlowReversal", "market_data_router:candles_for_decision", "INSUFFICIENT_ORDER_FLOW_BARS");
     } else {
       signals.orderFlowReversal = flow;
     }
@@ -443,7 +512,7 @@ export async function assembleMissionExitSignals(
     // atr — sizes the trail. null (not 0) when history is short.
     const a = meanTrueRange(candles, EXIT_SIGNAL_ATR_PERIOD);
     if (a == null) {
-      blind("atr", "market_data_router:candles", "INSUFFICIENT_ATR_HISTORY");
+      blind("atr", "market_data_router:candles_for_decision", "INSUFFICIENT_ATR_HISTORY");
     } else {
       signals.atr = a;
     }

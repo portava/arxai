@@ -44,6 +44,7 @@ import {
   type MissionMode,
 } from "@workspace/domain/profit-mission";
 import { checkAutomatedCommandAllowed } from "@workspace/domain/self-trade";
+import type { LiveAutonomousOrigin } from "@workspace/domain/safety-contracts/autonomyProvenance";
 import {
   executeInstant,
   type InstantTradeIntent,
@@ -587,6 +588,17 @@ export interface ManageMissionExitArgs {
   ip?: string | null;
   ua?: string | null;
   nowMs?: number;
+  /**
+   * AUTONOMY PROVENANCE for the EXIT (review fix) — true ONLY when the
+   * unattended mission driver is managing this position on its own tick. It
+   * stamps the resulting CLOSE / MODIFY command's actor as SYSTEM instead of
+   * USER, so an unattended protective exit is not recorded as the owner's own
+   * press. It relaxes nothing: #20/#23 exempt close/modify by design, and the
+   * management-authority arbiter ranks AUTOMATED_STRATEGY *below* a genuine
+   * USER_COMMAND — which is the honest ordering for a machine-placed exit.
+   * A user-pressed exit review leaves this absent and is unchanged.
+   */
+  driverOriginated?: boolean;
 }
 
 export interface ManageMissionExitOpts {
@@ -598,6 +610,9 @@ function intentForDecision(
   decision: ExitDecision,
   position: MissionExitOpenPosition,
   missionId: number,
+  /** Stamped on EVERY exit intent below so a driver-managed exit is recorded as
+   *  the machine action it is, never as an owner press. Null for a human. */
+  autonomousOrigin: LiveAutonomousOrigin | null = null,
 ): InstantTradeIntent | null {
   switch (decision.action) {
     case "CLOSE": {
@@ -608,6 +623,7 @@ function intentForDecision(
         accountMode: "live",
         symbol: position.symbol,
         positionId: position.brokerTicket,
+        autonomousOrigin,
       };
     }
     case "PARTIAL_CLOSE": {
@@ -623,6 +639,7 @@ function intentForDecision(
         symbol: position.symbol,
         positionId: position.brokerTicket,
         closeVolume,
+        autonomousOrigin,
       };
     }
     case "MOVE_BREAKEVEN":
@@ -637,6 +654,7 @@ function intentForDecision(
         positionId: position.brokerTicket,
         newStopLoss: decision.newPrice,
         newTakeProfit: position.takeProfit,
+        autonomousOrigin,
       };
     }
     case "ADJUST_TARGET": {
@@ -650,6 +668,7 @@ function intentForDecision(
         positionId: position.brokerTicket,
         newStopLoss: position.stopLoss,
         newTakeProfit: decision.newPrice,
+        autonomousOrigin,
       };
     }
     default:
@@ -806,7 +825,12 @@ export async function manageMissionTradeExit(
   });
 
   // ── NONE → nothing to route (honest no-op). ────────────────────────────────
-  const intent = intentForDecision(decision, position, args.missionId);
+  const intent = intentForDecision(
+    decision,
+    position,
+    args.missionId,
+    args.driverOriginated === true ? "MISSION_DRIVER" : null,
+  );
   if (decision.action === "NONE" || intent == null) {
     return { ok: true, decision, partialPlan, dispatched: false, position };
   }

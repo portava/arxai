@@ -18,11 +18,21 @@
 // stamps nothing and stays a human actor — unchanged.
 //
 // HONESTY: this classifies origin; it never grants anything. The only movement
-// possible here is USER → SYSTEM, i.e. strictly MORE gates bind. An unknown /
-// malformed origin literal is treated as ABSENT (no autonomy claim invented)
-// — and absent origin on a driver path is a wiring bug, not a licence, which
-// is why `missionDriver` passes the literal explicitly rather than inferring
-// it from a mission id (a mission id alone cannot tell a press from a tick).
+// possible here is USER → SYSTEM, i.e. strictly MORE gates bind. An absent
+// origin (null / undefined / empty string) is exactly that — absence, the
+// human default — and absent origin on a driver path is a wiring bug, not a
+// licence, which is why `missionDriver` passes the literal explicitly rather
+// than inferring it from a mission id (a mission id alone cannot tell a press
+// from a tick).
+//
+// FAIL CLOSED on an UNREADABLE claim (CLAUDE.md §1): a NON-EMPTY origin
+// literal this classifier does not recognise is an autonomy claim it cannot
+// read, so it resolves to SYSTEM (the gate-BOUND actor), never to USER (the
+// gate-EXEMPT human). Not being able to read who placed an order is not
+// permission to treat it as a human press. This costs nothing on the honest
+// paths — the only producer today emits a recognised literal — and it means a
+// future producer that stamps a literal this file has not learned yet REFUSES
+// at the autonomy gates instead of inheriting the human exemption.
 //
 // PURE + DETERMINISTIC + IO-FREE.
 
@@ -46,11 +56,22 @@ export function isLiveAutonomousOrigin(v: unknown): v is LiveAutonomousOrigin {
 }
 
 /**
+ * True when the caller stamped SOMETHING in the origin slot — i.e. an autonomy
+ * claim was made, whether or not this file recognises the literal. Absence is
+ * null / undefined / a blank string; anything else is a claim.
+ */
+export function hasAutonomyClaim(autonomousOrigin?: string | null): boolean {
+  return typeof autonomousOrigin === "string" && autonomousOrigin.trim() !== "";
+}
+
+/**
  * Classify the actor for a live DRAFT from its origination facts.
  *
  *  - a Self-Trade agent id  → SELF_TRADE_AGENT (unchanged, #213)
  *  - a recognised unattended origin → SYSTEM (gates #20/#23 bind)
- *  - anything else → USER (a human press; the documented gate exemption)
+ *  - an UNRECOGNISED non-empty origin → SYSTEM (fail closed: an autonomy claim
+ *    that cannot be read is never downgraded to the human exemption)
+ *  - no origin at all → USER (a human press; the documented gate exemption)
  *
  * Precedence is deliberate: an agent id is the more specific attribution and
  * both classes are autonomous, so the outcome at the gates is identical.
@@ -60,7 +81,8 @@ export function classifyDraftActorType(args: {
   autonomousOrigin?: string | null;
 }): CommandActorType {
   if (args.selfTradeAgentId != null) return "SELF_TRADE_AGENT";
-  if (isLiveAutonomousOrigin(args.autonomousOrigin)) return "SYSTEM";
+  // Recognised OR unreadable-but-present both resolve to the gate-bound actor.
+  if (hasAutonomyClaim(args.autonomousOrigin)) return "SYSTEM";
   return "USER";
 }
 

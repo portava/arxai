@@ -1696,6 +1696,17 @@ export async function createLiveOpsDraft(input: {
   // Task #28 — ownership linking for auto-managed ops (e.g. Live Test Cycle
   // auto-close). Optional + nullable.
   cycleId?: string | null;
+  // AUTONOMY PROVENANCE (review fix) — stamped by a producer that routes this
+  // CLOSE / MODIFY with NO human press (today: the unattended mission driver's
+  // protective exit). It classifies the command's actor as SYSTEM instead of
+  // USER. This changes NO gate — #20/#23 exempt close/modify by design — but it
+  // stops an unattended exit being RECORDED as the owner's own command, which
+  // is both an audit lie and, at the management-authority arbiter, a claim that
+  // would contend with a genuine owner command at equal rank instead of losing
+  // to it (claimSourceFromActorType: USER → USER_COMMAND, SYSTEM →
+  // AUTOMATED_STRATEGY, and HUMAN_DOMINANCE ranks the human above automation).
+  // Absent for every human press — unchanged.
+  autonomousOrigin?: LiveAutonomousOrigin | null;
   // Task #743 Cluster D — narrow, admin-emergency-close-only kill-switch bypass.
   // When present AND commandType is CLOSE_LIVE_POSITION, the per-user kill switch
   // does NOT block this reduce-risk close. It is funnelled through the SAME
@@ -1747,7 +1758,13 @@ export async function createLiveOpsDraft(input: {
     };
   }
   // AACI Security Phase 3 — stamp the integrity envelope on the ops command too
-  // (close/modify are sensitive live commands). Actor = the per-user owner.
+  // (close/modify are sensitive live commands). Actor = the per-user owner for a
+  // human press; the SAME shared classifier as the entry path stamps SYSTEM when
+  // the producer declared an unattended origin, so an unattended protective exit
+  // is never recorded as a command the owner pressed.
+  const opsActorType: CommandActorType = classifyDraftActorType({
+    autonomousOrigin: input.autonomousOrigin,
+  });
   const opsIntegrity: CommandIntegrityFields = buildCommandIntegrityFields({
     commandId,
     userId: input.userId,
@@ -1760,7 +1777,7 @@ export async function createLiveOpsDraft(input: {
     takeProfit: input.newTakeProfit ?? null,
     payload: opsPayload,
     actorId: input.userId,
-    actorType: "USER",
+    actorType: opsActorType,
   });
   const [row] = await db.insert(arxLiveCommandsTable).values({
     commandId,
@@ -3900,7 +3917,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
     // Tamper-evident mirror — best-effort, never throws (cannot affect dispatch).
     await mirrorCriticalEvent({
       eventType: "LIVE_TRADE_COMMAND", severity: "CRITICAL", status: "ATTEMPTED",
-      actorUserId: args.userId, actorType: "USER",
+      // Honest attribution (review fix): the mirror repeats the actor the
+      // command row itself carries — a driver-placed order is mirrored SYSTEM,
+      // not USER. An absent actor stays null (unknown), never a guessed human.
+      actorUserId: args.userId, actorType: row.actorType ?? null,
       affectedObject: `arx_live_commands:${args.commandId}`,
       message: `Live trade command dispatched: ${row.commandType} ${row.symbol} ${row.side}`,
       metadata: { commandId: args.commandId, symbol: row.symbol, side: row.side, commandType: row.commandType, idempotencyKey: idemKey },
