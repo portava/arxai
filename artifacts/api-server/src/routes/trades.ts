@@ -21,6 +21,7 @@ import {
 } from "./executionConfirmations.js";
 import { getBrokerHealthVerdict } from "./brokerHealth.js";
 import { requireUser } from "../lib/auth/middleware.js";
+import { CLIENT_DECLARABLE_ORIGIN_CLASSES } from "../lib/attribution/originClassAnalytics.js";
 
 const router = Router();
 
@@ -225,6 +226,20 @@ router.post("/execute-trade", requireUser, async (req, res) => {
 
     const adjustedLot = Number((body.lot * gate.recommendedSizeMultiplier01).toFixed(4));
 
+    // Capability #45 — origin-class attribution, stamped at creation.
+    // The client may declare MANUAL / ASSISTED / MODIFIED (how the human press
+    // relates to the platform's proposal). AUTOMATED is server-stamped only —
+    // a browser claiming automation would be fabricated provenance, so it is
+    // ignored here. When nothing is declared, this seam derives ASSISTED: an
+    // /execute-trade press is an authenticated human executing parameters the
+    // platform composed (strategy + confidence are required fields of this
+    // endpoint). The derivation is recorded as DERIVED_DEFAULT, never passed
+    // off as a declaration.
+    const declaredOriginRaw = (req.body as Record<string, unknown> | undefined)?.["originClass"];
+    const declaredOrigin = (CLIENT_DECLARABLE_ORIGIN_CLASSES as readonly string[]).includes(declaredOriginRaw as string)
+      ? (declaredOriginRaw as string)
+      : null;
+
     // Phase-2: stamp the trade with the authenticated user's id. We deliberately
     // do NOT accept a userId from the request body — the only authoritative
     // source of identity is the session cookie.
@@ -240,6 +255,8 @@ router.post("/execute-trade", requireUser, async (req, res) => {
       confidence: body.confidence,
       status: "OPEN",
       mode: gate.decisionMode === "LIVE" ? "LIVE" : "DEMO",
+      originClass: declaredOrigin ?? "ASSISTED",
+      originClassSource: declaredOrigin != null ? "DECLARED" : "DERIVED_DEFAULT",
     }).returning();
 
     const trade = inserted[0]!;

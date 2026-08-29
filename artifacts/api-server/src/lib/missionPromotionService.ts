@@ -41,6 +41,8 @@ import {
 } from "@workspace/domain/profit-mission";
 import { latestMissionTestResults } from "./missionTestingLabService.js";
 import { resolveLiveBrokerExecutionEnabledAsync } from "./live/phaseBConfig.js";
+import { checkLevelChange } from "@workspace/domain/safety-contracts/authorityGrants";
+import { readAuthorityCeiling } from "./authority/authorityService.js";
 
 type MissionRow = typeof profitMissionsTable.$inferSelect;
 
@@ -270,7 +272,38 @@ export async function applyMissionAutomationLevel(args: {
     }
 
     const { evidence } = await buildEvidence(args.userId, mission, args.ctx, requestedLiveAuto);
-    const decision = evaluateMissionPromotion(targetLevel, evidence);
+    let decision = evaluateMissionPromotion(targetLevel, evidence);
+
+    // Capability #37 — unified authority read-through (raise side). An INCREASE
+    // above the conservative default must be covered by an active, unexpired,
+    // owner-pressed grant in the authority ledger (ACCOUNT- or MISSION-scoped).
+    // Reductions and within-default changes never consult the ledger. An
+    // unreadable ledger fails CLOSED for the increase — an unreadable
+    // permission is not a permission — and the refusal is surfaced as its own
+    // named gate rather than a silent no.
+    const currentLevelForAuthority = coerceLevel(mission.automationLevel);
+    if (targetLevel > currentLevelForAuthority && targetLevel > DEFAULT_MISSION_AUTOMATION_LEVEL) {
+      const read = await readAuthorityCeiling({
+        userId: args.userId,
+        kind: "MISSION_AUTOMATION_LEVEL",
+        scopeType: "MISSION",
+        scopeRef: String(args.missionId),
+      });
+      const verdict = read.ok
+        ? checkLevelChange({ currentLevel: currentLevelForAuthority, targetLevel, ceiling: read.ceiling })
+        : null;
+      if (verdict == null || !verdict.allowed) {
+        const blocker = read.ok
+          ? `authority_grant: raising automation to level ${targetLevel} requires an active owner-pressed authority grant (current ceiling ${read.ceiling.ceiling}${read.ceiling.expiresAt ? `, grant expires ${read.ceiling.expiresAt.toISOString()}` : ""})`
+          : `authority_grant: the authority ledger could not be read (${read.reason}) — automation increases fail closed`;
+        decision = {
+          ...decision,
+          approved: false,
+          failedGates: [...decision.failedGates, "authority_grant"],
+          blockers: [...decision.blockers, blocker],
+        };
+      }
+    }
 
     if (!decision.approved) {
       await auditTx(tx, args, "MISSION_AUTOMATION_LEVEL_BLOCKED", {

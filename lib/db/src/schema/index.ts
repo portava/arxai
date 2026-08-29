@@ -493,3 +493,7 @@ export * from "./opportunitySpine";
 // ── #27 execution-policy promotion gate state ────────────────────────────────
 // Additive-only; applied via docs/migrations-pending/build-resilience.sql.
 export * from "./executionPolicyPromotion";
+// ── Self-trading polish (capabilities #37/#42) — authority + delayed risk ────
+// Additive-only; applied via docs/migrations-pending/build-product-polish.sql.
+export * from "./authorityGrants";
+export * from "./riskPendingIncreases";

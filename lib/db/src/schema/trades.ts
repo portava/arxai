@@ -29,6 +29,19 @@ export const tradesTable = pgTable("trades", {
   // EA older than v1.28 (the first version that reports the broker's real
   // close fill price). Null for legacy/demo rows or when the EA did not report.
   reportedEaVersion: text("reported_ea_version"),
+  // Capability #45 — origin-class attribution, stamped at creation.
+  //   MANUAL    — human-initiated with no platform proposal declared.
+  //   ASSISTED  — human press executing a platform-proposed trade unchanged.
+  //   MODIFIED  — human press after altering a platform proposal.
+  //   AUTOMATED — placed by an automated actor (server seams only; a client
+  //               may NEVER declare this class).
+  // NULL for historical rows created before tagging existed — analytics MUST
+  // report those as an honest UNTAGGED bucket, never guess a class.
+  originClass: text("origin_class"), // null | MANUAL | ASSISTED | MODIFIED | AUTOMATED
+  // How the class was determined: DECLARED (client stated it) or
+  // DERIVED_DEFAULT (server default for the creation seam). Kept so analytics
+  // can separate declared truth from seam-derived defaults.
+  originClassSource: text("origin_class_source"), // null | DECLARED | DERIVED_DEFAULT
   closedAt: timestamp("closed_at"),
   createdAt: timestamp("created_at").defaultNow(),
 }, (t) => ({

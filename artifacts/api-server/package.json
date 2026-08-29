@@ -245,6 +245,11 @@
     "tier1:seed": "node --import tsx src/scripts/tier1SeedCertificationTicket.ts",
     "test:execution-policy-shadow": "node --import tsx --test --test-force-exit src/lib/execution/__qa__/executionPolicyShadow.test.ts",
     "test:incident-replay": "node --import tsx --test --test-force-exit src/lib/replaySim/__qa__/incidentReplay.test.ts",
+    "test:authority-grants": "node --import tsx --test --test-force-exit src/lib/__qa__/authorityGrants.test.ts",
+    "test:risk-delayed-increase": "node --import tsx --test --test-force-exit src/lib/riskVault/__qa__/delayedIncrease.test.ts",
+    "test:manual-takeover": "node --import tsx --test --test-force-exit src/lib/__qa__/manualTakeover.test.ts",
+    "test:origin-attribution": "node --import tsx --test --test-force-exit src/lib/attribution/__qa__/originClassAnalytics.test.ts",
+    "test:escape-route": "node --import tsx --test --test-force-exit src/lib/brokerHub/__qa__/escapeRoute.test.ts",
     "watchdog": "node --import tsx src/watchdog.ts",
     "as-of": "node --import tsx src/scripts/asOfCli.ts",
     "test:execution-policy-promotion": "node --import tsx --test --test-force-exit src/lib/execution/__qa__/executionPolicyPromotion.test.ts",
@@ -298,7 +303,6 @@
     "@types/express": "^5.0.6",
     "@types/multer": "^2.1.0",
     "@types/node": "catalog:",
-    "@types/pg": "^8.18.0",
     "@types/web-push": "^3.6.4",
     "@types/ws": "^8.18.1",
     "esbuild": "^0.27.3",
@@ -306,6 +310,7 @@
     "pg": "^8.20.0",
     "pino-pretty": "^13",
     "thread-stream": "3.1.0",
-    "tsx": "catalog:"
+    "tsx": "catalog:",
+    "@types/pg": "^8.18.0"
   }
 }

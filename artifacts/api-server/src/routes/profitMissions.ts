@@ -819,6 +819,15 @@ router.post(
       case "not_executed":
         res.status(409).json({ error: `Mission trade is not executed (status: ${result.status}).` });
         return;
+      case "manual_control":
+        // Capability #44 — the owner has taken this position over; strategy
+        // management is suspended until an explicit release.
+        res.status(409).json({
+          error: "Position is under manual control — automated management is suspended until you release it.",
+          reason: "MANUAL_CONTROL_ACTIVE",
+          brokerTicket: result.brokerTicket,
+        });
+        return;
       case "no_open_position":
         res.status(409).json({ error: "No open position is linked to this mission trade." });
         return;
