@@ -24,8 +24,27 @@
 //   us a position is gone but gives us no numbers, the recorded outcome is
 //   closed + pnl null + a typed UNRECONCILED reason. Nothing is inferred from
 //   the stop-loss level, the take-profit level, or the last floating P/L.
+//
+// WHAT THIS DOES **NOT** FIX YET (state this plainly; do not let it be read as
+// more than it is). The only source of a broker-confirmed P/L is an explicit
+// close report — the `closed: [...]` array on the positions-snapshot ingest. No
+// SHIPPED EA sends that array today. So on a default field deployment every
+// broker-side close still resolves to UNRECONCILED with pnl NULL, and
+// `resolveMissionRealisedStats` (which sums only rows with a finite pnl) still
+// excludes it. The realised NUMBER is therefore unchanged by this module until
+// an EA reports closed deals; what changed is that the gap is now COUNTED and
+// LABELLED instead of being silent. Manufacturing a P/L from the close price,
+// the stop-loss level or the last floating P/L would close the numeric gap and
+// is exactly the lie this branch exists to prevent — an honest gap over a
+// flattering number, always.
+//
+// RACE WITH THE ACTION PATH. With BROKER_ABSENCE_AUTO_RECONCILE_ENABLED=true the
+// reconciler and this observer run as concurrent fire-and-forget tasks on the
+// same ingest. When the reconciler wins it stamps closed_at + reconcileState,
+// which removes the row from this module's candidate query permanently. The
+// RECOVERY source below re-offers those rows so the outcome is still recorded.
 
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull } from "drizzle-orm";
 import {
   db,
   arxLiveCommandsTable,
@@ -36,6 +55,7 @@ import { logger } from "../logger.js";
 import { isSnapshotReliable } from "./positionFreshness.js";
 import {
   brokerCloseObservationPolicy,
+  BROKER_CLOSE_RECOVERY_LOOKBACK_MS,
   type BrokerAbsenceReconcilePolicy,
 } from "./brokerAbsencePolicy.js";
 import { findBrokerAbsentGhostPositionIds } from "./brokerAbsenceReconcile.js";
@@ -160,9 +180,50 @@ export async function observeBrokerSideCloses(args: {
     },
   );
 
+  // RECOVERY source — rows the flag-gated ACTION path already stamped
+  // RECONCILED_BROKER_ABSENT. Those rows no longer match the candidate query
+  // above (it requires closedAt IS NULL and reconcileState IS NULL), so once the
+  // reconciler wins the race on any sweep the trade would otherwise never reach
+  // the mission recorder at all. Re-offering them records the SAME honest
+  // numberless close the absence path would have produced, and the recorder is
+  // idempotent so an already-recorded ticket is a no-op. Bounded by a lookback
+  // window; a read failure degrades to "no recovery tickets", never to a guess.
+  let reconciledAbsentTickets: string[] = [];
+  try {
+    const recovered = await db
+      .select({ brokerTicket: arxLivePositionsTable.brokerTicket })
+      .from(arxLivePositionsTable)
+      .where(
+        and(
+          eq(arxLivePositionsTable.userId, args.userId),
+          eq(arxLivePositionsTable.reconcileState, "RECONCILED_BROKER_ABSENT"),
+          gte(
+            arxLivePositionsTable.closedAt,
+            new Date(now.getTime() - BROKER_CLOSE_RECOVERY_LOOKBACK_MS),
+          ),
+          ...(bridgeConnectionId != null
+            ? [eq(arxLivePositionsTable.bridgeConnectionId, bridgeConnectionId)]
+            : []),
+        ),
+      );
+    reconciledAbsentTickets = recovered
+      .map((r) => r.brokerTicket)
+      .filter((t): t is string => typeof t === "string" && t.length > 0);
+  } catch (err) {
+    logger.warn(
+      {
+        event: "BROKER_SIDE_CLOSE_RECOVERY_READ_FAILED",
+        userId: args.userId,
+        error: err instanceof Error ? err.message : String(err),
+      },
+      "reconciled-absent recovery read failed — no recovery tickets this sweep",
+    );
+  }
+
   const plan = planBrokerCloseRecordings({
     reports: args.reports,
     absenceCandidates,
+    reconciledAbsentTickets,
   });
 
   let recordedCount = 0;

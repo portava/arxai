@@ -137,6 +137,72 @@ export interface BrokerCloseReport {
   brokerClosePrice?: number | null;
 }
 
+/** Why a broker close report was accepted or refused for this bridge. */
+export type BrokerCloseReportAttribution =
+  /** A position row for this ticket exists on THIS bridge. */
+  | "THIS_BRIDGE"
+  /** Rows exist for this ticket, but only on ANOTHER of the user's bridges. */
+  | "OTHER_BRIDGE"
+  /** No position row anywhere for this user — nothing to confuse it with. */
+  | "UNKNOWN_TICKET";
+
+/**
+ * PURE. Decide which broker close reports this bridge may be believed about.
+ *
+ * WHY THIS EXISTS. Broker ticket numbers are broker-local, so one user's two
+ * bridges can legitimately carry the SAME ticket string. The close-report ingest
+ * originally matched on userId alone, which let bridge A's EA stamp a close —
+ * and write a broker-realised P/L that flows straight into the mission's
+ * realised money figure — onto bridge B's position.
+ *
+ * THE RULE, and why it is not simply "must be on this bridge". Position rows are
+ * created ONLY by the snapshot ingest, so a trade that opens and stops out
+ * between two sweeps never gets a row at all. Refusing every ticket without a
+ * row on this bridge would therefore throw away exactly the broker-confirmed P/L
+ * this whole branch is trying to capture. So:
+ *   • rows on THIS bridge          → accept (unambiguous).
+ *   • rows only on ANOTHER bridge  → REFUSE (this is the collision we fear).
+ *   • no rows anywhere             → accept (there is no other claimant; the
+ *                                    ambiguity the refusal protects against does
+ *                                    not exist).
+ * RESIDUAL, stated plainly: an UNKNOWN ticket is still resolved to a mission
+ * draft by (userId, ticket) downstream, so a ticket that collides with a draft
+ * dispatched on a different bridge AND has no position row on either would be
+ * mis-attributed. Closing that needs bridge attribution on the draft itself,
+ * which this layer does not have.
+ */
+export function attributeBrokerCloseReports(args: {
+  bridgeConnectionId: number;
+  reportTickets: string[];
+  /** Every position row this USER holds for those tickets, across ALL bridges. */
+  positionRows: Array<{ brokerTicket: string | null; bridgeConnectionId: number | null }>;
+}): {
+  accepted: string[];
+  refused: Array<{ brokerTicket: string; attribution: BrokerCloseReportAttribution }>;
+} {
+  const onThisBridge = new Set<string>();
+  const onAnyBridge = new Set<string>();
+  for (const row of args.positionRows) {
+    const t = typeof row.brokerTicket === "string" ? row.brokerTicket.trim() : "";
+    if (t.length === 0) continue;
+    onAnyBridge.add(t);
+    if (row.bridgeConnectionId === args.bridgeConnectionId) onThisBridge.add(t);
+  }
+
+  const accepted: string[] = [];
+  const refused: Array<{ brokerTicket: string; attribution: BrokerCloseReportAttribution }> = [];
+  const seen = new Set<string>();
+  for (const raw of args.reportTickets) {
+    const t = typeof raw === "string" ? raw.trim() : "";
+    if (t.length === 0 || seen.has(t)) continue;
+    seen.add(t);
+    if (onThisBridge.has(t)) accepted.push(t);
+    else if (onAnyBridge.has(t)) refused.push({ brokerTicket: t, attribution: "OTHER_BRIDGE" });
+    else accepted.push(t);
+  }
+  return { accepted, refused };
+}
+
 /**
  * One recording instruction — precisely the arguments handed to the SAME honest
  * recorder the ARX close path uses (`recordMissionTradeCloseByBrokerTicket`).
@@ -163,10 +229,22 @@ export interface BrokerCloseRecording {
  * them `safeToStampClosed` — same bar as the action path. Anything blocked
  * (unreliable sweep, incomplete sweep, cross-user/bridge, uncertain mapping,
  * pending ARX close, too little / too young absence evidence) records NOTHING.
+ *
+ * `reconciledAbsentTickets` is the RECOVERY source (forward-fix). When the
+ * ACTION path (`runBrokerAbsenceReconcile`, flag-gated) stamps a row
+ * closed_at + reconcileState=RECONCILED_BROKER_ABSENT, that row stops matching
+ * the observer's open-and-unreconciled candidate query — permanently. Without
+ * this source the mission outcome for that trade would never be recorded at all
+ * and the draft would stay open forever. These tickets already cleared the
+ * IDENTICAL evidence bar (the action path applies the same evaluator), so
+ * recording an honest UNRECONCILED close for them fabricates nothing: it is the
+ * same numberless close the absence path would have produced had it won the
+ * race. The recorder is idempotent, so a re-offered ticket is a no-op.
  */
 export function planBrokerCloseRecordings(args: {
   reports?: BrokerCloseReport[];
   absenceCandidates?: BrokerAbsentGhostCandidate[];
+  reconciledAbsentTickets?: string[];
 }): BrokerCloseRecording[] {
   const out: BrokerCloseRecording[] = [];
   const seen = new Set<string>();
@@ -198,6 +276,24 @@ export function planBrokerCloseRecordings(args: {
     seen.add(ticket);
     // Absence gives us the FACT of a close and nothing else. No price, no P/L,
     // and we refuse to derive either. Honest typed null.
+    const outcome = resolveBrokerCloseOutcome({ source: "BROKER_ABSENCE" });
+    out.push({
+      brokerTicket: ticket,
+      realisedPnl: outcome.realisedPnl,
+      outcomeSource: outcome.source,
+      outcomeStatus: outcome.status,
+      unreconciledReason: outcome.unreconciledReason,
+      brokerClosePrice: outcome.closePrice,
+      exitReason: outcome.exitReason,
+    });
+  }
+
+  for (const t of args.reconciledAbsentTickets ?? []) {
+    const ticket = typeof t === "string" ? t.trim() : "";
+    if (ticket.length === 0 || seen.has(ticket)) continue;
+    seen.add(ticket);
+    // Same honest numberless close as the absence path: the ACTION path already
+    // proved the position is gone, and it gave us no P/L to record either.
     const outcome = resolveBrokerCloseOutcome({ source: "BROKER_ABSENCE" });
     out.push({
       brokerTicket: ticket,

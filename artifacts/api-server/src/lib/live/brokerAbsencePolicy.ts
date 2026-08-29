@@ -61,6 +61,17 @@ export const brokerAbsenceAutoReconcilePolicy: BrokerAbsenceReconcilePolicy = {
 // only "keep observing"; the observer writes no position state and issues no
 // broker command. When the broker gives us no numbers, the recorded outcome is
 // an honest UNRECONCILED with pnl null — never an inferred price or P/L.
+// RECOVERY WINDOW (forward-fix). With BROKER_ABSENCE_AUTO_RECONCILE_ENABLED=true
+// the ACTION path and the observer run as two concurrent fire-and-forget tasks
+// on the same ingest. When the action path wins it stamps closed_at +
+// reconcileState=RECONCILED_BROKER_ABSENT, and the row stops matching the
+// observer's "still open, not reconciled" candidate query FOREVER — so the
+// mission outcome for that trade would never be recorded at all. The observer
+// therefore ALSO re-offers rows the action path already reconciled, bounded to
+// this lookback so the scan stays small. The recorder is idempotent, so a
+// ticket whose outcome is already recorded costs one no-op lookup.
+export const BROKER_CLOSE_RECOVERY_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
+
 export const brokerCloseObservationPolicy: BrokerAbsenceReconcilePolicy = {
   enabled: true,
   requiredReliableAbsences: brokerAbsenceAutoReconcilePolicy.requiredReliableAbsences,

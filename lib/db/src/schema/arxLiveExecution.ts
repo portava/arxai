@@ -363,6 +363,14 @@ export const arxLivePositionsTable = pgTable("arx_live_positions", {
   // stop-loss level, the take-profit level, or the last floating P/L. When the
   // broker reports a close WITHOUT numbers these stay NULL and the mission
   // outcome is recorded as UNRECONCILED rather than guessed.
+  //
+  // DEPLOY ORDER: `docs/migrations-pending/fix-outcome-truth.sql` MUST be
+  // applied to a database BEFORE code carrying these three fields is deployed
+  // against it. Additive in the DB, NOT backward-compatible in the code: a bare
+  // `db.select()` on this table emits an explicit column list from this model,
+  // so every live-position read (~10 call sites) fails 42703 against an
+  // unmigrated database. The SQL file lists the call sites and the verification
+  // query. Code rollback is safe; SQL rollback under new code is not.
   brokerCloseReportedAt: timestamp("broker_close_reported_at", { withTimezone: true }),
   brokerClosePrice: doublePrecision("broker_close_price"),
   brokerRealisedPnl: doublePrecision("broker_realised_pnl"),

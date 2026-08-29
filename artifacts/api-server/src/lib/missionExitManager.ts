@@ -351,8 +351,12 @@ export interface MissionMilestoneState extends MilestoneVerdict {
   realisedProfit: number;
   /**
    * How complete the realised set behind `realisedProfit` / `peakRealisedProfit`
-   * actually is. When `complete` is false the figures are a FLOOR, not a result,
-   * and the target stop-and-lock is held until every outcome is recorded.
+   * actually is. When `complete` is false those figures are UNFINISHED and are a
+   * bound in NEITHER direction: unconfirmed closes are excluded outright, and
+   * because the closes ARX does not perform skew toward stop-losses the figure
+   * usually reads HIGH. The mission still STOPS at its target (the stop is never
+   * removed), but the completion flip and the "target reached" journal entry are
+   * held until every outcome is broker-confirmed.
    */
   outcomeCompleteness: MissionOutcomeCompleteness;
 }
@@ -364,8 +368,9 @@ export interface MissionMilestoneState extends MilestoneVerdict {
  * {@link refreshMissionProtection}.
  *
  * OUTCOME TRUTH: the realised set is checked for completeness and the verdict is
- * passed through the stricter-only completeness gate, so a mission can never
- * stop-and-lock its target on a set that is still missing a closed outcome.
+ * passed through the stricter-only completeness gate. The gate never removes the
+ * stop (that would resume trading on an unverified set); it attaches the honest
+ * reasons, and {@link refreshMissionProtection} holds the completion CLAIM.
  */
 export async function resolveMissionMilestones(args: {
   userId: number;
@@ -403,8 +408,9 @@ export async function resolveMissionMilestones(args: {
     continueAfterTarget: protection.continueAfterTarget,
   });
 
-  // Stricter-only: an incomplete outcome set can only HOLD a lock, never grant
-  // one, and never touches any other milestone field.
+  // Stricter-only: an incomplete outcome set attaches honest reasons. It never
+  // grants a lock and — deliberately — never removes one, because removing the
+  // stop is what would let an unverified mission keep trading.
   const gated = applyCompletenessToMilestone(verdict, completeness);
 
   return {
@@ -604,8 +610,18 @@ export async function refreshMissionProtection(args: {
     };
 
     // ── Target stop+lock → flip the mission to `completed` (default at 100%). ──
+    // OUTCOME TRUTH: the stop is honoured immediately (`stopAndLock` already
+    // makes `missionDriver` stop planning new risk), but the COMPLETION CLAIM is
+    // held while any closed outcome is still unconfirmed. Declaring a mission
+    // complete on a realised figure that excludes unconfirmed — usually losing —
+    // closes is a claim ARX cannot stand behind. The flip happens on a later
+    // refresh, once the set is complete.
+    const outcomesConfirmed = milestone.outcomeCompleteness.complete;
     const missionCompleted =
-      milestone.stopAndLock && mission.status !== "completed" && mission.status !== "cancelled";
+      milestone.stopAndLock &&
+      outcomesConfirmed &&
+      mission.status !== "completed" &&
+      mission.status !== "cancelled";
     await tx
       .update(profitMissionsTable)
       .set({
@@ -650,8 +666,16 @@ export async function refreshMissionProtection(args: {
       await tx.insert(missionEventsTable).values({
         missionId: args.missionId,
         type: "mission_target_locked",
-        message: `Target reached — ${missionCompleted ? "mission completed and profit locked" : "profit locked"} (${milestone.lockedProfit}).`,
-        metadataJson: { lockedProfit: milestone.lockedProfit, missionCompleted },
+        message: outcomesConfirmed
+          ? `Target reached — ${missionCompleted ? "mission completed and profit locked" : "profit locked"} (${milestone.lockedProfit}).`
+          : `Target reached on the confirmed results only (${milestone.lockedProfit}) — the mission is stopped, and completion is held until every closed trade has a broker-confirmed result.`,
+        metadataJson: {
+          lockedProfit: milestone.lockedProfit,
+          missionCompleted,
+          outcomesConfirmed,
+          pendingOutcomeCount: milestone.outcomeCompleteness.pendingOutcomeCount,
+          unreconciledCloseCount: milestone.outcomeCompleteness.unreconciledCloseCount,
+        },
       });
     }
 

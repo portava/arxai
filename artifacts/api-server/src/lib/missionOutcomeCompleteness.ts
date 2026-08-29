@@ -11,12 +11,30 @@
 //   This module makes the incompleteness VISIBLE and BINDING:
 //     • it counts what is missing, with typed reasons;
 //     • the UI states the figure is incomplete instead of showing it bare;
-//     • `applyCompletenessToMilestone` HOLDS the stop-and-lock while anything is
-//       unrecorded — a mission may never lock its target on a partial set.
+//     • `applyCompletenessToMilestone` marks the TARGET CLAIM as unconfirmed
+//       while anything is unrecorded — a mission may never be declared complete
+//       on a partial set.
+//
+// NOT A FLOOR (forward-fix, supersedes the first cut of this module). The first
+// version of this copy called the shown figure a "floor" and told the user to
+// read it as a lower bound. That is FALSE, and false in exactly the direction
+// this module exists to stop: the missing outcomes skew toward stop-loss
+// LOSSES, so excluding them makes the shown number an UPPER-biased estimate,
+// not a lower bound. An incomplete realised figure is a bound in NEITHER
+// direction. Every string here says so plainly.
+//
+// NEVER REMOVES A STOP (forward-fix). The first cut flipped `stopAndLock` from
+// true to false while outcomes were missing and called that "the protective
+// direction". It is the opposite: `stopAndLock` is what STOPS the mission
+// taking new trades (`missionDriver.ts` derives `targetReached` from it), so
+// turning it off resumes trading on an unverified set. AUTO authority may only
+// REDUCE exposure. The gate therefore leaves the stop exactly as the engine set
+// it and withholds only the CLAIM — mission completion and the "target reached"
+// journal entry are held until every outcome is broker-confirmed.
 //
 // HONEST DEGRADATION: an incomplete read never fabricates the missing P/L and
-// never guesses a direction. It says "we do not know yet" and fails toward NOT
-// locking (the protective direction), never toward a flattering claim.
+// never guesses a direction. It says "we do not know yet", it never widens
+// risk, and it never converts silence into a flattering claim.
 
 import type { MissionOutcomeStatus } from "./live/brokerCloseOutcome.js";
 
@@ -142,7 +160,16 @@ export function computeMissionOutcomeCompleteness(args: {
 
   const complete = pendingOutcomeCount === 0 && unreconciledCloseCount === 0;
   if (!complete) {
-    reasons.push("Realised profit is incomplete — treat it as a floor, not the final result.");
+    // NOT a floor and NOT a ceiling. Unconfirmed closes are excluded entirely,
+    // so the true figure may land either side of this number — and because the
+    // closes ARX did not perform are most often stop-losses, an incomplete
+    // figure reads HIGH more often than it reads low. Never claim a bound.
+    reasons.push(
+      "Realised profit is incomplete — unconfirmed closes are excluded, so the true figure may be higher or lower than this number.",
+    );
+    reasons.push(
+      "Closes ARX did not perform are most often stop-losses, so an incomplete figure usually reads better than the result.",
+    );
   }
 
   return {
@@ -167,9 +194,9 @@ export const COMPLETE_OUTCOME_SET: MissionOutcomeCompleteness = {
   reasons: [],
 };
 
-/** Copy shown wherever a target lock is being HELD by an incomplete set. */
-export const TARGET_LOCK_HELD_REASON =
-  "Target lock is held until every closed trade has a broker-confirmed result." as const;
+/** Copy shown wherever a target CLAIM is being held by an incomplete set. */
+export const TARGET_CLAIM_HELD_REASON =
+  "Target reached on the confirmed results only — the mission is stopped, and completion is held until every closed trade has a broker-confirmed result." as const;
 
 export interface MilestoneLockShape {
   stopAndLock: boolean;
@@ -177,10 +204,19 @@ export interface MilestoneLockShape {
 }
 
 /**
- * STRICTER-ONLY gate: a mission may not stop-and-lock its target while any
- * outcome is unrecorded or unreconciled. This can only ever turn a lock OFF and
- * add an honest reason — it can never turn a lock ON, never widen risk, and
- * never touch any other milestone field.
+ * STRICTER-ONLY gate — and stricter in the direction that matters for capital.
+ *
+ * `stopAndLock` is not a badge: `missionDriver.ts` derives `targetReached` from
+ * it, and `targetReached` is what stops the mission planning new risk. Turning
+ * it OFF because we are unsure would RESUME trading on an unverified set, which
+ * is a widening of exposure decided by an automated read. This gate therefore
+ * NEVER touches `stopAndLock` — it cannot turn a lock on, and it cannot turn one
+ * off. The only thing it changes is the set of honest reasons carried alongside.
+ *
+ * What is actually withheld while the set is incomplete is the CLAIM: the caller
+ * (`refreshMissionProtection`) holds the flip to `completed` and the "target
+ * reached" journal entry on `completeness.complete`, so ARX stops trading
+ * immediately but never announces a result it cannot stand behind.
  */
 export function applyCompletenessToMilestone<T extends MilestoneLockShape>(
   milestone: T,
@@ -189,7 +225,6 @@ export function applyCompletenessToMilestone<T extends MilestoneLockShape>(
   if (completeness.complete || !milestone.stopAndLock) return milestone;
   return {
     ...milestone,
-    stopAndLock: false,
-    reasons: [...milestone.reasons, TARGET_LOCK_HELD_REASON, ...completeness.reasons],
+    reasons: [...milestone.reasons, TARGET_CLAIM_HELD_REASON, ...completeness.reasons],
   };
 }

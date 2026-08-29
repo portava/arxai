@@ -7,7 +7,7 @@
  */
 
 /**
- * Outcome-truth read. Realised profit sums only closed trades that carry a broker-confirmed P/L, so a trade whose outcome is missing or unreconciled drops out of the figure. Because broker-side closes skew toward stop-loss LOSSES, that silence biased the figure upward. This read counts exactly what is missing so the number can be labelled honestly and the target lock held. Nothing here is ever estimated to fill a gap.
+ * Outcome-truth read. Realised profit sums only closed trades that carry a broker-confirmed P/L, so a trade whose outcome is missing or unreconciled drops out of the figure. Because broker-side closes skew toward stop-loss LOSSES, that silence biased the figure upward. This read counts exactly what is missing so the number can be labelled honestly and the mission's completion CLAIM held. Nothing here is ever estimated to fill a gap, and an incomplete figure is never presented as a floor or a minimum.
 
  */
 export interface MissionOutcomeCompleteness {

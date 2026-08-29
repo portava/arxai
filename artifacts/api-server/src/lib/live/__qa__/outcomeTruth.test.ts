@@ -14,10 +14,17 @@
 //      produces a RECORDED LOSS (from the broker's own number).
 //   2. A broker-side close with no numbers records the close with pnl NULL and a
 //      typed UNRECONCILED reason — it NEVER invents a price or a P/L.
-//   3. A mixed win/loss set does NOT lock the mission target while any outcome
-//      is unrecorded or unreconciled.
+//   3. A mixed win/loss set holds the mission's target CLAIM while any outcome
+//      is unrecorded — without ever removing the STOP (removing it would resume
+//      trading on an unverified set).
 //   4. The evidence bar for observing an absence is the same one the ACTION path
 //      uses: a blocked candidate records nothing at all.
+//   5. The user-facing copy never describes an incomplete figure as a floor, a
+//      minimum or any other bound. It is a bound in neither direction.
+//   6. An outcome the flag-gated ACTION path already reconciled still reaches
+//      the mission recorder (the observer would otherwise lose it forever).
+//   7. The broker close-report ingest is scoped by BRIDGE, so one bridge's EA
+//      can never write a realised P/L onto another bridge's position.
 //
 // Offline / pure: imports only IO-free modules, so it runs in the root `ci`
 // lane, not the DB-backed integration lane.
@@ -32,6 +39,7 @@ import { dirname, resolve } from "node:path";
 import {
   resolveBrokerCloseOutcome,
   planBrokerCloseRecordings,
+  attributeBrokerCloseReports,
   isBrokerReportedPnl,
   isBrokerReportedClosePrice,
   OUTCOME_UNRECONCILED_BROKER_ABSENT,
@@ -50,7 +58,7 @@ import {
 import {
   computeMissionOutcomeCompleteness,
   applyCompletenessToMilestone,
-  TARGET_LOCK_HELD_REASON,
+  TARGET_CLAIM_HELD_REASON,
   type MissionDraftOutcomeRow,
   type MissionPositionOutcomeRow,
 } from "../../missionOutcomeCompleteness.js";
@@ -240,18 +248,147 @@ test("observation is always on; the auto-reconcile ACTION flag stays default-off
   );
 });
 
-test("the ingest wires observation OUTSIDE the auto-reconcile action flag", () => {
+/**
+ * Return `src` with the CONTENTS of comments, string literals and template
+ * literals replaced by spaces, preserving length so every index still lines up
+ * with the original. Blanking comments is what makes "just comment the call
+ * out" a detectable mutation rather than a passing one.
+ */
+function blankNonCode(src: string): string {
+  const out = src.split("");
+  const n = src.length;
+  let i = 0;
+  const blank = (at: number): void => {
+    if (src[at] !== "\n") out[at] = " ";
+  };
+  while (i < n) {
+    const two = src.slice(i, i + 2);
+    if (two === "//") {
+      while (i < n && src[i] !== "\n") blank(i++);
+      continue;
+    }
+    if (two === "/*") {
+      blank(i++);
+      while (i < n && src.slice(i, i + 2) !== "*/") blank(i++);
+      if (i < n) {
+        blank(i++);
+        blank(i++);
+      }
+      continue;
+    }
+    const q = src[i];
+    if (q === '"' || q === "'" || q === "`") {
+      i += 1; // keep the opening quote as a token boundary
+      while (i < n) {
+        if (src[i] === "\\") {
+          blank(i++);
+          if (i < n) blank(i++);
+          continue;
+        }
+        if (src[i] === q) {
+          i += 1;
+          break;
+        }
+        blank(i++);
+      }
+      continue;
+    }
+    i += 1;
+  }
+  return out.join("");
+}
+
+/** Headers of every `{ ... }` block enclosing `idx`, innermost last. */
+function enclosingBlockHeaders(code: string, idx: number): string[] {
+  const open: number[] = [];
+  for (let i = 0; i < idx; i += 1) {
+    if (code[i] === "{") open.push(i);
+    else if (code[i] === "}") open.pop();
+  }
+  return open.map((bracePos) => {
+    let start = 0;
+    for (let i = bracePos - 1; i >= 0; i -= 1) {
+      const c = code[i]!;
+      if (c === ";" || c === "{" || c === "}") {
+        start = i + 1;
+        break;
+      }
+    }
+    return code.slice(start, bracePos);
+  });
+}
+
+test("the ingest wires observation OUTSIDE the auto-reconcile action flag — and unconditionally", () => {
   // A unit test cannot see where the route calls the observer, and putting that
   // call back inside `if (brokerAbsenceAutoReconcilePolicy.enabled)` would
   // silently restore the original defect on a default-configured deployment —
-  // ARX-issued closes recorded, broker-side stop-losses not. Pin the wiring.
+  // ARX-issued closes recorded, broker-side stop-losses not.
+  //
+  // A plain substring grep for the call is NOT enough: it survives `if (false)
+  // await observeBrokerSideCloses(...)` and it survives commenting the call out.
+  // A dead call proves nothing about a deployed binary. So this test parses the
+  // route's BLOCK STRUCTURE (with comments and string bodies blanked out, so a
+  // commented-out call simply does not exist) and asserts the call is reached
+  // unconditionally: no enclosing `if`, no statement-level guard on it.
+  //
+  // HONEST LIMIT: this is still a structural read of source, not an execution
+  // trace. It cannot see an early `return` placed above the call, and it cannot
+  // see the module-resolution layer. Those need the DB-backed route test in the
+  // integration lane; what is pinned here is everything a source read can prove.
   const routes = resolve(dirname(fileURLToPath(import.meta.url)), "../../../routes/mt5Live.ts");
   const src = readFileSync(routes, "utf8");
+  const code = blankNonCode(src);
 
+  assert.equal(code.length, src.length, "blanking must preserve every index");
+  let depth = 0;
+  for (const ch of code) {
+    if (ch === "{") depth += 1;
+    else if (ch === "}") depth -= 1;
+    assert.ok(depth >= 0, "brace scan went negative — the blanking pass mis-parsed the route");
+  }
+  assert.equal(depth, 0, "braces must balance — otherwise this test's structural read is unsound");
+
+  const awaited = code.indexOf("await observeBrokerSideCloses(");
   assert.ok(
-    src.includes("observeBrokerSideCloses("),
-    "the positions ingest must observe broker-side closes",
+    awaited >= 0,
+    "the positions ingest must AWAIT observeBrokerSideCloses in live (non-comment) code",
   );
+
+  for (const header of enclosingBlockHeaders(code, awaited)) {
+    assert.equal(
+      /\bif\s*\(/.test(header),
+      false,
+      `observation must not sit inside any conditional block — found header: ${header.trim()}`,
+    );
+    assert.equal(
+      header.includes("brokerAbsenceAutoReconcilePolicy"),
+      false,
+      "observation must NOT sit inside the action flag — recording history is not acting",
+    );
+  }
+
+  // Statement-level guard check: `if (false) await observeBrokerSideCloses(...)`
+  // adds no block, so the enclosing-header scan above cannot see it.
+  let stmtStart = 0;
+  for (let i = awaited - 1; i >= 0; i -= 1) {
+    const c = code[i]!;
+    if (c === ";" || c === "{" || c === "}") {
+      stmtStart = i + 1;
+      break;
+    }
+  }
+  const stmtPrefix = code.slice(stmtStart, awaited);
+  assert.equal(
+    /\b(if|else|while|for|switch|case)\b/.test(stmtPrefix),
+    false,
+    `the observation call must not be guarded by a statement-level condition: ${stmtPrefix.trim()}`,
+  );
+  assert.equal(
+    /(&&|\|\||\?)/.test(stmtPrefix),
+    false,
+    `the observation call must not be short-circuited: ${stmtPrefix.trim()}`,
+  );
+
   const flagged = src.match(
     /if \(brokerAbsenceAutoReconcilePolicy\.enabled\) \{[\s\S]*?\n {2}\}\n/,
   );
@@ -393,7 +530,12 @@ test("an executed trade we cannot follow to a position is counted as missing, ne
   }
 });
 
-test("the mission target does NOT lock while an outcome is unrecorded", () => {
+test("an incomplete set holds the target CLAIM but never removes the STOP", () => {
+  // FORWARD-FIX. The first cut of this gate flipped `stopAndLock` true -> false
+  // on an incomplete set and called that "protective". It is the opposite:
+  // `missionDriver` derives `targetReached` from `stopAndLock`, so turning it
+  // off RESUMES trading on a set ARX cannot verify — an automated widening of
+  // exposure. The stop stays; only the claim is withheld.
   const incomplete = computeMissionOutcomeCompleteness({
     drafts: [
       draft({ draftId: "win", brokerTicket: "T1", pnl: 400 }),
@@ -404,12 +546,16 @@ test("the mission target does NOT lock while an outcome is unrecorded", () => {
   });
   const locked = { stopAndLock: true, reasons: ["Target reached."] };
   const gated = applyCompletenessToMilestone(locked, incomplete);
-  assert.equal(gated.stopAndLock, false, "a target may never lock on a partial set");
-  assert.ok(gated.reasons.includes(TARGET_LOCK_HELD_REASON));
+  assert.equal(
+    gated.stopAndLock,
+    true,
+    "the stop is never removed — an unverified mission must not resume trading",
+  );
+  assert.ok(gated.reasons.includes(TARGET_CLAIM_HELD_REASON));
   assert.ok(gated.reasons.includes("Target reached."), "existing reasons are preserved, not replaced");
 });
 
-test("a complete set locks normally, and the gate can only ever REMOVE a lock", () => {
+test("the completeness gate never changes stopAndLock in either direction", () => {
   const complete = computeMissionOutcomeCompleteness({
     drafts: [draft({ draftId: "win", brokerTicket: "T1", pnl: 400 })],
     positions: [position({ brokerTicket: "T1", closedAt: NOW })],
@@ -426,4 +572,167 @@ test("a complete set locks normally, and the gate can only ever REMOVE a lock", 
   const unlocked = applyCompletenessToMilestone({ stopAndLock: false, reasons: [] }, incomplete);
   assert.equal(unlocked.stopAndLock, false);
   assert.deepEqual(unlocked.reasons, [], "an unlocked milestone is left exactly as it was");
+});
+
+// ── 6. THE COPY MAY NEVER CLAIM A BOUND ──────────────────────────────────────
+
+test("incompleteness copy never claims the shown figure is a floor or a minimum", () => {
+  // FORWARD-FIX. The first cut said "treat it as a floor, not the final result".
+  // A floor asserts truth >= shown. The excluded outcomes skew toward stop-loss
+  // LOSSES, so the shown figure is if anything upward-biased — the claim was
+  // false in exactly the case it was written for. An incomplete realised figure
+  // bounds the truth in NEITHER direction, and the copy must say so.
+  const incomplete = computeMissionOutcomeCompleteness({
+    drafts: [
+      draft({ draftId: "win", brokerTicket: "T1", pnl: 250 }),
+      draft({ draftId: "sl", brokerTicket: "T2", pnl: null, outcomeStatus: "UNRECONCILED" }),
+    ],
+    positions: [position({ brokerTicket: "T1", closedAt: NOW }), position({ brokerTicket: "T2", closedAt: NOW })],
+    absenceEvidenceThreshold: 3,
+  });
+  const copy = [...incomplete.reasons, TARGET_CLAIM_HELD_REASON]
+    .join(" \n ")
+    // Explicit DENIALS of a bound are the point — strip them so the scan below
+    // only ever sees an affirmative claim.
+    .replace(/\bnot a (floor|minimum|lower bound)\b/gi, "");
+
+  for (const forbidden of [
+    /\bfloor\b/i,
+    /\bminimum\b/i,
+    /\bat least\b/i,
+    /\blower bound\b/i,
+    /\bno less than\b/i,
+    /\bnot less than\b/i,
+  ]) {
+    assert.equal(
+      forbidden.test(copy),
+      false,
+      `an incomplete figure must not be described with ${forbidden} — it is not a bound`,
+    );
+  }
+  assert.match(
+    copy,
+    /may be higher or lower/i,
+    "the copy must state plainly that the truth can land either side of the number",
+  );
+  assert.match(
+    copy,
+    /most often stop-losses/i,
+    "and must name the direction of the known skew rather than implying a favourable one",
+  );
+});
+
+// ── 7. RECOVERY: the ACTION path winning the race must not lose the outcome ───
+
+test("a row the ACTION path already reconciled still reaches the mission recorder", () => {
+  // With BROKER_ABSENCE_AUTO_RECONCILE_ENABLED=true the reconciler stamps
+  // closedAt + reconcileState, which removes the row from the observer's
+  // candidate query permanently. Without the recovery source the outcome would
+  // never be recorded and the draft would stay open forever.
+  const plan = planBrokerCloseRecordings({ reconciledAbsentTickets: ["TKT-RECONCILED"] });
+  assert.equal(plan.length, 1);
+  assert.deepEqual(
+    {
+      ticket: plan[0]!.brokerTicket,
+      pnl: plan[0]!.realisedPnl,
+      price: plan[0]!.brokerClosePrice,
+      status: plan[0]!.outcomeStatus,
+      reason: plan[0]!.unreconciledReason,
+    },
+    {
+      ticket: "TKT-RECONCILED",
+      pnl: null,
+      price: null,
+      status: "UNRECONCILED",
+      reason: OUTCOME_UNRECONCILED_BROKER_ABSENT,
+    },
+    "recovery records the same honest numberless close — it invents nothing",
+  );
+});
+
+test("recovery never overrides a real broker number and never double-records", () => {
+  const plan = planBrokerCloseRecordings({
+    reports: [{ brokerTicket: "TKT-1", brokerRealisedPnl: -77.5 }],
+    absenceCandidates: findBrokerAbsentGhostPositionIds([absentRow()], evalCtx()),
+    reconciledAbsentTickets: ["TKT-1", "TKT-1", "  "],
+  });
+  assert.equal(plan.length, 1, "one ticket is never recorded twice, whatever the source");
+  assert.equal(plan[0]!.realisedPnl, -77.5, "the broker's own number wins over every numberless source");
+  assert.equal(plan[0]!.outcomeSource, "BROKER_CLOSE_REPORT");
+});
+
+// ── 8. BRIDGE ISOLATION OF THE CLOSE-REPORT INGEST ───────────────────────────
+
+test("a close report for a ticket that lives on ANOTHER bridge is refused", () => {
+  // Broker tickets are broker-local, so one user's two bridges can carry the
+  // same ticket string. A userId-only match let bridge A's EA write a
+  // broker-realised P/L onto bridge B's position — and that number reaches the
+  // mission's realised money figure.
+  const out = attributeBrokerCloseReports({
+    bridgeConnectionId: 3,
+    reportTickets: ["TKT-FOREIGN"],
+    positionRows: [{ brokerTicket: "TKT-FOREIGN", bridgeConnectionId: 44 }],
+  });
+  assert.deepEqual(out.accepted, [], "a foreign bridge's ticket must never be accepted");
+  assert.deepEqual(out.refused, [{ brokerTicket: "TKT-FOREIGN", attribution: "OTHER_BRIDGE" }]);
+});
+
+test("a close report for a ticket on THIS bridge is accepted, even once the row is closed", () => {
+  const out = attributeBrokerCloseReports({
+    bridgeConnectionId: 3,
+    reportTickets: ["TKT-1"],
+    // Same ticket present on this bridge AND on another — this bridge wins.
+    positionRows: [
+      { brokerTicket: "TKT-1", bridgeConnectionId: 44 },
+      { brokerTicket: "TKT-1", bridgeConnectionId: 3 },
+    ],
+  });
+  assert.deepEqual(out.accepted, ["TKT-1"]);
+  assert.deepEqual(out.refused, []);
+});
+
+test("a ticket with no position row anywhere is still accepted — refusing it would DROP a real broker P/L", () => {
+  // Position rows are created ONLY by the snapshot ingest, so a trade that
+  // opens and stops out between two sweeps never gets one. A "must be on this
+  // bridge" rule would throw away exactly the broker-confirmed loss this branch
+  // exists to capture, and there is no competing bridge to confuse it with.
+  const out = attributeBrokerCloseReports({
+    bridgeConnectionId: 3,
+    reportTickets: ["TKT-NEVER-SNAPSHOTTED"],
+    positionRows: [],
+  });
+  assert.deepEqual(out.accepted, ["TKT-NEVER-SNAPSHOTTED"]);
+  assert.deepEqual(out.refused, []);
+});
+
+test("attribution ignores blanks and never returns a ticket twice", () => {
+  const out = attributeBrokerCloseReports({
+    bridgeConnectionId: 3,
+    reportTickets: ["  ", "TKT-1", "TKT-1", " TKT-1 "],
+    positionRows: [{ brokerTicket: " TKT-1 ", bridgeConnectionId: 3 }],
+  });
+  assert.deepEqual(out.accepted, ["TKT-1"]);
+});
+
+test("the ingest routes close reports through attribution before they reach the recorder", () => {
+  const routes = resolve(dirname(fileURLToPath(import.meta.url)), "../../../routes/mt5Live.ts");
+  const code = blankNonCode(readFileSync(routes, "utf8"));
+
+  assert.ok(
+    code.includes("attributeBrokerCloseReports({"),
+    "the ingest must attribute reports to a bridge before believing them",
+  );
+  assert.ok(
+    code.includes("eq(arxLivePositionsTable.bridgeConnectionId, conn.id)"),
+    "the stamping UPDATE must carry the bridge scope",
+  );
+  assert.ok(
+    code.includes("reports: attributableCloseReports.map("),
+    "only bridge-attributable reports may be forwarded to the per-user recorder",
+  );
+  assert.equal(
+    code.includes("reports: closeReports.map("),
+    false,
+    "the unfiltered report list must never reach the observer",
+  );
 });

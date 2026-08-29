@@ -1359,6 +1359,13 @@ function ProtectionPanel({ protection }: { protection: MissionProtectionSnapshot
   // missing outcomes skew toward LOSSES, an unlabelled figure reads better than
   // the truth. So when anything is missing we say so, in plain words, right next
   // to the number — never a bare, flattering figure.
+  //
+  // NOT A FLOOR (forward-fix, supersedes this panel's first copy). An earlier
+  // version of this alert told the user to read the incomplete figure "as a
+  // floor, not the final result". That was a false directional claim: a floor
+  // asserts truth >= shown, and the excluded closes are usually stop-loss
+  // LOSSES, so the shown number is if anything upward-biased. An incomplete
+  // realised figure is a bound in NEITHER direction and the copy must say so.
   const completeness = m.outcomeCompleteness ?? null;
   const outcomesIncomplete = completeness != null && completeness.complete === false;
   const incompleteNote = outcomesIncomplete
@@ -1405,8 +1412,8 @@ function ProtectionPanel({ protection }: { protection: MissionProtectionSnapshot
       {outcomesIncomplete && completeness && (
         <CompactAlert
           tone="warning"
-          title="Realised profit is incomplete — read it as a floor, not the final result."
-          description="A trade closed at the broker (a stop-loss, a stop-out, a close at the terminal) is only counted once the broker confirms its profit or loss. We never estimate the missing figure, and the target stays unlocked until every closed trade has a confirmed result."
+          title="Realised profit is incomplete — it is not a minimum, and the true figure may be higher or lower."
+          description="A trade closed at the broker (a stop-loss, a stop-out, a close at the terminal) is only counted once the broker confirms its profit or loss. Closes ARX did not perform are most often stop-losses, so an incomplete figure usually reads better than the result. We never estimate the missing figure. The mission still stops at its target, but it is not marked complete until every closed trade has a confirmed result."
           testId="alert-outcomes-incomplete"
         />
       )}
@@ -1426,11 +1433,20 @@ function ProtectionPanel({ protection }: { protection: MissionProtectionSnapshot
           </li>
         </ul>
       )}
-      {m.stopAndLock && (
+      {m.stopAndLock && !outcomesIncomplete && (
         <CompactAlert
           tone="success"
           title="Target reached — default is to stop and lock the profit. Continuing trades at reduced risk."
           testId="alert-stop-lock"
+        />
+      )}
+      {m.stopAndLock && outcomesIncomplete && (
+        // The stop is real and already in force; the CLAIM is not. Never show a
+        // success "target reached" on a set that is still missing outcomes.
+        <CompactAlert
+          tone="warning"
+          title="Target reached on the confirmed results only — the mission is stopped, and completion is held until every closed trade has a broker-confirmed result."
+          testId="alert-stop-lock-unconfirmed"
         />
       )}
       {m.givebackTriggered && (

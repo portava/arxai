@@ -18,7 +18,10 @@ import { bridgeAuthPerUserOnly } from "./mt5.js";
 import { brokerAbsenceAutoReconcilePolicy } from "../lib/live/brokerAbsencePolicy.js";
 import { runBrokerAbsenceReconcile } from "../lib/live/brokerAbsenceReconcileRunner.js";
 import { observeBrokerSideCloses } from "../lib/live/brokerCloseObserver.js";
-import type { BrokerCloseReport } from "../lib/live/brokerCloseOutcome.js";
+import {
+  attributeBrokerCloseReports,
+  type BrokerCloseReport,
+} from "../lib/live/brokerCloseOutcome.js";
 import {
   pickupNextLiveCommand,
   recordLiveCommandResult,
@@ -467,7 +470,44 @@ async function handleLivePositionsSnapshot(req: AugReq, res: Response): Promise<
   // path: this is a confirmed close, not an operator reconciliation.
   const closeReports = parseBrokerCloseReports(b);
   let brokerReportedClosed = 0;
+  // BRIDGE ISOLATION (forward-fix). Broker ticket numbers are broker-local, so
+  // one user's two bridges can legitimately carry the SAME ticket string. The
+  // userId-only match here let bridge A's EA stamp a close — and write a
+  // broker-realised P/L that flows into the mission's realised money figure —
+  // onto bridge B's position. Every other write in this handler (the absence
+  // evidence sweep above, runBrokerAbsenceReconcile) is bridge-scoped, and this
+  // one must be too. `attributeBrokerCloseReports` holds the rule and the reason
+  // it is not simply "must be on this bridge"; a read failure refuses every
+  // report rather than falling back to the userId-only behaviour.
+  const reportTickets = closeReports.map((r) => r.brokerTicket);
+  const acceptedReportTickets = new Set<string>();
+  if (reportTickets.length > 0) {
+    try {
+      const rowsForTickets = await db.select({
+        brokerTicket: arxLivePositionsTable.brokerTicket,
+        bridgeConnectionId: arxLivePositionsTable.bridgeConnectionId,
+      }).from(arxLivePositionsTable).where(and(
+        eq(arxLivePositionsTable.userId, conn.userId!),
+        inArray(arxLivePositionsTable.brokerTicket, reportTickets),
+      ));
+      const attribution = attributeBrokerCloseReports({
+        bridgeConnectionId: conn.id,
+        reportTickets,
+        positionRows: rowsForTickets,
+      });
+      for (const t of attribution.accepted) acceptedReportTickets.add(t);
+      for (const r of attribution.refused) {
+        req.log.warn(
+          { brokerTicket: r.brokerTicket, bridgeConnectionId: conn.id, attribution: r.attribution },
+          "broker close report belongs to another bridge — refused",
+        );
+      }
+    } catch (err) {
+      req.log.warn({ err }, "broker close report attribution failed — every report refused");
+    }
+  }
   for (const rep of closeReports) {
+    if (!acceptedReportTickets.has(rep.brokerTicket)) continue;
     try {
       const stamped = await db.update(arxLivePositionsTable).set({
         closedAt: rep.closedAt ?? snapshotNow,
@@ -477,6 +517,7 @@ async function handleLivePositionsSnapshot(req: AugReq, res: Response): Promise<
         lastSyncedAt: snapshotNow,
       }).where(and(
         eq(arxLivePositionsTable.userId, conn.userId!),
+        eq(arxLivePositionsTable.bridgeConnectionId, conn.id),
         eq(arxLivePositionsTable.brokerTicket, rep.brokerTicket),
         isNull(arxLivePositionsTable.closedAt),
       )).returning({ id: arxLivePositionsTable.id });
@@ -485,6 +526,12 @@ async function handleLivePositionsSnapshot(req: AugReq, res: Response): Promise<
       req.log.warn({ err, brokerTicket: rep.brokerTicket }, "broker close report stamp failed");
     }
   }
+  // Only bridge-attributable reports are forwarded to the observer, which hands
+  // them to a per-USER recorder. Filtering here is what keeps a foreign bridge's
+  // number out of the mission's realised P/L.
+  const attributableCloseReports = closeReports.filter((r) =>
+    acceptedReportTickets.has(r.brokerTicket),
+  );
 
   // Stamp the bridge's "complete sweep landed" marker on EVERY snapshot,
   // including an EMPTY positions list (broker flat). The live position READ
@@ -534,7 +581,7 @@ async function handleLivePositionsSnapshot(req: AugReq, res: Response): Promise<
       await observeBrokerSideCloses({
         userId: conn.userId!,
         bridgeConnectionId: conn.id,
-        reports: closeReports.map((r) => ({
+        reports: attributableCloseReports.map((r) => ({
           brokerTicket: r.brokerTicket,
           brokerRealisedPnl: r.brokerRealisedPnl,
           brokerClosePrice: r.brokerClosePrice,

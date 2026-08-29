@@ -34,7 +34,7 @@ export interface MissionMilestoneState {
   peakRealisedProfit: number;
   /** Sum of realised P/L across CLOSED mission trades (account currency). */
   realisedProfit: number;
-  /** How complete the realised set behind realisedProfit / peakRealisedProfit is. When complete is false those figures are a FLOOR, not a result, and stopAndLock is HELD until every closed outcome is recorded.
+  /** How complete the realised set behind realisedProfit / peakRealisedProfit is. When complete is false those figures are UNFINISHED and are a bound in NEITHER direction — unconfirmed closes are excluded outright, and because the closes ARX does not perform skew toward stop-losses the figure usually reads better than the result. stopAndLock is NOT altered (removing the stop would resume trading on an unverified set); what is held is the CLAIM: the mission is not marked completed until every closed outcome is broker-confirmed.
    */
   outcomeCompleteness?: MissionOutcomeCompleteness | null;
 }
