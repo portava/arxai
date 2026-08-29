@@ -59,6 +59,8 @@ const MISSION_BACKEND_FILES = [
   "artifacts/api-server/src/lib/missionCertificateService.ts",
   "artifacts/api-server/src/lib/missionDrafts.ts",
   "artifacts/api-server/src/lib/missionDriftService.ts",
+  "artifacts/api-server/src/lib/missionDriver.ts",
+  "artifacts/api-server/src/lib/missionExecutionModeService.ts",
   "artifacts/api-server/src/lib/missionExecutionQuality.ts",
   "artifacts/api-server/src/lib/missionExecution.ts",
   "artifacts/api-server/src/lib/missionExitManager.ts",
