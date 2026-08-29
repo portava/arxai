@@ -36,7 +36,8 @@
 // — index.ts is out of this implementer's scope.
 
 import {
-  pgTable, serial, text, boolean, timestamp, jsonb, index,
+  pgTable, serial, text, boolean, timestamp, jsonb, index, doublePrecision,
+  integer,
 } from "drizzle-orm/pg-core";
 
 // Promotion ladder. Order matters: the pure gate in
@@ -83,6 +84,36 @@ export const productionEdgesTable = pgTable("production_edges", {
   // It is flipped only by the owner's own press on the admin surface that
   // does not exist yet — the default is the truth until then.
   liveAllowed:     boolean("live_allowed").notNull().default(false),
+
+  // ── Foundation gate #23 — per-edge capacity (EDGE_CAPACITY_EXCEEDED) ─────
+  // ALL additive + nullable. NULL capacityStatus = "no capacity estimate
+  // recorded" — gate #23 then REFUSES capacity-governed LIVE entries (fail
+  // closed, never a skipped cap).
+  //
+  //   capacityStatus — verbatim status literal from the campaign-3
+  //     ruin/capacity simulator (lib/domain decision-intelligence
+  //     ruinCapacitySimulation.engine.ts estimateStrategyCapacity):
+  //     "ESTIMATED" | "NO_SAFE_CAPACITY" | "DEGENERATE_INPUT". Only
+  //     "ESTIMATED" can admit deployment (allow-list; anything else refuses).
+  //   capacityRiskR — the simulator's raw capacityRiskR output, stored for
+  //     audit alongside the pressed ceiling; the gate does NOT convert it.
+  //   capacityMaxDeployedUsd — the OWNER/ADMIN-pressed cumulative USD
+  //     deployable ceiling recorded together with the estimate. The simulator
+  //     never writes this number itself (the flywheel invariant: learned
+  //     outputs may only refuse, never set a size); an estimate without a
+  //     pressed ceiling admits nothing.
+  //   capacityDeployCapOverrideUsd — optional owner tighten-only override;
+  //     gate #23 takes min(ceiling, override) so it can only LOWER capacity.
+  //   capacityEvidenceJson — the estimator's probes/reasons + the simulator
+  //     base input, so the recorded estimate can be re-derived and audited.
+  //   capacityEstimatedAt / capacityRecordedByAdminId — provenance of the press.
+  capacityStatus: text("capacity_status"),
+  capacityRiskR: doublePrecision("capacity_risk_r"),
+  capacityMaxDeployedUsd: doublePrecision("capacity_max_deployed_usd"),
+  capacityDeployCapOverrideUsd: doublePrecision("capacity_deploy_cap_override_usd"),
+  capacityEvidenceJson: jsonb("capacity_evidence_json"),
+  capacityEstimatedAt: timestamp("capacity_estimated_at", { withTimezone: true }),
+  capacityRecordedByAdminId: integer("capacity_recorded_by_admin_id"),
 
   createdAt:  timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   promotedAt: timestamp("promoted_at", { withTimezone: true }),  // last rung advance

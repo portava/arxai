@@ -1,20 +1,26 @@
-// Phase B — Live Dispatch Gate (21-gate evaluator + disclosure)
+// Phase B — Live Dispatch Gate (23-gate evaluator + disclosure)
 //
-// CONTRACT: this gate must return `decision: "PASS"` ONLY when ALL 21 gates
+// CONTRACT: this gate must return `decision: "PASS"` ONLY when ALL 23 gates
 // pass. Any single failing gate returns `decision: "BLOCKED"` with the exact
-// failing reason(s). The 21 gates are the original 16 base gates + #17
+// failing reason(s). The 23 gates are the original 16 base gates + #17
 // MISSING_TAKE_PROFIT (governance-conditional on requireTakeProfit /
-// adminAllowNoTakeProfit) + #18 DISCLOSURE_NOT_ACCEPTED + the three
+// adminAllowNoTakeProfit) + #18 DISCLOSURE_NOT_ACCEPTED + the five
 // FOUNDATION gates: #19 PROVENANCE_UNPROVEN (entry decision-data provenance
 // must be present, tradeable-origin, fresh, and integrity-covered), #20
 // STRATEGY_NOT_LIVE_PROMOTED (autonomous entries require an owner-pressed
 // LIVE_CANDIDATE production_edges row), #21 CAPITAL_TIER_EXCEEDED (per-user
-// capital-tier caps; tighten-only vs existing caps). Foundation verdict logic
+// capital-tier caps; tighten-only vs existing caps), #22
+// TENANT_CONTEXT_VIOLATION (every tenant-scoped fact must be stamped as read
+// for the command's OWNER; proven cross-tenant leakage refuses every command
+// type, unresolvable context refuses entries), #23 EDGE_CAPACITY_EXCEEDED
+// (per-edge USD capacity ceiling from the recorded ruin/capacity-simulator
+// estimate vs cumulative deployed size; no estimate ⇒ refuse LIVE;
+// tighten-only vs existing caps). Foundation verdict logic
 // is pure in ./foundationGates.ts; `foundation` inputs are assembled by the
 // dispatch pipeline. A caller that omits `foundation` (readiness previews
-// with no command context) gets the three gates recorded PASSED with a loud
+// with no command context) gets the five gates recorded PASSED with a loud
 // "not evaluated" detail — the real dispatch path ALWAYS supplies them
-// (pinned by test:foundation-gates). The default for
+// (pinned by test:foundation-gates / test:tenant-capacity-gates). The default for
 // `liveBrokerExecutionEnabled` is FALSE — when false, this gate ALWAYS appends
 // BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED as a trailing sentinel block reason
 // (NOT an evaluated gate), preserving the Phase A safety semantic.
@@ -32,6 +38,8 @@ import {
   evaluateProvenanceGate,
   evaluateEdgePromotionGate,
   evaluateCapitalAdmissibilityGate,
+  evaluateTenantContextGate,
+  evaluateEdgeCapacityGate,
 } from "./foundationGates.js";
 
 export type { FoundationGateInputs } from "./foundationGates.js";
@@ -62,6 +70,8 @@ export type LivePhaseBGateKey =
   | "PROVENANCE_UNPROVEN"                      // #19 entry lacks proven decision-data provenance
   | "STRATEGY_NOT_LIVE_PROMOTED"               // #20 autonomous entry's edge not owner-promoted LIVE
   | "CAPITAL_TIER_EXCEEDED"                    // #21 per-user capital tier cap breached / unresolvable
+  | "TENANT_CONTEXT_VIOLATION"                 // #22 command evaluated outside its owner's tenant context
+  | "EDGE_CAPACITY_EXCEEDED"                   // #23 per-edge capacity ceiling breached / no estimate
   | "BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED";  // historical chokepoint reason
 
 export interface LivePhaseBGateInput {
@@ -150,11 +160,13 @@ export interface LivePhaseBGateInput {
     advisoryOnly?: boolean;
   } | null;
 
-  // Foundation gates #19–#21 (provenance / edge-promotion / capital tier).
+  // Foundation gates #19–#23 (provenance / edge-promotion / capital tier /
+  // tenant context / edge capacity).
   // The dispatch pipeline ALWAYS assembles and supplies this block (pinned by
-  // test:foundation-gates); within it every unresolvable fact fails CLOSED
+  // test:foundation-gates and test:tenant-capacity-gates); within it every
+  // unresolvable fact fails CLOSED
   // for entries. Omitted/null is a READINESS-PREVIEW context only (no command
-  // exists to evaluate): the three gates are then recorded PASSED with a loud
+  // exists to evaluate): the five gates are then recorded PASSED with a loud
   // "not evaluated — preview caller" detail, never silently skipped.
   foundation?: FoundationGateInputs | null;
 }
@@ -319,9 +331,12 @@ export function evaluateLivePhaseBDispatchGate(
     });
   } else pass("DISCLOSURE_NOT_ACCEPTED");
 
-  // 19–21. FOUNDATION GATES — provenance, edge promotion, capital tier.
+  // 19–23. FOUNDATION GATES — provenance, edge promotion, capital tier,
+  // tenant context, edge capacity.
   // Pure verdict logic lives in ./foundationGates.ts (fail-closed for every
-  // unresolvable fact; ENTRY-only — close/modify are exempt inside each).
+  // unresolvable fact; ENTRY-only for #19/#20/#21/#23 — close/modify are
+  // exempt inside each; #22 refuses PROVEN cross-tenant violations for every
+  // command type and fails closed for entries on unresolvable context).
   // These gates only ever ADD block reasons; nothing above is weakened.
   const foundation = input.foundation ?? null;
   if (foundation == null) {
@@ -334,6 +349,8 @@ export function evaluateLivePhaseBDispatchGate(
     gates.push({ key: "PROVENANCE_UNPROVEN", passed: true, detail: notEvaluated });
     gates.push({ key: "STRATEGY_NOT_LIVE_PROMOTED", passed: true, detail: notEvaluated });
     gates.push({ key: "CAPITAL_TIER_EXCEEDED", passed: true, detail: notEvaluated });
+    gates.push({ key: "TENANT_CONTEXT_VIOLATION", passed: true, detail: notEvaluated });
+    gates.push({ key: "EDGE_CAPACITY_EXCEEDED", passed: true, detail: notEvaluated });
   } else {
     const g19 = evaluateProvenanceGate(foundation.isEntryCommand, foundation.provenance);
     gates.push({ key: "PROVENANCE_UNPROVEN", passed: g19.passed, detail: g19.detail });
@@ -343,6 +360,10 @@ export function evaluateLivePhaseBDispatchGate(
       foundation.isEntryCommand, input.commandVolume, foundation.capital,
     );
     gates.push({ key: "CAPITAL_TIER_EXCEEDED", passed: g21.passed, detail: g21.detail });
+    const g22 = evaluateTenantContextGate(foundation.isEntryCommand, foundation.tenantContext);
+    gates.push({ key: "TENANT_CONTEXT_VIOLATION", passed: g22.passed, detail: g22.detail });
+    const g23 = evaluateEdgeCapacityGate(foundation.isEntryCommand, foundation.edgeCapacity);
+    gates.push({ key: "EDGE_CAPACITY_EXCEEDED", passed: g23.passed, detail: g23.detail });
   }
 
   const failed = gates.filter((g) => !g.passed).map((g) => g.key);

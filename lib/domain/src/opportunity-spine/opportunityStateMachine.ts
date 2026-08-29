@@ -17,7 +17,7 @@
 //    window was seen open but that terminates without a fill is MISSED, never
 //    a bland EXPIRED — the miss is first-class, not a replay-lab afterthought.
 //  - This module never places, blocks, or modifies an order. It OBSERVES the
-//    existing decision/execution seams; the 18/21-gate live pipeline, kill
+//    existing decision/execution seams; the 18/23-gate live pipeline, kill
 //    switches and governors are untouched.
 
 // ── States ───────────────────────────────────────────────────────────────────

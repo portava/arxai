@@ -1,6 +1,7 @@
-// Phase B QA — truth table for evaluateLivePhaseBDispatchGate (21 gates:
+// Phase B QA — truth table for evaluateLivePhaseBDispatchGate (23 gates:
 // the original 18 + foundation gates #19 PROVENANCE_UNPROVEN, #20
-// STRATEGY_NOT_LIVE_PROMOTED, #21 CAPITAL_TIER_EXCEEDED).
+// STRATEGY_NOT_LIVE_PROMOTED, #21 CAPITAL_TIER_EXCEEDED, #22
+// TENANT_CONTEXT_VIOLATION, #23 EDGE_CAPACITY_EXCEEDED).
 //
 // Pure-function tests of the domain evaluator. No DB, no HTTP, no broker
 // calls. Each test mutates one input from a "happy path" baseline so the
@@ -66,7 +67,40 @@ function baseline(): LivePhaseBGateInput {
         candidateExposureUsd: 1_100,
         userMaxLot: null,
       },
+      // #22 — every fact stamped for the command's own owner (user 7).
+      tenantContext: {
+        commandOwnerUserId: 7,
+        dispatchUserId: 7,
+        facts: [
+          { fact: "capital_access", scopedToUserId: 7, rowOwnerUserIds: [7] },
+          { fact: "open_positions", scopedToUserId: 7, rowOwnerUserIds: [7] },
+          { fact: "live_arming_kill_switch", scopedToUserId: 7, rowOwnerUserIds: [7] },
+        ],
+      },
+      // #23 — human command with no edge reference: capacity not required.
+      edgeCapacity: {
+        required: false,
+        edgeRefPresent: false,
+        capacityStatus: null,
+        capacityDeployableUsd: null,
+        capacityCapOverrideUsd: null,
+        deployedUsd: null,
+        candidateUsd: null,
+      },
     },
+  };
+}
+
+/** A fully-admitting #23 block (recorded estimate + pressed ceiling with headroom). */
+function capacityOk() {
+  return {
+    required: true,
+    edgeRefPresent: true,
+    capacityStatus: "ESTIMATED",
+    capacityDeployableUsd: 50_000,
+    capacityCapOverrideUsd: null,
+    deployedUsd: 10_000,
+    candidateUsd: 1_100,
   };
 }
 
@@ -125,6 +159,41 @@ const cases: Array<[string, (b: LivePhaseBGateInput) => void, LivePhaseBGateKey]
   ["g21-tier-lot-cap-exceeded",    (b) => { b.foundation!.capital.tier = "T0"; b.commandVolume = 0.05; }, "CAPITAL_TIER_EXCEEDED"],
   ["g21-tier-exposure-exceeded",   (b) => { b.foundation!.capital.openExposureUsd = 30_000; },      "CAPITAL_TIER_EXCEEDED"],
   ["g21-exposure-unknown-fails-closed", (b) => { b.foundation!.capital.openExposureUsd = null; },   "CAPITAL_TIER_EXCEEDED"],
+  // ── Foundation gate #22 TENANT_CONTEXT_VIOLATION ──
+  ["g22-cross-tenant-dispatch",    (b) => { b.foundation!.tenantContext.dispatchUserId = 8; },      "TENANT_CONTEXT_VIOLATION"],
+  ["g22-fact-scoped-to-other-user", (b) => {
+    b.foundation!.tenantContext.facts[0]!.scopedToUserId = 8;
+  }, "TENANT_CONTEXT_VIOLATION"],
+  ["g22-fact-rows-owned-by-other-user", (b) => {
+    // User A's command citing user B's caps: the capital_access rows came
+    // back owned by user 8 while the command belongs to user 7.
+    b.foundation!.tenantContext.facts[0]!.rowOwnerUserIds = [8];
+  }, "TENANT_CONTEXT_VIOLATION"],
+  ["g22-owner-missing-fails-closed", (b) => { b.foundation!.tenantContext.commandOwnerUserId = null; }, "TENANT_CONTEXT_VIOLATION"],
+  ["g22-unscoped-read-fails-closed", (b) => {
+    b.foundation!.tenantContext.facts[1]!.scopedToUserId = null;
+  }, "TENANT_CONTEXT_VIOLATION"],
+  ["g22-no-stamps-fails-closed",   (b) => { b.foundation!.tenantContext.facts = []; },              "TENANT_CONTEXT_VIOLATION"],
+  // ── Foundation gate #23 EDGE_CAPACITY_EXCEEDED ──
+  ["g23-no-capacity-estimate",     (b) => {
+    b.foundation!.edgeCapacity = { ...capacityOk(), capacityStatus: null, capacityDeployableUsd: null };
+  }, "EDGE_CAPACITY_EXCEEDED"],
+  ["g23-no-safe-capacity-verdict", (b) => {
+    b.foundation!.edgeCapacity = { ...capacityOk(), capacityStatus: "NO_SAFE_CAPACITY" };
+  }, "EDGE_CAPACITY_EXCEEDED"],
+  ["g23-ceiling-exceeded",         (b) => {
+    b.foundation!.edgeCapacity = { ...capacityOk(), deployedUsd: 49_500 };
+  }, "EDGE_CAPACITY_EXCEEDED"],
+  ["g23-deployed-unknown-fails-closed", (b) => {
+    b.foundation!.edgeCapacity = { ...capacityOk(), deployedUsd: null };
+  }, "EDGE_CAPACITY_EXCEEDED"],
+  ["g23-required-no-edge-ref",     (b) => {
+    b.foundation!.edgeCapacity = { ...capacityOk(), edgeRefPresent: false };
+  }, "EDGE_CAPACITY_EXCEEDED"],
+  ["g23-override-only-tightens",   (b) => {
+    // A LOWER override caps below the recorded ceiling — headroom vanishes.
+    b.foundation!.edgeCapacity = { ...capacityOk(), capacityCapOverrideUsd: 11_000 };
+  }, "EDGE_CAPACITY_EXCEEDED"],
 ];
 
 for (const [name, mutate, reason] of cases) {
@@ -133,30 +202,50 @@ for (const [name, mutate, reason] of cases) {
   record(name, evaluateLivePhaseBDispatchGate(b), "BLOCKED", reason);
 }
 
-// Foundation pass-paths: ops commands are exempt from all three foundation
-// gates; a preview caller with no foundation block gets a loud
-// "NOT EVALUATED" detail — passed, never silently absent from the readout.
+// #23 pass-path: a recorded ESTIMATED capacity with headroom admits the entry.
+{
+  const b = baseline();
+  b.foundation!.edgeCapacity = capacityOk();
+  record("g23-pass-path-within-capacity", evaluateLivePhaseBDispatchGate(b), "PASS");
+}
+
+// Foundation pass-paths: ops commands are exempt from #19/#20/#21/#23 and
+// from #22's unresolvable branches; a preview caller with no foundation
+// block gets a loud "NOT EVALUATED" detail — passed, never silently absent
+// from the readout.
 {
   const b = baseline();
   b.foundation!.isEntryCommand = false;
   b.foundation!.provenance.envelopePresent = false;
   b.foundation!.edgePromotion.required = true;
   b.foundation!.capital.tier = "PLATINUM";
-  record("g19-21-ops-command-exempt", evaluateLivePhaseBDispatchGate(b), "PASS");
+  b.foundation!.edgeCapacity = { ...capacityOk(), capacityStatus: null, deployedUsd: null };
+  b.foundation!.tenantContext.facts = []; // unresolvable context: advisory for ops
+  record("g19-23-ops-command-exempt", evaluateLivePhaseBDispatchGate(b), "PASS");
+}
+// #22 PROVEN cross-tenant violation refuses even an ops command — a close
+// evaluated inside another tenant's context is not the owner's close.
+{
+  const b = baseline();
+  b.foundation!.isEntryCommand = false;
+  b.foundation!.tenantContext.facts[0]!.rowOwnerUserIds = [8];
+  record("g22-proven-leak-refuses-even-ops", evaluateLivePhaseBDispatchGate(b), "BLOCKED", "TENANT_CONTEXT_VIOLATION");
 }
 {
   const b = baseline();
   delete (b as { foundation?: unknown }).foundation;
   const r = evaluateLivePhaseBDispatchGate(b);
   const foundationRows = r.gates.filter((g) =>
-    g.key === "PROVENANCE_UNPROVEN" || g.key === "STRATEGY_NOT_LIVE_PROMOTED" || g.key === "CAPITAL_TIER_EXCEEDED");
+    g.key === "PROVENANCE_UNPROVEN" || g.key === "STRATEGY_NOT_LIVE_PROMOTED"
+    || g.key === "CAPITAL_TIER_EXCEEDED" || g.key === "TENANT_CONTEXT_VIOLATION"
+    || g.key === "EDGE_CAPACITY_EXCEEDED");
   results.push({
-    name: "g19-21-preview-caller-loud-not-evaluated",
+    name: "g19-23-preview-caller-loud-not-evaluated",
     ok: r.decision === "PASS"
-      && foundationRows.length === 3
+      && foundationRows.length === 5
       && foundationRows.every((g) => g.passed && (g.detail ?? "").includes("NOT EVALUATED")),
     got: `${r.decision} details=[${foundationRows.map((g) => g.detail ?? "null").join(" | ")}]`,
-    want: "PASS with 3 foundation rows carrying a loud NOT EVALUATED detail",
+    want: "PASS with 5 foundation rows carrying a loud NOT EVALUATED detail",
   });
 }
 

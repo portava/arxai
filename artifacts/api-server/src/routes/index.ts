@@ -613,6 +613,14 @@ router.use(adminOneClickRouter);
 import adminLearningVersionsRouter from "./adminLearningVersions.js";
 router.use(adminLearningVersionsRouter);
 
+// Edge Capacity Recording (foundation gate #23) — ADMIN/OWNER press of the
+// ruin/capacity-simulator verdict + USD deployable ceiling onto a
+// production_edges row. Writes capacity_* columns ONLY; the promotion ladder
+// stays out of reach (separate router so the adminLearningVersions
+// read-only pin for production_edges keeps holding).
+import adminEdgeCapacityRouter from "./adminEdgeCapacity.js";
+router.use(adminEdgeCapacityRouter);
+
 // Owner Decision Registry (blueprint Phase 0) — append-only rulings ledger.
 // ADMIN/OWNER gated inside the router; no update/delete surface exists.
 // Multi-broker spec §15 — GET /api/brokers/catalog. Read-only venue catalog:

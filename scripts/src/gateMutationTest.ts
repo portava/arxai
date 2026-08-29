@@ -111,6 +111,26 @@ const CASES: readonly MutationCase[] = [
     script: "test:foundation-gates",
   },
   {
+    breaks: "gate #22 must refuse a fact whose rows are owned by another tenant (proven leakage)",
+    file: "lib/domain/src/safety-contracts/foundationGates.ts",
+    find: `    const foreign = owner != null
+      ? stamp.rowOwnerUserIds.filter((id) => id !== owner)
+      : [];`,
+    replace: `    const foreign: number[] = [];`,
+    pkg: "@workspace/api-server",
+    script: "test:tenant-capacity-gates",
+  },
+  {
+    breaks: "gate #23 must refuse an edge with NO capacity estimate, never admit it",
+    file: "lib/domain/src/safety-contracts/foundationGates.ts",
+    find: `  if (e.capacityStatus == null) {
+    return { passed: false, detail: "Edge has NO capacity estimate`,
+    replace: `  if (false) {
+    return { passed: false, detail: "Edge has NO capacity estimate`,
+    pkg: "@workspace/api-server",
+    script: "test:tenant-capacity-gates",
+  },
+  {
     breaks: "the agent size multiplier must be tighten-only (a >1 multiplier may never oversize)",
     file: "lib/domain/src/self-trade/riskAwareLotSizer.ts",
     find: "  const mult = requestedMult > 0 ? Math.min(requestedMult, 1) : 1;",
