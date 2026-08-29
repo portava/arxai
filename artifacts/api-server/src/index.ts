@@ -14,6 +14,7 @@ import { startDailyHouseholdReportScheduler } from "./lib/agentEcosystem/dailyRe
 import { startHeatSnapshotRetentionWorker } from "./lib/timing/heatSnapshotRetention";
 import { startExpiredKeySweepWorker } from "./lib/registrationKeys/expiredKeySweepWorker";
 import { startExpiringKeysDigestWorker } from "./lib/registrationKeys/expiringKeysDigestWorker";
+import { startMissionDriverWorker } from "./lib/missionDriver";
 import { computeEnvChecklist, summarizeEnvChecklist } from "./lib/startup/envChecklist";
 import { runStartupReadinessCheck } from "./lib/startup/readinessCheck";
 import { seedCoreAgents } from "./lib/agentEcosystem/seedCoreAgents";
@@ -185,6 +186,16 @@ ensureSafetyCoreInitialized()
       // read-only over beta_invites, audited, fail-soft; never touches any
       // trade/live/demo/gate surface. First cycle after one interval.
       startExpiringKeysDigestWorker();
+      // F-build — Profit Mission driver. Advances ACTIVE missions unattended:
+      // protective exits, protection/goal refresh (stop-and-lock completes with
+      // no page open), timeframe expiry, blow-up/emergency pauses, and — ONLY
+      // for missions the user promoted to an auto level — scan → auto-approve →
+      // dispatch STRICTLY through the existing gated path (dispatchApprovedDraft
+      // → executeInstant → 18-gate live dispatch; paper/demo through the
+      // simulated recorder that never contacts a broker). Every gate re-runs at
+      // act time; a driver crash fails safe (mission skipped, positions
+      // untouched). Opt-out via ARX_MISSION_DRIVER_ENABLED (logged loudly).
+      startMissionDriverWorker();
       // Eagerly bootstrap the Deriv WebSocket so synthetic-index candles
       // (V10/V25/V50/V75/V100, 1Hz variants, Boom/Crash, Step) are ready
       // before the first scanner pass. Non-blocking; lazy ensureConnection

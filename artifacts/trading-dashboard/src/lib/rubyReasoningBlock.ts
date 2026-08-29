@@ -290,9 +290,11 @@ export function buildReasoningFromSetupReason(
 ): RubyReasoningBlockData {
   const r = input.reason;
   const dir = r.bias === "BUY" || r.bias === "SELL" ? r.bias : null;
+  // Canonical field first; deprecated alias as fallback for older payloads.
+  const strength = r.signalStrength ?? r.confidenceScore;
   const lowConf =
     /low|weak|uncertain|conditional/i.test(clean(r.confidenceLabel)) ||
-    (Number.isFinite(r.confidenceScore) && r.confidenceScore < 50);
+    (Number.isFinite(strength) && strength < 50);
 
   let decision: string;
   if (!dir) {

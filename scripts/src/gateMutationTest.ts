@@ -95,6 +95,30 @@ const CASES: readonly MutationCase[] = [
     script: "test:close-only-gate",
   },
   {
+    breaks: "gate #19 must refuse an entry with no provenance envelope",
+    file: "lib/domain/src/safety-contracts/foundationGates.ts",
+    find: "  if (!p.envelopePresent) {",
+    replace: "  if (false) {",
+    pkg: "@workspace/api-server",
+    script: "test:foundation-gates",
+  },
+  {
+    breaks: "gate #21 must fail CLOSED on an unrecognised capital tier, never fall back to a cap",
+    file: "lib/domain/src/safety-contracts/foundationGates.ts",
+    find: "  return CAPITAL_TIERS.find((t) => t.key === key) ?? null;",
+    replace: "  return CAPITAL_TIERS.find((t) => t.key === key) ?? CAPITAL_TIERS[0] ?? null;",
+    pkg: "@workspace/api-server",
+    script: "test:foundation-gates",
+  },
+  {
+    breaks: "the agent size multiplier must be tighten-only (a >1 multiplier may never oversize)",
+    file: "lib/domain/src/self-trade/riskAwareLotSizer.ts",
+    find: "  const mult = requestedMult > 0 ? Math.min(requestedMult, 1) : 1;",
+    replace: "  const mult = requestedMult > 0 ? requestedMult : 1;",
+    pkg: "@workspace/api-server",
+    script: "test:foundation-gates",
+  },
+  {
     breaks: "the append-only ledger guard must reject raw-SQL UPDATE/DELETE",
     file: "scripts/src/ci/check-vault-mutations.ts",
     find: `const APPEND_ONLY_SQL_TABLES = [

@@ -201,6 +201,28 @@ export const arxLiveCommandsTable = pgTable("arx_live_commands", {
   selfTradeAgentId: integer("self_trade_agent_id"),
   selfTradeDecisionId: integer("self_trade_decision_id"),
 
+  // Foundation gate #19 — command provenance envelope. Stamped by
+  // createLiveDraft for ENTRY drafts: {v, originActorType, producer{...},
+  // dataSource, sourceId, asOf, capturedAt} (see api-server
+  // lib/provenance/commandProvenance.ts). A byte-identical copy also lives in
+  // `payload.commandProvenance`, which IS covered by payload_hash — the
+  // dispatch gate compares the two, so the envelope cannot be forged between
+  // confirm and dispatch. Nullable + additive: a NULL on an entry means "no
+  // provenance" and gate #19 refuses LIVE dispatch (default-deny); close/
+  // modify ops rows leave it NULL and are exempt. Migration: additive
+  // nullable column, no backfill (drizzle push on Replit later).
+  provenanceEnvelope: jsonb("provenance_envelope"),
+
+  // Foundation gate #20 — promotion-ledger reference. Points at
+  // production_edges.id for the strategy/edge that produced this command.
+  // Deliberately NO .references() (same precedent as assignedRiskTemplateId)
+  // so tests/dev can populate either side first; the dispatch gate treats a
+  // dangling reference as "row not found" and refuses (fail closed).
+  // Nullable + additive: human manual commands leave it NULL (gate #20 not
+  // required for USER/ADMIN/OWNER actors); an autonomous entry with NULL is
+  // REFUSED at dispatch. Migration: additive nullable column, no backfill.
+  edgeId: integer("edge_id"),
+
   // R3 slice 5 — signal-provenance timestamp. When the caller knows WHEN the
   // signal/decision behind an entry was generated (scanner signal time, agent
   // decision time), createLiveDraft threads it here. Nullable + additive: a

@@ -71,6 +71,13 @@ const REAL_DEPS: SelectedMarketDeps = {
 export interface SelectedMarketHighlights {
   bias: "BUY" | "SELL" | "NEUTRAL" | "WAIT";
   confidenceLabel: "Very Low" | "Low" | "Medium" | "High";
+  /**
+   * Signal strength 0..100 — canonical name for the hand-weighted setup
+   * heuristic. UNCALIBRATED (Theme B): not a win probability. Always equals
+   * `confidenceScore` while both are emitted.
+   */
+  signalStrength: number;
+  /** @deprecated Renamed to `signalStrength` — same value, kept emitted so no client breaks. */
   confidenceScore: number;
   volatilityLabel: "Calm" | "Normal" | "Elevated" | "Choppy";
   trendState: "bullish" | "bearish" | "neutral" | "choppy";
@@ -391,6 +398,7 @@ export async function getSelectedMarketSnapshot(args: {
       highlights: {
         bias: "WAIT",
         confidenceLabel: "Very Low",
+        signalStrength: 0,
         confidenceScore: 0,
         volatilityLabel: "Calm",
         trendState: "neutral",
@@ -443,6 +451,7 @@ export async function getSelectedMarketSnapshot(args: {
   const highlights: SelectedMarketHighlights = {
     bias: biasFromAction(a.recommendedAction),
     confidenceLabel: confidenceLabel(a.confidenceScore),
+    signalStrength: Math.round(a.confidenceScore), // canonical name; equals confidenceScore
     confidenceScore: Math.round(a.confidenceScore),
     volatilityLabel: volatilityLabel(a.riskScore, a.marketBias),
     trendState: a.marketBias,

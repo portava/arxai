@@ -36,6 +36,7 @@ function read(rel: string): string {
 
 const nav = read("artifacts/trading-dashboard/src/components/layout/AppLayout.tsx");
 const shadowRoutes = read("artifacts/api-server/src/routes/shadowMode.ts");
+const app = read("artifacts/trading-dashboard/src/App.tsx");
 
 /** The nav entry line for a given href, if present. */
 function entry(href: string): string | null {
@@ -43,14 +44,21 @@ function entry(href: string): string | null {
   return rx.exec(nav)?.[0] ?? null;
 }
 
-/** Routes whose reads are admin-gated server-side. */
+/** Routes whose reads are admin-gated server-side AND still pinned in the nav. */
 const ADMIN_GATED = [
-  "/shadow-mode",
-  "/strategy-tournament",
-  "/strategy-promotion",
   "/confidence-calibration",
   "/ai-readiness-score",
   "/shadow-journal",
+];
+
+// Surface consolidation item C: these three admin-gated surfaces are Testing
+// Lab tabs now. Their nav entries are GONE (one Testing Lab entry covers
+// them, with admin-only tab triggers inside the page) and the old standalone
+// routes redirect so deep links keep working.
+const FOLDED_INTO_TESTING_LAB: Array<[href: string, tab: string]> = [
+  ["/shadow-mode", "shadow"],
+  ["/strategy-tournament", "tournament"],
+  ["/strategy-promotion", "promotion"],
 ];
 
 describe("H — the backend gate is genuinely admin-only", () => {
@@ -70,6 +78,36 @@ describe("H — no approvedOnly nav entry points at an admin-gated route", () =>
       expect(e!).toMatch(/adminOnly:\s*true/);
     });
   }
+});
+
+describe("C — folded shadow surfaces: no nav entry, redirect kept, tab exists", () => {
+  const testingLab = read("artifacts/trading-dashboard/src/pages/testing-lab.tsx");
+  for (const [href, tab] of FOLDED_INTO_TESTING_LAB) {
+    it(`${href} has NO standalone nav entry`, () => {
+      expect(entry(href)).toBeNull();
+    });
+    it(`${href} redirects to /testing-lab?tab=${tab}`, () => {
+      const rx = new RegExp(
+        `<Route path="${href.replace(/\//g, "\\/")}"><Redirect to="\\/testing-lab\\?tab=${tab}" \\/><\\/Route>`,
+      );
+      expect(app).toMatch(rx);
+    });
+    it(`Testing Lab whitelists the "${tab}" tab`, () => {
+      expect(testingLab).toMatch(new RegExp(`"${tab}"`));
+    });
+  }
+
+  it("the admin tab triggers are role-gated inside the Testing Lab", () => {
+    // The trigger block for the three folded tabs only renders for an admin
+    // session — an approved non-admin never sees a tab that would 403.
+    expect(testingLab).toMatch(/\{isAdmin && \(/);
+  });
+
+  it("the promotion tab copy keeps the not-live honesty", () => {
+    const promo = read("artifacts/trading-dashboard/src/pages/strategy-promotion.tsx");
+    expect(promo).toMatch(/never drive live execution/);
+    expect(promo).toMatch(/FUTURE_MT5_LIVE_LOCKED/);
+  });
 });
 
 describe("H — Journal points at the trader's own journal", () => {
@@ -113,7 +151,6 @@ describe("H — the assistant does not call admin data 'yours'", () => {
 const SIM_OPERATOR_GATED: Array<[href: string, routeFile: string, gate: RegExp]> = [
   ["/positions",                "artifacts/api-server/src/routes/oms.ts",             /router\.post\("\/oms\/positions\/:id\/close",\s*requireAdmin/],
   ["/orders",                   "artifacts/api-server/src/routes/oms.ts",             /router\.post\("\/orders\/create",\s*requireAdmin/],
-  ["/news-risk",                "artifacts/api-server/src/routes/marketDataLayer.ts", /router\.post\("\/news-risk\/events",\s*requireAdmin/],
   ["/autopilot-control-center", "artifacts/api-server/src/routes/autopilot.ts",       /router\.post\("\/autopilot\/start",\s*requireAdmin/],
   ["/market-replay",            "artifacts/api-server/src/routes/aiBrain.ts",         /router\.post\("\/market-replay\/start",\s*requireAdmin/],
 ];
@@ -127,6 +164,39 @@ describe("H — simulator/operator surfaces are adminOnly in the nav", () => {
       expect(read(routeFile)).toMatch(gate);
     });
   }
+});
+
+// Surface consolidation item E: /news-risk was in the batch above, but its
+// adminOnly nav flag was itself the defect — a leftover from the retired
+// simulator CRUD. The real News Risk surface (Theme G-FINISH) reads only
+// ungated endpoints (newsCalendar.ts /news-risk/latest + /economic-events/
+// upcoming), so gating the ENTRY hid a normal-user surface from normal users.
+// The surface is a tab of the Economic Calendar now; the old route redirects.
+describe("E — News Risk folded into the Economic Calendar", () => {
+  it("has NO standalone nav entry (the Economic Calendar entry covers it)", () => {
+    expect(entry("/news-risk")).toBeNull();
+  });
+
+  it("the Economic Calendar entry is NOT admin-gated", () => {
+    const e = entry("/economic-calendar");
+    expect(e).not.toBeNull();
+    expect(e!).not.toMatch(/adminOnly/);
+  });
+
+  it("/news-risk redirects to the calendar's news-risk tab", () => {
+    const page = read("artifacts/trading-dashboard/src/pages/news-risk.tsx");
+    expect(page).toMatch(/\/economic-calendar\?tab=news-risk/);
+  });
+
+  it("the folded tab reads only ungated endpoints, and the old simulator CRUD stays requireAdmin", () => {
+    const calRoutes = read("artifacts/api-server/src/routes/newsCalendar.ts");
+    expect(calRoutes).not.toMatch(/router\.get\("\/news-risk\/latest",\s*requireAdmin/);
+    expect(calRoutes).not.toMatch(/router\.get\("\/economic-events\/upcoming",\s*requireAdmin/);
+    // The in-memory simulator store's mutations remain admin-gated — folding
+    // the READ surface loosened nothing.
+    const sim = read("artifacts/api-server/src/routes/marketDataLayer.ts");
+    expect(sim).toMatch(/router\.post\("\/news-risk\/events",\s*requireAdmin/);
+  });
 });
 
 describe("H — authorization was NOT loosened to fix a menu bug", () => {

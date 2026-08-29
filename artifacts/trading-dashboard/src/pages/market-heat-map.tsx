@@ -14,6 +14,8 @@ import { useChartSymbol, bareSymbol } from "@/lib/use-chart-symbol";
 import { useAssistantName } from "@/lib/assistant-name";
 import { PageTabs } from "@/components/ui/PageTabs";
 import { useTradingMode } from "@/hooks/useTradingMode";
+import { useViewMode } from "@/hooks/useViewMode";
+import { GlobalMarketHeatCard } from "@/components/scanner/GlobalMarketHeatCard";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -22,7 +24,7 @@ import {
   Thermometer, Clock, AlertTriangle, TrendingUp, TrendingDown, Minus,
   Activity, Radio, Newspaper, BarChart2, History, Database,
   ShieldAlert, ArrowRight, CheckCircle2, XCircle, Pause, Info,
-  CalendarDays, Flame, Zap, Star,
+  CalendarDays, Flame, Zap, Star, Globe,
 } from "lucide-react";
 
 const MULTI_SYMBOLS = "EURUSD,GBPUSD,USDJPY,XAUUSD,GBPJPY,USDCAD";
@@ -1345,6 +1347,7 @@ export default function MarketHeatMapPage() {
   const [chartSymbol] = useChartSymbol();
   const symbol = bareSymbol(chartSymbol);
   const { name } = useAssistantName();
+  const { realIsAdmin } = useViewMode();
   const tz = useMemo(() => {
     try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return undefined; }
   }, []);
@@ -1381,6 +1384,32 @@ export default function MarketHeatMapPage() {
       label: "Now",
       icon: <Thermometer className="h-3.5 w-3.5" />,
       content: <NowTab data={data} isLoading={isLoading} symbol={symbol} />,
+    },
+    {
+      // Surface consolidation item A — heat is ONE surface. The global
+      // country/currency/synthetic heat card (previously a second heat surface
+      // on the Market Scanner's Focus tab) now lives here as its own tab.
+      // SOURCE RECONCILIATION: this tab reads the read-only market-heat
+      // service (GET /api/market-heat — news + calendar + price providers,
+      // honest `unavailable` when a provider is missing). Every other tab on
+      // this page reads the timing brain. Each view names its own engine and
+      // neither is re-labelled as the other; where they disagree, the timing
+      // brain remains authoritative for session/timing windows and the heat
+      // service for global news/country heat.
+      id: "global-heat",
+      label: "Global Heat",
+      icon: <Globe className="h-3.5 w-3.5" />,
+      content: (
+        <div className="space-y-3">
+          <p className="text-xs text-muted-foreground">
+            Country, currency and synthetic heat from the global market-heat
+            service (news + calendar + price). The other tabs on this page read
+            {" "}{name}&apos;s timing brain — different engines, each honest about
+            its own sources.
+          </p>
+          <GlobalMarketHeatCard />
+        </div>
+      ),
     },
     {
       id: "today",
@@ -1430,14 +1459,20 @@ export default function MarketHeatMapPage() {
       icon: <History className="h-3.5 w-3.5" />,
       content: <ReplayTab />,
     },
-    {
-      id: "admin-status",
-      label: "Admin Data Status",
-      icon: <Database className="h-3.5 w-3.5" />,
-      content: <AdminDataStatusTab data={data} isLoading={isLoading} />,
-    },
+    // The data-status tab is an operator diagnostics view labelled "Admin";
+    // hide it from non-admin sessions so the nav never advertises an admin
+    // surface to a normal trader (same defect class as Theme H). The data it
+    // renders is the page's own timing-brain read — no extra endpoint.
+    ...(realIsAdmin
+      ? [{
+          id: "admin-status",
+          label: "Admin Data Status",
+          icon: <Database className="h-3.5 w-3.5" />,
+          content: <AdminDataStatusTab data={data} isLoading={isLoading} />,
+        }]
+      : []),
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [data, isLoading, multiLoading, results, symbol]);
+  ], [data, isLoading, multiLoading, results, symbol, realIsAdmin]);
 
   return (
     <div className="space-y-4 pb-24 min-h-0">

@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Radar, Play, Square, RefreshCw, Send, TrendingUp, TrendingDown, Sliders, Target, Layers, Wand2 } from "lucide-react";
+import { Radar, Play, Square, RefreshCw, Send, TrendingUp, TrendingDown, Sliders, Target, Layers, Thermometer, ArrowRight } from "lucide-react";
 import { Link } from "wouter";
 import { SetupQualityBadge } from "@/components/trading/SetupQualityBadge";
 import { RubySetupReason } from "@/components/scanner/RubySetupReason";
@@ -31,13 +31,11 @@ import { useChartSymbol, bareSymbol, setChartSymbol } from "@/lib/use-chart-symb
 import { resolveSymbol } from "@/lib/symbolRegistry";
 import { useViewMode } from "@/hooks/useViewMode";
 import { RubyScalpFocusCard } from "@/components/scanner/RubyScalpFocusCard";
-import { RubyScalpRanking } from "@/components/scanner/RubyScalpRanking";
 import { RubyMarketReadCard } from "@/components/scanner/RubyMarketReadCard";
-import { GlobalMarketHeatCard } from "@/components/scanner/GlobalMarketHeatCard";
 import { TimingIntelligenceCard } from "@/components/scanner/TimingIntelligenceCard";
 import { ScannerReadGate } from "@/components/scanner/ScannerReadGate";
 import { BroadScanOpportunityMap } from "@/components/scanner/BroadScanOpportunityMap";
-import { RubyScalpBuilder } from "@/components/scanner/RubyScalpBuilder";
+import { RubyScalpScan } from "@/components/scanner/RubyScalpScan";
 import { RubyScalpBasketPanel } from "@/components/scanner/RubyScalpBasketPanel";
 import { RubyScalpReviewPanel } from "@/components/scanner/RubyScalpReviewPanel";
 import { safeJson } from "@/lib/api/safeJson";
@@ -47,7 +45,9 @@ import type { ScalpResult } from "@workspace/api-client-react";
 type Opp = {
   symbol: string; timeframe: string;
   bias: string; recommendedAction: string;
-  setupType: string; confidenceScore: number; riskScore: number;
+  // signalStrength is the canonical wire name; confidenceScore is the
+  // deprecated dual-emit alias (kept for the live-intent submit payload).
+  setupType: string; signalStrength?: number; confidenceScore: number; riskScore: number;
   entrySniperScore: number; riskRewardRatio: number;
   reasonForTrade: string; reasonToAvoid: string;
   rulesPassed: string[]; rulesFailed: string[];
@@ -176,6 +176,7 @@ export function scalpResultToSignal(r: ScalpResult) {
     timeframe: SCALP_TICKET_TIMEFRAME,
     recommendedAction: r.direction ?? "BUY",
     bias: r.direction ?? "NEUTRAL",
+    signalStrength: r.qualityScore,
     confidenceScore: r.qualityScore,
     reasonForTrade: r.plainEnglishReason,
     reasonToAvoid: r.riskWarning ?? r.noTradeReason ?? undefined,
@@ -544,7 +545,18 @@ export default function MarketScanner() {
     <div className="space-y-4">
       <MasterLiveAccessBanner />
       <HighImpactEventBanner />
-      <GlobalMarketHeatCard />
+      {/* Global market heat lives on the Market Heat Map page now (surface
+          consolidation item A — heat is ONE surface). A compact link keeps
+          at-a-glance heat one tap away from where trades are placed. */}
+      <Link
+        href="/market-heat-map"
+        className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-xs text-txt-secondary hover:border-primary/40 hover:text-foreground"
+        data-testid="scanner-global-heat-link"
+      >
+        <Thermometer className="h-3.5 w-3.5 text-warning" />
+        Global market heat — country, currency and synthetic heat on the Market Heat Map
+        <ArrowRight className="ml-auto h-3.5 w-3.5" />
+      </Link>
       <SelectedMarketPanel />
       <ScannerDataHealthPanel />
       <RubyScalpBasketPanel />
@@ -553,12 +565,6 @@ export default function MarketScanner() {
       <ScannerReadGate symbol={symbolsTabActive} />
       <TimingIntelligenceCard symbol={symbolsTabActive} />
       <RubyMarketReadCard symbol={symbolsTabActive} />
-    </div>
-  );
-
-  const scalpBuilderTab = (
-    <div className="space-y-4">
-      <RubyScalpBuilder onBuild={openScalpTrade} />
     </div>
   );
 
@@ -653,7 +659,9 @@ export default function MarketScanner() {
                 {(() => {
                   const c = cohesionMap.get(o.symbol);
                   const mult = c?.confidenceMultiplier ?? 1;
-                  const adjusted = mult < 1 ? Math.round(o.confidenceScore * mult) : o.confidenceScore;
+                  // Canonical field first; deprecated alias as fallback for older payloads.
+                  const strength = o.signalStrength ?? o.confidenceScore;
+                  const adjusted = mult < 1 ? Math.round(strength * mult) : strength;
                   return (
                     <>
                       <div className="grid grid-cols-3 gap-1 text-center">
@@ -662,7 +670,7 @@ export default function MarketScanner() {
                           <div className="font-mono font-semibold" data-testid={`scanner-conf-${o.symbol}`}>
                             {adjusted}
                             {mult < 1 && (
-                              <span className="ml-1 text-[10px] font-normal text-muted-foreground line-through">{o.confidenceScore}</span>
+                              <span className="ml-1 text-[10px] font-normal text-muted-foreground line-through">{strength}</span>
                             )}
                           </div>
                         </div>
@@ -687,6 +695,7 @@ export default function MarketScanner() {
                   signal={{
                     symbol: o.symbol, timeframe: o.timeframe,
                     recommendedAction: o.recommendedAction, bias: o.bias,
+                    signalStrength: o.signalStrength ?? o.confidenceScore,
                     confidenceScore: o.confidenceScore, riskScore: o.riskScore,
                     entrySniperScore: o.entrySniperScore, reasonForTrade: o.reasonForTrade,
                     reasonToAvoid: o.reasonToAvoid, setupType: o.setupType,
@@ -825,16 +834,25 @@ export default function MarketScanner() {
         </CardContent>
       </Card>
 
-      <RubyScalpRanking onPick={handleScalpPick} onBuild={openScalpTrade} />
+      {/* ONE scalp scan panel (merge-map item D): the old Broad ranking and
+          the separate Scalp Builder tab are folded into RubyScalpScan — rank
+          the universe by default, or open the optional goal to find the single
+          best fit. Same shared engine + live-quote path either way. */}
+      <RubyScalpScan onPick={handleScalpPick} onBuild={openScalpTrade} />
 
-      <BroadScanOpportunityMap
-        marketGroup={opportunityMapGroup(universe)}
-        selectedSymbol={symbolsTabActive}
-        onPick={handleSymbolPick}
-        onScanned={setMapScanned}
-      />
+      {/* Opportunity map + the engine feed results, stacked as one results
+          column: the map is the categorized read of the SAME scan the legacy
+          results block lists card-by-card below it. */}
+      <div className="space-y-3" data-testid="broad-scan-results">
+        <BroadScanOpportunityMap
+          marketGroup={opportunityMapGroup(universe)}
+          selectedSymbol={symbolsTabActive}
+          onPick={handleSymbolPick}
+          onScanned={setMapScanned}
+        />
 
-      {resultsBlock}
+        {resultsBlock}
+      </div>
 
       {activeUniverse && activeUniverse.symbols.length > 0 && (
         <CollapsibleSection
@@ -920,8 +938,10 @@ export default function MarketScanner() {
         variant="pill"
         tabs={[
           { id: "focus",      label: "Focus",      icon: <Target className="h-3.5 w-3.5" />, content: <SectionErrorBoundary section="Focus">{focusTab}</SectionErrorBoundary> },
+          // The former "Scalp Builder" tab is folded into Broad Scan as the
+          // optional goal picker on RubyScalpScan. PageTabs validates the
+          // persisted tab id, so a stored "scalp-builder" falls back to Focus.
           { id: "broad-scan", label: "Broad Scan", icon: <Radar className="h-3.5 w-3.5" />,  content: <SectionErrorBoundary section="Broad Scan">{broadScanTab}</SectionErrorBoundary> },
-          { id: "scalp-builder", label: "Scalp Builder", icon: <Wand2 className="h-3.5 w-3.5" />, content: <SectionErrorBoundary section="Scalp Builder">{scalpBuilderTab}</SectionErrorBoundary> },
           { id: "symbols",    label: "Symbols",    icon: <Layers className="h-3.5 w-3.5" />, content: <SectionErrorBoundary section="Symbols">{symbolsTab}</SectionErrorBoundary> },
         ]}
       />
@@ -934,6 +954,7 @@ export default function MarketScanner() {
           signal={{
             symbol: tradeTarget.opp.symbol, timeframe: tradeTarget.opp.timeframe,
             recommendedAction: tradeTarget.opp.recommendedAction, bias: tradeTarget.opp.bias,
+            signalStrength: tradeTarget.opp.signalStrength ?? tradeTarget.opp.confidenceScore,
             confidenceScore: tradeTarget.opp.confidenceScore, riskScore: tradeTarget.opp.riskScore,
             entrySniperScore: tradeTarget.opp.entrySniperScore,
             reasonForTrade: tradeTarget.opp.reasonForTrade, reasonToAvoid: tradeTarget.opp.reasonToAvoid,

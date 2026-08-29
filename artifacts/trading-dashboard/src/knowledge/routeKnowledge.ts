@@ -40,9 +40,9 @@ export const ROUTE_KNOWLEDGE: RouteKnowledge[] = [
   { route: "/market-health", title: "Market Health", purpose: "Volatility, spread, and session quality indicators.", related: ["/market-sessions"] },
   { route: "/market-sessions", title: "Market Sessions", purpose: "Schedule of London/NY/Tokyo/Sydney sessions and overlap windows." },
   { route: "/economic-calendar", title: "Economic Calendar", purpose: "Upcoming releases that move FX and indices.", related: ["/news-risk"] },
-  { route: "/calendar", title: "Calendar", purpose: "Trading calendar with sessions, news, and your scheduled reviews.", related: ["/economic-calendar"] },
-  { route: "/trading-calendar", title: "Trading Calendar", purpose: "Calendar focused on planned trading windows.", related: ["/calendar"] },
-  { route: "/news-risk", title: "News Risk", purpose: "Filters and warnings around high-impact news events.", related: ["/economic-calendar"] },
+  { route: "/calendar", title: "Calendar (moved)", purpose: "Redirects to the Economic Calendar, the one calendar surface.", related: ["/economic-calendar"] },
+  { route: "/trading-calendar", title: "Trading Calendar", purpose: "Calendar focused on planned trading windows.", related: ["/economic-calendar"] },
+  { route: "/news-risk", title: "News Risk (moved)", purpose: "Redirects to the Economic Calendar's News Risk tab — same real calendar-backed verdicts.", related: ["/economic-calendar"] },
 
   // ── AI ─────────────────────────────────────────────────────────────────
   { route: "/ai-trading", title: "AI Trade Setup", purpose: "AI-assisted entry / exit / risk suggestions for the current symbol.", safety: "Suggestions only — orders never auto-send.", related: ["/ai-decisions", "/ai-readiness-score"] },
@@ -90,7 +90,7 @@ export const ROUTE_KNOWLEDGE: RouteKnowledge[] = [
   // /active-paper-session) removed in Phase 3 — feature retired.
   { route: "/replay-simulator", title: "Replay Simulator", purpose: "Replay historical bars through the strategy + order engine." },
   { route: "/market-replay", title: "Market Replay", purpose: "Bar-by-bar replay of recorded sessions." },
-  { route: "/shadow-mode", title: "Shadow Mode", purpose: "Strategy runs and journals what it WOULD do — no orders sent.", related: ["/shadow-journal"] },
+  { route: "/shadow-mode", title: "Shadow Mode (moved)", purpose: "Admin: redirects to the Testing Lab's Shadow Mode tab — the strategy journals what it WOULD do, no orders sent.", related: ["/testing-lab", "/shadow-journal"] },
   { route: "/shadow-journal", title: "Shadow Journal", purpose: "Journal of shadow-mode hypothetical trades." },
   // /backtest is a redirect to Testing Lab, kept only so existing links and
   // bookmarks resolve. Its old description ("Upload candle CSV, run a
@@ -104,8 +104,8 @@ export const ROUTE_KNOWLEDGE: RouteKnowledge[] = [
   // ── Strategy ───────────────────────────────────────────────────────────
   { route: "/strategy-settings", title: "Strategy Settings", purpose: "Toggle the 5 modular strategies and their parameters." },
   { route: "/strategy-lab", title: "Strategy Lab", purpose: "Experiment with strategy variants in isolation." },
-  { route: "/strategy-promotion", title: "Strategy Promotion", purpose: "Promote a tested strategy from lab → shadow → demo → live-eligible." },
-  { route: "/strategy-tournament", title: "Strategy Tournament", purpose: "Bracket-style comparison of strategies on the same data." },
+  { route: "/strategy-promotion", title: "Strategy Promotion (moved)", purpose: "Admin: redirects to the Testing Lab's Promotion tab — a research ledger of strategy levels that never drives live execution.", related: ["/testing-lab"] },
+  { route: "/strategy-tournament", title: "Strategy Tournament (moved)", purpose: "Admin: redirects to the Testing Lab's Tournament tab — shadow-stat comparison of strategies.", related: ["/testing-lab"] },
   { route: "/rule-contracts", title: "Rule Contracts", purpose: "Formal contracts the bot must satisfy (entry/exit/risk)." },
 
   // ── Risk ───────────────────────────────────────────────────────────────

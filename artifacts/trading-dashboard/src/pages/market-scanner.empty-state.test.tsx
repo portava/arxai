@@ -76,7 +76,7 @@ vi.mock("lucide-react", () => {
   return {
     Radar: Stub, Play: Stub, Square: Stub, RefreshCw: Stub, Send: Stub,
     TrendingUp: Stub, TrendingDown: Stub, Sliders: Stub, Target: Stub,
-    Layers: Stub, Wand2: Stub,
+    Layers: Stub, Wand2: Stub, Thermometer: Stub, ArrowRight: Stub,
     AlertTriangle: Stub, Info: Stub, CheckCircle2: Stub, AlertCircle: Stub, ChevronDown: Stub,
     Flame: Stub, Loader2: Stub, Globe: Stub, Activity: Stub, Newspaper: Stub,
     CalendarClock: Stub, Map: Stub, LayoutGrid: Stub,
@@ -147,7 +147,7 @@ vi.mock("@/components/scanner/ScannerChartPanel", () => ({ ScannerChartPanel: ()
 vi.mock("@/components/live/TradeHealthPanel", () => ({ TradeHealthPanel: () => null }));
 vi.mock("@/components/scanner/ScannerHeaderSummary", () => ({ ScannerHeaderSummary: () => null }));
 vi.mock("@/components/scanner/RubyScalpFocusCard", () => ({ RubyScalpFocusCard: () => null }));
-vi.mock("@/components/scanner/RubyScalpRanking", () => ({ RubyScalpRanking: () => null }));
+vi.mock("@/components/scanner/RubyScalpScan", () => ({ RubyScalpScan: () => null }));
 vi.mock("@/components/scanner/RubyMarketReadCard", () => ({ RubyMarketReadCard: () => null }));
 vi.mock("@/components/scanner/TimingIntelligenceCard", () => ({ TimingIntelligenceCard: () => null }));
 vi.mock("@/components/scanner/ScannerReadGate", () => ({ ScannerReadGate: () => null }));
@@ -165,7 +165,6 @@ vi.mock("@/components/scanner/BroadScanOpportunityMap", () => ({
     return null;
   },
 }));
-vi.mock("@/components/scanner/RubyScalpBuilder", () => ({ RubyScalpBuilder: () => null }));
 vi.mock("@/components/scanner/RubyScalpBasketPanel", () => ({ RubyScalpBasketPanel: () => null }));
 vi.mock("@/components/scanner/RubyScalpReviewPanel", () => ({ RubyScalpReviewPanel: () => null }));
 

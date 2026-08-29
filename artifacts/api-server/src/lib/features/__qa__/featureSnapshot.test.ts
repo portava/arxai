@@ -36,8 +36,10 @@ import { fileURLToPath } from "node:url";
 import {
   buildFeatureSnapshot,
   candlePointInTimeReader,
+  ewmaSigma,
   inferBarMinutes,
   latestCloseIso,
+  EWMA_LAMBDA,
   FEATURE_SET_ID,
   LookaheadError,
   MIN_SIGMA_CANDLES,
@@ -85,6 +87,7 @@ function scannerOpp(over: Partial<ScannerOpportunity> = {}): ScannerOpportunity 
   return {
     symbol: "EURUSD", timeframe: "M5",
     bias: "bullish", recommendedAction: "BUY", setupType: "Continuation",
+    signalStrength: 88, // dual-emit alias — always equals confidenceScore
     confidenceScore: 88, riskScore: 20, entrySniperScore: 80, riskRewardRatio: 2,
     reasonForTrade: "Support hold", reasonToAvoid: "",
     rulesPassed: [], rulesFailed: [],
@@ -220,6 +223,65 @@ test("only the still-forming tail is excluded when asOf sits mid-series", () => 
   const snapOnlyEligible = buildFeatureSnapshot("XAUUSD", candles.slice(0, 40), asOf);
   assert.equal(snap.available, true);
   assert.equal(JSON.stringify(snap), JSON.stringify(snapOnlyEligible));
+});
+
+// ── EWMA measured-σ estimator (fset_v2) ─────────────────────────────────────
+
+test("fset_v2: the measured-σ math changed, so the engine version MUST say so", () => {
+  // The reader's estimator moved from a flat sample stdev to a RiskMetrics
+  // EWMA. FEATURE_SET_ID discipline: changed math without a bump would poison
+  // replay lineage — this pin fails if anyone reverts the bump but not the math.
+  assert.equal(FEATURE_SET_ID, "fset_v2");
+});
+
+test("EWMA: a constant-|r| return series yields exactly |r| (fixed point)", () => {
+  // With every squared return equal, both the seed and the recursion sit at
+  // the same fixed point — the estimator must reproduce |r| to the bit.
+  const r = 0.0025;
+  const returns = Array.from({ length: 40 }, (_, i) => (i % 2 === 0 ? r : -r));
+  assert.ok(
+    Math.abs(ewmaSigma(returns) - r) < r * 1e-12,
+    `fixed point must reproduce |r| to fp precision (got ${ewmaSigma(returns)})`,
+  );
+
+  // And through the reader: alternating closes 100 ↔ 100·e^r on 1-minute bars
+  // produce exactly those returns, so σ_1min = r (barMinutes = 1).
+  const candles: FeatureCandle[] = Array.from({ length: 41 }, (_, i) => {
+    const close = i % 2 === 0 ? 100 : 100 * Math.exp(r);
+    return {
+      time: new Date(T0 + i * M1).toISOString(),
+      open: close, high: close, low: close, close,
+    };
+  });
+  const reader = candlePointInTimeReader(candles);
+  const fact = reader.latestFact<number>(SIGMA_KEY, latestCloseIso(candles)!);
+  assert.ok(fact, "41 bars clear the honesty floor");
+  assert.ok(Math.abs(fact!.value - r) < 1e-15, `σ_1min must equal r (got ${fact!.value})`);
+});
+
+test("EWMA weights the CURRENT regime — a flat stdev cannot tell these apart", () => {
+  const calm = 0.0005;
+  const shock = 0.005;
+  // Same multiset of returns, opposite placement of the volatile stretch.
+  const shockLast = [...Array(50).fill(calm), ...Array(5).fill(shock)];
+  const shockFirst = [...Array(5).fill(shock), ...Array(50).fill(calm)];
+  const recent = ewmaSigma(shockLast);
+  const stale = ewmaSigma(shockFirst);
+  // A flat sample stdev is order-invariant; the EWMA must NOT be.
+  assert.ok(
+    recent > stale * 1.5,
+    `a shock in the newest bars must dominate (recent=${recent}, stale=${stale})`,
+  );
+  assert.ok(EWMA_LAMBDA > 0.9 && EWMA_LAMBDA < 1, "RiskMetrics-range decay");
+});
+
+test("EWMA honesty edges: empty series → 0; all-zero returns stay refused downstream", () => {
+  assert.equal(ewmaSigma([]), 0);
+  assert.equal(ewmaSigma([0, 0, 0]), 0);
+  // The reader path still refuses a flat series (σ=0 is never 'riskless').
+  const flat = mkCandles(60, { wobble: 0 });
+  const snap = buildFeatureSnapshot("XAUUSD", flat, latestCloseIso(flat)!);
+  assert.equal(snap.available, false);
 });
 
 // ── Anchor helpers ──────────────────────────────────────────────────────────

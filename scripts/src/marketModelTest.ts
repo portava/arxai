@@ -34,6 +34,8 @@ import {
   expectedNet,
   band,
   annualiseFromMinute,
+  expectedMoveOverHorizon,
+  resolveSigma1min,
   RANGE_COEFF,
   NET_COEFF,
   MINUTES_PER_YEAR,
@@ -69,13 +71,27 @@ export async function run(): Promise<CiTestResultLike> {
   for (const s of ["EURUSD", "XAUUSD", "GBPJPY"]) {
     assert(!isSyntheticInstrument(s) && venueOf(s) === "FX", `${s} → FX`);
   }
+  // Crypto trades 24/7 — the old FX default said a weekend BTC position had
+  // μ = 0 while the market was diffusing the whole time.
+  for (const s of ["BTCUSD", "ETHUSD", "btcusd"]) {
+    assert(venueOf(s) === "CRYPTO_24_7", `${s} → CRYPTO_24_7`);
+  }
+  // Exchange-traded stocks/indices have per-exchange RTH schedules this module
+  // does not hold — they classify as EQUITY_RTH and get NO calendar (honest
+  // refusal), never the silently-wrong FX 24×5 window.
+  for (const s of ["AAPL", "US30", "US500", "TSLA"]) {
+    assert(venueOf(s) === "EQUITY_RTH", `${s} → EQUITY_RTH`);
+    assert(getTradingCalendar(s) === null, `${s} has no honest calendar → null, not a guess`);
+  }
+  // An unknown symbol keeps the long-standing FX default.
+  assert(venueOf("ZZZUNKNOWN") === "FX", "unknown symbol keeps the FX default");
 
   // ── 2. The headline: μ over a weekend ──────────────────────────────────────
   // Friday 2026-06-19 00:00 UTC → Monday 2026-06-22 00:00 UTC.
   // 72 wall-clock hours; the FX week closes Fri 22:00 and reopens Sun 22:00, so
   // only Fri 00:00–22:00 (22h) + Sun 22:00–Mon 00:00 (2h) = 24h is open.
   console.log("\nμ over a weekend — the whole point of trading time");
-  const fx = getTradingCalendar("EURUSD");
+  const fx = getTradingCalendar("EURUSD")!;
   const friday = Date.UTC(2026, 5, 19, 0, 0, 0);
   const monday = Date.UTC(2026, 5, 22, 0, 0, 0);
 
@@ -88,9 +104,15 @@ export async function run(): Promise<CiTestResultLike> {
   assert(fx.gapsBetween(friday, monday) === 1, "exactly 1 session boundary crossed");
 
   // Synthetics never close: μ IS wall clock, and there is no gap to cross.
-  const syn = getTradingCalendar("Volatility 75 Index");
+  const syn = getTradingCalendar("Volatility 75 Index")!;
   near(syn.muMinutes(friday, monday), 4320, 0, "synthetic μ equals wall-clock (24/7)");
   assert(syn.gapsBetween(friday, monday) === 0, "synthetic crosses 0 boundaries (never closes)");
+
+  // Crypto too: a weekend BTC horizon is pure diffusion, no gap.
+  const btc = getTradingCalendar("BTCUSD")!;
+  near(btc.muMinutes(friday, monday), 4320, 0, "crypto μ equals wall-clock across a weekend");
+  assert(btc.gapsBetween(friday, monday) === 0, "crypto crosses 0 boundaries (24/7)");
+  assert(btc.venue === "CRYPTO_24_7", "the crypto calendar carries its own venue tag");
 
   // ── 3. Calendar mechanics ──────────────────────────────────────────────────
   console.log("\nCalendar mechanics");
@@ -211,7 +233,117 @@ export async function run(): Promise<CiTestResultLike> {
   near(expectedRange(v75Day, 1000), 62.63, 0.05, "expected 24h range ≈ 62.6 price units");
   near(expectedNet(v75Day, 1000), 31.32, 0.05, "expected 24h net move ≈ 31.3 price units");
 
-  // ── 9. Import isolation from the dispatch/gate path ────────────────────────
+  // ── 9. ExpectedMoveService — the horizon-level composition ─────────────────
+  // The spec's V75 worked example (§3, price 100 000): expected RANGE per
+  // horizon. These are the numbers a stop must survive; pinning the table pins
+  // the σ closed form, the √t scaling and the 1.596 coefficient at once.
+  console.log("\nExpectedMoveService — V75 horizon table @ P = 100 000");
+  const P0 = 100_000;
+  const anchor = Date.UTC(2026, 5, 17, 12, 0, 0); // midweek Wednesday
+  const v75Table: Array<[label: string, minutes: number, range: number]> = [
+    ["1 minute", 1, 165],
+    ["1 hour", 60, 1279],
+    ["4 hours", 240, 2557],
+    ["daily", 1440, 6264],
+    ["weekly", 10_080, 16_570],
+  ];
+  for (const [label, minutes, want] of v75Table) {
+    const em = expectedMoveOverHorizon({
+      instrument: "Volatility 75 Index",
+      nowMs: anchor,
+      horizonMinutes: minutes,
+      price: P0,
+    });
+    assert(em.available, `V75 ${label}: available (closed form, zero external data)`);
+    if (em.available) {
+      near(em.value, want, want * 0.001, `V75 ${label} expected range ≈ ${want}`);
+      near(em.expectedRange / em.expectedNet, 2, 1e-12, `V75 ${label}: range = 2 × net`);
+      near(em.muMinutes, minutes, 0, `V75 ${label}: μ is wall-clock (24/7)`);
+      assert(em.gaps === 0, `V75 ${label}: no session boundary`);
+      assert(em.provenance === "ANALYTIC", `V75 ${label}: provenance ANALYTIC`);
+      near(em.bandTwoSigma, 2 * em.bandOneSigma, 1e-9, `V75 ${label}: 2σ band is twice 1σ`);
+    }
+  }
+
+  // Flavor selection: value carries the flavor-selected number.
+  {
+    const range = expectedMoveOverHorizon({ instrument: "R_75", nowMs: anchor, horizonMinutes: 60, price: P0 });
+    const net = expectedMoveOverHorizon({ instrument: "R_75", nowMs: anchor, horizonMinutes: 60, price: P0, flavor: "net" });
+    const sig = expectedMoveOverHorizon({ instrument: "R_75", nowMs: anchor, horizonMinutes: 60, price: P0, flavor: "sigma" });
+    assert(range.available && net.available && sig.available, "all three flavors resolve for R_75");
+    if (range.available && net.available && sig.available) {
+      near(range.value / net.value, 2, 1e-12, "flavor range = 2 × flavor net");
+      near(range.value / sig.value, RANGE_COEFF, 1e-12, "flavor range = 1.596 × flavor sigma");
+    }
+  }
+
+  console.log("\nExpectedMoveService — honest refusals (never a guessed number)");
+  // A non-synthetic with no measured σ refuses — σ cannot be guessed.
+  {
+    const em = expectedMoveOverHorizon({ instrument: "EURUSD", nowMs: anchor, horizonMinutes: 60, price: 1.1 });
+    assert(!em.available && em.reason === "SIGMA_UNAVAILABLE", "EURUSD without measured σ → SIGMA_UNAVAILABLE");
+  }
+  // A stock/index has no honest calendar — refuse, never borrow FX's window.
+  {
+    const em = expectedMoveOverHorizon({ instrument: "US500", nowMs: anchor, horizonMinutes: 60, price: 5000, sigma1min: 0.0002 });
+    assert(!em.available && em.reason === "CALENDAR_UNAVAILABLE", "US500 → CALENDAR_UNAVAILABLE (no RTH calendar yet)");
+  }
+  // Degenerate inputs refuse rather than emit NaN.
+  {
+    const em = expectedMoveOverHorizon({ instrument: "R_75", nowMs: anchor, horizonMinutes: 0, price: P0 });
+    assert(!em.available && em.reason === "INVALID_INPUT", "zero horizon → INVALID_INPUT");
+  }
+
+  console.log("\nExpectedMoveService — FX measured path + the weekend gap term");
+  const sigmaFx = 0.0002; // a measured per-minute σ the caller supplies
+  // Intraday midweek: no boundary crossed, no σ_gap needed.
+  {
+    const em = expectedMoveOverHorizon({ instrument: "EURUSD", nowMs: anchor, horizonMinutes: 240, price: 1.1, sigma1min: sigmaFx });
+    assert(em.available, "midweek 4h FX horizon resolves from measured σ alone");
+    if (em.available) {
+      assert(em.provenance === "MEASURED", "measured σ carries MEASURED provenance");
+      near(em.muMinutes, 240, 0, "midweek μ = wall-clock inside the session");
+      assert(em.gaps === 0, "no boundary crossed midweek");
+      near(em.sigmaTau, sigmaFx * Math.sqrt(240), 1e-15, "σ_τ = σ_1min·√μ with no gap term");
+    }
+  }
+  // Friday 12:00 + 24h crosses the weekly close: the gap term is REQUIRED.
+  const friNoon = Date.UTC(2026, 5, 19, 12, 0, 0);
+  {
+    const refused = expectedMoveOverHorizon({ instrument: "EURUSD", nowMs: friNoon, horizonMinutes: 1440, price: 1.1, sigma1min: sigmaFx });
+    assert(
+      !refused.available && refused.reason === "GAP_SIGMA_UNAVAILABLE",
+      "weekend-crossing horizon without σ_gap REFUSES (dropping the gap would understate risk)",
+    );
+    const withGap = expectedMoveOverHorizon({ instrument: "EURUSD", nowMs: friNoon, horizonMinutes: 1440, price: 1.1, sigma1min: sigmaFx, sigmaGap: 0.004 });
+    assert(withGap.available, "the same horizon WITH a measured σ_gap resolves");
+    if (withGap.available) {
+      assert(withGap.gaps === 1, "exactly 1 boundary crossed (forward anchoring from Friday noon)");
+      near(withGap.muMinutes, 600, 0, "μ = Fri 12:00→22:00 only (10h open)");
+      near(
+        withGap.sigmaTau,
+        Math.sqrt(sigmaFx * sigmaFx * 600 + 0.004 * 0.004),
+        1e-15,
+        "σ_τ composes diffusion + gap in VARIANCE",
+      );
+    }
+    // Anchored just AFTER the weekend (Sunday 22:00), the same 24h horizon
+    // crosses nothing — forward anchoring decides the gap count.
+    const sunOpen = Date.UTC(2026, 5, 21, 22, 0, 0);
+    const after = expectedMoveOverHorizon({ instrument: "EURUSD", nowMs: sunOpen, horizonMinutes: 1440, price: 1.1, sigma1min: sigmaFx });
+    assert(after.available, "the same horizon anchored at the Sunday open needs no σ_gap");
+    if (after.available) assert(after.gaps === 0, "…because it crosses 0 boundaries");
+  }
+
+  // σ resolution order: analytic beats a supplied estimate for a synthetic.
+  {
+    const r = resolveSigma1min("Volatility 75 Index", 0.123);
+    assert(r !== null && r.provenance === "ANALYTIC", "synthetic σ resolution is ANALYTIC");
+    near(r!.sigma1min, synthSigma1min(75), 0, "…and equals the closed form, never the estimate");
+    assert(resolveSigma1min("EURUSD", null) === null, "no measured σ ⇒ null, never a default");
+  }
+
+  // ── 10. Import isolation from the dispatch/gate path ───────────────────────
   // Asserted here as a behavioural fact — the modules are pure arithmetic and
   // take every instant as an argument, so they cannot read a clock or a feed.
   // (The source-level import ban is enforced separately by ci:guards.)

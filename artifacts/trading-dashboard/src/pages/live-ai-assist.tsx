@@ -13,6 +13,9 @@ import { useAssistantName } from "@/lib/assistant-name";
 type TradeCard = {
   symbol: string; direction: "BUY" | "SELL"; setup: string;
   entry: number; stopLoss: number; takeProfit: number;
+  // signalStrength is canonical; confidenceScore is the deprecated wire alias
+  // still sent to the live-intent endpoint (stored column keeps the old name).
+  signalStrength: number;
   confidenceScore: number; riskScore: number; riskRewardRatio: number;
   reasonForTrade: string; invalidationReason: string;
   marketCondition: string;
@@ -71,7 +74,10 @@ function snapshotToState(snap: any): FeedState {
       entry,
       stopLoss: Number(h.suggestedStop ?? 0),
       takeProfit: Number(h.suggestedTakeProfit ?? 0),
-      confidenceScore: Number(h.confidenceScore ?? 0),
+      // Canonical field first; fall back to the deprecated alias so an older
+      // server payload can never render a blank strength.
+      signalStrength: Number(h.signalStrength ?? h.confidenceScore ?? 0),
+      confidenceScore: Number(h.confidenceScore ?? h.signalStrength ?? 0),
       riskScore: 0,
       riskRewardRatio: Number(h.riskRewardRatio ?? 0),
       reasonForTrade: snap.explanation?.why || "",
@@ -227,7 +233,7 @@ export default function LiveAiAssistPage() {
                   <div className="rounded border border-emerald-500/30 p-1.5"><div className="text-muted-foreground">TP</div>{card.takeProfit || "—"}</div>
                 </div>
                 <div className="grid grid-cols-2 gap-1">
-                  <div className="rounded border border-border p-1.5"><div className="text-muted-foreground">Confidence</div>{card.confidenceScore}</div>
+                  <div className="rounded border border-border p-1.5"><div className="text-muted-foreground">Confidence</div>{card.signalStrength}</div>
                   <div className="rounded border border-border p-1.5"><div className="text-muted-foreground">R:R</div>{card.riskRewardRatio || "—"}</div>
                 </div>
                 {card.reasonForTrade && <p><span className="text-muted-foreground">Reason:</span> {card.reasonForTrade}</p>}

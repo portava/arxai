@@ -80,6 +80,37 @@ describe("C3.2 — the append gate is not provider-scoped", () => {
   });
 });
 
+describe("R1 residual — the assistant source is paired, never mixed", () => {
+  it("the append gate enforces provider-family basis coherence", () => {
+    const block = formingTipBlock(serviceSource());
+    assert.ok(
+      /formingTipBasisCoherent\(/.test(block),
+      "a tip folded from one provider family must never sit under another family's closed bars",
+    );
+  });
+
+  it("the router folds each REALTIME assistant quote fetch into the composer", () => {
+    const HERE2 = dirname(fileURLToPath(import.meta.url));
+    const router = readFileSync(resolve(HERE2, "../../marketDataRouter.ts"), "utf8");
+    assert.ok(
+      /foldAssistantQuoteTick\(/.test(router),
+      "assistant_real-served charts need a forming-tip driver — the quote fetch is it",
+    );
+  });
+
+  it("an assistant fold records its provider identity on the bar", async () => {
+    const { foldFormingTick, getFormingBar, __resetFormingBarStore } = await import(
+      "../formingBarComposer.js"
+    );
+    __resetFormingBarStore();
+    const now = Date.now();
+    foldFormingTick("GBPJPY", 190.5, now, now, "assistant_real");
+    const bar = getFormingBar("GBPJPY", "M1", now);
+    assert.ok(bar, "an assistant-sourced tick yields a real tip");
+    assert.equal(bar.provider, "assistant_real", "the tip names the stream it was folded from");
+  });
+});
+
 describe("C3.2 — the composer's own contract is unchanged", () => {
   it("a symbol with no folded ticks yields no tip", async () => {
     const { getFormingBar, __resetFormingBarStore } = await import("../formingBarComposer.js");

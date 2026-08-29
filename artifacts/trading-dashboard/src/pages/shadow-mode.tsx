@@ -17,6 +17,9 @@ async function api(path: string, init?: RequestInit) {
 
 const PAGE_ICON = <Eye className="h-6 w-6 text-primary" />;
 
+// Rendered as the Testing Lab "Shadow Mode" tab (surface consolidation item
+// C); the old standalone /shadow-mode route redirects to
+// /testing-lab?tab=shadow and the nav entry is gone.
 export default function ShadowMode() {
   // Cached /api/me role pre-check: Shadow Mode is backed entirely by
   // admin/OWNER-only endpoints, so non-admins get the denied state immediately
@@ -87,9 +90,9 @@ export default function ShadowMode() {
           <Button variant="outline" onClick={() => api("/api/shadow-mode/stop", { method: "POST" }).then(load)}><StopCircle className="h-4 w-4 mr-1" />Stop</Button>
           <Button variant="ghost" onClick={() => api("/api/shadow-mode/decision", { method: "POST", body: JSON.stringify({ symbol: "EURUSD" }) }).then(load)}>Force EURUSD decision</Button>
           <a className="text-xs underline ml-2" href="/testing-lab?tab=forward">Forward testing →</a>
-          <a className="text-xs underline" href="/strategy-tournament">Tournament →</a>
+          <a className="text-xs underline" href="/testing-lab?tab=tournament">Tournament →</a>
           <a className="text-xs underline" href="/confidence-calibration">Calibration →</a>
-          <a className="text-xs underline" href="/strategy-promotion">Promotion →</a>
+          <a className="text-xs underline" href="/testing-lab?tab=promotion">Promotion →</a>
           <a className="text-xs underline" href="/ai-readiness-score">Readiness →</a>
           <a className="text-xs underline" href="/shadow-journal">Journal →</a>
         </CardContent>

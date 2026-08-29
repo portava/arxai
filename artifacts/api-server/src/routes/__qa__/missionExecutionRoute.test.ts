@@ -10,9 +10,10 @@
 // the real `executeInstant`.
 //
 // Proven here:
-//   (59) DEMO/PAPER never touches the live broker — a non-live mission audits +
-//        journals the intent and returns `non_live` WITHOUT ever calling the
-//        executor seam. Demo stays demo.
+//   (59) DEMO/PAPER never touches the live broker — a non-live mission runs the
+//        SAME gate chain and dispatches onto the SIMULATED recorder seam
+//        (`sim:` command id, journaled + audited); the LIVE executor seam is
+//        never called and no fill/price/P&L is fabricated. Demo stays demo.
 //   (61) Mission cannot bypass the live execution gates — a live dispatch routes
 //        through the SAME instant-trade seam with source "mission"; when that
 //        seam rejects (a downstream gate block), the draft stays `approved` and
@@ -251,8 +252,10 @@ after(async () => {
   await cleanup();
 });
 
-// (59) DEMO / PAPER missions never touch the live broker.
-test("59: demo/paper dispatch never touches the live broker", async () => {
+// (59) DEMO / PAPER missions never touch the live broker: the SAME gate chain
+//      runs, then the dispatch lands on the SIMULATED recorder — never the
+//      live executor seam — and no fill/price/P&L is fabricated.
+test("59: demo/paper dispatch runs the same gates but never touches the live broker", async () => {
   for (const mode of ["paper", "demo"] as const) {
     const missionId = await seedMission(userAId, mode);
     const draftId = `exec-nonlive-${mode}`;
@@ -262,27 +265,45 @@ test("59: demo/paper dispatch never touches the live broker", async () => {
     const spy = makeSpy({ ok: true, commandId: "should-never-be-used", action: "BUY" });
     const result = await dispatchApprovedDraft(
       { userId: userAId, missionId, proposalId },
-      { executor: spy.fn },
+      { executor: spy.fn, phase7Evaluator: passingPhase7Evaluator },
     );
 
-    assert.equal(result.ok, false);
-    assert.equal(result.ok === false && result.kind, "non_live");
-    assert.equal(
-      result.ok === false && result.kind === "non_live" && result.executionMode,
-      mode,
+    // The dispatch SUCCEEDS through the gated path in its own mode…
+    assert.equal(result.ok, true);
+    assert.equal(result.ok === true && result.executionMode, mode);
+    assert.match(
+      (result.ok === true && result.commandId) || "",
+      new RegExp(`^sim:${mode}:`),
+      "a simulated dispatch carries a sim: command id, never a broker command id",
     );
-    // The live broker seam is NEVER reached for a non-live mission.
-    assert.equal(spy.calls.length, 0, `${mode} must not call the executor`);
-    // The draft stays approved — non-live dispatch never marks it executed.
-    assert.equal(await draftStatus(draftId), "approved");
-    // The skip is journaled honestly.
-    assert.ok((await eventTypes(missionId)).includes("draft_dispatch_skipped_non_live"));
-    // And an audit row records the non-live dispatch.
+    // …but the LIVE executor seam is NEVER reached for a non-live mission.
+    assert.equal(spy.calls.length, 0, `${mode} must not call the live executor`);
+    // The draft flips executed exactly like a live one, with the sim commandId
+    // persisted on the row (draft→fill seam) — and NO pnl/close is fabricated.
+    assert.equal(await draftStatus(draftId), "executed");
+    const rows = await db
+      .select({
+        commandId: missionTradeDraftsTable.commandId,
+        pnl: missionTradeDraftsTable.pnl,
+        closedAt: missionTradeDraftsTable.closedAt,
+        brokerTicket: missionTradeDraftsTable.brokerTicket,
+      })
+      .from(missionTradeDraftsTable)
+      .where(eq(missionTradeDraftsTable.draftId, draftId));
+    assert.match(rows[0]!.commandId ?? "", new RegExp(`^sim:${mode}:`));
+    assert.equal(rows[0]!.pnl, null, "no fabricated P/L");
+    assert.equal(rows[0]!.closedAt, null, "no fabricated close");
+    assert.equal(rows[0]!.brokerTicket, null, "no fabricated broker ticket");
+    // The simulated dispatch is journaled honestly.
+    const types = await eventTypes(missionId);
+    assert.ok(types.includes("draft_dispatch_simulated"));
+    assert.ok(types.includes("draft_executed"));
+    // And an audit row records it.
     const audits = await db
       .select({ action: oneClickAuditTable.action })
       .from(oneClickAuditTable)
       .where(eq(oneClickAuditTable.userId, userAId));
-    assert.ok(audits.some((a) => a.action === "mission_draft_dispatch_non_live"));
+    assert.ok(audits.some((a) => a.action === "mission_draft_dispatch_simulated"));
   }
 });
 

@@ -14441,7 +14441,8 @@ components:
         cautions: { type: array, items: { type: string } }
         bestNextAction: { type: string }
         confidenceLabel: { type: string }
-        confidenceScore: { type: ["number", "null"] }
+        signalStrength: { type: ["number", "null"], description: "Canonical name for the readiness score 0-100 — a hand-weighted signal strength, NOT a calibrated win probability. Always equals confidenceScore while both are emitted." }
+        confidenceScore: { type: ["number", "null"], deprecated: true, description: "Deprecated alias of signalStrength — same value, kept (and still required) so existing clients keep working." }
         agentConsensus: { $ref: "#/components/schemas/RubyDraftConsensusView" }
         disclaimer: { type: string }
 

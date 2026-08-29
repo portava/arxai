@@ -54,7 +54,9 @@
     "test:testing-lab": "vitest run src/components/testing-lab/TestingLab.test.tsx src/components/testing-lab/ChartPanels.test.tsx",
     "test:live-ai-harness": "vitest run src/pages/live-ai-auto-test.honesty.test.tsx",
     "test:mission-honest-labelling": "vitest run src/pages/profit-missions.honest-labelling.test.ts",
-    "test:approval-inbox-honesty": "vitest run src/pages/approval-inbox.honesty.test.ts"
+    "test:approval-inbox-honesty": "vitest run src/pages/approval-inbox.honesty.test.ts",
+    "test:scalp-scan": "vitest run src/components/scanner/RubyScalpScan.test.tsx",
+    "test:surface-consolidation": "vitest run src/knowledge/surfaceConsolidation.test.ts"
   },
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",

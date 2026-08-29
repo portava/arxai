@@ -202,11 +202,14 @@ describe("Profit Mission planner (Phase 1 two-step)", () => {
     }
   });
 
-  it("renders the Battle Room shell as planning/display-only", () => {
+  it("renders the Battle Room shell with the gated-execution truth stated", () => {
     const { container } = render(<ProfitMissionsPage />);
     expect(screen.getByTestId("card-battle-room")).toBeTruthy();
     expect(screen.getByTestId("badge-battle-status")).toBeTruthy();
-    expect((container.textContent ?? "").toLowerCase()).toContain("display only");
+    // F-build: missions can trade, but ONLY through the gated approval path —
+    // the header must state that truth (it replaced "display only").
+    expect((container.textContent ?? "").toLowerCase()).toContain("gated approval path");
+    expect((container.textContent ?? "").toLowerCase()).toContain("waits for your approval");
     // The probability card only exists once a mission is assessed.
     const room = screen.getByTestId("card-battle-room");
     expect(within(room)).toBeTruthy();
