@@ -103,9 +103,15 @@ test("the migration states the SQL-before-code deploy order and names the hard-d
 
 test("the driver's capped open-position read excludes simulated drafts", () => {
   const driver = read("artifacts/api-server/src/lib/missionDriver.ts");
-  const start = driver.indexOf("async function manageOpenExits");
-  assert.ok(start > 0, "manageOpenExits not found in missionDriver.ts");
-  const body = driver.slice(start, driver.indexOf("\n}", start));
+  // Locate the read by its CAP rather than by a function name: the query has
+  // legitimately moved between manageOpenExits and a loadOpenExitDrafts helper,
+  // and the property under guard belongs to whichever function performs the
+  // capped read, not to a particular name.
+  const cap = driver.indexOf("MAX_EXIT_MANAGED_DRAFTS_PER_TICK)");
+  assert.ok(cap > 0, "the capped open-draft read was not found in missionDriver.ts");
+  const start = driver.lastIndexOf("async function", cap);
+  assert.ok(start > 0, "could not find the function containing the capped read");
+  const body = driver.slice(start, driver.indexOf("\n}", cap));
   assert.ok(
     /eq\(missionTradeDraftsTable\.simulated,\s*false\)/.test(body),
     "manageOpenExits must filter `simulated = false` — a simulated draft's closed_at is NULL forever and would occupy every per-tick exit slot after a demo→live promotion",
