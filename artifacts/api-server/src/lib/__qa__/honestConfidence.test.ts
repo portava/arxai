@@ -103,9 +103,12 @@ describe("B — no uncalibrated heuristic is rendered as a percentage", () => {
     it(`${name} does not append % to a confidence value`, () => {
       const src = read(rel);
       // Any interpolation of a confidence-ish field immediately followed by "%".
+      // signalStrength is the canonical rename of confidenceScore (dual-emit);
+      // the %-guard must cover it too or a new "signalStrength%" render would
+      // silently pass.
       const offender =
-        /\{[^{}]*(confidenceScore|aiConfidence)[^{}]*\}\s*%/.test(src) ||
-        /(confidenceScore|aiConfidence)[^\n]*\.toFixed\([^)]*\)\}%/.test(src);
+        /\{[^{}]*(confidenceScore|aiConfidence|signalStrength)[^{}]*\}\s*%/.test(src) ||
+        /(confidenceScore|aiConfidence|signalStrength)[^\n]*\.toFixed\([^)]*\)\}%/.test(src);
       assert.equal(offender, false, `${name} still presents a heuristic as a percentage`);
     });
 
