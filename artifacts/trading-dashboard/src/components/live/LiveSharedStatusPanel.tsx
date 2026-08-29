@@ -123,8 +123,8 @@ export function LiveSharedStatusPanel({ compact = false }: { compact?: boolean }
       <CardHeader className={compact ? "pb-2" : ""}>
         <CardTitle className="text-sm flex items-center gap-2">
           {canTrade
-            ? <ShieldCheck className="h-4 w-4 text-emerald-400" />
-            : <ShieldAlert className="h-4 w-4 text-amber-400" />}
+            ? <ShieldCheck className="h-4 w-4 text-success" />
+            : <ShieldAlert className="h-4 w-4 text-warning" />}
           Live Shared-Account Status
         </CardTitle>
       </CardHeader>
@@ -139,7 +139,7 @@ export function LiveSharedStatusPanel({ compact = false }: { compact?: boolean }
               good={env.liveBrokerExecutionEnabled === true} />
             <Field label="Default-deny" value={String(env.defaultDeny ?? "?")} good={env.defaultDeny === true} />
             {access.blockReason && (
-              <div className="col-span-2 text-amber-300">blockReason <span className="font-mono">{access.blockReason}</span></div>
+              <div className="col-span-2 text-warning">blockReason <span className="font-mono">{access.blockReason}</span></div>
             )}
             {access.message && (
               <div className="col-span-2 text-muted-foreground">{access.message}</div>
@@ -168,7 +168,7 @@ export function LiveSharedStatusPanel({ compact = false }: { compact?: boolean }
                     ? `$${access.reservedRisk.toFixed(2)}` : "—"}
                 />
                 {access.bridgeMessage && (
-                  <div className="col-span-2 text-amber-300" data-testid="bridge-availability-message">
+                  <div className="col-span-2 text-warning" data-testid="bridge-availability-message">
                     {access.bridgeMessage}
                   </div>
                 )}
@@ -218,7 +218,7 @@ export function LiveSharedStatusPanel({ compact = false }: { compact?: boolean }
               })}
             </ul>
             {blocked.length > 0 && (
-              <div className="mt-1 text-rose-300">{blocked.length} blocked attempt(s) on record.</div>
+              <div className="mt-1 text-danger">{blocked.length} blocked attempt(s) on record.</div>
             )}
           </div>
         )}
@@ -231,7 +231,7 @@ function Field({ label, value, good }: { label: string; value: string; good?: bo
   return (
     <div className="flex justify-between gap-2">
       <span className="text-muted-foreground">{label}</span>
-      <span className={`font-mono ${good === true ? "text-emerald-300" : good === false ? "text-rose-300" : ""}`}>{value}</span>
+      <span className={`font-mono ${good === true ? "text-success" : good === false ? "text-danger" : ""}`}>{value}</span>
     </div>
   );
 }

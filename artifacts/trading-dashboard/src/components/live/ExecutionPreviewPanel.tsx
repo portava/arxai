@@ -139,7 +139,7 @@ export function ExecutionPreviewPanel(props: Props) {
   if (loading && !preview) {
     return (
       <div
-        className="rounded border border-zinc-800 bg-zinc-900/40 p-3 text-xs text-muted-foreground flex items-center gap-2"
+        className="rounded border border-border bg-muted/40 p-3 text-xs text-muted-foreground flex items-center gap-2"
         data-testid="exec-preview-loading"
       >
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -150,7 +150,7 @@ export function ExecutionPreviewPanel(props: Props) {
 
   if (errorMsg && !preview) {
     return (
-      <Alert className="border-zinc-700/50 bg-zinc-900/40" data-testid="exec-preview-error">
+      <Alert className="border-border/50 bg-muted/40" data-testid="exec-preview-error">
         <Info className="h-4 w-4 text-muted-foreground" />
         <AlertDescription className="text-xs text-muted-foreground">{errorMsg}</AlertDescription>
       </Alert>
@@ -162,10 +162,10 @@ export function ExecutionPreviewPanel(props: Props) {
   const p = preview;
   const verdictTone =
     p.brokerCondition.verdict === "OK"
-      ? "border-emerald-700/40 bg-emerald-950/20"
+      ? "border-success/40 bg-success/20"
       : p.brokerCondition.verdict === "DOWNGRADE"
-        ? "border-amber-500/40 bg-amber-500/5"
-        : "border-rose-700/50 bg-rose-950/20";
+        ? "border-warning/40 bg-warning/5"
+        : "border-danger/50 bg-danger/20";
   const VerdictIcon =
     p.brokerCondition.verdict === "OK"
       ? ShieldCheck
@@ -174,16 +174,16 @@ export function ExecutionPreviewPanel(props: Props) {
         : AlertTriangle;
   const verdictIconTone =
     p.brokerCondition.verdict === "OK"
-      ? "text-emerald-400"
+      ? "text-success"
       : p.brokerCondition.verdict === "DOWNGRADE"
-        ? "text-amber-300"
-        : "text-rose-300";
+        ? "text-warning"
+        : "text-danger";
 
   const recommendedOrder = p.orderTypes.find((o) => o.recommended) ?? p.orderTypes[0];
 
   return (
     <div
-      className="rounded border border-zinc-800 bg-zinc-900/40 p-3 space-y-3"
+      className="rounded border border-border bg-muted/40 p-3 space-y-3"
       data-testid="exec-preview-panel"
     >
       <div className="flex items-center justify-between">
@@ -318,10 +318,10 @@ export function ExecutionPreviewPanel(props: Props) {
 
       {/* Hard blockers. */}
       {p.blockers.length > 0 && (
-        <Alert className="border-rose-700/50 bg-rose-950/20" data-testid="exec-preview-blockers">
-          <AlertTriangle className="h-4 w-4 text-rose-300" />
-          <AlertTitle className="text-xs text-rose-200">This order isn't viable as set up</AlertTitle>
-          <AlertDescription className="text-[11px] text-rose-200/90">
+        <Alert className="border-danger/50 bg-danger/20" data-testid="exec-preview-blockers">
+          <AlertTriangle className="h-4 w-4 text-danger" />
+          <AlertTitle className="text-xs text-danger">This order isn't viable as set up</AlertTitle>
+          <AlertDescription className="text-[11px] text-danger/90">
             <ul className="list-disc pl-4 space-y-0.5">
               {p.blockers.map((b, i) => <li key={i}>{b}</li>)}
             </ul>
@@ -333,8 +333,8 @@ export function ExecutionPreviewPanel(props: Props) {
       {p.warnings.length > 0 && (
         <div className="space-y-0.5" data-testid="exec-preview-warnings">
           {p.warnings.map((w, i) => (
-            <div key={i} className="flex items-start gap-1.5 text-[11px] text-amber-200/90">
-              <AlertTriangle className="h-3 w-3 mt-0.5 text-amber-300 shrink-0" />
+            <div key={i} className="flex items-start gap-1.5 text-[11px] text-warning/90">
+              <AlertTriangle className="h-3 w-3 mt-0.5 text-warning shrink-0" />
               <span>{w}</span>
             </div>
           ))}
@@ -343,7 +343,7 @@ export function ExecutionPreviewPanel(props: Props) {
 
       {/* Data-quality + disclaimer. */}
       {p.dataQuality.degraded && p.dataQuality.notes.length > 0 && (
-        <div className="text-[10px] text-muted-foreground border-t border-zinc-800 pt-1.5">
+        <div className="text-[10px] text-muted-foreground border-t border-border pt-1.5">
           {p.dataQuality.notes.map((n, i) => <div key={i}>{n}</div>)}
         </div>
       )}

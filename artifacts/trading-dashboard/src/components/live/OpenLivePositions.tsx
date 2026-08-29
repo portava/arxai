@@ -108,11 +108,11 @@ export function OpenLivePositions() {
   const notLiveMode = q.data?.notLiveReason === "ACCOUNT_NOT_IN_LIVE_MODE";
 
   return (
-    <Card className="border-red-500/20" data-testid="open-live-positions">
+    <Card className="border-danger/20" data-testid="open-live-positions">
       <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <CardTitle className="flex items-center gap-2">
-            <Briefcase className="h-5 w-5 text-red-400" /> Live Positions
+            <Briefcase className="h-5 w-5 text-danger" /> Live Positions
             <span className="text-xs text-muted-foreground font-normal">
               {q.isLoading || q.isError ? "(count unavailable)" : `(${open.length} open)`}
             </span>
@@ -136,7 +136,7 @@ export function OpenLivePositions() {
       </CardHeader>
       <CardContent>
         {q.data?.snapshotWarning && (
-          <div className="mb-3 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200" data-testid="live-positions-stale-warning">
+          <div className="mb-3 rounded border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning" data-testid="live-positions-stale-warning">
             {q.data.snapshotWarning}
           </div>
         )}
@@ -149,15 +149,15 @@ export function OpenLivePositions() {
           </div>
         ) : q.isError ? (
           <div
-            className="flex flex-col items-center gap-2 rounded border border-amber-500/40 bg-amber-500/10 px-3 py-4 text-center"
+            className="flex flex-col items-center gap-2 rounded border border-warning/40 bg-warning/10 px-3 py-4 text-center"
             role="alert"
             data-testid="live-positions-error"
           >
-            <div className="flex items-center gap-2 text-sm font-semibold text-amber-200">
+            <div className="flex items-center gap-2 text-sm font-semibold text-warning">
               <AlertTriangle className="h-4 w-4 shrink-0" />
               Couldn&apos;t load live positions — retrying. Do not assume you are flat.
             </div>
-            <div className="text-xs text-amber-200/80">
+            <div className="text-xs text-warning/80">
               Your broker may still hold open positions. Check MT5 directly before placing or closing anything.
             </div>
             <Button
@@ -185,7 +185,7 @@ export function OpenLivePositions() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-xs text-muted-foreground border-b border-zinc-800">
+                <tr className="text-left text-xs text-muted-foreground border-b border-border">
                   <th className="py-2 pr-2">Ticket</th>
                   <th className="py-2 pr-2">Symbol</th>
                   <th className="py-2 pr-2">Side</th>
@@ -203,13 +203,13 @@ export function OpenLivePositions() {
                   const ticket = p.brokerPositionId ?? "";
                   const closing = closeOne.isPending && closeOne.variables === ticket;
                   return (
-                    <tr key={p.id} className="border-b border-zinc-900" data-testid={`live-pos-${p.id}`}>
+                    <tr key={p.id} className="border-b border-border" data-testid={`live-pos-${p.id}`}>
                       <td className="py-2 pr-2 font-mono">{ticket || "—"}</td>
                       <td className="py-2 pr-2 font-mono">
                         {p.symbol}
                         {p.brokerDetectedOnly && (
                           <span
-                            className="ml-1.5 inline-block rounded bg-amber-500/15 px-1 py-0.5 text-[10px] font-medium text-amber-300 align-middle"
+                            className="ml-1.5 inline-block rounded bg-warning/15 px-1 py-0.5 text-[10px] font-medium text-warning align-middle"
                             title="This position exists at the broker even if it was opened outside this live ticket flow."
                             data-testid={`broker-detected-${p.id}`}
                           >
@@ -218,7 +218,7 @@ export function OpenLivePositions() {
                         )}
                         {p.confirmation === "BROKER_CONFIRMATION_PENDING" && (
                           <span
-                            className="ml-1.5 inline-block rounded bg-sky-500/15 px-1 py-0.5 text-[10px] font-medium text-sky-300 align-middle"
+                            className="ml-1.5 inline-block rounded bg-ruby/15 px-1 py-0.5 text-[10px] font-medium text-ruby align-middle"
                             title="Live position — broker confirmation pending. This position is still shown while we wait for the latest broker snapshot."
                             data-testid={`confirmation-pending-${p.id}`}
                           >
@@ -231,7 +231,7 @@ export function OpenLivePositions() {
                       <td className="py-2 pr-2">{p.entryPrice}</td>
                       <td className="py-2 pr-2">{p.currentPrice ?? "—"}</td>
                       <td className="py-2 pr-2 text-xs">{p.stopLoss ?? "—"} / {p.takeProfit ?? "—"}</td>
-                      <td className={`py-2 pr-2 ${(p.unrealizedProfitLoss ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                      <td className={`py-2 pr-2 ${(p.unrealizedProfitLoss ?? 0) >= 0 ? "text-success" : "text-danger"}`}>
                         {p.unrealizedProfitLoss ?? "—"}
                       </td>
                       <td className="py-2 pr-2 text-xs text-muted-foreground">
@@ -241,7 +241,7 @@ export function OpenLivePositions() {
                         <Button
                           size="sm"
                           variant="outline"
-                          className="border-rose-500/50 hover:bg-rose-500/10 text-rose-200 h-8"
+                          className="border-danger/50 hover:bg-danger/10 text-danger h-8"
                           disabled={!ticket || closing}
                           onClick={() => ticket && closeOne.mutate(ticket)}
                           data-testid={`btn-close-live-${p.id}`}

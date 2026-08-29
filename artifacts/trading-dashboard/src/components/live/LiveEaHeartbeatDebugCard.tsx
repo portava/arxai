@@ -42,18 +42,18 @@ type BridgeDebug = {
 function TriCell({ v, wantTrue = true }: { v: Tri; wantTrue?: boolean }) {
   if (v === null) {
     return (
-      <span className="inline-flex items-center gap-1 text-amber-300">
+      <span className="inline-flex items-center gap-1 text-warning">
         <AlertTriangle className="w-3.5 h-3.5" /> not reported
       </span>
     );
   }
   const ok = wantTrue ? v === true : v === false;
   return ok ? (
-    <span className="inline-flex items-center gap-1 text-emerald-300">
+    <span className="inline-flex items-center gap-1 text-success">
       <CheckCircle2 className="w-3.5 h-3.5" /> {String(v)}
     </span>
   ) : (
-    <span className="inline-flex items-center gap-1 text-red-300">
+    <span className="inline-flex items-center gap-1 text-danger">
       <XCircle className="w-3.5 h-3.5" /> {String(v)}
     </span>
   );
@@ -66,8 +66,8 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   // on iPhone Safari.
   return (
     <div className="flex flex-col gap-0.5 py-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3">
-      <span className="text-slate-400 text-xs sm:text-sm">{label}</span>
-      <span className="font-mono text-xs text-slate-200 break-all sm:text-right sm:break-normal sm:whitespace-normal">
+      <span className="text-txt-secondary text-xs sm:text-sm">{label}</span>
+      <span className="font-mono text-xs text-foreground break-all sm:text-right sm:break-normal sm:whitespace-normal">
         {children}
       </span>
     </div>
@@ -102,14 +102,14 @@ export function LiveEaHeartbeatDebugCard() {
   if (isLoading) {
     return (
       <Card data-testid="live-ea-heartbeat-debug-card">
-        <CardContent className="p-6 text-sm text-slate-400">Checking your MT5 bridge…</CardContent>
+        <CardContent className="p-6 text-sm text-txt-secondary">Checking your MT5 bridge…</CardContent>
       </Card>
     );
   }
   if (error || !data) {
     return (
       <Card data-testid="live-ea-heartbeat-debug-card">
-        <CardContent className="p-6 text-sm text-amber-300">
+        <CardContent className="p-6 text-sm text-warning">
           MT5 bridge status is unavailable right now. We'll keep retrying.
         </CardContent>
       </Card>
@@ -140,9 +140,9 @@ export function LiveEaHeartbeatDebugCard() {
   })();
 
   const toneCls =
-    summary.tone === "ok" ? "border-emerald-500/40 text-emerald-200 bg-emerald-500/5"
-      : summary.tone === "warn" ? "border-amber-500/40 text-amber-200 bg-amber-500/5"
-      : "border-rose-500/40 text-rose-200 bg-rose-500/5";
+    summary.tone === "ok" ? "border-success/40 text-success bg-success/5"
+      : summary.tone === "warn" ? "border-warning/40 text-warning bg-warning/5"
+      : "border-danger/40 text-danger bg-danger/5";
 
   return (
     <Card data-testid="live-ea-heartbeat-debug-card">
@@ -151,9 +151,9 @@ export function LiveEaHeartbeatDebugCard() {
           <div>
             <CardTitle className="flex items-center gap-2">
               {summary.tone === "ok" ? (
-                <Wifi className="w-4 h-4 text-emerald-300" />
+                <Wifi className="w-4 h-4 text-success" />
               ) : (
-                <WifiOff className="w-4 h-4 text-slate-400" />
+                <WifiOff className="w-4 h-4 text-txt-secondary" />
               )}
               MT5 Bridge Status
             </CardTitle>
@@ -174,23 +174,23 @@ export function LiveEaHeartbeatDebugCard() {
             never see raw bridge identity, MOCK/REAL labels, or EA input
             field names. */}
         {isAdmin && (
-          <div className="rounded-md border border-zinc-800 bg-zinc-950/40">
+          <div className="rounded-md border border-border bg-background/40">
             <Button
               type="button"
               variant="ghost"
-              className="w-full justify-between text-xs text-zinc-300 hover:bg-zinc-900/40"
+              className="w-full justify-between text-xs text-txt-secondary hover:bg-muted/40"
               onClick={() => setShowDiagnostics((v) => !v)}
               data-testid="bridge-diagnostics-toggle"
             >
               <span className="inline-flex items-center gap-2">
-                <ShieldAlert className="h-3.5 w-3.5 text-amber-400" />
+                <ShieldAlert className="h-3.5 w-3.5 text-warning" />
                 Admin diagnostics
                 <Badge
                   variant="outline"
                   className={
-                    isMock ? "border-red-500/50 text-red-300"
-                    : isReal ? "border-emerald-500/50 text-emerald-300"
-                    : "border-slate-500/40 text-slate-300"
+                    isMock ? "border-danger/50 text-danger"
+                    : isReal ? "border-success/50 text-success"
+                    : "border-border/40 text-txt-secondary"
                   }
                   data-testid="live-ea-heartbeat-bridge-kind-badge"
                 >
@@ -201,10 +201,10 @@ export function LiveEaHeartbeatDebugCard() {
             </Button>
 
             {showDiagnostics && (
-              <div className="p-3 border-t border-zinc-800 space-y-4">
+              <div className="p-3 border-t border-border space-y-4">
                 {isMock && (
-                  <Alert className="border-red-500/50 bg-red-500/10" data-testid="live-ea-heartbeat-mock-warning">
-                    <ShieldAlert className="h-4 w-4 text-red-400" />
+                  <Alert className="border-danger/50 bg-danger/10" data-testid="live-ea-heartbeat-mock-warning">
+                    <ShieldAlert className="h-4 w-4 text-danger" />
                     <AlertTitle>Bridge is MOCK — cannot satisfy live readiness</AlertTitle>
                     <AlertDescription>
                       The freshest bridge for this user is a MOCK placeholder (
@@ -216,8 +216,8 @@ export function LiveEaHeartbeatDebugCard() {
                 )}
 
                 {b && !eaVerOk && (
-                  <Alert className="border-amber-500/50 bg-amber-500/10" data-testid="live-ea-old-version-warning">
-                    <AlertTriangle className="h-4 w-4 text-amber-400" />
+                  <Alert className="border-warning/50 bg-warning/10" data-testid="live-ea-old-version-warning">
+                    <AlertTriangle className="h-4 w-4 text-warning" />
                     <AlertTitle>Old EA attached.</AlertTitle>
                     <AlertDescription>
                       EA reports v{b.eaVersion ?? "?"}. Live execution requires v1.27 or newer.
@@ -228,7 +228,7 @@ export function LiveEaHeartbeatDebugCard() {
                 {b && (
                   <div className="grid md:grid-cols-2 gap-4">
                     <div className="space-y-1">
-                      <div className="text-xs uppercase tracking-wider text-slate-400">Bridge identity</div>
+                      <div className="text-xs uppercase tracking-wider text-txt-secondary">Bridge identity</div>
                       <Row label="bridge id">{b.id}</Row>
                       <Row label="mode (real vs MOCK)">{b.mode}</Row>
                       <Row label="accountType">{b.accountType ?? "—"}</Row>
@@ -240,7 +240,7 @@ export function LiveEaHeartbeatDebugCard() {
                     </div>
 
                     <div className="space-y-1">
-                      <div className="text-xs uppercase tracking-wider text-slate-400">Heartbeat + EA inputs (v1.27)</div>
+                      <div className="text-xs uppercase tracking-wider text-txt-secondary">Heartbeat + EA inputs (v1.27)</div>
                       <Row label="last heartbeat">
                         {b.lastHeartbeatAt ? new Date(b.lastHeartbeatAt).toLocaleString() : "never"}
                       </Row>
@@ -258,7 +258,7 @@ export function LiveEaHeartbeatDebugCard() {
                       </Row>
                       <Row label="MaxLiveLot">
                         {b.eaInputs.maxLiveLot != null ? b.eaInputs.maxLiveLot : (
-                          <span className="text-amber-300">not reported</span>
+                          <span className="text-warning">not reported</span>
                         )}
                       </Row>
                       <Row label="terminalConnected (want true)">
@@ -274,7 +274,7 @@ export function LiveEaHeartbeatDebugCard() {
                   </div>
                 )}
 
-                <div className="text-xs text-slate-500">
+                <div className="text-xs text-txt-muted">
                   Selection rule: freshest non-revoked LIVE-mode bridge → freshest DEMO bridge → freshest MOCK.
                   MOCK rows are refused at the live dispatch pipeline and the EA-facing live endpoints.
                 </div>

@@ -95,74 +95,74 @@ export function T015ManualLiveStatusCard() {
 
   return (
     <div className="container mx-auto px-3 md:px-6">
-      <Card className="border-emerald-600/30 bg-emerald-950/10" data-testid="card-t015-status">
+      <Card className="border-success/30 bg-success/10" data-testid="card-t015-status">
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm text-emerald-300 flex items-center gap-2">
+          <CardTitle className="text-sm text-success flex items-center gap-2">
             Phase T015 — Manual Live Testing
-            <span className="rounded-full bg-emerald-600/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
+            <span className="rounded-full bg-success/20 px-2 py-0.5 text-[10px] font-semibold text-success">
               ACTIVE
             </span>
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3 text-xs">
-          {err && <div className="text-red-400">Could not load T015 status: {err}</div>}
-          {!data && !err && <div className="text-zinc-500">Loading…</div>}
+          {err && <div className="text-danger">Could not load T015 status: {err}</div>}
+          {!data && !err && <div className="text-txt-muted">Loading…</div>}
 
           {data && (
             <>
-              <div className="text-zinc-300" data-testid="t015-phase-note">
+              <div className="text-txt-secondary" data-testid="t015-phase-note">
                 {data.phase?.note ?? ""}
               </div>
 
               <div className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
                 <div>
-                  <div className="text-zinc-500">Gate readiness</div>
+                  <div className="text-txt-muted">Gate readiness</div>
                   <div
-                    className={ready ? "font-semibold text-green-400" : "font-semibold text-amber-400"}
+                    className={ready ? "font-semibold text-success" : "font-semibold text-warning"}
                     data-testid="t015-readiness"
                   >
                     {data.readiness?.decision ?? "—"}
                   </div>
                   {!ready && data.readiness?.primaryReason && (
-                    <div className="text-[11px] text-amber-300/80">{data.readiness.primaryReason}</div>
+                    <div className="text-[11px] text-warning/80">{data.readiness.primaryReason}</div>
                   )}
                 </div>
                 <div>
-                  <div className="text-zinc-500">Allocation (available)</div>
-                  <div className="font-semibold text-zinc-100" data-testid="t015-allocation">
+                  <div className="text-txt-muted">Allocation (available)</div>
+                  <div className="font-semibold text-foreground" data-testid="t015-allocation">
                     {fmtUsd(data.allocation?.availableAllocationUsd)}
                   </div>
-                  <div className="text-[11px] text-zinc-500">
+                  <div className="text-[11px] text-txt-muted">
                     of {fmtUsd(data.allocation?.assignedAllocationUsd)} assigned
                   </div>
                 </div>
                 <div>
-                  <div className="text-zinc-500">Manual live trades (T015)</div>
-                  <div className="font-semibold text-zinc-100" data-testid="t015-trade-count">
+                  <div className="text-txt-muted">Manual live trades (T015)</div>
+                  <div className="font-semibold text-foreground" data-testid="t015-trade-count">
                     {data.manualLiveTradeCount ?? 0}
                   </div>
-                  <div className="text-[11px] text-zinc-500">no per-trade limit</div>
+                  <div className="text-[11px] text-txt-muted">no per-trade limit</div>
                 </div>
                 <div>
-                  <div className="text-zinc-500">Bridge</div>
-                  <div className="font-semibold text-zinc-100">
+                  <div className="text-txt-muted">Bridge</div>
+                  <div className="font-semibold text-foreground">
                     {data.allocation?.bridgeAvailability ?? "—"}
                   </div>
                 </div>
               </div>
 
-              <div className="border-t border-zinc-800 pt-2">
-                <div className="text-zinc-400 font-semibold">T014 verification cycle history</div>
-                <div className="text-[11px] text-zinc-500">{data.t014History?.note ?? ""}</div>
+              <div className="border-t border-border pt-2">
+                <div className="text-txt-secondary font-semibold">T014 verification cycle history</div>
+                <div className="text-[11px] text-txt-muted">{data.t014History?.note ?? ""}</div>
                 {completedCycles.length === 0 ? (
-                  <div className="mt-1 text-zinc-500">No completed verification cycles yet.</div>
+                  <div className="mt-1 text-txt-muted">No completed verification cycles yet.</div>
                 ) : (
                   <ul className="mt-1 space-y-0.5 font-mono text-[11px]">
                     {completedCycles.map((c) => (
-                      <li key={c.cycleId} className="text-zinc-400">
-                        <span className="text-emerald-400">COMPLETED</span>{" "}
+                      <li key={c.cycleId} className="text-txt-secondary">
+                        <span className="text-success">COMPLETED</span>{" "}
                         {c.side} {c.symbol} {c.requestedVolume}{" · "}
-                        <span className="text-zinc-500">{fmtTs(c.createdAt)}</span>
+                        <span className="text-txt-muted">{fmtTs(c.createdAt)}</span>
                       </li>
                     ))}
                   </ul>

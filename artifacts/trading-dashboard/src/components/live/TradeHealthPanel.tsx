@@ -30,13 +30,13 @@ const STATE_LABEL: Record<TradeHealthAssessmentState, string> = {
 function stateBadgeClass(state: TradeHealthAssessmentState): string {
   switch (state) {
     case "healthy":
-      return "bg-emerald-500/15 text-emerald-300 border-emerald-500/30";
+      return "bg-success/15 text-success border-success/30";
     case "weakening":
-      return "bg-amber-500/15 text-amber-300 border-amber-500/30";
+      return "bg-warning/15 text-warning border-warning/30";
     case "danger":
-      return "bg-orange-500/15 text-orange-300 border-orange-500/30";
+      return "bg-warning/15 text-warning border-warning/30";
     case "invalidated":
-      return "bg-red-500/15 text-red-300 border-red-500/30";
+      return "bg-danger/15 text-danger border-danger/30";
   }
 }
 
@@ -62,12 +62,12 @@ function AssessmentCard({ a }: { a: TradeHealthAssessment }) {
 
   return (
     <div
-      className="rounded-md border border-zinc-800 bg-zinc-900/40 p-3 space-y-2"
+      className="rounded-md border border-border bg-muted/40 p-3 space-y-2"
       data-testid={`trade-health-card-${a.ticket}`}
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="font-medium text-zinc-200 truncate">{a.symbol}</span>
+          <span className="font-medium text-foreground truncate">{a.symbol}</span>
           <Badge variant="outline" className="text-[10px] shrink-0">
             {a.side}
           </Badge>
@@ -83,12 +83,12 @@ function AssessmentCard({ a }: { a: TradeHealthAssessment }) {
         </Badge>
       </div>
 
-      <p className="text-xs text-zinc-300">{a.headline}</p>
+      <p className="text-xs text-txt-secondary">{a.headline}</p>
 
       {reasons.length > 0 && (
         <ul className="space-y-0.5">
           {reasons.map((r, i) => (
-            <li key={i} className="text-[11px] text-zinc-500">
+            <li key={i} className="text-[11px] text-txt-muted">
               • {r}
             </li>
           ))}
@@ -97,20 +97,20 @@ function AssessmentCard({ a }: { a: TradeHealthAssessment }) {
 
       {/* Take-profit progress — honest unknown when no TP is set. */}
       <div className="space-y-1">
-        <div className="flex items-center justify-between text-[11px] text-zinc-400">
+        <div className="flex items-center justify-between text-[11px] text-txt-secondary">
           <span>Target progress</span>
           <span>{tpPct != null ? `${Math.round(tpPct)}%` : "—"}</span>
         </div>
         {tpPct != null ? (
           <Progress value={tpPct} className="h-1.5" />
         ) : (
-          <p className="text-[10px] text-zinc-600">{tpProgress?.note ?? "—"}</p>
+          <p className="text-[10px] text-txt-muted">{tpProgress?.note ?? "—"}</p>
         )}
       </div>
 
       {/* Stop-loss buffer — honest unknown when no SL is set. */}
-      <p className="text-[11px] text-zinc-400">
-        <span className="text-zinc-500">Stop buffer: </span>
+      <p className="text-[11px] text-txt-secondary">
+        <span className="text-txt-muted">Stop buffer: </span>
         {slDistance?.known && slDistance.bufferRemainingPct != null
           ? `${Math.round(slDistance.bufferRemainingPct)}% remaining`
           : (slDistance?.note ?? "—")}
@@ -119,23 +119,23 @@ function AssessmentCard({ a }: { a: TradeHealthAssessment }) {
       {(breakEven?.suggested || partialClose?.suggested) && (
         <div className="space-y-1">
           {breakEven?.suggested && (
-            <p className="text-[11px] text-sky-300">{breakEven.note}</p>
+            <p className="text-[11px] text-ruby">{breakEven.note}</p>
           )}
           {partialClose?.suggested && (
-            <p className="text-[11px] text-sky-300">{partialClose.note}</p>
+            <p className="text-[11px] text-ruby">{partialClose.note}</p>
           )}
         </div>
       )}
 
       {styleMatch?.note && (
-        <p className="text-[11px] text-zinc-500">{styleMatch.note}</p>
+        <p className="text-[11px] text-txt-muted">{styleMatch.note}</p>
       )}
 
       {alternatives.length > 0 && (
         <div className="space-y-0.5">
           {alternatives.map((alt, i) => (
-            <p key={i} className="text-[10px] text-zinc-500">
-              <span className="text-zinc-400">{alt.label}: </span>
+            <p key={i} className="text-[10px] text-txt-muted">
+              <span className="text-txt-secondary">{alt.label}: </span>
               {alt.note}
             </p>
           ))}
@@ -203,7 +203,7 @@ export function TradeHealthPanel({
     <Card data-testid="trade-health-panel">
       <CardHeader className={compact ? "pb-2" : ""}>
         <CardTitle className="text-sm flex items-center gap-2">
-          <Activity className="h-4 w-4 text-sky-400" />
+          <Activity className="h-4 w-4 text-ruby" />
           Trade Health
           {totalOpen > 0 && (
             <Badge variant="outline" className="text-[10px]" data-testid="trade-health-open-count">
@@ -214,24 +214,24 @@ export function TradeHealthPanel({
       </CardHeader>
       <CardContent className="space-y-3 text-xs">
         {query.isLoading ? (
-          <div className="flex items-center gap-2 text-zinc-500">
+          <div className="flex items-center gap-2 text-txt-muted">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
             Checking your open positions…
           </div>
         ) : query.isError ? (
-          <p className="text-amber-400/80" data-testid="trade-health-error">
+          <p className="text-warning/80" data-testid="trade-health-error">
             Trade health is momentarily unavailable — your positions and trading
             are unaffected.
           </p>
         ) : assessments.length === 0 ? (
-          <p className="text-zinc-500" data-testid="trade-health-empty">
+          <p className="text-txt-muted" data-testid="trade-health-empty">
             No open positions to monitor right now. Health guidance appears once
             you have a live or demo trade running.
           </p>
         ) : (
           <>
             {data?.summary && (
-              <p className="text-zinc-300" data-testid="trade-health-summary">
+              <p className="text-txt-secondary" data-testid="trade-health-summary">
                 {data.summary}
               </p>
             )}
@@ -241,7 +241,7 @@ export function TradeHealthPanel({
                 {/* This symbol — only positions on the selected symbol. */}
                 <div className="space-y-2" data-testid="trade-health-this-symbol">
                   <div className="flex items-center gap-2">
-                    <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-txt-secondary">
                       This symbol
                     </span>
                     <Badge variant="outline" className="text-[10px]">
@@ -256,7 +256,7 @@ export function TradeHealthPanel({
                     </div>
                   ) : (
                     <p
-                      className="text-zinc-500"
+                      className="text-txt-muted"
                       data-testid="trade-health-this-symbol-empty"
                     >
                       No open positions on {selectedSymbolLabel}.
@@ -268,13 +268,13 @@ export function TradeHealthPanel({
                     labeled account-wide so they never read as this-symbol health. */}
                 {accountAssessments.length > 0 && (
                   <>
-                    <Separator className="bg-zinc-800" />
+                    <Separator className="bg-secondary" />
                     <div
                       className="space-y-2"
                       data-testid="trade-health-account-exposure"
                     >
                       <div className="flex items-center gap-2">
-                        <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
+                        <span className="text-[11px] font-semibold uppercase tracking-wide text-txt-secondary">
                           Account exposure
                         </span>
                         <Badge variant="outline" className="text-[10px]">
@@ -282,7 +282,7 @@ export function TradeHealthPanel({
                           {accountAssessments.length === 1 ? "" : "s"}
                         </Badge>
                       </div>
-                      <p className="text-[11px] text-zinc-500">
+                      <p className="text-[11px] text-txt-muted">
                         Open positions elsewhere in your account — not on{" "}
                         {selectedSymbolLabel}.
                       </p>
@@ -308,12 +308,12 @@ export function TradeHealthPanel({
               correlations.length > 0 ||
               overtrading.length > 0) && (
               <>
-                <Separator className="bg-zinc-800" />
+                <Separator className="bg-secondary" />
                 <div className="space-y-1.5">
                   {conflicts.map((c, i) => (
                     <div
                       key={`cf-${i}`}
-                      className="flex items-start gap-2 text-[11px] text-amber-300"
+                      className="flex items-start gap-2 text-[11px] text-warning"
                     >
                       <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                       <span>{c.note}</span>
@@ -322,7 +322,7 @@ export function TradeHealthPanel({
                   {correlations.map((c, i) => (
                     <div
                       key={`co-${i}`}
-                      className="flex items-start gap-2 text-[11px] text-amber-300"
+                      className="flex items-start gap-2 text-[11px] text-warning"
                     >
                       <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                       <span>{c.note}</span>
@@ -331,7 +331,7 @@ export function TradeHealthPanel({
                   {overtrading.map((o, i) => (
                     <div
                       key={`ot-${i}`}
-                      className="flex items-start gap-2 text-[11px] text-amber-300"
+                      className="flex items-start gap-2 text-[11px] text-warning"
                     >
                       <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                       <span>{o.note}</span>
@@ -341,7 +341,7 @@ export function TradeHealthPanel({
               </>
             )}
 
-            <p className="text-[10px] text-zinc-600">
+            <p className="text-[10px] text-txt-muted">
               Guidance only — ARX never opens, closes, or changes a trade for
               you.
             </p>

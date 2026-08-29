@@ -107,10 +107,10 @@ function deriveStatus(args: {
 
 function StatusBadgePill({ s }: { s: StatusBadge }) {
   const cls =
-    s.tone === "ok" ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
-    : s.tone === "warn" ? "border-amber-500/40 bg-amber-500/10 text-amber-200"
-    : s.tone === "danger" ? "border-rose-500/40 bg-rose-500/10 text-rose-200"
-    : "border-zinc-700 bg-zinc-900/60 text-zinc-400";
+    s.tone === "ok" ? "border-success/40 bg-success/10 text-success"
+    : s.tone === "warn" ? "border-warning/40 bg-warning/10 text-warning"
+    : s.tone === "danger" ? "border-danger/40 bg-danger/10 text-danger"
+    : "border-border bg-muted/60 text-txt-secondary";
   return (
     <span
       className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] font-mono uppercase tracking-wide ${cls}`}
@@ -341,10 +341,10 @@ export function LiveTradeTicket({
     const canTradeNow = armed && vol > 0 && !overLot && !missingSL && !pending && access.canTrade && !tradabilityBlocked;
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-md border-zinc-800" data-testid="fast-trade-panel">
+        <DialogContent className="sm:max-w-md border-border" data-testid="fast-trade-panel">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-zinc-200">
-              <Zap className="h-5 w-5 text-amber-300" /> Fast Trade
+            <DialogTitle className="flex items-center gap-2 text-foreground">
+              <Zap className="h-5 w-5 text-warning" /> Fast Trade
               <StatusBadgePill s={status} />
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground">
@@ -353,7 +353,7 @@ export function LiveTradeTicket({
           </DialogHeader>
 
           {accountInfo && (
-            <div className="text-[11px] text-muted-foreground border border-zinc-800 rounded-md p-2 bg-zinc-950/60 font-mono">
+            <div className="text-[11px] text-muted-foreground border border-border rounded-md p-2 bg-background/60 font-mono">
               Acct {accountInfo.accountNumberConfirmed} · {accountInfo.brokerServerConfirmed} · max {accountInfo.maxLotConfirmed}
             </div>
           )}
@@ -380,14 +380,14 @@ export function LiveTradeTicket({
                 value={volume} onChange={(e) => setVolume(e.target.value)}
                 data-testid="input-live-volume"
               />
-              {overLot && <div className="text-xs text-rose-400 mt-1">Exceeds max lot {maxLot}</div>}
+              {overLot && <div className="text-xs text-danger mt-1">Exceeds max lot {maxLot}</div>}
               {overLotRaw && isOwnerUnrestricted && (
-                <div className="text-xs text-amber-400 mt-1">Above max lot {maxLot} — allowed by OWNER unrestricted profile.</div>
+                <div className="text-xs text-warning mt-1">Above max lot {maxLot} — allowed by OWNER unrestricted profile.</div>
               )}
             </div>
             <div>
               <Label className="text-xs text-muted-foreground">
-                Stop loss {isOwnerUnrestricted ? <span className="opacity-60">(optional — OWNER unrestricted)</span> : allowNoSl ? <span className="opacity-60">(optional)</span> : <span className="text-rose-400">(required)</span>}
+                Stop loss {isOwnerUnrestricted ? <span className="opacity-60">(optional — OWNER unrestricted)</span> : allowNoSl ? <span className="opacity-60">(optional)</span> : <span className="text-danger">(required)</span>}
               </Label>
               <Input
                 type="number" step="0.0001" inputMode="decimal"
@@ -395,7 +395,7 @@ export function LiveTradeTicket({
                 placeholder={allowNoSl ? "blank = no SL" : ""}
                 data-testid="input-live-sl"
               />
-              {missingSL && <div className="text-xs text-rose-400 mt-1">Stop loss required by your settings.</div>}
+              {missingSL && <div className="text-xs text-danger mt-1">Stop loss required by your settings.</div>}
             </div>
             <div>
               <Label className="text-xs text-muted-foreground">Take profit <span className="opacity-60">(optional)</span></Label>
@@ -411,9 +411,9 @@ export function LiveTradeTicket({
           {/* Non-blocking feed-honesty notice (chart isn't a live broker feed).
               NEVER gates the one-tap BUY/SELL. */}
           {feedWarning && (
-            <Alert className="border-amber-500/40 bg-amber-500/5" data-testid="live-feed-warning">
-              <AlertTriangle className="h-4 w-4 text-amber-300" />
-              <AlertDescription className="text-xs text-amber-200">
+            <Alert className="border-warning/40 bg-warning/5" data-testid="live-feed-warning">
+              <AlertTriangle className="h-4 w-4 text-warning" />
+              <AlertDescription className="text-xs text-warning">
                 <span className="font-semibold">{feedWarning.warningTitle}.</span> {feedWarning.warningDetail}
               </AlertDescription>
             </Alert>
@@ -423,7 +423,7 @@ export function LiveTradeTicket({
           <div className="grid grid-cols-2 gap-2 pt-1">
             <Button
               size="lg"
-              className="h-14 text-base font-semibold bg-emerald-600 hover:bg-emerald-500 text-white"
+              className="h-14 text-base font-semibold bg-success hover:bg-success text-white"
               disabled={!canTradeNow}
               onClick={() => submitOneClick.mutate("BUY")}
               data-testid="btn-one-click-buy"
@@ -432,7 +432,7 @@ export function LiveTradeTicket({
             </Button>
             <Button
               size="lg"
-              className="h-14 text-base font-semibold bg-rose-600 hover:bg-rose-500 text-white"
+              className="h-14 text-base font-semibold bg-danger hover:bg-danger text-white"
               disabled={!canTradeNow}
               onClick={() => submitOneClick.mutate("SELL")}
               data-testid="btn-one-click-sell"
@@ -446,9 +446,9 @@ export function LiveTradeTicket({
             const accepted = !lastResult.reason && /^(SENT_TO_MT5_LIVE|SENT|ACCEPTED|QUEUED|FILLED|EXECUTED|OK)$/.test(s);
             if (accepted) {
               return (
-                <Alert className="border-emerald-700/40 bg-emerald-950/30" data-testid="live-result-alert">
-                  <AlertTitle className="text-emerald-200">Live order accepted</AlertTitle>
-                  <AlertDescription className="text-emerald-100/80 text-xs">
+                <Alert className="border-success/40 bg-success/30" data-testid="live-result-alert">
+                  <AlertTitle className="text-success">Live order accepted</AlertTitle>
+                  <AlertDescription className="text-success/80 text-xs">
                     Passed every safety gate. Waiting for broker fill.
                   </AlertDescription>
                 </Alert>
@@ -494,10 +494,10 @@ export function LiveTradeTicket({
   })();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg border-red-500/40">
+      <DialogContent className="sm:max-w-lg border-danger/40">
         <MasterLiveAccessTicketBlock />
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-red-300">
+          <DialogTitle className="flex items-center gap-2 text-danger">
             <Zap className="h-5 w-5" /> Trade Ticket
             <StatusBadgePill s={status} />
           </DialogTitle>
@@ -517,7 +517,7 @@ export function LiveTradeTicket({
         )}
 
         {accountInfo && (
-          <div className="text-xs text-muted-foreground border border-zinc-800 rounded-md p-2 bg-zinc-950/50">
+          <div className="text-xs text-muted-foreground border border-border rounded-md p-2 bg-background/50">
             Account <span className="font-mono">{accountInfo.accountNumberConfirmed}</span> ·
             Broker <span className="font-mono">{accountInfo.brokerServerConfirmed}</span> ·
             Max lot <span className="font-mono">{accountInfo.maxLotConfirmed}</span>
@@ -553,17 +553,17 @@ export function LiveTradeTicket({
             <div>
               <Label>Volume (lots)</Label>
               <Input type="number" step="0.01" value={volume} onChange={(e) => setVolume(e.target.value)} data-testid="input-live-volume" />
-              {overLot && <div className="text-xs text-rose-400 mt-1">Exceeds max lot {maxLot}</div>}
+              {overLot && <div className="text-xs text-danger mt-1">Exceeds max lot {maxLot}</div>}
               {overLotRaw && isOwnerUnrestricted && (
-                <div className="text-xs text-amber-400 mt-1">Above max lot {maxLot} — allowed by OWNER unrestricted profile.</div>
+                <div className="text-xs text-warning mt-1">Above max lot {maxLot} — allowed by OWNER unrestricted profile.</div>
               )}
             </div>
             <div>
               <Label>Stop loss {isOwnerUnrestricted && <span className="text-xs opacity-60">(optional — OWNER unrestricted)</span>}</Label>
               <Input type="number" step="0.0001" value={stopLoss} onChange={(e) => setSL(e.target.value)} data-testid="input-live-sl" />
-              {missingSL && <div className="text-xs text-rose-400 mt-1">Stop loss required</div>}
+              {missingSL && <div className="text-xs text-danger mt-1">Stop loss required</div>}
               {missingSLRaw === false && isOwnerUnrestricted && sl == null && isMarket(orderType) && (
-                <div className="text-xs text-amber-400 mt-1">No stop loss — allowed by OWNER unrestricted profile. Manage risk manually.</div>
+                <div className="text-xs text-warning mt-1">No stop loss — allowed by OWNER unrestricted profile. Manage risk manually.</div>
               )}
             </div>
             <div>
@@ -575,7 +575,7 @@ export function LiveTradeTicket({
 
         {rubyExplanationSummary && (
           <Alert>
-            <AlertTitle className="text-amber-300">{name} note</AlertTitle>
+            <AlertTitle className="text-warning">{name} note</AlertTitle>
             <AlertDescription className="text-sm">
               {rubyExplanationSummary}
               <div className="mt-1.5 text-xs italic text-muted-foreground">
@@ -591,9 +591,9 @@ export function LiveTradeTicket({
             /^(SENT_TO_MT5_LIVE|SENT|ACCEPTED|QUEUED|FILLED|EXECUTED|OK)$/.test(status);
           if (accepted) {
             return (
-              <Alert className="border-emerald-700/40 bg-emerald-950/30" data-testid="live-result-alert">
-                <AlertTitle className="text-emerald-200">Live order accepted</AlertTitle>
-                <AlertDescription className="text-emerald-100/80">
+              <Alert className="border-success/40 bg-success/30" data-testid="live-result-alert">
+                <AlertTitle className="text-success">Live order accepted</AlertTitle>
+                <AlertDescription className="text-success/80">
                   The order passed every safety gate and is on its way to the broker.
                 </AlertDescription>
               </Alert>
@@ -616,9 +616,9 @@ export function LiveTradeTicket({
         {/* Non-blocking feed-honesty notice (chart isn't a live broker feed).
             NEVER gates Confirm. */}
         {feedWarning && (
-          <Alert className="border-amber-500/40 bg-amber-500/5" data-testid="live-feed-warning-full">
-            <AlertTriangle className="h-4 w-4 text-amber-300" />
-            <AlertDescription className="text-xs text-amber-200">
+          <Alert className="border-warning/40 bg-warning/5" data-testid="live-feed-warning-full">
+            <AlertTriangle className="h-4 w-4 text-warning" />
+            <AlertDescription className="text-xs text-warning">
               <span className="font-semibold">{feedWarning.warningTitle}.</span> {feedWarning.warningDetail}
             </AlertDescription>
           </Alert>
@@ -627,9 +627,9 @@ export function LiveTradeTicket({
         {/* Non-blocking exit-protection note when SL is waived (e.g. one-click
             allowNoSl). Owner-unrestricted has its own note above. */}
         {!slRequired && !isOwnerUnrestricted && sl == null && isMarket(orderType) && (
-          <Alert className="border-amber-500/40 bg-amber-500/5" data-testid="live-no-sl-warning">
-            <AlertTriangle className="h-4 w-4 text-amber-300" />
-            <AlertDescription className="text-xs text-amber-200">
+          <Alert className="border-warning/40 bg-warning/5" data-testid="live-no-sl-warning">
+            <AlertTriangle className="h-4 w-4 text-warning" />
+            <AlertDescription className="text-xs text-warning">
               No stop loss set. Confirm will send this live order without automatic exit protection.
             </AlertDescription>
           </Alert>
@@ -648,7 +648,7 @@ export function LiveTradeTicket({
             </Button>
           </DialogFooter>
           {!submitStandard.isPending && submitDisabledReason && (
-            <div className="text-xs text-rose-300 text-right" data-testid="live-confirm-disabled-reason">
+            <div className="text-xs text-danger text-right" data-testid="live-confirm-disabled-reason">
               {submitDisabledReason}
             </div>
           )}

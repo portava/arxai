@@ -77,16 +77,16 @@ export function LiveSlotSummaryCard() {
     return (
       <Card data-testid="slot-summary-error">
         <CardHeader><CardTitle className="text-base">Your Account</CardTitle></CardHeader>
-        <CardContent><div className="text-sm text-rose-400">Couldn't load your account summary.</div></CardContent>
+        <CardContent><div className="text-sm text-danger">Couldn't load your account summary.</div></CardContent>
       </Card>
     );
   }
 
-  const pnlTone = s.openPnL > 0 ? "text-emerald-400" : s.openPnL < 0 ? "text-rose-400" : "text-zinc-300";
+  const pnlTone = s.openPnL > 0 ? "text-success" : s.openPnL < 0 ? "text-danger" : "text-txt-secondary";
   const pnlIcon = s.openPnL > 0
-    ? <TrendingUp className="h-3 w-3 text-emerald-400" />
+    ? <TrendingUp className="h-3 w-3 text-success" />
     : s.openPnL < 0
-    ? <TrendingDown className="h-3 w-3 text-rose-400" />
+    ? <TrendingDown className="h-3 w-3 text-danger" />
     : null;
 
   return (
@@ -104,9 +104,9 @@ export function LiveSlotSummaryCard() {
         </div>
         <div className="flex items-center gap-2">
           {s.isLive ? (
-            <Badge className="bg-emerald-500/20 text-emerald-300 gap-1" data-testid="badge-live"><Wifi className="h-3 w-3" /> Live</Badge>
+            <Badge className="bg-success/20 text-success gap-1" data-testid="badge-live"><Wifi className="h-3 w-3" /> Live</Badge>
           ) : s.isStale ? (
-            <Badge variant="outline" className="text-amber-300 border-amber-500/40 gap-1" data-testid="badge-stale"><AlertTriangle className="h-3 w-3" /> Stale</Badge>
+            <Badge variant="outline" className="text-warning border-warning/40 gap-1" data-testid="badge-stale"><AlertTriangle className="h-3 w-3" /> Stale</Badge>
           ) : (
             <Badge variant="outline" className="text-muted-foreground gap-1" data-testid="badge-disconnected"><WifiOff className="h-3 w-3" /> Disconnected</Badge>
           )}
@@ -122,13 +122,13 @@ export function LiveSlotSummaryCard() {
           <Stat label="Margin Level" value={fmtPct(s.marginLevelPercent)} />
         </div>
         {s.positionSyncIncomplete ? (
-          <div className="mt-2 text-[11px] text-sky-300/90 flex items-start gap-1" data-testid="slot-sync-incomplete">
+          <div className="mt-2 text-[11px] text-ruby/90 flex items-start gap-1" data-testid="slot-sync-incomplete">
             <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
             <span>{s.snapshotWarning ?? "Position sync incomplete — waiting for broker confirmation."}</span>
           </div>
         ) : null}
         {s.marginEstimateIncomplete ? (
-          <div className="mt-2 text-[11px] text-amber-300/90 flex items-start gap-1">
+          <div className="mt-2 text-[11px] text-warning/90 flex items-start gap-1">
             <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
             <span>
               Used/free margin is a forex-only estimate. Your broker doesn't

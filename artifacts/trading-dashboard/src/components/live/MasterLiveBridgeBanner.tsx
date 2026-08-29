@@ -52,15 +52,15 @@ export function MasterLiveBridgeBanner() {
   const b = s.bridge;
   return (
     <Card
-      className="border-2 border-sky-500/40 bg-sky-500/5"
+      className="border-2 border-ruby/40 bg-ruby/5"
       data-testid="card-master-live-bridge-banner"
     >
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-sky-200">
+        <CardTitle className="flex items-center gap-2 text-ruby">
           <Plug className="w-5 h-5" />
           Master Live Bridge: Current Connected Bridge
           {s.detected && !s.blocked
-            ? <Badge className="ml-2 bg-emerald-500/20 text-emerald-300"><ShieldCheck className="w-3 h-3 mr-1" />ready</Badge>
+            ? <Badge className="ml-2 bg-success/20 text-success"><ShieldCheck className="w-3 h-3 mr-1" />ready</Badge>
             : <Badge variant="destructive" className="ml-2"><AlertTriangle className="w-3 h-3 mr-1" />blocked</Badge>}
         </CardTitle>
       </CardHeader>
@@ -85,17 +85,17 @@ export function MasterLiveBridgeBanner() {
             <Field label="mode" value={b.mode} mono />
           </div>
         ) : (
-          <div className="text-amber-300/90">
+          <div className="text-warning/90">
             No real-mode EA bridge currently connected. Attach the EA v1.27
             to your master MT5 terminal so the detector can resolve it.
           </div>
         )}
         {s.blocked && (
-          <div className="text-[12px] text-amber-200 pt-2 border-t border-sky-500/20">
+          <div className="text-[12px] text-warning pt-2 border-t border-ruby/20">
             Blocked: {s.primaryReason} {s.blockReasons.length > 1 ? `(+${s.blockReasons.length - 1} more)` : ""}
           </div>
         )}
-        <div className="text-[11px] text-muted-foreground pt-2 border-t border-sky-500/20">
+        <div className="text-[11px] text-muted-foreground pt-2 border-t border-ruby/20">
           Broker tokens, raw account numbers, and the server name are never
           returned to this card. Master live dispatch additionally requires
           ARX_LIVE_BROKER_EXECUTION_ENABLED + every Phase B gate PASS.

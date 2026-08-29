@@ -116,8 +116,8 @@ export function MasterLiveAccessBanner() {
   // and never mention Demo/Paper.
   if (v.status === "APPROVED") {
     return (
-      <Alert className="border-amber-500/40 bg-amber-500/5" data-testid="banner-master-live-access">
-        <ShieldAlert className="h-4 w-4 text-amber-400" />
+      <Alert className="border-warning/40 bg-warning/5" data-testid="banner-master-live-access">
+        <ShieldAlert className="h-4 w-4 text-warning" />
         <AlertTitle>{approvedBlockCopy(v.blockReason, v.message)}</AlertTitle>
         <AlertDescription className="text-xs text-muted-foreground">
           Live access is approved for your account. This is a temporary
@@ -137,8 +137,8 @@ export function MasterLiveAccessBanner() {
       ? "Live trading is risk-locked for your account."
       : "Live trading requires approval.";
   return (
-    <Alert className="border-amber-500/40 bg-amber-500/5" data-testid="banner-master-live-access">
-      <ShieldAlert className="h-4 w-4 text-amber-400" />
+    <Alert className="border-warning/40 bg-warning/5" data-testid="banner-master-live-access">
+      <ShieldAlert className="h-4 w-4 text-warning" />
       <AlertTitle>{sentence}</AlertTitle>
       <AlertDescription className="text-xs text-muted-foreground">
         Contact an administrator to request access.
@@ -152,7 +152,7 @@ export function MasterLiveAccessTicketBlock() {
   if (!v.loaded || v.canTrade) return null;
   return (
     <div
-      className="border border-rose-500/40 bg-rose-500/5 rounded-md p-3 text-sm text-rose-200"
+      className="border border-danger/40 bg-danger/5 rounded-md p-3 text-sm text-danger"
       data-testid="block-master-live-ticket-disabled"
     >
       <div className="font-medium">Your account is not approved for master live trading.</div>

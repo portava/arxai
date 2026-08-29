@@ -26,10 +26,10 @@ function formatAgo(lastRefreshAt: number | null): string {
 }
 
 const BRIDGE_STATE_STYLES: Record<BridgeState, { dot: string; label: string; text: string }> = {
-  live:    { dot: "bg-emerald-500 animate-pulse", label: "Live",    text: "text-emerald-400" },
-  delayed: { dot: "bg-amber-400",                  label: "Delayed", text: "text-amber-400"   },
-  stale:   { dot: "bg-orange-500",                 label: "Stale",   text: "text-orange-400"  },
-  offline: { dot: "bg-red-500",                    label: "Offline", text: "text-red-400"     },
+  live:    { dot: "bg-success animate-pulse", label: "Live",    text: "text-success" },
+  delayed: { dot: "bg-warning",                  label: "Delayed", text: "text-warning"   },
+  stale:   { dot: "bg-warning",                 label: "Stale",   text: "text-warning"  },
+  offline: { dot: "bg-danger",                    label: "Offline", text: "text-danger"     },
 };
 
 export interface LiveBridgeAutoRefreshControlProps {

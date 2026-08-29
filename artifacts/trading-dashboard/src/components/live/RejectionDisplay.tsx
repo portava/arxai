@@ -99,13 +99,13 @@ export function RejectionDisplay({
     <div className="space-y-2 min-w-0" data-testid="rejection-display">
       {/* User-facing line — always shown, no jargon */}
       <div className="flex items-start gap-2 min-w-0">
-        <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-rose-400" aria-hidden />
+        <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-danger" aria-hidden />
         <div className="min-w-0">
-          <div className="font-medium text-rose-100 break-words" data-testid="rejection-user-message">
+          <div className="font-medium text-danger break-words" data-testid="rejection-user-message">
             {s.userMessage}
           </div>
           {/* Suggested fix is useful to everyone, not just admins */}
-          <div className="text-xs text-zinc-400 mt-0.5 break-words" data-testid="rejection-suggested-fix">
+          <div className="text-xs text-txt-secondary mt-0.5 break-words" data-testid="rejection-suggested-fix">
             {s.suggestedFix}
           </div>
         </div>
@@ -113,15 +113,15 @@ export function RejectionDisplay({
 
       {/* Admin/owner technical detail — expandable, copyable */}
       {showAdminDetail && (
-        <details className="border-t border-zinc-800 pt-2" data-testid="rejection-admin-detail">
-          <summary className="cursor-pointer text-xs text-zinc-400 select-none">
+        <details className="border-t border-border pt-2" data-testid="rejection-admin-detail">
+          <summary className="cursor-pointer text-xs text-txt-secondary select-none">
             Technical detail (admin/owner)
           </summary>
           <div className="mt-2">
             <button
               type="button"
               onClick={copy}
-              className="mb-2 inline-flex items-center gap-1 rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-800"
+              className="mb-2 inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-xs text-txt-secondary hover:bg-secondary"
               data-testid="rejection-copy-btn"
             >
               {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
@@ -130,8 +130,8 @@ export function RejectionDisplay({
             <div className="space-y-1.5 font-mono text-xs">
               {rows.map(([k, v]) => (
                 <div key={k} className="flex flex-col sm:grid sm:grid-cols-[7rem_1fr] sm:gap-2 min-w-0">
-                  <span className="text-zinc-500 shrink-0">{k}</span>
-                  <span className="text-zinc-200 break-words min-w-0">{v}</span>
+                  <span className="text-txt-muted shrink-0">{k}</span>
+                  <span className="text-foreground break-words min-w-0">{v}</span>
                 </div>
               ))}
             </div>

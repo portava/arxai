@@ -40,8 +40,8 @@ function fmtMoney(v: number | null, ccy: string): string {
 }
 
 function toneFor(v: number | null): string {
-  if (v == null || !Number.isFinite(v) || v === 0) return "text-zinc-300";
-  return v > 0 ? "text-emerald-400" : "text-rose-400";
+  if (v == null || !Number.isFinite(v) || v === 0) return "text-txt-secondary";
+  return v > 0 ? "text-success" : "text-danger";
 }
 
 export function LiveOpenTradesPanel() {
@@ -68,9 +68,9 @@ export function LiveOpenTradesPanel() {
         </div>
         <div className="flex items-center gap-2">
           {q.data?.isLive ? (
-            <Badge className="bg-emerald-500/20 text-emerald-300 gap-1"><Wifi className="h-3 w-3" /> Live</Badge>
+            <Badge className="bg-success/20 text-success gap-1"><Wifi className="h-3 w-3" /> Live</Badge>
           ) : q.data?.isStale ? (
-            <Badge variant="outline" className="text-amber-300 border-amber-500/40 gap-1"><AlertTriangle className="h-3 w-3" /> Stale</Badge>
+            <Badge variant="outline" className="text-warning border-warning/40 gap-1"><AlertTriangle className="h-3 w-3" /> Stale</Badge>
           ) : (
             <Badge variant="outline" className="text-muted-foreground gap-1"><WifiOff className="h-3 w-3" /> Disconnected</Badge>
           )}
@@ -88,7 +88,7 @@ export function LiveOpenTradesPanel() {
             {/* Mobile card list */}
             <div className="md:hidden space-y-3">
               {positions.map((p) => (
-                <div key={`${p.brokerTicket}-mobile`} className="rounded-lg border border-zinc-800 p-3 space-y-2" data-testid={`open-trade-mobile-${p.brokerTicket ?? "x"}`}>
+                <div key={`${p.brokerTicket}-mobile`} className="rounded-lg border border-border p-3 space-y-2" data-testid={`open-trade-mobile-${p.brokerTicket ?? "x"}`}>
                   <div className="flex items-center justify-between">
                     <div className="font-mono font-semibold">{p.symbol}</div>
                     <Badge variant="outline">{p.direction}</Badge>
@@ -99,7 +99,7 @@ export function LiveOpenTradesPanel() {
                     <div><span className="text-muted-foreground">Current</span> {p.currentPrice ?? "—"}</div>
                     <div><span className="text-muted-foreground">SL/TP</span> {p.stopLoss ?? "—"} / {p.takeProfit ?? "—"}</div>
                   </div>
-                  <div className="flex items-center justify-between border-t border-zinc-800 pt-2">
+                  <div className="flex items-center justify-between border-t border-border pt-2">
                     <div className="text-xs text-muted-foreground">Current P/L</div>
                     <div className={`text-base font-semibold tabular-nums flex items-center gap-1 ${toneFor(p.netProfit)}`}>
                       {p.netProfit > 0 ? <TrendingUp className="h-3 w-3" /> : p.netProfit < 0 ? <TrendingDown className="h-3 w-3" /> : null}
@@ -126,7 +126,7 @@ export function LiveOpenTradesPanel() {
             <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-left text-xs text-muted-foreground border-b border-zinc-800">
+                  <tr className="text-left text-xs text-muted-foreground border-b border-border">
                     <th className="py-2 pr-2">Symbol</th>
                     <th className="py-2 pr-2">Side</th>
                     <th className="py-2 pr-2 text-right">Vol</th>
@@ -142,7 +142,7 @@ export function LiveOpenTradesPanel() {
                 </thead>
                 <tbody>
                   {positions.map((p) => (
-                    <tr key={p.brokerTicket} className="border-b border-zinc-900" data-testid={`open-trade-${p.brokerTicket ?? "x"}`}>
+                    <tr key={p.brokerTicket} className="border-b border-border" data-testid={`open-trade-${p.brokerTicket ?? "x"}`}>
                       <td className="py-2 pr-2 font-mono">{p.symbol}</td>
                       <td className="py-2 pr-2"><Badge variant="outline">{p.direction}</Badge></td>
                       <td className="py-2 pr-2 text-right tabular-nums">{p.volume}</td>

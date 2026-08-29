@@ -44,12 +44,12 @@ export function LiveScalpAddOnPanel({
 
   return (
     <Alert
-      className="border-fuchsia-500/30 bg-fuchsia-500/5"
+      className="border-premium/30 bg-premium/5"
       data-testid="ls-scalp-addon"
       data-addon={addOn.recommendation}
     >
-      <Flame className="h-4 w-4 text-fuchsia-300" />
-      <AlertTitle className="flex flex-wrap items-center gap-2 text-fuchsia-200">
+      <Flame className="h-4 w-4 text-premium" />
+      <AlertTitle className="flex flex-wrap items-center gap-2 text-premium">
         {name} add-on read
         <Badge variant="outline" className={ADD_ON_TONE[addOn.recommendation]}>
           {ADD_ON_LABEL[addOn.recommendation]}
@@ -65,7 +65,7 @@ export function LiveScalpAddOnPanel({
           {addOn.remainingAddOns > 0 ? ` · ${addOn.remainingAddOns} left` : " · none left"}
         </p>
         {addOn.revengeGuardTriggered && (
-          <p className="flex items-center gap-1 text-rose-300">
+          <p className="flex items-center gap-1 text-danger">
             <AlertTriangle className="h-3 w-3" /> Revenge-trade guard is on — adding here looks emotional, not planned.
           </p>
         )}
