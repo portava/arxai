@@ -155,7 +155,11 @@
     "test:epistemic-uncertainty": "node --import tsx --test --test-force-exit src/lib/__qa__/epistemicUncertainty.test.ts",
     "test:change-point": "node --import tsx --test --test-force-exit src/lib/__qa__/changePointDomain.test.ts",
     "test:evidence-diversity": "node --import tsx --test --test-force-exit src/lib/__qa__/evidenceDiversityDomain.test.ts",
-    "test:opportunity-spine": "node --import tsx --test --test-force-exit src/lib/__qa__/opportunitySpineDomain.test.ts",
+    "test:capital-scheduler": "node --import tsx --test --test-force-exit src/lib/__qa__/capitalScheduler.test.ts",
+    "test:admission-controller": "node --import tsx --test --test-force-exit src/lib/__qa__/admissionController.test.ts",
+    "test:beneficial-owner-exposure": "node --import tsx --test --test-force-exit src/lib/__qa__/beneficialOwnerExposure.test.ts",
+    "test:ruin-capacity": "node --import tsx --test --test-force-exit src/lib/__qa__/ruinCapacity.test.ts",
+    "test:market-selection": "node --import tsx --test --test-force-exit src/lib/__qa__/marketSelectionEngine.test.ts",
     "test:mission-driver-worker": "node --import tsx --test --test-force-exit src/lib/__qa__/missionDriverWorker.test.ts",
     "test:mission-execution-mode": "node --import tsx --test --test-force-exit src/routes/__qa__/missionExecutionModeRoute.test.ts",
     "test:intelligence-roi": "node --import tsx --test --test-force-exit src/lib/__qa__/intelligenceRoi.test.ts",
@@ -245,7 +249,8 @@
     "certify:tier1-demo": "node --import tsx src/scripts/tier1DemoCertify.ts",
     "tier1:seed": "node --import tsx src/scripts/tier1SeedCertificationTicket.ts",
     "test:execution-policy-shadow": "node --import tsx --test --test-force-exit src/lib/execution/__qa__/executionPolicyShadow.test.ts",
-    "test:incident-replay": "node --import tsx --test --test-force-exit src/lib/replaySim/__qa__/incidentReplay.test.ts"
+    "test:incident-replay": "node --import tsx --test --test-force-exit src/lib/replaySim/__qa__/incidentReplay.test.ts",
+    "test:opportunity-spine": "node --import tsx --test --test-force-exit src/lib/__qa__/opportunitySpineDomain.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

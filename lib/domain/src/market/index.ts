@@ -36,3 +36,4 @@ export * from "./goldRiskContract";
 export * from "./goldStrategyTemplates";
 export * from "./goldReasoning";
 export * from "./goldReliability";
+export * from "./marketSelectionEngine";

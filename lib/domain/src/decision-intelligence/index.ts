@@ -11,3 +11,4 @@ export * from "./adaptiveAggression.engine";
 export * from "./noTradeQuality.engine";
 export * from "./decisionChainScoring.engine";
 export * from "./governance";
+export * from "./ruinCapacitySimulation.engine";
