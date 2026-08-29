@@ -49,10 +49,10 @@ const fmt = (n: number | null | undefined, d = 2) =>
 
 function StatusPill({ tone, children }: { tone: "ok" | "warn" | "danger" | "info"; children: React.ReactNode }) {
   const cls = {
-    ok:    "border-emerald-500/40 bg-emerald-500/10 text-emerald-300",
-    warn:  "border-amber-500/40 bg-amber-500/10 text-amber-300",
-    danger:"border-red-500/40 bg-red-500/10 text-red-300",
-    info:  "border-cyan-500/40 bg-cyan-500/10 text-cyan-300",
+    ok:    "border-success/40 bg-success/10 text-success",
+    warn:  "border-warning/40 bg-warning/10 text-warning",
+    danger:"border-danger/40 bg-danger/10 text-danger",
+    info:  "border-ruby/40 bg-ruby/10 text-ruby",
   }[tone];
   return <span className={`px-2 py-0.5 rounded border font-mono text-[10px] uppercase tracking-wider ${cls}`}>{children}</span>;
 }
@@ -133,12 +133,12 @@ export function ARXIntelligencePanel() {
       <CardContent className="p-5 space-y-5">
         {/* Canonical safety posture — single source of truth, never says liveLocked=false */}
         <div className="rounded-md border border-border bg-card/50 p-3 text-[11px] font-mono grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-1" data-testid="arx-canonical-safety">
-          <div><span className="text-muted-foreground">Mode:</span> <span className="text-cyan-300">READ_ONLY</span></div>
-          <div><span className="text-muted-foreground">Live Execution:</span> <span className="text-red-300">Disabled</span></div>
-          <div><span className="text-muted-foreground">Broker Placement:</span> <span className="text-amber-300">Not Implemented</span></div>
-          <div><span className="text-muted-foreground">Demo Trading:</span> <span className="text-emerald-300">Enabled</span></div>
-          <div><span className="text-muted-foreground">Read-Only Guard:</span> <span className="text-emerald-300">Active</span></div>
-          <div><span className="text-muted-foreground">Live Locked:</span> <span className="text-emerald-300">True</span></div>
+          <div><span className="text-muted-foreground">Mode:</span> <span className="text-ruby">READ_ONLY</span></div>
+          <div><span className="text-muted-foreground">Live Execution:</span> <span className="text-danger">Disabled</span></div>
+          <div><span className="text-muted-foreground">Broker Placement:</span> <span className="text-warning">Not Implemented</span></div>
+          <div><span className="text-muted-foreground">Demo Trading:</span> <span className="text-success">Enabled</span></div>
+          <div><span className="text-muted-foreground">Read-Only Guard:</span> <span className="text-success">Active</span></div>
+          <div><span className="text-muted-foreground">Live Locked:</span> <span className="text-success">True</span></div>
         </div>
         {/* MT5 snapshot strip */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
@@ -171,7 +171,7 @@ export function ARXIntelligencePanel() {
 
         {/* Stale-data banner */}
         {stale && (
-          <div className="rounded border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200 flex gap-2 items-start" data-testid="arx-intel-stale-banner">
+          <div className="rounded border border-danger/40 bg-danger/10 p-3 text-sm text-danger flex gap-2 items-start" data-testid="arx-intel-stale-banner">
             <AlertTriangle size={16} className="mt-0.5 shrink-0" />
             <div>
               <div className="font-semibold">MT5 DATA STALE — analysis withheld.</div>
@@ -206,7 +206,7 @@ export function ARXIntelligencePanel() {
               {analysis.reasoning.map((r, i) => <div key={i}>• {r}</div>)}
             </div>
             {analysis.warnings.length > 0 && (
-              <div className="text-xs text-amber-300 space-y-1">
+              <div className="text-xs text-warning space-y-1">
                 {analysis.warnings.map((w, i) => <div key={i}>⚠ {w}</div>)}
               </div>
             )}
@@ -232,7 +232,7 @@ export function ARXIntelligencePanel() {
 
         {/* Blocked envelope display */}
         {blocked && (
-          <div className="rounded border border-red-500/40 bg-red-500/10 p-3 text-xs text-red-200" data-testid="arx-intel-blocked-result">
+          <div className="rounded border border-danger/40 bg-danger/10 p-3 text-xs text-danger" data-testid="arx-intel-blocked-result">
             <div className="font-semibold flex items-center gap-2"><ShieldOff size={14} /> {blocked.status}</div>
             <div className="mt-1">{blocked.reason}</div>
             <div className="mt-1 font-mono text-[11px]">executionMode={blocked.executionMode} · placementLayer={blocked.placementLayer}</div>

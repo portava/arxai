@@ -160,13 +160,13 @@ export function PositionSideCard({ position: p, onClose, onModifySLTP, onCloseTr
   };
 
   return (
-    <Card data-testid="position-side-card" className="border-zinc-800 bg-zinc-950/50">
+    <Card data-testid="position-side-card" className="border-border bg-background/50">
       <CardHeader className="py-3">
         <CardTitle className="flex items-center justify-between gap-2 text-sm">
           <div className="flex flex-wrap items-center gap-2">
-            <span data-testid="text-position-symbol" className="text-base font-semibold text-zinc-100">{p.symbol ?? "—"}</span>
+            <span data-testid="text-position-symbol" className="text-base font-semibold text-foreground">{p.symbol ?? "—"}</span>
             <Badge variant={p.side === "BUY" ? "default" : "destructive"} data-testid="badge-position-side">{p.side ?? "—"}</Badge>
-            <Badge variant="outline" data-testid="badge-account-mode" className={isLive ? "border-rose-500/40 text-rose-200" : "border-emerald-500/40 text-emerald-200"}>
+            <Badge variant="outline" data-testid="badge-account-mode" className={isLive ? "border-danger/40 text-danger" : "border-success/40 text-success"}>
               {p.accountMode}
             </Badge>
             <Badge variant="outline" className="text-[10px]" data-testid="badge-position-source">{p.source}</Badge>
@@ -191,7 +191,7 @@ export function PositionSideCard({ position: p, onClose, onModifySLTP, onCloseTr
           height={220}
         />
         {candleError && (
-          <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-xs text-amber-200">
+          <div className="rounded-md border border-warning/30 bg-warning/5 p-2 text-xs text-warning">
             Chart preview couldn't load: {candleError}
           </div>
         )}
@@ -204,7 +204,7 @@ export function PositionSideCard({ position: p, onClose, onModifySLTP, onCloseTr
           <Field label="Stop loss" testid="text-position-sl" value={p.stopLoss?.toString() ?? "—"} />
           <Field label="Take profit" testid="text-position-tp" value={p.takeProfit?.toString() ?? "—"} />
           <Field label="Floating P/L" testid="text-position-pnl" value={formatMoney(p.floatingPnl)}
-            valueClass={(p.floatingPnl ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"} />
+            valueClass={(p.floatingPnl ?? 0) >= 0 ? "text-success" : "text-danger"} />
           <Field label="Risk est." testid="text-position-risk" value={risk != null ? `$${risk.toFixed(2)}` : "—"} />
           <Field label="R : R" testid="text-position-rr" value={rr} />
           <Field label="Order type" testid="text-position-ordertype" value={p.side ? `MARKET_${p.side}` : "—"} />
@@ -213,7 +213,7 @@ export function PositionSideCard({ position: p, onClose, onModifySLTP, onCloseTr
         </div>
 
         {isLive && (
-          <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-[11px] text-amber-200">
+          <div className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/5 p-2 text-[11px] text-warning">
             <ShieldAlert className="mt-0.5 h-3 w-3 shrink-0" />
             <span>Live position. Every close or SL/TP edit goes through the full Phase B safety pipeline — nothing fires automatically.</span>
           </div>
@@ -242,8 +242,8 @@ export function PositionSideCard({ position: p, onClose, onModifySLTP, onCloseTr
         </div>
 
         {rubyReply && (
-          <div data-testid="ruby-reply" className="rounded-md border border-blue-500/30 bg-blue-500/5 p-3 text-xs leading-relaxed text-blue-100 whitespace-pre-wrap">
-            <div className="mb-1 flex items-center gap-1 text-[10px] uppercase tracking-wide text-blue-300">
+          <div data-testid="ruby-reply" className="rounded-md border border-primary/30 bg-primary/5 p-3 text-xs leading-relaxed text-primary whitespace-pre-wrap">
+            <div className="mb-1 flex items-center gap-1 text-[10px] uppercase tracking-wide text-primary">
               <Sparkles className="h-3 w-3" /> {name} (demo-only, read-only)
             </div>
             {rubyReply}
@@ -256,9 +256,9 @@ export function PositionSideCard({ position: p, onClose, onModifySLTP, onCloseTr
 
 function Field({ label, value, testid, valueClass }: { label: string; value: string; testid: string; valueClass?: string }) {
   return (
-    <div className="rounded-md border border-zinc-800 bg-zinc-900/40 p-2">
-      <div className="text-[10px] uppercase tracking-wide text-zinc-500">{label}</div>
-      <div data-testid={testid} className={`text-xs font-mono ${valueClass ?? "text-zinc-100"}`}>{value}</div>
+    <div className="rounded-md border border-border bg-muted/40 p-2">
+      <div className="text-[10px] uppercase tracking-wide text-txt-muted">{label}</div>
+      <div data-testid={testid} className={`text-xs font-mono ${valueClass ?? "text-foreground"}`}>{value}</div>
     </div>
   );
 }

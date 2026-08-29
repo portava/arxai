@@ -23,14 +23,14 @@ type Cmd = {
 };
 
 const STATUS_TONE: Record<string, string> = {
-  DRAFT: "bg-slate-500/20 text-slate-300",
-  USER_CONFIRMATION_REQUIRED: "bg-amber-500/20 text-amber-300",
-  DEMO_APPROVED: "bg-amber-500/20 text-amber-200",
-  SENT_TO_MT5_DEMO: "bg-sky-500/20 text-sky-300",
-  FILLED_DEMO: "bg-emerald-500/20 text-emerald-300",
-  REJECTED: "bg-rose-500/20 text-rose-300",
-  FAILED: "bg-rose-500/20 text-rose-300",
-  BLOCKED: "bg-rose-500/20 text-rose-200",
+  DRAFT: "bg-muted text-txt-secondary",
+  USER_CONFIRMATION_REQUIRED: "bg-warning/20 text-warning",
+  DEMO_APPROVED: "bg-warning/20 text-warning",
+  SENT_TO_MT5_DEMO: "bg-ruby/20 text-ruby",
+  FILLED_DEMO: "bg-success/20 text-success",
+  REJECTED: "bg-danger/20 text-danger",
+  FAILED: "bg-danger/20 text-danger",
+  BLOCKED: "bg-danger/20 text-danger",
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -113,7 +113,7 @@ export function RecentDemoCommands({
         </Button>
       </CardHeader>
       <CardContent className="p-0">
-        {err && <div className="text-xs text-rose-400 px-3 py-2">{err}</div>}
+        {err && <div className="text-xs text-danger px-3 py-2">{err}</div>}
         {!err && rows.length === 0 && (
           <div className="text-xs text-muted-foreground px-3 py-3">
             No demo commands yet. Submit a trade from the Market Scanner to see lifecycle here.
@@ -123,7 +123,7 @@ export function RecentDemoCommands({
         {rows.length > 0 && (
           <>
             {/* Mobile: stacked cards */}
-            <div className="md:hidden divide-y divide-slate-800/60">
+            <div className="md:hidden divide-y divide-border/60">
               {rows.map((c) => {
                 const sym = payloadStr(c.payload, "symbol") ?? "—";
                 const side = payloadStr(c.payload, "side") ?? "—";
@@ -133,12 +133,12 @@ export function RecentDemoCommands({
                   <div key={c.commandId} className="px-3 py-2 text-xs space-y-1">
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-mono font-semibold">{sym}</span>
-                      <Badge className={`text-[10px] ${STATUS_TONE[c.status] ?? "bg-slate-500/20 text-slate-300"}`}>
+                      <Badge className={`text-[10px] ${STATUS_TONE[c.status] ?? "bg-muted text-txt-secondary"}`}>
                         {STATUS_LABEL[c.status] ?? c.status}
                       </Badge>
                     </div>
                     <div className="flex items-center gap-2 text-[11px] font-mono text-muted-foreground">
-                      <span className={side === "BUY" ? "text-emerald-300" : side === "SELL" ? "text-rose-300" : ""}>{side}</span>
+                      <span className={side === "BUY" ? "text-success" : side === "SELL" ? "text-danger" : ""}>{side}</span>
                       <span>· vol {vol ?? "—"}</span>
                       <span>· {source}</span>
                     </div>
@@ -150,7 +150,7 @@ export function RecentDemoCommands({
                       {c.fillPrice != null && <span>@ {c.fillPrice}</span>}
                     </div>
                     {c.reason && (c.status === "REJECTED" || c.status === "FAILED" || c.status === "BLOCKED") && (
-                      <div className="text-[10px] text-rose-400 font-mono">{c.reason}</div>
+                      <div className="text-[10px] text-danger font-mono">{c.reason}</div>
                     )}
                   </div>
                 );
@@ -160,7 +160,7 @@ export function RecentDemoCommands({
             {/* Desktop: dense table */}
             <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-[11px]">
-                <thead className="text-muted-foreground border-b border-slate-700/60">
+                <thead className="text-muted-foreground border-b border-border/60">
                   <tr>
                     <th className="text-left font-medium px-2 py-1.5">Time</th>
                     <th className="text-left font-medium px-2 py-1.5">Source</th>
@@ -182,14 +182,14 @@ export function RecentDemoCommands({
                     const vol = payloadNum(c.payload, "volume");
                     const source = payloadStr(c.payload, "source") ?? "MANUAL";
                     return (
-                      <tr key={c.commandId} className="border-b border-slate-800/60 last:border-0">
+                      <tr key={c.commandId} className="border-b border-border/60 last:border-0">
                         <td className="px-2 py-1 font-mono whitespace-nowrap">{new Date(c.createdAt).toLocaleTimeString()}</td>
                         <td className="px-2 py-1 font-mono text-[10px] text-muted-foreground">{source}</td>
                         <td className="px-2 py-1 font-mono">{sym}</td>
-                        <td className={`px-2 py-1 font-mono ${side === "BUY" ? "text-emerald-300" : side === "SELL" ? "text-rose-300" : ""}`}>{side}</td>
+                        <td className={`px-2 py-1 font-mono ${side === "BUY" ? "text-success" : side === "SELL" ? "text-danger" : ""}`}>{side}</td>
                         <td className="px-2 py-1 font-mono text-right">{vol ?? "—"}</td>
                         <td className="px-2 py-1">
-                          <Badge className={`text-[10px] ${STATUS_TONE[c.status] ?? "bg-slate-500/20 text-slate-300"}`}>
+                          <Badge className={`text-[10px] ${STATUS_TONE[c.status] ?? "bg-muted text-txt-secondary"}`}>
                             {STATUS_LABEL[c.status] ?? c.status}
                           </Badge>
                         </td>
@@ -197,7 +197,7 @@ export function RecentDemoCommands({
                         <td className="px-2 py-1 font-mono text-[10px]">{c.bridgeConnectionId != null ? `#${c.bridgeConnectionId}` : "—"}</td>
                         <td className="px-2 py-1 font-mono text-[10px]">{c.brokerTicket ?? "—"}</td>
                         <td className="px-2 py-1 font-mono text-right">{c.fillPrice ?? "—"}</td>
-                        <td className="px-2 py-1 text-rose-400 font-mono text-[10px] max-w-[200px] truncate" title={c.reason ?? ""}>
+                        <td className="px-2 py-1 text-danger font-mono text-[10px] max-w-[200px] truncate" title={c.reason ?? ""}>
                           {c.reason ?? ""}
                         </td>
                       </tr>

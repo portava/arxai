@@ -87,7 +87,7 @@ export function OneClickArmModal({ open, onClose, status, onArmed }: Props) {
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Zap className="w-5 h-5 text-amber-400" />
+            <Zap className="w-5 h-5 text-warning" />
             {status.armed ? "Disarm One-Click Trading" : "Arm One-Click Trading"}
           </DialogTitle>
           <DialogDescription>
@@ -103,15 +103,15 @@ export function OneClickArmModal({ open, onClose, status, onArmed }: Props) {
               {bridgeLabel}
             </Badge>
             {status.armed && (
-              <Badge variant="default" className="text-xs bg-green-600">
+              <Badge variant="default" className="text-xs bg-success">
                 ARMED
               </Badge>
             )}
           </div>
 
           {status.armed ? (
-            <Alert className="border-amber-500/30 bg-amber-500/5">
-              <ShieldOff className="w-4 h-4 text-amber-400" />
+            <Alert className="border-warning/30 bg-warning/5">
+              <ShieldOff className="w-4 h-4 text-warning" />
               <AlertTitle>Currently armed</AlertTitle>
               <AlertDescription className="text-xs">
                 Buy and Sell execute immediately. Disarming restores the per-trade
@@ -128,8 +128,8 @@ export function OneClickArmModal({ open, onClose, status, onArmed }: Props) {
             </Alert>
           ) : (
             <>
-              <Alert className="border-emerald-500/30 bg-emerald-500/5">
-                <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              <Alert className="border-success/30 bg-success/5">
+                <ShieldCheck className="w-4 h-4 text-success" />
                 <AlertTitle>What arming means</AlertTitle>
                 <AlertDescription className="text-xs space-y-1">
                   <p>• Buy and Sell execute immediately with your saved defaults (lot: <b>{status.defaultVolume}</b>, symbol: <b>{status.defaultSymbol}</b>).</p>
@@ -166,7 +166,7 @@ export function OneClickArmModal({ open, onClose, status, onArmed }: Props) {
             <Button
               onClick={handleArm}
               disabled={busy || !status.canArm || !agreed}
-              className="bg-amber-600 hover:bg-amber-700 text-white"
+              className="bg-warning hover:bg-warning/15 text-white"
             >
               {busy ? "Arming…" : "I Agree — Arm One-Click Trading"}
             </Button>

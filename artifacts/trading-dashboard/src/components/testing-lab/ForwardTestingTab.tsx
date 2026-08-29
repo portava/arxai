@@ -70,14 +70,14 @@ export function ForwardTestingTab({ strategyId }: { strategyId?: string }) {
 
   if (accessDenied) {
     return (
-      <Card className="mt-2 border-amber-500/40 bg-amber-500/10">
+      <Card className="mt-2 border-warning/40 bg-warning/10">
         <CardContent className="p-4 flex items-start gap-3">
-          <ShieldAlert className="h-5 w-5 text-amber-400 mt-0.5 shrink-0" />
+          <ShieldAlert className="h-5 w-5 text-warning mt-0.5 shrink-0" />
           <div>
-            <p className="text-sm font-medium text-amber-300">
+            <p className="text-sm font-medium text-warning">
               Access denied — Admin or Owner role required for Forward Testing.
             </p>
-            <p className="text-xs text-amber-400/70 mt-1">
+            <p className="text-xs text-warning/70 mt-1">
               Forward testing observes SHADOW (non-live) data and is restricted to
               Admin and Owner sessions. Backtesting and the other Testing Lab tabs
               remain available to you.
@@ -98,7 +98,7 @@ export function ForwardTestingTab({ strategyId }: { strategyId?: string }) {
           </p>
         </div>
         <Badge variant="outline">SHADOW</Badge>
-        {status && <Badge className={status.running ? "bg-emerald-500/20 text-emerald-400" : ""}>{status.running ? "RUNNING" : "IDLE"}</Badge>}
+        {status && <Badge className={status.running ? "bg-success/20 text-success" : ""}>{status.running ? "RUNNING" : "IDLE"}</Badge>}
       </div>
 
       <Card>
@@ -133,7 +133,7 @@ export function ForwardTestingTab({ strategyId }: { strategyId?: string }) {
           <Stat label="Weakest strategy" value={results.weakestStrategy ?? "—"} />
         </div>
       ) : (
-        <p className="text-xs text-slate-500">No forward-test results yet.</p>
+        <p className="text-xs text-txt-muted">No forward-test results yet.</p>
       )}
 
       <ForwardChartPanel />

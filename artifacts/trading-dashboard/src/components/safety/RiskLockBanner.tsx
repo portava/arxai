@@ -25,23 +25,23 @@ export function RiskLockBanner() {
 
   return (
     <div
-      className="rounded-lg border border-red-500/40 bg-red-500/10 p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
+      className="rounded-lg border border-danger/40 bg-danger/10 p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
       data-testid="risk-lock-banner"
     >
       <div className="flex items-start gap-3">
-        <ShieldX className="text-red-300 shrink-0 mt-0.5" size={20} />
+        <ShieldX className="text-danger shrink-0 mt-0.5" size={20} />
         <div>
-          <div className="text-sm font-semibold text-red-200 flex items-center gap-2 flex-wrap">
+          <div className="text-sm font-semibold text-danger flex items-center gap-2 flex-wrap">
             <span>Trading is locked: {top.lockType}</span>
             <span
-              className="text-[10px] uppercase tracking-wider text-red-200/70 border border-red-300/30 rounded px-1 py-0.5"
+              className="text-[10px] uppercase tracking-wider text-danger/70 border border-danger/30 rounded px-1 py-0.5"
               data-testid="risk-lock-banner-mode"
             >
               {mode.cleanModeLabel}
             </span>
             {mode.isAdminPreviewingUserMode && (
               <span
-                className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider text-sky-200 border border-sky-400/40 rounded px-1 py-0.5"
+                className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider text-ruby border border-ruby/40 rounded px-1 py-0.5"
                 data-testid="risk-lock-banner-preview-badge"
                 title="Previewing as a regular user"
               >
@@ -49,15 +49,15 @@ export function RiskLockBanner() {
               </span>
             )}
           </div>
-          <div className="text-xs text-red-300/80 mt-0.5">{top.reason}</div>
+          <div className="text-xs text-danger/80 mt-0.5">{top.reason}</div>
           {mode.cleanBlockedReason && (
-            <div className="text-[11px] text-red-200/70 mt-0.5" data-testid="risk-lock-banner-blocked-reason">
+            <div className="text-[11px] text-danger/70 mt-0.5" data-testid="risk-lock-banner-blocked-reason">
               {mode.cleanBlockedReason}
             </div>
           )}
           {top.endTimeIso && <CooldownTimer endTimeIso={top.endTimeIso} className="mt-1" />}
           {locks.length > 1 && (
-            <div className="text-[11px] text-red-300/60 mt-1">+ {locks.length - 1} more active lock(s)</div>
+            <div className="text-[11px] text-danger/60 mt-1">+ {locks.length - 1} more active lock(s)</div>
           )}
         </div>
       </div>
@@ -67,7 +67,7 @@ export function RiskLockBanner() {
           size="sm"
           onClick={() => release.mutate({ id: top.id, data: { acknowledgement: "User override from banner", releasedBy: "USER" } })}
           disabled={release.isPending}
-          className="border-red-400/40 text-red-100 hover:bg-red-500/10"
+          className="border-danger/40 text-danger hover:bg-danger/10"
           data-testid="button-risk-lock-override"
         >
           {release.isPending ? "Releasing…" : "Override & Release"}

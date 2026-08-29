@@ -10,17 +10,17 @@ import { useTradingMode } from "@/hooks/useTradingMode";
 // every page agrees on whether the user is in LIVE_SHARED / DEMO / PAPER
 // and we don't leak legacy phrases like "OBSERVE_ONLY + PAPER_TRADING".
 const STATUS_STYLE = {
-  CLEAR:                 { icon: ShieldCheck, tone: "border-emerald-500/40 bg-emerald-500/5  text-emerald-200" },
-  CAUTION:               { icon: ShieldAlert, tone: "border-amber-500/40   bg-amber-500/5    text-amber-200" },
-  LOCKED:                { icon: ShieldX,     tone: "border-red-500/40     bg-red-500/5      text-red-200" },
-  LIVE_TRADING_DISABLED: { icon: Info,        tone: "border-slate-500/40   bg-slate-500/5    text-slate-200" },
+  CLEAR:                 { icon: ShieldCheck, tone: "border-success/40 bg-success/5  text-success" },
+  CAUTION:               { icon: ShieldAlert, tone: "border-warning/40   bg-warning/5    text-warning" },
+  LOCKED:                { icon: ShieldX,     tone: "border-danger/40     bg-danger/5      text-danger" },
+  LIVE_TRADING_DISABLED: { icon: Info,        tone: "border-border/40   bg-muted    text-foreground" },
 } as const;
 
 const RISK_TONE = {
-  LOW:      "text-emerald-300",
-  MEDIUM:   "text-amber-300",
-  HIGH:     "text-orange-300",
-  CRITICAL: "text-red-300",
+  LOW:      "text-success",
+  MEDIUM:   "text-warning",
+  HIGH:     "text-warning",
+  CRITICAL: "text-danger",
 } as const;
 
 export function TradingPermissionCard({ className }: { className?: string }) {
@@ -31,9 +31,9 @@ export function TradingPermissionCard({ className }: { className?: string }) {
 
   if (isLoading || !data || mode.isLoading) {
     return (
-      <Card className={cn("border-slate-700/50 bg-slate-900/40", className)}>
+      <Card className={cn("border-border/50 bg-muted/40", className)}>
         <CardHeader className="pb-3"><CardTitle className="text-sm">Trading Permission</CardTitle></CardHeader>
-        <CardContent className="text-xs text-slate-400">Loading…</CardContent>
+        <CardContent className="text-xs text-txt-secondary">Loading…</CardContent>
       </Card>
     );
   }
@@ -56,18 +56,18 @@ export function TradingPermissionCard({ className }: { className?: string }) {
       <CardContent className="space-y-2 text-xs">
         {exp && (
           <>
-            <div className="font-semibold text-slate-100">{exp.headline}</div>
-            <div className="text-slate-300">{exp.detail}</div>
-            <div className="text-slate-400 italic">→ {exp.recommendation}</div>
+            <div className="font-semibold text-foreground">{exp.headline}</div>
+            <div className="text-txt-secondary">{exp.detail}</div>
+            <div className="text-txt-secondary italic">→ {exp.recommendation}</div>
           </>
         )}
         {mode.cleanBlockedReason && (
-          <div className="text-[11px] text-amber-300/80 mt-2" data-testid="trading-permission-blocked-reason">
+          <div className="text-[11px] text-warning/80 mt-2" data-testid="trading-permission-blocked-reason">
             {mode.cleanBlockedReason}
           </div>
         )}
         {!mode.cleanBlockedReason && mode.cleanUserMessage && (
-          <div className="text-[11px] text-slate-400 mt-2" data-testid="trading-permission-user-message">
+          <div className="text-[11px] text-txt-secondary mt-2" data-testid="trading-permission-user-message">
             {mode.cleanUserMessage}
           </div>
         )}

@@ -147,7 +147,7 @@ export function PositionMiniChart({
     return (
       <div
         data-testid="position-mini-chart-empty"
-        className="rounded-md border border-zinc-800 bg-zinc-950/50 p-4 text-center text-xs text-zinc-500"
+        className="rounded-md border border-border bg-background/50 p-4 text-center text-xs text-txt-muted"
         style={{ height }}
       >
         Chart preview unavailable for <span className="font-mono">{symbol}</span> right now.
@@ -160,7 +160,7 @@ export function PositionMiniChart({
       <div
         ref={containerRef}
         data-testid="position-mini-chart"
-        className="w-full overflow-hidden rounded-md border border-zinc-800 bg-zinc-950/50"
+        className="w-full overflow-hidden rounded-md border border-border bg-background/50"
         style={{ height }}
       />
       {/* Honest feed-status badge — only renders for non-LIVE states. */}

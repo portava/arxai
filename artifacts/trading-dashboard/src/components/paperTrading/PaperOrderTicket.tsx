@@ -198,16 +198,16 @@ export function PaperOrderTicket({ accountId: _accountId }: { accountId: number 
   const showTriggerLimit = isStopLimit(orderType);
 
   const toneByLabel: Record<Preview["label"], string> = {
-    "Live-Eligible": "bg-emerald-600/20 text-emerald-200 border-emerald-500/40",
-    Paper: "bg-amber-600/20 text-amber-200 border-amber-500/40",
-    Draft: "bg-sky-600/20 text-sky-200 border-sky-500/40",
-    Blocked: "bg-red-600/20 text-red-200 border-red-500/40",
+    "Live-Eligible": "bg-success/20 text-success border-success/40",
+    Paper: "bg-warning/20 text-warning border-warning/40",
+    Draft: "bg-ruby/20 text-ruby border-ruby/40",
+    Blocked: "bg-danger/20 text-danger border-danger/40",
   };
 
   return (
-    <div className="space-y-3 rounded-lg border border-slate-700 bg-slate-900/40 p-4" data-testid="order-ticket">
+    <div className="space-y-3 rounded-lg border border-border bg-muted/40 p-4" data-testid="order-ticket">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-slate-100">Order Ticket</h3>
+        <h3 className="text-sm font-semibold text-foreground">Order Ticket</h3>
         <span className={`rounded border px-2 py-0.5 text-[10px] font-semibold ${toneByLabel[preview.label]}`} data-testid="order-ticket-label">
           {preview.label === "Paper" ? "DEMO" : preview.label.toUpperCase()}
         </span>
@@ -215,11 +215,11 @@ export function PaperOrderTicket({ accountId: _accountId }: { accountId: number 
 
       <div className="grid grid-cols-2 gap-2 text-xs">
         <label className="col-span-2">
-          <span className="text-slate-400">Order type</span>
+          <span className="text-txt-secondary">Order type</span>
           <select
             value={orderType}
             onChange={(e) => setOrderType(e.target.value as OrderType)}
-            className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100"
+            className="w-full rounded border border-border bg-background px-2 py-1 text-foreground"
             data-testid="select-order-type"
           >
             {(Object.keys(ORDER_LABELS) as OrderType[]).map((t) => (
@@ -229,87 +229,87 @@ export function PaperOrderTicket({ accountId: _accountId }: { accountId: number 
         </label>
 
         <label>
-          <span className="text-slate-400">Symbol</span>
-          <select value={symbol} onChange={(e) => setSymbol(e.target.value)} className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100">
+          <span className="text-txt-secondary">Symbol</span>
+          <select value={symbol} onChange={(e) => setSymbol(e.target.value)} className="w-full rounded border border-border bg-background px-2 py-1 text-foreground">
             {SYMBOLS.map((s) => <option key={s}>{s}</option>)}
           </select>
         </label>
         <label>
-          <span className="text-slate-400">Lot size</span>
-          <input type="number" step="0.01" min="0.01" value={lot} onChange={(e) => setLot(Number(e.target.value))} className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100" />
+          <span className="text-txt-secondary">Lot size</span>
+          <input type="number" step="0.01" min="0.01" value={lot} onChange={(e) => setLot(Number(e.target.value))} className="w-full rounded border border-border bg-background px-2 py-1 text-foreground" />
         </label>
 
         <label className="col-span-2">
-          <span className="text-slate-400">Current price (live) <span className="text-[10px] text-amber-300">— leave blank if not available</span></span>
-          <input type="number" step="0.00001" value={current} placeholder="e.g. 1.08500" onChange={(e) => setCurrent(e.target.value)} className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100" />
+          <span className="text-txt-secondary">Current price (live) <span className="text-[10px] text-warning">— leave blank if not available</span></span>
+          <input type="number" step="0.00001" value={current} placeholder="e.g. 1.08500" onChange={(e) => setCurrent(e.target.value)} className="w-full rounded border border-border bg-background px-2 py-1 text-foreground" />
         </label>
 
         {showEntry && (
           <label className="col-span-2">
-            <span className="text-slate-400">Entry price</span>
-            <input type="number" step="0.00001" value={entry} onChange={(e) => setEntry(e.target.value)} className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100" data-testid="input-entry" />
+            <span className="text-txt-secondary">Entry price</span>
+            <input type="number" step="0.00001" value={entry} onChange={(e) => setEntry(e.target.value)} className="w-full rounded border border-border bg-background px-2 py-1 text-foreground" data-testid="input-entry" />
           </label>
         )}
 
         {showTriggerLimit && (
           <>
             <label>
-              <span className="text-slate-400">Stop trigger</span>
-              <input type="number" step="0.00001" value={trigger} onChange={(e) => setTrigger(e.target.value)} className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100" data-testid="input-trigger" />
+              <span className="text-txt-secondary">Stop trigger</span>
+              <input type="number" step="0.00001" value={trigger} onChange={(e) => setTrigger(e.target.value)} className="w-full rounded border border-border bg-background px-2 py-1 text-foreground" data-testid="input-trigger" />
             </label>
             <label>
-              <span className="text-slate-400">Stop-limit price</span>
-              <input type="number" step="0.00001" value={limit} onChange={(e) => setLimit(e.target.value)} className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100" data-testid="input-limit" />
+              <span className="text-txt-secondary">Stop-limit price</span>
+              <input type="number" step="0.00001" value={limit} onChange={(e) => setLimit(e.target.value)} className="w-full rounded border border-border bg-background px-2 py-1 text-foreground" data-testid="input-limit" />
             </label>
           </>
         )}
 
         <label>
-          <span className="text-slate-400">Stop Loss</span>
-          <input type="number" step="0.00001" value={sl} onChange={(e) => setSl(e.target.value)} className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100" data-testid="input-sl" />
+          <span className="text-txt-secondary">Stop Loss</span>
+          <input type="number" step="0.00001" value={sl} onChange={(e) => setSl(e.target.value)} className="w-full rounded border border-border bg-background px-2 py-1 text-foreground" data-testid="input-sl" />
         </label>
         <label>
-          <span className="text-slate-400">Take Profit</span>
-          <input type="number" step="0.00001" value={tp} onChange={(e) => setTp(e.target.value)} className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100" data-testid="input-tp" />
+          <span className="text-txt-secondary">Take Profit</span>
+          <input type="number" step="0.00001" value={tp} onChange={(e) => setTp(e.target.value)} className="w-full rounded border border-border bg-background px-2 py-1 text-foreground" data-testid="input-tp" />
         </label>
       </div>
 
-      <div className="space-y-1 rounded border border-slate-700 bg-slate-950/60 p-2 text-[11px]">
-        <div className="flex justify-between text-slate-300">
+      <div className="space-y-1 rounded border border-border bg-background/60 p-2 text-[11px]">
+        <div className="flex justify-between text-txt-secondary">
           <span>R/R preview</span>
-          <span className="font-mono text-slate-100" data-testid="rr-preview">{preview.riskReward == null ? "—" : `${preview.riskReward}:1`}</span>
+          <span className="font-mono text-foreground" data-testid="rr-preview">{preview.riskReward == null ? "—" : `${preview.riskReward}:1`}</span>
         </div>
-        <div className="flex justify-between text-slate-300">
+        <div className="flex justify-between text-txt-secondary">
           <span>Effective entry</span>
-          <span className="font-mono text-slate-100">{preview.effectiveEntry == null ? "—" : preview.effectiveEntry}</span>
+          <span className="font-mono text-foreground">{preview.effectiveEntry == null ? "—" : preview.effectiveEntry}</span>
         </div>
         {!current.trim() && (
-          <p className="text-amber-300">Live price unavailable — direction checks against market are skipped. Real submission of a pending order may still be rejected at execution time.</p>
+          <p className="text-warning">Live price unavailable — direction checks against market are skipped. Real submission of a pending order may still be rejected at execution time.</p>
         )}
-        {preview.warnings.map((w, i) => <p key={`w${i}`} className="text-amber-300">{w}</p>)}
-        {preview.errors.map((e, i) => <p key={`e${i}`} className="text-red-400" data-testid={`error-${i}`}>{e}</p>)}
+        {preview.warnings.map((w, i) => <p key={`w${i}`} className="text-warning">{w}</p>)}
+        {preview.errors.map((e, i) => <p key={`e${i}`} className="text-danger" data-testid={`error-${i}`}>{e}</p>)}
       </div>
 
       <button
         onClick={() => place.mutate()}
         disabled={submitDisabled}
-        className="w-full rounded bg-amber-600 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-500 disabled:opacity-50"
+        className="w-full rounded bg-warning px-3 py-2 text-xs font-semibold text-white hover:bg-warning disabled:opacity-50"
         data-testid="button-place-order"
       >
         {place.isPending ? "Placing…" : isMarket(orderType) ? `Place SIMULATED ${ORDER_LABELS[orderType]}` : `Save ${ORDER_LABELS[orderType]} Draft`}
       </button>
 
-      {place.isError && <p className="text-[11px] text-red-400">{(place.error as Error).message}</p>}
+      {place.isError && <p className="text-[11px] text-danger">{(place.error as Error).message}</p>}
 
       {place.isSuccess && place.data && (
-        <div className="rounded border border-slate-700 bg-slate-950/60 p-2 text-[11px]">
+        <div className="rounded border border-border bg-background/60 p-2 text-[11px]">
           {place.data.kind === "market" ? (
-            <p className="text-emerald-300">Market order accepted.</p>
+            <p className="text-success">Market order accepted.</p>
           ) : (
             <>
-              <p className="text-sky-300">Draft saved.</p>
-              <p className="text-slate-300 mt-1">{place.data.result.reason ?? "Draft validated. Not sent to broker."}</p>
-              <p className="text-amber-300 mt-1">
+              <p className="text-ruby">Draft saved.</p>
+              <p className="text-txt-secondary mt-1">{place.data.result.reason ?? "Draft validated. Not sent to broker."}</p>
+              <p className="text-warning mt-1">
                 {place.data.result.executable ? "Ready to send" : "Not ready to send"}
                 {place.data.result.pendingStatus ? ` · ${place.data.result.pendingStatus}` : ""}
               </p>
@@ -318,7 +318,7 @@ export function PaperOrderTicket({ accountId: _accountId }: { accountId: number 
         </div>
       )}
 
-      <p className="text-[10px] text-amber-300">
+      <p className="text-[10px] text-warning">
         Live execution remains system-locked. Market orders execute as SIMULATED; pending orders save as validated DRAFTS until the MT5 bridge supports them and live trading is unlocked.
       </p>
     </div>

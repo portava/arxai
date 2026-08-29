@@ -15,8 +15,8 @@ export function ExecutionWarningPanel({ warnings = [], blockers = [] }: Props) {
   return (
     <div className="space-y-2" data-testid="execution-warning-panel">
       {blockers.length > 0 && (
-        <div className="rounded-md border border-red-500/30 bg-red-500/10 p-3">
-          <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-red-500 mb-1.5">
+        <div className="rounded-md border border-danger/30 bg-danger/10 p-3">
+          <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-danger mb-1.5">
             <ShieldX size={12} /> Blockers ({blockers.length})
           </div>
           <ul className="text-xs space-y-1 list-disc pl-5">
@@ -25,8 +25,8 @@ export function ExecutionWarningPanel({ warnings = [], blockers = [] }: Props) {
         </div>
       )}
       {warnings.length > 0 && (
-        <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3">
-          <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-amber-500 mb-1.5">
+        <div className="rounded-md border border-warning/30 bg-warning/10 p-3">
+          <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-warning mb-1.5">
             <AlertTriangle size={12} /> Warnings ({warnings.length})
           </div>
           <ul className="text-xs space-y-1 list-disc pl-5">

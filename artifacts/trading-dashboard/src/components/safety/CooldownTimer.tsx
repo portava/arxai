@@ -22,7 +22,7 @@ export function CooldownTimer({ endTimeIso, className }: { endTimeIso: string; c
   const end = new Date(endTimeIso).getTime();
   const remaining = end - now;
   return (
-    <div className={cn("inline-flex items-center gap-1.5 text-xs text-slate-300", className)}>
+    <div className={cn("inline-flex items-center gap-1.5 text-xs text-txt-secondary", className)}>
       <Clock size={12} />
       <span>cooldown: {formatRemaining(remaining)}</span>
     </div>

@@ -93,7 +93,7 @@ export function RubySetupReason({ signal, dense = false }: { signal: SignalConte
 
   return (
     <div className={`rounded border ${tone} p-2 text-[11px] leading-snug space-y-1`} data-testid="ruby-setup-reason">
-      <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-fuchsia-300">
+      <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-premium">
         <Sparkles className="h-3 w-3" />
         {name}'s Setup Reason
       </div>

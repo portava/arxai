@@ -285,7 +285,7 @@ export function QuickTradeModal({
               "bg-secondary/20 text-foreground"
             }`}>{mode}</span>
             {!market && (
-              <span className="rounded bg-indigo-500/20 px-2 py-0.5 text-xs text-indigo-200">DRAFT ONLY</span>
+              <span className="rounded bg-primary/20 px-2 py-0.5 text-xs text-primary">DRAFT ONLY</span>
             )}
           </DialogTitle>
         </DialogHeader>
@@ -417,7 +417,7 @@ export function QuickTradeModal({
             )}
 
             {!market && (
-              <div className="rounded bg-indigo-500/10 p-2 text-xs text-indigo-200">
+              <div className="rounded bg-primary/10 p-2 text-xs text-primary">
                 Pending orders are saved as validated drafts. The MT5 EA does not yet support
                 pending-order execution — this order will NOT be sent to your broker until that
                 EA upgrade ships.
@@ -462,7 +462,7 @@ export function QuickTradeModal({
             {market ? (
               <div className="text-xs text-txt-secondary">Market orders go through the existing guarded placement chain.</div>
             ) : (
-              <div className="rounded bg-indigo-500/10 p-2 text-xs text-indigo-200">
+              <div className="rounded bg-primary/10 p-2 text-xs text-primary">
                 This will save a validated DRAFT. The MT5 EA does not yet execute pending orders —
                 nothing will be sent to your broker.
               </div>

@@ -116,7 +116,7 @@ export function PositionPickerPanel() {
 
   return (
     <div className="space-y-3" data-testid="position-picker-panel">
-      <Card className="border-zinc-800 bg-zinc-950/50">
+      <Card className="border-border bg-background/50">
         <CardHeader className="py-3">
           <CardTitle className="flex items-center gap-2 text-sm">
             My open positions
@@ -124,15 +124,15 @@ export function PositionPickerPanel() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
-          {err && <div className="rounded border border-rose-500/30 bg-rose-500/5 p-2 text-xs text-rose-200">Couldn't load positions: {err}</div>}
+          {err && <div className="rounded border border-danger/30 bg-danger/5 p-2 text-xs text-danger">Couldn't load positions: {err}</div>}
           {!err && notLiveMode && !hasLive && (
-            <div data-testid="positions-not-live" className="rounded border border-zinc-700 bg-zinc-900/40 p-2 text-xs text-zinc-400">
+            <div data-testid="positions-not-live" className="rounded border border-border bg-muted/40 p-2 text-xs text-txt-secondary">
               <div>You are not currently in live trading mode.</div>
-              <div className="mt-0.5 text-[11px] text-zinc-500">Live positions will appear here when live mode is active.</div>
+              <div className="mt-0.5 text-[11px] text-txt-muted">Live positions will appear here when live mode is active.</div>
             </div>
           )}
           {!err && all.length === 0 && !notLiveMode && (
-            <div data-testid="text-no-open-positions" className="text-xs text-zinc-500">
+            <div data-testid="text-no-open-positions" className="text-xs text-txt-muted">
               You have no open demo or live positions right now.
             </div>
           )}
@@ -146,22 +146,22 @@ export function PositionPickerPanel() {
                 onClick={() => setSelected(isSel ? null : key)}
                 data-testid={`btn-select-position-${p.scope}-${p.brokerTicket}`}
                 className={`w-full rounded-md border p-2 text-left text-xs transition ${
-                  isSel ? "border-blue-500/60 bg-blue-500/5" : "border-zinc-800 bg-zinc-900/40 hover:bg-zinc-900"
+                  isSel ? "border-primary/60 bg-primary/5" : "border-border bg-muted/40 hover:bg-card"
                 }`}
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <span className="font-semibold text-zinc-100">{p.symbol}</span>
+                    <span className="font-semibold text-foreground">{p.symbol}</span>
                     <Badge variant={p.side === "BUY" ? "default" : "destructive"} className="text-[10px]">{p.side}</Badge>
-                    <Badge variant="outline" className={`text-[10px] ${p.accountMode === "LIVE" ? "border-rose-500/40 text-rose-200" : "border-emerald-500/40 text-emerald-200"}`}>
+                    <Badge variant="outline" className={`text-[10px] ${p.accountMode === "LIVE" ? "border-danger/40 text-danger" : "border-success/40 text-success"}`}>
                       {p.accountMode}
                     </Badge>
                   </div>
-                  <span className={`font-mono ${(p.floatingPnl ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+                  <span className={`font-mono ${(p.floatingPnl ?? 0) >= 0 ? "text-success" : "text-danger"}`}>
                     {p.floatingPnl == null ? "—" : (p.floatingPnl >= 0 ? "+" : "") + p.floatingPnl.toFixed(2)}
                   </span>
                 </div>
-                <div className="mt-1 flex items-center gap-2 text-[10px] text-zinc-500">
+                <div className="mt-1 flex items-center gap-2 text-[10px] text-txt-muted">
                   <span>#{p.brokerTicket ?? "—"}</span>
                   <span>lot {p.lotSize ?? "—"}</span>
                   <span>entry {p.entryPrice ?? "—"}</span>
@@ -183,13 +183,13 @@ export function PositionPickerPanel() {
 
       {confirm.kind === "close" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" data-testid="modal-confirm-close">
-          <div className="w-full max-w-md space-y-3 rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-            <div className="text-base font-semibold text-zinc-100">Close live position?</div>
-            <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-200">
+          <div className="w-full max-w-md space-y-3 rounded-xl border border-border bg-background p-4">
+            <div className="text-base font-semibold text-foreground">Close live position?</div>
+            <div className="rounded-md border border-warning/40 bg-warning/10 p-2 text-xs text-warning">
               The server will run the full Phase B 16-gate evaluator before any close command leaves ARX. If any gate fails the close is refused and nothing is sent to your broker.
             </div>
-            <div className="text-xs text-zinc-400">
-              Ticket <span className="font-mono text-zinc-200">{confirm.pos.brokerTicket}</span> · {confirm.pos.symbol} {confirm.pos.side} · lot {confirm.pos.lotSize}
+            <div className="text-xs text-txt-secondary">
+              Ticket <span className="font-mono text-foreground">{confirm.pos.brokerTicket}</span> · {confirm.pos.symbol} {confirm.pos.side} · lot {confirm.pos.lotSize}
             </div>
             <div className="flex justify-end gap-2 pt-1">
               <Button size="sm" variant="ghost" onClick={() => setConfirm({ kind: "none" })} disabled={busy} data-testid="btn-cancel-close">Cancel</Button>
@@ -203,20 +203,20 @@ export function PositionPickerPanel() {
 
       {confirm.kind === "modify" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" data-testid="modal-confirm-modify">
-          <div className="w-full max-w-md space-y-3 rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-            <div className="text-base font-semibold text-zinc-100">Edit SL / TP</div>
-            <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-200">
+          <div className="w-full max-w-md space-y-3 rounded-xl border border-border bg-background p-4">
+            <div className="text-base font-semibold text-foreground">Edit SL / TP</div>
+            <div className="rounded-md border border-warning/40 bg-warning/10 p-2 text-xs text-warning">
               Every modify also runs the full Phase B pipeline. A missing or invalid stop-loss will still fail gate 16.
             </div>
-            <label className="block text-xs text-zinc-400">
+            <label className="block text-xs text-txt-secondary">
               New stop loss
               <input data-testid="input-modify-sl" value={confirm.sl} onChange={(e) => setConfirm({ ...confirm, sl: e.target.value })}
-                className="mt-1 w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-sm font-mono text-zinc-100" />
+                className="mt-1 w-full rounded border border-border bg-card px-2 py-1 text-sm font-mono text-foreground" />
             </label>
-            <label className="block text-xs text-zinc-400">
+            <label className="block text-xs text-txt-secondary">
               New take profit
               <input data-testid="input-modify-tp" value={confirm.tp} onChange={(e) => setConfirm({ ...confirm, tp: e.target.value })}
-                className="mt-1 w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-sm font-mono text-zinc-100" />
+                className="mt-1 w-full rounded border border-border bg-card px-2 py-1 text-sm font-mono text-foreground" />
             </label>
             <div className="flex justify-end gap-2 pt-1">
               <Button size="sm" variant="ghost" onClick={() => setConfirm({ kind: "none" })} disabled={busy} data-testid="btn-cancel-modify">Cancel</Button>

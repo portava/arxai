@@ -38,16 +38,16 @@ export function ExposureCard({ rows, totalExposure, className, loading }: Props)
         {/* Long / Short split bar */}
         <div>
           <div className="flex items-center justify-between text-xs mb-1.5">
-            <span className="flex items-center gap-1 text-emerald-400 font-mono">
+            <span className="flex items-center gap-1 text-success font-mono">
               <TrendingUp size={12} /> Long ${netLong.toFixed(0)}
             </span>
-            <span className="flex items-center gap-1 text-rose-400 font-mono">
+            <span className="flex items-center gap-1 text-danger font-mono">
               Short ${netShort.toFixed(0)} <TrendingDown size={12} />
             </span>
           </div>
           <div className="h-2 rounded-full overflow-hidden bg-muted/40 flex">
-            <div className="bg-emerald-500 transition-all duration-500" style={{ width: `${longPct}%` }} />
-            <div className="bg-rose-500 transition-all duration-500" style={{ width: `${100 - longPct}%` }} />
+            <div className="bg-success transition-all duration-500" style={{ width: `${longPct}%` }} />
+            <div className="bg-danger transition-all duration-500" style={{ width: `${100 - longPct}%` }} />
           </div>
           <div className="text-[11px] text-muted-foreground mt-1 text-center font-mono">
             Total exposure ${total.toFixed(0)}
@@ -69,10 +69,10 @@ export function ExposureCard({ rows, totalExposure, className, loading }: Props)
                   <span className="font-mono text-xs w-20 truncate">{r.symbol}</span>
                   <div className="flex-1 h-5 relative bg-muted/30 rounded overflow-hidden">
                     <div
-                      className={cn("h-full transition-all duration-500", isLong ? "bg-emerald-500/70" : "bg-rose-500/70")}
+                      className={cn("h-full transition-all duration-500", isLong ? "bg-success/70" : "bg-danger/70")}
                       style={{ width: `${widthPct}%` }}
                     />
-                    <span className={cn("absolute inset-0 flex items-center px-2 text-[10px] font-mono", isLong ? "text-emerald-200" : "text-rose-200")}>
+                    <span className={cn("absolute inset-0 flex items-center px-2 text-[10px] font-mono", isLong ? "text-success" : "text-danger")}>
                       {isLong ? "LONG" : "SHORT"} {Math.abs(r.netLot).toFixed(2)} lot
                     </span>
                   </div>

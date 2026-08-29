@@ -56,10 +56,10 @@ function ArmStatusSection({ onRefresh }: { onRefresh: () => void }) {
 
   return (
     <>
-      <div className="rounded-md border-2 border-amber-500/40 bg-amber-500/10 p-3 space-y-2">
+      <div className="rounded-md border-2 border-warning/40 bg-warning/10 p-3 space-y-2">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <Zap className={`w-4 h-4 ${status.armed ? "text-green-400" : "text-amber-400"}`} />
+            <Zap className={`w-4 h-4 ${status.armed ? "text-success" : "text-warning"}`} />
             <Label className="text-sm font-semibold">
               Armed One-Click Trading
             </Label>
@@ -67,7 +67,7 @@ function ArmStatusSection({ onRefresh }: { onRefresh: () => void }) {
           <div className="flex items-center gap-2">
             <Badge variant="outline" className="text-xs">{bridgeLabel}</Badge>
             {status.armed ? (
-              <Badge variant="default" className="bg-green-600 text-xs" data-testid="badge-one-click-armed">ARMED</Badge>
+              <Badge variant="default" className="bg-success text-xs" data-testid="badge-one-click-armed">ARMED</Badge>
             ) : (
               <Badge variant="secondary" className="text-xs" data-testid="badge-one-click-armed">NOT ARMED</Badge>
             )}
@@ -81,23 +81,23 @@ function ArmStatusSection({ onRefresh }: { onRefresh: () => void }) {
         </p>
 
         {status.armed && status.armedAt && (
-          <p className="text-xs text-green-400/80">Armed since {new Date(status.armedAt).toLocaleString()}</p>
+          <p className="text-xs text-success/80">Armed since {new Date(status.armedAt).toLocaleString()}</p>
         )}
 
         {status.armed && status.executionReadinessState === "STALE" && (
-          <p className="text-xs text-amber-300 flex items-center gap-1">
+          <p className="text-xs text-warning flex items-center gap-1">
             <AlertTriangle className="w-3 h-3" /> Bridge type changed since arming — disarm and re-arm to restore instant execution.
           </p>
         )}
 
         {status.armed && status.executionReadinessState === "BLOCKED" && status.executionBlockReason && (
-          <p className="text-xs text-red-400 flex items-center gap-1">
+          <p className="text-xs text-danger flex items-center gap-1">
             <AlertTriangle className="w-3 h-3" /> {status.executionBlockReason.replace(/_/g, " ")}
           </p>
         )}
 
         {!status.canArm && !status.armed && status.canArmBlockReason && (
-          <p className="text-xs text-amber-300/80 flex items-center gap-1">
+          <p className="text-xs text-warning/80 flex items-center gap-1">
             <AlertTriangle className="w-3 h-3" /> {status.canArmBlockReason.replace(/_/g, " ")}
           </p>
         )}
@@ -106,7 +106,7 @@ function ArmStatusSection({ onRefresh }: { onRefresh: () => void }) {
           <Button
             size="sm"
             variant={status.armed ? "destructive" : "default"}
-            className={status.armed ? "" : "bg-amber-600 hover:bg-amber-700 text-white"}
+            className={status.armed ? "" : "bg-warning hover:bg-warning/15 text-white"}
             onClick={() => setModalOpen(true)}
             data-testid="button-one-click-arm"
           >
@@ -213,10 +213,10 @@ export function OneClickToggleCard() {
   if (!s) return null;
 
   return (
-    <Card className="border-2 border-amber-500/30 bg-amber-500/5" data-testid="card-one-click-toggle">
+    <Card className="border-2 border-warning/30 bg-warning/5" data-testid="card-one-click-toggle">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Zap className="w-5 h-5 text-amber-400" />
+          <Zap className="w-5 h-5 text-warning" />
           ARX Single Confirm (One-Click)
         </CardTitle>
         <CardDescription>
@@ -224,7 +224,7 @@ export function OneClickToggleCard() {
           both scopes. Every safety gate (Phase B, master-live access,
           per-user arming, exposure, daily-loss) still runs on every
           dispatch — Single Confirm only removes the manual click.
-          <span className="mt-2 block text-amber-300/90">
+          <span className="mt-2 block text-warning/90">
             This is an <b>ARX app setting</b>. It is <b>not</b> your MT5
             terminal's "One Click Trading" checkbox (Options → Trade) — ARX
             cannot read that terminal setting and does not require it.
@@ -282,7 +282,7 @@ export function OneClickToggleCard() {
               data-testid="switch-one-click-live"
             />
             {!s.liveOneClickEnabled && !s.canEnableLive && (
-              <span className="text-xs text-amber-300" data-testid="text-one-click-live-block-reason">
+              <span className="text-xs text-warning" data-testid="text-one-click-live-block-reason">
                 {humanize(s.canEnableLiveBlockedReason ?? "MASTER_LIVE_USER_ACCESS_REQUIRED")}
               </span>
             )}
@@ -292,8 +292,8 @@ export function OneClickToggleCard() {
           </div>
         </div>
 
-        <Alert className="border-emerald-500/30 bg-emerald-500/5">
-          <ShieldCheck className="w-4 h-4 text-emerald-400" />
+        <Alert className="border-success/30 bg-success/5">
+          <ShieldCheck className="w-4 h-4 text-success" />
           <AlertTitle>Server gates still apply</AlertTitle>
           <AlertDescription className="text-xs">
             Enabling one-click never bypasses the master switch, admin
@@ -363,10 +363,10 @@ function RubyAuthoritySection({ s, onSaved }: { s: Settings; onSaved: (next: Set
   ];
 
   return (
-    <div className="rounded-md border-2 border-violet-500/30 bg-violet-500/5 p-3 space-y-4" data-testid="section-ruby-authority">
+    <div className="rounded-md border-2 border-premium/30 bg-premium/5 p-3 space-y-4" data-testid="section-ruby-authority">
       <div>
         <Label className="text-sm font-semibold flex items-center gap-2">
-          <Zap className="w-4 h-4 text-violet-400" /> {name} execution authority
+          <Zap className="w-4 h-4 text-premium" /> {name} execution authority
         </Label>
         <p className="text-xs text-muted-foreground mt-0.5">
           Controls whether {name} can act on your trading commands. AI-Assisted
@@ -384,8 +384,8 @@ function RubyAuthoritySection({ s, onSaved }: { s: Settings; onSaved: (next: Set
             onClick={() => save({ rubyExecutionAuthority: opt.value }, `authority ${opt.label}`)}
             className={`text-left rounded-md border p-2.5 transition ${
               authority === opt.value
-                ? "border-violet-400 bg-violet-500/10"
-                : "border-border bg-background/40 hover:border-violet-500/40"
+                ? "border-premium bg-premium/10"
+                : "border-border bg-background/40 hover:border-premium/40"
             }`}
             data-testid={`button-ruby-authority-${opt.value.toLowerCase()}`}
           >

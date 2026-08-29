@@ -23,14 +23,14 @@ export function StopLossTakeProfitEditor({ position }: { position: LivePosition 
   const tpMut = useUpdatePositionTakeProfit({ mutation: { onSuccess: invalidate, onError: (e) => setError(String(e)) } });
 
   return (
-    <div className="space-y-3 rounded-lg border border-zinc-800 bg-zinc-950/50 p-3">
-      <div className="text-xs uppercase tracking-wide text-zinc-500">Stop loss / Take profit</div>
+    <div className="space-y-3 rounded-lg border border-border bg-background/50 p-3">
+      <div className="text-xs uppercase tracking-wide text-txt-muted">Stop loss / Take profit</div>
       <div className="flex flex-wrap items-end gap-2">
-        <label className="flex flex-col text-xs text-zinc-400">
+        <label className="flex flex-col text-xs text-txt-secondary">
           Stop loss
-          <input value={sl} onChange={(e) => setSL(e.target.value)} className="mt-1 w-32 rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-sm text-zinc-100" placeholder="empty = remove" />
+          <input value={sl} onChange={(e) => setSL(e.target.value)} className="mt-1 w-32 rounded border border-border bg-card px-2 py-1 text-sm text-foreground" placeholder="empty = remove" />
         </label>
-        <label className="inline-flex items-center gap-1 text-xs text-zinc-400">
+        <label className="inline-flex items-center gap-1 text-xs text-txt-secondary">
           <input type="checkbox" checked={removeConfirm} onChange={(e) => setRemoveConfirm(e.target.checked)} />
           confirm SL removal
         </label>
@@ -40,25 +40,25 @@ export function StopLossTakeProfitEditor({ position }: { position: LivePosition 
             stopLoss: sl.trim() === "" ? null : Number(sl),
             removeConfirmed: removeConfirm,
           } })}
-          className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs font-medium text-zinc-200 hover:bg-zinc-800 disabled:opacity-50">
+          className="rounded-md border border-border bg-card px-3 py-1 text-xs font-medium text-foreground hover:bg-secondary disabled:opacity-50">
           Update SL
         </button>
       </div>
       <div className="flex flex-wrap items-end gap-2">
-        <label className="flex flex-col text-xs text-zinc-400">
+        <label className="flex flex-col text-xs text-txt-secondary">
           Take profit
-          <input value={tp} onChange={(e) => setTP(e.target.value)} className="mt-1 w-32 rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-sm text-zinc-100" placeholder="empty = remove" />
+          <input value={tp} onChange={(e) => setTP(e.target.value)} className="mt-1 w-32 rounded border border-border bg-card px-2 py-1 text-sm text-foreground" placeholder="empty = remove" />
         </label>
         <button type="button"
           disabled={tpMut.isPending}
           onClick={() => tpMut.mutate({ id: position.id, data: {
             takeProfit: tp.trim() === "" ? null : Number(tp),
           } })}
-          className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs font-medium text-zinc-200 hover:bg-zinc-800 disabled:opacity-50">
+          className="rounded-md border border-border bg-card px-3 py-1 text-xs font-medium text-foreground hover:bg-secondary disabled:opacity-50">
           Update TP
         </button>
       </div>
-      {error && <div className="text-xs text-rose-300">{error}</div>}
+      {error && <div className="text-xs text-danger">{error}</div>}
     </div>
   );
 }

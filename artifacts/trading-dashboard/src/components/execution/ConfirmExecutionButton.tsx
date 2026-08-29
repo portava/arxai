@@ -16,7 +16,7 @@ interface Props {
 export function ConfirmExecutionButton({ onClick, disabled, verdict }: Props) {
   const meta = {
     APPROVED: { label: "Confirm Trade", icon: ShieldCheck, className: "bg-primary hover:bg-primary/90" },
-    WARN:     { label: "Confirm Despite Warnings", icon: ShieldAlert, className: "bg-amber-500 hover:bg-amber-500/90 text-black" },
+    WARN:     { label: "Confirm Despite Warnings", icon: ShieldAlert, className: "bg-warning hover:bg-warning/90 text-black" },
     BLOCKED:  { label: "Cannot Confirm — Blocked", icon: ShieldX, className: "bg-muted text-muted-foreground cursor-not-allowed" },
   }[verdict];
   const Icon = meta.icon;

@@ -25,7 +25,7 @@ export function ComparisonOverlayChart({ series }: { series: OverlaySeries[] }) 
   const nonEmpty = series.filter((s) => s.points.length > 0);
   if (nonEmpty.length === 0) {
     return (
-      <p className="rounded border border-dashed border-slate-700 p-6 text-center text-xs text-slate-500">
+      <p className="rounded border border-dashed border-border p-6 text-center text-xs text-txt-muted">
         {EMPTY_HINT}
       </p>
     );
@@ -49,9 +49,9 @@ export function ComparisonOverlayChart({ series }: { series: OverlaySeries[] }) 
     : units[0] === "$" ? "Growth from start ($)" : "Growth from start (R)";
 
   return (
-    <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-3">
-      <h3 className="mb-1 text-sm font-semibold text-slate-200">Equity overlay</h3>
-      <p className="mb-2 text-[10px] text-slate-500">{yNote}</p>
+    <div className="rounded-lg border border-border bg-muted/40 p-3">
+      <h3 className="mb-1 text-sm font-semibold text-foreground">Equity overlay</h3>
+      <p className="mb-2 text-[10px] text-txt-muted">{yNote}</p>
       <div className="h-64">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={rows} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>

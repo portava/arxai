@@ -704,7 +704,7 @@ export function ScannerTradeModal({
               </div>
 
               {!market && (
-                <div className="rounded bg-indigo-500/10 p-2 text-[11px] text-indigo-200 flex items-start gap-1.5">
+                <div className="rounded bg-primary/10 p-2 text-[11px] text-primary flex items-start gap-1.5">
                   <Info className="h-3 w-3 mt-0.5 shrink-0" />
                   Pending orders save as validated drafts. The MT5 EA does not yet execute pending orders — nothing will be sent to your broker until that EA upgrade ships.
                 </div>
@@ -759,7 +759,7 @@ export function ScannerTradeModal({
                   cmd.status === "FILLED_DEMO" ? "bg-success/20 text-success" :
                   cmd.status === "REJECTED" || cmd.status === "FAILED" || cmd.status === "BLOCKED" ? "bg-danger/20 text-danger" :
                   cmd.status === "SENT_TO_MT5_DEMO" ? "bg-primary/20 text-primary" :
-                  cmd.status === "DRAFT_SAVED" ? "bg-indigo-500/20 text-indigo-300" :
+                  cmd.status === "DRAFT_SAVED" ? "bg-primary/20 text-primary" :
                   "bg-warning/20 text-warning"
                 }`}>{cmd.status}</span>
               </div>

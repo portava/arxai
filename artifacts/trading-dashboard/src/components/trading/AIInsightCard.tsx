@@ -57,7 +57,7 @@ export function AIInsightCard({ setupQuality, invalidation, warning, managementS
           // the shared read-quality trust line instead, so this card can never
           // contradict the scanner / Ruby / chart for the same symbol+timeframe.
           <p className="text-xs text-muted-foreground flex items-start gap-2" data-testid="ai-insight-withheld">
-            <AlertTriangle size={14} className="shrink-0 mt-0.5 text-amber-500" />
+            <AlertTriangle size={14} className="shrink-0 mt-0.5 text-warning" />
             {readinessTrustLine || "Read isn't live-confirmed yet — the detailed setup is withheld until the feed confirms."}
           </p>
         ) : (

@@ -96,7 +96,7 @@ function biasBadgeClass(b: Bias): string {
   return "bg-muted/60 text-foreground border-border";
 }
 function impactBadgeClass(i: ImpactLevel): string {
-  if (i === "CRITICAL") return "bg-fuchsia-500/20 text-fuchsia-300 border-fuchsia-500/40";
+  if (i === "CRITICAL") return "bg-premium/20 text-premium border-premium/40";
   if (i === "HIGH") return "bg-danger/10 text-danger border-danger/25";
   if (i === "MEDIUM") return "bg-warning/10 text-warning border-warning/25";
   return "bg-muted/60 text-foreground border-border";

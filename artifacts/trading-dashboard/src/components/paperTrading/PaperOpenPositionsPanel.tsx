@@ -28,17 +28,17 @@ export function PaperOpenPositionsPanel({ accountId }: { accountId: number | nul
   });
   const orders = data?.orders ?? [];
   return (
-    <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-4">
-      <h3 className="mb-2 text-sm font-semibold text-slate-100">Open demo positions ({orders.length})</h3>
-      {orders.length === 0 ? <p className="text-xs text-slate-500">No open demo positions.</p> :
+    <div className="rounded-lg border border-border bg-muted/40 p-4">
+      <h3 className="mb-2 text-sm font-semibold text-foreground">Open demo positions ({orders.length})</h3>
+      {orders.length === 0 ? <p className="text-xs text-txt-muted">No open demo positions.</p> :
         <div className="max-h-64 overflow-auto text-xs">
           <table className="w-full">
-            <thead className="sticky top-0 bg-slate-900 text-left text-[10px] uppercase text-slate-500">
+            <thead className="sticky top-0 bg-card text-left text-[10px] uppercase text-txt-muted">
               <tr><th className="p-1">Symbol</th><th className="p-1">Dir</th><th className="p-1">Lot</th><th className="p-1">Entry</th><th className="p-1">SL/TP</th><th className="p-1"></th></tr>
             </thead>
             <tbody>
               {orders.map((o) => (
-                <tr key={o.id} className="border-t border-slate-800">
+                <tr key={o.id} className="border-t border-border">
                   <td className="p-1 font-mono">{o.symbol}</td>
                   <td className="p-1">{o.direction}</td>
                   <td className="p-1">{o.lotSize}</td>
@@ -46,7 +46,7 @@ export function PaperOpenPositionsPanel({ accountId }: { accountId: number | nul
                   <td className="p-1 font-mono text-[10px]">{o.stopLoss.toFixed(4)} / {o.takeProfit.toFixed(4)}</td>
                   <td className="p-1">
                     <button onClick={()=>close.mutate(o.id)} disabled={close.isPending}
-                      className="rounded bg-slate-700 px-2 py-0.5 text-[10px] hover:bg-slate-600 disabled:opacity-50">Close</button>
+                      className="rounded bg-muted px-2 py-0.5 text-[10px] hover:bg-muted disabled:opacity-50">Close</button>
                   </td>
                 </tr>
               ))}

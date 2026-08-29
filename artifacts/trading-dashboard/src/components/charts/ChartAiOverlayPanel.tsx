@@ -41,12 +41,12 @@ export function ChartAiOverlayPanel({
 
   return (
     <div
-      className="rounded-md border border-fuchsia-500/20 bg-fuchsia-950/10 p-3 text-[11px] leading-snug"
+      className="rounded-md border border-premium/20 bg-premium/10 p-3 text-[11px] leading-snug"
       data-testid="chart-ai-overlay-panel"
     >
       <div className="flex items-center gap-2">
-        <Sparkles className="h-3.5 w-3.5 text-fuchsia-400" />
-        <span className="font-semibold text-fuchsia-300">AI overlays</span>
+        <Sparkles className="h-3.5 w-3.5 text-premium" />
+        <span className="font-semibold text-premium">AI overlays</span>
         <Button
           size="sm"
           variant="outline"
@@ -142,7 +142,7 @@ export function ChartAiOverlayPanel({
           {ruby.status === "ok" && ruby.read && (
             <div className="space-y-0.5 text-txt-secondary" data-testid="chart-ai-overlay-ruby-body">
               <div className="flex flex-wrap items-center gap-x-2">
-                <Sparkles className="h-3.5 w-3.5 text-fuchsia-400" />
+                <Sparkles className="h-3.5 w-3.5 text-premium" />
                 <span className="text-txt-muted">{name}:</span>
                 <span className={`font-semibold ${biasTone(ruby.read.bias)}`}>{ruby.read.bias}</span>
                 <span className="text-txt-muted">·</span>
