@@ -505,7 +505,7 @@ export function SidebarContent({ collapsed = false, onNavigate }: { collapsed?: 
               <button
                 type="button"
                 onClick={() => toggleGroup(group.label)}
-                className="w-full flex items-center justify-between text-[9px] font-bold uppercase tracking-[0.18em] text-sidebar-foreground/35 px-3 mb-1.5 hover:text-sidebar-foreground/70"
+                className="w-full flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/40 px-3 mb-1.5 hover:text-sidebar-foreground/70 transition-colors"
                 data-testid={`nav-group-${group.label.toLowerCase().replace(/\s+/g, "-")}`}
                 aria-expanded={open}
               >
@@ -625,7 +625,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             blocked/kill-switch state now surface only through the compact
             LiveModeBadge chip, whose tooltip carries the longer detail. */}
         {!hideGlobalHeader && (
-        <div className="flex items-center justify-between gap-2 px-4 py-1 border-b border-zinc-900 bg-zinc-950/60">
+        <div className="flex items-center justify-between gap-2 px-4 py-1 border-b border-border/60 bg-background/60">
           <LiveModeBadge />
           <NotificationCenter />
         </div>
@@ -634,7 +634,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             Phase 3 ships and the broker placement layer replaces it. */}
         {!hideGlobalHeader && <SafetyHeader />}
         <main id="main-content" className="flex-1 min-w-0 overflow-y-auto overflow-x-clip pb-24 md:pb-0 pb-[max(6rem,calc(env(safe-area-inset-bottom)+5rem))] md:pb-[unset]" tabIndex={-1}>
-          <div className="min-w-0 p-3 sm:p-4 md:p-6 max-w-[1600px] mx-auto w-full">
+          <div className="min-w-0 p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto w-full">
             <RouteAccessGuard>{children}</RouteAccessGuard>
           </div>
           <Footer />

@@ -18,9 +18,9 @@ export interface CompactAlertProps {
 
 const TONE_CLASS: Record<CompactAlertTone, string> = {
   info:    "border-blue-500/40 bg-blue-500/10 text-blue-300",
-  success: "border-emerald-500/40 bg-emerald-500/10 text-emerald-300",
-  warning: "border-amber-500/40 bg-amber-500/10 text-amber-300",
-  danger:  "border-rose-500/40 bg-rose-500/10 text-rose-300",
+  success: "border-success/25 bg-success/10 text-success",
+  warning: "border-warning/25 bg-warning/10 text-warning",
+  danger:  "border-danger/25 bg-danger/10 text-danger",
 };
 
 const TONE_ICON: Record<CompactAlertTone, React.ComponentType<{ className?: string }>> = {

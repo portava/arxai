@@ -20,8 +20,8 @@ export function Footer() {
           <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70">Analyze · Risk · eXecute</span>
           <span>· © {year}</span>
           {v?.version && <Badge variant="outline" className="text-[10px] font-mono" data-testid="footer-version">{v.version}</Badge>}
-          {v?.stage && v.stage !== "LIVE" && <Badge className="text-[10px] bg-amber-500/15 text-amber-300 border border-amber-500/30">{v.stage}</Badge>}
-          {v?.mt5Deferred && false && <Badge className="text-[10px] bg-zinc-500/15 text-zinc-300 border border-zinc-500/30">MT5 DEFERRED</Badge>}
+          {v?.stage && v.stage !== "LIVE" && <Badge className="text-[10px] bg-warning/10 text-warning border border-warning/25">{v.stage}</Badge>}
+          {v?.mt5Deferred && false && <Badge className="text-[10px] bg-muted/60 text-txt-secondary border border-border">MT5 DEFERRED</Badge>}
         </div>
         <p className="text-[11px] leading-relaxed text-muted-foreground flex-1">
           <span className="font-semibold text-foreground/70 uppercase tracking-wider mr-2">Risk disclosure:</span>

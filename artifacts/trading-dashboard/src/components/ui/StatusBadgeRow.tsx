@@ -21,10 +21,10 @@ export interface StatusBadgeRowProps {
 }
 
 const TONE_CLASS: Record<NonNullable<StatusPill["tone"]>, string> = {
-  neutral: "bg-zinc-800/60 text-zinc-300 border-zinc-700",
-  success: "bg-emerald-500/15 text-emerald-300 border-emerald-500/40",
-  warning: "bg-amber-500/15 text-amber-300 border-amber-500/40",
-  danger:  "bg-rose-500/15 text-rose-300 border-rose-500/40",
+  neutral: "bg-muted/60 text-txt-secondary border-border",
+  success: "bg-success/10 text-success border-success/25",
+  warning: "bg-warning/10 text-warning border-warning/25",
+  danger:  "bg-danger/10 text-danger border-danger/25",
 };
 
 /**
@@ -40,7 +40,7 @@ export function StatusBadgeRow(props: StatusBadgeRowProps) {
         <button
           type="button"
           className={cn(
-            "w-full flex flex-wrap items-center gap-1.5 rounded-md border border-zinc-800 bg-zinc-950/40 px-2 py-1.5 text-left hover:bg-zinc-900/40",
+            "w-full flex flex-wrap items-center gap-1.5 rounded-lg border border-border/60 bg-card/40 px-2 py-1.5 text-left hover:bg-muted/40 transition-colors",
             className,
           )}
           data-testid={testId ?? "status-badge-row"}

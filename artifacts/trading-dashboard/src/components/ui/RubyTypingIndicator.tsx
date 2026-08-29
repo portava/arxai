@@ -41,7 +41,7 @@ export function RubyTypingIndicator(props: RubyTypingIndicatorProps) {
 
   return (
     <div
-      className={cn("inline-flex items-center gap-1.5 text-xs text-violet-300", className)}
+      className={cn("inline-flex items-center gap-1.5 text-xs text-premium", className)}
       role="status"
       aria-live="polite"
       aria-label={ariaLabel}
@@ -50,9 +50,9 @@ export function RubyTypingIndicator(props: RubyTypingIndicatorProps) {
     >
       <span className="font-medium">{label}</span>
       <span className="inline-flex items-center gap-0.5" aria-hidden="true">
-        <span className="inline-block h-1.5 w-1.5 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: "0ms" }} />
-        <span className="inline-block h-1.5 w-1.5 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: "150ms" }} />
-        <span className="inline-block h-1.5 w-1.5 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: "300ms" }} />
+        <span className="inline-block h-1.5 w-1.5 rounded-full bg-premium animate-bounce" style={{ animationDelay: "0ms" }} />
+        <span className="inline-block h-1.5 w-1.5 rounded-full bg-premium animate-bounce" style={{ animationDelay: "150ms" }} />
+        <span className="inline-block h-1.5 w-1.5 rounded-full bg-premium animate-bounce" style={{ animationDelay: "300ms" }} />
       </span>
     </div>
   );
