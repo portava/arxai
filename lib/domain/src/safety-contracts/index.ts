@@ -18,6 +18,10 @@ export * from "./foundationGates.js";
 export * from "./isLiveBrokerExecutionEnabled.js";
 export * from "./preTradeBrokerGuard.js";
 export * from "./syntheticLiveFloor.js";
+// #32 — per-subsystem degraded-mode matrix (contract + pure evaluator).
+export * from "./degradedModeMatrix.js";
+// #33 — fault-containment cells (declared partition + shared-dependency register).
+export * from "./faultContainmentCells.js";
 export * from "./clockDrift.js";
 export * from "./eaCloseFill.js";
 export * from "./eaRemoteConfigContract.js";

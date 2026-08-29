@@ -625,4 +625,10 @@ router.use(brokerCatalogRouter);
 import adminOwnerDecisionsRouter from "./adminOwnerDecisions.js";
 router.use(adminOwnerDecisionsRouter);
 
+// Resilience front (#27 promotion gate owner-press seam + #35 as-of tool).
+// ADMIN/OWNER gated inside the router; the only widening handler is the
+// evidence-gated, typed-confirmation execution-policy enable press.
+import adminResilienceRouter from "./adminResilience.js";
+router.use(adminResilienceRouter);
+
 export default router;
