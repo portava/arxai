@@ -28,7 +28,7 @@
 //   * Opt-out via ARX_CHANGEPOINT_DRIVER_ENABLED (default enabled); disabling
 //     is logged loudly.
 
-import { and, asc, eq, gte } from "drizzle-orm";
+import { and, desc, eq, gte } from "drizzle-orm";
 import { db, aaciTrustScoresTable, aaciLearningAuditTable } from "@workspace/db";
 import {
   detectSeriesBreak,
@@ -105,8 +105,12 @@ async function readOutcomeSeries(entityType: string, entityKey: string, userId: 
         eq(aaciLearningAuditTable.changeType, "TRUST_UPDATE"),
       ),
     )
-    .orderBy(asc(aaciLearningAuditTable.id))
+    // NEWEST window, restored to chronological order: asc(id)+limit would pin
+    // the read to the entity's oldest rows forever once it exceeds the cap,
+    // blinding the watchdog to breaks on exactly the long-lived entities.
+    .orderBy(desc(aaciLearningAuditTable.id))
     .limit(MAX_OUTCOME_SERIES_LEN);
+  rows.reverse();
   const series: number[] = [];
   for (const r of rows) {
     const rewarded = (r.newValue as { rewarded?: unknown } | null)?.rewarded;
