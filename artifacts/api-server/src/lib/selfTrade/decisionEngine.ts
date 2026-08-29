@@ -38,7 +38,9 @@ import {
   type GovernorContext,
   type HandshakeReadinessContext,
   type QuotaContext,
+  type SupervisorResult,
 } from "@workspace/domain/self-trade";
+import { ingestDecisionCycle } from "../opportunitySpine/opportunityLifecycleManager.js";
 import type {
   NewsRiskLevel,
   RubyMarketEdgeSignal,
@@ -410,10 +412,10 @@ export async function buildFleetSafetyContext(): Promise<{
 
 async function persistCycle(
   cycleId: string,
-  candidates: DecisionCandidate[],
-  contendedSymbols: string[],
+  supervised: SupervisorResult,
   evaluatedAt: Date,
 ): Promise<boolean> {
+  const { candidates, contendedSymbols, dedupJournal, conflictJournal } = supervised;
   if (candidates.length === 0) return true;
   try {
     await db.transaction(async (tx) => {
@@ -427,6 +429,10 @@ async function persistCycle(
           decisions: candidates.length,
           contendedSymbols,
           approved: candidates.filter((c) => c.outcome === "APPROVED" || c.outcome === "APPROVED_REDUCED").length,
+          // #18/#19: dedup + opposite-conflict verdicts journaled with reasons
+          // (bounded — the opportunity_events log carries the full trail).
+          dedupJournal: dedupJournal.slice(0, 20),
+          conflictJournal: conflictJournal.slice(0, 20),
         },
         reason: `Self-Trade decision cycle (shadow): ${candidates.length} decisions`,
       });
@@ -533,12 +539,27 @@ export async function runDecisionCycle(
     }
   }
 
-  const supervised = resolveSupervisor(allCandidates);
+  // nowMs powers the validated opposite-conflict rules (e.g. EXPIRED_OPPONENT).
+  const supervised = resolveSupervisor(allCandidates, { nowMs: now });
   // Highest rank first so the feed reads as a priority list.
   supervised.candidates.sort((a, b) => b.rankScore - a.rankScore);
 
   const evaluatedAt = new Date(now);
-  const persisted = await persistCycle(cycleId, supervised.candidates, supervised.contendedSymbols, evaluatedAt);
+  const persisted = await persistCycle(cycleId, supervised, evaluatedAt);
+
+  // Opportunity Spine (#17): feed the owning lifecycle manager at this seam.
+  // FAIL-OPEN — a spine failure must never break the decision read path.
+  try {
+    await ingestDecisionCycle({
+      cycleId,
+      candidates: supervised.candidates,
+      dedupJournal: supervised.dedupJournal,
+      conflictJournal: supervised.conflictJournal,
+      nowMs: now,
+    });
+  } catch (err) {
+    logger.warn({ err, cycleId }, "opportunity spine ingest failed (fail-open, read path unaffected)");
+  }
 
   const result: DecisionCycleResult = {
     cycleId,
