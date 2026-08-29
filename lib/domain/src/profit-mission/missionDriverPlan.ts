@@ -18,7 +18,7 @@
 //     explicitly enabled, the certificate is accepted, the promotion gate
 //     approves, drift is not SEVERE, and the platform live gates are on. A
 //     "yes" here still only reaches the broker through dispatchApprovedDraft →
-//     executeInstant → 18-gate dispatch, which re-checks everything again.
+//     executeInstant → 23-gate dispatch, which re-checks everything again.
 
 import {
   isMissionAutomationLevel,

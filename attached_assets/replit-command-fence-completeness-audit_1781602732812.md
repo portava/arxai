@@ -18,7 +18,7 @@ For EACH directory/file listed above (and any other execution/safety/trade dir y
 - **DISPLAY/READ-ONLY (class D):** the module only reads/records/presents (history, previews, advice, coaching, analytics) and never decides order placement. Fencing is unnecessary (and these may legitimately consume the display contract).
 - **UNCLEAR (class U):** can't tell from a quick read — needs the deeper look in step 2.
 
-For each, report: dir/file, one-line role, whether it imports or transitively reaches order-placement/gate logic, and the classification. Use grep for the tells: does it import the live pipeline / `dispatchLiveCommand` / `createLiveDraft` / the MT5 command path / order-queue / sizing / the 18-gate / `tradeSignalAllowed` / arming, or write to the live/demo command tables?
+For each, report: dir/file, one-line role, whether it imports or transitively reaches order-placement/gate logic, and the classification. Use grep for the tells: does it import the live pipeline / `dispatchLiveCommand` / `createLiveDraft` / the MT5 command path / order-queue / sizing / the 23-gate / `tradeSignalAllowed` / arming, or write to the live/demo command tables?
 
 ## STEP 2 — RESOLVE THE UNCLEAR ONES + CHECK FOR EXISTING LEAKS
 

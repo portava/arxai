@@ -12,10 +12,22 @@
  * (`sourceId`). A single predicate — `isTradeable` — decides whether that
  * origin is good enough to size from.
  *
- * SCOPE: this module is a seed. It is exported and unit-tested
- * (`scripts/src/provenanceEnvelopeTest.ts`), but it is NOT yet consulted by the
- * 18-gate evaluator; wiring it in as gate #19 is a separate, later work order
- * that must review gate ordering. Nothing on the dispatch path imports it.
+ * SCOPE — read this carefully, it has changed. Gate #19 PROVENANCE_UNPROVEN
+ * now EXISTS and is enforced by the 23-gate evaluator; the "later work order"
+ * this comment used to describe has been done. What is still true is narrower:
+ * the dispatch path does not import THIS file. The gate's origin taxonomy and
+ * its tradeable-origin predicate are structurally MIRRORED in
+ * `lib/domain/src/safety-contracts/foundationGates.ts`
+ * (`CommandProvenanceSource` / `isTradeableProvenanceSource`), because
+ * `lib/domain` cannot import from `api-server` without inverting the dependency
+ * direction. The two are pinned against each other by `test:foundation-gates`
+ * so they cannot drift silently. The envelope actually carried on a live
+ * command is parsed by the sibling module `./commandProvenance.ts`, which IS
+ * on the dispatch path via `../live/foundationGateInputs.ts`.
+ *
+ * So: this file is the canonical taxonomy definition and is unit-tested
+ * (`scripts/src/provenanceEnvelopeTest.ts`); it is not itself a runtime
+ * dependency of the evaluator.
  *
  * This file deliberately imports nothing, so it can be pulled into any layer
  * (including the DB and domain packages) without dragging a dependency graph

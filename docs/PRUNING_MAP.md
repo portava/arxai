@@ -11,7 +11,7 @@ More**) while **nothing is deleted** and admins/owner keep full access.
   `App.tsx` is left intact and reachable by direct URL.
 - Items hidden from normal users are moved into `adminOnly` nav groups. They
   still render for OWNER/ADMIN sessions and remain in the admin menu search.
-- Backend route guards (`AdminRouteGuard`, server 403s, the 18-gate live
+- Backend route guards (`AdminRouteGuard`, server 403s, the 23-gate live
   pipeline, trade-ownership scoping, kill switch, MT5 confirmation) are
   unchanged and remain authoritative.
 - The mobile bottom nav already matches the target 4 surfaces
@@ -50,7 +50,7 @@ reachable by typing the URL. As of this pass that gap is closed:
   unchanged. Identity-loading renders a neutral skeleton so a real admin is
   never bounced off a deep link before `/api/me` resolves.
 - This is a product-containment / UX layer. **Backend route guards
-  (`requireAdmin`, per-user ownership, the 18-gate live pipeline, kill switch)
+  (`requireAdmin`, per-user ownership, the 23-gate live pipeline, kill switch)
   remain authoritative** for all data and every trade action — nothing here
   weakens them.
 - The Scanner result cards' advanced quick-links (Grade / Replay / Backtest)

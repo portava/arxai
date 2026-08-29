@@ -3,7 +3,7 @@
 Branch `prodready/20260819`, three commits on top of `main` @ `8f115c2`. Verified locally: full workspace typecheck clean, **59/59 CI guards**, `test:emergency-kill-switch-gate` 7/7, `test:coaching-no-fabricated-exit` 10/10, `navAccessTier` 23/23, `backtest-route-honesty` 8/8, `coming-soon-affordances` 9/9. DB-backed lanes not run locally (no database, by rule) — run full `pnpm run ci` on Replit.
 
 ## Commit 1 — P0 fixpack
-`SESSION_SECRET` fatal-if-missing in production; production CORS same-origin (opt-in `ARX_CORS_ALLOWED_ORIGINS`); doc corrections (18 gates, 56→59 guards note, 7 strategies, bridge-v2 endpoints live, isolation status current).
+`SESSION_SECRET` fatal-if-missing in production; production CORS same-origin (opt-in `ARX_CORS_ALLOWED_ORIGINS`); doc corrections (23 gates, 56→59 guards note, 7 strategies, bridge-v2 endpoints live, isolation status current).
 
 ## Commit 2 — Un-clobber (the big one)
 Reverts `9185c8b` ("Git commit prior to merge"), which had committed a stale workspace over the in-flight fix-pack merge. Restores: 30+ honesty/race QA tests, `liveCommandCas` (CAS re-wired into the live pipeline), `provenance/`, `allocationBlown`, `contractSize`, `accountCurrency`, `eventLog` + `discoveryPipeline` schemas, `lib/{discovery,validation,features,risk,money}` sources, honest `forexIntelligence`/`indicesIntelligence`/news-risk, 3 CI guards (`check-no-fabrication`, `check-live-dispatch-cas`, `check-no-committed-pepper`). Re-deletes zombie surfaces (Build DD `marketData` routes, `systemFullHealth`, `entrySniperRepo`). `.replit` kept at HEAD (pepper removal preserved).

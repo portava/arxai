@@ -13,7 +13,7 @@ comparator), advisory-only, consumed ONLY by `GET /api/admin/cockpit/pattern-syn
 No `/api/pattern-sync/*` routes, no `pattern_sync_*` tables, no execution wiring.
 
 **Pattern Sync engine = pure + deterministic, ADVISORY ONLY.** Never feeds the
-18-gate live pipeline / kill switch / risk limits / any execution path. Honest-empty
+23-gate live pipeline / kill switch / risk limits / any execution path. Honest-empty
 (`sufficient:false`) below `PATTERN_SYNC_MIN_CANDLES` (20). Risk-language only, no
 profit/guarantee words. `runPatternSyncEngine(input)` → scores + levels + signature;
 `comparePatternSync(inputs[], {timeframe,now})` → leader/follower/lagging + H4/M15

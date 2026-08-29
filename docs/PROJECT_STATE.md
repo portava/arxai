@@ -72,7 +72,7 @@ Phase 6 design document proposed.
 
 **Path A — MT5 / Phase B live pipeline.**
 `artifacts/api-server/src/lib/live/liveCommandPipeline.ts` →
-`dispatchLiveCommand` → ~25 sequential blocking checks, of which the 18-gate
+`dispatchLiveCommand` → ~25 sequential blocking checks, of which the 23-gate
 evaluator (`lib/domain/src/safety-contracts/livePhaseBDispatchGate.ts`) is one
 checkpoint, running late (≈line 3345 of 4861) → `selectExecutionAdapter(EXECUTION_ADAPTERS, row.executionVenue)`
 at `liveCommandPipeline.ts:3676` → `mt5ExecutionAdapter`.
@@ -241,11 +241,11 @@ lineage-sweeper 19, **tier0-product 33 (32 pass / 1 fail)**, surfaces 14.
 | Phase 6 execution-safety CI guard (R1/R2/R3) | `scripts/src/ci/check-phase6-execution-safety.ts` |
 
 ### Pre-existing platform (unchanged by Phase 6)
-- Phase B live broker execution, default-deny, 18 gates, MT5 EA bridge (per-user
+- Phase B live broker execution, default-deny, 23 gates, MT5 EA bridge (per-user
   tokens only, SHA-256 hashes stored).
 - Ruby AI assistant as a permission-bounded executor with **no second execution
   path** — every authorised action routes through the same instant-trade router
-  → live pipeline → 18-gate dispatch. `AI_AUTO` defined but not enabled.
+  → live pipeline → 23-gate dispatch. `AI_AUTO` defined but not enabled.
 - Scanner, chart intelligence, market/news/economic-calendar providers with
   real-or-empty honesty.
 - Unknown-command reconciler worker (60s cadence).

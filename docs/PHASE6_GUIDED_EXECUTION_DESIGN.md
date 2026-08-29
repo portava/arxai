@@ -69,12 +69,12 @@ Phase 5 supplied the real response, so the deferral is now due.
 
 ---
 
-## Finding 2a — "the 18 gates" is not the dispatch boundary, and the repo disagrees with itself about the number
+## Finding 2a — "the 23 gates" is not the dispatch boundary, and the repo disagrees with itself about the number
 
 Before trusting the phrase at all: the codebase contradicts itself on the count.
 Inside `liveCommandPipeline.ts` the string "15-gate" appears once, "16-gate" 15
-times and "18-gate" 17 times. Repo-wide "16-gate" appears **416** times against
-**200** for "18-gate". The single worst offender is the docstring directly above
+times and "23-gate" 17 times. Repo-wide "16-gate" appears **416** times against
+**200** for "23-gate". The single worst offender is the docstring directly above
 `dispatchLiveCommand` itself (`liveCommandPipeline.ts:1987`), which says
 "15-gate".
 
@@ -82,7 +82,7 @@ Only the code settles it. `evaluateLivePhaseBDispatchGate` pushes exactly
 **18** entries into `gates[]`. That is the real count, and every prose mention
 of 15 or 16 is stale.
 
-More importantly, **the 18-gate evaluator is not the dispatch boundary** — it is
+More importantly, **the 23-gate evaluator is not the dispatch boundary** — it is
 one checkpoint among roughly twenty-five sequential blocking checks inside
 `dispatchLiveCommand`, and it runs LATE (line 3345 of 4861), after some twenty
 pre-gates have already had their chance to refuse. Compensating controls live
@@ -90,7 +90,7 @@ outside it: the MOCK-bridge short-circuit at `liveCommandPipeline.ts:2976`
 exists precisely because gate 6 is blind to `bridge.mode`, so a MOCK row
 carrying `accountType='live'` would otherwise satisfy `BRIDGE_NOT_LIVE_ACCOUNT`.
 
-The consequence for Phase 6 is concrete: **satisfying the 18 gates is necessary
+The consequence for Phase 6 is concrete: **satisfying the 23 gates is necessary
 but nowhere near sufficient.** A venue that ran only the pure evaluator would
 skip ~20 pre-gates including risk locks, price collars, exposure reservation and
 the double-send CAS. The Deriv path must enter through `dispatchLiveCommand`
@@ -99,7 +99,7 @@ boundary while appearing to honour it.
 
 ---
 
-## Finding 2 — the 18 gates are MT5-live-specific, and seven cannot mean anything for Deriv demo
+## Finding 2 — the 23 gates are MT5-live-specific, and seven cannot mean anything for Deriv demo
 
 There are **exactly 18** gates, in
 `lib/domain/src/safety-contracts/livePhaseBDispatchGate.ts:126-231`: fifteen
@@ -119,7 +119,7 @@ wall: the exact thing the owner prohibited, and a lie recorded in the audit log.
 
 ### Decision 2 — venue gate parity, fail-closed on any unmapped gate
 
-Every one of the 18 gates gets an explicit, audited disposition for the Deriv
+Every one of the 23 gates gets an explicit, audited disposition for the Deriv
 demo venue. A gate may be:
 
 - **EQUIVALENT** — a Deriv check enforcing the same intent;

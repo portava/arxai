@@ -7,7 +7,7 @@ is, names the deterministic test that pins each behavior, and records the one
 evidence-based surgical patch that was applied.
 
 > **Scope guard.** Nothing here is an execution path. Live broker dispatch is the
-> 18-gate Phase B pipeline (`lib/domain/src/safety-contracts/`), which this work
+> 23-gate Phase B pipeline (`lib/domain/src/safety-contracts/`), which this work
 > did **not** touch. The advisory/scanner/scalp/Ruby layers below only rank,
 > advise, and explain — they never place or gate a live order.
 
@@ -100,7 +100,7 @@ evidence-based surgical patch that was applied.
   `explain-signal` reads, the realtime voice bootstrap, and the system prompt —
   never a static `paper_only` constant, and honest in both directions (a real
   blocker surfaces as its specific gate reason, not a generic lock). This is
-  **reporting only**: it never changes the order-guard chain, the 18-gate Phase B
+  **reporting only**: it never changes the order-guard chain, the 23-gate Phase B
   dispatch, or the explicit per-trade confirm step, and read surfaces still place
   no orders. The read-only chart-brain / decision surfaces (`draw-setup`,
   `draft-read` — the latter's OpenAPI response pinned to `safetyMode: paper_only`)

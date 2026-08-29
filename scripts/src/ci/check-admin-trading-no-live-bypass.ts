@@ -4,7 +4,7 @@
 // the `mt5_commands` EA mailbox (the table the EA polls for status='PENDING'):
 //
 //   1. Phase B — canonical (`lib/live/liveCommandPipeline.ts`). A live draft
-//      becomes an `arx_live_commands` row, traverses the 18-gate
+//      becomes an `arx_live_commands` row, traverses the 23-gate
 //      `livePhaseBDispatchGate`, and ONLY on a positive PASS is mirrored into
 //      `mt5_commands`. This is the sanctioned live delivery path — the contract.
 //
@@ -16,7 +16,7 @@
 //      `DEMO_DISPATCH_DISABLED_USE_DEMO_QUEUE`). This is strictly stronger than
 //      the old env-keyed `BRIDGE_TOKEN_UNSET` lock that a stray server-wide
 //      `MT5_BRIDGE_TOKEN` could in principle unlock. It does NOT traverse the
-//      Phase B 18-gate.
+//      Phase B 23-gate.
 //
 // The assistant + chart surfaces already have static no-direct-execution guards.
 // The adminTrading path is structurally locked at gate #8. This guard locks the
@@ -73,7 +73,7 @@
 //   INVARIANT 5 — deliverable-LIVE semantics are confined to the two pipelines.
 //     Positive net: ANY non-test file whose `mt5_commands` insert `.values({…})`
 //     carries a live-delivery token must be one of the two sanctioned
-//     LIVE_SEMANTICS_WRITER_ALLOWLIST files. Only Phase B (post-18-gate) and the
+//     LIVE_SEMANTICS_WRITER_ALLOWLIST files. Only Phase B (post-23-gate) and the
 //     gated adminTrading path (locked by invariants 2 & 3) may ever emit a
 //     deliverable LIVE command; anything else fails the build.
 //
@@ -93,9 +93,9 @@ import { walk, read, rel, ROOT, reportResult, type CheckResult } from "./_lib.js
 // sanctioned DELIVERABLE LIVE writer; the rest are non-LIVE or forced-BLOCKED.
 const MAILBOX_WRITER_ALLOWLIST: Record<string, string> = {
   // Phase B canonical pipeline — the ONLY sanctioned deliverable LIVE writer.
-  // Mirrors arx_live_commands into mt5_commands only after the 18-gate PASS.
+  // Mirrors arx_live_commands into mt5_commands only after the 23-gate PASS.
   "artifacts/api-server/src/lib/live/liveCommandPipeline.ts":
-    "Phase B canonical pipeline (post-18-gate mirror) — the sanctioned live writer",
+    "Phase B canonical pipeline (post-23-gate mirror) — the sanctioned live writer",
   // adminTrading broker placement — LIVE-capable but gated; locked by
   // INVARIANT 2 (runOrderGuards bridge_token gate) + INVARIANT 3 (import-confined).
   "artifacts/api-server/src/lib/adminTrading/brokerPlacement.ts":
@@ -122,7 +122,7 @@ const MAILBOX_WRITER_ALLOWLIST: Record<string, string> = {
 };
 
 // The two — and only two — pipelines permitted to emit a DELIVERABLE LIVE
-// mt5_commands row. Phase B is post-18-gate; adminTrading brokerPlacement is
+// mt5_commands row. Phase B is post-23-gate; adminTrading brokerPlacement is
 // LIVE-capable but locked by invariants 2 & 3. Every OTHER allowlisted writer
 // must keep a provably non-LIVE shape (invariant 4) and no other file anywhere
 // may emit live-delivery semantics into mt5_commands (invariant 5).
@@ -399,7 +399,7 @@ export function checkAdminTradingNoLiveBypass(): CheckResult {
     if (!(relPath in MAILBOX_WRITER_ALLOWLIST)) {
       for (const ins of inserts) {
         violations.push(
-          `${relPath}:${ins.line} writes the mt5_commands EA mailbox (\`${ins.token}\`) but is NOT an allowlisted writer — a new mailbox writer must traverse the Phase B 18-gate contract or be reviewed + added to MAILBOX_WRITER_ALLOWLIST`,
+          `${relPath}:${ins.line} writes the mt5_commands EA mailbox (\`${ins.token}\`) but is NOT an allowlisted writer — a new mailbox writer must traverse the Phase B 23-gate contract or be reviewed + added to MAILBOX_WRITER_ALLOWLIST`,
         );
       }
     }
@@ -450,7 +450,7 @@ export function checkAdminTradingNoLiveBypass(): CheckResult {
       violations.push(`${ORDER_GUARD}: the structural bridge_token dispatch-lock gate must remain — it is the lock that keeps adminTrading from delivering live/demo`);
     }
     if (!/LIVE_DISPATCH_DISABLED_USE_PHASE_B/.test(orderGuardSrc)) {
-      violations.push(`${ORDER_GUARD}: the bridge_token gate must hard-deny LIVE with "LIVE_DISPATCH_DISABLED_USE_PHASE_B" — LIVE must route only through the Phase B 18-gate pipeline`);
+      violations.push(`${ORDER_GUARD}: the bridge_token gate must hard-deny LIVE with "LIVE_DISPATCH_DISABLED_USE_PHASE_B" — LIVE must route only through the Phase B 23-gate pipeline`);
     }
     if (!/DEMO_DISPATCH_DISABLED_USE_DEMO_QUEUE/.test(orderGuardSrc)) {
       violations.push(`${ORDER_GUARD}: the bridge_token gate must hard-deny DEMO with "DEMO_DISPATCH_DISABLED_USE_DEMO_QUEUE" — DEMO must route only through the per-user demo arming queue`);
@@ -535,7 +535,7 @@ export function checkAdminTradingNoLiveBypass(): CheckResult {
         continue;
       }
       violations.push(
-        `${relPath}:${blk.line} writes a DELIVERABLE LIVE mt5_commands row (mode:'LIVE' / requiredAccountType:'live') outside the sanctioned pipelines — only Phase B (post-18-gate) and the gated adminTrading path may emit live broker commands`,
+        `${relPath}:${blk.line} writes a DELIVERABLE LIVE mt5_commands row (mode:'LIVE' / requiredAccountType:'live') outside the sanctioned pipelines — only Phase B (post-23-gate) and the gated adminTrading path may emit live broker commands`,
       );
     }
   }

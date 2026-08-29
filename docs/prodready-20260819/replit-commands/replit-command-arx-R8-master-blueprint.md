@@ -18,7 +18,7 @@ The blueprint's **Part V twelve-phase sequence becomes the program's master sequ
 | **5 — Demo execution truth** | **R2** epistemology + **R5** Deriv demo + adapter certification. Independent Protection Watchdog (II-28) joins here. |
 | **6 — Self-Trading guided mode** | Largely EXISTS (scanner, native chart, Ruby, instant-trade funnel, Round A menu honesty). New: Bounded Autonomy Levels (II-37), Personal Trading Constitution (II-38), Approval Inbox with expiring tickets (II-43), Manual Takeover (II-44). |
 | **7 — Shadow & controlled demo automation** | **R7** + Champion-Challenger (II-15), OOD detection (II-3), structural breaks (II-9), continuous certification (II-56). |
-| **8 — Limited live** | The current controlled owner-only live testing posture already matches this phase's shape (one owner account, one broker, canary capital, 18 gates + kill-switch pre-gate). Blueprint adds: expiring authority and recovery probation (II-34) — build these. |
+| **8 — Limited live** | The current controlled owner-only live testing posture already matches this phase's shape (one owner account, one broker, canary capital, 23 gates + kill-switch pre-gate). Blueprint adds: expiring authority and recovery probation (II-34) — build these. |
 | **9 — Portfolio & multi-broker intelligence** | R6 later phases + Capital Scheduler, Portfolio Intelligence, Risk-of-Ruin simulator, Market Selection (II-20…24). |
 | **10 — Managed Allocation** | R6 workspace/compliance slices + Risk Cells, ownership resolver, separation of duties (II-47…52). |
 | **11 — Advanced autonomous research** | Part II 13–16 & 53–61 + the Part III research backlog (explicitly non-commitments — keep as backlog). |

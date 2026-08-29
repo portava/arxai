@@ -5,7 +5,7 @@ _Originally written 2026-05-11 (Build B). Headline status reconciled 2026-06-12 
 > **⚠️ Current reality (read first — supersedes the Build-B/MVP framing below).**
 > - **Branding** is **ARX AI — Analyze. Risk. eXecute.** (not "High Roll Trading AI").
 > - **The product is NOT paper-only.** **Phase B live broker execution exists** and
->   runs **default-deny** behind an **18-gate** evaluator
+>   runs **default-deny** behind a **23-gate** evaluator
 >   (`lib/domain/src/safety-contracts/livePhaseBDispatchGate.ts`) + the server master
 >   switch + per-user arming + admin approval + kill switch. `canPlaceTrades:false`
 >   holds **only on the advisory / intelligence APIs** (still CI-enforced), not the
@@ -32,7 +32,7 @@ These rules are enforced by automated guards in `scripts/src/ci/`. Violating the
 
 | # | Invariant | Why | Guard |
 |---|---|---|---|
-| 1 | **`canPlaceTrades` is `false` on the advisory / intelligence APIs.** Those surfaces (e.g. `executionIntelligence`, `risk`) return `canPlaceTrades: false as const`. | The advisory surfaces never execute — live execution is the separate Phase B pipeline (default-deny, 18-gate), not these APIs. Flipping `true` on an advisory route would falsely imply it can place orders. | `check-can-place-trades.ts` |
+| 1 | **`canPlaceTrades` is `false` on the advisory / intelligence APIs.** Those surfaces (e.g. `executionIntelligence`, `risk`) return `canPlaceTrades: false as const`. | The advisory surfaces never execute — live execution is the separate Phase B pipeline (default-deny, 23-gate), not these APIs. Flipping `true` on an advisory route would falsely imply it can place orders. | `check-can-place-trades.ts` |
 | 2 | **Vault tables are append-only**: `audit_events`, `vault_events`, `state_transitions`. No `UPDATE`, no `DELETE`, ever. Forward-fix via corrective events. | The vault is the source of truth for audit, replay, and dispute resolution. Mutating it destroys auditability. | `check-vault-mutations.ts` |
 | 3 | **No `console.*` in server runtime code.** Use `req.log` in route handlers and the singleton `logger` (`lib/logger.ts`) elsewhere. | `console.*` bypasses Pino redaction (auth headers, cookies) and structured logging. Allowlisted: `lib/db/src/seed/`, tests, scripts. | `check-no-console.ts` |
 | 4 | **No two routes share `(method, path)`.** | Express's last-registered-wins behavior masks bugs and enables silent overrides. | `check-route-collisions.ts` |
@@ -123,7 +123,7 @@ Ruby is no longer strictly read-only: a user may grant
 `rubyExecutionAuthority = AI_ASSISTED` to let the assistant place/manage **live**
 trades. This does **not** create a new execution route. Every Ruby trade action
 funnels through the SAME instant-trade router → live command pipeline → Phase B
-18-gate dispatch as a manual trade (source `ruby_text`/`ruby_voice`).
+23-gate dispatch as a manual trade (source `ruby_text`/`ruby_voice`).
 `AI_ASSISTED` skips ONLY the extra app-side confirmation prompt (rule 1's
 "explicit user gesture" is satisfied by the user's prior, persisted, per-action
 authority grant) — it never skips a backend gate, per-user approval,
@@ -141,7 +141,7 @@ off/locked on any read failure) on every conversational surface, the
 `getTradingMode` / `getPaperSafetyStatus` tools, the `read-chart` /
 `explain-signal` reads, the realtime voice bootstrap, and the system prompt —
 never a static `paper_only` constant. This changes only what Ruby *reports*,
-never what it is *allowed to do*: the order-guard chain, the 18-gate Phase B
+never what it is *allowed to do*: the order-guard chain, the 23-gate Phase B
 dispatch, and the explicit per-trade confirmation choreography are untouched, and
 read/advisory surfaces still place no orders (they additionally force
 `readOnlyMode: true`). The genuinely read-only chart-brain / decision surfaces —

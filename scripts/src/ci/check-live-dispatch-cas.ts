@@ -4,7 +4,7 @@
 //   `dispatchLiveCommand` reads the command row, evaluates all 18 Phase B
 //   gates, and then UPDATEs the row to SENT_TO_MT5_LIVE. That read-then-write
 //   is a TOCTOU window: two concurrent dispatches of the same LIVE_APPROVED
-//   command both observe status=LIVE_APPROVED, both pass all 18 gates (no gate
+//   command both observe status=LIVE_APPROVED, both pass all 23 gates (no gate
 //   asks "has this already been sent"), and — if the UPDATE matches on
 //   `command_id` ALONE — both succeed and both mirror an order into the
 //   `mt5_commands` mailbox the EA polls. The broker then executes the same

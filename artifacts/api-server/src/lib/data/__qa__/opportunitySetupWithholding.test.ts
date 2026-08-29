@@ -14,7 +14,7 @@
 // blocked / missing verdict leaks NO entry/SL/TP/targets/R:R anywhere (including
 // alternate field names) and returns an honest withheld state instead.
 //
-// Withhold-only: this is display gating. It never touches the 16/18-gate live
+// Withhold-only: this is display gating. It never touches the 16/23-gate live
 // dispatch path, never grants/sizes/places a trade, and the verdict never enters
 // an execution module.
 

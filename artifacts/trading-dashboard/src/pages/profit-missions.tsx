@@ -4,7 +4,7 @@
 // probability / pace read in the Battle Room plus the mission's specialist
 // Agent Desk and proposals. Missions CAN now place trades — but ONLY through
 // the gated path: dispatch routes through the instant-trade router (source
-// "mission") → live pipeline → 18-gate dispatch, the default automation level
+// "mission") → live pipeline → 23-gate dispatch, the default automation level
 // (2) waits for the user's explicit approval on every trade, and auto levels
 // must be earned through the promotion gates, explicitly enabled, and are
 // re-checked against every gate at each dispatch. Every figure is a labelled
@@ -1356,6 +1356,13 @@ function ProtectionPanel({ protection }: { protection: MissionProtectionSnapshot
         <Metric label="Peak realised" value={money(m.peakRealisedProfit)} testId="metric-peak-realised" />
         <Metric label="Min setup tier" value={m.minSetupTier} testId="metric-min-tier" />
       </div>
+      <p className="text-[11px] text-muted-foreground" data-testid="text-realised-completeness">
+        These figures count realised closed live trades only. Demo and paper
+        dispatches are never filled and never close, so they contribute nothing
+        here and are not missing data — a mission running in demo or paper will
+        show zero indefinitely. Read these as a live-only total, not as the
+        mission's full activity.
+      </p>
       {m.stopAndLock && (
         <CompactAlert
           tone="success"
@@ -1654,6 +1661,17 @@ function TradeDraftRow({ draft, missionId }: { draft: TradeDraft; missionId: num
             the full 23-gate safety check. Demo and paper missions never contact the
             live broker.
           </p>
+          <p className="text-[11px] text-warning" data-testid={`draft-mode-truth-${draft.proposalId}`}>
+            To be exact about what each mode does: the 23-gate safety check runs
+            on live dispatch only. A demo or paper mission still passes the
+            mission risk gate and the pre-trade checks, but it then stops at a
+            recorder that writes down the intended trade and goes no further — it
+            reaches no broker, not even a demo one, and the 23 gates are not
+            evaluated for it. Because nothing is ever filled, a demo or paper
+            trade produces no fill, no profit or loss and no result, and the
+            mission cannot progress toward its target or complete on it. Nothing
+            is estimated in their place.
+          </p>
         </div>
       ) : draft.effectiveStatus === "executed" ? (
         <div className="mt-3 space-y-2">
@@ -1706,7 +1724,10 @@ function TradeDraftRow({ draft, missionId }: { draft: TradeDraft; missionId: num
           <p className="text-[11px] text-muted-foreground">
             Protective exits (partial close, break-even, trailing stop, structure /
             news / target close) route only through the standard instant-trade
-            pipeline and the full 23-gate safety check.
+            pipeline and the full 23-gate safety check. Protective exits apply to
+            live positions. A demo or paper dispatch never opens a position, so
+            there is nothing for the exit manager to find and no exit will be
+            taken for it.
           </p>
         </div>
       ) : draft.effectiveStatus === "expired" ? (
@@ -2044,12 +2065,16 @@ function MissionRiskPanel({ missionId }: { missionId: number }) {
 // applying an automation level only records intent; live dispatch still goes
 // through the platform's existing gates.
 
+// Labels mirror lib/domain missionAutomation AUTOMATION_LEVEL_META. Level 3 is
+// NOT an auto-execute-on-demo level — a non-live mission stops at the simulated
+// recorder and contacts no broker, so the label must not imply a demo account.
+// Level 4 carries no size cap of its own (levels 4-6 share one execution path).
 const AUTOMATION_LABELS: Record<number, string> = {
   0: "Off",
   1: "Advisory",
   2: "Approval (default)",
-  3: "Demo auto",
-  4: "Micro live",
+  3: "Demo auto (records intent only)",
+  4: "Live auto — first step",
   5: "Limited live auto",
   6: "Full live auto",
 };
@@ -2337,6 +2362,9 @@ function MissionTestingLab({ mission }: { mission: ProfitMission }): ReactElemen
           <CardDescription>
             Every gate must pass before a level is allowed. Live automation (level 4+)
             is opt-in and still routes through the platform's existing live safety gates.
+            The evidence these gates read is realised closed live trades; demo and
+            paper produce none, so a level cannot be earned on them. Applying a
+            level records intent only — it never places a trade.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -2606,6 +2634,24 @@ export default function ProfitMissionsPage() {
           earned, explicitly enabled, and re-checked against every live gate at
           each dispatch. A blocked gate holds the mission — it never trades
           around a refusal.
+        </p>
+        <p className="mt-2 text-sm text-warning" data-testid="text-mission-mode-truth">
+          What paper and demo actually do: they record the trade ARX would have
+          taken and stop there. No broker is contacted in either mode — there is
+          no demo broker behind them — so no order is filled and no profit or
+          loss is produced. A paper or demo mission therefore cannot produce a
+          result and cannot complete its target; it is a record of intent, not a
+          simulated account. The 23-gate live safety check runs on live dispatch
+          only.
+        </p>
+        <p className="mt-2 text-sm text-muted-foreground" data-testid="text-mission-ladder-road">
+          The road to auto levels: because paper and demo produce no realised
+          trades, they cannot build the track record the promotion gates ask for.
+          Automation levels are earned from real closed results on a live
+          mission, and a paper or demo account is capped at level 3. Level 3 does
+          not auto-execute anywhere today — see its label. Live auto (levels 4–6)
+          additionally needs the accepted risk certificate, the platform live
+          gates on, and your explicit opt-in.
         </p>
       </div>
 

@@ -195,7 +195,7 @@ const MANUAL_ONLY = new Set<string>([
   "@workspace/scripts::test:backfill-ea-version",
   "@workspace/scripts::test:section-25",
   // Task #747 — convenience umbrella that re-runs the one-click safety trio
-  // (frontend consent + pure 18-gate + DB route). Each constituent is ALREADY
+  // (frontend consent + pure 23-gate + DB route). Each constituent is ALREADY
   // covered automatically (test:one-click-consent and test:one-click-gates are
   // in root `ci`; test:one-click-route runs in the integration lane), and the
   // umbrella's DB route leg cannot run in the offline `ci` lane. It exists only

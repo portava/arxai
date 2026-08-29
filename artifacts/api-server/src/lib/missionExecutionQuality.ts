@@ -6,7 +6,7 @@
 //     MT5/feed runtime signals, the ARX Focus registry) and COMPOSES the five
 //     pure Phase 7 domain engines into one aggregate pre-check verdict.
 //   - It is BLOCK / DOWNGRADE ONLY. Nothing here can upgrade a setup, relax an
-//     existing gate, or place an order. The real per-user governor + 18-gate live
+//     existing gate, or place an order. The real per-user governor + 23-gate live
 //     dispatch still run unconditionally inside `executeInstant`; these pre-checks
 //     only layer ADDITIONAL strictness on top of the Phase 6 gated path.
 //   - It NEVER fabricates spread / slippage / quote data: when an input cannot be
@@ -22,7 +22,7 @@
 //     (net loss / below-floor). Its fail-closed "unverified" states (no target /
 //     no cost estimate at the dispatch boundary) are surfaced as WARNINGS, not a
 //     hard dispatch block — the net-profit filter's fail-closed teeth live at
-//     proposal selection, and the 18-gate path still runs. This keeps the
+//     proposal selection, and the 23-gate path still runs. This keeps the
 //     pre-check additive (it never relaxes a gate) without falsely blocking an
 //     already-approved, fully-gated draft on un-observable cost data.
 //   - Capital efficiency is advisory/ranking ONLY and never blocks.

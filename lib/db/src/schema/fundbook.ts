@@ -455,7 +455,7 @@ export type NewFundBookTraderInternalEntry = typeof fundBookTraderInternalEntrie
 //   so investors can never buy in below the actual finalized book value.
 // - The tier ladder is per-pool; each pool has its own state row.
 // - This table is NEVER touched by any execution path, broker dispatch,
-//   lot sizing, or the 18-gate live pipeline.
+//   lot sizing, or the 23-gate live pipeline.
 
 export const TIER_PRICING_MODES = ["FIXED", "DYNAMIC"] as const;
 export type TierPricingMode = (typeof TIER_PRICING_MODES)[number];

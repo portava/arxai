@@ -84,7 +84,7 @@ E. CI BOUNDARY: the guard fails if a live/safety/execution path imports `mayShow
 
 ## STEP 9 — DO NOT CHANGE (live safety framing)
 
-No change to: `tradeSignalAllowed`/`canShowTradeSetup` semantics, broker dispatch gates, live account governance, risk gates, kill switch, MT5 bridge execution, order-queue eligibility, the 18-gate `livePhaseBDispatchGate`, the synthetic floor, SL policy, owner/admin live behavior, or aiBrain simulator math. Display contract removes/downgrades what's SEEN only.
+No change to: `tradeSignalAllowed`/`canShowTradeSetup` semantics, broker dispatch gates, live account governance, risk gates, kill switch, MT5 bridge execution, order-queue eligibility, the 23-gate `livePhaseBDispatchGate`, the synthetic floor, SL policy, owner/admin live behavior, or aiBrain simulator math. Display contract removes/downgrades what's SEEN only.
 
 ## VERIFY + REPORT
 

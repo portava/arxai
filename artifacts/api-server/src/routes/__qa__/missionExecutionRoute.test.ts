@@ -1,7 +1,7 @@
 // Profit Mission Phase 6 (Task #665) — prove the gated execution hook
 // (`dispatchApprovedDraft`) connects an APPROVED draft to REAL execution for the
 // first time, but ONLY through the existing instant-trade router seam
-// (`executeInstant`, source "mission") → live pipeline → 18-gate dispatch, and
+// (`executeInstant`, source "mission") → live pipeline → 23-gate dispatch, and
 // never as a parallel order path. Runs end to end against a real database.
 //
 // The injected `executor` is a SPY that stands in for the real instant-trade

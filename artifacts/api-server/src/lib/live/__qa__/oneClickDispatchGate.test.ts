@@ -1,5 +1,5 @@
 // Task #747 — Prove the one-click / fast-trade live execution path cannot bypass
-// ANY of the required live-trading gates at the 18-gate dispatch chokepoint.
+// ANY of the required live-trading gates at the 23-gate dispatch chokepoint.
 //
 // WHY THIS EXISTS
 //   POST /api/me/one-click/submit-live is the fast-trade entry. It is the most
@@ -9,7 +9,7 @@
 //     createLiveDraft → confirmLiveCommand → dispatchLiveCommand
 //   and dispatch refuses unless `evaluateLivePhaseBDispatchGate` returns PASS.
 //   This file is the per-gate proof of that chokepoint: it PASSes ONLY when ALL
-//   18 gates pass, and ANY single failing gate BLOCKs with the exact reason. A
+//   23 gates pass, and ANY single failing gate BLOCKs with the exact reason. A
 //   fast-trade caller therefore cannot "skip" a gate by virtue of being armed.
 //
 // SCOPE / SAFETY

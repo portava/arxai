@@ -1,7 +1,7 @@
 // Single-trade DEMO certification (spec Phase 15).
 //
 // THIS FILE PLACES A REAL ORDER AT A REAL VENUE. It is the only code in ARX
-// that does so outside the 18-gate live path, and it is deliberately isolated
+// that does so outside the 23-gate live path, and it is deliberately isolated
 // from it: no DerivExecutionAdapter, no dispatch pipeline, no strategy input.
 // If buy/sell semantics, contract tracking, or reconciliation are wrong, the
 // blast radius is one explicit demo trade that a human asked for.

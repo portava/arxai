@@ -135,7 +135,7 @@ function publicConn(c: typeof mt5ConnectionTable.$inferSelect) {
 // Honest per-user reported account mode for assistant reporting surfaces.
 // DERIVED from the canonical per-user envelope (`safetyMode`), fail-closed to
 // "paper_only" on any error. This is REPORTING ONLY — it authorizes nothing.
-// Live execution stays governed by the per-user activation gate + the 18-gate
+// Live execution stays governed by the per-user activation gate + the 23-gate
 // Phase B dispatch + the per-trade confirmation choreography.
 async function reportedAccountMode(
   userId: number,

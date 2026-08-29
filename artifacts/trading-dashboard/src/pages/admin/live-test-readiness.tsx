@@ -4,7 +4,7 @@
 // - No trade is created on page load.
 // - No trade is created by preflight / preview.
 // - arx_live_commands stays 0 until the OWNER clicks "Confirm Live Test Order"
-//   in the confirmation modal after all 18 gates pass.
+//   in the confirmation modal after all 23 gates pass.
 // - All 16 backend gates are re-evaluated server-side on the actual send.
 // - Typed-phrase confirmation removed — replaced with Confirm/Cancel modal.
 // - Only users with role=OWNER can reach this page (enforced at route level

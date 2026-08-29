@@ -13,7 +13,7 @@
 //
 // SAFETY SCOPE: this is ANALYSIS / DISPLAY truth only. It NEVER touches
 // execution routing, fills, balance, equity, margin, broker execution price,
-// the 18-gate live pipeline, the Risk Governor, AACI, or the Security
+// the 23-gate live pipeline, the Risk Governor, AACI, or the Security
 // Handshake. It also never fabricates data — it only *classifies* data that a
 // provider already returned (or honestly reports the absence of data).
 //

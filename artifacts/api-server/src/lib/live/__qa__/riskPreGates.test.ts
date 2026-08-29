@@ -16,7 +16,7 @@
 // These are pure-unit proofs of the two extracted decision helpers (no DB,
 // no network — extracted exactly so these contracts can run offline), plus
 // source-order proofs that dispatchLiveCommand consults each pre-gate
-// BEFORE the 18-gate evaluator. Structure mirrors
+// BEFORE the 23-gate evaluator. Structure mirrors
 // emergencyKillSwitchPreGate.test.ts.
 //
 // Importing ../liveCommandPipeline.js transitively imports @workspace/db,
@@ -272,7 +272,7 @@ test("lock: no locks at all blocks nothing", () => {
 
 // ── Source-order proofs ────────────────────────────────────────────────────
 
-test("dispatchLiveCommand consults BOTH pre-gates BEFORE the 18-gate evaluator", () => {
+test("dispatchLiveCommand consults BOTH pre-gates BEFORE the 23-gate evaluator", () => {
   const source = readFileSync(
     fileURLToPath(new URL("../liveCommandPipeline.ts", import.meta.url)),
     "utf8",
@@ -284,11 +284,11 @@ test("dispatchLiveCommand consults BOTH pre-gates BEFORE the 18-gate evaluator",
   const evaluatorAt = source.indexOf("evaluateLivePhaseBDispatchGate({", dispatchStart);
   assert.ok(riskLockAt > 0, "dispatchLiveCommand must call activeRiskLockBlockReason");
   assert.ok(weeklyAt > 0, "dispatchLiveCommand must call weeklyDrawdownBlocksDispatch");
-  assert.ok(evaluatorAt > 0, "dispatchLiveCommand must still run the 18-gate evaluator");
+  assert.ok(evaluatorAt > 0, "dispatchLiveCommand must still run the 23-gate evaluator");
   assert.ok(riskLockAt < evaluatorAt,
-    "the risk-lock pre-gate must run BEFORE the 18-gate evaluator");
+    "the risk-lock pre-gate must run BEFORE the 23-gate evaluator");
   assert.ok(weeklyAt < evaluatorAt,
-    "the weekly-drawdown pre-gate must run BEFORE the 18-gate evaluator");
+    "the weekly-drawdown pre-gate must run BEFORE the 23-gate evaluator");
 });
 
 test("the weekly pre-gate sits NEXT TO the daily-loss input assembly", () => {

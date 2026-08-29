@@ -12,9 +12,15 @@
 // WHAT IS TRUE NOW (and what this suite pins)
 //   - Missions CAN place trades, but ONLY through the gated path: draft →
 //     approval → dispatchApprovedDraft → executeInstant (source "mission") →
-//     18-gate live dispatch. Paper/demo run the SAME gate chain against a
-//     simulated recorder that never contacts a broker and never fabricates a
-//     fill.
+//     23-gate live dispatch.
+//   - Paper/demo run the SAME MISSION-LAYER chain (probation + mission gate +
+//     Phase 7 + the single-flight claim) and then STOP at a simulated recorder.
+//     They never reach executeInstant, so the live pipeline's pre-gates, the
+//     per-user governor and the 23 gates are NOT evaluated for them. No broker
+//     is contacted, nothing is fabricated — and because nothing is ever filled,
+//     a paper/demo draft never closes and never produces a realised result.
+//     (This header previously said paper/demo "run the SAME gate chain", which
+//     read as if the 23 gates applied to them. They do not.)
 //   - The default automation level (2) waits for the USER's approval on every
 //     trade. Auto levels (3–6) must be earned via the promotion gates,
 //     explicitly enabled for live, and are re-checked at every dispatch.

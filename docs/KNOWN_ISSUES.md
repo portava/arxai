@@ -11,7 +11,7 @@ Last refreshed alongside `ARX_AI_LAUNCH_CANDIDATE_0.1`. Items below are
 - **`ARX_LIVE_BROKER_EXECUTION_ENABLED` defaults to unset/false in code.**
   In THIS environment it is intentionally set `"true"` for controlled
   owner/admin live testing (see `replit.md`) — that satisfies gate #1 of 18
-  only; dispatch still requires the DB arm flag, all 18 gates, and per-user
+  only; dispatch still requires the DB arm flag, all 23 gates, and per-user
   approval. Demo path is unaffected.
 - **Scanner returns empty with `safetyNote` when `TWELVEDATA_API_KEY`
   is unset.** Live data is never substituted by simulator data.

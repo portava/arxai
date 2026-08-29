@@ -16,7 +16,7 @@
 //     data service appends it OPT-IN for the display route only; every analysis
 //     caller keeps consuming closed bars.
 //   - No execution-path involvement: this touches no arx_live_* table, no
-//     18-gate evaluator, no balance/fill. Pure market-data display telemetry.
+//     23-gate evaluator, no balance/fill. Pure market-data display telemetry.
 //   - Freeze, never fabricate motion: the bar only mutates when a REAL tick
 //     folds in. When ticks go silent the bar simply stops changing; the shared
 //     freshness layer reads the tick age and downgrades the tip to stale.

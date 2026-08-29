@@ -5,7 +5,7 @@
 // These are pure-unit proofs of the extracted decision helpers (no DB, no
 // network — extracted exactly so these contracts run offline), plus
 // source-order proofs that dispatchLiveCommand consults every new pre-gate
-// AFTER the risk-lock pre-gate and BEFORE the 18-gate evaluator, and that
+// AFTER the risk-lock pre-gate and BEFORE the 23-gate evaluator, and that
 // recordLiveCommandResult owns the failure-streak breaker. Structure mirrors
 // riskPreGates.test.ts / emergencyKillSwitchPreGate.test.ts.
 //
@@ -607,7 +607,7 @@ const pipelineSource = readFileSync(
   "utf8",
 );
 
-test("dispatchLiveCommand consults all four wave-4 pre-gates AFTER the risk-lock gate and BEFORE the 18-gate evaluator", () => {
+test("dispatchLiveCommand consults all four wave-4 pre-gates AFTER the risk-lock gate and BEFORE the 23-gate evaluator", () => {
   const dispatchStart = pipelineSource.indexOf("export async function dispatchLiveCommand");
   assert.ok(dispatchStart > 0, "dispatchLiveCommand must exist");
   const riskLockAt = pipelineSource.indexOf("activeRiskLockBlockReason({", dispatchStart);
@@ -617,7 +617,7 @@ test("dispatchLiveCommand consults all four wave-4 pre-gates AFTER the risk-lock
   const feedAt = pipelineSource.indexOf("evaluateLiveEntryFeedGate({", dispatchStart);
   const evaluatorAt = pipelineSource.indexOf("evaluateLivePhaseBDispatchGate({", dispatchStart);
   assert.ok(riskLockAt > 0, "risk-lock pre-gate must still run");
-  assert.ok(evaluatorAt > 0, "the 18-gate evaluator must still run");
+  assert.ok(evaluatorAt > 0, "the 23-gate evaluator must still run");
   for (const [name, at] of [
     ["price collar", collarAt],
     ["signal age", signalAt],
@@ -626,7 +626,7 @@ test("dispatchLiveCommand consults all four wave-4 pre-gates AFTER the risk-lock
   ] as const) {
     assert.ok(at > 0, `dispatchLiveCommand must consult the ${name} pre-gate`);
     assert.ok(at > riskLockAt, `the ${name} pre-gate must run AFTER the risk-lock pre-gate`);
-    assert.ok(at < evaluatorAt, `the ${name} pre-gate must run BEFORE the 18-gate evaluator`);
+    assert.ok(at < evaluatorAt, `the ${name} pre-gate must run BEFORE the 23-gate evaluator`);
   }
 });
 

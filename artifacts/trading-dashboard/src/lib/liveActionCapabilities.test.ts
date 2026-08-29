@@ -17,7 +17,7 @@ import {
  *        available so the trader can exit risk.
  *
  * The helper is display-only — it exposes capability + honest copy, never a
- * field that grants execution. The backend 18-gate pipeline stays the sole
+ * field that grants execution. The backend 23-gate pipeline stays the sole
  * authority; these assertions only pin what the UI may show.
  */
 

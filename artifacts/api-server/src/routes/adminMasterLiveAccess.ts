@@ -510,7 +510,7 @@ export async function approveTraderForMasterLiveCore(
   // the admin attach route uses, so there is zero safety-code duplication. It
   // NEVER arms the user for live execution, NEVER inserts into
   // arx_live_commands, and NEVER bypasses any Phase B gate. Manual per-user
-  // arming + all 18 gates still independently gate execution.
+  // arming + all 23 gates still independently gate execution.
   //
   // Best-effort + fail-open: the approval transaction has already committed,
   // so an attach failure here must never roll it back or fail the response.

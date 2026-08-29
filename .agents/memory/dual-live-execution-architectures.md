@@ -10,7 +10,7 @@ pipelines, and **both ultimately write the `mt5_commands` EA mailbox** (the tabl
 the EA polls for `status='PENDING'`). Checking only Phase B misses half the surface.
 
 1. **Phase B — canonical (`lib/live/`).** Live draft → `arxLiveCommandsTable`
-   (the only non-test insert site) → 18-gate `livePhaseBDispatchGate` → on PASS
+   (the only non-test insert site) → 23-gate `livePhaseBDispatchGate` → on PASS
    mirrors into `mt5_commands`. Gated by `ARX_LIVE_BROKER_EXECUTION_ENABLED`
    (env **AND** db, never OR).
 2. **adminTrading — legacy backup (`lib/adminTrading/`).** `placeOrder()` (sole
@@ -73,7 +73,7 @@ dynamic table identifiers, multi-hop re-export laundering, a write hidden in a
 third-file helper, raw SQL whose VALUES can't be parsed (still caught by inv 1).
 Remaining options: hard-deny the legacy token, or formally deprecate the 2nd pipeline.
 **Why:** a single stray config value must never unlock real broker dispatch from
-a layer that bypasses the canonical per-user demo gates and the Phase B 18-gate.
+a layer that bypasses the canonical per-user demo gates and the Phase B 23-gate.
 
 **How to apply / don't regress:**
 - `placeOrder` reaches `dispatchToBroker` ONLY on `guard.status==="APPROVED"`, so

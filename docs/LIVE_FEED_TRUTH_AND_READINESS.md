@@ -66,7 +66,7 @@ symbol through the chain:
 | Scanner | `marketScanner.ts` | enriches, never gates; same verdict |
 | Eleanor/Ruby chart read | `assistant/` read layers | same verdict; withholds setup when feed unconfirmed |
 | Live preflight feed gate | `live/entryDataSufficiency.ts` | composes the pure engine; block-only, fail-closed |
-| Dispatch | `executeInstant` → `liveCommandPipeline` → 18-gate | sanctioned chokepoint; unchanged |
+| Dispatch | `executeInstant` → `liveCommandPipeline` → 23-gate | sanctioned chokepoint; unchanged |
 
 **Heartbeat-threshold divergence (documented, intentionally not force-unified):**
 `approvedTraderLiveState` and `meRoutingStatus` use **15s** (live-readiness
@@ -90,7 +90,7 @@ readiness field set; broader per-surface adoption (each surface calling it
 directly instead of its own readiness reads) is tracked as follow-up. The
 surfaces it composes already share the same feed-truth core
 (`resolveSymbolFeedVerdict`, locked by `test:shared-feed-verdict`) and the
-18-gate dispatch chokepoint, so they agree on feed/readiness state today even
+23-gate dispatch chokepoint, so they agree on feed/readiness state today even
 before that adoption completes.
 
 - **Pure core:** `lib/live/unifiedLiveReadinessDecision.ts`
@@ -160,7 +160,7 @@ or bypass any gate:
   resolver reports, so it **cannot create a new block**.
 - It is **fail-soft**: a resolver error is swallowed (logged) so observability can
   never break a trade that already passed every real gate.
-- The canonical preflight gates and the **18-gate dispatch** chokepoint remain the
+- The canonical preflight gates and the **23-gate dispatch** chokepoint remain the
   **sole** execution authority.
 
 Its purpose is **drift visibility**: when the unified resolver reports a blocker
@@ -185,7 +185,7 @@ Advisory engines that cannot place orders must use an **Alert-only** /
 ### Safety invariant
 
 `liveEntryEligible: true` is a **readiness hint only**. Every live order still
-re-runs the full instant-trade router → live pipeline → **18-gate dispatch**. The
+re-runs the full instant-trade router → live pipeline → **23-gate dispatch**. The
 resolver can never dispatch, weaken, or bypass any gate. This is locked by the CI
 guard `scripts/src/ci/check-unified-readiness-no-dispatch.ts`.
 
@@ -195,25 +195,25 @@ guard `scripts/src/ci/check-unified-readiness-no-dispatch.ts`.
 
 Honest classification of every live-related function. UI labels must match.
 
-| Function / surface | Classification | Routes through `executeInstant` → 18-gate? | Notes |
+| Function / surface | Classification | Routes through `executeInstant` → 23-gate? | Notes |
 | --- | --- | --- | --- |
 | Chart / manual ticket (`LiveSharedTradeTicket`) | **LIVE EXECUTION SUPPORTED** | Yes | place/close/modify/reverse/cancel all route via `executeInstantTrade`; PAPER renders no buttons |
 | Scanner chart trade actions | **LIVE EXECUTION SUPPORTED** | Yes | `executeInstantTrade(source:"chart")`; pending-cancel = DELETE draft |
 | Chart drag-to-modify SL/TP | **LIVE EXECUTION SUPPORTED** | Yes | own LIVE SL/TP only, `MODIFY_SL_TP`; entry never draggable; feed+entitlement re-checked at send |
-| Eleanor / Ruby (assistant) | **LIVE EXECUTION SUPPORTED (conditional)** | Yes | only with `rubyExecutionAuthority = AI_ASSISTED`; same router/pipeline/18-gate; `AI_AUTO` defined but **not enabled** |
+| Eleanor / Ruby (assistant) | **LIVE EXECUTION SUPPORTED (conditional)** | Yes | only with `rubyExecutionAuthority = AI_ASSISTED`; same router/pipeline/23-gate; `AI_AUTO` defined but **not enabled** |
 | Profit Mission | **LIVE EXECUTION SUPPORTED (gated)** | Yes | drafts reach real exec ONLY via `executeInstant(source:"mission")`; CAS-claim single-flight |
 | Self-Trade agent executor | **LIVE EXECUTION SUPPORTED (gated)** | Yes | scoped autonomous cycle; fail-closed audit before side effect; `AI_AUTO` not enabled |
 | Final Live Test page (owner) | **LIVE EXECUTION SUPPORTED (owner-only)** | Yes | no command until owner confirms; all gates re-evaluated server-side |
 | Scalp engine | **ALERT-ONLY / ANALYSIS-ONLY** | No (advisory) | scoring/add-on/personality advisory; only a generated trade button routing through the chokepoint would be live |
 | Flare | **ANALYSIS-ONLY** | No | advisory read; does not place live orders |
-| Agent Ecosystem specialists | **ANALYSIS-ONLY (advisory/shadow)** | No | advisory-only, fail-open, shadow weight 0; never the 18-gate |
+| Agent Ecosystem specialists | **ANALYSIS-ONLY (advisory/shadow)** | No | advisory-only, fail-open, shadow weight 0; never the 23-gate |
 | Auto-close | **ALERT-ONLY** | No | system never closes a position; emits an alert only |
 | Market scanner / opportunity map | **ANALYSIS-ONLY** | No | enriches/ranks; never gates or executes |
 
 **Rule:** any surface in the ALERT-ONLY / ANALYSIS-ONLY rows must never present a
 "live"/"execute"/"trading enabled" affordance. If such a surface ever gains a
 trade button, that button must route through `executeInstant` → `liveCommandPipeline`
-→ 18-gate and be reclassified to LIVE EXECUTION SUPPORTED.
+→ 23-gate and be reclassified to LIVE EXECUTION SUPPORTED.
 
 ---
 

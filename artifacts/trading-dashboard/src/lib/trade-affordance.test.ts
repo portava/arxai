@@ -247,7 +247,7 @@ describe("Trade-Health contract — display NEVER grants execution", () => {
     // Even when the read is fully live-confirmed (ceilings true), the helper adds
     // NO friction and — crucially — exposes nothing that ENABLES a trade. The
     // ceilings are display-only; the ticket's Confirm is gated elsewhere (canTrade
-    // + the backend 18-gate pipeline), which this helper never touches.
+    // + the backend 23-gate pipeline), which this helper never touches.
     const t = resolveScannerTruth(inputs());
     expect(t.actionable).toBe(true);
     const live = resolveTradeAffordance(t, "live");

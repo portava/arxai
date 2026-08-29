@@ -386,7 +386,7 @@ All counts below were re-run in this audit at HEAD.
 - **Artifacts:** `lib/domain/src/safety-contracts/venueGateParity.ts` and
   `derivDemoGateParity.ts`. `VenueGateParityMap` is a
   `Record<LivePhaseBGateOnlyKey, VenueGateDisposition>`, so **every one of the
-  18 gate keys must carry a disposition or the build fails.** A `NOT_APPLICABLE`
+  23 gate keys must carry a disposition or the build fails.** A `NOT_APPLICABLE`
   requires a written reason.
 - **What this genuinely guarantees:** adding a nineteenth gate to the live path
   breaks compilation until someone maps it. Weakening by silent omission is
@@ -408,7 +408,7 @@ All counts below were re-run in this audit at HEAD.
   (`lib/domain/src/safety-contracts/livePhaseBDispatchGate.ts:126-231`).
   `BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED` (`:236-240`) is a sentinel appended
   for audit greps, **not a gate**.
-- Repo-wide prose still says "16-gate" 416 times against 200 for "18-gate", and
+- Repo-wide prose still says "16-gate" 416 times against 200 for "23-gate", and
   the docstring directly above `dispatchLiveCommand` itself says "15-gate". **All
   stale.** Trust the code.
 

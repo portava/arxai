@@ -19,7 +19,7 @@
 //
 // It never arms a user for live trading, never approves anyone, never touches
 // broker credentials, a bridge connection, or arming/approval state, and never
-// runs the 18-gate evaluator. It seeds a synthetic `arx_live_commands` row
+// runs the 23-gate evaluator. It seeds a synthetic `arx_live_commands` row
 // (clearly-prefixed command_id, negative synthetic user id) and exercises the
 // state-transition primitive that the gates hand off to. Every row it creates
 // is deleted in a `finally`.

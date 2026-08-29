@@ -10,7 +10,7 @@ Paste this file's instructions to Claude Code in the Replit shell (workspace `ar
 
 2. **`artifacts/api-server/src/lib/auth/globalGate.ts`** — comment-only: the stale "Phase 3 pending / User A can see User B's data" block is replaced with the accurate closed status per `docs/TODO_PER_USER_ISOLATION.md` (resolved May 17, 2026). No code change.
 
-3. **`docs/LAUNCH_CANDIDATE.md`** — "16 gates" → "18 gates" (both occurrences); guard count "21/21" → "56/56".
+3. **`docs/LAUNCH_CANDIDATE.md`** — "16 gates" → "23 gates" (both occurrences); guard count "21/21" → "56/56".
 
 4. **`docs/KNOWN_ISSUES.md`** — the claim that `ARX_LIVE_BROKER_EXECUTION_ENABLED` is unset in dev and prod is corrected to the actual posture (code default false; intentionally `"true"` in this environment for controlled owner/admin live testing, satisfying gate #1 of 18 only).
 

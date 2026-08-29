@@ -27,7 +27,7 @@
 
 ## 1. Executive Summary
 
-**Reality confirmed:** there is **no always-on autonomous loop**. The Self-Trade autonomous cycle is admin-trigger-only. `AI_AUTO_EXECUTION_ENABLED` defaults to `false` and is never set to `true` in any code path. Ruby tops out at `AI_ASSISTED`. Every auto/agent decision routes through the identical `executeInstant` → `createLiveDraft` → `confirm` → `dispatchLiveCommand` → 18-gate Phase B pipeline as a manual trade. No new MT5 path exists. No gate is bypassed.
+**Reality confirmed:** there is **no always-on autonomous loop**. The Self-Trade autonomous cycle is admin-trigger-only. `AI_AUTO_EXECUTION_ENABLED` defaults to `false` and is never set to `true` in any code path. Ruby tops out at `AI_ASSISTED`. Every auto/agent decision routes through the identical `executeInstant` → `createLiveDraft` → `confirm` → `dispatchLiveCommand` → 23-gate Phase B pipeline as a manual trade. No new MT5 path exists. No gate is bypassed.
 
 **Key findings:**
 
@@ -57,9 +57,9 @@
 | Position Manager | `artifacts/api-server/src/lib/selfTrade/livePositionManager.ts` | L2: alerts only. L3+: MOVE_TO_BE/TIGHTEN_SL/EXIT via `executeInstant`. |
 | Agent Ledger | `artifacts/api-server/src/lib/selfTrade/agentLedger.ts` | Append-only capital accounting. Realized P/L posted only from real fills. |
 | Service Layer | `artifacts/api-server/src/lib/selfTrade/service.ts` | CRUD for agents, kill switches, autonomy levels. Every mutation audit-wrapped. |
-| 18-Gate Phase B Dispatch | `lib/domain/src/safety-contracts/livePhaseBDispatchGate.ts` | Pure function. ALL 18 gates must PASS or dispatch is BLOCKED. |
+| 18-Gate Phase B Dispatch | `lib/domain/src/safety-contracts/livePhaseBDispatchGate.ts` | Pure function. ALL 23 gates must PASS or dispatch is BLOCKED. |
 | Synthetic Live Floor | `lib/domain/src/safety-contracts/syntheticLiveFloor.ts` | Hard floor: synthetics blocked for non-owner or non-Deriv broker. |
-| Live Command Pipeline | `artifacts/api-server/src/lib/live/liveCommandPipeline.ts` | Full pipeline: preflight → draft → confirm → dispatch. 18-gate eval. |
+| Live Command Pipeline | `artifacts/api-server/src/lib/live/liveCommandPipeline.ts` | Full pipeline: preflight → draft → confirm → dispatch. 23-gate eval. |
 | Symbol Feed Verdict | `artifacts/api-server/src/lib/data/symbolFeedVerdict.ts` | LIVE/LIVE_DELAYED/AWAITING. Must be LIVE for autonomous entry (entryDataSufficiency). |
 | Entry Data Sufficiency | `artifacts/api-server/src/lib/live/entryDataSufficiency.ts` | Live-entry block if feed not LIVE or insufficient candles. |
 | Trade Health Service | `artifacts/api-server/src/lib/tradeHealth/tradeHealthService.ts` | Read-only health report. Honest nulls on missing data — never fabricates. |
@@ -128,7 +128,7 @@ flowchart TD
     AB --> AC[executeInstant userId=executingUserId\nSource: self_trade]
     AC --> AD[createLiveDraft preflight\nARXFocus check, SL/TP sanity, pool gates,\nbroker symbol rules, feed verdict]
     AD --> AE[confirmLiveDraft]
-    AE --> AF[dispatchLiveCommand\n18-gate Phase B evaluator\nALL 18 must PASS]
+    AE --> AF[dispatchLiveCommand\n23-gate Phase B evaluator\nALL 18 must PASS]
 
     AF -- PASS all 18 --> AG[SENT_TO_MT5_LIVE → EA bridge]
     AF -- ANY gate FAIL --> AH[LIVE_BLOCKED primaryReason]
@@ -328,7 +328,7 @@ Pre-conditions:
 - AACI advisory score: 83 → `ALLOW`, sizeMultiplier = 1
 - Lot computed: 0.03 lots from $150 risk budget, 50-pip stop, within agent max 0.05
 
-Decision flow: `APPROVED` → Execution gate: `EXECUTE` → AACI: proceed → entry price from thesis midpoint → lot sized → PENDING_TICKET inserted → TOCTOU pass → dispatch intent audited → `executeInstant` → draft created → confirmed → 18-gate PASS → `SENT_TO_MT5_LIVE`.
+Decision flow: `APPROVED` → Execution gate: `EXECUTE` → AACI: proceed → entry price from thesis midpoint → lot sized → PENDING_TICKET inserted → TOCTOU pass → dispatch intent audited → `executeInstant` → draft created → confirmed → 23-gate PASS → `SENT_TO_MT5_LIVE`.
 
 ### 7b. Trade the bot CORRECTLY SKIPS
 
@@ -350,7 +350,7 @@ Agent has `maxConcurrentPositions = 2`, open positions = 2. `evaluateExecutionPe
 
 **Case 5: Stale bridge heartbeat**
 
-At Phase B dispatch, gate #7 `EA_HEARTBEAT_STALE` checks heartbeat age > 15s. Even if the decision engine produced an APPROVED candidate, the 18-gate evaluator returns `BLOCKED:EA_HEARTBEAT_STALE`. Result: **BLOCKED at dispatch.** Execution gets `res.ok = false`, execution row updated to BLOCKED.
+At Phase B dispatch, gate #7 `EA_HEARTBEAT_STALE` checks heartbeat age > 15s. Even if the decision engine produced an APPROVED candidate, the 23-gate evaluator returns `BLOCKED:EA_HEARTBEAT_STALE`. Result: **BLOCKED at dispatch.** Execution gets `res.ok = false`, execution row updated to BLOCKED.
 
 **Case 6: Unsafe margin / daily loss cap reached**
 
@@ -366,7 +366,7 @@ The CI guard `check-display-contract-import-boundary.ts` asserts `artifacts/api-
 
 **Case 9: Owner/admin live path — broker truth not bypassed**
 
-Even for the owner with `isOwnerUnrestricted = true`: the 18-gate Phase B evaluator runs in full. Gates #6 (account type live/real), #7 (heartbeat fresh), #9/#10 (EA flags) still evaluate real broker state. The unrestricted profile only relaxes the *app-layer* margin proxy and lot/symbol caps — never the broker-side gates or the live command pipeline. The autonomy system still requires `hasMasterLiveAccess = true` resolved from `loadAndEvaluateUserMasterLiveAccessGate`.
+Even for the owner with `isOwnerUnrestricted = true`: the 23-gate Phase B evaluator runs in full. Gates #6 (account type live/real), #7 (heartbeat fresh), #9/#10 (EA flags) still evaluate real broker state. The unrestricted profile only relaxes the *app-layer* margin proxy and lot/symbol caps — never the broker-side gates or the live command pipeline. The autonomy system still requires `hasMasterLiveAccess = true` resolved from `loadAndEvaluateUserMasterLiveAccessGate`.
 
 ---
 
@@ -440,7 +440,7 @@ Each score /100 reflects the depth and correctness of implementation, honesty of
 | **Market Read Intelligence** | 74/100 | M5 + H1 multi-timeframe, Chart Truth ≥75, broker alignment required, closed-candle only. Gap: no real-time news provider; spread not re-checked at dispatch. |
 | **Feed-Truth Honesty** | 88/100 | Feed verdict LIVE required end-to-end (decision + entryDataSufficiency). AWAITING = honest block. No fabrication of OHLC. Broker alignment verified. Gap: stale-candle edge case in Chart Truth cache expiry. |
 | **Risk Control** | 85/100 | 11-layer execution permission, quota pressure PROTECT/RECOVERY, ghost-position exclusion, concurrent cap, agent daily P/L. Gap: weekly drawdown not evaluated at agent layer. |
-| **Execution Safety** | 92/100 | 18-gate Phase B, exactly-once idempotency, TOCTOU kill-switch, anomaly screen fail-safe, audit pre-dispatch, dispatch ≠ fill, zero fabricated fills. Outstanding architecture. |
+| **Execution Safety** | 92/100 | 23-gate Phase B, exactly-once idempotency, TOCTOU kill-switch, anomaly screen fail-safe, audit pre-dispatch, dispatch ≠ fill, zero fabricated fills. Outstanding architecture. |
 | **Explanation Quality** | 70/100 | Thesis includes direction/entry/SL/TP/confidence/newsRisk/edge. Ruby self-review produces mistake/success tags + plain-English summary. Gap: no per-trade reward:risk or invalidation narrated in the control room UI. |
 | **Performance Consistency** | 68/100 | Quota engine handles NORMAL/RECOVERY/PROTECT regimes. Post-trade learning via Bayesian trust. Gap: weekly cap missing at agent level; learning cold start not surfaced; no backtest harness for live scenario replay. |
 | **Stop/Skip Discipline** | 90/100 | NO_THESIS/NO_PROTECTIVE_STOP/KILL_SWITCH/CHART_TRUTH_BLOCKED/HANDSHAKE_BLOCKED/AACI_DEFERRED all explicitly block. Default-deny throughout. |

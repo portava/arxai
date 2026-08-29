@@ -122,7 +122,7 @@ export interface ApprovalTicket {
   /** Set when a dispatch claim is won. Non-null means an attempt happened. */
   dispatchClaimedAtIso: string | null;
   constitutionVersion: number;
-  /** All 18 gate verdicts passed at proposal time. */
+  /** All 23 gate verdicts passed at proposal time. */
   gateVerdictsPassed: boolean;
   /**
    * True when gate 18 passed via an operator waiver rather than the user

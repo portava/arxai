@@ -12,7 +12,7 @@ description: How additive ownership tags on InstantTradeIntent behave and where 
 **Rule:** these tags are pass-through audit metadata ONLY. `executeInstant` never
 reads or branches on them, so they can add no gate, weaken nothing, and create no
 second execution path. A mission still dispatches solely via
-`executeInstant(source:"mission")` → live command pipeline → 18-gate dispatch.
+`executeInstant(source:"mission")` → live command pipeline → 23-gate dispatch.
 
 **Why:** attribution had to be possible without introducing a gate or a parallel
 path. Durable attribution already lives in `mission_trade_drafts` + the journaled

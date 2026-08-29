@@ -432,7 +432,7 @@ export * from "./profitMissions";
 
 // ── Task #705 — Claude Backend Fix Agent run ledger. Append-only record of
 // admin-initiated backend-error DIAGNOSES and DRY-RUN patch proposals. ADVISORY
-// / DIAGNOSTIC ONLY — never an execution path, never the 18-gate live pipeline,
+// / DIAGNOSTIC ONLY — never an execution path, never the 23-gate live pipeline,
 // never a fill; inputs are redacted before persistence; no APPLY path exists.
 export * from "./aiFixAgentRuns";
 
@@ -440,7 +440,7 @@ export * from "./aiFixAgentRuns";
 // Pure READ-aggregation + operator-control evidence. admin_cockpit_audit_log is
 // append-only and mirrors (never replaces) the canonical admin audit when a
 // mutation is initiated from the cockpit. ADVISORY / DISPLAY / AUDIT ONLY —
-// never an execution path, never the 18-gate live pipeline, never a fill.
+// never an execution path, never the 23-gate live pipeline, never a fill.
 export * from "./adminCockpit";
 
 // ── Session 2 Phase 6 — the Black Box. Append-only, BITEMPORAL, hash-chained

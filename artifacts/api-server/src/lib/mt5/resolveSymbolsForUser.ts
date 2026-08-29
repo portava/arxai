@@ -19,7 +19,7 @@
 //     enumerated the instrument AND reported it tradable. Everything else is
 //     flagged `executionRequiresBrokerConfirmation: true`.
 //   - Execution is unaffected: orders still resolve the exact broker symbol via
-//     resolveBrokerSymbol and run the full preflight + 18-gate dispatch. A
+//     resolveBrokerSymbol and run the full preflight + 23-gate dispatch. A
 //     symbol shown here as not-yet-tradable is honestly refused at execution.
 
 import {

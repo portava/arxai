@@ -5,7 +5,7 @@
 //     admin-initiated backend-error diagnosis or a DRY-RUN patch proposal made
 //     by the Claude Backend Fix Agent. It is append-only evidence — it NEVER
 //     places/approves a trade, mutates bridge state, overrides a risk gate or
-//     the kill switch, marks anything broker-confirmed, or touches the 18-gate
+//     the kill switch, marks anything broker-confirmed, or touches the 23-gate
 //     live pipeline.
 //   - The agent never applies a patch in this build. `dryRun` is always true and
 //     `applied` is always false; an APPLY path is intentionally not implemented.

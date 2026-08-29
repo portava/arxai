@@ -72,11 +72,11 @@ test("the gate is wired entry-only at the dispatch call site", () => {
   );
 });
 
-test("it runs BEFORE the 18-gate evaluator and never replaces it", () => {
+test("it runs BEFORE the 23-gate evaluator and never replaces it", () => {
   const gateIdx = pipelineSrc.indexOf("// ── CLOSE-ONLY PRE-GATE");
   const evalIdx = pipelineSrc.indexOf("evaluateLivePhaseBDispatchGate(");
   assert.ok(gateIdx > -1 && evalIdx > -1);
-  assert.ok(gateIdx < evalIdx, "the pre-gate must precede the 18-gate evaluator");
+  assert.ok(gateIdx < evalIdx, "the pre-gate must precede the 23-gate evaluator");
 });
 
 test("a refusal is audited and snapshot-tagged, not silent", () => {

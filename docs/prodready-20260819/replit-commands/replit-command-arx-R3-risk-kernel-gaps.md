@@ -1,4 +1,4 @@
-# Replit command — R3: risk-kernel gaps (the 24-check spec vs the 18 gates)
+# Replit command — R3: risk-kernel gaps (the 24-check spec vs the 23 gates)
 
 **Prerequisite:** R1 merged (R2 can run in parallel on its own branch). **Risk class:** live-execution risk controls — branch + owner merge.
 
@@ -20,7 +20,7 @@ Implement the risk-kernel gap series from `audit-risk.md` on branch `feat/risk-k
 
 Also: **wire or retire `evaluateRiskGovernor`** — the 6-kill-switch engine in `lib/domain/src/risk-governor/` has zero callers while its docstring claims it is the master pre-trade gate. Either consume it in the live pre-gates (preferred if its checks don't duplicate slices above) or rewrite its docstring to advisory-only truth. No dead code claiming to be a safety authority.
 
-Every slice: red-fail test first, `pnpm run ci` green after, no changes to the pure 18-gate contract file.
+Every slice: red-fail test first, `pnpm run ci` green after, no changes to the pure 23-gate contract file.
 
 ---
 

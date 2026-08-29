@@ -716,7 +716,7 @@ Brand:
 - `lib/api-client-react/src/generated/` — Generated React Query hooks
 - `lib/api-zod/src/generated/` — Generated Zod schemas
 - `lib/domain/src/safety-contracts/executionMode.ts` — Inviolable safety contracts
-- `lib/domain/src/safety-contracts/livePhaseBDispatchGate.ts` — 18-gate evaluator
+- `lib/domain/src/safety-contracts/livePhaseBDispatchGate.ts` — 23-gate evaluator
 - `mt5-bridge/`, `mt5-bridge-export/` — EA source (in-project tops at v1.54; live bridge runs operator-managed v1.55 — see EA install section + history archive)
 
 ## Architecture decisions
@@ -810,9 +810,9 @@ runtime.
   continue to see it).
 - `ARX_LIVE_BROKER_EXECUTION_ENABLED` defaults to `false` in code — Phase B
   server master switch (gate #1 of 18). Resolution is env `AND` db, never OR
-  (`resolveLiveBrokerExecutionEnabled`); ON only lets the 18-gate evaluator
+  (`resolveLiveBrokerExecutionEnabled`); ON only lets the 23-gate evaluator
   *consider* PASSing and bypasses nothing. Live dispatch still requires the DB arm
-  flag `globalTradingSettings.liveBrokerExecutionArmed`, all 18 gates, and
+  flag `globalTradingSettings.liveBrokerExecutionArmed`, all 23 gates, and
   per-user approval. **This environment** sets it `"true"` for controlled
   owner/admin live testing (see "Environment live-testing posture").
 - `autoCloseMode = "ALERT_ONLY"`
@@ -834,7 +834,7 @@ runtime.
   force `readOnlyMode: true`; the genuinely read-only `draw-setup` / `draft-read`
   surfaces keep the forced `READ_ONLY_PAPER_ENVELOPE`. Ruby may place/manage a
   **live** trade ONLY with explicit `rubyExecutionAuthority = AI_ASSISTED`, and
-  even then routes through the SAME instant-trade router → live pipeline → 18-gate
+  even then routes through the SAME instant-trade router → live pipeline → 23-gate
   dispatch as a manual trade (skips only the extra app-side confirm, never a
   backend gate / approval / allocation / kill-switch). `AI_AUTO` is defined but
   **not enabled**. (Detail: "Ruby behavior rules" below.)
@@ -847,7 +847,7 @@ runtime.
   **VERIFIED_DEMO** by `runDemoVerificationGate()` AND **armed** via MT5 Setup →
   Demo Execution Control. Arming is per-user, never global.
 - The live path (Phase B) is **default-deny**. Even with the master switch on, all
-  18 gates must individually PASS or the dispatch refuses with
+  23 gates must individually PASS or the dispatch refuses with
   `LIVE_BLOCKED:<primaryReason>`.
 - All EA-facing endpoints are guarded by `bridgeAuthPerUserOnly` (heartbeat,
   command poll/result, account/position sync, live poll/result, sync-live).
@@ -877,7 +877,7 @@ bus-selected symbol (`useChartSymbol`) over `GET /api/data/candles`, with the
 real-time signal scanner below it. Market selection, search, Broad Scan, and
 Focus Scan all read the shared chart-symbol bus. All chart trade actions (place,
 Close, partial close, break-even, Reverse, Cancel) route through the Global
-Instant Trade Router (`executeInstantTrade`), which re-runs the full 18-gate
+Instant Trade Router (`executeInstantTrade`), which re-runs the full 23-gate
 evaluator + kill switch + per-user allocation server-side. There is **no**
 frontend-only trade path; PAPER mode renders **no** trade buttons. Candles are
 real or an honest empty state — never fabricated/simulator data, never
@@ -893,7 +893,7 @@ authority is `OFF` (read-only). A user may raise `rubyExecutionAuthority` to
 **There is NO second execution path**: when authorized, every Ruby trade action —
 OPEN / CLOSE / CLOSE_ALL / MODIFY_SL_TP / MOVE_SL_TO_BREAKEVEN / PARTIAL_CLOSE
 plus the MONITOR/WATCH single-fire engines — routes through the EXISTING
-instant-trade router → live command pipeline → 18-gate Phase B dispatch (source
+instant-trade router → live command pipeline → 23-gate Phase B dispatch (source
 `ruby_text`/`ruby_voice`), exactly like a manual trade. `AI_ASSISTED` skips only
 the extra app-side confirmation prompt, never any backend gate, per-user approval,
 allocation, or kill-switch check. Ruby actions are bounded by per-action
@@ -925,9 +925,9 @@ hot path and prefer SQL aggregates over client-side counting.
 ## Phase B — live broker execution (active summary)
 
 Live broker dispatch is runtime-gated and **default-deny**. The chokepoint is the
-18-gate decision in `lib/domain/src/safety-contracts/livePhaseBDispatchGate.ts`;
+23-gate decision in `lib/domain/src/safety-contracts/livePhaseBDispatchGate.ts`;
 the server master switch `ARX_LIVE_BROKER_EXECUTION_ENABLED` defaults to `false`
-in code. Even when on, all 18 gates must individually PASS or dispatch refuses
+in code. Even when on, all 23 gates must individually PASS or dispatch refuses
 with `LIVE_BLOCKED:<primaryReason>`, with the legacy literal
 `BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED` appended while the switch is off. The
 legacy `lib/liveTrading/` Build TT chokepoint (`placeLiveOrderGuarded()`) stays
@@ -945,7 +945,7 @@ enablement, not a safety violation, and **must not be reset** to `false`/unset
 here. Switch ON satisfies **only** gate #1 — it bypasses nothing. Live dispatch
 additionally requires the admin DB arm flag `liveBrokerExecutionArmed` (env `AND`
 db), per-user master-live approval + toggle + disclosure, the operator-funded
-cohort cap, and all 18 gates. Normal users are downgraded to DEMO and can NEVER go
+cohort cap, and all 23 gates. Normal users are downgraded to DEMO and can NEVER go
 live from the switch alone — live access is **approval-based**. Full detail + the
 admin-only diagnostic endpoints are in the history archive.
 
@@ -1012,7 +1012,7 @@ Server-side tooling for managing MT5 bridges safely. Every endpoint requires an
 ADMIN/OWNER session (admin-previewing-as-user is auto-downgraded to the 403
 branch), every mutation takes a reason (≥3 chars) and writes a fail-CLOSED
 `admin_action_audit_log` row, and **no path weakens a safety surface** — closes
-funnel through the same 18-gate live pipeline.
+funnel through the same 23-gate live pipeline.
 
 - **Bridge-token rotation** — `rotate-token` issues a new per-user token (raw once),
   parks the old hash in a bounded grace window (default 15 min, max 24h); `revoke`
@@ -1036,7 +1036,7 @@ Full endpoint detail is in the history archive.
   trace row commits, and `lib/data/marketDataRouter.ts` serves the `mt5_broker`
   slot (durable `broker_candles` preferred when fresh+sufficient); a `STALE`,
   duplicate, or out-of-sequence message is traced **but never fed**. Telemetry
-  only — no execution path, `arx_live_*` table, balance, fill, or 18-gate
+  only — no execution path, `arx_live_*` table, balance, fill, or 23-gate
   involvement. Backstory + validation tests in the history archive.
 - **EA-side `ReadOnlyMode` defaults to `true`.** Until the operator flips it to
   `false` in MT5 → EA Inputs, every live (and demo) dispatch returns

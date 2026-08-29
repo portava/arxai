@@ -11,7 +11,7 @@
 // - The marker is part of the command payload that is integrity-hashed at draft
 //   creation, so it cannot be forged after the fact without failing the
 //   command-integrity pre-gate.
-// - Every OTHER gate of the 18-gate Phase B evaluator still runs unchanged.
+// - Every OTHER gate of the 23-gate Phase B evaluator still runs unchanged.
 
 export const EMERGENCY_CLOSE_KILL_SWITCH_BYPASS_REASON =
   "EMERGENCY_CLOSE_KILL_SWITCH_BYPASS" as const;

@@ -30,7 +30,7 @@ Apply the fix that matches the diagnosed cause — NEVER weaken the guard or a g
 
 ## NON-NEGOTIABLE
 - This is the LIVE-EXECUTION chokepoint guard. Do NOT loosen it, comment it out, add an exception/allowlist for `adminTrading`, or weaken gate #8 to make it green. The only acceptable outcomes are: (1) proven flake → no change; (2) code tightened to satisfy the invariant; (3) guard made MORE correct (still catches real bypasses, proven by injecting one).
-- No change to the Phase B 18-gate, synthetic floor, SL policy, or any unrelated path.
+- No change to the Phase B 23-gate, synthetic floor, SL policy, or any unrelated path.
 - If at any point the fix would involve relaxing what can reach `dispatchToBroker`/`mt5_commands`, STOP — that is the wrong direction.
 
 ## VERIFY

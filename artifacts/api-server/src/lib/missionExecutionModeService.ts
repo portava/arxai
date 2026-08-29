@@ -3,11 +3,19 @@
 // SAFETY / SCOPE:
 //   - GOVERNANCE ONLY. This service applies a gated `paper → demo → live`
 //     execution-mode transition to a mission. Changing the mode NEVER places a
-//     trade and NEVER relaxes any gate: a live-mode mission still dispatches
-//     only through dispatchApprovedDraft → executeInstant → the full per-user
-//     governor + 18-gate live dispatch + the env/db master switch, and a
-//     paper/demo mission runs the SAME gate chain against the simulated
-//     recorder that never contacts a broker.
+//     trade and NEVER relaxes any gate. Precisely what each mode reaches:
+//       * a LIVE-mode mission dispatches only through dispatchApprovedDraft →
+//         executeInstant → the full per-user governor + the 23-gate live
+//         dispatch + the env/db master switch;
+//       * a PAPER/DEMO mission runs the same MISSION-LAYER chain inside
+//         dispatchApprovedDraft (probation + mission gate + Phase 7 + the
+//         single-flight claim) and then stops at the simulated recorder. It
+//         never reaches executeInstant, so the governor, the master switch and
+//         the 23 gates are NOT evaluated for it, and no broker is contacted.
+//     Nothing is fabricated in either mode; the simulated leg records an intent
+//     and produces no fill, no position and no realised result.
+//     INTEGRATOR NOTE: the sibling branch `fix/demo-ladder` may change this
+//     behaviour — this describes the code on `fix/honest-copy`.
 //   - FAIL-CLOSED ladder: upgrades are stepwise (paper→demo, demo→live) and
 //     each upgrade requires an explicit `confirm: true`. Stepping to LIVE
 //     additionally requires the accepted Mission Risk Certificate, the platform

@@ -17,7 +17,7 @@
 //     the broker feed IS the live source; Task #776).
 //
 // SAFETY: analysis/display truth only. This never touches execution routing,
-// fills, balance, the 18-gate live pipeline, or any gate. A stale/awaiting feed
+// fills, balance, the 23-gate live pipeline, or any gate. A stale/awaiting feed
 // still resolves AWAITING/LIVE_DELAYED and stays entry-blocked — this corrects a
 // wrong verdict, it never relaxes the gate.
 

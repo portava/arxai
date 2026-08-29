@@ -2,7 +2,7 @@
 //
 // Profit Mission is another live-trade entry point: its OPEN and its protective
 // exit management must route ONLY through the Global Instant Trade Router
-// (`executeInstant`, source "mission") → live command pipeline → 18-gate Phase B
+// (`executeInstant`, source "mission") → live command pipeline → 23-gate Phase B
 // dispatch — and must stamp the originating `missionId`. This suite exercises:
 //
 //   1. the DISPATCH-surface REQUIRED anchors (executeInstant + source "mission"

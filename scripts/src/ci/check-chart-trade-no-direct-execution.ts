@@ -5,7 +5,7 @@
 // Reverse, Cancel, and — Task #764 — drag-to-modify SL/TP) are ANOTHER
 // live-trade entry point. Every one of them MUST route through the Global
 // Instant Trade Router (`executeInstant` on the backend, `executeInstantTrade`
-// on the frontend) → live command pipeline → 18-gate Phase B dispatch.
+// on the frontend) → live command pipeline → 23-gate Phase B dispatch.
 //
 // This guard locks the no-second-execution-path invariant on BOTH ends of the
 // chart surface:

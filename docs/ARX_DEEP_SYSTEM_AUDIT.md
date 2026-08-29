@@ -25,10 +25,13 @@ does not fix. Repair tasks are created separately from these findings._
 >   `news_filter` / `session_filter`), read-on-load and mutated-on-toggle via
 >   `PATCH /api/bot/settings`; PATCH→GET round-trip verified. The "local `useState`
 >   only — reverts on refresh" finding no longer reflects current behavior.
-> - **§7.2 / §7.3 — Stale docs + 16→18 gate-count drift:** ✅ REMEDIATED — docs and
->   `replit.md` reconciled to Phase-B-live reality and **18** gates (#17
->   `MISSING_TAKE_PROFIT` and #18 `DISCLOSURE_NOT_ACCEPTED` governance-conditional),
->   default-deny framing preserved; no gate behavior changed.
+> - **§7.2 / §7.3 — Stale docs + 16→18 gate-count drift:** ✅ REMEDIATED AT THE TIME
+>   — docs and `replit.md` were reconciled to Phase-B-live reality and **18** gates
+>   (#17 `MISSING_TAKE_PROFIT` and #18 `DISCLOSURE_NOT_ACCEPTED`
+>   governance-conditional), default-deny framing preserved; no gate behavior changed.
+>   **SUPERSEDED:** the evaluator has since grown the five FOUNDATION gates #19–#23,
+>   so the count is now **23**. The 18→23 drift was corrected in a later sweep; the
+>   text below is retained as the record of what was true then.
 > - **Priority-2 §11.4 — mock fallback never `LIVE_FEED`:** ✅ REMEDIATED — added a
 >   permanent CI guard asserting no file may both import the mock surface and emit a
 >   `LIVE_FEED` label (router + scanner kept mock-free).
@@ -69,7 +72,7 @@ PASS is the *actual broker fill*, which is correctly **`BLOCKED_FOR_SUPERVISED_L
 - **Dispatch ≠ fill.** A sent command is never reported as executed without a real broker
   ticket (`mapBridgedLiveOutcome`).
 - **Default-deny everywhere.** The master switch resolves env **AND** db; the env's
-  `="true"` satisfies only gate #1 of 18. Backend role gates are authoritative; nav-hiding
+  `="true"` satisfies only gate #1 of 23. Backend role gates are authoritative; nav-hiding
   is cosmetic. Per-user isolation holds on every read.
 - **No fabricated truth.** Balances, positions, P&L, chart freshness, and scanner
   actionability all derive from real sources or degrade to honest empty/blocked states.
@@ -79,8 +82,8 @@ PASS is the *actual broker fill*, which is correctly **`BLOCKED_FOR_SUPERVISED_L
    state only and silently revert on refresh (§7.1).
 2. **Stale architecture docs (FAIL, Med):** `ARCHITECTURE_MAP`/`SAFETY_NOTES`/`PRUNING_MAP`
    still describe a 24-page paper-only MVP (§7.2).
-3. **Gate-count drift (PARTIAL, Low):** code enforces **18** gates; docs say 16 — stricter,
-   so doc-accuracy only (§7.3).
+3. **Gate-count drift (PARTIAL, Low):** code enforces **23** gates (18 at the time of this
+   audit); much prose still says 16 or 18 — stricter than documented, so doc-accuracy only (§7.3).
 
 **Audit integrity:** an automated first pass produced several false positives
 (phantom `console.log`, raw fetch, "dead" routes, a nonexistent duplicate modal). Each was
@@ -102,7 +105,7 @@ Counts taken from the working tree at audit time (shell-enumerated).
 | Generated/typed hook modules | **19** | Orval React Query hooks + custom wrappers |
 | Docs under `docs/` | **58** | 6 long-form maps + history archive + per-phase notes |
 | Workflows | **3** | api-server (8080), trading-dashboard (24210), mockup-sandbox |
-| Live safety gates (Phase B) | **18 enumerated** | `LivePhaseBGateKey` union; docs say "16" (see §7) |
+| Live safety gates (Phase B) | **23 enumerated** | `LivePhaseBGateKey` union (18 at audit time); much prose still says "16" (see §7) |
 
 **Apps (artifacts):** `trading-dashboard` (React 19 + Vite, the product UI), `api-server`
 (Express 5), `mockup-sandbox` (design/canvas preview). **Shared libs:** `lib/domain`
@@ -121,7 +124,7 @@ Each chain below was traced UI → hook → endpoint → service → truth sourc
 
 ### 3.1 Live trade backbone (manual / scanner / chart / Ruby / one-click)
 **Expected:** every live action funnels through one server orchestrator and the live
-dispatch-gate evaluator (**18 gates**; documented as 16 — see §7.3); no second execution path.
+dispatch-gate evaluator (**23 gates** — the 16 base gates + #17/#18 + FOUNDATION #19–#23; much surrounding prose still says 16, see §7.3); no second execution path.
 **Actual (verified):** ✅ matches.
 ```
 UI button (LiveSharedTradeTicket / ScannerTradeModal / ScannerChartPanel / QuickTradeModal / Ruby)
@@ -182,7 +185,7 @@ consistently; no investor/admin nav leak found.
 **Expected:** one execution path shared with manual; reported safety state derived per-user;
 advisory surfaces non-executing.
 **Actual (verified):** ✅ matches. Ruby trade actions route through the same
-`executeInstant` → 18-gate path (`instantTrade.ts:277`); `rubyExecutionAuthority` bounds
+`executeInstant` → 23-gate path (`instantTrade.ts:277`); `rubyExecutionAuthority` bounds
 capability (`OFF`/`ADVISE_ONLY` refuse; `AI_ASSISTED` permitted per-action; `AI_AUTO`
 defined-not-enabled); reporting surfaces use `deriveAssistantEnvelope`, read-only surfaces
 force `READ_ONLY_PAPER_ENVELOPE`; `scrubUserCopyDeep` strips internal codes.
@@ -254,8 +257,8 @@ source — a `200`/no-error alone is never a pass.
 ### 5.6 Live Execution (Phase B)
 | Function | Verdict | Sev | Evidence |
 | :-- | :-- | :-- | :-- |
-| Single execution path | PASS | — | all sources → `executeInstant` → 16/18-gate; no 2nd path |
-| 18-gate fail-closed eval | PASS | — | `evaluateLivePhaseBDispatch`; any fail ⇒ `LIVE_BLOCKED:<gate>` |
+| Single execution path | PASS | — | all sources → `executeInstant` → the 23-gate evaluator; no 2nd path |
+| 23-gate fail-closed eval | PASS | — | `evaluateLivePhaseBDispatch`; any fail ⇒ `LIVE_BLOCKED:<gate>` |
 | Dispatch ≠ fill honesty | PASS | — | `mapBridgedLiveOutcome` (LIVE_FILLED needs real `brokerTicket`) |
 | Legacy chokepoint locked | PASS | — | `placeLiveOrderGuarded()` always REJECTED, CI-enforced; off the active path |
 | Exactly-once dispatch | PASS | — | `arx_live_commands` CAS + idempotency partial-unique index |
@@ -355,7 +358,7 @@ documentation drift. No fabricated data was found on any live truth surface.
 
 **What is proven (code/config):**
 - One execution path for every source (manual/scanner/chart/Ruby/one-click) →
-  `executeInstant` → draft/confirm/dispatch → **18-gate** evaluator. No second path; Ruby
+  `executeInstant` → draft/confirm/dispatch → **23-gate** evaluator. No second path; Ruby
   uses the same pipeline (`AI_ASSISTED` skips only the extra app-side prompt).
 - Master switch resolves **env AND db** (`ARX_LIVE_BROKER_EXECUTION_ENABLED="true"` in this
   env satisfies **only gate #1** — it bypasses nothing). DB arm flag, per-user approval,
@@ -382,7 +385,7 @@ are in place for a supervised session.
 **Per-action coverage (code path proven; real fill BLOCKED):**
 | Action | Code path | Verdict |
 | :-- | :-- | :-- |
-| OPEN | `executeInstant` → dispatch → 18-gate | PASS / fill BLOCKED |
+| OPEN | `executeInstant` → dispatch → 23-gate | PASS / fill BLOCKED |
 | CLOSE / CLOSE_ALL | same router (`source` tagged) | PASS / fill BLOCKED |
 | MODIFY SL/TP, MOVE_SL_TO_BREAKEVEN | same router; physics guard on SL side | PASS / fill BLOCKED |
 | PARTIAL_CLOSE / REVERSE | same router | PASS / fill BLOCKED |
@@ -417,7 +420,7 @@ graded on code-readiness (the real fill is `BLOCKED_FOR_SUPERVISED_LIVE_SESSION`
 | 2 | Navigation / containment | 95 | A | PASS | backend allowlist authoritative; nav-hiding cosmetic |
 | 3 | Dashboard | 93 | A | PASS | live SSE → allocation; stale-flagged |
 | 4 | Open Trades | 92 | A | PASS | confirmed broker tickets only, user-scoped |
-| 5 | Live Execution (code) | 90 | A- | PASS / real-fill BLOCKED | one path, 18-gate, dispatch≠fill |
+| 5 | Live Execution (code) | 90 | A- | PASS / real-fill BLOCKED | one path, 23-gate, dispatch≠fill |
 | 6 | MT5 Bridge | 90 | A- | PASS | per-user token; v1.55 live; some confirm BLOCKED |
 | 7 | Scanner | 90 | A- | PASS | truth-caps gate actionability |
 | 8 | Chart | 92 | A | PASS | data-time freshness; forming-tip not persisted |

@@ -486,7 +486,7 @@ test("dispatch wires the gate entry-only, flag-guarded, after the feed gate and 
   const evaluatorAt = pipelineSource.indexOf("evaluateLivePhaseBDispatchGate({", dispatchStart);
   assert.ok(dispatchStart > -1 && feedAt > -1 && gateAt > -1 && verdictAt > -1 && evaluatorAt > -1);
   assert.ok(feedAt < gateAt, "freshness gate runs after the broker-feed pre-gate");
-  assert.ok(gateAt < verdictAt && verdictAt < evaluatorAt, "freshness gate must decide BEFORE the 18-gate evaluator");
+  assert.ok(gateAt < verdictAt && verdictAt < evaluatorAt, "freshness gate must decide BEFORE the 23-gate evaluator");
   assert.ok(
     /if \(isWave4EntryCommand\s*\n?\s*&& reconciliationFreshnessGateEnabled\(/.test(pipelineSource),
     "the gate must be ENTRY-ONLY and flag-guarded in the same predicate",

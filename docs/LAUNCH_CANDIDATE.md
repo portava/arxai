@@ -7,7 +7,7 @@
 
 - `ARX_LIVE_BROKER_EXECUTION_ENABLED` defaults **unset/false** in dev and prod.
 - `arx_live_commands` row count must not grow during any QA or test run.
-- Demo path is the default. Live path is default-deny with 18 gates (see
+- Demo path is the default. Live path is default-deny with 23 gates (see
   `lib/domain/src/safety-contracts/livePhaseBDispatchGate.ts`).
 - Legacy server-wide `MT5_BRIDGE_TOKEN` env value is rejected on every
   EA endpoint. Per-user bridge tokens only.
@@ -20,7 +20,7 @@
 ## Do not enable live without explicit approval
 
 Setting `ARX_LIVE_BROKER_EXECUTION_ENABLED=true` flips the runtime gate
-from "always deny" to "evaluate 18 gates." It does **not** auto-fire
+from "always deny" to "evaluate 23 gates." It does **not** auto-fire
 trades. But it requires written operator approval AND a green run of
 the launch gate commands listed below.
 

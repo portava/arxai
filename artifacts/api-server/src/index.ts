@@ -202,11 +202,15 @@ ensureSafetyCoreInitialized()
       // protective exits, protection/goal refresh (stop-and-lock completes with
       // no page open), timeframe expiry, blow-up/emergency pauses, and — ONLY
       // for missions the user promoted to an auto level — scan → auto-approve →
-      // dispatch STRICTLY through the existing gated path (dispatchApprovedDraft
-      // → executeInstant → 18-gate live dispatch; paper/demo through the
-      // simulated recorder that never contacts a broker). Every gate re-runs at
-      // act time; a driver crash fails safe (mission skipped, positions
-      // untouched). Opt-out via ARX_MISSION_DRIVER_ENABLED (logged loudly).
+      // dispatch STRICTLY through the existing gated path. A LIVE mission goes
+      // dispatchApprovedDraft → executeInstant → the 23-gate live dispatch, and
+      // every one of those gates re-runs at act time. A PAPER/DEMO mission runs
+      // the mission-layer gates inside dispatchApprovedDraft and then stops at
+      // the simulated recorder: it never reaches executeInstant, so the 23 gates
+      // are not evaluated for it, no broker is contacted, and it records an
+      // intent only (no fill, no position, no realised result). A driver crash
+      // fails safe (mission skipped, positions untouched). Opt-out via
+      // ARX_MISSION_DRIVER_ENABLED (logged loudly).
       startMissionDriverWorker();
       // Economic truth spine (#29/#30/#31) — daily broker-statement
       // reconciliation: posting-ledger BROKER_CASH vs the broker's reported

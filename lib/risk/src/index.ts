@@ -9,7 +9,7 @@
 //
 // Additive and standalone. Imports nothing from the dispatch/gate path
 // (`lib/domain/src/safety-contracts`, `artifacts/api-server/src/lib/live`, the
-// 18-gate evaluator), reads no clock and no feed, and places no trades. Wiring
+// 23-gate evaluator), reads no clock and no feed, and places no trades. Wiring
 // it into live sizing is a separate, later work order.
 
 export { kellyStar, logGrowthRate, expectedLogWealth } from "./objective.js";

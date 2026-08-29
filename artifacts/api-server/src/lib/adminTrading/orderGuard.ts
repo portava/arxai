@@ -171,7 +171,7 @@ export async function runOrderGuards(req: OrderRequest): Promise<OrderGuardResul
     // dispatch from here: a single stray setting can no longer bypass the main
     // safety gates. Any DEMO/LIVE order is hard-denied at this gate regardless
     // of any env var, so the backup path cannot reach dispatchToBroker.
-    //   • LIVE  → routes exclusively through the Phase B 18-gate pipeline
+    //   • LIVE  → routes exclusively through the Phase B 23-gate pipeline
     //             (lib/live/liveCommandPipeline.ts via the instant-trade router).
     //   • DEMO  → routes through the per-user demo arming queue
     //             (lib/mt5/demoCommandQueue.ts), which also enforces

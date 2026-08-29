@@ -20,7 +20,7 @@ candles and must be viewable/scannable before the broker enumerates.
 **Honesty (the trap):** `tradeable=true` ONLY when an enumerated row exists AND
 is tradable AND has a brokerSymbol; everything else sets
 `executionRequiresBrokerConfirmation=true`. Execution is unaffected — orders
-still resolve the exact broker symbol + run the full preflight + 18-gate dispatch.
+still resolve the exact broker symbol + run the full preflight + 23-gate dispatch.
 The `source` tag must be reported from REAL evidence only: enumerated /
 shared_bridge / default. Do NOT infer a richer source (e.g. "active_candles")
 from chart selection alone — `getCandles()` reads the SIMULATOR, so it can't be

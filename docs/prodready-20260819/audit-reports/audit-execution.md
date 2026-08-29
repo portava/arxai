@@ -60,7 +60,7 @@ The spec's single 14-value `OrderState` enum (spec lines 368–382) is currently
 7. MOCK-bridge short-circuit — no silent live→mock fallback (`1643-1674`)
 8. Per-user exposure gates counting open positions **plus in-flight SENT commands** to close the TOCTOU window (`1747-1847`)
 9. Activation gate re-check (`1849-1886`)
-10. 18-gate `evaluateLivePhaseBDispatchGate` pure evaluator (`lib/domain/src/safety-contracts/livePhaseBDispatchGate.ts:117-250`), master switch default-false (`:20`), sentinel `BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED` appended when off (`:239-241`)
+10. 23-gate `evaluateLivePhaseBDispatchGate` pure evaluator (`lib/domain/src/safety-contracts/livePhaseBDispatchGate.ts:117-250`), master switch default-false (`:20`), sentinel `BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED` appended when off (`:239-241`)
 11. Atomic master exposure reservation before SENT (`2008-2081`)
 12. Idempotency-keyed SENT_TO_MT5_LIVE write, DB partial-unique enforced (`2083-2111`, index at `arxLiveExecution.ts:209-211`)
 13. Fail-closed transport mirror into `mt5_commands` with reservation release on failure (`2135-2219`)
@@ -105,7 +105,7 @@ Demo equivalent: `consumeApprovedCommand` with the `canDispatchToMt5` chokepoint
 
 **C5 — Duplicate-suppression implemented three different ways.** Demo: payload fingerprint + 10 s window scan + partial unique index (`demoDispatchDuplicate.ts:18, 47-55`; `mt5DemoExecution.ts:92-94`). Live: minute-bucket SHA idempotency key + partial unique index over `('SENT_TO_MT5_LIVE','LIVE_FILLED')` (`phaseBConfig.ts:74-95`; `arxLiveExecution.ts:209-211`). Legacy: none. Spec wants one idempotency ledger keyed by a client-supplied `idempotency_key` unique forever (`execution_intents.idempotency_key text not null unique`, spec line 621).
 
-**C6 — Two live dispatch gates plus a demo chokepoint plus a legacy guard.** Phase A `evaluateLiveDispatchGate` (always-false, CI-pinned), Phase B `evaluateLivePhaseBDispatchGate` (18 gates), demo `canDispatchToMt5`, and the untouched `placeLiveOrderGuarded()` chokepoint referenced at `livePhaseBDispatchGate.ts:14-18`. Intentional layering, but any spec-§12 refactor must keep the CI-pinned literals (`BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED` appended at `livePhaseBDispatchGate.ts:239-241` and asserted by `scripts/src/ci/check-live-trading-readiness-lock.ts` per `liveDispatchGate.ts:4-6`).
+**C6 — Two live dispatch gates plus a demo chokepoint plus a legacy guard.** Phase A `evaluateLiveDispatchGate` (always-false, CI-pinned), Phase B `evaluateLivePhaseBDispatchGate` (23 gates), demo `canDispatchToMt5`, and the untouched `placeLiveOrderGuarded()` chokepoint referenced at `livePhaseBDispatchGate.ts:14-18`. Intentional layering, but any spec-§12 refactor must keep the CI-pinned literals (`BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED` appended at `livePhaseBDispatchGate.ts:239-241` and asserted by `scripts/src/ci/check-live-trading-readiness-lock.ts` per `liveDispatchGate.ts:4-6`).
 
 **C7 — Status vocabulary near-collisions.** `SENT_TO_MT5_DEMO` vs `SENT_TO_MT5_LIVE` vs legacy `sent`; `FAILED` vs `failed` vs `LIVE_FAILED`; `REJECTED` vs `rejected` vs `LIVE_REJECTED`. All free-text columns — none of the three tables uses a Postgres enum, unlike spec §7's `execution_order_state` enum (spec lines 458–463).
 
@@ -142,7 +142,7 @@ One row mutates from draft through terminal: `status`, `payload`-adjacent column
 
 ### G5 — No `reconciliation_runs`, no reconciliation-freshness gate (spec §7 lines 681–691, §11 check 10, §14)
 
-Reconciliation sweeps are ephemeral by design (`detect.ts:1-5`). Consequences: no "last reconciled at" fact exists for the risk path; the 18-gate evaluator has **no gate for reconciliation freshness or open mismatches** (full gate list `livePhaseBDispatchGate.ts:24-43`); spec-§14 trigger points (after unknown submission, after restart, before re-enabling) are not orchestrated — there is no `reconciler.enqueue_urgent` analogue (spec line 931).
+Reconciliation sweeps are ephemeral by design (`detect.ts:1-5`). Consequences: no "last reconciled at" fact exists for the risk path; the 23-gate evaluator has **no gate for reconciliation freshness or open mismatches** (full gate list `livePhaseBDispatchGate.ts:24-43`); spec-§14 trigger points (after unknown submission, after restart, before re-enabling) are not orchestrated — there is no `reconciler.enqueue_urgent` analogue (spec line 931).
 
 ### G6 — Mismatch does not freeze new entries (spec line 27: "A broker reconciliation mismatch is CRITICAL and blocks new entries"; §14 lines 950–952)
 
@@ -217,7 +217,7 @@ Each test must be written to **fail against today's code** where it encodes a ga
 12. ✅ *Race-lost sweep never overwrites a real result:* concurrent `expireStaleSentCommands` vs demo EA write-back → the EA terminal stands (`demoCommandQueue.ts:634-646` CAS + `RACE_LOST`).
 
 **Dispatch gates (mutation-test the chokepoints — spec line 1030)**
-13. ✅ *18-gate truth table:* for each of the 18 gates in `evaluateLivePhaseBDispatchGate`, flipping exactly that input flips `decision` to BLOCKED with that `primaryReason` (`livePhaseBDispatchGate.ts:117-250`). Mutation: comment out any single `fail(...)` call → suite goes red.
+13. ✅ *23-gate truth table:* for each of the 23 gates in `evaluateLivePhaseBDispatchGate`, flipping exactly that input flips `decision` to BLOCKED with that `primaryReason` (`livePhaseBDispatchGate.ts:117-250`). Mutation: comment out any single `fail(...)` call → suite goes red.
 14. ✅ *Master switch sentinel:* `liveBrokerExecutionEnabled=false` always appends `BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED` last (`livePhaseBDispatchGate.ts:239-241`); env `true` + DB unarmed still blocks (`phaseBConfig.ts:54-72` truth table).
 15. ✅ *Demo chokepoint refuses with no inputs:* `canDispatchToMt5()` with zero args refuses `NO_PER_USER_INPUTS` (`executionMode.ts:254-259`); `eaVersionAtLeast:false` refuses `EA_VERSION_TOO_OLD` (`executionMode.ts:221-223`).
 16. ✅ *Bridge binding:* result POST from `reportingBridgeConnectionId != row.bridgeConnectionId` → `BRIDGE_BINDING_MISMATCH`, no dedup counter bump (`liveCommandPipeline.ts:2621-2623`); pickup from the wrong bridge returns no command (`:2367-2376`).

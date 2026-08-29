@@ -26,7 +26,7 @@ any assistant or radar surface; route through this projection.
   setup through these derived names. Close levels at the source, not per consumer.
 - This EXTENDS the shared display contract (`@workspace/domain/market`
   `canShowTradeSetup`); it is NOT a parallel threshold and touches no live
-  dispatch / 16-18-gate path (withhold-only).
+  dispatch / 16-23-gate path (withhold-only).
 
 **How to apply:** any new scanner/Ruby/radar consumer that surfaces price levels
 must consume `projectOpportunitySetup` (or `scannerOpportunityToLiveCandidate`,

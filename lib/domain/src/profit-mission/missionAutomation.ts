@@ -4,8 +4,21 @@
 // per-role / per-account-type ceiling that caps how far a mission may be promoted.
 // It is pure, deterministic, and IO-free. It NEVER executes, relaxes, or bypasses
 // any live gate. A higher automation level only changes whether the EXISTING
-// instant-trade → live-pipeline → 18-gate dispatch is reached after approval; the
+// instant-trade → live-pipeline → 23-gate dispatch is reached after approval; the
 // gates themselves are untouched. Live auto is opt-in, last, and never silent.
+//
+// LABEL HONESTY — these `description` strings are user-facing product copy, so
+// they must describe what the CODE does, not what the ladder was designed to do.
+// Two corrections are baked in below and must not be reverted without the
+// behaviour landing first:
+//   * Level 3 does not execute anywhere. A non-live mission's dispatch stops at
+//     the simulated recorder in `missionExecution.ts`; there is no demo broker
+//     behind this level.
+//   * Level 4 has no execution behaviour distinct from levels 5–6 in the
+//     mission path. Its "micro-size / tight caps" wording described an intent
+//     that is not implemented as a distinct code path.
+// INTEGRATOR NOTE: the sibling branch `fix/demo-ladder` may implement the demo
+// leg. If it does, these labels must be revisited in the same merge.
 
 export const MISSION_AUTOMATION_LEVELS = [0, 1, 2, 3, 4, 5, 6] as const;
 export type MissionAutomationLevel = (typeof MISSION_AUTOMATION_LEVELS)[number];
@@ -47,23 +60,50 @@ export const AUTOMATION_LEVEL_META: Record<MissionAutomationLevel, AutomationLev
     isAuto: false, reachesLive: true, requiresCertificate: false, requiresExplicitLiveEnable: false,
   },
   3: {
-    level: 3, key: "DEMO_AUTO", label: "Demo auto",
-    description: "Auto-executes on a DEMO account only. The live broker is never contacted.",
+    level: 3, key: "DEMO_AUTO", label: "Demo auto (records intent only)",
+    // HONEST LABEL. The previous wording — "Auto-executes on a DEMO account
+    // only" — was false: there is no demo broker behind this level. A non-live
+    // mission's dispatch stops at `recordSimulatedMissionDispatch`, which
+    // journals + audits the intent and returns a `sim:` command id. No account
+    // of any kind is touched, nothing is filled, and no result is ever produced.
+    description:
+      "Auto-approves and records the trade ARX would have taken, then stops. "
+      + "No broker account is contacted — not a live one and not a demo one — "
+      + "so nothing is filled and no profit, loss or result is produced. "
+      + "Auto-execution against a real demo account is NOT YET AVAILABLE.",
     isAuto: true, reachesLive: false, requiresCertificate: false, requiresExplicitLiveEnable: false,
   },
   4: {
-    level: 4, key: "MICRO_LIVE", label: "Supervised micro-live",
-    description: "Supervised micro-size live execution with tight caps. Certificate required.",
+    level: 4, key: "MICRO_LIVE", label: "Live auto — first step",
+    // HONEST LABEL. "Supervised micro-size live execution with tight caps"
+    // promised a size ceiling this level does not carry: `decideAutoApproval`
+    // treats levels 4, 5 and 6 identically, and no per-level lot or notional cap
+    // is applied anywhere for level 4. Sizing comes from the mission's own risk
+    // settings and the platform caps that apply at every level.
+    description:
+      "The first level that auto-executes against the live broker. It is not "
+      + "size-limited by the level itself — sizing comes from your mission risk "
+      + "settings and the platform-wide caps that apply at every level. "
+      + "Requires the accepted certificate and explicit live opt-in.",
     isAuto: true, reachesLive: true, requiresCertificate: true, requiresExplicitLiveEnable: true,
   },
   5: {
     level: 5, key: "LIMITED_LIVE_AUTO", label: "Limited live auto",
-    description: "Limited automated live execution. Requires all promotion gates + explicit enablement.",
+    // Levels 4–6 share one execution path today; what differs is only how far
+    // the promotion gates let a mission climb. Say that rather than implying a
+    // per-level throttle that is not implemented.
+    description:
+      "Automated live execution. Same execution path as level 4 — the "
+      + "difference is how much evidence the promotion gates demand to reach it. "
+      + "Requires all promotion gates + explicit enablement.",
     isAuto: true, reachesLive: true, requiresCertificate: true, requiresExplicitLiveEnable: true,
   },
   6: {
     level: 6, key: "FULL_LIVE_AUTO", label: "Full live auto",
-    description: "Full automated live execution within mission caps. Requires all gates + explicit enablement.",
+    description:
+      "Automated live execution within your mission caps, at the highest "
+      + "evidence bar. Same execution path as levels 4–5. Requires all gates + "
+      + "explicit enablement.",
     isAuto: true, reachesLive: true, requiresCertificate: true, requiresExplicitLiveEnable: true,
   },
 };

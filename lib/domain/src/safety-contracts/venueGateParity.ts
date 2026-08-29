@@ -8,7 +8,7 @@
 // for a Deriv WebSocket session, and gate 6 BLOCKS anything that is not a
 // live/real account — by design, to keep the live path on live accounts.
 //
-// A second venue therefore cannot run those 18 gates verbatim. The two dishonest
+// A second venue therefore cannot run those 23 gates verbatim. The two dishonest
 // ways out are both forbidden here:
 //
 //   - fabricate EA facts so the gates "pass" — that mocks around the gate wall

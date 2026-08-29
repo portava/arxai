@@ -5,7 +5,7 @@
 // in the offline `ci` lane with no database or network.
 //
 // SAFETY / SCOPE: these engines can only make a mission STRICTER. They never
-// place an order and can never relax the per-user Risk Governor or the 18-gate
+// place an order and can never relax the per-user Risk Governor or the 23-gate
 // live dispatch — `composeMissionGate` proves its decision is always at least as
 // strict as the governor decision it is handed.
 //

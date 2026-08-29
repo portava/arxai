@@ -8,7 +8,7 @@
 //
 // Consumes GET /api/me/live-readiness/unified (self-scoped, no secrets). This is
 // a DESCRIBE-only readout — it can never place an order; every live order still
-// re-runs the instant-trade router → live pipeline → 18-gate dispatch.
+// re-runs the instant-trade router → live pipeline → 23-gate dispatch.
 import { useCallback, useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";

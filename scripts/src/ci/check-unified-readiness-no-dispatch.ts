@@ -13,7 +13,7 @@
 // To make that boundary structural rather than a matter of trust, the resolver
 // surface may not import any execution / dispatch / live-pipeline module —
 // directly, via a barrel, or through a runtime require. Every live order must
-// still flow through executeInstantTrade → liveCommandPipeline → the 18-gate
+// still flow through executeInstantTrade → liveCommandPipeline → the 23-gate
 // dispatch, which re-checks readiness independently.
 //
 // Fast static scan — no runtime, no DB, no network.

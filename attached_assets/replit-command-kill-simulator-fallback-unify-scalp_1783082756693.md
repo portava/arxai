@@ -22,7 +22,7 @@ The trace found the scalp actionability can fire on a LOWER bar than Ruby's stru
 
 ## NON-NEGOTIABLE
 - Do NOT weaken any gate. The FIX direction is to TIGHTEN scalp/non-synthetic to match the sufficiency/feed authority and the synthetic honest-empty pattern — NEVER loosen Ruby or the sufficiency gate.
-- Do NOT touch the live execution/dispatch/order path, the 18-gate, synthetic floor, SL policy, or the import-boundary-protected modules. This is scanner-READ honesty, not execution.
+- Do NOT touch the live execution/dispatch/order path, the 23-gate, synthetic floor, SL policy, or the import-boundary-protected modules. This is scanner-READ honesty, not execution.
 - The simulator must NEVER surface as a live scanner/scalp signal for ANY asset class after this.
 - Investigate consumers (Part 0) BEFORE removing the simulator fallback — replace with honest AWAITING_FEED, don't just delete and crash a consumer.
 - Preserve the #790/#792/#794 downgrade behavior (empty/thin/stale → honest, not LIVE_FEED).

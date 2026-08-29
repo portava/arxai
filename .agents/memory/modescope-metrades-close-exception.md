@@ -8,7 +8,7 @@ asserts the user-facing read-only mode-scope routes never import the live
 dispatch pipeline. meTrades USED to be purely read-only, but a later task gave
 its trade-CLOSE handler a sanctioned live dispatch path
 (createLiveOpsDraft → confirmLiveCommand → dispatchLiveCommand) because a close
-always reduces risk and routes through the SAME 18-gate dispatch as any other
+always reduces risk and routes through the SAME 23-gate dispatch as any other
 live command.
 
 **Rule:** keep the strict "imports no PIPELINE" check for the genuinely

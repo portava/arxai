@@ -12,7 +12,7 @@
 //
 // SAFETY: pure READ; per-user scoped; never returns broker credentials, bridge
 // tokens, raw account numbers, or IPs. DESCRIBE-only — dispatch still re-runs the
-// full instant-trade router → live pipeline → 18-gate dispatch on top of this.
+// full instant-trade router → live pipeline → 23-gate dispatch on top of this.
 // Fail-closed: on any error every consumer sees a not-ready, fully-blocked state.
 
 import { eq } from "drizzle-orm";

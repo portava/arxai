@@ -35,4 +35,4 @@ Because the gated/structural honesty moved out of the route into the service, st
 honesty guards (e.g. gatedChartTrustLineHonestyTest #09) must target the SERVICE,
 not scan the route for an inline branch — a route-scoped guard silently goes stale
 after such an extraction. readLayer stays display-only — none of this touches
-execution / the 18-gate dispatch / SL.
+execution / the 23-gate dispatch / SL.

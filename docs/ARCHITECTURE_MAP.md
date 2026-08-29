@@ -10,7 +10,7 @@ _Originally written 2026-05-11 (Build B — Architecture Consolidation). Headlin
 >
 > - **Branding** is **ARX AI — Analyze. Risk. eXecute.** (not "High Roll Trading AI").
 > - **The product is NOT paper-only.** **Phase B live broker execution exists** and
->   runs **default-deny**: live dispatch is gated by an **18-gate** evaluator
+>   runs **default-deny**: live dispatch is gated by a **23-gate** evaluator
 >   (`lib/domain/src/safety-contracts/livePhaseBDispatchGate.ts`) plus the server
 >   master switch, per-user arming, admin approval, and kill switch. `canPlaceTrades:false`
 >   remains true **only on the advisory / intelligence APIs** (still CI-enforced) — it is
@@ -294,7 +294,7 @@ components/
                         └──────────┬───────────┘
                                    │ verdict
                                    ▼
-   PAPER/DEMO mode (default):      LIVE mode (Phase B — default-deny, 18-gate):
+   PAPER/DEMO mode (default):      LIVE mode (Phase B — default-deny, 23-gate):
    ─────────────────────────       ──────────────────────────────
    trades table (mock)             POST /api/execute-trade
    aiDecisionLog (vault event)        → routes/trades.ts

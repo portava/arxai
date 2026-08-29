@@ -19,7 +19,7 @@
 //
 // SAFETY — PURE + DISPLAY-ONLY. A larger floor can only DOWNGRADE a read (demand
 // more bars), never grant eligibility. This module takes no role/privilege input
-// and is never an execution gate; the 18-gate dispatch, synthetic floor, SL
+// and is never an execution gate; the 23-gate dispatch, synthetic floor, SL
 // policy, kill switch, and per-user arming/approval remain the sole execution
 // authority.
 //

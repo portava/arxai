@@ -8,7 +8,7 @@
 // convention as scannerChartFormat.ts / structureLines.ts.
 //
 // HONESTY: these are display/decision-support helpers only. They never place,
-// dispatch, or gate a trade — the backend 18-gate dispatch remains the single
+// dispatch, or gate a trade — the backend 23-gate dispatch remains the single
 // authority. A returned `reason` is always a plain-English phrase, never a raw
 // gate code.
 

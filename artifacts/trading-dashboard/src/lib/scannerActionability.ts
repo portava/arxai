@@ -164,7 +164,7 @@ export function resolveDataActionabilityCap(
 // the verdict this pure translator receives already reflects any pattern
 // downgrade. There is deliberately NO frontend pattern parameter here: a second,
 // independently-applied pattern fold would violate the module's single-verdict
-// authority. The backend caps + the Phase B 18-gate pipeline remain the sole
+// authority. The backend caps + the Phase B 23-gate pipeline remain the sole
 // authority for pattern impact and execution.
 export function resolveScannerActionability(
   c: ActionabilityDataInput,
@@ -198,7 +198,7 @@ export function resolveScannerActionability(
   // false), a positive setup may not read as "Ready now". This can only soften
   // READY_NOW → WAIT_FOR_CONFIRMATION; it NEVER upgrades a verdict and is not an
   // execution gate (canAct already drives whether buttons enable; canTrade and
-  // the backend 18-gate pipeline remain the sole execution authority).
+  // the backend 23-gate pipeline remain the sole execution authority).
   if (
     verdict === "READY_NOW" &&
     readinessCeiling &&
@@ -439,7 +439,7 @@ export function actionabilityDisplayUi(
 //
 // DISPLAY-ONLY: this renames a label. It changes NO verdict, tone, canAct, gate,
 // sufficiency, or execution path (resolveScannerActionability, the data caps, the
-// Phase B 18-gate pipeline, and canTrade remain the sole authorities).
+// Phase B 23-gate pipeline, and canTrade remain the sole authorities).
 
 /** A resolved trade side for the action label, or null for no clear direction. */
 export type ActionDirection = "BUY" | "SELL" | null;

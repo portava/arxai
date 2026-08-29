@@ -13,7 +13,7 @@ FAIL-CLOSED**, **NEW-ENTRY only**, and runs at BOTH preflight (`createLiveDraft`
 `preflight`, gated on `PLACE_LIVE_MARKET/PENDING`) and dispatch
 (`dispatchLiveCommand`, gated on `isEntryRow`) through the SAME shared helper so
 they stay in lockstep (TOCTOU re-check). It sits additively in FRONT of the
-existing chain (ARX focus → synthetic floor → SL → 18 gates), all of which still
+existing chain (ARX focus → synthetic floor → SL → 23 gates), all of which still
 run and keep final say. The verdict can only **block/downgrade, never grant**.
 
 **Why:** a live-trading safety surface must never become a second authorization

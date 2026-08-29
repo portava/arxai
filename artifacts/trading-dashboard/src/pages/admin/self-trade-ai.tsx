@@ -85,6 +85,19 @@ const STATUSES = ["UNFUNDED", "FUNDED_IDLE", "ACTIVE", "PAUSED", "STOPPED", "ARC
 const KILL_SCOPES = ["GLOBAL", "AGENT", "STRATEGY", "SYMBOL", "NEWS"] as const;
 const NEWS_PERMISSIONS = ["BLOCK", "CAUTION", "ALLOW"] as const;
 
+// Autonomy labels describe what `evaluateExecutionPermission` actually does.
+// L2/L3/L4 all resolve to the same EXECUTE verdict; the only L3 distinction is
+// that `livePositionManager` will manage an open position instead of merely
+// alerting. L4 has no behaviour of its own — say so rather than implying a
+// higher tier of authority exists.
+const AUTONOMY_LEVEL_LABELS: Record<number, string> = {
+  0: "Suggest only (never dispatched)",
+  1: "Prepare draft (human confirms)",
+  2: "Execute; position management alert-only",
+  3: "Execute + autonomous position management",
+  4: "Same as L3 (no added authority implemented)",
+};
+
 function statusTone(status: string): StatusTone {
   switch (status) {
     case "ACTIVE": return "success";
@@ -281,8 +294,13 @@ function AgentDetailPanel({ agentId }: { agentId: number }) {
                 <Label className="text-xs">Autonomy level</Label>
                 <Select value={autonomy} onValueChange={setAutonomy}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{[0, 1, 2, 3, 4].map((l) => <SelectItem key={l} value={String(l)}>Level {l}</SelectItem>)}</SelectContent>
+                  <SelectContent>{[0, 1, 2, 3, 4].map((l) => <SelectItem key={l} value={String(l)}>Level {l} · {AUTONOMY_LEVEL_LABELS[l]}</SelectItem>)}</SelectContent>
                 </Select>
+                <p className="mt-1 text-[11px] text-muted-foreground" data-testid="text-autonomy-level-truth">
+                  L4 currently behaves exactly as L3 — no additional authority is
+                  implemented behind it. Raising to L4 changes the recorded level
+                  and nothing else.
+                </p>
               </div>
               <div className="flex items-end">
                 <Button size="sm" className="w-full" disabled={busy || !reasonOk}
