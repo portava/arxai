@@ -1,4 +1,6 @@
-// Phase B QA — 15-gate truth table for evaluateLivePhaseBDispatchGate.
+// Phase B QA — truth table for evaluateLivePhaseBDispatchGate (21 gates:
+// the original 18 + foundation gates #19 PROVENANCE_UNPROVEN, #20
+// STRATEGY_NOT_LIVE_PROMOTED, #21 CAPITAL_TIER_EXCEEDED).
 //
 // Pure-function tests of the domain evaluator. No DB, no HTTP, no broker
 // calls. Each test mutates one input from a "happy path" baseline so the
@@ -39,6 +41,32 @@ function baseline(): LivePhaseBGateInput {
     adminAllowNoTakeProfit: false,
     commandHasTakeProfit: true,
     disclosureAccepted: true,
+    // Foundation gates #19–#21 — a fully-proven human entry: fresh
+    // tradeable-origin provenance covered by the integrity hash, promotion
+    // not required (USER actor), and a T1 tier with plenty of headroom.
+    foundation: {
+      isEntryCommand: true,
+      provenance: {
+        envelopePresent: true,
+        source: "LIVE_TICK",
+        ageMs: 1_000,
+        maxAgeMs: 900_000,
+        integrityCovered: true,
+      },
+      edgePromotion: {
+        required: false,
+        edgeRefPresent: false,
+        edgeStatus: null,
+        edgeLiveAllowed: false,
+        edgeEvidenceValid: false,
+      },
+      capital: {
+        tier: "T1",
+        openExposureUsd: 1_000,
+        candidateExposureUsd: 1_100,
+        userMaxLot: null,
+      },
+    },
   };
 }
 
@@ -75,12 +103,61 @@ const cases: Array<[string, (b: LivePhaseBGateInput) => void, LivePhaseBGateKey]
   ["18-disclosure-not-accepted",   (b) => { b.disclosureAccepted = false; },                 "DISCLOSURE_NOT_ACCEPTED"],
   ["16-missing-stop-loss",         (b) => { b.commandHasStopLoss = false; },                 "MISSING_STOP_LOSS"],
   ["19-missing-take-profit",       (b) => { b.commandHasTakeProfit = false; },               "MISSING_TAKE_PROFIT"],
+  // ── Foundation gate #19 PROVENANCE_UNPROVEN ──
+  ["g19-provenance-envelope-missing", (b) => { b.foundation!.provenance.envelopePresent = false; }, "PROVENANCE_UNPROVEN"],
+  ["g19-provenance-untradeable-source", (b) => { b.foundation!.provenance.source = "MODEL"; },      "PROVENANCE_UNPROVEN"],
+  ["g19-provenance-stale",         (b) => { b.foundation!.provenance.ageMs = 900_001; },            "PROVENANCE_UNPROVEN"],
+  ["g19-provenance-age-unknown",   (b) => { b.foundation!.provenance.ageMs = null; },               "PROVENANCE_UNPROVEN"],
+  ["g19-provenance-tampered",      (b) => { b.foundation!.provenance.integrityCovered = false; },   "PROVENANCE_UNPROVEN"],
+  // ── Foundation gate #20 STRATEGY_NOT_LIVE_PROMOTED ──
+  ["g20-required-no-edge-ref",     (b) => { b.foundation!.edgePromotion.required = true; },         "STRATEGY_NOT_LIVE_PROMOTED"],
+  ["g20-edge-not-live-candidate",  (b) => {
+    b.foundation!.edgePromotion = { required: true, edgeRefPresent: true, edgeStatus: "SHADOW", edgeLiveAllowed: false, edgeEvidenceValid: true };
+  }, "STRATEGY_NOT_LIVE_PROMOTED"],
+  ["g20-owner-press-missing",      (b) => {
+    b.foundation!.edgePromotion = { required: true, edgeRefPresent: true, edgeStatus: "LIVE_CANDIDATE", edgeLiveAllowed: false, edgeEvidenceValid: true };
+  }, "STRATEGY_NOT_LIVE_PROMOTED"],
+  ["g20-evidence-invalid",         (b) => {
+    b.foundation!.edgePromotion = { required: true, edgeRefPresent: true, edgeStatus: "LIVE_CANDIDATE", edgeLiveAllowed: true, edgeEvidenceValid: false };
+  }, "STRATEGY_NOT_LIVE_PROMOTED"],
+  // ── Foundation gate #21 CAPITAL_TIER_EXCEEDED ──
+  ["g21-unknown-tier-fails-closed", (b) => { b.foundation!.capital.tier = "PLATINUM"; },            "CAPITAL_TIER_EXCEEDED"],
+  ["g21-tier-lot-cap-exceeded",    (b) => { b.foundation!.capital.tier = "T0"; b.commandVolume = 0.05; }, "CAPITAL_TIER_EXCEEDED"],
+  ["g21-tier-exposure-exceeded",   (b) => { b.foundation!.capital.openExposureUsd = 30_000; },      "CAPITAL_TIER_EXCEEDED"],
+  ["g21-exposure-unknown-fails-closed", (b) => { b.foundation!.capital.openExposureUsd = null; },   "CAPITAL_TIER_EXCEEDED"],
 ];
 
 for (const [name, mutate, reason] of cases) {
   const b = baseline();
   mutate(b);
   record(name, evaluateLivePhaseBDispatchGate(b), "BLOCKED", reason);
+}
+
+// Foundation pass-paths: ops commands are exempt from all three foundation
+// gates; a preview caller with no foundation block gets a loud
+// "NOT EVALUATED" detail — passed, never silently absent from the readout.
+{
+  const b = baseline();
+  b.foundation!.isEntryCommand = false;
+  b.foundation!.provenance.envelopePresent = false;
+  b.foundation!.edgePromotion.required = true;
+  b.foundation!.capital.tier = "PLATINUM";
+  record("g19-21-ops-command-exempt", evaluateLivePhaseBDispatchGate(b), "PASS");
+}
+{
+  const b = baseline();
+  delete (b as { foundation?: unknown }).foundation;
+  const r = evaluateLivePhaseBDispatchGate(b);
+  const foundationRows = r.gates.filter((g) =>
+    g.key === "PROVENANCE_UNPROVEN" || g.key === "STRATEGY_NOT_LIVE_PROMOTED" || g.key === "CAPITAL_TIER_EXCEEDED");
+  results.push({
+    name: "g19-21-preview-caller-loud-not-evaluated",
+    ok: r.decision === "PASS"
+      && foundationRows.length === 3
+      && foundationRows.every((g) => g.passed && (g.detail ?? "").includes("NOT EVALUATED")),
+    got: `${r.decision} details=[${foundationRows.map((g) => g.detail ?? "null").join(" | ")}]`,
+    want: "PASS with 3 foundation rows carrying a loud NOT EVALUATED detail",
+  });
 }
 
 // Bonus: master-switch off ALSO appends BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED.

@@ -45,6 +45,7 @@
     "test:user-settings-cap-writer": "node --import tsx --test --test-force-exit src/lib/live/__qa__/userSettingsCapWriter.test.ts",
     "test:wave5-seam": "node --import tsx --test --test-force-exit src/lib/live/__qa__/wave5Seam.test.ts",
     "test:edge-promotion": "node --import tsx --test --test-force-exit src/lib/learning/__qa__/edgePromotion.test.ts",
+    "test:foundation-gates": "node --import tsx --test --test-force-exit src/lib/live/__qa__/foundationGates.test.ts",
     "test:feature-snapshot": "node --import tsx --test --test-force-exit src/lib/features/__qa__/featureSnapshot.test.ts",
     "test:pre-gate-wave4": "node --import tsx --test --test-force-exit src/lib/live/__qa__/preGateWave4.test.ts",
     "test:deriv-new-api-wire": "node --import tsx --test --test-force-exit src/lib/deriv/newApi/__qa__/newApiWire.test.ts",

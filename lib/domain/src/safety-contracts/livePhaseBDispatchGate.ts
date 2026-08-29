@@ -1,10 +1,20 @@
-// Phase B — Live Dispatch Gate (18-gate evaluator + disclosure)
+// Phase B — Live Dispatch Gate (21-gate evaluator + disclosure)
 //
-// CONTRACT: this gate must return `decision: "PASS"` ONLY when ALL 18 gates
+// CONTRACT: this gate must return `decision: "PASS"` ONLY when ALL 21 gates
 // pass. Any single failing gate returns `decision: "BLOCKED"` with the exact
-// failing reason(s). The 18 gates are the original 16 base gates + #17
+// failing reason(s). The 21 gates are the original 16 base gates + #17
 // MISSING_TAKE_PROFIT (governance-conditional on requireTakeProfit /
-// adminAllowNoTakeProfit) + #18 DISCLOSURE_NOT_ACCEPTED. The default for
+// adminAllowNoTakeProfit) + #18 DISCLOSURE_NOT_ACCEPTED + the three
+// FOUNDATION gates: #19 PROVENANCE_UNPROVEN (entry decision-data provenance
+// must be present, tradeable-origin, fresh, and integrity-covered), #20
+// STRATEGY_NOT_LIVE_PROMOTED (autonomous entries require an owner-pressed
+// LIVE_CANDIDATE production_edges row), #21 CAPITAL_TIER_EXCEEDED (per-user
+// capital-tier caps; tighten-only vs existing caps). Foundation verdict logic
+// is pure in ./foundationGates.ts; `foundation` inputs are assembled by the
+// dispatch pipeline. A caller that omits `foundation` (readiness previews
+// with no command context) gets the three gates recorded PASSED with a loud
+// "not evaluated" detail — the real dispatch path ALWAYS supplies them
+// (pinned by test:foundation-gates). The default for
 // `liveBrokerExecutionEnabled` is FALSE — when false, this gate ALWAYS appends
 // BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED as a trailing sentinel block reason
 // (NOT an evaluated gate), preserving the Phase A safety semantic.
@@ -16,6 +26,15 @@
 // - This new file is consumed ONLY by `liveCommandPipeline.dispatchLiveCommand`
 //   in the api-server Phase B path. The Build TT `placeLiveOrderGuarded()` /
 //   `lib/liveTrading/guard.ts` chokepoint also stays untouched.
+
+import {
+  type FoundationGateInputs,
+  evaluateProvenanceGate,
+  evaluateEdgePromotionGate,
+  evaluateCapitalAdmissibilityGate,
+} from "./foundationGates.js";
+
+export type { FoundationGateInputs } from "./foundationGates.js";
 
 export const LIVE_BROKER_EXECUTION_ENABLED_DEFAULT = false as const;
 export const MIN_LIVE_EA_VERSION = "1.27" as const;
@@ -40,6 +59,9 @@ export type LivePhaseBGateKey =
   | "MISSING_STOP_LOSS"                        // command lacks SL (no override)
   | "MISSING_TAKE_PROFIT"                      // command lacks TP (no override)
   | "DISCLOSURE_NOT_ACCEPTED"                  // user has no row in live_risk_disclosure_acceptances
+  | "PROVENANCE_UNPROVEN"                      // #19 entry lacks proven decision-data provenance
+  | "STRATEGY_NOT_LIVE_PROMOTED"               // #20 autonomous entry's edge not owner-promoted LIVE
+  | "CAPITAL_TIER_EXCEEDED"                    // #21 per-user capital tier cap breached / unresolvable
   | "BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED";  // historical chokepoint reason
 
 export interface LivePhaseBGateInput {
@@ -94,6 +116,14 @@ export interface LivePhaseBGateInput {
   // satisfied even if `disclosureAccepted` is false, and the gate readout names
   // the waiver. Default-deny: omitted/undefined is treated as NOT waived.
   disclosureWaivedByOperator?: boolean;
+
+  // Foundation gates #19–#21 (provenance / edge-promotion / capital tier).
+  // The dispatch pipeline ALWAYS assembles and supplies this block (pinned by
+  // test:foundation-gates); within it every unresolvable fact fails CLOSED
+  // for entries. Omitted/null is a READINESS-PREVIEW context only (no command
+  // exists to evaluate): the three gates are then recorded PASSED with a loud
+  // "not evaluated — preview caller" detail, never silently skipped.
+  foundation?: FoundationGateInputs | null;
 }
 
 export interface LivePhaseBGateResult {
@@ -230,6 +260,32 @@ export function evaluateLivePhaseBDispatchGate(
       detail: "Disclosure requirement waived by operator (owner/admin override).",
     });
   } else pass("DISCLOSURE_NOT_ACCEPTED");
+
+  // 19–21. FOUNDATION GATES — provenance, edge promotion, capital tier.
+  // Pure verdict logic lives in ./foundationGates.ts (fail-closed for every
+  // unresolvable fact; ENTRY-only — close/modify are exempt inside each).
+  // These gates only ever ADD block reasons; nothing above is weakened.
+  const foundation = input.foundation ?? null;
+  if (foundation == null) {
+    // No command context (readiness preview / legacy caller). Recorded loudly
+    // as NOT EVALUATED — the live dispatch path always supplies the block, so
+    // a null here can never bypass enforcement at dispatch.
+    const notEvaluated =
+      "NOT EVALUATED: no foundation inputs supplied (readiness preview / no command context). "
+      + "Live dispatch always evaluates this gate with real command facts.";
+    gates.push({ key: "PROVENANCE_UNPROVEN", passed: true, detail: notEvaluated });
+    gates.push({ key: "STRATEGY_NOT_LIVE_PROMOTED", passed: true, detail: notEvaluated });
+    gates.push({ key: "CAPITAL_TIER_EXCEEDED", passed: true, detail: notEvaluated });
+  } else {
+    const g19 = evaluateProvenanceGate(foundation.isEntryCommand, foundation.provenance);
+    gates.push({ key: "PROVENANCE_UNPROVEN", passed: g19.passed, detail: g19.detail });
+    const g20 = evaluateEdgePromotionGate(foundation.isEntryCommand, foundation.edgePromotion);
+    gates.push({ key: "STRATEGY_NOT_LIVE_PROMOTED", passed: g20.passed, detail: g20.detail });
+    const g21 = evaluateCapitalAdmissibilityGate(
+      foundation.isEntryCommand, input.commandVolume, foundation.capital,
+    );
+    gates.push({ key: "CAPITAL_TIER_EXCEEDED", passed: g21.passed, detail: g21.detail });
+  }
 
   const failed = gates.filter((g) => !g.passed).map((g) => g.key);
   const blockReasons: LivePhaseBGateKey[] = [...failed];

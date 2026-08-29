@@ -78,6 +78,14 @@ export const userMasterLiveAccessTable = pgTable(
     // orders when the post-trade exposure on the command's symbol would
     // exceed this value, emitting MAX_EXPOSURE_PER_SYMBOL_REACHED.
     maxExposurePerSymbolLots: doublePrecision("max_exposure_per_symbol_lots"),
+    // Foundation gate #21 — capital tier ("T0" | "T1" | "T2" | "T3", see
+    // lib/domain safety-contracts/foundationGates.ts CAPITAL_TIERS). Nullable
+    // + additive: NULL = unassigned = the MOST RESTRICTIVE tier (T0,
+    // default-deny), an unrecognised literal REFUSES dispatch (fail closed,
+    // never guess a cap). The tier can only TIGHTEN the caps above (effective
+    // cap = min(tier cap, maxLot)) — never loosen them. Migration: additive
+    // nullable column, no backfill (drizzle push on Replit later).
+    capitalTier: text("capital_tier"),
     requireStopLoss: boolean("require_stop_loss").notNull().default(true),
     // Phase 22V Part 2 — require TP at dispatch for approved-shared-bridge users.
     requireTakeProfit: boolean("require_take_profit").notNull().default(true),

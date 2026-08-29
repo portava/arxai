@@ -486,7 +486,7 @@ export async function armLiveForUser(input: LiveArmingInput & { ip?: string }) {
  * SAFETY: this is a precondition convenience only. It does NOT contact the EA,
  * insert into `arx_live_commands`, or weaken any dispatch gate. Every live
  * dispatch still re-checks heartbeat, EA version, account type, kill switch,
- * allocation, symbol, and the rest of the 18 Phase B gates in real time, so a
+ * allocation, symbol, and the rest of the 21 Phase B gates in real time, so a
  * force-armed trader still cannot fire unless the live broker is genuinely
  * ready at dispatch.
  */
@@ -504,7 +504,7 @@ export async function adminForceArmLiveForUser(args: {
   const snapshot = {
     adminBypass: true,
     bypassedByAdminId: args.adminId,
-    note: "Armed via admin Full Live Activation (typed phrase + ack). Dispatch still re-checks all 18 Phase B gates.",
+    note: "Armed via admin Full Live Activation (typed phrase + ack). Dispatch still re-checks all 21 Phase B gates.",
     armedAt: now.toISOString(),
   } as unknown as Record<string, unknown>;
   const values = {
