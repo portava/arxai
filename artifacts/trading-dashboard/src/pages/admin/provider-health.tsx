@@ -649,7 +649,7 @@ export default function ProviderHealthPage() {
               ["Failing", snap.summary.failing, "bg-danger/20 text-danger"],
               ["Not configured", snap.summary.notConfigured, "bg-secondary/20 text-txt-secondary"],
               ["Reserved", snap.summary.reserved, "bg-primary/20 text-primary"],
-              ["Configured but unused", snap.summary.configuredButUnused, "bg-fuchsia-500/20 text-fuchsia-300"],
+              ["Configured but unused", snap.summary.configuredButUnused, "bg-premium/20 text-premium"],
             ].map(([label, val, cls]) => (
               <Card key={label as string} className="border-border/40">
                 <CardContent className="py-3">
@@ -936,7 +936,7 @@ export default function ProviderHealthPage() {
                       <Badge className="bg-secondary/20 text-txt-secondary text-[10px]">{p.category}</Badge>
                       {statusBadge(p.status)}
                       {p.configuredButUnused && (
-                        <Badge className="bg-fuchsia-500/20 text-fuchsia-300">configured but unused</Badge>
+                        <Badge className="bg-premium/20 text-premium">configured but unused</Badge>
                       )}
                     </div>
                     {p.lastSelfTestMs != null && (

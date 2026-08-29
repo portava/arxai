@@ -121,7 +121,7 @@ export function PoolsSection() {
                     <div className="flex items-center gap-1">
                       <StatusBadge status={p.status} />
                       {p.frozen ? (
-                        <Badge className="bg-sky-500/15 text-sky-400">
+                        <Badge className="bg-ruby/15 text-ruby">
                           <Snowflake className="mr-1 h-3 w-3" /> Frozen
                         </Badge>
                       ) : null}
@@ -154,7 +154,7 @@ export function PoolsSection() {
                   <Field
                     label="Drawdown"
                     value={
-                      <span className={p.currentDrawdownPercent < 0 ? "text-red-400" : ""}>
+                      <span className={p.currentDrawdownPercent < 0 ? "text-danger" : ""}>
                         {fmtPct(p.currentDrawdownPercent)}
                       </span>
                     }
@@ -221,7 +221,7 @@ export function PoolsSection() {
               </div>
             ))
           )}
-          {err ? <p className="text-xs text-red-400">{err}</p> : null}
+          {err ? <p className="text-xs text-danger">{err}</p> : null}
         </CardContent>
       </Card>
 

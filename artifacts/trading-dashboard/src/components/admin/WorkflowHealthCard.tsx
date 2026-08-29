@@ -82,15 +82,15 @@ export function WorkflowHealthCard() {
     <Card data-testid="card-workflow-health">
       <CardHeader>
         <CardTitle className="text-base flex items-center gap-2">
-          <HeartPulse className="h-4 w-4 text-emerald-400" />
+          <HeartPulse className="h-4 w-4 text-success" />
           Workflow Health
           <Badge variant="outline">Admin</Badge>
           {data && (
             <Badge
               className={
                 data.ok
-                  ? "bg-emerald-500/20 text-emerald-300"
-                  : "bg-rose-500/20 text-rose-300"
+                  ? "bg-success/20 text-success"
+                  : "bg-danger/20 text-danger"
               }
               data-testid="badge-workflow-health"
             >
@@ -111,8 +111,8 @@ export function WorkflowHealthCard() {
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
         {err && (
-          <Alert variant="default" className="border-amber-700/40 bg-amber-500/5">
-            <AlertTriangle className="h-4 w-4 text-amber-400" />
+          <Alert variant="default" className="border-warning/40 bg-warning/5">
+            <AlertTriangle className="h-4 w-4 text-warning" />
             <AlertTitle>Unavailable</AlertTitle>
             <AlertDescription>{err}</AlertDescription>
           </Alert>
@@ -122,14 +122,14 @@ export function WorkflowHealthCard() {
           <>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
               <div className="flex items-center gap-2">
-                <Activity className="h-3.5 w-3.5 text-cyan-400" />
+                <Activity className="h-3.5 w-3.5 text-ruby" />
                 <span className="text-muted-foreground">api-server:</span>{" "}
-                <span className="text-emerald-300">listening</span>
+                <span className="text-success">listening</span>
                 <span className="text-muted-foreground">· up {fmtUptime(data.apiServer.uptimeSeconds)}</span>
               </div>
               <div>
                 <span className="text-muted-foreground">DB:</span>{" "}
-                <span className={data.database.ok ? "text-emerald-300" : "text-rose-300"}>
+                <span className={data.database.ok ? "text-success" : "text-danger"}>
                   {data.database.ok ? "reachable" : "DOWN"}
                 </span>
                 {data.database.latencyMs != null && (
@@ -150,9 +150,9 @@ export function WorkflowHealthCard() {
               <div className="text-muted-foreground mb-1">MT5 / EA bridges (aggregate heartbeat)</div>
               <div className="flex gap-3 font-mono" data-testid="workflow-health-bridge">
                 <span>total {data.bridge.total}</span>
-                <span className="text-emerald-300">healthy {data.bridge.healthy}</span>
-                <span className="text-amber-300">stale {data.bridge.stale}</span>
-                <span className="text-rose-300">down {data.bridge.down}</span>
+                <span className="text-success">healthy {data.bridge.healthy}</span>
+                <span className="text-warning">stale {data.bridge.stale}</span>
+                <span className="text-danger">down {data.bridge.down}</span>
                 <span className="text-muted-foreground">
                   latest{" "}
                   {data.bridge.latestHeartbeatAgeSeconds == null

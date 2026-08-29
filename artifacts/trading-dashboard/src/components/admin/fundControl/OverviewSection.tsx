@@ -161,7 +161,7 @@ export function OverviewSection() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-base">
-              <AlertTriangle className="h-4 w-4 text-amber-400" /> Reconciliation
+              <AlertTriangle className="h-4 w-4 text-warning" /> Reconciliation
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
@@ -191,7 +191,7 @@ export function OverviewSection() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-base">
-              <Banknote className="h-4 w-4 text-emerald-400" /> Capital queue
+              <Banknote className="h-4 w-4 text-success" /> Capital queue
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
@@ -228,7 +228,7 @@ export function OverviewSection() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-base">
-              <Layers className="h-4 w-4 text-sky-400" /> Allocation
+              <Layers className="h-4 w-4 text-ruby" /> Allocation
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
@@ -277,7 +277,7 @@ function Row({
   return (
     <div className="flex items-center justify-between border-b border-border/40 py-1 last:border-0">
       <span className="text-muted-foreground">{label}</span>
-      <span className={`tabular-nums ${emphasize ? "font-bold text-amber-400" : ""}`} data-testid={testid}>
+      <span className={`tabular-nums ${emphasize ? "font-bold text-warning" : ""}`} data-testid={testid}>
         {value}
       </span>
     </div>

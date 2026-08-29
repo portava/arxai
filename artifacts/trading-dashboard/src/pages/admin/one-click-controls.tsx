@@ -92,7 +92,7 @@ export function OneClickControlsContent({ embedded = false }: { embedded?: boole
     <div className={embedded ? "space-y-6" : "mx-auto w-full max-w-[1100px] space-y-6 p-4 md:p-6 pb-32 md:pb-6"}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Zap className="w-6 h-6 text-amber-400" />
+          <Zap className="w-6 h-6 text-warning" />
           <div>
             {embedded
               ? <h2 className="text-lg font-bold">One-Click Trading Controls</h2>
@@ -108,8 +108,8 @@ export function OneClickControlsContent({ embedded = false }: { embedded?: boole
         </Button>
       </div>
 
-      <Alert className="border-amber-500/30 bg-amber-500/5">
-        <ShieldCheck className="w-4 h-4 text-amber-400" />
+      <Alert className="border-warning/30 bg-warning/5">
+        <ShieldCheck className="w-4 h-4 text-warning" />
         <AlertTitle>Scope: shared-bridge users only</AlertTitle>
         <AlertDescription className="text-xs">
           Own-bridge users self-arm from their MT5 Setup page once their bridge is live/ready.
@@ -146,7 +146,7 @@ export function OneClickControlsContent({ embedded = false }: { embedded?: boole
                 </span>
                 <div className="flex items-center gap-2">
                   {u.oneClickArmed && (
-                    <Badge variant="default" className="bg-green-600 text-xs">
+                    <Badge variant="default" className="bg-success text-xs">
                       <Zap className="w-3 h-3 mr-1" />ARMED
                     </Badge>
                   )}
@@ -167,12 +167,12 @@ export function OneClickControlsContent({ embedded = false }: { embedded?: boole
               </CardTitle>
               <CardDescription className="text-xs space-y-0.5">
                 {u.sharedBridgeOneClickPermittedAt && (
-                  <span className="block text-emerald-400">
+                  <span className="block text-success">
                     Permitted: {new Date(u.sharedBridgeOneClickPermittedAt).toLocaleString()}
                   </span>
                 )}
                 {u.sharedBridgeOneClickRevokedAt && (
-                  <span className="block text-amber-400">
+                  <span className="block text-warning">
                     Last revoked: {new Date(u.sharedBridgeOneClickRevokedAt).toLocaleString()}
                   </span>
                 )}
@@ -194,7 +194,7 @@ export function OneClickControlsContent({ embedded = false }: { embedded?: boole
                   </span>
                 )}
                 {!!u.lastAuditMetadata?.blockReason && (
-                  <span className="block text-amber-400 text-xs">
+                  <span className="block text-warning text-xs">
                     Block reason: <span className="font-mono">{String(u.lastAuditMetadata.blockReason)}</span>
                   </span>
                 )}
@@ -234,7 +234,7 @@ export function OneClickControlsContent({ embedded = false }: { embedded?: boole
                     onClick={() => void grant(u.userId)}
                     disabled={busy[u.userId] || !u.approvedForMasterLive}
                     title={!u.approvedForMasterLive ? "User must be approved for master live first" : undefined}
-                    className="bg-amber-600 hover:bg-amber-700"
+                    className="bg-warning hover:bg-warning/15"
                   >
                     <ShieldCheck className="w-4 h-4 mr-1" />
                     {busy[u.userId] ? "Granting…" : "Grant"}
@@ -242,7 +242,7 @@ export function OneClickControlsContent({ embedded = false }: { embedded?: boole
                 )}
               </div>
               {!u.approvedForMasterLive && !u.sharedBridgeOneClickPermitted && (
-                <p className="text-xs text-amber-400">
+                <p className="text-xs text-warning">
                   Approve this user for master live trading before granting one-click permission.
                 </p>
               )}

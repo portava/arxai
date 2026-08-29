@@ -85,8 +85,8 @@ function LiveStageBadge({ label, on }: { label: string; on: boolean }) {
     <Badge
       className={
         on
-          ? "bg-emerald-500/20 text-emerald-300"
-          : "bg-slate-500/20 text-slate-400"
+          ? "bg-success/20 text-success"
+          : "bg-muted text-txt-secondary"
       }
     >
       {on ? "✓ " : "• "}
@@ -102,14 +102,14 @@ type AuditRow = {
 };
 
 const STATUS_COLORS: Record<AccessStatus, string> = {
-  APPROVED: "bg-emerald-500/20 text-emerald-300",
-  PENDING_REQUEST: "bg-amber-500/30 text-amber-200 ring-1 ring-amber-500/60",
-  NOT_APPROVED: "bg-slate-500/20 text-slate-300",
-  DENIED: "bg-rose-500/20 text-rose-300",
-  DISABLED: "bg-amber-500/20 text-amber-300",
-  SUSPENDED: "bg-rose-500/20 text-rose-300",
-  REVOKED: "bg-rose-600/30 text-rose-200",
-  RISK_LOCKED: "bg-fuchsia-500/20 text-fuchsia-300",
+  APPROVED: "bg-success/20 text-success",
+  PENDING_REQUEST: "bg-warning/30 text-warning ring-1 ring-warning/60",
+  NOT_APPROVED: "bg-muted text-txt-secondary",
+  DENIED: "bg-danger/20 text-danger",
+  DISABLED: "bg-warning/20 text-warning",
+  SUSPENDED: "bg-danger/20 text-danger",
+  REVOKED: "bg-danger/30 text-danger",
+  RISK_LOCKED: "bg-premium/20 text-premium",
 };
 
 // Task #737 — four operational tabs. Classification is display-only; the
@@ -219,7 +219,7 @@ export function MasterLiveUserAccessTable() {
     <Card data-testid="card-master-live-user-access">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <ShieldCheck className="w-4 h-4 text-emerald-400" />
+          <ShieldCheck className="w-4 h-4 text-success" />
           Master Live User Access
           <Badge variant="outline" className="ml-2 text-[10px]">server-enforced</Badge>
         </CardTitle>
@@ -234,7 +234,7 @@ export function MasterLiveUserAccessTable() {
       <CardContent className="space-y-3">
         <div className="flex flex-wrap items-center gap-2 justify-between">
           <div className="flex items-center gap-2 text-xs flex-wrap">
-            <Inbox className="w-3 h-3 text-amber-400" />
+            <Inbox className="w-3 h-3 text-warning" />
             <span className="text-muted-foreground">View:</span>
             {(["PENDING_HUMAN", "APPROVED_LIVE", "BLOCKED", "BOTS_AI"] as const).map((k) => {
               const c = tabCount(k);
@@ -260,7 +260,7 @@ export function MasterLiveUserAccessTable() {
                 onClick={() => setActivation({ userId: null, email: null })}
                 disabled={busy}
                 data-testid="btn-bulk-full-activation"
-                className="h-7 text-[11px] border-emerald-500/50 text-emerald-300"
+                className="h-7 text-[11px] border-success/50 text-success"
               >
                 <ShieldCheck className="w-3 h-3 mr-1" /> Bulk Full Live Activation
               </Button>
@@ -270,7 +270,7 @@ export function MasterLiveUserAccessTable() {
             </Button>
           </div>
         </div>
-        {err && <div className="text-xs text-rose-400">{err}</div>}
+        {err && <div className="text-xs text-danger">{err}</div>}
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead className="text-left text-muted-foreground">
@@ -302,7 +302,7 @@ export function MasterLiveUserAccessTable() {
                       <div className="font-mono">u{u.userId}</div>
                       <div className="text-[10px] text-muted-foreground truncate max-w-[180px]">{u.email}</div>
                       {isPending && u.access.liveBridgeRequestedAt && (
-                        <div className="text-[10px] text-amber-300 mt-1">
+                        <div className="text-[10px] text-warning mt-1">
                           Requested {new Date(u.access.liveBridgeRequestedAt).toLocaleString()}
                         </div>
                       )}
@@ -312,12 +312,12 @@ export function MasterLiveUserAccessTable() {
                         </div>
                       )}
                       {s === "DENIED" && u.access.liveBridgeDeniedReason && (
-                        <div className="text-[10px] text-rose-300 mt-1 truncate max-w-[200px]" title={u.access.liveBridgeDeniedReason}>
+                        <div className="text-[10px] text-danger mt-1 truncate max-w-[200px]" title={u.access.liveBridgeDeniedReason}>
                           Denied: {u.access.liveBridgeDeniedReason}
                         </div>
                       )}
                       {s === "REVOKED" && u.access.liveBridgeRevokedReason && (
-                        <div className="text-[10px] text-rose-300 mt-1 truncate max-w-[200px]" title={u.access.liveBridgeRevokedReason}>
+                        <div className="text-[10px] text-danger mt-1 truncate max-w-[200px]" title={u.access.liveBridgeRevokedReason}>
                           Revoked: {u.access.liveBridgeRevokedReason}
                         </div>
                       )}
@@ -334,7 +334,7 @@ export function MasterLiveUserAccessTable() {
                           </div>
                         )}
                         {u.liveState && !u.liveState.executionReady && u.liveState.blockingReason && (
-                          <div className="text-[10px] text-amber-300/80" data-testid={`live-blocker-${u.userId}`}>
+                          <div className="text-[10px] text-warning/80" data-testid={`live-blocker-${u.userId}`}>
                             {u.liveState.blockingReason}
                           </div>
                         )}
@@ -361,7 +361,7 @@ export function MasterLiveUserAccessTable() {
                     <td className="py-2 pr-3 font-mono" data-testid={`cell-max-open-${u.userId}`}>{u.access.maxOpenPositions ?? "—"}</td>
                     <td className="py-2 pr-3 font-mono" data-testid={`cell-max-exposure-${u.userId}`}>{u.access.maxExposurePerSymbolLots ?? "—"}</td>
                     <td className="py-2 pr-3 font-mono">{u.currentExposureLots.toFixed(2)}</td>
-                    <td className={`py-2 pr-3 font-mono ${u.currentDailyPnlUsd >= 0 ? "text-emerald-300" : "text-rose-400"}`}>
+                    <td className={`py-2 pr-3 font-mono ${u.currentDailyPnlUsd >= 0 ? "text-success" : "text-danger"}`}>
                       {u.currentDailyPnlUsd.toFixed(2)}
                     </td>
                     <td className="py-2 pr-3 text-muted-foreground">
@@ -384,7 +384,7 @@ export function MasterLiveUserAccessTable() {
                           disabled={busy}
                           onClick={() => void act(u.userId, "approve", undefined, { confirmLabel: "Approve Live Bridge for" })}
                           data-testid={`btn-approve-${u.userId}`}
-                          className={isPending ? "bg-emerald-600 hover:bg-emerald-500 text-white" : ""}
+                          className={isPending ? "bg-success hover:bg-success text-white" : ""}
                         >
                           <ShieldCheck className="w-3 h-3 mr-1" />Approve
                         </Button>
@@ -395,7 +395,7 @@ export function MasterLiveUserAccessTable() {
                             disabled={busy}
                             onClick={() => setActivation({ userId: u.userId, email: u.email })}
                             data-testid={`btn-full-activation-${u.userId}`}
-                            className="border-emerald-500/50 text-emerald-300"
+                            className="border-success/50 text-success"
                           >
                             <ShieldCheck className="w-3 h-3 mr-1" />Full Live
                           </Button>
@@ -547,9 +547,9 @@ function FullLiveActivationModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" data-testid="modal-full-live-activation">
-      <div className="w-full max-w-md rounded-lg border border-emerald-500/40 bg-background p-4 space-y-3">
+      <div className="w-full max-w-md rounded-lg border border-success/40 bg-background p-4 space-y-3">
         <div className="flex items-center gap-2">
-          <ShieldCheck className="w-4 h-4 text-emerald-400" />
+          <ShieldCheck className="w-4 h-4 text-success" />
           <div className="text-sm font-semibold">
             {isBulk ? "Bulk Full Live Activation" : `Full Live Activation — u${target.userId}`}
           </div>
@@ -561,7 +561,7 @@ function FullLiveActivationModal({
           {" "}All 18 Phase B dispatch gates still apply on every order.
         </p>
         <label className="block text-xs">
-          <span className="text-muted-foreground">Type <code className="font-mono text-emerald-300">{FULL_LIVE_PHRASE}</code> to confirm</span>
+          <span className="text-muted-foreground">Type <code className="font-mono text-success">{FULL_LIVE_PHRASE}</code> to confirm</span>
           <Input
             value={phrase}
             onChange={(e) => setPhrase(e.target.value)}
@@ -590,7 +590,7 @@ function FullLiveActivationModal({
             data-testid="input-activation-reason"
           />
         </label>
-        {msg && <div className="text-[11px] text-rose-400">{msg}</div>}
+        {msg && <div className="text-[11px] text-danger">{msg}</div>}
         <div className="flex justify-end gap-2 pt-1">
           <Button size="sm" variant="ghost" onClick={onClose} disabled={busy} data-testid="btn-activation-cancel">Cancel</Button>
           <Button
@@ -598,7 +598,7 @@ function FullLiveActivationModal({
             onClick={() => void submit()}
             disabled={!canSubmit}
             data-testid="btn-activation-confirm"
-            className="bg-emerald-600 hover:bg-emerald-500 text-white"
+            className="bg-success hover:bg-success text-white"
           >
             {isBulk ? "Activate all approved" : "Activate live"}
           </Button>
@@ -707,7 +707,7 @@ function LimitsEditor({ rows, onSaved }: { rows: UserRow[]; onSaved: () => void 
           </label>
         </label>
         <label className="flex flex-col flex-1 min-w-[200px]">
-          <span className="text-muted-foreground mb-1">Reason (audit) <span className="text-rose-400">*</span></span>
+          <span className="text-muted-foreground mb-1">Reason (audit) <span className="text-danger">*</span></span>
           <Input
             className="h-7"
             value={reason}

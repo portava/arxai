@@ -105,7 +105,7 @@ export function CapitalMovementsSection() {
         </Badge>
       </div>
 
-      {err ? <p className="text-xs text-red-400">{err}</p> : null}
+      {err ? <p className="text-xs text-danger">{err}</p> : null}
 
       {listQ.isLoading ? (
         <Skeleton className="h-48 w-full" />
@@ -135,9 +135,9 @@ export function CapitalMovementsSection() {
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <CardTitle className="flex items-center gap-2 text-sm">
                       {isDeposit ? (
-                        <ArrowDownToLine className="h-4 w-4 text-emerald-400" />
+                        <ArrowDownToLine className="h-4 w-4 text-success" />
                       ) : (
-                        <ArrowUpFromLine className="h-4 w-4 text-amber-400" />
+                        <ArrowUpFromLine className="h-4 w-4 text-warning" />
                       )}
                       {r.movementType} · user {r.userId}
                     </CardTitle>

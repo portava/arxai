@@ -27,9 +27,9 @@ type Resp = {
 };
 
 const STATUS_BADGE: Record<Gate["status"], string> = {
-  pass: "bg-emerald-500/20 text-emerald-300",
-  fail: "bg-rose-500/20 text-rose-300",
-  info: "bg-slate-500/20 text-slate-300",
+  pass: "bg-success/20 text-success",
+  fail: "bg-danger/20 text-danger",
+  info: "bg-muted text-txt-secondary",
 };
 
 export function LiveGatesDiagnosticPanel() {
@@ -54,7 +54,7 @@ export function LiveGatesDiagnosticPanel() {
     <Card data-testid="card-live-gates-diagnostic">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <Activity className="w-4 h-4 text-sky-400" />
+          <Activity className="w-4 h-4 text-ruby" />
           Live Gates Diagnostic
           <Badge variant="outline" className="ml-2 text-[10px]">admin-only</Badge>
         </CardTitle>
@@ -64,7 +64,7 @@ export function LiveGatesDiagnosticPanel() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        {err && <div className="text-xs text-rose-400">{err}</div>}
+        {err && <div className="text-xs text-danger">{err}</div>}
         <div className="flex items-center justify-between">
           <div className="text-xs">
             <div><span className="text-muted-foreground">Mode:</span> <span className="font-mono">{data?.platformBridgeMode ?? "—"}</span></div>

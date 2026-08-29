@@ -128,8 +128,8 @@ function BenchmarkBody() {
     <div className="mx-auto w-full max-w-6xl space-y-6 p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="rounded-lg bg-indigo-500/10 p-2">
-            <Brain className="h-5 w-5 text-indigo-300" />
+          <div className="rounded-lg bg-primary/10 p-2">
+            <Brain className="h-5 w-5 text-primary" />
           </div>
           <div>
             <h1 className="text-xl font-semibold text-foreground">Chart Brain Benchmark</h1>
@@ -238,7 +238,7 @@ function BenchmarkBody() {
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
-                <BarChart3 className="h-4 w-4 text-indigo-300" />
+                <BarChart3 className="h-4 w-4 text-primary" />
                 Benchmark scores
               </CardTitle>
               <CardDescription>

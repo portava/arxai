@@ -159,7 +159,7 @@ export function GovernancePanel() {
 
   if (loading) {
     return (
-      <Card className="bg-zinc-900 border-zinc-800">
+      <Card className="bg-card border-border">
         <CardContent className="flex items-center gap-2 py-8 text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" /> Loading governance…
         </CardContent>
@@ -202,11 +202,11 @@ export function GovernancePanel() {
       )}
 
       {/* Master switch */}
-      <Card className="bg-zinc-900 border-zinc-800">
+      <Card className="bg-card border-border">
         <CardHeader className="pb-3">
           <CardTitle className="text-white text-base flex items-center gap-2">
             Owner Live Control Mode
-            <Badge className="bg-emerald-500/15 text-emerald-300 border-emerald-500/30">
+            <Badge className="bg-success/15 text-success border-success/30">
               {gov.ownerLiveControlMode ? "ON — governance-driven" : "OFF — protective defaults"}
             </Badge>
           </CardTitle>
@@ -230,7 +230,7 @@ export function GovernancePanel() {
       </Card>
 
       {/* Requirement toggles */}
-      <Card className="bg-zinc-900 border-zinc-800">
+      <Card className="bg-card border-border">
         <CardHeader className="pb-3">
           <CardTitle className="text-white text-base">Trade requirements</CardTitle>
           <CardDescription className="text-xs">
@@ -256,7 +256,7 @@ export function GovernancePanel() {
       </Card>
 
       {/* Numeric caps */}
-      <Card className="bg-zinc-900 border-zinc-800">
+      <Card className="bg-card border-border">
         <CardHeader className="pb-3">
           <CardTitle className="text-white text-base">Sizing &amp; loss caps</CardTitle>
           <CardDescription className="text-xs">Leave blank for no app cap. Press Save per field.</CardDescription>
@@ -301,7 +301,7 @@ export function GovernancePanel() {
       </Card>
 
       {/* Allowed actions */}
-      <Card className="bg-zinc-900 border-zinc-800">
+      <Card className="bg-card border-border">
         <CardHeader className="pb-3">
           <CardTitle className="text-white text-base">Allowed actions</CardTitle>
           <CardDescription className="text-xs">Turn OFF to disallow that action for this account.</CardDescription>
@@ -322,10 +322,10 @@ export function GovernancePanel() {
       </Card>
 
       {/* Permanent checks — read-only context */}
-      <Card className="bg-zinc-900 border-zinc-800">
+      <Card className="bg-card border-border">
         <CardHeader className="pb-3">
           <CardTitle className="text-white text-base flex items-center gap-2">
-            <ShieldCheck className="h-4 w-4 text-emerald-400" /> Always enforced (not changeable)
+            <ShieldCheck className="h-4 w-4 text-success" /> Always enforced (not changeable)
           </CardTitle>
           <CardDescription className="text-xs">
             These are permanent technical / security / broker-truth checks. They
@@ -336,7 +336,7 @@ export function GovernancePanel() {
           <ul className="space-y-1.5 text-xs text-muted-foreground">
             {PERMANENT_CHECKS.map((c) => (
               <li key={c} className="flex items-center gap-2">
-                <Badge variant="outline" className="border-zinc-700 text-zinc-300">locked</Badge>
+                <Badge variant="outline" className="border-border text-txt-secondary">locked</Badge>
                 {c}
               </li>
             ))}

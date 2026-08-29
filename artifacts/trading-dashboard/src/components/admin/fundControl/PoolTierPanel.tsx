@@ -105,13 +105,13 @@ export function PoolTierPanel({ poolKey, poolName }: Props) {
           <div className="flex items-center gap-2">
             <Badge
               variant="outline"
-              className={isDynamic ? "border-amber-500/40 text-amber-400" : ""}
+              className={isDynamic ? "border-warning/40 text-warning" : ""}
               data-testid={`tier-badge-${poolKey}`}
             >
               {ts.activeTierLabel}
             </Badge>
             {isDynamic ? (
-              <Badge className="bg-amber-500/15 text-amber-400">Dynamic</Badge>
+              <Badge className="bg-warning/15 text-warning">Dynamic</Badge>
             ) : (
               <Badge variant="outline">Fixed</Badge>
             )}
@@ -149,7 +149,7 @@ export function PoolTierPanel({ poolKey, poolName }: Props) {
             label="Downgrade mode"
             value={
               ts.tierDowngradeModeEnabled
-                ? <Badge variant="outline" className="text-[10px] text-amber-400 border-amber-500/40">Enabled</Badge>
+                ? <Badge variant="outline" className="text-[10px] text-warning border-warning/40">Enabled</Badge>
                 : <span className="text-muted-foreground text-xs">Disabled</span>
             }
           />
@@ -188,7 +188,7 @@ export function PoolTierPanel({ poolKey, poolName }: Props) {
         })() : null}
 
         {ts.tierChanged ? (
-          <p className="text-xs text-amber-400" data-testid={`tier-changed-${poolKey}`}>
+          <p className="text-xs text-warning" data-testid={`tier-changed-${poolKey}`}>
             ↑ Tier advanced from T{ts.previousTierNum} on this read.
           </p>
         ) : null}
@@ -242,7 +242,7 @@ export function PoolTierPanel({ poolKey, poolName }: Props) {
         >
           Edit tier growth config
         </Button>
-        {err ? <p className="text-xs text-red-400">{err}</p> : null}
+        {err ? <p className="text-xs text-danger">{err}</p> : null}
       </CardContent>
 
       <ReasonDialog
