@@ -219,7 +219,17 @@ export async function getPersistedConfidenceCalibration(daysBack = 30) {
     ));
 
   if (rows.length < 10) {
-    return { label: "NEEDS_MORE_DATA", sample: rows.length, buckets: [] };
+    return {
+      label: "NEEDS_MORE_DATA", sample: rows.length,
+      buckets: [] as Array<{
+        bucket: string; sample: number; winRate: number;
+        expectedWinRate: number; errorPctPts: number | null; avgR: number;
+      }>,
+      calibrationErrorPctPts: null as number | null,
+      signedErrorPctPts: null as number | null,
+      tolerancePctPts: 10,
+      monotonicitySlopePctPts: null as number | null,
+    };
   }
 
   const buckets = [
@@ -241,23 +251,46 @@ export async function getPersistedConfidenceCalibration(daysBack = 30) {
       bucket:  b.label,
       sample:  bucket.length,
       winRate: Math.round(winRate * 10) / 10,
+      // What the confidence number claimed: the midpoint of its bucket.
+      expectedWinRate: (b.min + Math.min(100, b.max)) / 2,
+      errorPctPts: bucket.length
+        ? Math.round(((b.min + Math.min(100, b.max)) / 2 - winRate) * 10) / 10
+        : null,
       avgR:    Math.round(avgR * 100) / 100,
     };
   });
 
-  // Calibration quality
+  // Calibration quality — the DB-backed twin of shadowMode.confidenceCalibration().
+  // It carried the same defect (audit rank 66): slope > 15 returned
+  // WELL_CALIBRATED without ever comparing a stated confidence to the observed
+  // win rate. Both now measure real, sample-weighted calibration error and use
+  // the same label set, so the two surfaces can never disagree in wording.
   const highBuckets = result.filter((b) => b.bucket === "80-90" || b.bucket === "90-100");
   const lowBuckets  = result.filter((b) => b.bucket === "50-60" || b.bucket === "60-70");
   const highWR = avg(highBuckets.map((b) => b.winRate));
   const lowWR  = avg(lowBuckets.map((b)  => b.winRate));
   const slope  = highWR - lowWR;
 
-  const label =
-    Math.abs(slope) < 5      ? "RANDOM_CONFIDENCE" :
-    slope > 15               ? "WELL_CALIBRATED"   :
-    highWR > 0 && highWR < 60 ? "OVERCONFIDENT"    : "UNDERCONFIDENT";
+  const populated = result.filter((b) => b.sample > 0);
+  const totalPopulated = populated.reduce((a, b) => a + b.sample, 0);
+  const calibrationErrorPctPts = totalPopulated
+    ? Math.round((populated.reduce((a, b) => a + Math.abs(b.errorPctPts ?? 0) * b.sample, 0) / totalPopulated) * 10) / 10
+    : null;
+  const signedErrorPctPts = totalPopulated
+    ? Math.round((populated.reduce((a, b) => a + (b.errorPctPts ?? 0) * b.sample, 0) / totalPopulated) * 10) / 10
+    : null;
 
-  return { label, sample: rows.length, buckets: result };
+  const label =
+    calibrationErrorPctPts == null   ? "NEEDS_MORE_DATA" :
+    calibrationErrorPctPts <= 10     ? "CALIBRATED_ON_SYNTHETIC_ONLY" :
+    Math.abs(slope) < 5              ? "RANDOM_CONFIDENCE" :
+    (signedErrorPctPts ?? 0) > 0     ? "OVERCONFIDENT"     : "UNDERCONFIDENT";
+
+  return {
+    label, sample: rows.length, buckets: result,
+    calibrationErrorPctPts, signedErrorPctPts, tolerancePctPts: 10,
+    monotonicitySlopePctPts: Math.round(slope * 10) / 10,
+  };
 }
 
 // ── Accuracy summary for a symbol ─────────────────────────────────────────────

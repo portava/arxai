@@ -147,6 +147,8 @@ interface RunDto {
   timeframe: string;
   status: string;
   isVerified: string;
+  dataSource?: string;
+  aiSummary?: string | null;
   totalTrades: number;
   winningTrades: number;
   losingTrades: number;
@@ -181,7 +183,21 @@ test("POST /backtest-runs completes a deterministic run with real metrics", asyn
   assert.equal(body.winningTrades + body.losingTrades <= body.totalTrades, true);
   assert.ok(Number.isFinite(body.netProfitLoss), "netProfitLoss is a real number");
   assert.ok(body.winRate >= 0 && body.winRate <= 100, "winRate within [0,100]");
-  assert.ok(["VERIFIED", "UNVERIFIED"].includes(body.isVerified), "honest verification verdict");
+  // CORRECTED (audit rank 41): this used to accept "VERIFIED" for this run.
+  // This request supplies no history window and CI has no broker candles, so it
+  // runs on fabricated candles — a run that can never be verified. Accepting
+  // VERIFIED here was asserting something false. A synthetic run's honest
+  // verdict is SYNTHETIC_NOT_VERIFIABLE; VERIFIED/UNVERIFIED remain the verdicts
+  // for a run over real broker bars.
+  assert.equal(
+    body.isVerified, "SYNTHETIC_NOT_VERIFIABLE",
+    "a run on fabricated candles must never be stamped VERIFIED",
+  );
+  assert.equal(body.dataSource, "synthetic", "no broker history in this environment");
+  assert.match(
+    body.aiSummary ?? "", /^SYNTHETIC DATA —/,
+    "the stored summary must open by saying the candles were fabricated",
+  );
   assert.ok(Array.isArray(body.equityCurve) && body.equityCurve.length > 0, "equity curve returned");
 });
 

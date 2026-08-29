@@ -46,13 +46,20 @@ async function logEvent(orderId: number, eventType: string, message: string) {
 // "current" price is reproducible per (symbol, second-bucket) and never
 // requires a real broker quote. Bucket = 60s so prices feel live but stay
 // reproducible within the bucket.
-function getMockPrice(symbol: string, atMs: number): number {
+// Returns null when the symbol has no synthetic price model — callers must
+// refuse rather than mark a position to a fabricated 1.0000 price (the old
+// `?? 1` default did exactly that for any unmodelled instrument).
+function getMockPrice(symbol: string, atMs: number): number | null {
   const bucket = Math.floor(atMs / 60_000) * 60_000;
-  const candles = generateDeterministicCandles({
-    symbol, count: 1, timeframe: "M1",
-    seed: `paper-mtm|${bucket}`, baseTimeMs: bucket,
-  });
-  return candles[0]?.close ?? 1;
+  try {
+    const candles = generateDeterministicCandles({
+      symbol, count: 1, timeframe: "M1",
+      seed: `paper-mtm|${bucket}`, baseTimeMs: bucket,
+    });
+    return candles[0]?.close ?? null;
+  } catch {
+    return null;
+  }
 }
 
 function pnlFor(direction: string, lotSize: number, entry: number, exit: number): number {
@@ -78,6 +85,10 @@ async function markToMarket(accountId: number) {
 
   for (const o of open) {
     const px = getMockPrice(o.symbol, now);
+    // No synthetic price model ⇒ this position simply cannot be marked. Skip it
+    // (it keeps its last stored state) rather than settling SL/TP against a
+    // fabricated price.
+    if (px == null) continue;
     // (Build EE) EE-managed orders are owned by the Build EE monitor (which
     // uses Build DD market data). Build Q's mark-to-market must NOT auto-close
     // them with mock prices — only refresh unrealized P&L for equity display.
@@ -201,6 +212,10 @@ router.post("/paper/orders", async (req, res): Promise<void> => {
       .where(eq(paperAccountsTable.id, b.paperAccountId)).limit(1);
     if (!accs[0]) { fail(res, 404, "Paper account not found"); return; }
     const px = b.entryPrice ?? getMockPrice(b.symbol, Date.now());
+    if (px == null) {
+      fail(res, 422, `No synthetic price model for ${b.symbol} — supply an explicit entryPrice or use a modelled symbol.`);
+      return;
+    }
     // Validate SL/TP geometry to refuse malformed paper orders.
     const slOk = b.direction === "BUY" ? b.stopLoss < px   : b.stopLoss > px;
     const tpOk = b.direction === "BUY" ? b.takeProfit > px : b.takeProfit < px;
@@ -271,6 +286,10 @@ router.post("/paper/orders/:id/close", async (req, res): Promise<void> => {
     if (!cur) { fail(res, 404, "Not found"); return; }
     if (cur.status !== "OPEN") { fail(res, 409, "Order not open"); return; }
     const exitPx = getMockPrice(cur.symbol, Date.now());
+    if (exitPx == null) {
+      fail(res, 422, `No synthetic price model for ${cur.symbol} — refusing to close at a fabricated price.`);
+      return;
+    }
     const pnl = pnlFor(cur.direction, cur.lotSize, cur.entryPrice, exitPx);
     await db.update(paperOrdersTable).set({
       status: "CLOSED_MANUAL", closedAt: new Date(), exitPrice: exitPx,

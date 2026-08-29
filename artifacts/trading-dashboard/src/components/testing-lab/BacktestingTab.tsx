@@ -52,7 +52,12 @@ export function BacktestingTab({
                       {r.dataSource === "broker"
                         ? <span className="rounded bg-success/60 px-1 py-0.5 text-[9px] font-semibold text-success" title="Simulated over real closed broker bars.">REAL BROKER DATA</span>
                         : <span className="rounded bg-secondary px-1 py-0.5 text-[9px] font-semibold text-txt-secondary" title="Simulated over deterministic synthetic candles — no broker history was used.">SYNTHETIC</span>}
-                      <span className={`text-[10px] ${r.isVerified === "VERIFIED" ? "text-success" : r.status === "INSUFFICIENT_DATA" ? "text-warning" : "text-txt-muted"}`}>{r.isVerified}</span>
+                      <span
+                        title={r.isVerified === "SYNTHETIC_NOT_VERIFIABLE"
+                          ? "Fabricated candles — a verification verdict is not possible from this run."
+                          : undefined}
+                        className={`text-[10px] ${r.isVerified === "VERIFIED" ? "text-success" : r.status === "INSUFFICIENT_DATA" ? "text-warning" : "text-txt-muted"}`}
+                      >{r.isVerified === "SYNTHETIC_NOT_VERIFIABLE" ? "NOT VERIFIABLE" : r.isVerified}</span>
                     </span>
                   </div>
                   <div className="mt-1 text-[10px] text-txt-muted">

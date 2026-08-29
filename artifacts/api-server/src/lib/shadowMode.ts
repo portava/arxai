@@ -15,6 +15,7 @@
 import { marketSimulator } from "./marketSimulator.js";
 import { preTradeCheck } from "./riskGovernor2.js";
 import { runStrategyScan, type Candle as EngineCandle } from "./strategyEngine.js";
+import { ENGINE_STRATEGY_NAMES } from "./backtestStrategyRegistry.js";
 import { DEFAULT_SYMBOLS } from "./marketScanner.js";
 import { buildForwardChartSeries, type ForwardChartSeries } from "./shadow/forwardChartSeries.js";
 // shadowPersistence imports this module type-only, so no runtime cycle.
@@ -34,6 +35,25 @@ function adaptCandles(symbol: string): EngineCandle[] {
   return marketSimulator.candlesFor(symbol, 240).map((c) => ({
     time: c.tsIso, open: c.o, high: c.h, low: c.l, close: c.c, volume: c.v,
   }));
+}
+
+// ── Data-source coverage (audit rank 67) ────────────────────────────────────
+//
+// The shadow scanner's ONLY candle source is marketSimulator, which knows eight
+// symbols. The scan set defaults to the ~23 tier-1 ARX markets, so every symbol
+// outside the simulator used to return null on every tick — silently, with no
+// log and no counter. The card then read as coverage of the platform's market
+// list while three symbols were ever actually observed.
+/** Symbols the shadow scanner's data source can actually produce candles for. */
+export function shadowCoveredSymbols(): string[] {
+  return marketSimulator.symbols().map((s) => s.symbol);
+}
+function partitionBySourceCoverage(symbols: readonly string[]): { covered: string[]; skipped: string[] } {
+  const known = new Set(shadowCoveredSymbols().map((s) => s.toUpperCase()));
+  const covered: string[] = [];
+  const skipped: string[] = [];
+  for (const s of symbols) (known.has(s.toUpperCase()) ? covered : skipped).push(s);
+  return { covered, skipped };
 }
 
 export type ShadowStatus =
@@ -183,19 +203,35 @@ function trackOutcomes() {
   }
 }
 
-export function startShadowMode(opts?: { symbols?: string[]; intervalSec?: number }): { running: boolean; startedAt: string | null } {
-  if (shadowEnabled) return { running: true, startedAt: shadowStartedAt };
+// The symbols this run of the scanner is actually observing, and the ones that
+// were requested but have no candle source. Both are reported by shadowStatus()
+// so no surface can read the requested list as coverage.
+let scanSymbols: string[] = [];
+let skippedSymbols: string[] = [];
+
+export function startShadowMode(opts?: { symbols?: string[]; intervalSec?: number }): {
+  running: boolean; startedAt: string | null;
+  scannedSymbols: string[]; skippedSymbols: string[];
+} {
+  if (shadowEnabled) {
+    return { running: true, startedAt: shadowStartedAt, scannedSymbols: [...scanSymbols], skippedSymbols: [...skippedSymbols] };
+  }
+  const requested = opts?.symbols && opts.symbols.length ? [...opts.symbols] : [...DEFAULT_SYMBOLS];
+  // Restrict the scan set to symbols the data source covers, and REPORT the
+  // rest instead of failing null on every tick for them (audit rank 67).
+  const { covered, skipped } = partitionBySourceCoverage(requested);
+  scanSymbols = covered;
+  skippedSymbols = skipped;
   shadowEnabled = true; shadowStartedAt = new Date().toISOString();
-  const symbols = opts?.symbols && opts.symbols.length ? opts.symbols : DEFAULT_SYMBOLS;
   const intervalMs = Math.max(2, opts?.intervalSec ?? 5) * 1000;
   scanTimer = setInterval(() => {
     if (!shadowEnabled) return;
-    for (const s of symbols) createShadowDecision(s, "M15");
+    for (const s of scanSymbols) createShadowDecision(s, "M15");
   }, intervalMs);
   scanTimer.unref?.();
   trackTimer = setInterval(trackOutcomes, 1000);
   trackTimer.unref?.();
-  return { running: true, startedAt: shadowStartedAt };
+  return { running: true, startedAt: shadowStartedAt, scannedSymbols: [...scanSymbols], skippedSymbols: [...skippedSymbols] };
 }
 export function stopShadowMode() {
   shadowEnabled = false;
@@ -207,6 +243,17 @@ export function shadowStatus() {
   const arr = [...decisions.values()];
   return {
     enabled: shadowEnabled, startedAt: shadowStartedAt,
+    // Coverage truth (audit rank 67): what is actually observed, what was asked
+    // for and cannot be, and where the candles come from.
+    scannedSymbols: [...scanSymbols],
+    skippedSymbols: [...skippedSymbols],
+    skippedSymbolCount: skippedSymbols.length,
+    candleSource: "SYNTHETIC_SIMULATOR" as const,
+    coverageNote: skippedSymbols.length
+      ? `Observing ${scanSymbols.length} of ${scanSymbols.length + skippedSymbols.length} requested symbols. ` +
+        `${skippedSymbols.length} have no candle source in the simulator and are NOT shadow-tested: ` +
+        `${skippedSymbols.join(", ")}.`
+      : `Observing ${scanSymbols.length} symbol(s) on synthetic simulator candles.`,
     totalsObserved, totalDecisions: arr.length,
     tracking: arr.filter((d) => d.status === "SHADOW_TRACKING_OUTCOME").length,
     wins: arr.filter((d) => d.status === "SHADOW_WIN").length,
@@ -238,6 +285,14 @@ let forwardConfig: ForwardTestConfig | null = null;
 let forwardStartedAt: string | null = null;
 let forwardEndsAt: string | null = null;
 let forwardCountAtStart = 0;
+// Audit rank 69: stopForwardTest() used to only null the config. The scanner
+// kept running and forwardResults() kept absorbing new decisions, so a
+// "finished" forward test's tiles carried on climbing after Stop. The window is
+// now explicitly bounded, the config is retained for the frozen read, and the
+// scanner is stopped again if this forward test is what started it.
+let forwardRunning = false;
+let forwardEndedAt: string | null = null;
+let forwardStartedScanner = false;
 
 export function startForwardTest(c: Partial<ForwardTestConfig> = {}): { running: boolean; endsAt: string } {
   forwardConfig = {
@@ -248,24 +303,64 @@ export function startForwardTest(c: Partial<ForwardTestConfig> = {}): { running:
     sessionFilters: c.sessionFilters ?? [], newsFilters: c.newsFilters ?? [],
   };
   forwardStartedAt = new Date().toISOString();
+  forwardEndedAt = null;
+  forwardRunning = true;
   forwardEndsAt = new Date(Date.now() + forwardConfig.durationMin * 60_000).toISOString();
   forwardCountAtStart = totalsObserved;
-  if (!shadowEnabled) startShadowMode({ symbols: forwardConfig.symbols });
+  forwardStartedScanner = false;
+  if (!shadowEnabled) {
+    startShadowMode({ symbols: forwardConfig.symbols });
+    forwardStartedScanner = true;
+  }
   return { running: true, endsAt: forwardEndsAt };
 }
-export function stopForwardTest() { const c = forwardConfig; forwardConfig = null; return { stopped: true, was: c }; }
+export function stopForwardTest() {
+  const c = forwardConfig;
+  const wasRunning = forwardRunning;
+  forwardRunning = false;
+  // Freeze the window at the moment of Stop. forwardConfig is retained (not
+  // nulled) so the frozen read keeps the strategy filter it was scoped by.
+  if (wasRunning) forwardEndedAt = new Date().toISOString();
+  // If this forward test started the scanner, stop it again — otherwise the
+  // shadow stream keeps running unattended after the user pressed Stop.
+  let scannerStopped = false;
+  if (forwardStartedScanner && shadowEnabled) {
+    stopShadowMode();
+    scannerStopped = true;
+  }
+  forwardStartedScanner = false;
+  return { stopped: true, was: c, endedAt: forwardEndedAt, scannerStopped };
+}
+
+/** Inclusive [start, end] bounds of the forward window; end is null while running. */
+function forwardWindow(): { since: number; until: number } {
+  return {
+    since: forwardStartedAt ? Date.parse(forwardStartedAt) : 0,
+    until: forwardEndedAt ? Date.parse(forwardEndedAt) : Number.POSITIVE_INFINITY,
+  };
+}
+function forwardDecisions(): ShadowDecision[] {
+  const { since, until } = forwardWindow();
+  return [...decisions.values()].filter((d) => {
+    const t = Date.parse(d.ts);
+    return t >= since && t <= until &&
+      (!forwardConfig?.strategy || d.strategy === forwardConfig.strategy);
+  });
+}
 
 export function forwardStatus() {
   return {
-    running: !!forwardConfig, startedAt: forwardStartedAt, endsAt: forwardEndsAt,
+    running: forwardRunning, startedAt: forwardStartedAt, endsAt: forwardEndsAt,
+    endedAt: forwardEndedAt,
     config: forwardConfig, observedSinceStart: totalsObserved - forwardCountAtStart,
+    // The window the results below are bounded by. After Stop this is frozen,
+    // so two people reading the page see the same numbers.
+    windowFrozen: !forwardRunning && forwardEndedAt !== null,
     dataSource: "SHADOW" as const,
   };
 }
 export function forwardResults() {
-  const since = forwardStartedAt ? Date.parse(forwardStartedAt) : 0;
-  const arr = [...decisions.values()].filter((d) => Date.parse(d.ts) >= since &&
-    (!forwardConfig?.strategy || d.strategy === forwardConfig.strategy));
+  const arr = forwardDecisions();
   const wins = arr.filter((d) => d.status === "SHADOW_WIN");
   const losses = arr.filter((d) => d.status === "SHADOW_LOSS");
   const tracked = wins.length + losses.length;
@@ -305,14 +400,26 @@ export function forwardResults() {
 // Same scope as forwardResults(): decisions since the forward test started,
 // filtered to the active strategy. Pure derivation via buildForwardChartSeries.
 export function forwardChartSeries(): ForwardChartSeries {
-  const since = forwardStartedAt ? Date.parse(forwardStartedAt) : 0;
-  const arr = [...decisions.values()].filter((d) => Date.parse(d.ts) >= since &&
-    (!forwardConfig?.strategy || d.strategy === forwardConfig.strategy));
+  const arr = forwardDecisions();
   return buildForwardChartSeries(arr.map((d) => ({
     id: d.id, ts: d.ts, symbol: d.symbol, strategy: d.strategy,
     action: d.action, entry: d.entry, status: d.status,
     pnlR: d.pnlR, outcomeAt: d.outcomeAt,
   })));
+}
+
+/** Strategies present in `arr`, ordered by win rate over resolved decisions. */
+function rankByStrategyOverDecisions(arr: ShadowDecision[]): string[] {
+  const by: Record<string, { n: number; wins: number }> = {};
+  for (const d of arr) {
+    if (d.status !== "SHADOW_WIN" && d.status !== "SHADOW_LOSS") continue;
+    by[d.strategy] = by[d.strategy] ?? { n: 0, wins: 0 };
+    by[d.strategy]!.n++;
+    if (d.status === "SHADOW_WIN") by[d.strategy]!.wins++;
+  }
+  return Object.entries(by)
+    .sort((a, b) => (b[1].wins / b[1].n) - (a[1].wins / a[1].n))
+    .map(([k]) => k);
 }
 
 function maxDrawdownR(arr: ShadowDecision[]): number {
@@ -324,10 +431,15 @@ function maxDrawdownR(arr: ShadowDecision[]): number {
 }
 
 // ── Strategy Tournament ───────────────────────────────────────────────────
-export const TOURNAMENT_STRATEGIES = [
-  "Conservative Pullback", "Trend Continuation", "Breakout Confirmation",
-  "Liquidity Sweep Reversal", "Gold Scalping Test", "Custom Strategy",
-];
+//
+// Audit rank 70: this was a hand-written list of six names, but the only
+// producer of shadow decisions is runStrategyScan, whose strategy values are a
+// different eight — only 2 of the 6 could ever match. The Promotion tab
+// therefore listed four strategies permanently at n=0 / tracked=0 / wr=0% with
+// a Promote button that could never enable, however long shadow mode ran.
+// The universe is now DERIVED from the engine's own registry, so it cannot
+// drift from the set of strategies that can produce a decision.
+export const TOURNAMENT_STRATEGIES: string[] = [...ENGINE_STRATEGY_NAMES];
 let tournamentStartedAt: string | null = null;
 let tournamentEnabled = false;
 
@@ -365,19 +477,80 @@ export function tournamentResults() {
       tradeGradeAvg: Number((s.gradeSum / Math.max(1, s.gradeN)).toFixed(2)),
     };
   }).sort((a, b) => b.expectancy - a.expectancy);
+  // Audit rank 70: `bestScalping` (/scalp/i) and `bestGold` (/gold/i) matched
+  // against strategy NAMES, none of which contain those words — they read "—"
+  // forever. `bestOnGold` is now computed from the decision's SYMBOL instead,
+  // which is a fact the decisions actually carry. There is no timeframe/holding
+  // -period field on a shadow decision, so a "scalping" slot cannot be computed
+  // at all and is not rendered rather than shown as a permanent dash.
+  const goldRows = rankByStrategyOverDecisions(arr.filter((d) => /^XAU|^XAG/i.test(d.symbol)));
   const leaderboard = {
     bestOverall: rows[0]?.strategy ?? null,
     bestLowRisk: [...rows].sort((a, b) => b.riskDiscipline - a.riskDiscipline)[0]?.strategy ?? null,
-    bestScalping: rows.find((r) => /scalp/i.test(r.strategy))?.strategy ?? null,
-    bestGold: rows.find((r) => /gold/i.test(r.strategy))?.strategy ?? null,
+    bestOnGold: goldRows[0] ?? null,
     bestForex: rows.find((r) => /pullback|trend|break/i.test(r.strategy))?.strategy ?? null,
     worst: rows.at(-1)?.strategy ?? null,
     toRetire: rows.find((r) => r.expectancy < 0 && r.sample >= 10)?.strategy ?? null,
   };
-  return { running: tournamentEnabled, startedAt: tournamentStartedAt, ranked: rows, leaderboard, dataSource: "SHADOW" as const };
+  return {
+    running: tournamentEnabled, startedAt: tournamentStartedAt, ranked: rows, leaderboard,
+    notComputed: {
+      bestScalping: "Not computed — a shadow decision carries no holding-period or timeframe-class field, so a scalping category cannot be derived.",
+    },
+    dataSource: "SHADOW" as const,
+  };
 }
 
 // ── Confidence Calibration ────────────────────────────────────────────────
+//
+// Audit rank 66: the verdict never compared predicted confidence to observed
+// win rate. It computed slope = highBucketWinRate − lowBucketWinRate and
+// returned WELL_CALIBRATED for any slope > 15, so a model whose 90-100% bucket
+// won 45% and whose 50-60% bucket won 20% was labelled green WELL_CALIBRATED.
+// That is monotonicity, not calibration.
+//
+// This now computes a real, sample-weighted calibration error — the mean
+// |bucket midpoint − observed win rate| across buckets that have samples — and
+// labels from THAT, checking absolute accuracy before any ordering shortcut.
+//
+// The samples come from shadow decisions on synthetic simulator candles, so the
+// good-calibration label is CALIBRATED_ON_SYNTHETIC_ONLY: it never carries a
+// bare "WELL_CALIBRATED" that reads as evidence the confidence numbers can be
+// trusted as probabilities in the real market.
+export type CalibrationLabel =
+  | "CALIBRATED_ON_SYNTHETIC_ONLY" | "OVERCONFIDENT" | "UNDERCONFIDENT"
+  | "RANDOM_CONFIDENCE" | "NEEDS_MORE_DATA";
+
+/** Calibration error at or below this (percentage points) counts as calibrated. */
+export const CALIBRATION_ERROR_TOLERANCE_PCTPTS = 10;
+export const MIN_CALIBRATION_SAMPLE = 20;
+
+/**
+ * The labelling rule, isolated so it can be tested directly against the exact
+ * counterexample the audit raised: a model whose 90-100% bucket wins 45% and
+ * whose 50-60% bucket wins 20% has a monotonic slope of +25 and used to be
+ * labelled WELL_CALIBRATED — while being wrong by ~40 points about every
+ * probability it stated.
+ *
+ * `signedErrorPctPts` is claimed minus observed: positive ⇒ the model promised
+ * more than it delivered.
+ */
+export function labelCalibration(args: {
+  sample: number;
+  calibrationErrorPctPts: number | null;
+  signedErrorPctPts: number | null;
+  slopePctPts: number;
+}): CalibrationLabel {
+  const { sample, calibrationErrorPctPts, signedErrorPctPts, slopePctPts } = args;
+  if (sample < MIN_CALIBRATION_SAMPLE) return "NEEDS_MORE_DATA";
+  if (calibrationErrorPctPts == null || signedErrorPctPts == null) return "NEEDS_MORE_DATA";
+  // ABSOLUTE accuracy first. Ordering is checked only after the model has been
+  // shown to be wrong about the probabilities themselves.
+  if (calibrationErrorPctPts <= CALIBRATION_ERROR_TOLERANCE_PCTPTS) return "CALIBRATED_ON_SYNTHETIC_ONLY";
+  if (Math.abs(slopePctPts) < 5) return "RANDOM_CONFIDENCE";
+  return signedErrorPctPts > 0 ? "OVERCONFIDENT" : "UNDERCONFIDENT";
+}
+
 export function confidenceCalibration() {
   const arr = [...decisions.values()].filter((d) => d.status === "SHADOW_WIN" || d.status === "SHADOW_LOSS");
   const buckets = [
@@ -390,21 +563,51 @@ export function confidenceCalibration() {
     const wins = xs.filter((d) => d.status === "SHADOW_WIN").length;
     const winRate = xs.length ? wins / xs.length : 0;
     const avgR = xs.length ? xs.reduce((a, d) => a + (d.pnlR ?? 0), 0) / xs.length : 0;
-    return { bucket: b.label, sample: xs.length, winRate: Number((winRate * 100).toFixed(1)), avgR: Number(avgR.toFixed(2)) };
+    // What the confidence number CLAIMS: the midpoint of the bucket it fell in.
+    const expectedWinRate = (b.min + Math.min(100, b.max)) / 2;
+    return {
+      bucket: b.label, sample: xs.length,
+      winRate: Number((winRate * 100).toFixed(1)),
+      expectedWinRate: Number(expectedWinRate.toFixed(1)),
+      // Positive ⇒ claimed more than it delivered (overconfident in this bucket).
+      errorPctPts: xs.length ? Number((expectedWinRate - winRate * 100).toFixed(1)) : null,
+      avgR: Number(avgR.toFixed(2)),
+    };
   });
-  let label: "WELL_CALIBRATED" | "OVERCONFIDENT" | "UNDERCONFIDENT" | "RANDOM_CONFIDENCE" | "NEEDS_MORE_DATA" = "NEEDS_MORE_DATA";
-  if (arr.length >= 20) {
-    const high = out.filter((b) => b.bucket === "80-90" || b.bucket === "90-100");
-    const low = out.filter((b) => b.bucket === "50-60" || b.bucket === "60-70");
-    const highWR = avg(high.map((b) => b.winRate));
-    const lowWR = avg(low.map((b) => b.winRate));
-    const slope = highWR - lowWR;
-    if (Math.abs(slope) < 5) label = "RANDOM_CONFIDENCE";
-    else if (slope > 15) label = "WELL_CALIBRATED";
-    else if (highWR > 0 && highWR < 60) label = "OVERCONFIDENT";
-    else label = "UNDERCONFIDENT";
-  }
-  return { buckets: out, totalSample: arr.length, label, dataSource: "SHADOW" as const };
+
+  const populated = out.filter((b) => b.sample > 0);
+  const totalPopulated = populated.reduce((a, b) => a + b.sample, 0);
+  // Sample-weighted mean |error| and mean signed error, in percentage points.
+  const calibrationErrorPctPts = totalPopulated
+    ? Number((populated.reduce((a, b) => a + Math.abs(b.errorPctPts ?? 0) * b.sample, 0) / totalPopulated).toFixed(1))
+    : null;
+  const signedErrorPctPts = totalPopulated
+    ? Number((populated.reduce((a, b) => a + (b.errorPctPts ?? 0) * b.sample, 0) / totalPopulated).toFixed(1))
+    : null;
+
+  const high = out.filter((b) => b.bucket === "80-90" || b.bucket === "90-100");
+  const low = out.filter((b) => b.bucket === "50-60" || b.bucket === "60-70");
+  const slope = avg(high.map((b) => b.winRate)) - avg(low.map((b) => b.winRate));
+
+  const label = labelCalibration({
+    sample: arr.length, calibrationErrorPctPts, signedErrorPctPts, slopePctPts: slope,
+  });
+
+  return {
+    buckets: out,
+    totalSample: arr.length,
+    minSample: MIN_CALIBRATION_SAMPLE,
+    label,
+    calibrationErrorPctPts,
+    signedErrorPctPts,
+    tolerancePctPts: CALIBRATION_ERROR_TOLERANCE_PCTPTS,
+    monotonicitySlopePctPts: Number(slope.toFixed(1)),
+    method:
+      "Sample-weighted mean |bucket midpoint − observed win rate| over buckets with samples. " +
+      "Samples are SHADOW decisions resolved against synthetic simulator candles — never live fills.",
+    dataSource: "SHADOW" as const,
+    candleSource: "SYNTHETIC_SIMULATOR" as const,
+  };
 }
 function avg(xs: number[]) { return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0; }
 function confidenceAccuracyFor(strategy: string): number {
@@ -459,11 +662,11 @@ function computeNextLevel(curr: PromotionLevel, st: ReturnType<typeof strategySt
     return null;
   }
   if (curr === "PAPER_APPROVED") {
-    if (st.tracked >= 50 && st.expectancy > 0 && st.drawdownR <= 8 && (calLabel === "WELL_CALIBRATED" || calLabel === "UNDERCONFIDENT")) return "DEMO_APPROVED";
+    if (st.tracked >= 50 && st.expectancy > 0 && st.drawdownR <= 8 && (calLabel === "CALIBRATED_ON_SYNTHETIC_ONLY" || calLabel === "UNDERCONFIDENT")) return "DEMO_APPROVED";
     return null;
   }
   if (curr === "DEMO_APPROVED") {
-    if (st.tracked >= 100 && st.expectancy > 0 && (calLabel === "WELL_CALIBRATED") && st.rgViolations === 0) return "LIVE_INTENT_APPROVED";
+    if (st.tracked >= 100 && st.expectancy > 0 && (calLabel === "CALIBRATED_ON_SYNTHETIC_ONLY") && st.rgViolations === 0) return "LIVE_INTENT_APPROVED";
     return null;
   }
   return null;
@@ -501,13 +704,43 @@ export function demotionScan() {
 }
 
 // ── AI Readiness Score ────────────────────────────────────────────────────
+//
+// Audit rank 46: three of the eleven scored factors were typed literals —
+// overtradingBehavior: 100, learningLoopStability: 80, safetyCompliance: 100 —
+// and the composite averaged all eleven equally, so ~27% of a readiness verdict
+// on a live-trading system was invented, and it pulled the label upward. The
+// page rendered them as progress bars identical to the measured ones.
+//
+// They are now EXCLUDED from the mean and reported separately as not measured,
+// each with the reason and what would be needed to measure it. The score is
+// explicitly `partial`. The remaining eight factors are still derived from
+// shadow decisions on SYNTHETIC simulator candles — that provenance is returned
+// too, so the page can say so rather than implying market evidence.
+export const READINESS_NOT_MEASURED: Array<{ factor: string; reason: string; wouldNeed: string }> = [
+  {
+    factor: "overtradingBehavior",
+    reason: "Was a typed constant (100). Nothing counts shadow decisions per unit time against a limit.",
+    wouldNeed: "A decisions-per-window rate compared with the session's configured max-trades rule.",
+  },
+  {
+    factor: "learningLoopStability",
+    reason: "Was a typed constant (80). No learning-loop metric is read here.",
+    wouldNeed: "Variance of the loop's parameter updates over time from the learning-events store.",
+  },
+  {
+    factor: "safetyCompliance",
+    reason: "Was a typed constant (100). Risk-Governor outcomes are already counted by riskDiscipline; no separate safety-gate audit is read.",
+    wouldNeed: "A pass/violation count from the gate evaluator's audit trail for the same window.",
+  },
+];
+
 export function readinessScore() {
   const all = [...decisions.values()];
   const tracked = all.filter((d) => d.status === "SHADOW_WIN" || d.status === "SHADOW_LOSS");
   const wins = tracked.filter((d) => d.status === "SHADOW_WIN").length;
   const wr = tracked.length ? wins / tracked.length : 0;
   const cal = confidenceCalibration();
-  const calScore = cal.label === "WELL_CALIBRATED" ? 100 : cal.label === "UNDERCONFIDENT" ? 75 : cal.label === "OVERCONFIDENT" ? 40 : cal.label === "RANDOM_CONFIDENCE" ? 20 : 30;
+  const calScore = cal.label === "CALIBRATED_ON_SYNTHETIC_ONLY" ? 100 : cal.label === "UNDERCONFIDENT" ? 75 : cal.label === "OVERCONFIDENT" ? 40 : cal.label === "RANDOM_CONFIDENCE" ? 20 : 30;
   const rgViolations = all.filter((d) => !d.riskGovernor.approved).length;
   const riskDiscipline = Math.max(0, 100 - Math.round((rgViolations / Math.max(1, all.length)) * 100));
   const ddR = maxDrawdownR(all);
@@ -515,23 +748,32 @@ export function readinessScore() {
   const sample = Math.min(100, all.length);
   const grades = all.map((d) => d.grade); const avgGrade = grades.length ? avg(grades) * 10 : 0;
 
+  // MEASURED factors only. Nothing typed, nothing defaulted.
   const factors = {
     strategyPerformance: Math.round(wr * 100),
     confidenceCalibration: calScore,
     riskDiscipline,
     drawdownBehavior: ddScore,
-    overtradingBehavior: 100,
     tradeGradeAvg: Math.round(avgGrade),
     entrySniperAvg: Math.round(avg(all.map((d) => d.sniper))),
     opportunityScoreAccuracy: Math.round(avg(all.map((d) => d.opportunity))),
     sampleSize: sample,
-    learningLoopStability: 80,
-    safetyCompliance: 100,
   };
   const score = Math.round(avg(Object.values(factors)));
   const label = score < 50 ? "NOT_READY" : score < 70 ? "NEEDS_MORE_TESTING" : score < 85 ? "PAPER_READY" : score < 95 ? "DEMO_READY" : "LIVE_INTENT_READY";
   return {
     score, label, factors,
+    partial: true as const,
+    measuredFactorCount: Object.keys(factors).length,
+    totalFactorCount: Object.keys(factors).length + READINESS_NOT_MEASURED.length,
+    notMeasured: READINESS_NOT_MEASURED,
+    basis:
+      `Partial score: ${Object.keys(factors).length} of ` +
+      `${Object.keys(factors).length + READINESS_NOT_MEASURED.length} factors are measured; ` +
+      `${READINESS_NOT_MEASURED.length} are not measured and are excluded from the mean (they are not scored as 100). ` +
+      "Every measured factor is derived from SHADOW decisions resolved against synthetic simulator " +
+      "candles, so this is a self-consistency score on fabricated prices — not a live-readiness certification.",
+    candleSource: "SYNTHETIC_SIMULATOR" as const,
     realBrokerReadiness: "Real broker readiness unavailable until MT5 bridge is connected.",
     dataSource: "SHADOW" as const,
   };
@@ -567,7 +809,7 @@ export function dashboardCards() {
   const avgR = arr.length ? arr.reduce((a, d) => a + (d.pnlR ?? 0), 0) / arr.length : 0;
   return {
     shadowStatus: s.enabled ? "RUNNING" : "STOPPED",
-    forwardTest: forwardConfig ? { running: true, endsAt: forwardEndsAt } : { running: false },
+    forwardTest: forwardRunning ? { running: true, endsAt: forwardEndsAt } : { running: false },
     topStrategy: t.leaderboard.bestOverall,
     worstStrategy: t.leaderboard.worst,
     aiReadinessScore: r.score, aiReadinessLabel: r.label,

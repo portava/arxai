@@ -308,29 +308,80 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000).unref?.();
 
+// Bars of history the analysis needs before the first step. Stepping from
+// candle 0 would hand the analyzer a one-bar window and produce a number with
+// nothing behind it.
+const REPLAY_WARMUP_BARS = 20;
+
 export function replayStart(symbol: string, timeframe = "M15", strategy?: string) {
   const replayId = `replay_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const candles = marketSimulator.candlesFor(symbol, 60);
+  // Audit rank 45: a symbol outside the simulator's set yields candles = [] and
+  // the session used to open anyway, reading "candle 0 of 0" and silently
+  // producing nothing on every Step. Refuse with the reason and the coverage.
+  if (candles.length <= REPLAY_WARMUP_BARS) {
+    return {
+      error: candles.length === 0
+        ? `No simulator candles for "${symbol}" — Market Replay can only replay symbols the simulator generates.`
+        : `Only ${candles.length} simulator candles for "${symbol}"; ${REPLAY_WARMUP_BARS + 1} are needed before a replay can step.`,
+      requestedSymbol: symbol,
+      availableSymbols: marketSimulator.symbols().map((x) => x.symbol),
+      availableCandles: candles.length,
+      warmupBars: REPLAY_WARMUP_BARS,
+    };
+  }
   const s: ReplaySession = {
     replayId, symbol, timeframe, strategy,
     candles, index: 0, decisions: [], startedAt: new Date().toISOString(),
   };
   replays.set(replayId, s);
-  return s;
+  return {
+    ...s,
+    warmupBars: REPLAY_WARMUP_BARS,
+    steps: s.candles.length - REPLAY_WARMUP_BARS,
+    // The strategy the caller asked for is recorded but NOT executed: replay
+    // runs the AI brain's own analysis, which has no strategy selector.
+    strategyHonoured: false as const,
+    strategyNote: strategy
+      ? "Replay runs the AI brain's default analysis. The requested strategy is recorded on the session but does not change what is analysed."
+      : undefined,
+    dataSource: "SIMULATOR" as const,
+  };
 }
 export function replayStep(replayId: string, humanAction?: string) {
   const s = replays.get(replayId); if (!s) return null;
-  if (s.index >= s.candles.length) return { ...s, finished: true };
-  const a = analyzeMarket(s.symbol, s.timeframe);
+  // Window = the bars up to and including the candle being stepped onto. The
+  // old implementation called analyzeMarket(symbol, timeframe), which re-fetched
+  // the CURRENT simulator state on every step and labelled the identical result
+  // with an increasing candleIndex — the replay never looked at its own candles.
+  const end = REPLAY_WARMUP_BARS + s.index;
+  if (end >= s.candles.length) return { ...s, finished: true };
+  const window = s.candles.slice(0, end + 1);
+  const bar = window[window.length - 1]!;
+  const liveQuote = marketSimulator.quote(s.symbol);
+  const a = analyzeMarketFromCandles(
+    s.symbol, s.timeframe,
+    window.map((c) => ({ o: c.o, h: c.h, l: c.l, c: c.c })),
+    // Mid is the replayed bar's close — NOT the current tick. Spread is the
+    // symbol's simulator spread (a per-symbol constant), the only spread the
+    // simulator records; historical per-bar spread is not stored.
+    { mid: bar.c, spread: liveQuote?.spread ?? 0 },
+    "SIMULATOR",
+  );
   const decision = {
-    candleIndex: s.index, aiAction: a.recommendedAction,
+    candleIndex: end, aiAction: a.recommendedAction,
     entry: (a.entryZone.low + a.entryZone.high) / 2,
     stopLoss: a.stopLoss, takeProfit: a.takeProfit,
     confidenceScore: a.confidenceScore, riskScore: a.riskScore,
     reason: a.reasonForTrade, humanAction,
   };
   s.decisions.push(decision); s.index += 1;
-  return { replayId: s.replayId, candleIndex: decision.candleIndex, decision, totalCandles: s.candles.length };
+  return {
+    replayId: s.replayId, candleIndex: decision.candleIndex, decision,
+    totalCandles: s.candles.length,
+    candleTime: bar.tsIso, candleClose: bar.c,
+    stepsRemaining: s.candles.length - (REPLAY_WARMUP_BARS + s.index),
+  };
 }
 export function replayStop(replayId: string) {
   const s = replays.get(replayId); if (!s) return null;
