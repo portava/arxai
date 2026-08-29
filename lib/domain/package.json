@@ -142,6 +142,7 @@
     "./safety-contracts/executionTier": "./src/safety-contracts/executionTier.ts",
     "./safety-contracts/guidedTtlPolicy": "./src/safety-contracts/guidedTtlPolicy.ts",
     "./safety-contracts/executionVenue": "./src/safety-contracts/executionVenue.ts",
+    "./safety-contracts/certificationExpiry": "./src/safety-contracts/certificationExpiry.ts",
     "./institutional": "./src/institutional/index.ts",
     "./safety-contracts/authorityGrants": "./src/safety-contracts/authorityGrants.ts",
     "./horizons": "./src/horizons/index.ts",

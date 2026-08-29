@@ -38,6 +38,10 @@
 
 import { createHash } from "node:crypto";
 import { VERSION_GATES } from "@workspace/db/schema";
+import {
+  modelCertificationPromotionRefusals,
+  type CodedCertification,
+} from "@workspace/domain/safety-contracts/certificationExpiry";
 
 // ── Statuses ──────────────────────────────────────────────────────────────────
 // Mirrored from lib/db/src/schema/edgeLibrary.ts PRODUCTION_EDGE_STATUSES
@@ -241,8 +245,22 @@ export function evaluatePromotion(
   edge: EdgeGateView,
   evidence: PromotionEvidence,
   now: Date,
+  /**
+   * #56 Continuous certification — injectable register for recertification
+   * drills. Omitted (production) = the CODED register. While any MODEL
+   * certification is past its review period, EVERY rung refuses: existing
+   * edges keep their earned status, but nothing new climbs on the say-so of a
+   * validation stack whose own evidence has expired. Reduce-only by
+   * construction — this check can only ADD refusals, never grant a rung.
+   */
+  certificationRegistry?: readonly CodedCertification[],
 ): PromotionDecision {
   const from = edge.status;
+
+  const modelCertRefusals = modelCertificationPromotionRefusals(now, certificationRegistry);
+  if (modelCertRefusals.length > 0) {
+    return refuse(from, modelCertRefusals);
+  }
 
   switch (from) {
     case "RESEARCH": {

@@ -41,6 +41,7 @@ import {
   killSwitchReleaseViolations,
   postureFromSettingsRow,
 } from "../lib/phase6/killSwitchReleasePolicy.js";
+import { recoveryCertificationReleaseViolations } from "@workspace/domain/safety-contracts/certificationExpiry";
 import { loadAndEvaluateMasterLiveBridgeGate } from "../lib/mt5/masterLiveBridgeGate.js";
 import {
   detectCurrentConnectedBridge,
@@ -824,7 +825,15 @@ router.post("/admin/live-shared/kill-switch", async (req, res) => {
           .values({ updatedAt: new Date() }).returning())[0]!;
       }
       const posture = postureFromSettingsRow(row, envEnabled);
-      const violations = killSwitchReleaseViolations(posture);
+      // #56 Continuous certification — the RECOVERY seam. A release relies on
+      // the recovery procedure (probation arming, graduated restoration); when
+      // that procedure's certification is past its review period the release
+      // is refused and the switch STAYS ENGAGED (reduce-only). Recertify by
+      // re-running the drills named in the coded register, then release.
+      const violations = [
+        ...killSwitchReleaseViolations(posture),
+        ...recoveryCertificationReleaseViolations(new Date()),
+      ];
       if (violations.length > 0) {
         return { released: false as const, violations };
       }

@@ -24,6 +24,7 @@ import { startOpportunitySpineWorker } from "./lib/opportunitySpine/opportunityS
 import { startUncertaintyCoverageWorker } from "./lib/aaci/uncertaintyCoverageWorker.js";
 import { logConformalGateBootStatus } from "./lib/conformal/conformalGateFlag.js";
 import { startAuthorityExpirySweepWorker } from "./lib/authority/authorityExpirySweepWorker.js";
+import { startBaselineComparatorWorker } from "./lib/baseline/baselineComparatorWorker.js";
 import { computeEnvChecklist, summarizeEnvChecklist } from "./lib/startup/envChecklist";
 import { runStartupReadinessCheck } from "./lib/startup/readinessCheck";
 import { seedCoreAgents } from "./lib/agentEcosystem/seedCoreAgents";
@@ -254,6 +255,17 @@ ensureSafetyCoreInitialized()
       // mass-demote); raise-time checks are the fail-closed side. Opt-out via
       // ARX_AUTHORITY_SWEEP_ENABLED (logged loudly).
       startAuthorityExpirySweepWorker();
+      // #59 Minimum-intelligence baseline — the blueprint's running control
+      // group. Evaluates the deterministic baseline (trusted candles + one
+      // breakout edge + hard 1R risk + declared costs) in SHADOW on the
+      // symbols the full stack actually trades, journals every decision as a
+      // shadow prediction, and resolves outcomes deterministically; the
+      // existing champion-challenger worker pairs those against the live
+      // champion's realised results (strategy MIN_INTEL_BASELINE in
+      // champion_challenger_pairs). Evidence only — can never place, modify,
+      // or promote anything. Opt-out via ARX_MINIMUM_BASELINE_ENABLED
+      // (logged loudly).
+      startBaselineComparatorWorker();
       // Eagerly bootstrap the Deriv WebSocket so synthetic-index candles
       // (V10/V25/V50/V75/V100, 1Hz variants, Boom/Crash, Step) are ready
       // before the first scanner pass. Non-blocking; lazy ensureConnection

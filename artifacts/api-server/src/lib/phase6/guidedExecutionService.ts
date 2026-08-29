@@ -33,6 +33,9 @@ import {
 import {
   resolveExecutionTier, tierPermitsVenueSend, type ExecutionTier,
 } from "@workspace/domain/safety-contracts/executionTier";
+import {
+  brokerCertificationDispatchRefusals, type CodedCertification,
+} from "@workspace/domain/safety-contracts/certificationExpiry";
 import { routeExecutionVenue, type ExecutionVenue } from "@workspace/domain/safety-contracts/executionVenue";
 
 export const GUIDED_REFUSALS = [
@@ -45,6 +48,10 @@ export const GUIDED_REFUSALS = [
   "UNRESOLVED_INTENT_OUTSTANDING",
   "ADAPTER_REFUSED",
   "DELIVERY_INDETERMINATE",
+  // #56 Continuous certification — a venue-permitting dispatch is refused
+  // while any BROKER certification in the coded register is past its review
+  // period. Reduce-only: TIER_0 dry-run keeps working (it is the floor).
+  "BROKER_CERTIFICATION_LAPSED",
 ] as const;
 export type GuidedRefusal = (typeof GUIDED_REFUSALS)[number];
 
@@ -79,6 +86,13 @@ export interface GuidedDispatchOutcome {
 export interface GuidedDispatchDeps {
   /** The tier value the SERVER resolved. Never client-supplied. */
   configuredTier: string | null;
+  /**
+   * #56 clock/registry injection for certification-lapse drills. Production
+   * omits both: the CODED register is consulted at the wall clock, so a lapsed
+   * broker certification reduces authority without anyone remembering to.
+   */
+  certificationNowMs?: number;
+  certificationRegistry?: readonly CodedCertification[];
   loadActiveConstitution: (userId: number) => Promise<TradingConstitution | null>;
   /** `instrument` scopes the per-symbol exposure figure to the proposal's own symbol. */
   loadObservedState: (userId: number, instrument?: string) => Promise<ConstitutionObservedState>;
@@ -157,6 +171,26 @@ export async function dispatchGuidedTicket(
 ): Promise<GuidedDispatchOutcome> {
   const tierResolution = resolveExecutionTier(deps.configuredTier);
   const tier = tierResolution.tier;
+
+  // ── #56 Continuous certification — the BROKER seam ────────────────────────
+  // A tier that would let a frame reach the venue is only as good as the
+  // broker evidence behind it, and evidence expires (Article IV). While any
+  // BROKER certification in the coded register is past its review period, a
+  // venue-permitting dispatch is refused BEFORE the ticket is loaded or
+  // claimed — nothing is burned, nothing is sent. TIER_0 is deliberately NOT
+  // gated here: the dry-run floor is exactly what a lapse reduces you to, and
+  // it must keep working so the recertification harness itself can run.
+  if (tierPermitsVenueSend(tier)) {
+    const certNow = new Date(deps.certificationNowMs ?? Date.now());
+    const certRefusals = brokerCertificationDispatchRefusals(certNow, deps.certificationRegistry);
+    if (certRefusals.length > 0) {
+      await deps.recordAudit({
+        kind: "GUIDED_DISPATCH_REFUSED", userId: args.userId, ticketId: args.ticketId,
+        detail: `broker certification lapsed: ${certRefusals.join("; ").slice(0, 500)}`,
+      });
+      return refuse("BROKER_CERTIFICATION_LAPSED", certRefusals.join("; "));
+    }
+  }
 
   // Everything from here to the adapter is PRE-TRANSMISSION by construction:
   // no adapter has been constructed, so no frame can have been written. An

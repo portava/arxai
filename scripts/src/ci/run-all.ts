@@ -64,6 +64,8 @@ import { checkScannerVerdictImportBoundary } from "./check-scanner-verdict-impor
 import { checkNoFabrication } from "./check-no-fabrication.js";
 import { checkWorktreeIntegrity } from "./check-worktree-integrity.js";
 import { checkCapitalConstitution } from "./check-capital-constitution.js";
+import { checkOwnerDecisionLinkage } from "./check-owner-decision-linkage.js";
+import { checkReleaseSafetyCase } from "./check-release-safety-case.js";
 import { checkProvenanceNoCollapse } from "./check-provenance-no-collapse.js";
 import { checkBrokerHubNoExecution } from "./check-broker-hub-no-execution.js";
 // NOTE: `check-no-user-facing-paper-only.ts` exists as a future guard but
@@ -138,6 +140,8 @@ const checks: Array<() => CheckResult> = [
   checkScannerVerdictImportBoundary,
   checkNoFabrication,
   checkCapitalConstitution,
+  checkOwnerDecisionLinkage,
+  checkReleaseSafetyCase,
   checkProvenanceNoCollapse,
   checkBrokerHubNoExecution,
 ];

@@ -27,3 +27,4 @@ export * from "./eaCloseFill.js";
 export * from "./eaRemoteConfigContract.js";
 export * from "./eaUpdateGate.js";
 export * from "./truthHierarchy.js";
+export * from "./certificationExpiry.js";
