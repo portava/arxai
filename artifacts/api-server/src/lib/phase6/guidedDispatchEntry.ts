@@ -30,6 +30,11 @@ import {
 } from "@workspace/db";
 import { and, eq, gte, sql } from "drizzle-orm";
 import { buildLineageRecord, type GuidedAuditEvent } from "./guidedLineage.js";
+import {
+  resolveEffectiveProbation,
+  guidedProbationVerdict,
+  type EffectiveProbation,
+} from "../recoveryProbation.js";
 import type { ApprovalTicket, MaterialTradeTerms } from "@workspace/domain/safety-contracts/approvalTicket";
 import type { TradingConstitution, ConstitutionObservedState }
   from "@workspace/domain/safety-contracts/tradingConstitution";
@@ -395,6 +400,12 @@ export interface GuidedDispatchOverrides {
    * unresolved-intent and position-count reads before either writes.
    */
   serializeDispatch?: <T>(userId: number, fn: () => Promise<T>) => Promise<{ acquired: boolean; value?: T }>;
+  /**
+   * #34 Recovery probation read, injectable for certificates (the live
+   * default needs Postgres). STRICTER-ONLY: whatever this returns can only
+   * add a refusal in front of the existing wall — it can never relax a gate.
+   */
+  resolveProbation?: () => Promise<EffectiveProbation>;
 }
 
 function buildAdapter(args: {
@@ -741,6 +752,32 @@ async function dispatchGuidedTicketInner(
     },
   };
 
+
+  // ── #34 RECOVERY PROBATION WALL, before anything can claim the ticket ───
+  // Additive stricter-only pre-claim check: while a post-outage probation is
+  // at BLOCK_ALL, guided dispatch refuses honestly (ticket stays APPROVED and
+  // may retry after an owner press advances the stage). A DEPLOYED-but-
+  // unreadable probation layer fails CLOSED; a not-yet-deployed layer
+  // (missing table) or env opt-out degrades to "none" — every pre-existing
+  // wall below still runs unchanged. Nothing here can relax any gate.
+  const probation = await (overrides.resolveProbation ?? resolveEffectiveProbation)();
+  if (probation.kind === "unreadable") {
+    return {
+      ok: false, refusal: "TICKET_AUTHORIZATION_REFUSED",
+      detail: `RECOVERY_PROBATION_UNREADABLE: ${probation.reason} — failing closed; nothing was sent`,
+      venueContractRef: null, indeterminate: false, intentId: null, claimed: false,
+    };
+  }
+  if (probation.kind === "active") {
+    const verdict = guidedProbationVerdict(probation.stage);
+    if (!verdict.allowed) {
+      return {
+        ok: false, refusal: "TICKET_AUTHORIZATION_REFUSED",
+        detail: `RECOVERY_PROBATION_BLOCK: ${verdict.reasons[0] ?? "probation refused the dispatch"}; nothing was sent`,
+        venueContractRef: null, indeterminate: false, intentId: null, claimed: false,
+      };
+    }
+  }
 
   // ── GATE 18, before anything can claim the ticket ───────────────────────
   // Pre-claim by design: a refusal here leaves the ticket APPROVED, and once

@@ -50,6 +50,11 @@ import {
   ARX_LIVE_DEFAULT_ALLOWED_SYMBOLS,
   ARX_LIVE_DEFAULT_MAX_LOT_PER_MARKET,
 } from "../lib/live/liveArming.js";
+import {
+  armRecoveryProbation,
+  tightenRecoveryProbation,
+  recoveryProbationEnabled,
+} from "../lib/recoveryProbation.js";
 
 const router: IRouter = Router();
 router.use(express.json());
@@ -704,6 +709,22 @@ router.post("/admin/live-shared/activate-step", async (req, res) => {
       .update(globalTradingSettingsTable)
       .set(patch)
       .where(eq(globalTradingSettingsTable.id, settingsRow.id));
+    // ── #34 Recovery probation — a HOT release (full activate-step ceremony)
+    // re-opens the live path at REDUCED_SIZE first, never full authority.
+    // Same-transaction: a failed arm rolls the release back (fail closed).
+    // Advancement to full authority = owner presses on
+    // POST /api/admin/recovery-probation/advance.
+    if (
+      body.releaseKillSwitch === true &&
+      settingsRow.emergencyKillSwitch === true &&
+      recoveryProbationEnabled(process.env["ARX_RECOVERY_PROBATION_ENABLED"])
+    ) {
+      await armRecoveryProbation(tx, {
+        source: "activate_step_release",
+        actor: `admin:${admin.id}`,
+        reason: "kill switch released via the activate-step ceremony (shared-live posture)",
+      });
+    }
     const post = (await tx.select().from(globalTradingSettingsTable).limit(1))[0]!;
     await writeAuditOn(tx, {
       adminId: admin.id,
@@ -765,7 +786,30 @@ router.post("/admin/live-shared/kill-switch", async (req, res) => {
   // cold release cannot enable live execution by itself.
   if (body.action === "RELEASE") {
     const envEnabled = liveBrokerExecutionEnabled();
-    const outcome = await db.transaction(async (tx) => {
+    // Captured for the hoisted transaction closure (TS narrowing does not
+    // cross function boundaries; requireAdmin already returned on null).
+    const adminActor = { id: admin.id, role: admin.role };
+    type ReleaseOutcome =
+      | { released: true; violations: string[] }
+      | { released: false; violations: string[] };
+    let outcome: ReleaseOutcome;
+    try {
+      outcome = await releaseTx();
+    } catch (err) {
+      // A failed probation arm (or any other write) rolled the release back —
+      // the switch is still engaged. Report honestly instead of a bare 500.
+      res.status(409).json({
+        ok: false,
+        error: "RELEASE_ROLLED_BACK",
+        detail:
+          "The release transaction failed and was rolled back; the kill switch remains engaged. " +
+          "If the error names recovery_probations, apply docs/migrations-pending/build-engine-drivers.sql first. " +
+          `Cause: ${err instanceof Error ? err.message : String(err)}`,
+      });
+      return;
+    }
+    async function releaseTx(): Promise<ReleaseOutcome> {
+      return db.transaction(async (tx) => {
       // The settings table is a by-convention singleton with no unique
       // constraint; serialize with any concurrent bootstrap so two callers
       // cannot create two rows. Namespace 0x41525807 = "ARX" + 07 (phase 6
@@ -793,9 +837,23 @@ router.post("/admin/live-shared/kill-switch", async (req, res) => {
           updatedAt: new Date(),
         })
         .where(eq(globalTradingSettingsTable.id, row.id));
+      // ── #34 Recovery probation — a release NEVER restores full authority ──
+      // in one step. Arm (or tighten-merge into) the graduated probation on
+      // the SAME transaction: if the probation row cannot be written (e.g.
+      // docs/migrations-pending/build-engine-drivers.sql not applied yet) the
+      // release itself rolls back and the switch stays engaged — fail closed.
+      // Advancing stages toward full authority takes owner presses on
+      // POST /api/admin/recovery-probation/advance, one stage per press.
+      if (recoveryProbationEnabled(process.env["ARX_RECOVERY_PROBATION_ENABLED"])) {
+        await armRecoveryProbation(tx, {
+          source: "kill_switch_release",
+          actor: `admin:${adminActor.id}`,
+          reason: `kill switch released (cold posture): ${reason}`,
+        });
+      }
       await writeAuditOn(tx, {
-        adminId: admin.id,
-        adminRole: admin.role,
+        adminId: adminActor.id,
+        adminRole: adminActor.role,
         action: "ADMIN_RELEASED_LIVE_SHARED_KILL_SWITCH",
         before: {
           emergencyKillSwitch: row.emergencyKillSwitch,
@@ -810,7 +868,8 @@ router.post("/admin/live-shared/kill-switch", async (req, res) => {
         },
       });
       return { released: true as const, violations: [] as string[] };
-    });
+      });
+    }
     if (!outcome.released) {
       res.status(409).json({
         ok: false,
@@ -862,6 +921,17 @@ router.post("/admin/live-shared/kill-switch", async (req, res) => {
       },
     });
   });
+  // #34 — an ENGAGE is an emergency: automatically tighten any active
+  // probation to BLOCK_ALL (toward LESS authority — the only automatic
+  // direction). Best-effort and non-fatal: the switch itself is already the
+  // hard wall; a failed tighten is logged inside the service, never a 500.
+  if (recoveryProbationEnabled(process.env["ARX_RECOVERY_PROBATION_ENABLED"])) {
+    await tightenRecoveryProbation({
+      toStage: "BLOCK_ALL",
+      actor: `admin:${admin.id}`,
+      reason: `kill switch engaged: ${reason}`,
+    }).catch(() => undefined);
+  }
   res.json({ ok: true, killSwitchEngaged: true, reason });
 });
 
