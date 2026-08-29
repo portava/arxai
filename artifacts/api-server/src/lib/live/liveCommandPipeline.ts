@@ -3539,10 +3539,27 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   // and dispatch is honoured. Fail-closed: no broker_eligibility review, a
   // READ_ONLY posture, unknown funds provenance, or a failed read all refuse
   // INSIDE gate #3 (USER_NOT_LIVE_APPROVED) — deliberately not a new gate key.
+  // CLOSE-PATH POSTURE: for exactly CLOSE_LIVE_POSITION a refusal is degraded
+  // to advisory (recorded in the gate readout + logged loudly, not blocking)
+  // so a compliance hold can never trap an open position — mirrors the
+  // kill-switch emergency-CLOSE exemption and the management-authority
+  // advisory degradation for risk-reducing closes. Entries and MODIFY stay
+  // fully blocked.
   const complianceEligibility = await (async () => {
-    const { buildComplianceEligibilityVerdict } =
+    const { buildComplianceEligibilityVerdict, complianceVerdictForCommand } =
       await import("./complianceDispatchInput.js");
-    return buildComplianceEligibilityVerdict(args.userId);
+    const raw = await buildComplianceEligibilityVerdict(args.userId);
+    const effective = complianceVerdictForCommand(raw, row.commandType);
+    if (!effective.allowed && effective.advisoryOnly === true) {
+      logger.warn({
+        [PHASE_B_LIVE_LOG_PREFIX]: true,
+        event: "COMPLIANCE_REFUSAL_ADVISORY_FOR_CLOSE",
+        commandId: args.commandId, userId: args.userId,
+        reasons: effective.reasons,
+      }, "Compliance eligibility refused, but this is a risk-reducing CLOSE: "
+        + "refusal recorded as ADVISORY, close not trapped");
+    }
+    return effective;
   })();
 
   const phaseBGate: LivePhaseBGateResult = evaluateLivePhaseBDispatchGate({

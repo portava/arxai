@@ -17,7 +17,9 @@
 //   * INVIOLABLE (blueprint §70 ~L2817): relationshipToMaster=OUTSIDE_CLIENT
 //     REFUSES any status other than COMPLIANCE_HOLD with a 422. Engineering
 //     cannot decide whether outside-client management is lawful; this route
-//     will not record a review that pretends otherwise.
+//     will not record a review that pretends otherwise. The check runs on the
+//     POST-MERGE effective relationship (body ?? existing row), so omitting
+//     the field against an existing OUTSIDE_CLIENT row cannot bypass it.
 //   * Every mutation writes admin_action_audit_log (before/after states).
 //   * This router grants no live authority by itself: the review it records
 //     is ONE input to gate #3; every other Phase B gate still applies.
@@ -77,6 +79,30 @@ const RELATIONSHIPS = [
   "OUTSIDE_CLIENT",
 ] as const;
 
+/**
+ * PURE — the INVIOLABLE check (blueprint §70 ~L2817), evaluated against the
+ * POST-MERGE effective relationship, not just the request body. The PUT patch
+ * preserves the existing row's relationshipToMaster when the body omits it
+ * (or sends null), so the 422 must consider exactly the value the row will
+ * hold after the write: PUT {eligibilityStatus:"ELIGIBLE"} with the
+ * relationship omitted against an existing OUTSIDE_CLIENT row must refuse,
+ * or the stored review would assert OUTSIDE_CLIENT + ELIGIBLE — a lie.
+ * Exported for the offline test lane (test:compliance-dispatch-consult).
+ */
+export function outsideClientHoldViolation(args: {
+  /** relationshipToMaster from the request body (undefined = omitted). */
+  bodyRelationship: string | null | undefined;
+  /** relationshipToMaster on the existing row, if any. */
+  existingRelationship: string | null | undefined;
+  /** The eligibility status the request asks to store. */
+  eligibilityStatus: string;
+}): boolean {
+  // Mirrors the patch merge below EXACTLY (`??`, so an explicit body null
+  // also keeps the existing value — it never clears an OUTSIDE_CLIENT mark).
+  const effective = args.bodyRelationship ?? args.existingRelationship ?? null;
+  return effective === "OUTSIDE_CLIENT" && args.eligibilityStatus !== "COMPLIANCE_HOLD";
+}
+
 const reviewSchema = z.object({
   userId: z.number().int().positive(),
   venueCode: z.string().min(1).max(32),
@@ -119,19 +145,6 @@ router.put("/admin/compliance/eligibility", async (req: Request, res: Response):
   }
   const body = parsed.data;
 
-  // INVIOLABLE — an outside-client relationship may only ever be recorded as
-  // COMPLIANCE_HOLD (blueprint §70 ~L2817). Refuse loudly, never coerce.
-  if (body.relationshipToMaster === "OUTSIDE_CLIENT" && body.eligibilityStatus !== "COMPLIANCE_HOLD") {
-    res.status(422).json({
-      ok: false,
-      error: "OUTSIDE_CLIENT_REQUIRES_COMPLIANCE_HOLD",
-      message:
-        "OUTSIDE_CLIENT relationships remain COMPLIANCE_HOLD until jurisdiction-specific "
-        + "counsel and broker approval are documented. This route will not record otherwise.",
-    });
-    return;
-  }
-
   try {
     const [existing] = await db.select().from(brokerEligibilityTable)
       .where(and(
@@ -139,11 +152,32 @@ router.put("/admin/compliance/eligibility", async (req: Request, res: Response):
         eq(brokerEligibilityTable.venueCode, body.venueCode),
       )).limit(1);
 
+    // INVIOLABLE — an outside-client relationship may only ever be recorded as
+    // COMPLIANCE_HOLD (blueprint §70 ~L2817). Refuse loudly, never coerce.
+    // Evaluated against the POST-MERGE effective relationship: omitting the
+    // field cannot launder an existing OUTSIDE_CLIENT row into ELIGIBLE.
+    const effectiveRelationship =
+      body.relationshipToMaster ?? existing?.relationshipToMaster ?? null;
+    if (outsideClientHoldViolation({
+      bodyRelationship: body.relationshipToMaster,
+      existingRelationship: existing?.relationshipToMaster,
+      eligibilityStatus: body.eligibilityStatus,
+    })) {
+      res.status(422).json({
+        ok: false,
+        error: "OUTSIDE_CLIENT_REQUIRES_COMPLIANCE_HOLD",
+        message:
+          "OUTSIDE_CLIENT relationships remain COMPLIANCE_HOLD until jurisdiction-specific "
+          + "counsel and broker approval are documented. This route will not record otherwise.",
+      });
+      return;
+    }
+
     const patch = {
       eligibilityStatus: body.eligibilityStatus,
       legalResidency: body.legalResidency ?? existing?.legalResidency ?? null,
       beneficialOwner: body.beneficialOwner ?? existing?.beneficialOwner ?? null,
-      relationshipToMaster: body.relationshipToMaster ?? existing?.relationshipToMaster ?? null,
+      relationshipToMaster: effectiveRelationship,
       reasons: body.reasons ?? existing?.reasons ?? [],
       reviewedBy: admin.id,
       reviewedAt: new Date(),

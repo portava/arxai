@@ -20,6 +20,23 @@
 // terminal / the owner-operated shared master, per-user bridge token) does not
 // demand a separate per-user venue approval — the eligibility review itself is
 // the approval surface here.
+//
+// CLOSE-PATH DECISION (documented, mirrors this repo's standing precedents):
+// a compliance refusal must never trap an open live position. For exactly
+// CLOSE_LIVE_POSITION the refusal is degraded to ADVISORY — still evaluated,
+// still recorded verbatim in the gate readout and logged loudly, but not
+// blocking. This mirrors the repo's existing risk-reducing-close posture:
+//   * the ONLY kill-switch bypass is the emergency-CLOSE exemption
+//     (killSwitchBypass.ts, Owner Ruling 6);
+//   * management-authority arbitration degrades to advisory for a
+//     risk-reducing CLOSE ("a read failure must never trap a close",
+//     liveCommandPipeline.ts);
+//   * rollback is deliberately ungated.
+// Entries (PLACE_LIVE_MARKET_ORDER / PLACE_LIVE_PENDING_ORDER) and
+// MODIFY_LIVE_SLTP (can widen a stop = increase risk) remain fully blocked.
+// Without this, every pre-existing live-approved user (broker_eligibility had
+// NO write surface before capability #52, so no rows exist) could not close
+// an open position through ARX until an admin records a review.
 
 import { eq } from "drizzle-orm";
 import { db, brokerEligibilityTable } from "@workspace/db";
@@ -38,6 +55,31 @@ const MT5_VENUE_REQUIRES_APPROVAL = false;
 export interface ComplianceEligibilityVerdict {
   allowed: boolean;
   reasons: string[];
+  /**
+   * True ONLY when a refusing verdict has been degraded to advisory for a
+   * risk-reducing CLOSE_LIVE_POSITION (see the CLOSE-PATH DECISION above).
+   * Never set on an allowing verdict, never set for any other command type.
+   */
+  advisoryOnly?: boolean;
+}
+
+/**
+ * PURE: apply the close-path posture to a compliance verdict for one command.
+ * A refusing verdict for exactly CLOSE_LIVE_POSITION is marked advisoryOnly
+ * (gate #3 then records the refusal verbatim but does not block the close).
+ * Every other command type — entries AND MODIFY_LIVE_SLTP (a modify can widen
+ * a stop) — passes through unchanged and remains fully blocking.
+ * Exported for the offline test lane.
+ */
+export function complianceVerdictForCommand(
+  verdict: ComplianceEligibilityVerdict,
+  commandType: string,
+): ComplianceEligibilityVerdict {
+  if (verdict.allowed) return verdict;
+  if (commandType === "CLOSE_LIVE_POSITION") {
+    return { allowed: false, reasons: [...verdict.reasons], advisoryOnly: true };
+  }
+  return verdict;
 }
 
 interface EligibilityRowFacts {
