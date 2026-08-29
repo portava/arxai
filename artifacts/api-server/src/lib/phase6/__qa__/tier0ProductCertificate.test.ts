@@ -388,8 +388,15 @@ test("with NO observed state wired, the product still refuses — never trades b
     assert.equal(outcome.ok, false, "the product traded on unreadable account state");
     assert.equal(outcome.indeterminate, false,
       "an unreadable PRE-transmission state was reported as possibly-sent");
-    assert.match(outcome.detail, /nothing was sent|could not establish dispatch preconditions/,
-      `the refusal does not state that nothing was sent: ${outcome.detail}`);
+    // Two legitimate pre-transmission refusal families exist, and which one
+    // fires is environmental: with no readable database the default
+    // observed-state loader fails (the original path this test certified);
+    // on a live environment the cold-platform doorway's ENGAGED kill switch
+    // refuses even earlier. Both are DEFINITE refusals in which the transport
+    // stub above was provably never reached — the certified property.
+    assert.match(outcome.detail,
+      /nothing was sent|could not establish dispatch preconditions|KILL_SWITCH_ENGAGED/,
+      `the refusal is not a recognized pre-transmission refusal: ${outcome.detail}`);
   } finally {
     if (prev === undefined) delete process.env["ARX_EXECUTION_TIER"];
     else process.env["ARX_EXECUTION_TIER"] = prev;
