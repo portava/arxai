@@ -25,6 +25,8 @@ import { startUncertaintyCoverageWorker } from "./lib/aaci/uncertaintyCoverageWo
 import { logConformalGateBootStatus } from "./lib/conformal/conformalGateFlag.js";
 import { startAuthorityExpirySweepWorker } from "./lib/authority/authorityExpirySweepWorker.js";
 import { startBaselineComparatorWorker } from "./lib/baseline/baselineComparatorWorker.js";
+import { startFlywheelWorker } from "./lib/flywheel/flywheelWorker.js";
+import { demote } from "./lib/shadowMode.js";
 import { computeEnvChecklist, summarizeEnvChecklist } from "./lib/startup/envChecklist";
 import { runStartupReadinessCheck } from "./lib/startup/readinessCheck";
 import { seedCoreAgents } from "./lib/agentEcosystem/seedCoreAgents";
@@ -266,6 +268,20 @@ ensureSafetyCoreInitialized()
       // or promote anything. Opt-out via ARX_MINIMUM_BASELINE_ENABLED
       // (logged loudly).
       startBaselineComparatorWorker();
+      // THE LEARNING FLYWHEEL (B0–B7) — SHADOW-ONLY. Assembles per-trade
+      // case files, builds rewards from broker-reconciled postings only,
+      // keeps cohort posteriors, and JOURNALS discounted-Thompson shadow
+      // allocation weights (mode SHADOW, authority NONE — no apply path
+      // exists; every weight is 0 until the owner promotes an edge, and
+      // kellyCapGovernor independently sizes 0 without edge_OOS). Edge decay
+      // auto-DEMOTES via the shadow registry's own reduce-only demote() seam,
+      // injected HERE so the flywheel's import closure stays provably clean
+      // (scripts/src/ci/check-flywheel-isolation.test.ts). Promotion is never
+      // called. Opt-out via ARX_FLYWHEEL_ENABLED (logged loudly).
+      startFlywheelWorker({
+        notifyDemotion: (strategyId, reason) =>
+          demote(strategyId, "NEEDS_REVIEW", reason, "flywheel_edge_decay"),
+      });
       // Eagerly bootstrap the Deriv WebSocket so synthetic-index candles
       // (V10/V25/V50/V75/V100, 1Hz variants, Boom/Crash, Step) are ready
       // before the first scanner pass. Non-blocking; lazy ensureConnection
