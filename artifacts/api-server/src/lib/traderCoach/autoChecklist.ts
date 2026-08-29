@@ -26,12 +26,24 @@ export interface PreSessionChecklistItem {
   autoDetail?: string;
 }
 
-/** The Risk Governor facts each auto item is answered from. */
+/**
+ * The Risk Governor facts each auto item is answered from.
+ *
+ * `softWarnings` and `metrics` are part of the view because the governor does
+ * NOT report every degradation as a hard block or a risk flag: DEGRADED market
+ * data arrives as a soft warning (governor.ts pushes MARKET_DATA_DEGRADED into
+ * softWarnings), and UNKNOWN quality raises nothing at all. A view that omitted
+ * them made those states structurally invisible, so the data-quality item
+ * answered PASS under a label asserting the opposite.
+ */
 export interface AutoCheckGovernorView {
   overallStatus: string;
   hardBlocks: Array<{ code: string; message: string }>;
+  softWarnings: Array<{ code: string; message: string }>;
   riskFlags: Array<{ code: string; message: string }>;
   cooldowns: Array<{ symbol: string; reason: string | null; until: string | null }>;
+  /** Optional: absent means the quality was not reported, which is NOT_CHECKED. */
+  metrics?: { marketDataQuality?: string };
 }
 
 /**
@@ -48,6 +60,7 @@ export function evaluateAutoChecklist(
     governor?.hardBlocks.some((b) => b.code === code) ??
     false;
   const flagged = (code: string) => governor?.riskFlags.some((f) => f.code === code) ?? false;
+  const warned = (code: string) => governor?.softWarnings?.some((w) => w.code === code) ?? false;
 
   return items.map((item) => {
     if (!item.auto) return { ...item };
@@ -73,14 +86,33 @@ export function evaluateAutoChecklist(
           ? { ...item, autoResult: "FAIL" as const, autoDetail: `${n} active symbol cooldown(s): ${governor.cooldowns.map((c) => c.symbol).join(", ")}.` }
           : { ...item, autoResult: "PASS" as const, autoDetail: "No active symbol cooldowns." };
       }
-      case "data_quality":
+      case "data_quality": {
+        // The label asserts "GOOD (not DEGRADED/FALLBACK)", so only a reported
+        // GOOD may pass. DEGRADED is a soft warning, and UNKNOWN raises nothing
+        // at all — both used to fall through to PASS, a green tick under a
+        // label saying the opposite must hold.
         if (has("MARKET_DATA_FAILED")) {
-          return { ...item, autoResult: "FAIL" as const, autoDetail: "Market data is unavailable." };
+          return { ...item, autoResult: "FAIL" as const, autoDetail: "Market data is unavailable (quality FAILED)." };
         }
         if (flagged("MARKET_DATA_FALLBACK_ONLY")) {
           return { ...item, autoResult: "FAIL" as const, autoDetail: "Market data is fallback-only." };
         }
-        return { ...item, autoResult: "PASS" as const, autoDetail: "Market data quality is acceptable." };
+        if (warned("MARKET_DATA_DEGRADED")) {
+          return { ...item, autoResult: "FAIL" as const, autoDetail: "Market data is DEGRADED." };
+        }
+        const quality = governor.metrics?.marketDataQuality;
+        if (quality === "GOOD") {
+          return { ...item, autoResult: "PASS" as const, autoDetail: "Market data quality is GOOD." };
+        }
+        if (quality === "DEGRADED" || quality === "FALLBACK_ONLY" || quality === "FAILED") {
+          return { ...item, autoResult: "FAIL" as const, autoDetail: `Market data quality is ${quality}.` };
+        }
+        return {
+          ...item,
+          autoResult: "NOT_CHECKED" as const,
+          autoDetail: `Market data quality is ${quality ?? "not reported"} — unverified, not passed.`,
+        };
+      }
       case "live_disabled":
         return has("LIVE_TRADING_FLAG_DETECTED") || has("LIVE_CAN_PLACE_TRADES_TRUE")
           ? { ...item, autoResult: "FAIL" as const, autoDetail: "A live-trading flag is set — Build HH locks the system." }

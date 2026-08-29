@@ -27,7 +27,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-import { proximityToLevel, NEAR_LEVEL_THRESHOLD } from "@/pages/my-trades";
+import { proximityToLevel, countNearLevel, NEAR_LEVEL_THRESHOLD } from "@/pages/my-trades";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SRC = resolve(HERE, "..");
@@ -102,8 +102,37 @@ describe("my-trades computes near-SL / near-TP instead of printing a dash", () =
     expect(proximityToLevel(100, 110, 90)).toBe(0);
   });
 
-  it("returns 0 when entry and level coincide — nothing to measure", () => {
-    expect(proximityToLevel(100, 105, 100)).toBe(0);
+  // CORRECTED: this used to pin `toBe(0)`. A stop moved to break-even makes
+  // entry === level, which is ordinary risk practice, and a 0 there reads as
+  // "not near its stop" — a confident zero for something never measured. There
+  // is no span to express the travel as a fraction of, so the answer is a typed
+  // null, and the tile drops the row from the count and says how many it could
+  // not measure.
+  it("returns null when entry and level coincide — nothing to measure", () => {
+    expect(proximityToLevel(100, 105, 100)).toBeNull();
+    expect(proximityToLevel(100, 100, 100)).toBeNull();
+    expect(proximityToLevel(Number.NaN, 100, 90)).toBeNull();
+  });
+
+  it("a break-even stop is reported as unmeasurable, never as 'not near'", () => {
+    const out = countNearLevel([
+      { entry: 100, current: 100, level: 100 },   // break-even stop, price on it
+      { entry: 100, current: 92, level: 90 },     // 80% of the way to the stop
+      { entry: 100, current: null, level: 90 },   // no price to compare
+      { entry: 100, current: 101, level: null },  // no stop at all — "Without SL" counts this
+    ]);
+    expect(out.near).toBe(1);
+    expect(out.unmeasurable).toBe(2);
+  });
+
+  it("nothing measurable degrades to null, not to zero", () => {
+    expect(countNearLevel([{ entry: 100, current: 100, level: 100 }])).toEqual({ near: null, unmeasurable: 1 });
+    expect(countNearLevel([])).toEqual({ near: null, unmeasurable: 0 });
+  });
+
+  it("the tile shows what it could not measure instead of dropping it silently", () => {
+    expect(myTrades).toMatch(/nearSLUnmeasurable/);
+    expect(myTrades).toMatch(/not measurable/);
   });
 
   it("80% is the near threshold", () => {

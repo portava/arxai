@@ -48,17 +48,50 @@ function openRubyLiveChat() {
 /**
  * How far price has travelled from entry toward a level, as a 0–1 fraction.
  * 0 = still at entry, 1 = the level has been reached. Values outside [0,1] are
- * clamped. Returns 0 when entry and level coincide (nothing to measure).
+ * clamped.
+ *
+ * Returns `null` when there is no span to measure against — entry and level
+ * coincide (a stop moved to break-even is the ordinary case), or an input is
+ * not finite. That is a non-measurement and must stay one: returning 0 here
+ * meant a break-even-stop position was counted as "not near its stop" while
+ * price sat exactly on it.
  */
-export function proximityToLevel(entry: number, current: number, level: number): number {
+export function proximityToLevel(entry: number, current: number, level: number): number | null {
   const span = Math.abs(level - entry);
-  if (!Number.isFinite(span) || span === 0) return 0;
+  if (!Number.isFinite(span) || span === 0) return null;
   const travelled = (current - entry) / (level - entry);
   return Math.max(0, Math.min(1, travelled));
 }
 
 /** A position counts as "near" a level once price has covered 80% of the way. */
 export const NEAR_LEVEL_THRESHOLD = 0.8;
+
+/**
+ * Count how many positions are near their level, and how many carry that level
+ * but could not be measured at all.
+ *
+ * `near` is null when NOTHING was measurable — the tile then renders "—" rather
+ * than a confident 0. Rows with no level are not counted here at all; they are
+ * what the "Without SL"/"Without TP" tiles report. Rows that HAVE a level but
+ * cannot be measured (missing price, break-even stop) are surfaced as
+ * `unmeasurable` so they are never silently dropped from the denominator.
+ */
+export function countNearLevel(
+  rows: Array<{ entry: number | null; current: number | null; level: number | null }>,
+): { near: number | null; unmeasurable: number } {
+  let measured = 0;
+  let near = 0;
+  let unmeasurable = 0;
+  for (const row of rows) {
+    if (row.level == null) continue;
+    if (row.entry == null || row.current == null) { unmeasurable += 1; continue; }
+    const p = proximityToLevel(row.entry, row.current, row.level);
+    if (p == null) { unmeasurable += 1; continue; }
+    measured += 1;
+    if (p >= NEAR_LEVEL_THRESHOLD) near += 1;
+  }
+  return { near: measured > 0 ? near : null, unmeasurable };
+}
 
 type OpenCard = {
   id: string;
@@ -199,17 +232,15 @@ export default function MyTradesPage() {
     // four working tiles, so the user read "no positions near stop loss" from a
     // field that never computed. Both are derivable from data already on the
     // card: entry, current price and the level. `null` (rendered "—") is kept
-    // for the honest case where NO card has enough of those to measure.
-    const measurable = cards.filter(
-      (c) => c.currentPrice != null && c.entryPrice != null,
-    );
-    const nearSL = measurable.some((c) => c.stopLoss != null)
-      ? measurable.filter((c) => c.stopLoss != null && proximityToLevel(c.entryPrice!, c.currentPrice!, c.stopLoss) >= NEAR_LEVEL_THRESHOLD).length
-      : null;
-    const nearTP = measurable.some((c) => c.takeProfit != null)
-      ? measurable.filter((c) => c.takeProfit != null && proximityToLevel(c.entryPrice!, c.currentPrice!, c.takeProfit) >= NEAR_LEVEL_THRESHOLD).length
-      : null;
-    return { openPnl, totalLots, protectedN, unprotectedN, withWinner, withLoser, longLots, shortLots, noSL, noTP, nearSL, nearTP };
+    // for the honest case where NO card has enough of those to measure, and any
+    // card that carries the level but cannot be measured (missing price, or a
+    // stop moved to break-even, where the fraction has no span) is reported
+    // beside the count rather than quietly counted as "not near".
+    const sl = countNearLevel(cards.map((c) => ({ entry: c.entryPrice, current: c.currentPrice, level: c.stopLoss })));
+    const tp = countNearLevel(cards.map((c) => ({ entry: c.entryPrice, current: c.currentPrice, level: c.takeProfit })));
+    const nearSL = sl.near;
+    const nearTP = tp.near;
+    return { openPnl, totalLots, protectedN, unprotectedN, withWinner, withLoser, longLots, shortLots, noSL, noTP, nearSL, nearTP, nearSLUnmeasurable: sl.unmeasurable, nearTPUnmeasurable: tp.unmeasurable };
   }, [cards]);
 
   /** Open positions that reported an open time, newest first. Real rows only. */
@@ -403,9 +434,9 @@ export default function MyTradesPage() {
           ) : (
             <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
               <Stat dot="bg-success" label="Protected" value={sum.protectedN} />
-              <Stat dot="bg-danger" label="Near Stop Loss" value={sum.nearSL ?? "—"} />
+              <Stat dot="bg-danger" label="Near Stop Loss" value={sum.nearSL ?? "—"} note={sum.nearSLUnmeasurable > 0 ? `${sum.nearSLUnmeasurable} not measurable` : undefined} />
               <Stat dot="bg-danger" label="Unprotected" value={sum.unprotectedN} />
-              <Stat dot="bg-warning" label="Near Take Profit" value={sum.nearTP ?? "—"} />
+              <Stat dot="bg-warning" label="Near Take Profit" value={sum.nearTP ?? "—"} note={sum.nearTPUnmeasurable > 0 ? `${sum.nearTPUnmeasurable} not measurable` : undefined} />
               <Stat dot="bg-danger" label="Without SL" value={sum.noSL} />
               <Stat dot="bg-warning" label="Without TP" value={sum.noTP} />
             </div>
@@ -675,11 +706,14 @@ function Mini({ label, value, tone, sub }: { label: string; value: string; tone?
     </div>
   );
 }
-function Stat({ dot, label, value }: { dot: string; label: string; value: number | string }) {
+function Stat({ dot, label, value, note }: { dot: string; label: string; value: number | string; note?: string }) {
   return (
     <div className="flex items-center justify-between">
       <span className="inline-flex items-center gap-1.5 text-txt-secondary"><span className={cn("h-2 w-2 rounded-full", dot)} />{label}</span>
-      <span className="font-mono text-foreground">{value}</span>
+      <span className="font-mono text-foreground">
+        {value}
+        {note && <span className="ml-1.5 font-sans text-[11px] text-txt-muted">({note})</span>}
+      </span>
     </div>
   );
 }

@@ -36,8 +36,10 @@ const ITEMS: PreSessionChecklistItem[] = [
 const HEALTHY: AutoCheckGovernorView = {
   overallStatus: "PAPER_ALLOWED",
   hardBlocks: [],
+  softWarnings: [],
   riskFlags: [],
   cooldowns: [],
+  metrics: { marketDataQuality: "GOOD" },
 };
 
 function byId(items: PreSessionChecklistItem[], id: string): PreSessionChecklistItem {
@@ -110,6 +112,49 @@ test("fallback-only market data FAILS the data-quality item", () => {
     riskFlags: [{ code: "MARKET_DATA_FALLBACK_ONLY", message: "fallback" }],
   });
   assert.equal(byId(out, "data_quality").autoResult, "FAIL");
+});
+
+// DEGRADED market data reaches the coach as a governor SOFT WARNING
+// (governor.ts pushes { code: "MARKET_DATA_DEGRADED" } into softWarnings), and
+// UNKNOWN quality raises no signal at all. The first cut of this evaluator
+// answered data_quality from hardBlocks + riskFlags only, so both states fell
+// through to PASS — a green tick under the label "Market data quality is GOOD
+// (not DEGRADED/FALLBACK)". These four tests pin the fail-closed behaviour.
+test("DEGRADED market data (a soft warning) FAILS the data-quality item", () => {
+  const out = evaluateAutoChecklist(ITEMS, {
+    ...HEALTHY,
+    softWarnings: [{ code: "MARKET_DATA_DEGRADED", message: "Build DD market data is degraded." }],
+    metrics: { marketDataQuality: "DEGRADED" },
+  });
+  const item = byId(out, "data_quality");
+  assert.equal(item.autoResult, "FAIL");
+  assert.match(item.autoDetail ?? "", /DEGRADED/);
+  assert.equal(byId(out, "governor_ok").autoResult, "PASS");
+});
+
+test("a reported DEGRADED quality FAILS even if the soft warning is absent", () => {
+  const out = evaluateAutoChecklist(ITEMS, {
+    ...HEALTHY,
+    metrics: { marketDataQuality: "DEGRADED" },
+  });
+  assert.equal(byId(out, "data_quality").autoResult, "FAIL");
+});
+
+test("UNKNOWN market data quality is NOT_CHECKED — never a pass", () => {
+  const out = evaluateAutoChecklist(ITEMS, {
+    ...HEALTHY,
+    metrics: { marketDataQuality: "UNKNOWN" },
+  });
+  const item = byId(out, "data_quality");
+  assert.equal(item.autoResult, "NOT_CHECKED");
+  assert.notEqual(item.autoResult, "PASS");
+});
+
+test("an unreported market data quality is NOT_CHECKED — never a pass", () => {
+  const out = evaluateAutoChecklist(ITEMS, { ...HEALTHY, metrics: undefined });
+  const item = byId(out, "data_quality");
+  assert.equal(item.autoResult, "NOT_CHECKED");
+  assert.match(item.autoDetail ?? "", /not reported/);
 });
 
 test("an auto item with no evaluator is NOT_CHECKED, not passed by default", () => {
