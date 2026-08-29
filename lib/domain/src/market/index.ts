@@ -3,6 +3,7 @@ export * from "./volatility.engine";
 export * from "./session.engine";
 export * from "./liquidity.engine";
 export * from "./arxFocusMarkets";
+export * from "./instrumentPassport";
 export * from "./marketDataSufficiency";
 export * from "./readinessTimeframes";
 export * from "./tradeHealthReadinessContract";
