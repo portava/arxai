@@ -303,7 +303,10 @@
     "test:broker-hub-metadata-db": "tsx ./src/brokerHubMetadataIntegrationTest.ts",
     "verify:secret-provisioning": "tsx ./src/verifySecretProvisioning.ts",
     "test:approval-ticket-race-db": "tsx ./src/ci/run-approval-ticket-race-db.ts",
-    "test:conformal-bounds": "node --import tsx --test --test-force-exit src/__qa__/conformalBounds.test.ts"
+    "test:conformal-bounds": "node --import tsx --test --test-force-exit src/__qa__/conformalBounds.test.ts",
+    "test:owner-decision-linkage": "tsx ./src/ci/check-owner-decision-linkage.test.ts",
+    "test:release-safety-case": "node --import tsx --test --test-force-exit src/__qa__/releaseSafetyCase.test.ts",
+    "release:safety-case": "tsx ./src/release/generateSafetyCase.ts"
   },
   "devDependencies": {
     "@types/node": "catalog:",

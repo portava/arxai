@@ -244,7 +244,9 @@
     "certify:tier1-demo": "node --import tsx src/scripts/tier1DemoCertify.ts",
     "tier1:seed": "node --import tsx src/scripts/tier1SeedCertificationTicket.ts",
     "test:execution-policy-shadow": "node --import tsx --test --test-force-exit src/lib/execution/__qa__/executionPolicyShadow.test.ts",
-    "test:incident-replay": "node --import tsx --test --test-force-exit src/lib/replaySim/__qa__/incidentReplay.test.ts"
+    "test:incident-replay": "node --import tsx --test --test-force-exit src/lib/replaySim/__qa__/incidentReplay.test.ts",
+    "test:certification-expiry": "node --import tsx --test --test-force-exit src/lib/phase6/__qa__/certificationExpiry.test.ts",
+    "test:minimum-baseline": "node --import tsx --test --test-force-exit src/lib/baseline/__qa__/minimumBaseline.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
