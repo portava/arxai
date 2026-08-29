@@ -173,16 +173,16 @@ export function CommandPalette() {
       onClick={() => setOpen(true)}
       aria-label="Open command palette"
       data-testid="cmdk-trigger"
-      className="fixed bottom-20 left-3 md:bottom-6 md:left-6 z-40 inline-flex items-center gap-2 rounded-full border bg-background/85 px-3 py-1.5 text-xs text-muted-foreground shadow-lg backdrop-blur hover:text-foreground"
+      className="fixed bottom-20 left-3 md:bottom-6 md:left-6 z-40 inline-flex items-center gap-2 rounded-full border border-popover-border bg-popover/85 px-3 py-1.5 text-xs text-muted-foreground shadow-md backdrop-blur hover:text-foreground transition-colors"
     >
       <Search size={14} /> <span className="hidden md:inline">Search</span> <kbd className="ml-1 hidden md:inline rounded border px-1 text-[10px]">Ctrl K</kbd>
     </button>
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-20" onClick={() => setOpen(false)} role="dialog" aria-modal="true" aria-label="Command palette" data-testid="cmdk-dialog">
-      <div className="w-full max-w-xl rounded-lg border bg-background shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center gap-2 border-b px-3 py-2">
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 backdrop-blur-sm p-4 pt-20" onClick={() => setOpen(false)} role="dialog" aria-modal="true" aria-label="Command palette" data-testid="cmdk-dialog">
+      <div className="w-full max-w-xl rounded-xl border border-popover-border bg-popover shadow-xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2 border-b border-border/60 px-3 py-2.5">
           <Search size={16} className="text-muted-foreground" />
           <input
             ref={inputRef} value={q}
@@ -205,7 +205,7 @@ export function CommandPalette() {
               <button
                 onMouseEnter={() => setHi(i)}
                 onClick={() => go(it)}
-                className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm ${i === hi ? "bg-muted" : ""}`}
+                className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm transition-colors ${i === hi ? "bg-accent text-accent-foreground" : ""}`}
                 data-testid={`cmdk-result-${it.href.replace(/\//g, "-") || "home"}`}
               >
                 <span>{it.label}</span>

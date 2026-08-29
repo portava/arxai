@@ -101,7 +101,7 @@ const BASE_MODES: ModeDef[] = [
 ];
 
 const LazyFallback = (
-  <div className="flex items-center gap-2 rounded-md border border-zinc-800 bg-zinc-950/40 p-3 text-[11px] text-zinc-500">
+  <div className="flex items-center gap-2 rounded-md border border-border bg-background/40 p-3 text-[11px] text-txt-muted">
     <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading…
   </div>
 );
@@ -117,11 +117,11 @@ function EmptyMode({
 }) {
   return (
     <div
-      className="rounded-md border border-zinc-800 bg-zinc-950/40 p-4 text-[11px] text-zinc-400"
+      className="rounded-md border border-border bg-background/40 p-4 text-[11px] text-muted-foreground"
       data-testid={testid}
     >
-      <div className="font-semibold text-zinc-300">{title}</div>
-      <p className="mt-1 text-zinc-500">{body}</p>
+      <div className="font-semibold text-txt-secondary">{title}</div>
+      <p className="mt-1 text-txt-muted">{body}</p>
     </div>
   );
 }
@@ -144,7 +144,7 @@ export function ChartModes({ state }: { state: ChartState | null }) {
       {/* Mode switcher — horizontally scrollable on mobile. */}
       <div className="flex items-center gap-2">
         <div
-          className="flex flex-1 items-center gap-1 overflow-x-auto rounded-md border border-zinc-800 bg-zinc-950/40 p-1"
+          className="flex flex-1 items-center gap-1 overflow-x-auto rounded-md border border-border bg-background/40 p-1"
           role="tablist"
           aria-label="Chart modes"
         >

@@ -3,10 +3,11 @@ import { useProductRole } from "@/hooks/useProductRole";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { NotebookPen } from "lucide-react";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { AccessCheckingShell, AccessDeniedCard, SHADOW_ADMIN_DENIED_NOTE, shadowAdminDeniedMessage } from "@/components/access/AdminOnlyGate";
 
 type Entry = { id: string; ts: string; symbol: string; strategy: string; marketCondition: string; aiSaw: string; whatHappened: string; rightOrWrong: "RIGHT" | "WRONG" | "PENDING"; lesson: string };
-const RW_COLOR: Record<string, string> = { RIGHT: "bg-emerald-500/20 text-emerald-400", WRONG: "bg-rose-500/20 text-rose-400", PENDING: "bg-slate-500/20 text-slate-300" };
+const RW_COLOR: Record<string, string> = { RIGHT: "bg-success/10 text-success border-success/25", WRONG: "bg-danger/10 text-danger border-danger/25", PENDING: "bg-muted/60 text-txt-secondary border-border" };
 
 const PAGE_ICON = <NotebookPen className="h-6 w-6 text-primary" />;
 
@@ -48,10 +49,10 @@ export default function ShadowJournal() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div className="flex items-center gap-3">
         <NotebookPen className="h-6 w-6 text-primary" />
-        <div className="flex-1"><h1 className="text-2xl font-bold">Shadow Journal</h1>
+        <div className="flex-1"><h1 className="text-2xl font-bold tracking-tight">Shadow Journal</h1>
           <p className="text-sm text-muted-foreground">Separate from simulator/demo/intent records. Pure shadow observations and lessons.</p>
         </div>
         <Badge variant="outline">SHADOW</Badge>
@@ -60,20 +61,27 @@ export default function ShadowJournal() {
         <CardHeader><CardTitle className="text-base">{es.length} entries</CardTitle><CardDescription>Most recent first</CardDescription></CardHeader>
         <CardContent className="space-y-1">
           {es.map((e) => (
-            <div key={e.id} className="border rounded p-2 text-xs">
+            <div key={e.id} className="rounded-lg bg-muted/40 p-3 text-xs">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge className={RW_COLOR[e.rightOrWrong]}>{e.rightOrWrong}</Badge>
                 <Badge variant="outline">{e.symbol}</Badge>
                 <Badge variant="outline">{e.strategy}</Badge>
                 <Badge variant="outline">mc {e.marketCondition}</Badge>
-                <span className="ml-auto text-muted-foreground">{new Date(e.ts).toLocaleTimeString()}</span>
+                <span className="ml-auto text-muted-foreground tabular-nums">{new Date(e.ts).toLocaleTimeString()}</span>
               </div>
               <div className="mt-1"><span className="text-muted-foreground">AI saw:</span> {e.aiSaw}</div>
               <div><span className="text-muted-foreground">Outcome:</span> {e.whatHappened}</div>
-              <div className="text-emerald-300"><span className="text-muted-foreground">Lesson:</span> {e.lesson}</div>
+              <div className="text-success"><span className="text-muted-foreground">Lesson:</span> {e.lesson}</div>
             </div>
           ))}
-          {es.length === 0 && <p className="text-xs text-muted-foreground">Start shadow mode to populate the journal.</p>}
+          {es.length === 0 && (
+            <EmptyState
+              icon={NotebookPen}
+              compact
+              title="No shadow observations yet"
+              description="Start shadow mode to populate the journal."
+            />
+          )}
         </CardContent>
       </Card>
     </div>

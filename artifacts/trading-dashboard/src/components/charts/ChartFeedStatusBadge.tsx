@@ -36,7 +36,7 @@ export function ChartFeedStatusBadge({
     return (
       <Badge
         variant="outline"
-        className="text-[10px] border-amber-500/40 text-amber-300 bg-amber-500/5"
+        className="text-[10px] border-warning/25 text-warning bg-warning/5"
         data-testid={`${testIdPrefix}-feed-delayed`}
       >
         Delayed market data{gapSuffix}
@@ -47,7 +47,7 @@ export function ChartFeedStatusBadge({
     return (
       <Badge
         variant="outline"
-        className="text-[10px] border-orange-500/40 text-orange-300 bg-orange-500/5"
+        className="text-[10px] border-warning/25 text-warning bg-warning/5"
         data-testid={`${testIdPrefix}-feed-stale`}
       >
         Stale · last-known{gapSuffix}
@@ -58,7 +58,7 @@ export function ChartFeedStatusBadge({
     return (
       <Badge
         variant="outline"
-        className="text-[10px] border-zinc-500/40 text-zinc-400 bg-zinc-500/5"
+        className="text-[10px] border-border text-muted-foreground bg-muted/60"
         data-testid={`${testIdPrefix}-feed-analysis`}
       >
         Live feed unavailable · Analysis only{gapSuffix}

@@ -6,7 +6,9 @@ import { cn } from "@/lib/utils"
 const badgeVariants = cva(
   // @replit
   // Whitespace-nowrap: Badges should never wrap.
-  "whitespace-nowrap inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2" +
+  // ARX 6.0: badges are pills (rounded-full), medium weight — calmer than
+  // the old bold rectangles. Variant API unchanged.
+  "whitespace-nowrap inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2" +
   " hover-elevate ",
   {
     variants: {

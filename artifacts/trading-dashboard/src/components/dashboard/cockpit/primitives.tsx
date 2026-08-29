@@ -17,7 +17,7 @@ const ACCENT_CHIP: Record<Accent, string> = {
   success: "bg-success/15 text-success ring-success/25",
   warning: "bg-warning/15 text-warning ring-warning/25",
   danger: "bg-danger/15 text-danger ring-danger/25",
-  neutral: "bg-secondary/60 text-txt-secondary ring-white/10",
+  neutral: "bg-secondary/60 text-txt-secondary ring-border",
 };
 
 const ACCENT_BORDER: Record<Accent, string> = {
@@ -75,9 +75,9 @@ export function CockpitCard({
     <section
       data-testid={rest["data-testid"]}
       className={cn(
-        "relative isolate overflow-hidden rounded-2xl border bg-card p-4 sm:p-5",
+        "relative isolate overflow-hidden rounded-xl border bg-card p-4 sm:p-5",
         ACCENT_BORDER[accent],
-        "shadow-[0_8px_30px_-12px_rgba(0,0,0,0.7)]",
+        "shadow-sm",
         className,
       )}
     >
@@ -128,8 +128,8 @@ export function CockpitCard({
 function CardSkeleton() {
   return (
     <div className="space-y-2">
-      <div className="h-4 w-2/3 animate-pulse rounded bg-secondary/50" />
-      <div className="h-10 w-full animate-pulse rounded bg-secondary/30" />
+      <div className="h-4 w-2/3 animate-pulse rounded-md bg-muted/70" />
+      <div className="h-10 w-full animate-pulse rounded-md bg-muted/70" />
     </div>
   );
 }
@@ -137,8 +137,8 @@ function CardSkeleton() {
 export function StatTile({ label, value, valueClass }: { label: string; value: string; valueClass?: string }) {
   return (
     <div className="min-w-0">
-      <div className="text-[11px] uppercase tracking-wide text-txt-muted">{label}</div>
-      <div className={cn("mt-0.5 truncate font-mono text-lg font-bold text-foreground sm:text-xl", valueClass)}>
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</div>
+      <div className={cn("mt-0.5 truncate font-mono text-lg font-bold tabular-nums text-foreground sm:text-xl", valueClass)}>
         {value}
       </div>
     </div>
@@ -182,9 +182,9 @@ export function ActionButton({
       href={href}
       data-testid={rest["data-testid"]}
       className={cn(
-        "inline-flex h-10 items-center justify-center gap-1.5 rounded-xl px-3 text-sm font-semibold transition-colors",
+        "inline-flex h-10 items-center justify-center gap-1.5 rounded-md px-3 text-sm font-medium transition-colors",
         primary
-          ? "bg-primary text-primary-foreground hover:bg-primary/90"
+          ? "bg-primary text-primary-foreground shadow-xs hover:bg-primary/90"
           : subtle
             ? "border border-border bg-transparent text-txt-secondary hover:bg-secondary/50 hover:text-foreground"
             : "border border-border bg-secondary/40 text-foreground hover:bg-secondary/70",
@@ -201,7 +201,7 @@ export function SectionLink({ href, children, ...rest }: { href: string; childre
     <Link
       href={href}
       data-testid={rest["data-testid"]}
-      className="mt-3 flex items-center justify-center gap-1 rounded-xl border border-border/70 py-2 text-sm font-medium text-primary transition-colors hover:bg-primary/5"
+      className="mt-3 flex items-center justify-center gap-1 rounded-md border border-border/70 py-2 text-sm font-medium text-primary transition-colors hover:bg-primary/5"
     >
       {children}
       <ChevronRight className="h-4 w-4" />

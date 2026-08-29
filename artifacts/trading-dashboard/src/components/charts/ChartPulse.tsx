@@ -167,7 +167,7 @@ export function ChartPulse({ state }: { state: ChartState | null }) {
   if (!state) {
     return (
       <div
-        className="rounded-md border border-zinc-800 bg-zinc-950/40 p-3 text-[11px] text-zinc-500"
+        className="rounded-md border border-border bg-background/40 p-3 text-[11px] text-txt-muted"
         data-testid="chart-pulse-empty"
       >
         Waiting for chart pulse…
@@ -183,24 +183,24 @@ export function ChartPulse({ state }: { state: ChartState | null }) {
 
   return (
     <div
-      className="rounded-md border border-zinc-800 bg-zinc-950/40 p-3"
+      className="rounded-md border border-border bg-background/40 p-3"
       data-testid="chart-pulse"
     >
       <div className="flex items-center gap-2 text-[11px]">
         <Activity className="h-3.5 w-3.5 text-primary" />
-        <span className="font-semibold text-zinc-200">Chart Pulse</span>
-        <span className="text-zinc-500">
+        <span className="font-semibold text-foreground">Chart Pulse</span>
+        <span className="text-txt-muted">
           {state.displaySymbol} · {state.timeframe}
         </span>
         <span
           className={`ml-auto rounded px-1.5 py-0.5 text-[10px] ${
             conf.severity === "clean"
-              ? "bg-emerald-500/10 text-emerald-400"
+              ? "bg-success/10 text-success"
               : conf.severity === "caution"
-                ? "bg-amber-500/10 text-amber-400"
+                ? "bg-warning/10 text-warning"
                 : conf.severity === "danger"
-                  ? "bg-red-500/10 text-red-400"
-                  : "bg-zinc-800 text-zinc-400"
+                  ? "bg-danger/10 text-danger"
+                  : "bg-muted text-muted-foreground"
           }`}
           data-testid="pulse-feed"
         >
@@ -210,7 +210,7 @@ export function ChartPulse({ state }: { state: ChartState | null }) {
 
       {dirty && (
         <div
-          className="mt-2 flex items-start gap-1.5 rounded border border-red-500/30 bg-red-500/10 px-2 py-1.5 text-[10px] text-red-300"
+          className="mt-2 flex items-start gap-1.5 rounded border border-danger/25 bg-danger/10 px-2 py-1.5 text-[10px] text-danger"
           data-testid="chart-pulse-dirty"
         >
           <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
@@ -227,7 +227,7 @@ export function ChartPulse({ state }: { state: ChartState | null }) {
               className={`rounded border ${tc.border} ${tc.bg} px-2 py-1`}
               data-testid={it.testid}
             >
-              <div className="text-[9px] uppercase tracking-wide text-zinc-500">
+              <div className="text-[9px] uppercase tracking-wide text-txt-muted">
                 {it.label}
               </div>
               <div className={`text-[11px] font-medium ${tc.text}`}>
@@ -243,7 +243,7 @@ export function ChartPulse({ state }: { state: ChartState | null }) {
         className={`mt-1.5 rounded border ${baTone.border} ${baTone.bg} px-2 py-1.5`}
         data-testid="pulse-best-action"
       >
-        <div className="text-[9px] uppercase tracking-wide text-zinc-500">
+        <div className="text-[9px] uppercase tracking-wide text-txt-muted">
           Best next action
         </div>
         <div className={`text-[11px] ${baTone.text}`}>{bestAction.text}</div>
@@ -251,15 +251,15 @@ export function ChartPulse({ state }: { state: ChartState | null }) {
 
       {/* Honest standby chips: the agent court + Ruby consumers land in a later
           task, so we never fake a verdict here. */}
-      <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px] text-zinc-500">
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px] text-txt-muted">
         <span
-          className="rounded border border-zinc-800 px-1.5 py-0.5"
+          className="rounded border border-border px-1.5 py-0.5"
           data-testid="pulse-agent-court"
         >
           Agent court: standby
         </span>
         <span
-          className="rounded border border-zinc-800 px-1.5 py-0.5"
+          className="rounded border border-border px-1.5 py-0.5"
           data-testid="pulse-ruby"
         >
           {name}: read-only · on demand

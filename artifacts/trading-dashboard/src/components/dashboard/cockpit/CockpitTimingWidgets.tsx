@@ -93,12 +93,12 @@ export function BestMarketsCard() {
             return (
               <li
                 key={sym}
-                className="flex items-center justify-between gap-3 rounded-lg border border-emerald-500/20 bg-emerald-500/[0.04] px-3 py-2"
+                className="flex items-center justify-between gap-3 rounded-lg border border-success/20 bg-success/5 px-3 py-2"
               >
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="font-mono font-semibold text-sm">{sym}</span>
-                    <span className="rounded border border-emerald-500/40 bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-bold text-emerald-400">{grade}</span>
+                    <span className="rounded border border-success/25 bg-success/10 px-1.5 py-0.5 text-[10px] font-bold text-success">{grade}</span>
                   </div>
                   <div className="flex items-center gap-2 mt-0.5">
                     <span className="text-[10px] text-txt-muted capitalize">{state}</span>
@@ -171,7 +171,7 @@ export function AvoidMarketsCard() {
             return (
               <li
                 key={sym}
-                className="flex items-center justify-between gap-3 rounded-lg border border-rose-500/20 bg-rose-500/[0.04] px-3 py-2"
+                className="flex items-center justify-between gap-3 rounded-lg border border-danger/20 bg-danger/5 px-3 py-2"
               >
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
@@ -179,8 +179,8 @@ export function AvoidMarketsCard() {
                     <span className={cn(
                       "rounded border px-1.5 py-0.5 text-[10px] font-bold",
                       GRADE_BAD.has(grade)
-                        ? "border-rose-500/40 bg-rose-500/15 text-rose-400"
-                        : "border-amber-500/40 bg-amber-500/15 text-amber-400",
+                        ? "border-danger/25 bg-danger/10 text-danger"
+                        : "border-warning/25 bg-warning/10 text-warning",
                     )}>{grade}</span>
                   </div>
                   <div className="flex items-center gap-2 mt-0.5">
@@ -190,7 +190,7 @@ export function AvoidMarketsCard() {
                   </div>
                 </div>
                 <div className="flex flex-col items-end gap-0.5">
-                  <span className={cn("text-[10px] font-mono", danger >= 65 ? "text-rose-400" : "text-amber-400")}>
+                  <span className={cn("text-[10px] font-mono", danger >= 65 ? "text-danger" : "text-warning")}>
                     D:{danger}
                   </span>
                 </div>

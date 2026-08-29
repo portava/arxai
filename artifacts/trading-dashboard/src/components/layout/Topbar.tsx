@@ -109,7 +109,7 @@ function ViewModeSwitch() {
       title={isAdminView ? "Currently in Admin view — tap to preview as a regular user" : "Currently in User view — tap to return to Admin view"}
       className="min-h-[44px] h-11 px-3 text-xs gap-1.5 touch-manipulation"
     >
-      {isAdminView ? <ShieldCheck className="w-4 h-4 text-amber-400" /> : <Eye className="w-4 h-4 text-sky-400" />}
+      {isAdminView ? <ShieldCheck className="w-4 h-4 text-warning" /> : <Eye className="w-4 h-4 text-ruby" />}
       <span>{isAdminView ? "Admin" : "User"}</span>
     </Button>
   );

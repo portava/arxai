@@ -19,15 +19,15 @@ async function getJSON<T>(url: string): Promise<T> {
 }
 
 function StatusDot({ tone }: { tone: "ok" | "warn" | "bad" | "muted" }) {
-  const c = tone === "ok" ? "bg-emerald-500" : tone === "warn" ? "bg-amber-500" : tone === "bad" ? "bg-rose-500" : "bg-zinc-500";
+  const c = tone === "ok" ? "bg-success" : tone === "warn" ? "bg-warning" : tone === "bad" ? "bg-danger" : "bg-muted-foreground";
   return <span className={`inline-block w-2 h-2 rounded-full ${c}`} />;
 }
 
 function EmptyHint({ hint, cta, to }: { hint: string; cta?: string; to?: string }) {
   return (
-    <div className="text-xs text-zinc-400">
+    <div className="text-xs text-muted-foreground">
       {hint}
-      {cta && to && <Link href={to} className="ml-2 text-blue-400 hover:underline">{cta} →</Link>}
+      {cta && to && <Link href={to} className="ml-2 text-primary hover:underline">{cta} →</Link>}
     </div>
   );
 }
@@ -47,10 +47,10 @@ export function CommandCenterCards() {
   const recommendedAction: string | undefined = intel.data?.recommendedNextAction;
 
   if (cards.isLoading) {
-    return <div className="text-xs text-zinc-500" data-testid="cc-loading">Loading your command center…</div>;
+    return <div className="text-xs text-txt-muted" data-testid="cc-loading">Loading your command center…</div>;
   }
   if (cards.isError || !c) {
-    return <div className="text-xs text-amber-400" data-testid="cc-error">Couldn't load your command center. Retrying…</div>;
+    return <div className="text-xs text-warning" data-testid="cc-error">Couldn't load your command center. Retrying…</div>;
   }
 
   // Live status is server-authoritative. `liveLocked=true` (or any
@@ -60,17 +60,17 @@ export function CommandCenterCards() {
   const isLiveArmed = cards.data?.liveLocked === false && cards.data?.safetyMode === "live";
   const safetyBadgeLabel = isLiveArmed ? "Live trading" : "Demo trading";
   const safetyBadgeCls = isLiveArmed
-    ? "border-emerald-500/50 text-emerald-300"
-    : "border-zinc-700 text-zinc-300";
+    ? "border-success/25 text-success"
+    : "border-border text-txt-secondary";
 
   return (
     <div className="space-y-4" data-testid="command-center">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-zinc-100" data-testid="cc-header">Command Center</h2>
+          <h2 className="text-lg font-semibold text-foreground" data-testid="cc-header">Command Center</h2>
           {recommendedAction && (
-            <div className="text-xs text-zinc-400 mt-0.5" data-testid="cc-next-action">Next: {recommendedAction}</div>
+            <div className="text-xs text-muted-foreground mt-0.5" data-testid="cc-next-action">Next: {recommendedAction}</div>
           )}
         </div>
         <Badge variant="outline" className={`text-[10px] ${safetyBadgeCls}`} data-testid="cc-safety-badge">
@@ -80,11 +80,11 @@ export function CommandCenterCards() {
 
       {/* First-time banner */}
       {isFirstTime && (
-        <Card className="border-blue-900/50 bg-blue-950/20" data-testid="cc-firsttime">
+        <Card className="border-primary/25 bg-primary/5" data-testid="cc-firsttime">
           <CardContent className="pt-5 space-y-2">
-            <div className="text-base font-semibold text-zinc-100">Welcome to ARX AI</div>
-            <div className="text-sm text-zinc-300">Risk Governor is active with safe defaults. Get started:</div>
-            <ul className="text-xs text-zinc-400 list-disc pl-5 space-y-1">
+            <div className="text-base font-semibold text-foreground">Welcome to ARX AI</div>
+            <div className="text-sm text-txt-secondary">Risk Governor is active with safe defaults. Get started:</div>
+            <ul className="text-xs text-muted-foreground list-disc pl-5 space-y-1">
               <li>Connect MT5 to begin tracking</li>
               <li>Start a demo session</li>
               <li>Create your first playbook</li>
@@ -104,7 +104,7 @@ export function CommandCenterCards() {
             </div>
             {c.mt5Bridge.isEmpty
               ? <EmptyHint hint={c.mt5Bridge.emptyHint} cta="Connect MT5" to="/my-mt5" />
-              : <div className="text-xs text-zinc-400">
+              : <div className="text-xs text-muted-foreground">
                   {c.mt5Bridge.broker ?? "—"} · #{c.mt5Bridge.account ?? "—"}
                   <div>Read-only · Live locked</div>
                 </div>}
@@ -119,7 +119,7 @@ export function CommandCenterCards() {
               ? <EmptyHint hint={c.session.emptyHint} cta="Start session" to="/my-performance" />
               : <>
                   <div className="flex items-center gap-2"><StatusDot tone={c.session.status === "active" ? "ok" : "muted"} /><span className="capitalize">{c.session.status}</span></div>
-                  <div className="text-xs text-zinc-400">{c.session.title} · {c.session.durationMinutes}m · {c.session.tradesTaken} trades · P/L {c.session.pnl}</div>
+                  <div className="text-xs text-muted-foreground">{c.session.title} · {c.session.durationMinutes}m · {c.session.tradesTaken} trades · P/L {c.session.pnl}</div>
                 </>}
           </CardContent>
         </Card>
@@ -132,10 +132,10 @@ export function CommandCenterCards() {
               <StatusDot tone={c.risk.status === "safe" ? "ok" : c.risk.status === "warning" ? "warn" : "bad"} />
               <span className="capitalize">{c.risk.status}</span>
             </div>
-            <div className="text-xs text-zinc-400">
+            <div className="text-xs text-muted-foreground">
               {c.risk.tradesToday}/{c.risk.maxTradesPerDay ?? "∞"} trades · {c.risk.consecutiveLosses}/{c.risk.maxConsecutiveLosses ?? "∞"} losses
               {c.risk.cooldownMinutesRemaining > 0 && <div>Cooldown: {c.risk.cooldownMinutesRemaining}m remaining</div>}
-              {c.risk.reason && <div className="text-rose-400 mt-1">{c.risk.reason}</div>}
+              {c.risk.reason && <div className="text-danger mt-1">{c.risk.reason}</div>}
             </div>
           </CardContent>
         </Card>
@@ -147,8 +147,8 @@ export function CommandCenterCards() {
             {c.paperPerformance.isEmpty
               ? <EmptyHint hint={c.paperPerformance.emptyHint} />
               : <>
-                  <div className={c.paperPerformance.todayPnl >= 0 ? "text-emerald-400" : "text-rose-400"}>P/L {c.paperPerformance.todayPnl}</div>
-                  <div className="text-xs text-zinc-400">{c.paperPerformance.winRate}% win · {c.paperPerformance.tradesToday} trades</div>
+                  <div className={c.paperPerformance.todayPnl >= 0 ? "text-success" : "text-danger"}>P/L {c.paperPerformance.todayPnl}</div>
+                  <div className="text-xs text-muted-foreground">{c.paperPerformance.winRate}% win · {c.paperPerformance.tradesToday} trades</div>
                 </>}
           </CardContent>
         </Card>
@@ -161,8 +161,8 @@ export function CommandCenterCards() {
               ? <EmptyHint hint="Close your first trade to get a quality score." />
               : <>
                   <div className="text-2xl font-semibold">{c.tradeQuality.score}</div>
-                  <div className="text-xs text-zinc-400 capitalize">{c.tradeQuality.label}</div>
-                  {c.tradeQuality.nextImprovement && <div className="text-xs text-zinc-500">{c.tradeQuality.nextImprovement}</div>}
+                  <div className="text-xs text-muted-foreground capitalize">{c.tradeQuality.label}</div>
+                  {c.tradeQuality.nextImprovement && <div className="text-xs text-txt-muted">{c.tradeQuality.nextImprovement}</div>}
                 </>}
           </CardContent>
         </Card>
@@ -175,7 +175,7 @@ export function CommandCenterCards() {
               ? <EmptyHint hint="No AI insights yet" />
               : <>
                   <div className="text-xs">Grade: <span className="font-semibold">{c.aiCoach.overallGrade}</span> · {c.aiCoach.overallScore}</div>
-                  {c.aiCoach.focus && <div className="text-xs text-zinc-400">Focus: {c.aiCoach.focus}</div>}
+                  {c.aiCoach.focus && <div className="text-xs text-muted-foreground">Focus: {c.aiCoach.focus}</div>}
                 </>}
           </CardContent>
         </Card>
@@ -188,7 +188,7 @@ export function CommandCenterCards() {
               ? <EmptyHint hint={c.playbookDiscipline.emptyHint} cta="Create" to="/playbook" />
               : <>
                   <div className="text-xs">{c.playbookDiscipline.active}/{c.playbookDiscipline.total} active</div>
-                  <div className="text-xs text-zinc-400">{c.playbookDiscipline.checklistPassRate}% checklist pass · {c.playbookDiscipline.withoutPlaybookCount} trades without playbook</div>
+                  <div className="text-xs text-muted-foreground">{c.playbookDiscipline.checklistPassRate}% checklist pass · {c.playbookDiscipline.withoutPlaybookCount} trades without playbook</div>
                 </>}
           </CardContent>
         </Card>
@@ -199,15 +199,15 @@ export function CommandCenterCards() {
         <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Bell className="w-4 h-4" /> Alerts {alerts.data && alerts.data.unread > 0 && <Badge variant="destructive" className="ml-2">{alerts.data.unread}</Badge>}</CardTitle></CardHeader>
         <CardContent className="text-sm">
           {!alerts.data || alerts.data.isEmpty
-            ? <div className="text-xs text-zinc-500">No active alerts.</div>
+            ? <div className="text-xs text-txt-muted">No active alerts.</div>
             : <ul className="space-y-1">
                 {alerts.data.alerts.slice(0, 5).map((a: any) => (
-                  <li key={a.id} className="flex items-start justify-between gap-2 border-b border-zinc-800/60 pb-1" data-testid={`alert-${a.id}`}>
+                  <li key={a.id} className="flex items-start justify-between gap-2 border-b border-border/60 pb-1" data-testid={`alert-${a.id}`}>
                     <div className="flex items-start gap-2">
-                      <AlertTriangle className={`w-3.5 h-3.5 mt-0.5 ${a.severity === "critical" ? "text-rose-400" : a.severity === "warning" ? "text-amber-400" : "text-zinc-400"}`} />
+                      <AlertTriangle className={`w-3.5 h-3.5 mt-0.5 ${a.severity === "critical" ? "text-danger" : a.severity === "warning" ? "text-warning" : "text-muted-foreground"}`} />
                       <div>
                         <div className="text-xs font-medium">{a.title}</div>
-                        <div className="text-[11px] text-zinc-400">{a.message}</div>
+                        <div className="text-[11px] text-muted-foreground">{a.message}</div>
                       </div>
                     </div>
                     <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => dismiss.mutate(a.id)} aria-label="Dismiss"><X className="w-3 h-3" /></Button>

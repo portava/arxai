@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { ClipboardList } from "lucide-react";
+import { EmptyState } from "@/components/ui/EmptyState";
 import {
   PostTradeDebriefModal, RecommendedReplayDrillCard,
 } from "@/components/postTradeDebriefs";
@@ -50,62 +52,69 @@ export default function PostTradeDebriefsPage() {
   const sel = (debriefs.data?.debriefs ?? []).find((d) => d.id === selected);
 
   return (
-    <div className="mx-auto w-full max-w-[1280px] space-y-4 p-4 md:p-6 pb-32 md:pb-6">
+    <div className="mx-auto w-full max-w-4xl space-y-6">
       <header>
-        <h1 className="text-2xl font-bold leading-tight">Post-trade Debriefs</h1>
-        <p className="text-sm text-txt-secondary">Quick reflection right after a trade closes — process beats outcome. Coaching aid, not predictive.</p>
+        <h1 className="text-2xl font-bold tracking-tight">Post-trade Debriefs</h1>
+        <p className="text-sm text-muted-foreground">Quick reflection right after a trade closes — process beats outcome. Coaching aid, not predictive.</p>
       </header>
 
       {undebriefed.length > 0 && (
-        <div className="rounded-lg border border-warning/40 bg-warning/10 p-3">
+        <div className="rounded-lg border border-warning/25 bg-warning/10 p-3">
           <h2 className="mb-1.5 text-sm font-semibold text-warning">{undebriefed.length} closed trade(s) waiting for debrief</h2>
           <ul className="space-y-1 text-xs">
             {undebriefed.slice(0, 8).map((o) => (
-              <li key={o.id} className="flex items-center justify-between gap-2 rounded border border-warning/30 bg-background/40 p-2">
+              <li key={o.id} className="flex items-center justify-between gap-2 rounded-md bg-background/40 p-2">
                 <div className="flex items-center gap-2">
-                  <span className="font-mono text-txt-secondary">#{o.id}</span>
+                  <span className="tabular-nums text-txt-secondary">#{o.id}</span>
                   <span className="text-foreground">{o.symbol} {o.direction}</span>
-                  <span className={`font-mono ${o.profitLoss >= 0 ? "text-success" : "text-danger"}`}>
+                  <span className={`tabular-nums ${o.profitLoss >= 0 ? "text-success" : "text-danger"}`}>
                     {o.profitLoss >= 0 ? "+" : ""}{o.profitLoss.toFixed(2)}
                   </span>
                 </div>
                 <button onClick={() => setOpenTradeId(o.id)}
-                  className="rounded bg-warning/20 px-2 py-0.5 text-[11px] font-semibold text-warning hover:bg-warning/30">Debrief</button>
+                  className="rounded-full bg-warning/10 border border-warning/25 px-2.5 py-0.5 text-[11px] font-semibold text-warning hover-elevate">Debrief</button>
               </li>
             ))}
           </ul>
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="lg:col-span-1">
-          <h2 className="mb-2 text-sm font-semibold text-foreground">History ({debriefs.data?.debriefs.length ?? 0})</h2>
+          <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">History ({debriefs.data?.debriefs.length ?? 0})</h2>
           <ul className="max-h-[60vh] space-y-1 overflow-auto">
             {(debriefs.data?.debriefs ?? []).map((d) => (
               <li key={d.id}>
                 <button onClick={() => setSelected(d.id)}
-                  className={`flex w-full items-center justify-between rounded border p-2 text-xs text-left transition ${
-                    selected === d.id ? "border-primary bg-primary/10" : "border-border bg-background/40 hover:border-primary/40"}`}>
+                  className={`flex w-full items-center justify-between rounded-md border p-2 text-xs text-left transition ${
+                    selected === d.id ? "border-primary bg-primary/10" : "border-border/60 bg-muted/40 hover:border-primary/40"}`}>
                   <div>
                     <div className="text-foreground">Trade #{d.tradeId}</div>
-                    <div className="text-[10px] text-txt-muted">{new Date(d.createdAt).toLocaleString()}</div>
+                    <div className="text-[10px] text-txt-muted tabular-nums">{new Date(d.createdAt).toLocaleString()}</div>
                   </div>
-                  <span className={`rounded px-1.5 py-0.5 font-bold text-[10px] ${resultTone(d.result)}`}>{d.result}</span>
+                  <span className={`rounded-full px-2 py-0.5 font-semibold text-[10px] ${resultTone(d.result)}`}>{d.result}</span>
                 </button>
               </li>
             ))}
             {(debriefs.data?.debriefs.length ?? 0) === 0 && (
-              <li className="rounded border border-border bg-background/40 p-3 text-center text-xs text-txt-muted">No debriefs yet.</li>
+              <li className="rounded-lg border border-border/60 bg-muted/40">
+                <EmptyState
+                  compact
+                  icon={ClipboardList}
+                  title="No debriefs yet"
+                  description="Debrief a closed trade above and your reflections will appear here."
+                />
+              </li>
             )}
           </ul>
         </div>
         <div className="lg:col-span-2">
           {sel ? (
-            <div className="space-y-2">
-              <div className="rounded-lg border border-border bg-card p-3 text-xs">
+            <div className="space-y-4">
+              <div className="rounded-xl border border-card-border bg-card p-4 shadow-sm text-xs">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-foreground">Debrief detail · trade #{sel.tradeId}</h3>
-                  <span className={`rounded px-2 py-0.5 font-bold text-[10px] ${resultTone(sel.result)}`}>{sel.result}</span>
+                  <span className={`rounded-full px-2 py-0.5 font-semibold text-[10px] ${resultTone(sel.result)}`}>{sel.result}</span>
                 </div>
                 <dl className="mt-2 grid grid-cols-1 gap-1 sm:grid-cols-2">
                   <div className="flex justify-between"><dt className="text-txt-muted">Followed plan</dt><dd className={sel.followedPlan ? "text-success" : "text-warning"}>{sel.followedPlan ? "yes" : "no"}</dd></div>
@@ -115,13 +124,13 @@ export default function PostTradeDebriefsPage() {
                 {sel.biggestMistake  && <p><span className="text-danger">Would change: </span>{sel.biggestMistake}</p>}
                 {sel.lessonLearned   && <p className="mt-1 italic text-txt-secondary">"{sel.lessonLearned}"</p>}
               </div>
-              <div className="rounded-lg border border-border bg-card p-3">
+              <div className="rounded-xl border border-card-border bg-card p-4 shadow-sm">
                 <h4 className="mb-1 text-xs font-semibold text-foreground">Checklist</h4>
                 <ul className="space-y-0.5 text-xs">
                   {sel.checklist.map((c) => (
-                    <li key={c.id} className="flex justify-between gap-2 rounded border border-border bg-background/40 px-2 py-1">
+                    <li key={c.id} className="flex justify-between gap-2 rounded-md bg-muted/40 px-2 py-1">
                       <span className="text-txt-secondary">{c.id.replaceAll("_", " ")}</span>
-                      <span className={`font-mono text-[10px] ${c.answer === "YES" ? "text-success" : c.answer === "NO" ? "text-danger" : "text-txt-secondary"}`}>{c.answer}</span>
+                      <span className={`font-semibold text-[10px] ${c.answer === "YES" ? "text-success" : c.answer === "NO" ? "text-danger" : "text-txt-secondary"}`}>{c.answer}</span>
                     </li>
                   ))}
                 </ul>
@@ -129,8 +138,12 @@ export default function PostTradeDebriefsPage() {
               <RecommendedReplayDrillCard drill={sel.recommendedDrill} feedback={sel.aiFeedback} />
             </div>
           ) : (
-            <div className="rounded-lg border border-dashed border-border p-6 text-center text-xs text-txt-muted">
-              Select a debrief on the left, or open one for an undebriefed trade above.
+            <div className="rounded-xl border border-dashed border-border">
+              <EmptyState
+                icon={ClipboardList}
+                title="Nothing selected"
+                description="Select a debrief on the left, or open one for an undebriefed trade above."
+              />
             </div>
           )}
         </div>

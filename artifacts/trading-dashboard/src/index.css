@@ -45,11 +45,15 @@
   --color-chart-4: hsl(var(--chart-4));
   --color-chart-5: hsl(var(--chart-5));
 
-  /* ARX semantic accents — bg-ruby / text-success / border-warning etc. */
+  /* ARX semantic accents — bg-ruby / text-success / border-warning etc.
+     STRICTLY for meaning (P&L, risk, status, AI attribution) — never
+     decoration. Utility NAMES are test-pinned (ScannerHeaderSummary,
+     GlobalMarketHeatCard); never rename. */
   --color-ruby: hsl(var(--ruby));
   --color-success: hsl(var(--success));
   --color-warning: hsl(var(--warning));
   --color-danger: hsl(var(--danger));
+  --color-premium: hsl(var(--premium));
 
   /* Dedicated readable body-text greys (do not collide with surface colors).
      Use text-txt-secondary / text-txt-muted in components. */
@@ -67,86 +71,124 @@
   --color-sidebar-accent-border: var(--sidebar-accent-border);
   --color-sidebar-ring: hsl(var(--sidebar-ring));
 
-  --font-sans: "Inter", sans-serif;
-  --font-mono: "Menlo", monospace;
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Menlo", "Consolas", monospace;
 
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  /* Radius family — one system: controls 8px (md), cards/dialogs 12px (xl). */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.625rem;
+  --radius-xl: 0.75rem;
+
+  /* Soft elevation scale, colored per-palette via --shadow-hsl so shadows
+     read correctly on both the light and the dark ground. */
+  --shadow-2xs: 0 1px 2px 0 hsl(var(--shadow-hsl) / 0.05);
+  --shadow-xs: 0 1px 2px 0 hsl(var(--shadow-hsl) / 0.08);
+  --shadow-sm: 0 1px 2px 0 hsl(var(--shadow-hsl) / 0.1), 0 1px 3px -1px hsl(var(--shadow-hsl) / 0.08);
+  --shadow-md: 0 2px 6px -1px hsl(var(--shadow-hsl) / 0.14), 0 4px 12px -2px hsl(var(--shadow-hsl) / 0.1);
+  --shadow-lg: 0 4px 12px -2px hsl(var(--shadow-hsl) / 0.18), 0 10px 24px -4px hsl(var(--shadow-hsl) / 0.14);
+  --shadow-xl: 0 8px 20px -4px hsl(var(--shadow-hsl) / 0.22), 0 20px 40px -8px hsl(var(--shadow-hsl) / 0.18);
+  --shadow-2xl: 0 24px 60px -12px hsl(var(--shadow-hsl) / 0.3);
 }
 
+/* ── LIGHT palette ─────────────────────────────────────────────────────────
+   Complete (semantic accents + readable greys included) so pre-login routes
+   and any future light mode render every token. Same brand hue (213) as
+   dark, deepened for contrast on the near-white ground. */
 :root {
-  --background: 0 0% 100%;
-  --foreground: 0 0% 10%;
-  --border: 0 0% 90%;
+  --background: 216 33% 98%;
+  --foreground: 222 40% 12%;
+  --border: 216 20% 90%;
+  --input: 216 18% 84%;
   --card: 0 0% 100%;
-  --card-foreground: 0 0% 10%;
-  --card-border: 0 0% 90%;
-  --sidebar: 0 0% 98%;
-  --sidebar-foreground: 0 0% 10%;
-  --sidebar-border: 0 0% 90%;
-  --sidebar-primary: 191 100% 50%;
-  --sidebar-primary-foreground: 0 0% 0%;
-  --sidebar-accent: 0 0% 90%;
-  --sidebar-accent-foreground: 0 0% 10%;
-  --sidebar-ring: 191 100% 50%;
+  --card-foreground: 222 40% 12%;
+  --card-border: 216 20% 90%;
+  --sidebar: 216 30% 97%;
+  --sidebar-foreground: 222 40% 12%;
+  --sidebar-border: 216 20% 90%;
+  --sidebar-primary: 213 88% 46%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 216 24% 92%;
+  --sidebar-accent-foreground: 222 40% 12%;
+  --sidebar-ring: 213 88% 46%;
   --popover: 0 0% 100%;
-  --popover-foreground: 0 0% 10%;
-  --popover-border: 0 0% 90%;
-  --primary: 191 100% 50%;
-  --primary-foreground: 0 0% 0%;
-  --secondary: 0 0% 96%;
-  --secondary-foreground: 0 0% 10%;
-  --muted: 0 0% 96%;
-  --muted-foreground: 0 0% 40%;
-  --accent: 0 0% 96%;
-  --accent-foreground: 0 0% 10%;
-  --destructive: 0 84% 60%;
+  --popover-foreground: 222 40% 12%;
+  --popover-border: 216 20% 88%;
+  --primary: 213 88% 46%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 216 24% 95%;
+  --secondary-foreground: 222 40% 12%;
+  --muted: 216 24% 95%;
+  --muted-foreground: 218 12% 42%;
+  --accent: 216 24% 95%;
+  --accent-foreground: 222 40% 12%;
+  --destructive: 354 72% 48%;
   --destructive-foreground: 0 0% 100%;
-  --input: 0 0% 90%;
-  --ring: 191 100% 50%;
-  --chart-1: 191 100% 50%;
-  --chart-2: 160 60% 45%;
-  --chart-3: 30 80% 55%;
-  --chart-4: 280 65% 60%;
-  --chart-5: 340 75% 55%;
-  --radius: 0.5rem;
+  --ring: 213 88% 46%;
+  --chart-1: 213 88% 46%;
+  --chart-2: 192 95% 34%;
+  --chart-3: 156 72% 30%;
+  --chart-4: 36 90% 36%;
+  --chart-5: 354 72% 48%;
+  /* Semantic accents — light-tuned (dark enough to read as text on white). */
+  --arx-blue: 213 88% 46%;
+  --ruby: 192 95% 34%;
+  --success: 156 72% 30%;
+  --warning: 36 90% 36%;
+  --danger: 354 72% 48%;
+  --premium: 258 66% 50%;
+  --text-secondary: 218 16% 32%;
+  --txt-secondary: 218 16% 32%;
+  --txt-muted: 218 10% 46%;
+  --shadow-hsl: 220 40% 20%;
+  /* Component-edge variables consumed by button/badge recipes. */
+  --button-outline: hsl(216 18% 82%);
+  --badge-outline: hsl(216 18% 85%);
+  --primary-border: transparent;
+  --secondary-border: transparent;
+  --muted-border: transparent;
+  --accent-border: transparent;
+  --destructive-border: transparent;
+  --sidebar-primary-border: transparent;
+  --sidebar-accent-border: transparent;
+  --radius: 0.625rem;
 }
 
+/* ── DARK palette (primary theme) ──────────────────────────────────────────
+   ARX 6.0 — "calm confidence". Softened from the 5.0 fortress: deep calm
+   ground (not near-black), quieter borders, surface contrast + soft shadows
+   for elevation. Brand + semantic hues unchanged:
+   blue #2F8CFF · cyan #35D7FF · success #42E6A4 · warning #FFCC4D
+   · danger #FF4D5E. */
 .dark {
-  /* ARX 5.0 palette — "dark fortress, cleaner".
-     bg #070A0F · card #0E131B · border rgba(255,255,255,.08)
-     blue #2F8CFF · cyan #35D7FF · success #42E6A4 · warning #FFCC4D · danger #FF4D5E
-     text #F5F7FA · secondary #A7AFBE · muted #6F7785 */
-  --background: 218 36% 4%;
+  --background: 219 30% 7%;
   --foreground: 216 33% 97%;
-  --border: 217 24% 24%;
-  --card: 217 30% 11%;
+  --border: 218 20% 16%;
+  --input: 218 18% 22%;
+  --card: 218 28% 11%;
   --card-foreground: 216 33% 97%;
-  --card-border: 217 24% 24%;
-  --sidebar: 218 36% 4%;
+  --card-border: 218 20% 16%;
+  --sidebar: 219 32% 6%;
   --sidebar-foreground: 216 33% 97%;
-  --sidebar-border: 217 30% 16%;
+  --sidebar-border: 218 22% 13%;
   --sidebar-primary: 213 100% 59%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 217 30% 14%;
+  --sidebar-accent: 218 24% 14%;
   --sidebar-accent-foreground: 216 33% 97%;
   --sidebar-ring: 213 100% 59%;
-  --popover: 217 32% 8%;
+  --popover: 218 28% 10%;
   --popover-foreground: 216 33% 97%;
-  --popover-border: 217 30% 16%;
+  --popover-border: 218 20% 18%;
   --primary: 213 100% 59%;
   --primary-foreground: 0 0% 100%;
-  --secondary: 217 30% 14%;
+  --secondary: 218 24% 15%;
   --secondary-foreground: 216 33% 97%;
-  --muted: 217 30% 14%;
-  --muted-foreground: 219 15% 70%;
-  --accent: 217 30% 14%;
+  --muted: 218 24% 15%;
+  --muted-foreground: 219 15% 68%;
+  --accent: 218 24% 15%;
   --accent-foreground: 216 33% 97%;
   --destructive: 354 100% 65%;
   --destructive-foreground: 0 0% 100%;
-  --input: 217 30% 16%;
   --ring: 213 100% 59%;
   --chart-1: 213 100% 59%;
   --chart-2: 192 100% 60%;
@@ -159,10 +201,21 @@
   --success: 156 77% 58%;
   --warning: 43 100% 65%;
   --danger: 354 100% 65%;
+  --premium: 258 88% 74%;
   --text-secondary: 219 15% 70%;
   /* Brighter, readable body greys for dark UI (used by text-txt-* utilities) */
   --txt-secondary: 219 18% 78%;
-  --txt-muted: 218 12% 60%;
+  --txt-muted: 218 12% 62%;
+  --shadow-hsl: 220 60% 2%;
+  --button-outline: hsl(218 18% 26%);
+  --badge-outline: hsl(218 16% 27%);
+  --primary-border: transparent;
+  --secondary-border: transparent;
+  --muted-border: transparent;
+  --accent-border: transparent;
+  --destructive-border: transparent;
+  --sidebar-primary-border: transparent;
+  --sidebar-accent-border: transparent;
 }
 
 @layer base {
@@ -171,6 +224,47 @@
   }
   body {
     @apply font-sans antialiased bg-background text-foreground;
+  }
+  /* Numbers line up everywhere they're compared: every table, plus anything
+     marked data-numeric, renders tabular figures. */
+  table,
+  [data-numeric] {
+    font-variant-numeric: tabular-nums;
+  }
+  ::selection {
+    background: hsl(var(--primary) / 0.25);
+  }
+  /* Calm, thin scrollbars that match the surface they live on. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
+  }
+}
+
+@layer utilities {
+  /* Elevation-on-interaction overlay used by Button/Badge ("hover-elevate" /
+     "active-elevate-2"). A currentColor wash lightens dark surfaces and
+     darkens light ones, so one utility works in both themes. */
+  .hover-elevate,
+  .active-elevate-2 {
+    position: relative;
+  }
+  .hover-elevate::after,
+  .active-elevate-2::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: currentColor;
+    opacity: 0;
+    transition: opacity 120ms ease;
+  }
+  .hover-elevate:hover::after {
+    opacity: 0.06;
+  }
+  .active-elevate-2:active::after {
+    opacity: 0.12;
   }
 }
 

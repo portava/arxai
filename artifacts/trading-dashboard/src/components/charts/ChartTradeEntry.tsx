@@ -84,7 +84,7 @@ export function ChartTradeEntry({ prefill }: { prefill?: ChartTradePrefill | nul
 
   return (
     <>
-      <Card className="border-zinc-800/80" data-testid="chart-trade-entry">
+      <Card className="border-border" data-testid="chart-trade-entry">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div>
@@ -112,7 +112,7 @@ export function ChartTradeEntry({ prefill }: { prefill?: ChartTradePrefill | nul
           <div className="grid grid-cols-2 gap-2">
             <Button
               variant="default"
-              className="bg-emerald-600 hover:bg-emerald-500 text-white"
+              className="bg-success hover:bg-success text-white"
               onClick={() => openTicket("BUY")}
               disabled={accessLoading}
               data-testid="btn-chart-open-buy"
@@ -122,7 +122,7 @@ export function ChartTradeEntry({ prefill }: { prefill?: ChartTradePrefill | nul
             </Button>
             <Button
               variant="default"
-              className="bg-rose-600 hover:bg-rose-500 text-white"
+              className="bg-danger hover:bg-danger text-white"
               onClick={() => openTicket("SELL")}
               disabled={accessLoading}
               data-testid="btn-chart-open-sell"
@@ -134,7 +134,7 @@ export function ChartTradeEntry({ prefill }: { prefill?: ChartTradePrefill | nul
 
           {openedFromPrefill && prefill?.sourceNote && (
             <p
-              className="text-xs text-sky-300/90 flex items-start gap-1.5 rounded-md border border-sky-500/20 bg-sky-500/5 p-2"
+              className="text-xs text-ruby/90 flex items-start gap-1.5 rounded-md border border-ruby/25 bg-ruby/5 p-2"
               data-testid="chart-trade-prefill-source"
             >
               <Info className="h-3 w-3 mt-0.5 shrink-0" />

@@ -26,6 +26,7 @@ import { SelectedActionStoreProvider } from "@/components/scanner/selectedAction
 import { SectionErrorBoundary } from "@/components/layout/SectionErrorBoundary";
 import { PageTabs } from "@/components/ui/PageTabs";
 import { CollapsibleSection } from "@/components/ui/CollapsibleSection";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { CompactAlert } from "@/components/ui/CompactAlert";
 import { useChartSymbol, bareSymbol, setChartSymbol } from "@/lib/use-chart-symbol";
 import { resolveSymbol } from "@/lib/symbolRegistry";
@@ -38,6 +39,7 @@ import { BroadScanOpportunityMap } from "@/components/scanner/BroadScanOpportuni
 import { RubyScalpScan } from "@/components/scanner/RubyScalpScan";
 import { RubyScalpBasketPanel } from "@/components/scanner/RubyScalpBasketPanel";
 import { RubyScalpReviewPanel } from "@/components/scanner/RubyScalpReviewPanel";
+import { STATUS_COLORS } from "@/lib/design-tokens";
 import { safeJson } from "@/lib/api/safeJson";
 import { SCANNER_DEGRADED_MESSAGE } from "@/lib/scannerResilience";
 import type { ScalpResult } from "@workspace/api-client-react";
@@ -76,15 +78,17 @@ function opportunityMapGroup(u: UniverseId): OpportunityMapGroup {
   return u;
 }
 
+// ARX 6.0: status chips compose STATUS_COLORS (design-tokens.ts) so every
+// tone renders correctly in both themes — no raw Tailwind palette classes.
 const BADGE_COLORS: Record<string, string> = {
-  HOT_SETUP: "bg-emerald-500/20 text-emerald-400 border-emerald-500/40",
-  WATCHLIST: "bg-blue-500/20 text-blue-400 border-blue-500/40",
-  WAIT_FOR_CONFIRMATION: "bg-amber-500/20 text-amber-400 border-amber-500/40",
-  REJECTED_BY_RISK: "bg-rose-500/20 text-rose-400 border-rose-500/40",
-  CHOPPY_MARKET: "bg-zinc-500/20 text-zinc-400 border-zinc-500/40",
-  LOW_CONFIDENCE: "bg-orange-500/20 text-orange-400 border-orange-500/40",
-  SPREAD_TOO_HIGH: "bg-rose-500/20 text-rose-400 border-rose-500/40",
-  PENDING_MT5_CONNECTION: "bg-purple-500/20 text-purple-400 border-purple-500/40",
+  HOT_SETUP: STATUS_COLORS.success.badge,
+  WATCHLIST: "bg-primary/10 text-primary border-primary/25",
+  WAIT_FOR_CONFIRMATION: STATUS_COLORS.warning.badge,
+  REJECTED_BY_RISK: STATUS_COLORS.danger.badge,
+  CHOPPY_MARKET: STATUS_COLORS.neutral.badge,
+  LOW_CONFIDENCE: STATUS_COLORS.warning.badge,
+  SPREAD_TOO_HIGH: STATUS_COLORS.danger.badge,
+  PENDING_MT5_CONNECTION: STATUS_COLORS.premium.badge,
 };
 
 // Plain-language labels for the scanner status badges. Raw UPPER_SNAKE
@@ -102,20 +106,27 @@ const BADGE_LABELS: Record<string, string> = {
 };
 
 const LABEL_COLORS: Record<string, string> = {
-  ELITE: "bg-emerald-500 text-white",
-  STRONG: "bg-emerald-600/80 text-white",
-  ACCEPTABLE: "bg-blue-500/70 text-white",
-  WEAK: "bg-amber-500/70 text-white",
-  REJECT: "bg-rose-500/70 text-white",
+  ELITE: STATUS_COLORS.premium.badge,
+  STRONG: STATUS_COLORS.success.badge,
+  ACCEPTABLE: "bg-primary/10 text-primary border-primary/25",
+  WEAK: STATUS_COLORS.warning.badge,
+  REJECT: STATUS_COLORS.danger.badge,
 };
+
+/** Left-edge accent for a result card, keyed to the opportunity verdict. */
+function oppEdgeClass(label: string): string {
+  if (label === "ELITE" || label === "STRONG") return "border-l-success";
+  if (label === "REJECT") return "border-l-danger";
+  return "border-l-primary";
+}
 
 // Scanner AACI cohesion badge accents (advisory/display only — never reorders
 // or routes). Tone comes straight from the read-only batch cohesion endpoint.
 const COHESION_SHELL: Record<AaciCohesionItem["cohesionTone"], string> = {
-  ok: "border-emerald-500/40 text-emerald-300 bg-emerald-500/10",
-  muted: "border-zinc-700 text-zinc-300 bg-zinc-800/40",
-  warn: "border-amber-500/40 text-amber-300 bg-amber-500/10",
-  danger: "border-red-500/40 text-red-300 bg-red-500/10",
+  ok: STATUS_COLORS.success.badge,
+  muted: STATUS_COLORS.neutral.badge,
+  warn: STATUS_COLORS.warning.badge,
+  danger: STATUS_COLORS.danger.badge,
 };
 const COHESION_MAX_SYMBOLS = 12;
 
@@ -553,7 +564,7 @@ export default function MarketScanner() {
         className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-xs text-txt-secondary hover:border-primary/40 hover:text-foreground"
         data-testid="scanner-global-heat-link"
       >
-        <Thermometer className="h-3.5 w-3.5 text-warning" />
+        <Thermometer className="h-3.5 w-3.5 text-muted-foreground" />
         Global market heat — country, currency and synthetic heat on the Market Heat Map
         <ArrowRight className="ml-auto h-3.5 w-3.5" />
       </Link>
@@ -581,7 +592,7 @@ export default function MarketScanner() {
   const resultsBlock = (
     <div className="space-y-3">
       {status?.lastScanAt && (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs tabular-nums text-muted-foreground">
           Last scan {new Date(status.lastScanAt).toLocaleTimeString()} · {opps.length} opportunit{opps.length === 1 ? "y" : "ies"} in {activeUniverse?.label ?? "current universe"}
         </p>
       )}
@@ -601,30 +612,39 @@ export default function MarketScanner() {
         />
       ) : opps.length === 0 ? (
         <Card><CardContent className="p-6 text-sm text-muted-foreground" data-testid="scanner-empty-state">
-          {err ? (
-            // A degraded status/opportunities poll must NOT masquerade as an empty
-            // market (Task #600). The precise reason is in the `scanner-error`
-            // banner above; here we only refuse to assert a false scan verdict.
-            <span data-testid="scanner-empty-degraded">
-              Scanner results couldn't be refreshed just now — see the message above. This is a temporary feed issue, not an empty market.
-            </span>
-          ) : scanExists ? (
-            <span data-testid="scanner-scanned-empty">
-              Scan complete — no qualifying setups in {activeUniverse?.label ?? "this universe"} right now. Nothing met the scanner's criteria; try another universe above or scan again shortly.
-            </span>
-          ) : (
-            <span data-testid="scanner-never-scanned">
-              No scan run yet for {activeUniverse?.label ?? "this universe"} — click "Scan" or "Start Auto Scan" above to analyze the market.
-            </span>
-          )}
+          {/* Blessed empty-state shape (DESIGN_SPEC §5) — the muted icon well
+              frames the SAME pinned honesty copy (never-scanned vs scanned-empty
+              vs degraded); testids and sentences are asserted by
+              market-scanner.empty-state.test.tsx and stay verbatim. */}
+          <EmptyState
+            icon={Radar}
+            compact
+            title={
+              err ? (
+                // A degraded status/opportunities poll must NOT masquerade as an empty
+                // market (Task #600). The precise reason is in the `scanner-error`
+                // banner above; here we only refuse to assert a false scan verdict.
+                <span data-testid="scanner-empty-degraded">
+                  Scanner results couldn't be refreshed just now — see the message above. This is a temporary feed issue, not an empty market.
+                </span>
+              ) : scanExists ? (
+                <span data-testid="scanner-scanned-empty">
+                  Scan complete — no qualifying setups in {activeUniverse?.label ?? "this universe"} right now. Nothing met the scanner's criteria; try another universe above or scan again shortly.
+                </span>
+              ) : (
+                <span data-testid="scanner-never-scanned">
+                  No scan run yet for {activeUniverse?.label ?? "this universe"} — click "Scan" or "Start Auto Scan" above to analyze the market.
+                </span>
+              )
+            }
+          />
         </CardContent></Card>
       ) : (
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
           {opps.map((o, i) => (
             <Card
               key={`${o.symbol}-${o.timeframe}-${i}`}
-              className="border-l-4"
-              style={{ borderLeftColor: o.opportunity.label === "ELITE" || o.opportunity.label === "STRONG" ? "#10b981" : o.opportunity.label === "REJECT" ? "#f43f5e" : "#3b82f6" }}
+              className={`border-l-4 ${oppEdgeClass(o.opportunity.label)}`}
             >
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between gap-2">
@@ -665,17 +685,17 @@ export default function MarketScanner() {
                   return (
                     <>
                       <div className="grid grid-cols-3 gap-1 text-center">
-                        <div className="border rounded p-1">
+                        <div className="rounded-md bg-muted/40 p-1.5">
                           <div className="text-muted-foreground">Conf</div>
-                          <div className="font-mono font-semibold" data-testid={`scanner-conf-${o.symbol}`}>
+                          <div className="font-mono font-semibold tabular-nums" data-testid={`scanner-conf-${o.symbol}`}>
                             {adjusted}
                             {mult < 1 && (
                               <span className="ml-1 text-[10px] font-normal text-muted-foreground line-through">{strength}</span>
                             )}
                           </div>
                         </div>
-                        <div className="border rounded p-1"><div className="text-muted-foreground">Risk</div><div className="font-mono font-semibold">{o.riskScore}</div></div>
-                        <div className="border rounded p-1"><div className="text-muted-foreground">Sniper</div><div className="font-mono font-semibold">{o.entrySniperScore}</div></div>
+                        <div className="rounded-md bg-muted/40 p-1.5"><div className="text-muted-foreground">Risk</div><div className="font-mono font-semibold tabular-nums">{o.riskScore}</div></div>
+                        <div className="rounded-md bg-muted/40 p-1.5"><div className="text-muted-foreground">Sniper</div><div className="font-mono font-semibold tabular-nums">{o.entrySniperScore}</div></div>
                       </div>
                       {mult < 1 && (
                         <div className="text-[10px] text-muted-foreground italic" data-testid={`scanner-conf-note-${o.symbol}`}>
@@ -690,7 +710,7 @@ export default function MarketScanner() {
                   <SetupQualityBadge symbol={o.symbol} side={o.recommendedAction === "SELL" ? "sell" : "buy"} />
                 </div>
                 <div className="text-xs text-muted-foreground italic">"{o.reasonForTrade}"</div>
-                {o.reasonToAvoid && <div className="text-xs text-rose-400">⚠ {o.reasonToAvoid}</div>}
+                {o.reasonToAvoid && <div className="text-xs text-danger">⚠ {o.reasonToAvoid}</div>}
                 <RubySetupReason
                   signal={{
                     symbol: o.symbol, timeframe: o.timeframe,
@@ -710,7 +730,7 @@ export default function MarketScanner() {
                 <div className="grid grid-cols-3 gap-1 pt-2 border-t">
                   <Button
                     size="sm"
-                    className="h-9 text-sm font-bold bg-emerald-600 hover:bg-emerald-500 text-white"
+                    className="h-9 border border-success/30 bg-success/15 text-sm font-bold text-success"
                     onClick={() => {
                       // PART B — Scanner.openTradeModal timing.
                       // Target: modal visible <250ms. The end mark fires
@@ -727,7 +747,7 @@ export default function MarketScanner() {
                   >BUY</Button>
                   <Button
                     size="sm"
-                    className="h-9 text-sm font-bold bg-rose-600 hover:bg-rose-500 text-white"
+                    className="h-9 border border-danger/30 bg-danger/15 text-sm font-bold text-danger"
                     onClick={() => {
                       const tid = markActionStart("scanner.openTradeModal", { page: "market-scanner" });
                       setTradeTarget({ opp: o, side: "SELL" });
@@ -779,7 +799,7 @@ export default function MarketScanner() {
 
   const broadScanTab = (
     <div className="space-y-4">
-      <Card className="rounded-2xl border-border bg-card">
+      <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-base flex items-center gap-2.5">
             <span className="grid h-9 w-9 place-items-center rounded-xl bg-primary/15 text-primary ring-1 ring-primary/25">
@@ -788,7 +808,7 @@ export default function MarketScanner() {
             Broad Scan
           </CardTitle>
         </CardHeader>
-        <CardContent className="p-3 pt-0 flex flex-wrap items-center gap-3">
+        <CardContent className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2">
             <span className="text-xs uppercase tracking-wider text-txt-muted">Scan Universe</span>
             <Select value={universe} onValueChange={(v) => void changeUniverse(v as UniverseId)}>
@@ -820,7 +840,7 @@ export default function MarketScanner() {
             {realIsAdmin ? (
               status?.running
                 ? <Button size="sm" variant="outline" onClick={stop} disabled={busy} data-testid="scanner-btn-stop"><Square className="h-4 w-4 mr-1" />Stop</Button>
-                : <Button size="sm" className="bg-primary text-white hover:bg-primary/90" onClick={start} disabled={busy || !universeAvailable} data-testid="scanner-btn-start"><Play className="h-4 w-4 mr-1" />Start Auto Scan</Button>
+                : <Button size="sm" onClick={start} disabled={busy || !universeAvailable} data-testid="scanner-btn-start"><Play className="h-4 w-4 mr-1" />Start Auto Scan</Button>
             ) : (
               // Start/Stop drive the operator-controlled engine (admin-gated on
               // the server). For non-admins we render a disabled control with an

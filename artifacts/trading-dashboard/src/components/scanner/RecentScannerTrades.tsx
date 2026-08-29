@@ -172,7 +172,7 @@ export function RecentScannerTrades() {
         {rows.length > 0 && (
           <div className="overflow-x-auto">
             <table className="w-full text-[11px]">
-              <thead className="text-muted-foreground border-b border-slate-700/60">
+              <thead className="text-muted-foreground border-b border-border">
                 <tr>
                   <th className="text-left font-medium px-2 py-1.5">Time</th>
                   <th className="text-left font-medium px-2 py-1.5">Symbol</th>
@@ -193,7 +193,7 @@ export function RecentScannerTrades() {
                   const conf = sc && typeof sc.confidenceScore === "number" ? sc.confidenceScore as number : null;
                   const why = sc && typeof sc.reasonForTrade === "string" ? sc.reasonForTrade as string : null;
                   return (
-                    <tr key={c.commandId} className="border-b border-slate-800/60 last:border-0">
+                    <tr key={c.commandId} className="border-b border-border last:border-0">
                       <td className="px-2 py-1 font-mono whitespace-nowrap">{new Date(c.createdAt).toLocaleTimeString()}</td>
                       <td className="px-2 py-1 font-mono">{sym}</td>
                       <td className={`px-2 py-1 font-mono ${side === "BUY" ? "text-success" : side === "SELL" ? "text-danger" : ""}`}>{side}</td>

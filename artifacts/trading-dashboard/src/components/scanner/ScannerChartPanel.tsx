@@ -195,10 +195,10 @@ function formatCountdown(seconds: number): string {
 // route to a toast alert; Medium/Low stay visual-only in the radar strip.
 function newsSeverityStyle(sev: string): { cls: string; label: string } {
   switch (sev) {
-    case "CRITICAL": return { cls: "border-red-500/50 text-red-300", label: "Critical" };
-    case "HIGH": return { cls: "border-amber-500/50 text-amber-300", label: "High" };
-    case "MEDIUM": return { cls: "border-sky-500/40 text-sky-300", label: "Medium" };
-    default: return { cls: "border-zinc-600 text-zinc-400", label: "Low" };
+    case "CRITICAL": return { cls: "border-danger/25 text-danger", label: "Critical" };
+    case "HIGH": return { cls: "border-warning/25 text-warning", label: "High" };
+    case "MEDIUM": return { cls: "border-ruby/25 text-ruby", label: "Medium" };
+    default: return { cls: "border-border text-muted-foreground", label: "Low" };
   }
 }
 
@@ -218,10 +218,10 @@ function newsMarkerColor(sev: string, affectsSymbol: boolean): string {
 // Overlay-handshake status → badge styling (no internal token surfaced).
 function handshakeBadgeStyle(status: string): string {
   switch (status) {
-    case "PASS": return "border-emerald-500/50 text-emerald-300";
-    case "WARN": return "border-amber-500/50 text-amber-300";
-    case "BLOCK": return "border-red-500/50 text-red-300";
-    default: return "border-zinc-600 text-zinc-400";
+    case "PASS": return "border-success/25 text-success";
+    case "WARN": return "border-warning/25 text-warning";
+    case "BLOCK": return "border-danger/25 text-danger";
+    default: return "border-border text-muted-foreground";
   }
 }
 
@@ -301,11 +301,11 @@ function ChartTimingChip({ symbol }: { symbol: string }) {
   const read = q.data as { timingGrade?: string; entryPermission?: string; heatScore?: number } | undefined;
   if (!read?.timingGrade || !read.entryPermission) return null;
   const permColor: Record<string, string> = {
-    GO: "border-emerald-500/40 bg-emerald-500/10 text-emerald-400",
-    WAIT_FOR_ENTRY: "border-amber-500/40 bg-amber-500/10 text-amber-400",
-    WAIT_NEWS: "border-orange-500/40 bg-orange-500/10 text-orange-400",
-    NO_TRADE: "border-rose-500/40 bg-rose-500/10 text-rose-400",
-    STAND_DOWN: "border-rose-600/50 bg-rose-600/15 text-rose-300",
+    GO: "border-success/25 bg-success/10 text-success",
+    WAIT_FOR_ENTRY: "border-warning/25 bg-warning/10 text-warning",
+    WAIT_NEWS: "border-warning/25 bg-warning/10 text-warning",
+    NO_TRADE: "border-danger/25 bg-danger/10 text-danger",
+    STAND_DOWN: "border-danger/25 bg-danger/10 text-danger",
   };
   return (
     <Badge
@@ -345,7 +345,7 @@ function CandleCloseCountdown({
   return (
     <Badge
       variant="outline"
-      className="gap-1 font-mono text-[10px] border-emerald-500/30 text-emerald-300"
+      className="gap-1 font-mono text-[10px] border-success/25 text-success"
       data-testid="scanner-chart-countdown"
       title="Time until the current candle closes"
     >
@@ -2188,7 +2188,7 @@ export function ScannerChartPanel() {
               </Badge>
             )}
             {lastClose != null && !isLiveDisplay && displayStatus !== "UNAVAILABLE" && (
-              <Badge variant="outline" className="font-mono text-xs text-zinc-500" data-testid="scanner-chart-last-stale" title="Last-known candle close — not a live price">
+              <Badge variant="outline" className="font-mono text-xs text-txt-muted" data-testid="scanner-chart-last-stale" title="Last-known candle close — not a live price">
                 {lastClose} <span className="ml-1 text-[9px] uppercase tracking-wide">last-known</span>
               </Badge>
             )}
@@ -2213,7 +2213,7 @@ export function ScannerChartPanel() {
             {marketFrozen && (
               <Badge
                 variant="outline"
-                className="flex items-center gap-1 border-amber-500/50 bg-amber-500/10 text-[10px] text-amber-200"
+                className="flex items-center gap-1 border-warning/25 bg-warning/10 text-[10px] text-warning"
                 data-testid="scanner-chart-market-closed"
                 title="The broker is replaying its last quote — the market is closed (derived from real tick broker-time staleness, not a calendar)."
               >
@@ -2238,12 +2238,12 @@ export function ScannerChartPanel() {
               />
             )}
             {symbolPositions.length > 0 && (
-              <Badge variant="outline" className="border-blue-500/40 text-[10px] text-blue-300" data-testid="scanner-chart-pos-count">
+              <Badge variant="outline" className="border-primary/25 text-[10px] text-primary" data-testid="scanner-chart-pos-count">
                 {symbolPositions.length} position{symbolPositions.length > 1 ? "s" : ""}
               </Badge>
             )}
             {symbolPending.length > 0 && (
-              <Badge variant="outline" className="border-amber-500/40 text-[10px] text-amber-300" data-testid="scanner-chart-pending-count">
+              <Badge variant="outline" className="border-warning/25 text-[10px] text-warning" data-testid="scanner-chart-pending-count">
                 {symbolPending.length} pending
               </Badge>
             )}
@@ -2283,7 +2283,7 @@ export function ScannerChartPanel() {
         {candles.length === 0 ? (
           <div
             data-testid="scanner-chart-empty"
-            className="flex h-[360px] flex-col items-center justify-center rounded-md border border-zinc-800 bg-zinc-950/50 text-center text-xs text-zinc-500"
+            className="flex h-[360px] flex-col items-center justify-center rounded-md border border-border bg-background/50 text-center text-xs text-txt-muted"
           >
             {loading ? (
               <>
@@ -2300,10 +2300,10 @@ export function ScannerChartPanel() {
                     outage (e.g. "connect MetaTrader 5"), a stale feed, and a
                     provider error read differently — never fabricated. */}
                 {(feedStatus?.warning ?? feedStatus?.message) && (
-                  <div className="mt-1 max-w-md text-zinc-400">{feedStatus?.warning ?? feedStatus?.message}</div>
+                  <div className="mt-1 max-w-md text-muted-foreground">{feedStatus?.warning ?? feedStatus?.message}</div>
                 )}
-                {error && <div className="mt-1 text-amber-400/80">Feed: {error}</div>}
-                <div className="mt-1 text-zinc-600">
+                {error && <div className="mt-1 text-warning/80">Feed: {error}</div>}
+                <div className="mt-1 text-txt-muted">
                   We don't fabricate data — pick another symbol or connect your broker feed.
                 </div>
               </>
@@ -2315,7 +2315,7 @@ export function ScannerChartPanel() {
               <div
                 ref={containerRef}
                 data-testid="scanner-chart-canvas"
-                className="h-full w-full overflow-hidden rounded-md border border-zinc-800 bg-zinc-950/50"
+                className="h-full w-full overflow-hidden rounded-md border border-border bg-background/50"
                 onContextMenu={(e) => {
                   e.preventDefault();
                   openMenuAt(e.clientX, e.clientY);
@@ -2357,14 +2357,14 @@ export function ScannerChartPanel() {
               )}
               {rubyRead && (
                 <div
-                  className="absolute right-2 top-2 z-30 w-72 max-w-[calc(100%-1rem)] max-h-[320px] overflow-y-auto rounded-md border border-zinc-700 bg-zinc-950/95 p-3 text-xs shadow-xl backdrop-blur"
+                  className="absolute right-2 top-2 z-30 w-72 max-w-[calc(100%-1rem)] max-h-[320px] overflow-y-auto rounded-md border border-border bg-background/95 p-3 text-xs shadow-xl backdrop-blur"
                   data-testid="scanner-chart-ruby-read"
                 >
                   <div className="mb-1 flex items-center justify-between">
                     <span className="font-semibold text-fuchsia-200">{rubyRead.title}</span>
                     <button
                       type="button"
-                      className="rounded p-0.5 text-zinc-500 hover:text-zinc-200"
+                      className="rounded p-0.5 text-txt-muted hover:text-foreground"
                       onClick={() => setRubyRead(null)}
                       aria-label="Close"
                     >
@@ -2375,31 +2375,31 @@ export function ScannerChartPanel() {
                     <div className="mb-1 text-indigo-200">{rubyRead.consensus.headline}</div>
                   )}
                   {rubyRead.consensus?.note && (
-                    <div className="mb-1 text-zinc-400">{rubyRead.consensus.note}</div>
+                    <div className="mb-1 text-muted-foreground">{rubyRead.consensus.note}</div>
                   )}
                   {rubyRead.headline && (
-                    <div className="mb-1 text-zinc-100">{rubyRead.headline}</div>
+                    <div className="mb-1 text-foreground">{rubyRead.headline}</div>
                   )}
                   {rubyRead.points && rubyRead.points.length > 0 && (
-                    <ul className="mb-1 list-disc space-y-0.5 pl-4 text-zinc-300">
+                    <ul className="mb-1 list-disc space-y-0.5 pl-4 text-txt-secondary">
                       {rubyRead.points.map((p, i) => (
                         <li key={i}>{p}</li>
                       ))}
                     </ul>
                   )}
                   {rubyRead.cautions && rubyRead.cautions.length > 0 && (
-                    <ul className="mb-1 list-disc space-y-0.5 pl-4 text-amber-300/90">
+                    <ul className="mb-1 list-disc space-y-0.5 pl-4 text-warning/90">
                       {rubyRead.cautions.map((c, i) => (
                         <li key={i}>{c}</li>
                       ))}
                     </ul>
                   )}
                   {rubyRead.bestNextAction && (
-                    <div className="mt-1 border-t border-zinc-800 pt-1 text-emerald-200">
+                    <div className="mt-1 border-t border-border pt-1 text-success">
                       {rubyRead.bestNextAction}
                     </div>
                   )}
-                  <div className="mt-1 text-[10px] text-zinc-600">
+                  <div className="mt-1 text-[10px] text-txt-muted">
                     Read-only — {name} never places a trade.
                   </div>
                 </div>
@@ -2475,30 +2475,30 @@ export function ScannerChartPanel() {
                 source token). Only the lastCandleTime timestamp — safe — is
                 shown, on the STALE strip (Task #347). */}
             {displayStatus === "FALLBACK_COMPOSITE" && (
-              <div className="flex items-center gap-2 rounded-md border border-amber-500/20 bg-amber-500/5 px-3 py-1.5 text-[11px] text-amber-300" data-testid="scanner-chart-status-composite">
+              <div className="flex items-center gap-2 rounded-md border border-warning/25 bg-warning/5 px-3 py-1.5 text-[11px] text-warning" data-testid="scanner-chart-status-composite">
                 <span className="font-medium">Delayed market data</span>
-                <span className="ml-auto text-amber-400/50 text-[10px]">Historical context only — no live price marker</span>
+                <span className="ml-auto text-warning/50 text-[10px]">Historical context only — no live price marker</span>
               </div>
             )}
             {displayStatus === "STALE" && (
-              <div className="flex items-center gap-2 rounded-md border border-orange-500/20 bg-orange-500/5 px-3 py-1.5 text-[11px] text-orange-300" data-testid="scanner-chart-status-stale">
+              <div className="flex items-center gap-2 rounded-md border border-warning/25 bg-warning/5 px-3 py-1.5 text-[11px] text-warning" data-testid="scanner-chart-status-stale">
                 <span className="font-medium">Stale · last-known candles</span>
                 {feedStatus?.lastCandleTime && (
-                  <span className="text-orange-400/70">· last updated {new Date(feedStatus.lastCandleTime).toLocaleTimeString()}</span>
+                  <span className="text-warning/70">· last updated {new Date(feedStatus.lastCandleTime).toLocaleTimeString()}</span>
                 )}
-                <span className="ml-auto text-orange-400/50 text-[10px]">No live price marker</span>
+                <span className="ml-auto text-warning/50 text-[10px]">No live price marker</span>
               </div>
             )}
             {displayStatus === "ANALYSIS_ONLY" && candles.length > 0 && (
-              <div className="flex items-center gap-2 rounded-md border border-zinc-700/50 bg-zinc-900/40 px-3 py-1.5 text-[11px] text-zinc-400" data-testid="scanner-chart-status-analysis">
+              <div className="flex items-center gap-2 rounded-md border border-border bg-card/40 px-3 py-1.5 text-[11px] text-muted-foreground" data-testid="scanner-chart-status-analysis">
                 <span className="font-medium">Live feed unavailable · Analysis only</span>
-                <span className="ml-auto text-zinc-600 text-[10px]">Historical context — no live price marker</span>
+                <span className="ml-auto text-txt-muted text-[10px]">Historical context — no live price marker</span>
               </div>
             )}
 
             {/* Phase 4 — draft order shaping (drag the lines; nothing fires here). */}
             {canTrade && chartAffordance.warningTitle && (
-              <div className="mb-2 flex items-start gap-1.5 text-[11px] text-amber-300" data-testid="scanner-chart-feed-warning">
+              <div className="mb-2 flex items-start gap-1.5 text-[11px] text-warning" data-testid="scanner-chart-feed-warning">
                 <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
                 <span><strong>{chartAffordance.warningTitle}.</strong> {chartAffordance.warningDetail}</span>
               </div>
@@ -2536,18 +2536,18 @@ export function ScannerChartPanel() {
                 )
               ) : (
                 <>
-                  <Badge variant="outline" className={draft.side === "BUY" ? "border-blue-500/50 text-blue-300" : "border-purple-500/50 text-purple-300"}>
+                  <Badge variant="outline" className={draft.side === "BUY" ? "border-primary/25 text-primary" : "border-premium/25 text-premium"}>
                     Draft {draft.side}
                   </Badge>
-                  <span className="font-mono text-[11px] text-zinc-300" data-testid="scanner-chart-draft-values">
-                    Entry <span className="text-blue-300">{fmt(draft.entry)}</span>
-                    {" · "}SL <span className="text-red-300">{fmt(draft.sl)}</span>
-                    {" · "}TP <span className="text-emerald-300">{fmt(draft.tp)}</span>
+                  <span className="font-mono text-[11px] text-txt-secondary" data-testid="scanner-chart-draft-values">
+                    Entry <span className="text-primary">{fmt(draft.entry)}</span>
+                    {" · "}SL <span className="text-danger">{fmt(draft.sl)}</span>
+                    {" · "}TP <span className="text-success">{fmt(draft.tp)}</span>
                   </span>
-                  <span className="text-[10px] text-zinc-500">Drag the dashed lines to adjust.</span>
+                  <span className="text-[10px] text-txt-muted">Drag the dashed lines to adjust.</span>
                   {canTrade ? (
                     <div className="ml-auto flex items-center gap-2">
-                      <label className="flex items-center gap-1 text-[10px] text-zinc-400">
+                      <label className="flex items-center gap-1 text-[10px] text-muted-foreground">
                         Lot
                         <input
                           type="number"
@@ -2555,13 +2555,13 @@ export function ScannerChartPanel() {
                           min="0.01"
                           value={lot}
                           onChange={(e) => setLot(e.target.value)}
-                          className="h-7 w-16 rounded border border-zinc-700 bg-zinc-900 px-1.5 font-mono text-[11px] text-zinc-200"
+                          className="h-7 w-16 rounded border border-border bg-card px-1.5 font-mono text-[11px] text-foreground"
                           data-testid="scanner-chart-lot"
                         />
                       </label>
                       <Button
                         size="sm"
-                        className={`h-7 px-3 text-xs ${draft.side === "BUY" ? "bg-blue-600 hover:bg-blue-500" : "bg-purple-600 hover:bg-purple-500"}`}
+                        className={`h-7 px-3 text-xs ${draft.side === "BUY" ? "bg-primary hover:bg-primary" : "bg-premium hover:bg-premium"}`}
                         disabled={busy === "place"}
                         onClick={() => void placeDraft()}
                         data-testid="scanner-chart-draft-confirm"
@@ -2569,16 +2569,16 @@ export function ScannerChartPanel() {
                         {busy === "place" ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
                         Confirm {draft.side} ({tradeMode})
                       </Button>
-                      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-zinc-400" onClick={() => setDraft(null)} data-testid="scanner-chart-draft-clear">
+                      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-muted-foreground" onClick={() => setDraft(null)} data-testid="scanner-chart-draft-clear">
                         Clear
                       </Button>
                     </div>
                   ) : (
                     <div className="ml-auto flex items-center gap-2">
-                      <span className="text-[10px] text-amber-400/80" data-testid="scanner-chart-no-trade">
+                      <span className="text-[10px] text-warning/80" data-testid="scanner-chart-no-trade">
                         {tradeMode == null ? "Trading not available for this account mode." : "Manual trading is currently blocked for your account."}
                       </span>
-                      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-zinc-400" onClick={() => setDraft(null)} data-testid="scanner-chart-draft-clear">
+                      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-muted-foreground" onClick={() => setDraft(null)} data-testid="scanner-chart-draft-clear">
                         Clear
                       </Button>
                     </div>
@@ -2591,44 +2591,44 @@ export function ScannerChartPanel() {
                 is dragging an own LIVE position's SL/TP. Confirm step shows when
                 one-click is OFF; submit routes through the sanctioned pipeline. */}
             {posModify && (
-              <div className="space-y-2 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3" data-testid="scanner-chart-modify-controls">
+              <div className="space-y-2 rounded-xl border border-warning/25 bg-warning/5 p-3" data-testid="scanner-chart-modify-controls">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="outline" className="border-amber-500/50 text-amber-200">Adjust SL/TP · {posModify.side}</Badge>
-                  <span className="font-mono text-[11px] text-zinc-300" data-testid="scanner-chart-modify-values">
-                    Entry <span className="text-blue-300">{fmt(posModify.entry)}</span>
-                    {" · "}SL <span className="text-red-300">{posModify.sl != null ? fmt(posModify.sl) : "—"}</span>
-                    {" · "}TP <span className="text-emerald-300">{posModify.tp != null ? fmt(posModify.tp) : "—"}</span>
+                  <Badge variant="outline" className="border-warning/25 text-warning">Adjust SL/TP · {posModify.side}</Badge>
+                  <span className="font-mono text-[11px] text-txt-secondary" data-testid="scanner-chart-modify-values">
+                    Entry <span className="text-primary">{fmt(posModify.entry)}</span>
+                    {" · "}SL <span className="text-danger">{posModify.sl != null ? fmt(posModify.sl) : "—"}</span>
+                    {" · "}TP <span className="text-success">{posModify.tp != null ? fmt(posModify.tp) : "—"}</span>
                   </span>
                   {(() => {
                     const rr = computeRiskReward({ side: posModify.side, entry: posModify.entry, stopLoss: posModify.sl, takeProfit: posModify.tp });
-                    return rr != null ? <span className="text-[10px] text-zinc-400" data-testid="scanner-chart-modify-rr">R/R {rr.toFixed(2)}</span> : null;
+                    return rr != null ? <span className="text-[10px] text-muted-foreground" data-testid="scanner-chart-modify-rr">R/R {rr.toFixed(2)}</span> : null;
                   })()}
-                  <span className="text-[10px] text-zinc-500">Drag the dashed SL/TP lines — entry stays fixed.</span>
+                  <span className="text-[10px] text-txt-muted">Drag the dashed SL/TP lines — entry stays fixed.</span>
                   <OneClickArmedBadge className="ml-auto" />
                 </div>
                 {modifyArmed ? (
-                  <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-500/20 bg-background/40 p-2" data-testid="scanner-chart-modify-confirm">
-                    <span className="text-[11px] text-amber-200">Confirm change:</span>
-                    <span className="font-mono text-[11px] text-zinc-300">
-                      SL <span className="text-zinc-500">{posModify.origSl != null ? fmt(posModify.origSl) : "—"}</span>
-                      {" → "}<span className="text-red-300">{posModify.sl != null ? fmt(posModify.sl) : "—"}</span>
-                      {"  ·  "}TP <span className="text-zinc-500">{posModify.origTp != null ? fmt(posModify.origTp) : "—"}</span>
-                      {" → "}<span className="text-emerald-300">{posModify.tp != null ? fmt(posModify.tp) : "—"}</span>
+                  <div className="flex flex-wrap items-center gap-2 rounded-md border border-warning/25 bg-background/40 p-2" data-testid="scanner-chart-modify-confirm">
+                    <span className="text-[11px] text-warning">Confirm change:</span>
+                    <span className="font-mono text-[11px] text-txt-secondary">
+                      SL <span className="text-txt-muted">{posModify.origSl != null ? fmt(posModify.origSl) : "—"}</span>
+                      {" → "}<span className="text-danger">{posModify.sl != null ? fmt(posModify.sl) : "—"}</span>
+                      {"  ·  "}TP <span className="text-txt-muted">{posModify.origTp != null ? fmt(posModify.origTp) : "—"}</span>
+                      {" → "}<span className="text-success">{posModify.tp != null ? fmt(posModify.tp) : "—"}</span>
                     </span>
                     <div className="ml-auto flex items-center gap-2">
-                      <Button size="sm" className="h-7 bg-amber-600 px-3 text-xs text-white hover:bg-amber-500" disabled={busy === `modify:${posModify.ticket}`} onClick={() => void submitModify(posModify)} data-testid="scanner-chart-modify-submit">
+                      <Button size="sm" className="h-7 bg-warning px-3 text-xs text-white hover:bg-warning" disabled={busy === `modify:${posModify.ticket}`} onClick={() => void submitModify(posModify)} data-testid="scanner-chart-modify-submit">
                         {busy === `modify:${posModify.ticket}` ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
                         Confirm SL/TP
                       </Button>
-                      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-zinc-400" onClick={cancelPosModify} data-testid="scanner-chart-modify-cancel">Cancel</Button>
+                      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-muted-foreground" onClick={cancelPosModify} data-testid="scanner-chart-modify-cancel">Cancel</Button>
                     </div>
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] text-zinc-500" data-testid="scanner-chart-modify-hint">
+                    <span className="text-[10px] text-txt-muted" data-testid="scanner-chart-modify-hint">
                       {oneClickArmed ? "One-click is on — releasing a line sends the change instantly." : "One-click is off — releasing a line opens a confirm step."}
                     </span>
-                    <Button size="sm" variant="ghost" className="ml-auto h-7 px-2 text-xs text-zinc-400" onClick={cancelPosModify} data-testid="scanner-chart-modify-done">Done</Button>
+                    <Button size="sm" variant="ghost" className="ml-auto h-7 px-2 text-xs text-muted-foreground" onClick={cancelPosModify} data-testid="scanner-chart-modify-done">Done</Button>
                   </div>
                 )}
               </div>
@@ -2636,9 +2636,9 @@ export function ScannerChartPanel() {
 
             {/* Smart Chart Layers & Market Impact Radar (Task #197) — read-only,
                 advisory overlays with honest empty/absent states throughout. */}
-            <div className="space-y-2 rounded-md border border-zinc-800 bg-zinc-950/40 p-2" data-testid="scanner-smart-layers">
+            <div className="space-y-2 rounded-md border border-border bg-background/40 p-2" data-testid="scanner-smart-layers">
               <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-[10px] uppercase tracking-wide text-zinc-500">Layers:</span>
+                <span className="text-[10px] uppercase tracking-wide text-txt-muted">Layers:</span>
                 {SMART_LAYER_TOGGLES.map((t) => {
                   const on = layerToggles[t.id];
                   return (
@@ -2646,7 +2646,7 @@ export function ScannerChartPanel() {
                       key={t.id}
                       type="button"
                       onClick={() => toggleLayer(t.id)}
-                      className={`rounded-full border px-2 py-0.5 text-[10px] transition-colors ${on ? "border-primary/50 bg-primary/10 text-primary" : "border-zinc-700 text-zinc-500"}`}
+                      className={`rounded-full border px-2 py-0.5 text-[10px] transition-colors ${on ? "border-primary/50 bg-primary/10 text-primary" : "border-border text-txt-muted"}`}
                       data-testid={`scanner-smart-layer-toggle-${t.id}`}
                       aria-pressed={on}
                     >
@@ -2657,7 +2657,7 @@ export function ScannerChartPanel() {
                 {handshake && (
                   <Badge
                     variant="outline"
-                    className={`ml-auto text-[10px] ${overlayDegraded ? "border-amber-500/40 text-amber-300" : handshakeBadgeStyle(handshake.overallStatus)}`}
+                    className={`ml-auto text-[10px] ${overlayDegraded ? "border-warning/25 text-warning" : handshakeBadgeStyle(handshake.overallStatus)}`}
                     title={overlayDegraded ? OVERLAY_DEGRADED_TITLE : handshake.userFacingMessage}
                     data-testid="scanner-smart-handshake"
                   >
@@ -2669,9 +2669,9 @@ export function ScannerChartPanel() {
               {layerToggles.news && news && (
                 <div className="space-y-1" data-testid="scanner-news-radar">
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-[10px] uppercase tracking-wide text-zinc-500">Impact radar</span>
+                    <span className="text-[10px] uppercase tracking-wide text-txt-muted">Impact radar</span>
                     {news.highImpactWindowActive && (
-                      <Badge variant="outline" className="border-red-500/50 text-[10px] text-red-300" data-testid="scanner-news-window">
+                      <Badge variant="outline" className="border-danger/25 text-[10px] text-danger" data-testid="scanner-news-window">
                         High-impact window
                       </Badge>
                     )}
@@ -2679,11 +2679,11 @@ export function ScannerChartPanel() {
                         page — rendered here, only when no provider is connected
                         (news.disclaimer is null otherwise). */}
                     {!news.providerConnected && news.disclaimer && (
-                      <span className="text-[10px] text-zinc-600">{news.disclaimer}</span>
+                      <span className="text-[10px] text-txt-muted">{news.disclaimer}</span>
                     )}
                   </div>
                   {news.events.length === 0 ? (
-                    <div className="text-[11px] text-zinc-500">{news.riskLabel}</div>
+                    <div className="text-[11px] text-txt-muted">{news.riskLabel}</div>
                   ) : (
                     <div className="flex flex-wrap gap-1.5">
                       {news.events.slice(0, 8).map((ev) => {
@@ -2699,7 +2699,7 @@ export function ScannerChartPanel() {
                             <span className="font-semibold">{st.label}</span>
                             <span className="font-mono">{ev.currency}</span>
                             <span>{ev.title}</span>
-                            <span className="text-zinc-400">{formatCountdown((Date.parse(ev.eventTimeIso) - Date.now()) / 1000)}</span>
+                            <span className="text-muted-foreground">{formatCountdown((Date.parse(ev.eventTimeIso) - Date.now()) / 1000)}</span>
                           </Badge>
                         );
                       })}
@@ -2712,8 +2712,8 @@ export function ScannerChartPanel() {
                 <div
                   className={
                     tradeHealthQuery.isError
-                      ? "text-[10px] text-amber-400/80"
-                      : "text-[10px] text-zinc-600"
+                      ? "text-[10px] text-warning/80"
+                      : "text-[10px] text-txt-muted"
                   }
                   data-testid="scanner-smart-reserved"
                 >
@@ -2728,7 +2728,7 @@ export function ScannerChartPanel() {
               )}
 
               {smartLayersQuery.isError && (
-                <div className="text-[11px] text-amber-400/80" data-testid="scanner-smart-error">
+                <div className="text-[11px] text-warning/80" data-testid="scanner-smart-error">
                   Smart layers are momentarily unavailable — the chart and your data are unaffected.
                 </div>
               )}
@@ -2748,8 +2748,8 @@ export function ScannerChartPanel() {
                 Right-click (or long-press) the chart to add. Read-only artifacts;
                 dismissing soft-deletes (status → dismissed), never hard-delete. */}
             {annotations.length > 0 && (
-              <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-zinc-800 bg-zinc-950/40 p-2" data-testid="scanner-chart-annotations">
-                <span className="text-[10px] uppercase tracking-wide text-zinc-500">Your marks:</span>
+              <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-border bg-background/40 p-2" data-testid="scanner-chart-annotations">
+                <span className="text-[10px] uppercase tracking-wide text-txt-muted">Your marks:</span>
                 {annotations.map((a) => {
                   const label =
                     a.kind === "SUPPORT" ? "S" :
@@ -2757,11 +2757,11 @@ export function ScannerChartPanel() {
                     a.kind === "PRICE_ALERT" ? `Alert ${a.direction === "above" ? "↑" : a.direction === "below" ? "↓" : ""}`.trim() :
                     "Zone";
                   return (
-                    <Badge key={a.id} variant="outline" className="gap-1 border-zinc-700 font-mono text-[10px] text-zinc-300" data-testid={`scanner-chart-annotation-${a.id}`}>
+                    <Badge key={a.id} variant="outline" className="gap-1 border-border font-mono text-[10px] text-txt-secondary" data-testid={`scanner-chart-annotation-${a.id}`}>
                       {label} {fmt(a.price)}
                       <button
                         type="button"
-                        className="ml-0.5 text-zinc-500 hover:text-red-400 disabled:opacity-40"
+                        className="ml-0.5 text-txt-muted hover:text-danger disabled:opacity-40"
                         disabled={dismissAnnotation.isPending}
                         onClick={() => dismissAnnotation.mutate({ id: a.id })}
                         title="Dismiss"
@@ -2778,16 +2778,16 @@ export function ScannerChartPanel() {
             {/* Phase 5/6 — manage the user's own open positions + pending orders
                 directly from the chart. Every action is backend-gated. */}
             {(symbolPositions.length > 0 || symbolPending.length > 0) && (
-              <div className="space-y-1.5 rounded-md border border-zinc-800 bg-zinc-950/40 p-2" data-testid="scanner-chart-manage">
+              <div className="space-y-1.5 rounded-md border border-border bg-background/40 p-2" data-testid="scanner-chart-manage">
                 {symbolPositions.map((p, i) => (
                   <div key={`pos-${p.brokerTicket ?? i}`} className="flex flex-wrap items-center gap-2 text-[11px]" data-testid={`scanner-chart-pos-${p.brokerTicket ?? i}`}>
-                    <Badge variant="outline" className={p.accountMode === "LIVE" ? "border-red-500/40 text-red-300" : "border-blue-500/40 text-blue-300"}>
+                    <Badge variant="outline" className={p.accountMode === "LIVE" ? "border-danger/25 text-danger" : "border-primary/25 text-primary"}>
                       {p.accountMode}
                     </Badge>
-                    <span className={p.side === "BUY" ? "font-semibold text-emerald-300" : "font-semibold text-red-300"}>{p.side}</span>
-                    <span className="font-mono text-zinc-400">{p.lotSize ?? "—"} @ {p.entryPrice != null ? fmt(p.entryPrice) : "—"}</span>
+                    <span className={p.side === "BUY" ? "font-semibold text-success" : "font-semibold text-danger"}>{p.side}</span>
+                    <span className="font-mono text-muted-foreground">{p.lotSize ?? "—"} @ {p.entryPrice != null ? fmt(p.entryPrice) : "—"}</span>
                     {p.floatingPnl != null && (
-                      <span className={`font-mono ${p.floatingPnl >= 0 ? "text-emerald-400" : "text-red-400"}`}>{p.floatingPnl >= 0 ? "+" : ""}{p.floatingPnl.toFixed(2)}</span>
+                      <span className={`font-mono ${p.floatingPnl >= 0 ? "text-success" : "text-danger"}`}>{p.floatingPnl >= 0 ? "+" : ""}{p.floatingPnl.toFixed(2)}</span>
                     )}
                     {canTrade && p.brokerTicket && (
                       <div className="ml-auto flex items-center gap-1">
@@ -2807,7 +2807,7 @@ export function ScannerChartPanel() {
                           <Button
                             size="sm"
                             variant="outline"
-                            className="h-6 border-amber-500/40 px-2 text-[10px] text-amber-200"
+                            className="h-6 border-warning/25 px-2 text-[10px] text-warning"
                             disabled={busy === `modify:${p.brokerTicket}`}
                             onClick={() => startPosModify(p)}
                             data-testid={`scanner-chart-modify-${p.brokerTicket}`}
@@ -2815,7 +2815,7 @@ export function ScannerChartPanel() {
                             Adjust SL/TP
                           </Button>
                         ) : (
-                          <span className="text-[10px] text-zinc-500" data-testid={`scanner-chart-modify-locked-${p.brokerTicket}`}>
+                          <span className="text-[10px] text-txt-muted" data-testid={`scanner-chart-modify-locked-${p.brokerTicket}`}>
                             SL/TP edit needs live feed
                           </span>
                         ))}
@@ -2825,9 +2825,9 @@ export function ScannerChartPanel() {
                 ))}
                 {symbolPending.map((o) => (
                   <div key={`pen-${o.id}`} className="flex flex-wrap items-center gap-2 text-[11px]" data-testid={`scanner-chart-pending-${o.id}`}>
-                    <Badge variant="outline" className="border-amber-500/40 text-amber-300">PENDING</Badge>
-                    <span className="font-semibold text-zinc-200">{o.side} {o.orderType ?? ""}</span>
-                    <span className="font-mono text-zinc-400">{o.lotSize} @ {(o.entryPrice ?? o.stopTriggerPrice ?? o.stopLimitPrice) != null ? fmt((o.entryPrice ?? o.stopTriggerPrice ?? o.stopLimitPrice)!) : "—"}</span>
+                    <Badge variant="outline" className="border-warning/25 text-warning">PENDING</Badge>
+                    <span className="font-semibold text-foreground">{o.side} {o.orderType ?? ""}</span>
+                    <span className="font-mono text-muted-foreground">{o.lotSize} @ {(o.entryPrice ?? o.stopTriggerPrice ?? o.stopLimitPrice) != null ? fmt((o.entryPrice ?? o.stopTriggerPrice ?? o.stopLimitPrice)!) : "—"}</span>
                     {canTrade && (
                       <div className="ml-auto">
                         <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" disabled={busy === `cancel:${o.id}`} onClick={() => void cancelPending(o.id)} data-testid={`scanner-chart-cancel-${o.id}`}>

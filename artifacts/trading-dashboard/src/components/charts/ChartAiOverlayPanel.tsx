@@ -26,9 +26,9 @@ function badgeLabel(badge: string): string {
 
 function biasTone(bias: string): string {
   const b = (bias || "").toLowerCase();
-  if (b.includes("bull")) return "text-emerald-300";
-  if (b.includes("bear")) return "text-rose-300";
-  return "text-zinc-300";
+  if (b.includes("bull")) return "text-success";
+  if (b.includes("bear")) return "text-danger";
+  return "text-txt-secondary";
 }
 
 export function ChartAiOverlayPanel({
@@ -64,7 +64,7 @@ export function ChartAiOverlayPanel({
 
       {suppressed ? (
         <div
-          className="mt-2 flex items-start gap-1.5 text-amber-400/90"
+          className="mt-2 flex items-start gap-1.5 text-warning/90"
           data-testid="chart-ai-overlay-suppressed"
         >
           <ShieldOff className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -76,24 +76,24 @@ export function ChartAiOverlayPanel({
           {signal ? (
             <div className="space-y-1" data-testid="chart-ai-overlay-signal">
               <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                <Radar className="h-3.5 w-3.5 text-sky-400" />
-                <span className="text-zinc-500">Scanner:</span>
+                <Radar className="h-3.5 w-3.5 text-ruby" />
+                <span className="text-txt-muted">Scanner:</span>
                 <span
                   className={`font-semibold ${
-                    signal.side === "BUY" ? "text-emerald-300" : "text-rose-300"
+                    signal.side === "BUY" ? "text-success" : "text-danger"
                   }`}
                 >
                   {signal.side}
                 </span>
-                <span className="text-zinc-500">conf</span>
-                <span className="font-semibold text-zinc-200">{pct(signal.confidence)}</span>
+                <span className="text-txt-muted">conf</span>
+                <span className="font-semibold text-foreground">{pct(signal.confidence)}</span>
                 {signal.statusBadge && (
-                  <span className="rounded bg-zinc-800/80 px-1.5 py-0.5 text-[10px] text-zinc-300">
+                  <span className="rounded bg-muted/80 px-1.5 py-0.5 text-[10px] text-txt-secondary">
                     {badgeLabel(signal.statusBadge)}
                   </span>
                 )}
                 <span
-                  className="rounded border border-zinc-700 px-1.5 py-0.5 text-[10px] text-zinc-400"
+                  className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground"
                   title="Honest data source for this signal"
                   data-testid="chart-ai-overlay-datasource"
                 >
@@ -103,8 +103,8 @@ export function ChartAiOverlayPanel({
                   <span
                     className={`rounded border px-1.5 py-0.5 text-[10px] ${
                       signal.timeframeMatchesChart
-                        ? "border-zinc-700 text-zinc-400"
-                        : "border-amber-600/60 text-amber-400/90"
+                        ? "border-border text-muted-foreground"
+                        : "border-warning/25 text-warning/90"
                     }`}
                     title={
                       signal.timeframeMatchesChart
@@ -119,50 +119,50 @@ export function ChartAiOverlayPanel({
                 )}
               </div>
               {signal.finalReadHeadline && (
-                <div className="text-zinc-400">{signal.finalReadHeadline}</div>
+                <div className="text-muted-foreground">{signal.finalReadHeadline}</div>
               )}
             </div>
           ) : (
-            <div className="text-zinc-500" data-testid="chart-ai-overlay-no-signal">
+            <div className="text-txt-muted" data-testid="chart-ai-overlay-no-signal">
               No scanner signal for this symbol right now.
             </div>
           )}
 
           {/* Ruby read summary (on-demand). */}
           {ruby.status === "error" && (
-            <div className="text-rose-400" data-testid="chart-ai-overlay-ruby-err">
+            <div className="text-danger" data-testid="chart-ai-overlay-ruby-err">
               {name} couldn't read this chart ({ruby.error}).
             </div>
           )}
           {ruby.status === "insufficient" && (
-            <div className="text-amber-400/90" data-testid="chart-ai-overlay-ruby-insufficient">
+            <div className="text-warning/90" data-testid="chart-ai-overlay-ruby-insufficient">
               {name} read: not enough confirmed data to mark zones.
             </div>
           )}
           {ruby.status === "ok" && ruby.read && (
-            <div className="space-y-0.5 text-zinc-300" data-testid="chart-ai-overlay-ruby-body">
+            <div className="space-y-0.5 text-txt-secondary" data-testid="chart-ai-overlay-ruby-body">
               <div className="flex flex-wrap items-center gap-x-2">
                 <Sparkles className="h-3.5 w-3.5 text-fuchsia-400" />
-                <span className="text-zinc-500">{name}:</span>
+                <span className="text-txt-muted">{name}:</span>
                 <span className={`font-semibold ${biasTone(ruby.read.bias)}`}>{ruby.read.bias}</span>
-                <span className="text-zinc-500">·</span>
-                <span className="text-zinc-400">{ruby.read.confidence}</span>
+                <span className="text-txt-muted">·</span>
+                <span className="text-muted-foreground">{ruby.read.confidence}</span>
               </div>
-              <div className="grid grid-cols-2 gap-x-3 text-zinc-400">
-                <div><span className="text-zinc-500">Support:</span> {ruby.read.supportZone}</div>
-                <div><span className="text-zinc-500">Resistance:</span> {ruby.read.resistanceZone}</div>
+              <div className="grid grid-cols-2 gap-x-3 text-muted-foreground">
+                <div><span className="text-txt-muted">Support:</span> {ruby.read.supportZone}</div>
+                <div><span className="text-txt-muted">Resistance:</span> {ruby.read.resistanceZone}</div>
               </div>
               {ruby.read.goldStrategyRead?.active && (
                 <div
-                  className="mt-1 border-t border-amber-500/20 pt-1 text-amber-300/90"
+                  className="mt-1 border-t border-warning/25 pt-1 text-warning/90"
                   data-testid="chart-ai-overlay-gold"
                 >
-                  <span className="font-semibold text-amber-300">Gold mode</span>
-                  <span className="text-zinc-500"> · macro </span>
+                  <span className="font-semibold text-warning">Gold mode</span>
+                  <span className="text-txt-muted"> · macro </span>
                   {ruby.read.goldStrategyRead.macroBias}
-                  <span className="text-zinc-500"> · ATR </span>
+                  <span className="text-txt-muted"> · ATR </span>
                   {ruby.read.goldStrategyRead.atrState}
-                  <div className="text-amber-300/70">{ruby.read.goldStrategyRead.riskWarning}</div>
+                  <div className="text-warning/70">{ruby.read.goldStrategyRead.riskWarning}</div>
                 </div>
               )}
             </div>

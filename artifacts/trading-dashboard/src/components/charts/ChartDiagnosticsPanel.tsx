@@ -37,28 +37,28 @@ function pct(n: number | null | undefined): string {
 function qualityLabel(quality: string | null | undefined): { text: string; cls: string } {
   switch (quality) {
     case "invalid":
-      return { text: "Data integrity failure (OHLC / mock-data check failed)", cls: "text-red-300" };
+      return { text: "Data integrity failure (OHLC / mock-data check failed)", cls: "text-danger" };
     case "stale":
-      return { text: "Feed stale — trailing gap exceeds threshold", cls: "text-amber-300" };
+      return { text: "Feed stale — trailing gap exceeds threshold", cls: "text-warning" };
     case "partial":
-      return { text: "Incomplete sequence — missing / duplicate / out-of-order bars", cls: "text-amber-300" };
+      return { text: "Incomplete sequence — missing / duplicate / out-of-order bars", cls: "text-warning" };
     case "delayed":
-      return { text: "Feed delayed — not yet confirmed real-time", cls: "text-amber-300" };
+      return { text: "Feed delayed — not yet confirmed real-time", cls: "text-warning" };
     case "empty":
-      return { text: "No candles returned by any provider", cls: "text-zinc-400" };
+      return { text: "No candles returned by any provider", cls: "text-muted-foreground" };
     case "unavailable":
-      return { text: "No live feed provider reachable", cls: "text-zinc-400" };
+      return { text: "No live feed provider reachable", cls: "text-muted-foreground" };
     case "clean":
-      return { text: "Feed clean — all integrity checks passed", cls: "text-emerald-300" };
+      return { text: "Feed clean — all integrity checks passed", cls: "text-success" };
     default:
-      return { text: "Unknown quality state", cls: "text-zinc-500" };
+      return { text: "Unknown quality state", cls: "text-txt-muted" };
   }
 }
 
 export function ChartDiagnosticsPanel({ state }: { state: ChartState | null }) {
   if (!state) {
     return (
-      <div className="rounded-md border border-zinc-800 bg-zinc-950/40 p-3 text-[11px] text-zinc-500">
+      <div className="rounded-md border border-border bg-background/40 p-3 text-[11px] text-txt-muted">
         No state to diagnose yet.
       </div>
     );
@@ -75,29 +75,29 @@ export function ChartDiagnosticsPanel({ state }: { state: ChartState | null }) {
 
   return (
     <div
-      className="rounded-md border border-zinc-800 bg-zinc-950/40 p-3 text-[11px] leading-snug"
+      className="rounded-md border border-border bg-background/40 p-3 text-[11px] leading-snug"
       data-testid="chart-diagnostics-panel"
     >
       <div className="flex items-center gap-2">
-        <Gauge className="h-3.5 w-3.5 text-amber-400" />
-        <span className="font-semibold text-zinc-200">Admin diagnostics</span>
-        <span className="ml-auto text-[10px] text-zinc-500">operator-only</span>
+        <Gauge className="h-3.5 w-3.5 text-warning" />
+        <span className="font-semibold text-foreground">Admin diagnostics</span>
+        <span className="ml-auto text-[10px] text-txt-muted">operator-only</span>
       </div>
 
       {/* ── Phase 2 — Feed / Safe-Mode block ───────────────────────────── */}
       <div
         className={`mt-2 rounded border px-2 py-1.5 ${
           qualityDegraded
-            ? "border-amber-500/30 bg-amber-950/20"
-            : "border-emerald-500/20 bg-emerald-950/10"
+            ? "border-warning/25 bg-warning/10"
+            : "border-success/25 bg-success/10"
         }`}
         data-testid="chart-diag-feed-summary"
       >
-        <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
+        <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
           {qualityDegraded ? (
-            <AlertTriangle className="h-3 w-3 shrink-0 text-amber-400" />
+            <AlertTriangle className="h-3 w-3 shrink-0 text-warning" />
           ) : (
-            <Info className="h-3 w-3 shrink-0 text-emerald-400" />
+            <Info className="h-3 w-3 shrink-0 text-success" />
           )}
           Feed / Safe-Mode
         </div>
@@ -118,14 +118,14 @@ export function ChartDiagnosticsPanel({ state }: { state: ChartState | null }) {
           <DiagRow label="Feed latency" value={ms(truth.latencyMs)} />
           <DiagRow label="AI-usable" value={state.aiUsable ? "Yes" : "No"} />
           {truth.message && truth.message !== "Feed nominal" && (
-            <DiagRow label="Message" value={<span className="text-amber-200">{truth.message}</span>} />
+            <DiagRow label="Message" value={<span className="text-warning">{truth.message}</span>} />
           )}
         </div>
       </div>
 
       {/* ── Phase 2 — Validation failures block ────────────────────────── */}
       <div className="mt-2" data-testid="chart-diag-validation">
-        <div className="text-[10px] uppercase tracking-wide text-zinc-500">Validation failures</div>
+        <div className="text-[10px] uppercase tracking-wide text-txt-muted">Validation failures</div>
         <div className="mt-1 grid grid-cols-2 gap-1 sm:grid-cols-4">
           <ValidationStat label="Invalid OHLC" value={truth.invalidOhlcCount} warnAbove={0} />
           <ValidationStat label="Missing bars" value={truth.missingCandleCount} warnAbove={0} />
@@ -136,9 +136,9 @@ export function ChartDiagnosticsPanel({ state }: { state: ChartState | null }) {
 
       {/* ── Phase 2 — Fast flags block ──────────────────────────────────── */}
       <div className="mt-2" data-testid="chart-diag-fast-flags">
-        <div className="text-[10px] uppercase tracking-wide text-zinc-500">Fast flags</div>
+        <div className="text-[10px] uppercase tracking-wide text-txt-muted">Fast flags</div>
         {!flags.populated ? (
-          <div className="mt-1 text-zinc-500">Not enough candles to derive flags.</div>
+          <div className="mt-1 text-txt-muted">Not enough candles to derive flags.</div>
         ) : (
           <div className="mt-1 grid grid-cols-3 gap-1">
             <FlagStat label="Momentum burst" active={flags.momentumBurst} />
@@ -147,14 +147,14 @@ export function ChartDiagnosticsPanel({ state }: { state: ChartState | null }) {
           </div>
         )}
         {flags.note && (
-          <div className="mt-1 text-[10px] text-zinc-500">{flags.note}</div>
+          <div className="mt-1 text-[10px] text-txt-muted">{flags.note}</div>
         )}
       </div>
 
       {/* ── Candle stats ─────────────────────────────────────────────────── */}
       {stats.barsAnalyzed > 0 && (
         <div className="mt-2" data-testid="chart-diag-candle-stats">
-          <div className="text-[10px] uppercase tracking-wide text-zinc-500">Candle stats</div>
+          <div className="text-[10px] uppercase tracking-wide text-txt-muted">Candle stats</div>
           <div className="mt-1 grid grid-cols-2 gap-1 sm:grid-cols-3">
             <Stat label="Direction" value={stats.direction} />
             <Stat label="Change %" value={pct(stats.changePct)} />
@@ -167,7 +167,7 @@ export function ChartDiagnosticsPanel({ state }: { state: ChartState | null }) {
       )}
 
       {/* ── Speed architecture ───────────────────────────────────────────── */}
-      <div className="mt-3 text-[10px] uppercase tracking-wide text-zinc-500">Speed architecture</div>
+      <div className="mt-3 text-[10px] uppercase tracking-wide text-txt-muted">Speed architecture</div>
       <div className="mt-1 grid grid-cols-2 gap-1.5 sm:grid-cols-3">
         <Stat label="Brain" value={sp.brain} />
         <Stat label="Build time" value={ms(sp.stateBuildMs)} />
@@ -178,12 +178,12 @@ export function ChartDiagnosticsPanel({ state }: { state: ChartState | null }) {
       </div>
 
       {/* ── Readiness gates ──────────────────────────────────────────────── */}
-      <div className="mt-3 text-[10px] uppercase tracking-wide text-zinc-500">
+      <div className="mt-3 text-[10px] uppercase tracking-wide text-txt-muted">
         Readiness gates ({state.marketUnderstanding.readiness.quality})
       </div>
       <div className="mt-1 space-y-1">
         {gates.length === 0 ? (
-          <div className="text-zinc-500">No gates evaluated (insufficient data).</div>
+          <div className="text-txt-muted">No gates evaluated (insufficient data).</div>
         ) : (
           gates.map((g) => (
             <div
@@ -192,13 +192,13 @@ export function ChartDiagnosticsPanel({ state }: { state: ChartState | null }) {
               data-testid={`chart-diag-gate-${g.key}`}
             >
               {g.passed ? (
-                <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0 text-emerald-400" />
+                <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0 text-success" />
               ) : (
-                <XCircle className="mt-0.5 h-3 w-3 shrink-0 text-rose-400" />
+                <XCircle className="mt-0.5 h-3 w-3 shrink-0 text-danger" />
               )}
-              <span className="text-zinc-400">
-                <span className="text-zinc-300">{g.label}</span>{" "}
-                <span className="text-zinc-600">({g.score})</span> — {g.detail}
+              <span className="text-muted-foreground">
+                <span className="text-txt-secondary">{g.label}</span>{" "}
+                <span className="text-txt-muted">({g.score})</span> — {g.detail}
               </span>
             </div>
           ))
@@ -208,10 +208,10 @@ export function ChartDiagnosticsPanel({ state }: { state: ChartState | null }) {
       {/* ── Contradictions ───────────────────────────────────────────────── */}
       {contradictions.length > 0 && (
         <>
-          <div className="mt-3 text-[10px] uppercase tracking-wide text-zinc-500">Contradictions</div>
+          <div className="mt-3 text-[10px] uppercase tracking-wide text-txt-muted">Contradictions</div>
           <div className="mt-1 space-y-1">
             {contradictions.map((c, i) => (
-              <div key={i} className="text-amber-300/90">
+              <div key={i} className="text-warning/90">
                 [{c.severity}] {c.text}
               </div>
             ))}
@@ -224,9 +224,9 @@ export function ChartDiagnosticsPanel({ state }: { state: ChartState | null }) {
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded border border-zinc-800 bg-zinc-900/40 px-2 py-1">
-      <div className="text-[9px] uppercase tracking-wide text-zinc-500">{label}</div>
-      <div className="text-[11px] font-medium text-zinc-300">{value}</div>
+    <div className="rounded border border-border bg-card/40 px-2 py-1">
+      <div className="text-[9px] uppercase tracking-wide text-txt-muted">{label}</div>
+      <div className="text-[11px] font-medium text-txt-secondary">{value}</div>
     </div>
   );
 }
@@ -234,8 +234,8 @@ function Stat({ label, value }: { label: string; value: string }) {
 function DiagRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-2 text-[10px]">
-      <span className="shrink-0 text-zinc-500">{label}</span>
-      <span className="text-right font-mono text-zinc-300">{value}</span>
+      <span className="shrink-0 text-txt-muted">{label}</span>
+      <span className="text-right font-mono text-txt-secondary">{value}</span>
     </div>
   );
 }
@@ -244,11 +244,11 @@ function ValidationStat({ label, value, warnAbove }: { label: string; value: num
   const warn = value > warnAbove;
   return (
     <div
-      className={`rounded border px-2 py-1 ${warn ? "border-amber-500/40 bg-amber-950/20" : "border-zinc-800 bg-zinc-900/40"}`}
+      className={`rounded border px-2 py-1 ${warn ? "border-warning/25 bg-warning/10" : "border-border bg-card/40"}`}
       data-testid={`chart-diag-val-${label.toLowerCase().replace(/\s+/g, "-")}`}
     >
-      <div className="text-[9px] uppercase tracking-wide text-zinc-500">{label}</div>
-      <div className={`text-[11px] font-medium ${warn ? "text-amber-300" : "text-zinc-500"}`}>
+      <div className="text-[9px] uppercase tracking-wide text-txt-muted">{label}</div>
+      <div className={`text-[11px] font-medium ${warn ? "text-warning" : "text-txt-muted"}`}>
         {value}
       </div>
     </div>
@@ -258,10 +258,10 @@ function ValidationStat({ label, value, warnAbove }: { label: string; value: num
 function FlagStat({ label, active }: { label: string; active: boolean }) {
   return (
     <div
-      className={`rounded border px-2 py-1 ${active ? "border-blue-500/30 bg-blue-950/20" : "border-zinc-800 bg-zinc-900/40"}`}
+      className={`rounded border px-2 py-1 ${active ? "border-primary/25 bg-primary/10" : "border-border bg-card/40"}`}
     >
-      <div className="text-[9px] uppercase tracking-wide text-zinc-500">{label}</div>
-      <div className={`text-[11px] font-medium ${active ? "text-blue-300" : "text-zinc-600"}`}>
+      <div className="text-[9px] uppercase tracking-wide text-txt-muted">{label}</div>
+      <div className={`text-[11px] font-medium ${active ? "text-primary" : "text-txt-muted"}`}>
         {active ? "Yes" : "No"}
       </div>
     </div>

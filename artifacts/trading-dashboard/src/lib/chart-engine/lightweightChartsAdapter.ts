@@ -130,18 +130,18 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
       height: options.height,
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
-        textColor: "#a1a1aa",
+        textColor: "#9AA6B5",
         fontSize: 11,
       },
       grid: {
-        vertLines: { color: "rgba(63, 63, 70, 0.25)" },
-        horzLines: { color: "rgba(63, 63, 70, 0.25)" },
+        vertLines: { color: "rgba(33, 42, 52, 0.8)" },
+        horzLines: { color: "rgba(33, 42, 52, 0.8)" },
       },
       crosshair: { mode: CrosshairMode.Normal },
       timeScale: {
         timeVisible: true,
         secondsVisible: false,
-        borderColor: "rgba(63, 63, 70, 0.5)",
+        borderColor: "#212A34",
         // rightOffset keeps the latest candle slightly inside the canvas edge so
         // the forming bar never clips against the price axis.
         rightOffset: 8,
@@ -149,7 +149,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
         lockVisibleTimeRangeOnResize: false,
       },
       rightPriceScale: {
-        borderColor: "rgba(63, 63, 70, 0.5)",
+        borderColor: "#212A34",
         // autoScale on the right price scale fits the y-axis to only the VISIBLE
         // candles rather than the entire loaded history, eliminating the
         // "compressed flat line" symptom on H4/D1 views.
@@ -161,12 +161,12 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     // lightweight-charts v5: addSeries(SeriesDefinition, options). The legacy v4
     // addCandlestickSeries() was removed and throws at runtime. Do NOT cast.
     const series = chart.addSeries(CandlestickSeries, {
-      upColor: "#10b981",
-      downColor: "#ef4444",
-      borderUpColor: "#10b981",
-      borderDownColor: "#ef4444",
-      wickUpColor: "#10b981",
-      wickDownColor: "#ef4444",
+      upColor: "#42E6A4",
+      downColor: "#FF4D5E",
+      borderUpColor: "#42E6A4",
+      borderDownColor: "#FF4D5E",
+      wickUpColor: "#42E6A4",
+      wickDownColor: "#FF4D5E",
     });
 
     // Throttled crosshair subscription (≈60fps) to avoid thrashing.
@@ -549,7 +549,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     if (last && live) {
       this.lastPriceLine = series.createPriceLine({
         price: last.close,
-        color: "#60a5fa",
+        color: "#2F8CFF",
         lineWidth: 1,
         lineStyle: LineStyle.Dashed,
         axisLabelVisible: true,

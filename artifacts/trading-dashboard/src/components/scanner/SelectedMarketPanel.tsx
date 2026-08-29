@@ -93,13 +93,13 @@ function biasBadgeClass(b: Bias): string {
   if (b === "BUY") return "bg-success/20 text-success border-success/40";
   if (b === "SELL") return "bg-danger/20 text-danger border-danger/40";
   if (b === "WAIT") return "bg-warning/20 text-warning border-warning/40";
-  return "bg-zinc-500/20 text-foreground border-zinc-500/40";
+  return "bg-muted/60 text-foreground border-border";
 }
 function impactBadgeClass(i: ImpactLevel): string {
   if (i === "CRITICAL") return "bg-fuchsia-500/20 text-fuchsia-300 border-fuchsia-500/40";
-  if (i === "HIGH") return "bg-rose-500/20 text-danger border-rose-500/40";
-  if (i === "MEDIUM") return "bg-amber-500/20 text-warning border-amber-500/40";
-  return "bg-zinc-500/20 text-foreground border-zinc-500/40";
+  if (i === "HIGH") return "bg-danger/10 text-danger border-danger/25";
+  if (i === "MEDIUM") return "bg-warning/10 text-warning border-warning/25";
+  return "bg-muted/60 text-foreground border-border";
 }
 
 function timeAgo(iso: string): string {
@@ -457,7 +457,7 @@ export function SelectedMarketPanel() {
                 >SELL</Button>
               </div>
               {liveFeedWarning && (
-                <p className="text-[11px] text-amber-300 flex items-start gap-1.5" data-testid="selected-market-feed-warning">
+                <p className="text-[11px] text-warning flex items-start gap-1.5" data-testid="selected-market-feed-warning">
                   <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
                   <span><strong>{liveFeedWarning.warningTitle}.</strong> {liveFeedWarning.warningDetail}</span>
                 </p>

@@ -179,7 +179,7 @@ export function TradingViewLiveChart({ defaultSymbol = "V75", height = 520, comp
         )}
         {error && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background/95 p-4 text-center">
-            <AlertTriangle className="w-6 h-6 text-amber-500" />
+            <AlertTriangle className="w-6 h-6 text-warning" />
             <p className="text-sm font-semibold">Live chart failed to load</p>
             <p className="text-xs text-muted-foreground max-w-md">{error}</p>
             <Button size="sm" onClick={() => setReloadKey(k => k + 1)} data-testid="tv-retry"><RefreshCw className="w-3.5 h-3.5 mr-1" /> Retry</Button>

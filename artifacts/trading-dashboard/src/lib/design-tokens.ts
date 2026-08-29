@@ -17,16 +17,20 @@ export const ARX_COLORS = {
 // shadows, and typography. Use these helpers everywhere — never hand-write
 // conditional color classes.
 
+// ARX 6.0: tones now flow through the CSS palette tokens (index.css), so
+// every tone renders correctly in BOTH themes and there is exactly one place
+// a semantic color is defined. Shape and keys are unchanged — only the class
+// strings moved off stock-Tailwind emerald/rose/amber/cyan/slate/violet.
 export const STATUS_COLORS = {
-  bullish: { text: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/30", badge: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30", solid: "bg-emerald-500", ring: "ring-emerald-500/40" },
-  bearish: { text: "text-rose-400", bg: "bg-rose-500/10", border: "border-rose-500/30", badge: "bg-rose-500/15 text-rose-300 border-rose-500/30", solid: "bg-rose-500", ring: "ring-rose-500/40" },
-  warning: { text: "text-amber-400", bg: "bg-amber-500/10", border: "border-amber-500/30", badge: "bg-amber-500/15 text-amber-300 border-amber-500/30", solid: "bg-amber-500", ring: "ring-amber-500/40" },
-  danger: { text: "text-red-400", bg: "bg-red-500/10", border: "border-red-500/30", badge: "bg-red-500/15 text-red-300 border-red-500/30", solid: "bg-red-500", ring: "ring-red-500/40" },
-  success: { text: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/30", badge: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30", solid: "bg-emerald-500", ring: "ring-emerald-500/40" },
-  info: { text: "text-cyan-300", bg: "bg-cyan-500/10", border: "border-cyan-500/30", badge: "bg-cyan-500/15 text-cyan-300 border-cyan-500/30", solid: "bg-cyan-500", ring: "ring-cyan-500/40" },
-  neutral: { text: "text-slate-300", bg: "bg-slate-500/10", border: "border-slate-500/30", badge: "bg-slate-500/15 text-slate-300 border-slate-500/30", solid: "bg-slate-500", ring: "ring-slate-500/40" },
-  inactive: { text: "text-slate-500", bg: "bg-slate-700/20", border: "border-slate-700/30", badge: "bg-slate-700/20 text-slate-500 border-slate-700/30", solid: "bg-slate-600", ring: "ring-slate-700/40" },
-  premium: { text: "text-violet-300", bg: "bg-violet-500/10", border: "border-violet-500/30", badge: "bg-violet-500/15 text-violet-300 border-violet-500/30", solid: "bg-violet-500", ring: "ring-violet-500/40" },
+  bullish: { text: "text-success", bg: "bg-success/10", border: "border-success/25", badge: "bg-success/10 text-success border-success/25", solid: "bg-success", ring: "ring-success/30" },
+  bearish: { text: "text-danger", bg: "bg-danger/10", border: "border-danger/25", badge: "bg-danger/10 text-danger border-danger/25", solid: "bg-danger", ring: "ring-danger/30" },
+  warning: { text: "text-warning", bg: "bg-warning/10", border: "border-warning/25", badge: "bg-warning/10 text-warning border-warning/25", solid: "bg-warning", ring: "ring-warning/30" },
+  danger: { text: "text-danger", bg: "bg-danger/10", border: "border-danger/25", badge: "bg-danger/10 text-danger border-danger/25", solid: "bg-danger", ring: "ring-danger/30" },
+  success: { text: "text-success", bg: "bg-success/10", border: "border-success/25", badge: "bg-success/10 text-success border-success/25", solid: "bg-success", ring: "ring-success/30" },
+  info: { text: "text-ruby", bg: "bg-ruby/10", border: "border-ruby/25", badge: "bg-ruby/10 text-ruby border-ruby/25", solid: "bg-ruby", ring: "ring-ruby/30" },
+  neutral: { text: "text-txt-secondary", bg: "bg-muted/60", border: "border-border", badge: "bg-muted/60 text-txt-secondary border-border", solid: "bg-muted-foreground", ring: "ring-border" },
+  inactive: { text: "text-txt-muted", bg: "bg-muted/40", border: "border-border/60", badge: "bg-muted/40 text-txt-muted border-border/60", solid: "bg-muted", ring: "ring-border/60" },
+  premium: { text: "text-premium", bg: "bg-premium/10", border: "border-premium/25", badge: "bg-premium/10 text-premium border-premium/25", solid: "bg-premium", ring: "ring-premium/30" },
 } as const;
 
 export type StatusTone = keyof typeof STATUS_COLORS;
@@ -133,10 +137,12 @@ export const SPACING = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 } as cons
 
 // ── Radius / Shadow tokens (Tailwind class strings) ─────────────────────────
 export const RADIUS = { sm: "rounded-sm", md: "rounded-md", lg: "rounded-lg", xl: "rounded-xl" } as const;
+// Shadows are theme-colored via the --shadow-* tokens in index.css now, so
+// the composites no longer force black overlays.
 export const SHADOWS = {
-  subtle: "shadow-sm shadow-black/20",
-  elevated: "shadow-lg shadow-black/40",
-  modal: "shadow-2xl shadow-black/60",
+  subtle: "shadow-sm",
+  elevated: "shadow-lg",
+  modal: "shadow-2xl",
 } as const;
 
 // ── Typography tokens (Tailwind composites) ─────────────────────────────────

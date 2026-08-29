@@ -96,17 +96,17 @@ function SystemSection({
       <CollapsibleTrigger asChild>
         <button
           type="button"
-          className="flex w-full items-center justify-between gap-3 rounded-xl border border-border bg-card/60 px-4 py-3 text-left transition-colors hover:bg-card"
+          className="flex w-full items-center justify-between gap-3 rounded-xl border border-card-border bg-card/60 px-4 py-3 text-left transition-colors hover:bg-card"
           data-testid={`collapsible-${testid}`}
         >
           <div className="flex min-w-0 items-center gap-3">
             <Icon className="h-4 w-4 shrink-0 text-primary" />
             <div className="min-w-0">
               <div className="text-sm font-semibold">{title}</div>
-              <div className="truncate text-xs text-secondary">{description}</div>
+              <div className="truncate text-xs text-muted-foreground">{description}</div>
             </div>
           </div>
-          <ChevronDown className={cn("h-4 w-4 text-muted transition-transform", open && "rotate-180")} />
+          <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", open && "rotate-180")} />
         </button>
       </CollapsibleTrigger>
       <CollapsibleContent className="mt-3 space-y-4">{children}</CollapsibleContent>
@@ -201,7 +201,7 @@ export default function Dashboard() {
           guards remain authoritative; this is purely a visibility change. */}
       {isAdmin && (
         <div className="space-y-3 border-t border-border/60 pt-5">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             System Health · Admin
           </div>
 

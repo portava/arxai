@@ -44,9 +44,9 @@ export default function TestingLab() {
   const { isAdmin } = useProductRole();
 
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-6">
       <header className="space-y-1">
-        <h1 className="text-2xl font-bold text-slate-100">Testing Lab</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Testing Lab</h1>
         <p className="text-sm text-muted-foreground">
           Test strategies against historical data and live market conditions
           before trusting them.
@@ -54,16 +54,16 @@ export default function TestingLab() {
       </header>
 
       <div className="flex items-center gap-2">
-        <span className="text-xs text-slate-400">Strategy</span>
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Strategy</span>
         <select
           data-testid="shared-strategy-select"
           value={strategyId}
           onChange={(e) => setStrategyId(e.target.value)}
-          className="rounded border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-100"
+          className="rounded-md border border-input bg-transparent px-2.5 py-1.5 text-xs text-foreground shadow-xs focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/25"
         >
           {TESTING_STRATEGIES.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
-        <span className="text-[10px] text-slate-500">shared across all tabs</span>
+        <span className="text-xs text-muted-foreground">shared across all tabs</span>
       </div>
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>

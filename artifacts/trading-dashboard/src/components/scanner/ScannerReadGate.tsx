@@ -43,10 +43,10 @@ export function ScannerReadGate({
   if (compact) {
     const toneCls =
       level === "blocked"
-        ? "text-rose-400"
+        ? "text-danger"
         : level === "limited"
-          ? "text-blue-400"
-          : "text-amber-400";
+          ? "text-primary"
+          : "text-warning";
     return (
       <div
         className={cn("flex items-start gap-1.5 text-[11px] leading-tight", toneCls)}

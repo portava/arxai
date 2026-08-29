@@ -4,22 +4,25 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Shield, Pause, Play, RotateCcw, Gauge, SlidersHorizontal, ClipboardList, ScrollText } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { PageTabs } from "@/components/ui/PageTabs";
 import { CollapsibleSection } from "@/components/ui/CollapsibleSection";
 import { CompactAlert } from "@/components/ui/CompactAlert";
+import { STATUS_COLORS } from "@/lib/design-tokens";
 
 type Profile = Record<string, unknown> & { profileName: string; preset: string; maxRiskPerTradeUsd: number; maxDailyLossUsd: number; maxLotSize: number; minRiskReward: number };
 type Budget = { dailyRiskLimit: number; dailyRiskUsed: number; dailyRiskRemaining: number; weeklyRiskLimit: number; weeklyRiskUsed: number; openRisk: number; currentDrawdownUsd: number; maxDrawdownAllowed: number; riskStatus: string };
 type Cards = { riskStatus: string; dailyRiskRemaining: number; openRisk: number; drawdownStatus: string; exposureStatus: string; overtradingRisk: string; activeRiskLocks: string[]; aiRiskDiscipline: number; permissions: { aiTrading: boolean; manualTrading: boolean; simulator: boolean; liveTesterIntent: boolean; futureMt5: boolean; pauseReason: string | null }; propFirm: { status: string; profitTargetProgress: number } | null };
 
+// Status → semantic badge classes from STATUS_COLORS (correct in both themes).
 const STATUS_COLOR: Record<string, string> = {
-  OK: "bg-success/20 text-success",
-  CAUTION: "bg-warning/20 text-warning",
-  BLOCK: "bg-danger/20 text-danger",
-  NORMAL: "bg-success/20 text-success",
-  OVERTRADING_RISK: "bg-warning/20 text-warning",
-  REVENGE_TRADING_RISK: "bg-danger/20 text-danger",
-  HARD_BLOCK: "bg-danger/20 text-danger",
+  OK: STATUS_COLORS.success.badge,
+  CAUTION: STATUS_COLORS.warning.badge,
+  BLOCK: STATUS_COLORS.danger.badge,
+  NORMAL: STATUS_COLORS.success.badge,
+  OVERTRADING_RISK: STATUS_COLORS.warning.badge,
+  REVENGE_TRADING_RISK: STATUS_COLORS.danger.badge,
+  HARD_BLOCK: STATUS_COLORS.danger.badge,
 };
 
 async function api(path: string, init?: RequestInit) {
@@ -110,7 +113,8 @@ export default function RiskCommandCenter() {
             <Button
               key={p}
               size="sm"
-              variant={profile?.preset === p ? "default" : "outline"}
+              variant="outline"
+              className={cn(profile?.preset === p && "border-primary/40 bg-primary/10 text-primary")}
               onClick={() => applyPreset(p)}
               data-testid={`risk-preset-${p}`}
             >{p}</Button>
@@ -208,11 +212,11 @@ export default function RiskCommandCenter() {
       <div className="flex items-center gap-3 flex-wrap">
         <Shield className="h-6 w-6 text-primary" />
         <div className="flex-1 min-w-0">
-          <h1 className="text-xl md:text-2xl font-bold">Risk Command Center</h1>
+          <h1 className="text-xl md:text-2xl font-bold tracking-tight">Risk Command Center</h1>
           <p className="text-xs md:text-sm text-muted-foreground">Account protection layer — controls execution decisions, never navigation. MT5 broker permission stays OFF.</p>
         </div>
         <Badge variant="outline" className="text-[11px]">SIMULATOR</Badge>
-        {cards && <Badge className={`text-[11px] ${STATUS_COLOR[cards.riskStatus] ?? ""}`} data-testid="risk-status-badge">{cards.riskStatus}</Badge>}
+        {cards && <Badge className={cn("text-[11px]", STATUS_COLOR[cards.riskStatus] ?? "")} data-testid="risk-status-badge">{cards.riskStatus}</Badge>}
       </div>
 
       <PageTabs
@@ -230,8 +234,10 @@ export default function RiskCommandCenter() {
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
-  return <Card><CardContent className="p-2">
-    <p className="text-[10px] text-muted-foreground uppercase">{label}</p>
-    <p className="text-sm font-mono font-semibold">{value}</p>
-  </CardContent></Card>;
+  return (
+    <div className="rounded-lg bg-muted/40 p-3">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className="text-sm font-mono font-semibold tabular-nums">{value}</p>
+    </div>
+  );
 }

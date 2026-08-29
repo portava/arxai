@@ -68,11 +68,11 @@ const MODES = {
   },
   Balanced: {
     icon: ShieldAlert,
-    color: "text-blue-400",
-    border: "border-blue-500/40",
-    bg: "bg-blue-500/5",
-    activeBg: "bg-blue-500/15",
-    badge: "bg-blue-500/20 text-blue-300 border-blue-500/30",
+    color: "text-primary",
+    border: "border-primary/40",
+    bg: "bg-primary/5",
+    activeBg: "bg-primary/15",
+    badge: "bg-primary/20 text-primary border-primary/30",
     stats: [
       { label: "Risk/Trade", value: "0.5%" },
       { label: "Daily Limit", value: "2%" },
@@ -86,11 +86,11 @@ const MODES = {
   },
   Aggressive: {
     icon: Zap,
-    color: "text-orange-400",
-    border: "border-orange-500/40",
-    bg: "bg-orange-500/5",
-    activeBg: "bg-orange-500/15",
-    badge: "bg-orange-500/20 text-orange-300 border-orange-500/30",
+    color: "text-warning",
+    border: "border-warning/40",
+    bg: "bg-warning/5",
+    activeBg: "bg-warning/15",
+    badge: "bg-warning/20 text-warning border-warning/30",
     stats: [
       { label: "Risk/Trade", value: "1%" },
       { label: "Daily Limit", value: "3%" },
@@ -104,11 +104,11 @@ const MODES = {
   },
   Custom: {
     icon: BarChart3,
-    color: "text-violet-400",
-    border: "border-violet-500/40",
-    bg: "bg-violet-500/5",
-    activeBg: "bg-violet-500/15",
-    badge: "bg-violet-500/20 text-violet-300 border-violet-500/30",
+    color: "text-premium",
+    border: "border-premium/40",
+    bg: "bg-premium/5",
+    activeBg: "bg-premium/15",
+    badge: "bg-premium/20 text-premium border-premium/30",
     stats: [],
     description: "Full manual control. Every parameter editable. Your rules, your risk.",
   },
@@ -146,7 +146,7 @@ function StatRow({ label, value, sub }: { label: string; value: React.ReactNode;
     <div className="flex items-center justify-between py-2 border-b border-border/30 last:border-0">
       <span className="text-sm text-muted-foreground">{label}</span>
       <div className="text-right">
-        <span className="text-sm font-mono font-semibold text-foreground">{value}</span>
+        <span className="text-sm font-mono font-semibold tabular-nums text-foreground">{value}</span>
         {sub && <div className="text-xs text-muted-foreground">{sub}</div>}
       </div>
     </div>
@@ -171,16 +171,16 @@ function AuditBanner({ symbol }: { symbol?: string }) {
         "flex items-center gap-4 rounded-lg border px-5 py-3",
         audit.passed
           ? "border-success/30 bg-success/10"
-          : "border-red-500/30 bg-red-500/5"
+          : "border-danger/30 bg-danger/5"
       )}
     >
       <div className="shrink-0">
         {audit.passed
           ? <ShieldCheck className="h-8 w-8 text-success" />
-          : <ShieldX className="h-8 w-8 text-red-400" />}
+          : <ShieldX className="h-8 w-8 text-danger" />}
       </div>
       <div className="flex-1 min-w-0">
-        <p className={cn("font-semibold text-sm", audit.passed ? "text-success" : "text-red-300")}>
+        <p className={cn("font-semibold text-sm", audit.passed ? "text-success" : "text-danger")}>
           {audit.passed ? "Trading conditions GREEN — all risk checks passed" : "Trading BLOCKED — risk rule violation"}
         </p>
         {!audit.passed && (
@@ -190,7 +190,7 @@ function AuditBanner({ symbol }: { symbol?: string }) {
           </p>
         )}
         {audit.warnings.length > 0 && audit.passed && (
-          <p className="text-xs text-yellow-400/80 truncate mt-0.5">
+          <p className="text-xs text-warning/80 truncate mt-0.5">
             ⚠ {audit.warnings[0]}
           </p>
         )}
@@ -198,20 +198,20 @@ function AuditBanner({ symbol }: { symbol?: string }) {
       <div className="hidden md:flex gap-6 shrink-0 text-center">
         <div>
           <div className="text-xs text-muted-foreground">Daily Loss</div>
-          <div className="font-mono font-bold text-sm">{audit.dailyLossUsed.toFixed(1)}%</div>
+          <div className="font-mono font-bold text-sm tabular-nums">{audit.dailyLossUsed.toFixed(1)}%</div>
         </div>
         <div>
           <div className="text-xs text-muted-foreground">Trades Left</div>
-          <div className="font-mono font-bold text-sm">{audit.tradesRemaining}</div>
+          <div className="font-mono font-bold text-sm tabular-nums">{audit.tradesRemaining}</div>
         </div>
         <div>
           <div className="text-xs text-muted-foreground">Open</div>
-          <div className="font-mono font-bold text-sm">{audit.openTradesCount}</div>
+          <div className="font-mono font-bold text-sm tabular-nums">{audit.openTradesCount}</div>
         </div>
         {audit.cooldownActive && (
           <div>
-            <div className="text-xs text-red-400">Cooldown</div>
-            <div className="font-mono font-bold text-sm text-red-400">ACTIVE</div>
+            <div className="text-xs text-danger">Cooldown</div>
+            <div className="font-mono font-bold text-sm text-danger">ACTIVE</div>
           </div>
         )}
       </div>
@@ -435,7 +435,7 @@ export default function RiskSettings() {
 
   if (isLoading) {
     return (
-      <div className="mx-auto w-full max-w-5xl space-y-4 p-4 md:p-6 pb-32 md:pb-6">
+      <div className="mx-auto w-full max-w-5xl space-y-4 pb-32 md:pb-6">
         <Skeleton className="h-16 w-full" />
         <Skeleton className="h-96 w-full" />
       </div>
@@ -447,7 +447,7 @@ export default function RiskSettings() {
   const ModeIcon = modeConfig.icon;
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-5 p-4 md:p-6 pb-32 md:pb-6 animate-in fade-in duration-500">
+    <div className="mx-auto w-full max-w-5xl space-y-6 pb-32 md:pb-6 animate-in fade-in duration-500">
 
       {/* ── Header ── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -468,12 +468,12 @@ export default function RiskSettings() {
             {currentMode} Mode
           </Badge>
           {settings?.liveLocked && (
-            <Badge className="bg-red-500/20 text-red-300 border-red-500/30 px-3 py-1 border">
+            <Badge className="bg-danger/20 text-danger border-danger/30 px-3 py-1 border">
               <Lock size={12} className="mr-1.5" /> Live Locked
             </Badge>
           )}
           {botStatus?.isPaused && (
-            <Badge className="bg-yellow-500/20 text-yellow-300 border-yellow-500/30 px-3 py-1 border">
+            <Badge className="bg-warning/20 text-warning border-warning/30 px-3 py-1 border">
               <PauseCircle size={12} className="mr-1.5" /> Paused
             </Badge>
           )}
@@ -504,7 +504,7 @@ export default function RiskSettings() {
           <TabsTrigger value="calculator" className="gap-1.5 text-xs sm:text-sm">
             <CalculatorIcon size={14} /> Sizer
           </TabsTrigger>
-          <TabsTrigger value="emergency" className="gap-1.5 text-xs sm:text-sm text-red-400 data-[state=active]:text-red-400">
+          <TabsTrigger value="emergency" className="gap-1.5 text-xs sm:text-sm text-danger data-[state=active]:text-danger">
             <AlertTriangle size={14} /> Emergency
           </TabsTrigger>
         </TabsList>
@@ -560,7 +560,7 @@ export default function RiskSettings() {
                     <CardContent className="pt-0">
                       <p className="text-xs text-muted-foreground">
                         Switch to the{" "}
-                        <span className="text-violet-400 font-semibold">Limits</span> tab to
+                        <span className="text-premium font-semibold">Limits</span> tab to
                         configure every parameter individually.
                       </p>
                     </CardContent>
@@ -597,16 +597,22 @@ export default function RiskSettings() {
             </CardHeader>
             <CardContent>
               <div className="relative pt-2 pb-4">
-                <div className="h-2 rounded-full bg-gradient-to-r from-emerald-500 via-blue-500 via-orange-400 to-red-500" />
                 <div
-                  className="absolute top-0 w-4 h-4 rounded-full border-2 border-background shadow-lg transition-all duration-500"
+                  className="h-2 rounded-full"
+                  style={{
+                    background:
+                      "linear-gradient(to right, hsl(var(--success)), hsl(var(--primary)), hsl(var(--warning)), hsl(var(--danger)))",
+                  }}
+                />
+                <div
+                  className="absolute top-0 w-4 h-4 rounded-full border-2 border-background shadow-md transition-all duration-500"
                   style={{
                     left: currentMode === "Conservative" ? "2%" :
                           currentMode === "Balanced" ? "33%" :
                           currentMode === "Aggressive" ? "65%" : "90%",
-                    backgroundColor: currentMode === "Conservative" ? "#10b981" :
-                                     currentMode === "Balanced" ? "#3b82f6" :
-                                     currentMode === "Aggressive" ? "#f97316" : "#8b5cf6",
+                    backgroundColor: currentMode === "Conservative" ? "hsl(var(--success))" :
+                                     currentMode === "Balanced" ? "hsl(var(--primary))" :
+                                     currentMode === "Aggressive" ? "hsl(var(--warning))" : "hsl(var(--premium))",
                   }}
                 />
                 <div className="flex justify-between text-xs text-muted-foreground mt-3">
@@ -625,11 +631,11 @@ export default function RiskSettings() {
         ══════════════════════════════════════════════════════════════════ */}
         <TabsContent value="limits">
           {currentMode !== "Custom" && (
-            <Alert className="mb-4 border-blue-500/30 bg-blue-500/5">
-              <ShieldAlert className="h-4 w-4 text-blue-400" />
-              <AlertTitle className="text-blue-300 text-sm">Preset Active — {currentMode}</AlertTitle>
+            <Alert className="mb-4 border-primary/30 bg-primary/5">
+              <ShieldAlert className="h-4 w-4 text-primary" />
+              <AlertTitle className="text-primary text-sm">Preset Active — {currentMode}</AlertTitle>
               <AlertDescription className="text-xs text-muted-foreground">
-                Editing any limit below will switch you to <strong className="text-violet-400">Custom</strong> mode automatically.
+                Editing any limit below will switch you to <strong className="text-premium">Custom</strong> mode automatically.
               </AlertDescription>
             </Alert>
           )}
@@ -820,13 +826,13 @@ export default function RiskSettings() {
                   key: "vol75ExtraConfidence" as const,
                   label: "Volatility 75 (1s) — Extra Confidence",
                   desc: "Adds +10% to the minimum confidence threshold when trading V75 1s. Extreme tick speed requires higher certainty.",
-                  accent: "text-orange-400",
+                  accent: "text-warning",
                 },
                 {
                   key: "vol75SmallLot" as const,
                   label: "Volatility 75 — Reduced Lot Size",
                   desc: "Automatically halves the calculated lot size for V75 instruments to account for higher pip volatility.",
-                  accent: "text-orange-400",
+                  accent: "text-warning",
                 },
               ].map(({ key, label, desc, accent }) => (
                 <div key={key} className="flex items-start justify-between px-6 py-4 gap-4">
@@ -856,19 +862,19 @@ export default function RiskSettings() {
                   key: "us30BlockNews" as const,
                   label: "US30 — Block During Major U.S. News",
                   desc: "Warns when US30 trades are detected near NFP, FOMC, CPI and other tier-1 U.S. economic releases.",
-                  accent: "text-blue-400",
+                  accent: "text-primary",
                 },
                 {
                   key: "stocksBlockEarnings" as const,
                   label: "Stocks — Block Around Earnings",
                   desc: "Flags stock trades during earnings season. Can be overridden manually if you have a directional view.",
-                  accent: "text-blue-400",
+                  accent: "text-primary",
                 },
                 {
                   key: "forexBlockEvents" as const,
                   label: "Forex — Block Around Central Bank Events",
                   desc: "Generates warnings for forex pairs during ECB, Fed, BoE, BoJ decisions and high-impact news.",
-                  accent: "text-blue-400",
+                  accent: "text-primary",
                 },
               ].map(({ key, label, desc, accent }) => (
                 <div key={key} className="flex items-start justify-between px-6 py-4 gap-4">
@@ -1018,9 +1024,9 @@ export default function RiskSettings() {
                       </div>
                     </div>
                     {calcResult.warning && (
-                      <Alert className="mt-3 border-yellow-500/30 bg-yellow-500/5 py-2">
-                        <AlertTriangle className="h-3 w-3 text-yellow-400" />
-                        <AlertDescription className="text-xs text-yellow-300/90 ml-1">
+                      <Alert className="mt-3 border-warning/30 bg-warning/5 py-2">
+                        <AlertTriangle className="h-3 w-3 text-warning" />
+                        <AlertDescription className="text-xs text-warning/90 ml-1">
                           {calcResult.warning}
                         </AlertDescription>
                       </Alert>
@@ -1092,9 +1098,9 @@ export default function RiskSettings() {
         <TabsContent value="emergency" className="space-y-4">
 
           {/* Kill Switch */}
-          <Card className="border-red-500/40 bg-red-500/5">
+          <Card className="border-danger/40 bg-danger/5">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-red-400">
+              <CardTitle className="flex items-center gap-2 text-danger">
                 <XCircle size={20} /> Emergency Kill Switch
               </CardTitle>
               <CardDescription className="text-muted-foreground text-sm">
@@ -1108,15 +1114,15 @@ export default function RiskSettings() {
                   <Button
                     variant="destructive"
                     size="lg"
-                    className="w-full h-16 text-lg font-black tracking-widest gap-3 shadow-lg shadow-red-500/20 hover:shadow-red-500/40 transition-shadow"
+                    className="w-full h-16 text-lg font-black tracking-widest gap-3 shadow-lg"
                   >
                     <XCircle size={24} />
                     ⛔ EMERGENCY STOP ALL TRADING
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="border-red-500/40">
+                <DialogContent className="border-danger/40">
                   <DialogHeader>
-                    <DialogTitle className="text-red-400 flex items-center gap-2">
+                    <DialogTitle className="text-danger flex items-center gap-2">
                       <AlertTriangle /> Confirm Emergency Stop
                     </DialogTitle>
                     <DialogDescription className="text-sm text-muted-foreground space-y-2 pt-2">
@@ -1127,7 +1133,7 @@ export default function RiskSettings() {
                         <li>Set bot mode to <strong>OFF</strong></li>
                         <li>Require manual restart to resume</li>
                       </ul>
-                      <p className="text-red-400 font-medium pt-2">Are you sure?</p>
+                      <p className="text-danger font-medium pt-2">Are you sure?</p>
                     </DialogDescription>
                   </DialogHeader>
                   <DialogFooter className="gap-2">
@@ -1150,9 +1156,9 @@ export default function RiskSettings() {
           {/* Quick Actions Grid */}
           <div className="grid md:grid-cols-3 gap-4">
             {/* Pause / Resume */}
-            <Card className="border-yellow-500/30">
+            <Card className="border-warning/30">
               <CardHeader className="pb-3">
-                <CardTitle className="text-sm flex items-center gap-2 text-yellow-400">
+                <CardTitle className="text-sm flex items-center gap-2 text-warning">
                   <PauseCircle size={16} /> Pause Trading
                 </CardTitle>
                 <CardDescription className="text-xs">
@@ -1161,9 +1167,9 @@ export default function RiskSettings() {
               </CardHeader>
               <CardContent className="space-y-2">
                 {botStatus?.isPaused ? (
-                  <Alert className="border-yellow-500/30 bg-yellow-500/5 py-2">
-                    <PauseCircle className="h-3 w-3 text-yellow-400" />
-                    <AlertDescription className="text-xs text-yellow-300 ml-1">Bot is currently paused</AlertDescription>
+                  <Alert className="border-warning/30 bg-warning/5 py-2">
+                    <PauseCircle className="h-3 w-3 text-warning" />
+                    <AlertDescription className="text-xs text-warning ml-1">Bot is currently paused</AlertDescription>
                   </Alert>
                 ) : null}
                 <Button
@@ -1172,7 +1178,7 @@ export default function RiskSettings() {
                     "w-full gap-2 border",
                     botStatus?.isPaused
                       ? "border-success/40 text-success hover:bg-success/10"
-                      : "border-yellow-500/40 text-yellow-400 hover:bg-yellow-500/10"
+                      : "border-warning/40 text-warning hover:bg-warning/10"
                   )}
                   onClick={botStatus?.isPaused ? handleResumeTrading : handlePauseTrading}
                   disabled={updateBotStatus.isPending}
@@ -1187,11 +1193,11 @@ export default function RiskSettings() {
             </Card>
 
             {/* Live Bridge Lock */}
-            <Card className={cn("border", settings?.liveLocked ? "border-red-500/40" : "border-border/50")}>
+            <Card className={cn("border", settings?.liveLocked ? "border-danger/40" : "border-border/50")}>
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm flex items-center gap-2">
                   {settings?.liveLocked
-                    ? <><Lock size={16} className="text-red-400" /> <span className="text-red-400">Live Locked</span></>
+                    ? <><Lock size={16} className="text-danger" /> <span className="text-danger">Live Locked</span></>
                     : <><Unlock size={16} className="text-muted-foreground" /> <span>Live Mode Lock</span></>}
                 </CardTitle>
                 <CardDescription className="text-xs">
@@ -1200,9 +1206,9 @@ export default function RiskSettings() {
               </CardHeader>
               <CardContent className="space-y-2">
                 {settings?.liveLocked && (
-                  <Alert className="border-red-500/30 bg-red-500/5 py-2">
-                    <Lock className="h-3 w-3 text-red-400" />
-                    <AlertDescription className="text-xs text-red-300 ml-1">Live trading is locked</AlertDescription>
+                  <Alert className="border-danger/30 bg-danger/5 py-2">
+                    <Lock className="h-3 w-3 text-danger" />
+                    <AlertDescription className="text-xs text-danger ml-1">Live trading is locked</AlertDescription>
                   </Alert>
                 )}
                 <Button
@@ -1211,7 +1217,7 @@ export default function RiskSettings() {
                     "w-full gap-2 border",
                     settings?.liveLocked
                       ? "border-success/40 text-success hover:bg-success/10"
-                      : "border-red-500/40 text-red-400 hover:bg-red-500/10"
+                      : "border-danger/40 text-danger hover:bg-danger/10"
                   )}
                   onClick={handleToggleLiveLock}
                   disabled={setLiveLock.isPending}
@@ -1268,7 +1274,7 @@ export default function RiskSettings() {
                 ].map((row) => (
                   <div key={row.label} className="flex items-center justify-between text-xs">
                     <span className="text-muted-foreground">{row.label}</span>
-                    <span className={cn("font-mono font-semibold", row.ok ? "text-success" : "text-yellow-400")}>
+                    <span className={cn("font-mono font-semibold tabular-nums", row.ok ? "text-success" : "text-warning")}>
                       {row.value}
                     </span>
                   </div>
@@ -1319,22 +1325,22 @@ function RiskAuditDetail() {
             <StatRow
               label="Cooldown"
               value={audit.cooldownActive
-                ? <span className="text-red-400">ACTIVE</span>
+                ? <span className="text-danger">ACTIVE</span>
                 : <span className="text-success">Clear</span>}
             />
           </div>
         </div>
 
-        <div className="mx-auto w-full max-w-5xl space-y-4 p-4 md:p-6 pb-32 md:pb-6">
+        <div className="space-y-4">
           {audit.reasonsBlocked.length > 0 && (
             <div>
-              <h4 className="text-xs font-semibold text-red-400/80 mb-2 uppercase tracking-wider">
+              <h4 className="text-xs font-semibold text-danger/80 mb-2 uppercase tracking-wider">
                 Blocked ({audit.reasonsBlocked.length})
               </h4>
               <div className="space-y-1.5">
                 {audit.reasonsBlocked.map((r, i) => (
-                  <div key={i} className="flex items-start gap-2 text-xs text-red-300/90">
-                    <XCircle size={12} className="shrink-0 mt-0.5 text-red-400" />
+                  <div key={i} className="flex items-start gap-2 text-xs text-danger/90">
+                    <XCircle size={12} className="shrink-0 mt-0.5 text-danger" />
                     {r}
                   </div>
                 ))}
@@ -1344,13 +1350,13 @@ function RiskAuditDetail() {
 
           {audit.warnings.length > 0 && (
             <div>
-              <h4 className="text-xs font-semibold text-yellow-400/80 mb-2 uppercase tracking-wider">
+              <h4 className="text-xs font-semibold text-warning/80 mb-2 uppercase tracking-wider">
                 Warnings ({audit.warnings.length})
               </h4>
               <div className="space-y-1.5">
                 {audit.warnings.map((w, i) => (
-                  <div key={i} className="flex items-start gap-2 text-xs text-yellow-300/80">
-                    <AlertTriangle size={12} className="shrink-0 mt-0.5 text-yellow-400" />
+                  <div key={i} className="flex items-start gap-2 text-xs text-warning/80">
+                    <AlertTriangle size={12} className="shrink-0 mt-0.5 text-warning" />
                     {w}
                   </div>
                 ))}
