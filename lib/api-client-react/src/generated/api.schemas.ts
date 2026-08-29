@@ -11916,6 +11916,11 @@ export interface LivePosition {
   lastSyncedAtIso?: string | null;
 }
 
+export type ClosePositionResult = LivePosition & {
+  /** @nullable */
+  tradeRecordUpdated?: boolean | null;
+};
+
 export interface LivePositionList {
   positions: LivePosition[];
 }

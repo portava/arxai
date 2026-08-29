@@ -250,6 +250,7 @@
     "test:certification-expiry": "node --import tsx --test --test-force-exit src/lib/phase6/__qa__/certificationExpiry.test.ts",
     "test:minimum-baseline": "node --import tsx --test --test-force-exit src/lib/baseline/__qa__/minimumBaseline.test.ts",
     "test:adversarial-isolation": "node --import tsx --test --test-force-exit src/routes/__qa__/adversarialIsolation.test.ts",
+    "test:live-positions-isolation": "node --import tsx --test --test-force-exit src/routes/__qa__/livePositionsIsolation.test.ts",
     "test:trade-management-isolation": "node --import tsx --test --test-force-exit src/routes/__qa__/tradeManagementIsolation.test.ts",
     "test:netting-authority": "node --import tsx --test --test-force-exit src/lib/live/__qa__/nettingAuthority.test.ts",
     "test:org-hierarchy": "node --import tsx --test --test-force-exit src/lib/institutional/__qa__/orgHierarchy.test.ts",

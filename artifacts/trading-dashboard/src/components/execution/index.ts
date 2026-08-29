@@ -26,12 +26,21 @@
 //    by owner decision and is pinned by scripts/src/liveSingleConfirmTest.ts,
 //    so this modal cannot simply be bolted onto it as a pre-step.
 //
-//  • ConvertToLiveExecutionButton (components/tradePlan) still tells the user to
+//  • ConvertToLiveExecutionButton (components/tradePlan) used to tell the user to
 //    "Open the Pre-Trade Confirmation flow to review and confirm" after creating
-//    a PENDING confirmation. That instruction currently has no destination.
-//    Wiring a route for this modal, or correcting that sentence, is open work —
-//    it is NOT done, and this comment exists so the gap is visible rather than
-//    implied-complete by the presence of these files.
+//    a PENDING confirmation — an instruction with no destination. That sentence
+//    is CORRECTED: the button (and TradePlanBuilderPanel) now say a PENDING
+//    confirmation was recorded, that there is no in-app screen to confirm it
+//    yet, and that no order has been placed. executionLayerMounted.test.ts pins
+//    both halves — the removal of the old sentence AND this paragraph agreeing
+//    with it. (A previous pass of this note described that correction as
+//    outstanding in the very commit that made it. A file whose whole job is to
+//    state the truth is the last place that may go stale, hence the new guard.)
+//
+//    What remains genuinely open is the other half: these components still have
+//    no route or mount point, so a user cannot advance a PENDING confirmation to
+//    CONFIRMED anywhere in the app. That is why the STATUS line above still
+//    reads NOT MOUNTED.
 //
 // The guard for this comment is executionLayerMounted.test.ts in this folder:
 // it fails if an importer appears (the note above is then stale and must be

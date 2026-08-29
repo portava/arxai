@@ -12,7 +12,10 @@ import { RubySetupReason } from "@/components/scanner/RubySetupReason";
 import { ScannerTimingBadges, type ScannerTimingContext } from "@/components/scanner/ScannerTimingBadges";
 import { isGoldMode } from "@workspace/domain/market";
 import { ScannerTradeModal } from "@/components/scanner/ScannerTradeModal";
-import { RecentScannerTrades } from "@/components/scanner/RecentScannerTrades";
+import {
+  RecentScannerTrades,
+  RECENT_SCANNER_TRADES_SECTION_DESCRIPTION,
+} from "@/components/scanner/RecentScannerTrades";
 import { MasterLiveAccessBanner } from "@/components/live/MasterLiveAccessGuard";
 import { SelectedMarketPanel } from "@/components/scanner/SelectedMarketPanel";
 import { ScannerDataHealthPanel } from "@/components/scanner/ScannerDataHealthPanel";
@@ -950,9 +953,13 @@ export default function MarketScanner() {
         />
       )}
 
+      {/* The description belongs to the panel, not to this page: CollapsibleSection
+          renders it unconditionally right above <RecentScannerTrades/>, so an
+          inline string here can (and did) contradict the panel one line below it.
+          Import the constant — never re-type the sentence. */}
       <CollapsibleSection
         title="Recent scanner trades"
-        description="Scanner-generated trades will appear here once orders are placed."
+        description={RECENT_SCANNER_TRADES_SECTION_DESCRIPTION}
         storageKey="scanner.recentTrades"
         testId="scanner-recent-trades"
         defaultOpen

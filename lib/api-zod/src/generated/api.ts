@@ -13613,34 +13613,40 @@ export const ClosePositionBody = zod.object({
   reason: zod.string().max(closePositionBodyReasonMax).optional(),
 });
 
-export const ClosePositionResponse = zod.object({
-  id: zod.number(),
-  tradeId: zod.number().nullish(),
-  brokerPositionId: zod.string().nullish(),
-  symbol: zod.string(),
-  direction: zod.enum(["BUY", "SELL"]),
-  lotSize: zod.number(),
-  entryPrice: zod.number(),
-  currentPrice: zod.number().nullish(),
-  stopLoss: zod.number().nullish(),
-  takeProfit: zod.number().nullish(),
-  unrealizedProfitLoss: zod.number().nullish(),
-  realizedProfitLoss: zod.number().nullish(),
-  rewardToRisk: zod.number().nullish(),
-  status: zod.enum([
-    "OPEN",
-    "PARTIALLY_CLOSED",
-    "CLOSED",
-    "STOP_LOSS_HIT",
-    "TAKE_PROFIT_HIT",
-    "MANUALLY_CLOSED",
-    "BROKER_ERROR",
-    "SYNC_PENDING",
-  ]),
-  openedAtIso: zod.string().nullish(),
-  closedAtIso: zod.string().nullish(),
-  lastSyncedAtIso: zod.string().nullish(),
-});
+export const ClosePositionResponse = zod
+  .object({
+    id: zod.number(),
+    tradeId: zod.number().nullish(),
+    brokerPositionId: zod.string().nullish(),
+    symbol: zod.string(),
+    direction: zod.enum(["BUY", "SELL"]),
+    lotSize: zod.number(),
+    entryPrice: zod.number(),
+    currentPrice: zod.number().nullish(),
+    stopLoss: zod.number().nullish(),
+    takeProfit: zod.number().nullish(),
+    unrealizedProfitLoss: zod.number().nullish(),
+    realizedProfitLoss: zod.number().nullish(),
+    rewardToRisk: zod.number().nullish(),
+    status: zod.enum([
+      "OPEN",
+      "PARTIALLY_CLOSED",
+      "CLOSED",
+      "STOP_LOSS_HIT",
+      "TAKE_PROFIT_HIT",
+      "MANUALLY_CLOSED",
+      "BROKER_ERROR",
+      "SYNC_PENDING",
+    ]),
+    openedAtIso: zod.string().nullish(),
+    closedAtIso: zod.string().nullish(),
+    lastSyncedAtIso: zod.string().nullish(),
+  })
+  .and(
+    zod.object({
+      tradeRecordUpdated: zod.boolean().nullish(),
+    }),
+  );
 
 /**
  * @summary Append-only event timeline for a live position

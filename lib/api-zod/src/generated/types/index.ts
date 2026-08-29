@@ -491,6 +491,7 @@ export * from "./chartTruthSubMetric";
 export * from "./clearAlertsResult";
 export * from "./closePaperOrder200";
 export * from "./closePositionBody";
+export * from "./closePositionResult";
 export * from "./coachExplanation";
 export * from "./cockpitActionResp";
 export * from "./cockpitAuditEntry";

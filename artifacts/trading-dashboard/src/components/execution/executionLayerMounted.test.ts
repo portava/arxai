@@ -115,4 +115,32 @@ describe("the trade-plan surface no longer points at the unmounted flow", () => 
     expect(panel).toMatch(/no order has been placed/);
     expect(page).toMatch(/never places an order/);
   });
+
+  // ADDED (review). The barrel note is the one file in this folder whose entire
+  // purpose is to state what is and is not done — and it went stale inside the
+  // same commit that fixed the thing it described, claiming the
+  // ConvertToLiveExecutionButton sentence was "open work — it is NOT done"
+  // while the sibling assertion above proved it WAS done. Neither the mount
+  // check nor the copy checks caught it, because nothing compared the note to
+  // the code it narrates. This does.
+  it("the barrel note's account of the trade-plan copy matches the trade-plan copy", () => {
+    const stillPoints = /Open the Pre-Trade Confirmation flow/.test(convert)
+      || /Open the Pre-Trade Confirmation flow/.test(panel);
+    expect(stillPoints, "guarded above — this test's premise has changed").toBe(false);
+
+    // Since the sentence is gone, the note may not describe removing it as
+    // outstanding work.
+    const claimsOpen =
+      /correcting that sentence, is open work/.test(barrel)
+      || /it is NOT done/.test(barrel)
+      || /still tells the user to/.test(barrel);
+    expect(
+      claimsOpen,
+      "components/execution/index.ts still calls the ConvertToLiveExecutionButton copy fix outstanding, but ConvertToLiveExecutionButton/TradePlanBuilderPanel no longer carry that sentence — update the note",
+    ).toBe(false);
+
+    // And it must positively record what actually happened, so the next reader
+    // does not re-derive it from the absence of a claim.
+    expect(barrel).toMatch(/CORRECTED/);
+  });
 });

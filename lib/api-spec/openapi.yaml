@@ -5989,7 +5989,7 @@ paths:
           description: Closed position
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/LivePosition" }
+              schema: { $ref: "#/components/schemas/ClosePositionResult" }
 
   /positions/{id}/events:
     get:
@@ -20645,6 +20645,19 @@ components:
         openedAtIso: { type: ["string", "null"] }
         closedAtIso: { type: ["string", "null"] }
         lastSyncedAtIso: { type: ["string", "null"] }
+
+    ClosePositionResult:
+      allOf:
+        - $ref: "#/components/schemas/LivePosition"
+        - type: object
+          properties:
+            # The linked `trades` row is reached through a LOOSE FK on the
+            # position and carries its own ownership predicate, so the write can
+            # legitimately match nothing (a legacy/unowned trade row). null =
+            # the position had no linked trade at all; false = there was one and
+            # it was NOT written. A close that silently skipped the trade record
+            # must not read back as a clean success.
+            tradeRecordUpdated: { type: ["boolean", "null"] }
 
     LivePositionList:
       type: object

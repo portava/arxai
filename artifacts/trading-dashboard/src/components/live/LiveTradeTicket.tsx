@@ -521,13 +521,26 @@ export function LiveTradeTicket({
             <AlertTriangle className="h-4 w-4" />
             <AlertTitle>Live trading not armed</AlertTitle>
             <AlertDescription>
-              {/* No "15-check gate" exists anywhere in the product: the Live
-                  Trading page shows a readiness card whose checks it reports
-                  itself, and the server-side dispatch evaluator is a different
-                  count again. Naming an invented number sent the user looking
-                  for something that is not there, so the copy points at the
-                  surface that reports the real list instead. */}
-              Open <a href={`${BASE}/live-trading`} className="underline">Live Trading Setup</a> and clear the live-readiness checks listed there first.
+              {/* CORRECTION (review): a previous pass replaced "the 15-check
+                  gate" here on the belief that no such count existed. It does.
+                  `armed` above is read from GET /api/me/live/arming, which is
+                  lib/live/liveArming.ts — `evaluateLiveArmingGate` pushes
+                  checks 1..15 (AUTH_OPERATOR … KILL_SWITCH_ACKNOWLEDGED) and
+                  the server's own audit line says "passed all 15 checks".
+                  /live-trading renders exactly those: LiveTradingUnlockCard's
+                  "Pre-arm checklist" is the 14 preArm ones, with SERVER_LIVE_FLAG
+                  shown separately as the dispatch status. So the number is real
+                  and the user can count it on the page we send them to.
+
+                  What the original auditor conflated it with is the SEPARATE
+                  server-side DISPATCH evaluator (the 16/23-gate one behind
+                  GovernancePanel / LiveSharedTradeTicket). That gate is not what
+                  this alert is about — this alert is about ARMING. Naming the
+                  two counts apart is the honest fix; erasing the accurate one
+                  was not. liveArmingGateCount in tradeSurfaceHonesty.test.ts
+                  derives 15 from liveArming.ts so this sentence cannot drift
+                  from the evaluator. */}
+              Open <a href={`${BASE}/live-trading`} className="underline">Live Trading Setup</a> and clear the 15-check arming gate first — 14 pre-arm checks plus the server dispatch status.
             </AlertDescription>
           </Alert>
         )}

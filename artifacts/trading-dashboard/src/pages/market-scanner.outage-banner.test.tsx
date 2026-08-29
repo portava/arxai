@@ -139,7 +139,14 @@ vi.mock("@/components/trading/SetupQualityBadge", () => ({ SetupQualityBadge: ()
 vi.mock("@/components/scanner/RubySetupReason", () => ({ RubySetupReason: () => null }));
 vi.mock("@/components/scanner/ScannerTimingBadges", () => ({ ScannerTimingBadges: () => null }));
 vi.mock("@/components/scanner/ScannerTradeModal", () => ({ ScannerTradeModal: () => null }));
-vi.mock("@/components/scanner/RecentScannerTrades", () => ({ RecentScannerTrades: () => null }));
+// The page imports RECENT_SCANNER_TRADES_SECTION_DESCRIPTION from this module
+// as well as the component. Spread the real module rather than re-typing the
+// sentence here: a copy of it in three mocks would recreate exactly the
+// divergence the constant exists to prevent. Only the component is stubbed.
+vi.mock("@/components/scanner/RecentScannerTrades", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/components/scanner/RecentScannerTrades")>()),
+  RecentScannerTrades: () => null,
+}));
 vi.mock("@/components/live/MasterLiveAccessGuard", () => ({ MasterLiveAccessBanner: () => null }));
 vi.mock("@/components/scanner/SelectedMarketPanel", () => ({ SelectedMarketPanel: () => null }));
 vi.mock("@/components/scanner/ScannerDataHealthPanel", () => ({ ScannerDataHealthPanel: () => null }));

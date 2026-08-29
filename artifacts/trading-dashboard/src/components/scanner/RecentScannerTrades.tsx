@@ -37,6 +37,22 @@ function payloadNum(p: Record<string, unknown> | null, k: string): number | null
 
 // Status tone/label moved to @/lib/statusLabels for cross-surface reuse.
 
+// The one-line description any wrapper (today: the "Recent scanner trades"
+// CollapsibleSection on market-scanner.tsx) must render above this panel.
+//
+// It lives here, next to the fetch, because the wrapper's own copy is what
+// broke: this component was corrected to stop promising live scanner history,
+// while the page's `description=` prop one line above it still read
+// "Scanner-generated trades will appear here once orders are placed." —
+// CollapsibleSection renders `description` unconditionally, so a live-armed
+// trader read the false promise and the correction back to back. Exporting the
+// string makes the two physically the same sentence.
+//
+// It must stay true in EVERY mode, because the wrapper does not know the mode:
+// this panel's only source is /api/me/demo-commands, the DEMO queue.
+export const RECENT_SCANNER_TRADES_SECTION_DESCRIPTION =
+  "Scanner-originated orders recorded in the demo command queue. Live Shared orders are not listed here.";
+
 // Recent Scanner Trades — compact table on the Market Scanner page. Lists
 // commands whose payload.source === "MARKET_SCANNER". Polls every 5s.
 export function RecentScannerTrades() {

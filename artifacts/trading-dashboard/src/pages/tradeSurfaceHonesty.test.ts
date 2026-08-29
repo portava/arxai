@@ -181,9 +181,55 @@ describe("LiveTradeTicket describes itself accurately", () => {
     expect(raw).toMatch(/liveSingleConfirmTest/);
   });
 
-  it("does not send the user to look for a '15-check gate'", () => {
-    expect(liveTradeTicket).not.toMatch(/15-check gate/);
-    expect(liveTradeTicket).toMatch(/live-readiness checks listed there/);
+  // CORRECTED ASSERTION (review). This block previously pinned the OPPOSITE:
+  //   expect(liveTradeTicket).not.toMatch(/15-check gate/)
+  // on the premise that no 15-check gate existed in the product. It does, and
+  // it is precisely the gate this alert is about: `armed` is read from
+  // GET /api/me/live/arming → lib/live/liveArming.ts, whose
+  // evaluateLiveArmingGate pushes checks 1..15 and whose ARM_SUCCESS audit line
+  // says "passed all 15 checks". The earlier assertion would have blocked
+  // anyone restoring the accurate number, so it is replaced — not deleted —
+  // with one that derives the count from the evaluator itself.
+  it("names the arming gate with the count liveArming.ts actually implements", () => {
+    const arming = readFileSync(
+      resolve(SRC, "../../api-server/src/lib/live/liveArming.ts"),
+      "utf8",
+    );
+    // Count the `push(<n>, "KEY", …)` calls inside evaluateLiveArmingGate.
+    const ids = [...arming.matchAll(/^\s*push\((\d+),\s*"/gm)].map((m) => Number(m[1]));
+    expect(ids.length, "no arming checks found — the scan, not the gate, is broken").toBeGreaterThan(5);
+    // Ids must be a dense 1..N so N is a count the user can verify on screen.
+    expect(ids).toEqual(Array.from({ length: ids.length }, (_, i) => i + 1));
+    const n = ids.length;
+
+    // The ticket must name that number, and nothing else.
+    expect(
+      liveTradeTicket,
+      `LiveTradeTicket must send the user to the ${n}-check arming gate`,
+    ).toMatch(new RegExp(`${n}-check arming gate`));
+    for (const wrong of [n - 1, n + 1]) {
+      expect(liveTradeTicket).not.toMatch(new RegExp(`${wrong}-check arming gate`));
+    }
+
+    // …and must not conflate it with the separate dispatch evaluator, which is
+    // a different gate with a different count (GovernancePanel /
+    // LiveSharedTradeTicket). This alert fires on `!armed`, i.e. arming only.
+    expect(liveTradeTicket).toMatch(/Live Trading Setup/);
+  });
+
+  it("the pre-arm split it quotes matches the evaluator's preArm flags", () => {
+    const arming = readFileSync(
+      resolve(SRC, "../../api-server/src/lib/live/liveArming.ts"),
+      "utf8",
+    );
+    // preArm defaults true; a check excluded from the on-screen "Pre-arm
+    // checklist" passes an explicit `false` in the 7th push() slot, annotated
+    // inline as `/* preArm … */` (today only SERVER_LIVE_FLAG, the runtime
+    // dispatch flag, which LiveTradingUnlockCard renders as its own row).
+    const total = [...arming.matchAll(/^\s*push\((\d+),\s*"/gm)].length;
+    const nonPreArm = (arming.match(/\/\*\s*preArm\b/g) ?? []).length;
+    expect(nonPreArm, "expected exactly one runtime (non-pre-arm) check").toBe(1);
+    expect(liveTradeTicket).toMatch(new RegExp(`${total - nonPreArm} pre-arm checks`));
   });
 });
 
@@ -193,6 +239,30 @@ describe("Market Scanner surfaces", () => {
     expect(recentScannerTrades).not.toMatch(/Live Shared scanner trade history will appear here/);
     expect(recentScannerTrades).toMatch(/not available in Live Shared mode/);
     expect(recentScannerTrades).toMatch(/data-testid="recent-scanner-trades-live-link"/);
+  });
+
+  // WIDENED (review). The assertion above reads only the component. The page
+  // that WRAPS it kept the original promise — market-scanner.tsx passed
+  // description="Scanner-generated trades will appear here once orders are
+  // placed." to CollapsibleSection, which renders `description`
+  // unconditionally, directly above the corrected panel. A live-armed
+  // non-admin therefore read the false promise and its correction back to
+  // back. The wrapper is now forbidden its own sentence: it must import the
+  // constant the panel exports.
+  it("the section wrapping the panel cannot carry its own contradicting copy", () => {
+    expect(marketScanner).not.toMatch(/trades will appear here once orders are placed/);
+    expect(marketScanner).not.toMatch(/Scanner-generated trades/);
+    expect(marketScanner).toMatch(/RECENT_SCANNER_TRADES_SECTION_DESCRIPTION/);
+    expect(marketScanner).toMatch(
+      /description=\{RECENT_SCANNER_TRADES_SECTION_DESCRIPTION\}/,
+    );
+    // The exported sentence must itself be true in every mode — this panel's
+    // only source is the DEMO queue, so it may not promise live rows.
+    const raw = read("components/scanner/RecentScannerTrades.tsx");
+    const decl = /RECENT_SCANNER_TRADES_SECTION_DESCRIPTION\s*=\s*\n?\s*"([^"]+)"/.exec(raw);
+    expect(decl, "the shared description constant must be a plain string literal").not.toBeNull();
+    expect(decl![1]).toMatch(/demo command queue/);
+    expect(decl![1]).not.toMatch(/will appear/);
   });
 
   it("the tester capture is admin-only, labelled honestly, and error-handled", () => {
