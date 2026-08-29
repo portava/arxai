@@ -16,3 +16,4 @@ export * from "./deflatedSharpe.js";
 export * from "./pbo.js";
 export * from "./strategyFamilies.js";
 export * from "./factory.js";
+export * from "./conformal.js";

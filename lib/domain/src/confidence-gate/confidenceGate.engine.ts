@@ -1,6 +1,7 @@
 import {
   REQUIRED_SCORE, SCORE_WEIGHTS,
   type Blocker, type ConfidenceGateContext, type ConfidenceGateResult,
+  type ConformalAdvisoryEvidence,
   type OverrideRecord, type Recommendation, type ReplayRecord, type ScoreReport,
 } from "./confidenceGate.types";
 import { scoreStrategyEdge      } from "./strategyEdgeScore.engine";
@@ -90,6 +91,27 @@ function decideRecommendation(finalScore: number, hasHardBlocker: boolean): Reco
   if (finalScore >= 85) return "WAIT";
   if (finalScore >= 70) return "REDUCE_RISK";
   return "BLOCK";
+}
+
+// ── Conformal advisory (capability #4) — evidence, never authority ─────────
+// Attaches a lib/validation conformalGate verdict to a gate result as
+// journal/display evidence. WIRING CONTRACT (the honest first integration —
+// the venue-parity contract makes a new GATE KEY expensive, so this is an
+// advisory field, not a gate):
+//   - PURE COPY: returns a NEW result object; the input is not mutated.
+//   - Every verdict-bearing field (approved, finalScore, blockers, warnings,
+//     scoreBreakdown, recommendation, reports, requiredScore) is passed
+//     through UNCHANGED, whatever the advisory says. An inadmissible
+//     conformal verdict on an approved result stays approved — the advisory
+//     is there for the journal and the operator's eyes, not for dispatch.
+export function attachConformalAdvisory(
+  result: ConfidenceGateResult,
+  conformal: ConformalAdvisoryEvidence,
+): ConfidenceGateResult {
+  return {
+    ...result,
+    advisory: { ...result.advisory, conformal },
+  };
 }
 
 // ── User override — produces an audit record. Does NOT mutate the result. ──

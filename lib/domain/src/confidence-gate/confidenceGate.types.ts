@@ -58,6 +58,31 @@ export interface ScoreReport {
   evidence: Record<string, unknown>;
 }
 
+// ── Advisory conformal evidence (capability #4) ────────────────────────────
+// Structural mirror of lib/validation `ConformalGateVerdict` — @workspace/domain
+// deliberately does NOT depend on @workspace/validation (the package graph is
+// frozen; lib/discovery and api-server edgePromotion mirror validation types
+// the same way). Structural fidelity to the real conformalGate output is
+// pinned by the scripts-package conformal-bounds test, which drives the REAL
+// lib/validation gate and assigns its verdict into this shape.
+//
+// ADVISORY ONLY. This is journal/display evidence riding on the confidence
+// gate result. It is NOT a gate key, NOT a blocker source, and can never
+// change `approved` / `finalScore` / `recommendation` — pinned by test.
+export interface ConformalAdvisoryEvidence {
+  admissible: boolean;
+  interval: { lower: number; upper: number; unbounded: boolean } | null;
+  outcomeSet: string[] | null;
+  coverage: number;
+  calibrationSize: number;
+  reason: string;
+  advisoryOnly: true;
+}
+
+export interface ConfidenceGateAdvisory {
+  conformal?: ConformalAdvisoryEvidence;
+}
+
 // ── Recommendation ─────────────────────────────────────────────────────────
 export const RecommendationSchema = z.enum(["ENTER", "WAIT", "REDUCE_RISK", "BLOCK"]);
 export type Recommendation = z.infer<typeof RecommendationSchema>;
@@ -79,6 +104,13 @@ export interface ConfidenceGateResult {
     liveValidation:   number;
   };
   recommendation: Recommendation;
+
+  /**
+   * Advisory evidence riding on the result for journal/display consumers.
+   * NEVER consulted by the verdict logic — `attachConformalAdvisory` is the
+   * only writer and it copies every verdict field through unchanged.
+   */
+  advisory?: ConfidenceGateAdvisory;
 
   // Audit-grade extras (not in the minimum spec but required by the rules:
   // "every blocked trade must explain why", "every approved trade stored
