@@ -103,6 +103,7 @@ export function maskSimulatedOpportunity(opp: ScannerOpportunity): ScannerOpport
   if (opp.dataSource !== "SIMULATOR") return opp;
   return {
     ...opp,
+    signalStrength: 0, // canonical alias of confidenceScore — masked identically
     confidenceScore: 0,
     riskScore: 0,
     entrySniperScore: 0,

@@ -47,7 +47,9 @@ import type { ScalpResult } from "@workspace/api-client-react";
 type Opp = {
   symbol: string; timeframe: string;
   bias: string; recommendedAction: string;
-  setupType: string; confidenceScore: number; riskScore: number;
+  // signalStrength is the canonical wire name; confidenceScore is the
+  // deprecated dual-emit alias (kept for the live-intent submit payload).
+  setupType: string; signalStrength?: number; confidenceScore: number; riskScore: number;
   entrySniperScore: number; riskRewardRatio: number;
   reasonForTrade: string; reasonToAvoid: string;
   rulesPassed: string[]; rulesFailed: string[];
@@ -176,6 +178,7 @@ export function scalpResultToSignal(r: ScalpResult) {
     timeframe: SCALP_TICKET_TIMEFRAME,
     recommendedAction: r.direction ?? "BUY",
     bias: r.direction ?? "NEUTRAL",
+    signalStrength: r.qualityScore,
     confidenceScore: r.qualityScore,
     reasonForTrade: r.plainEnglishReason,
     reasonToAvoid: r.riskWarning ?? r.noTradeReason ?? undefined,
@@ -653,7 +656,9 @@ export default function MarketScanner() {
                 {(() => {
                   const c = cohesionMap.get(o.symbol);
                   const mult = c?.confidenceMultiplier ?? 1;
-                  const adjusted = mult < 1 ? Math.round(o.confidenceScore * mult) : o.confidenceScore;
+                  // Canonical field first; deprecated alias as fallback for older payloads.
+                  const strength = o.signalStrength ?? o.confidenceScore;
+                  const adjusted = mult < 1 ? Math.round(strength * mult) : strength;
                   return (
                     <>
                       <div className="grid grid-cols-3 gap-1 text-center">
@@ -662,7 +667,7 @@ export default function MarketScanner() {
                           <div className="font-mono font-semibold" data-testid={`scanner-conf-${o.symbol}`}>
                             {adjusted}
                             {mult < 1 && (
-                              <span className="ml-1 text-[10px] font-normal text-muted-foreground line-through">{o.confidenceScore}</span>
+                              <span className="ml-1 text-[10px] font-normal text-muted-foreground line-through">{strength}</span>
                             )}
                           </div>
                         </div>
@@ -687,6 +692,7 @@ export default function MarketScanner() {
                   signal={{
                     symbol: o.symbol, timeframe: o.timeframe,
                     recommendedAction: o.recommendedAction, bias: o.bias,
+                    signalStrength: o.signalStrength ?? o.confidenceScore,
                     confidenceScore: o.confidenceScore, riskScore: o.riskScore,
                     entrySniperScore: o.entrySniperScore, reasonForTrade: o.reasonForTrade,
                     reasonToAvoid: o.reasonToAvoid, setupType: o.setupType,
@@ -934,6 +940,7 @@ export default function MarketScanner() {
           signal={{
             symbol: tradeTarget.opp.symbol, timeframe: tradeTarget.opp.timeframe,
             recommendedAction: tradeTarget.opp.recommendedAction, bias: tradeTarget.opp.bias,
+            signalStrength: tradeTarget.opp.signalStrength ?? tradeTarget.opp.confidenceScore,
             confidenceScore: tradeTarget.opp.confidenceScore, riskScore: tradeTarget.opp.riskScore,
             entrySniperScore: tradeTarget.opp.entrySniperScore,
             reasonForTrade: tradeTarget.opp.reasonForTrade, reasonToAvoid: tradeTarget.opp.reasonToAvoid,

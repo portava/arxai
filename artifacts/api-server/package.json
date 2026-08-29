@@ -143,6 +143,8 @@
     "test:dead-heat-surfaces-removed": "node --import tsx --test --test-force-exit src/routes/__qa__/deadHeatSurfacesRemoved.test.ts",
     "test:post-trade-debrief-source": "node --import tsx --test --test-force-exit src/lib/__qa__/postTradeDebriefSource.test.ts",
     "test:honest-confidence": "node --import tsx --test --test-force-exit src/lib/__qa__/honestConfidence.test.ts",
+    "test:signal-strength-dual-emit": "node --import tsx --test --test-force-exit src/lib/__qa__/signalStrengthDualEmit.test.ts",
+    "test:signal-strength-guard": "node --import tsx --test --test-force-exit src/lib/__qa__/signalStrengthGuard.test.ts",
     "test:source-unification": "node --import tsx --test --test-force-exit src/lib/__qa__/sourceUnification.test.ts",
     "test:entry-sizer-quote-fx": "node --import tsx --test --test-force-exit src/lib/selfTrade/__qa__/entrySizerQuoteFx.test.ts",
     "test:market-heat-geography": "node --import tsx --test --test-force-exit src/lib/heat/__qa__/symbolGeography.test.ts",

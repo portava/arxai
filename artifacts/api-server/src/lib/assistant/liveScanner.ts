@@ -58,6 +58,13 @@ export interface LiveCandidate {
   bias: "bullish" | "bearish" | "neutral" | "choppy";
   recommendedAction: "BUY" | "SELL" | "WAIT" | "REJECT";
   setupType: string;
+  /**
+   * Signal strength 0..100 — canonical name for the hand-weighted setup
+   * heuristic. UNCALIBRATED (Theme B): not a win probability, never render
+   * with a "%". Always equals `confidenceScore` while both are emitted.
+   */
+  signalStrength: number;
+  /** @deprecated Renamed to `signalStrength` — same value, kept emitted so no client breaks (same dual-emit pattern as `takeProfit` below). */
   confidenceScore: number;
   riskScore: number;
   riskRewardRatio: number;
@@ -194,7 +201,8 @@ function scoreCandles(
     symbol, timeframe, bias,
     recommendedAction: action,
     setupType: bias === "bullish" || bias === "bearish" ? "trend_continuation" : "wait",
-    confidenceScore: confidence,
+    signalStrength: confidence,
+    confidenceScore: confidence, // backward-compat: equals signalStrength
     riskScore,
     riskRewardRatio: rr,
     reasonForTrade: `${bias} on ${symbol} ${timeframe} from ${candles.length} real candles; trend=${trendStrength}, vol=${volatilityRatio.toFixed(2)}`,

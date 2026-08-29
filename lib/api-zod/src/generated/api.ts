@@ -8015,7 +8015,18 @@ export const PostMeAssistantDraftReadResponse = zod.object({
       cautions: zod.array(zod.string()),
       bestNextAction: zod.string(),
       confidenceLabel: zod.string(),
-      confidenceScore: zod.number().nullable(),
+      signalStrength: zod
+        .number()
+        .nullish()
+        .describe(
+          "Canonical name for the readiness score 0-100 — a hand-weighted signal strength, NOT a calibrated win probability. Always equals confidenceScore while both are emitted.",
+        ),
+      confidenceScore: zod
+        .number()
+        .nullable()
+        .describe(
+          "Deprecated alias of signalStrength — same value, kept (and still required) so existing clients keep working.",
+        ),
       agentConsensus: zod
         .object({
           populated: zod.boolean(),

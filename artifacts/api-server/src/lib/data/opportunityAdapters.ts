@@ -268,6 +268,7 @@ export function scannerOpportunityToLiveCandidate(o: ScannerOpportunity): LiveCa
     bias: coerceLiveBias(o.bias),
     recommendedAction: coerceLiveAction(o.recommendedAction),
     setupType: o.setupType,
+    signalStrength: o.signalStrength, // canonical name; equals confidenceScore
     confidenceScore: o.confidenceScore,
     riskScore: o.riskScore,
     riskRewardRatio: setup.riskRewardRatio ?? 0,

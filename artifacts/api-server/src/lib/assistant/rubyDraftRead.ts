@@ -95,7 +95,13 @@ export interface RubyDraftReadResult {
   bestNextAction: string;
   /** Quality label from the readiness/decision layer (e.g. "B", "unrated"). */
   confidenceLabel: string;
-  /** Readiness score 0-100, or null when not populated. */
+  /**
+   * Readiness score 0-100, or null when not populated — canonical name for
+   * the uncalibrated heuristic (Theme B: not a win probability). Always
+   * equals `confidenceScore` while both are emitted.
+   */
+  signalStrength: number | null;
+  /** @deprecated Renamed to `signalStrength` — same value, kept emitted so no client breaks. */
   confidenceScore: number | null;
   /** Advisory/shadow agent-consensus view — never gates anything. */
   agentConsensus: RubyDraftConsensusView;
@@ -251,7 +257,8 @@ function baseResult(
     cautions: [],
     bestNextAction: sentence(state, "bestNextAction"),
     confidenceLabel: state.marketUnderstanding.readiness.quality,
-    confidenceScore: state.marketUnderstanding.readiness.score,
+    signalStrength: state.marketUnderstanding.readiness.score,
+    confidenceScore: state.marketUnderstanding.readiness.score, // backward-compat: equals signalStrength
     agentConsensus: consensusView(state),
     disclaimer: disclaimerFor(DEFAULT_ASSISTANT_NAME),
   };
@@ -300,6 +307,7 @@ function neutralizeDirectionalFields(r: RubyDraftReadResult): RubyDraftReadResul
   r.bias = "neutral";
   r.bestNextAction = "";
   r.confidenceLabel = "unverifiable";
+  r.signalStrength = null;
   r.confidenceScore = null;
   // Agent consensus carries directional stance — blank it out so no directional
   // reading can be inferred from the consensus block when the gate is blocked.

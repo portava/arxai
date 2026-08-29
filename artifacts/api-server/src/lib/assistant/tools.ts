@@ -1590,6 +1590,7 @@ export async function getMarketScannerOpportunities(args: { limit?: number } = {
         bias: o.bias,
         recommendedAction: o.recommendedAction,
         setupType: o.setupType,
+        signalStrength: o.signalStrength, // canonical name; equals confidenceScore
         confidenceScore: o.confidenceScore,
         riskScore: o.riskScore,
         riskRewardRatio: setup.riskRewardRatio,
