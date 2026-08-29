@@ -19,8 +19,14 @@
 //   NewsRiskCard is the same surface the Trade Plan Builder renders, so this
 //   page and the trade path now show the SAME verdict from the SAME source.
 //
-// Asserted at the source level: the page is a composition, and what matters is
-// which endpoints it can reach and which it no longer can.
+// Asserted at the source level: the surface is a composition, and what matters
+// is which endpoints it can reach and which it no longer can.
+//
+// SURFACE CONSOLIDATION (item E): the composition moved from the standalone
+// pages/news-risk.tsx into components/news/NewsRiskSection.tsx, rendered as
+// the "News Risk" tab of the unified Economic Calendar. The old /news-risk
+// route is a redirect to /economic-calendar?tab=news-risk. Every honesty
+// assertion below now pins the folded section.
 
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
@@ -34,8 +40,8 @@ function read(rel: string): string {
   return readFileSync(resolve(SRC, rel), "utf8");
 }
 
-const page = read("pages/news-risk.tsx");
-/** Page source with comments stripped — the header documents the old simulator. */
+const page = read("components/news/NewsRiskSection.tsx");
+/** Section source with comments stripped — the header documents the old simulator. */
 const pageCode = page
   .split("\n")
   .filter((line) => !line.trim().startsWith("//") && !line.trim().startsWith("*"))
@@ -100,10 +106,22 @@ describe("G-FINISH — honesty is preserved by reuse", () => {
   });
 });
 
-describe("G-FINISH — the page is still routed", () => {
-  it("/news-risk still resolves to this page", () => {
+describe("G-FINISH + E — the surface is still reachable", () => {
+  it("/news-risk still routes, as a redirect to the calendar's news-risk tab", () => {
     const app = read("App.tsx");
     expect(app).toMatch(/<Route path="\/news-risk"/);
     expect(app).toMatch(/pages\/news-risk/);
+    const redirect = read("pages/news-risk.tsx");
+    expect(redirect).toMatch(/\/economic-calendar\?tab=news-risk/);
+    // The redirect page must not have grown back any data reads of its own.
+    expect(redirect).not.toMatch(/fetch\(|useQuery|api\//);
+  });
+
+  it("the Economic Calendar hosts the folded section as a tab", () => {
+    const calendar = read("pages/economic-calendar.tsx");
+    expect(calendar).toMatch(/<NewsRiskSection \/>/);
+    expect(calendar).toMatch(/TabsTrigger value="news-risk"/);
+    // ?tab=news-risk deep links (from the redirect) select the tab.
+    expect(calendar).toMatch(/get\("tab"\)/);
   });
 });

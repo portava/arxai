@@ -14,6 +14,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { NewsRiskSection } from "@/components/news";
 import {
   Calendar, Sparkles, Settings, ShieldAlert, Search, Clock, ChevronRight,
   ChevronDown, Bell, Eye, TrendingUp, RefreshCcw, MessageCircle, Target,
@@ -222,11 +224,25 @@ interface LiveCalendarResponse {
   events: LiveCalendarEvent[];
 }
 
+// Page tabs (surface consolidation item E — calendar + news risk are ONE
+// surface). "calendar" keeps the unified economic-calendar body; "news-risk"
+// hosts the folded News Risk surface (components/news/NewsRiskSection). The
+// initial tab honours ?tab= so the retired /news-risk route can deep-link.
+const CAL_TABS = ["calendar", "news-risk"] as const;
+type CalTabKey = (typeof CAL_TABS)[number];
+
+function initialCalTab(): CalTabKey {
+  if (typeof window === "undefined") return "calendar";
+  const t = new URLSearchParams(window.location.search).get("tab");
+  return (CAL_TABS as readonly string[]).includes(t ?? "") ? (t as CalTabKey) : "calendar";
+}
+
 export default function EconomicCalendarPage() {
   const qc = useQueryClient();
   const [, navigate] = useLocation();
   const [, setChartSymbol] = useChartSymbol();
   const { name } = useAssistantName();
+  const [tab, setTab] = useState<CalTabKey>(initialCalTab);
 
   // Filters (existing currency/impact/days preserved; date + search added client-side)
   const [currency, setCurrency] = useState<string>("");
@@ -385,6 +401,15 @@ export default function EconomicCalendarPage() {
           </button>
         </div>
       </div>
+
+      {/* Calendar / News Risk tabs — the folded news-risk surface keeps its
+          own honest components; the calendar body is unchanged underneath. */}
+      <Tabs value={tab} onValueChange={(v) => setTab(v as CalTabKey)}>
+        <TabsList>
+          <TabsTrigger value="calendar" data-testid="economic-calendar-tab-calendar">Calendar</TabsTrigger>
+          <TabsTrigger value="news-risk" data-testid="economic-calendar-tab-news-risk">News Risk</TabsTrigger>
+        </TabsList>
+        <TabsContent value="calendar" className="mt-4 space-y-4">
 
       {/* Provider status banner — honesty gate.
           Not configured → "manual events only" warning.
@@ -762,6 +787,12 @@ export default function EconomicCalendarPage() {
           alerts that ARX does generate arrive in your alerts inbox.
         </p>
       </div>
+
+        </TabsContent>
+        <TabsContent value="news-risk" className="mt-4">
+          <NewsRiskSection />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

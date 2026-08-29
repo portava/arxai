@@ -15,6 +15,11 @@ async function api(path: string, init?: RequestInit) { return fetch(path, { head
 
 const PAGE_ICON = <TrendingUp className="h-6 w-6 text-primary" />;
 
+// Rendered as the Testing Lab "Promotion" tab (surface consolidation item C);
+// the old standalone /strategy-promotion route redirects to
+// /testing-lab?tab=promotion and the nav entry is gone. The copy above the
+// gates keeps the FUTURE_MT5_LIVE_LOCKED honesty: this ledger never drives
+// live execution.
 export default function StrategyPromotion() {
   // Admin/OWNER-only endpoint (/api/strategy-promotion). Non-admins get the
   // denied state immediately and fire ZERO gated calls.
@@ -56,7 +61,7 @@ export default function StrategyPromotion() {
       <div className="flex items-center gap-3">
         <TrendingUp className="h-6 w-6 text-primary" />
         <div className="flex-1"><h1 className="text-2xl font-bold">Strategy Promotion Gates</h1>
-          <p className="text-sm text-muted-foreground">A strategy can only be promoted one level at a time and only if it meets the gate. FUTURE_MT5_LIVE_LOCKED is permanent until the bridge is wired.</p>
+          <p className="text-sm text-muted-foreground">A strategy can only be promoted one level at a time and only if it meets the gate. This ledger is research-only — promotion levels never drive live execution. FUTURE_MT5_LIVE_LOCKED is permanent until the bridge is wired.</p>
         </div>
         <Badge variant="outline">SHADOW</Badge>
       </div>

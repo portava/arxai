@@ -15,6 +15,9 @@ async function api(path: string, init?: RequestInit) {
 
 const PAGE_ICON = <Swords className="h-6 w-6 text-primary" />;
 
+// Rendered as the Testing Lab "Tournament" tab (surface consolidation item
+// C); the old standalone /strategy-tournament route redirects to
+// /testing-lab?tab=tournament and the nav entry is gone.
 export default function StrategyTournament() {
   // Admin/OWNER-only endpoint (/api/strategy-tournament/results). Non-admins get
   // the denied state immediately and fire ZERO gated calls.
