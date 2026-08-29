@@ -51,15 +51,15 @@ function buildCommandPaletteItems(name: string): CommandPaletteItem[] {
   { label: "Market Heat Map",            href: "/market-heat-map", hint: "Heat scores, news heat, broad flow", approvedOnly: true },
   { label: "AI Coach",                   href: "/ai-coach", admin: true },
   { label: "Autopilot Control Center",   href: "/autopilot-control-center", admin: true },
-  { label: "Shadow Mode",                href: "/shadow-mode", admin: true },
+  { label: "Shadow Mode",                href: "/testing-lab?tab=shadow", admin: true },
   { label: "AI Readiness Score",         href: "/ai-readiness-score", admin: true },
   // Strategy
   { label: "Strategy Lab",               href: "/strategy-lab", admin: true },
   { label: "Testing Lab",                href: "/testing-lab", admin: true },
   { label: "Market Replay",              href: "/market-replay", admin: true },
   { label: "Trade Grader",               href: "/trade-grader", admin: true },
-  { label: "Strategy Tournament",        href: "/strategy-tournament", admin: true },
-  { label: "Strategy Promotion",         href: "/strategy-promotion", admin: true },
+  { label: "Strategy Tournament",        href: "/testing-lab?tab=tournament", admin: true },
+  { label: "Strategy Promotion",         href: "/testing-lab?tab=promotion", admin: true },
   { label: "Confidence Calibration",     href: "/confidence-calibration", admin: true },
   // Risk
   { label: "Risk Command Center",        href: "/risk-command-center", approvedOnly: true },

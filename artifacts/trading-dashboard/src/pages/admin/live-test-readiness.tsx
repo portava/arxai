@@ -335,7 +335,7 @@ export default function FinalLiveTestPage() {
         </div>
         <p className="text-xs text-txt-secondary leading-relaxed">
           One tiny real live order — EURUSD 0.01 lot — routed through the approved shared master bridge.
-          All 18 gates must pass. No trade is created until you confirm in the modal.
+          All 21 gates must pass. No trade is created until you confirm in the modal.
           arx_live_commands stays 0 until that moment.
         </p>
       </div>

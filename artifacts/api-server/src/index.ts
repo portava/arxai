@@ -14,7 +14,7 @@ import { startDailyHouseholdReportScheduler } from "./lib/agentEcosystem/dailyRe
 import { startHeatSnapshotRetentionWorker } from "./lib/timing/heatSnapshotRetention";
 import { startExpiredKeySweepWorker } from "./lib/registrationKeys/expiredKeySweepWorker";
 import { startExpiringKeysDigestWorker } from "./lib/registrationKeys/expiringKeysDigestWorker";
-import { startMissionDriverWorker } from "./lib/missionDriver";
+import { startMissionDriverWorker } from "./lib/missionDriver.js";
 import { computeEnvChecklist, summarizeEnvChecklist } from "./lib/startup/envChecklist";
 import { runStartupReadinessCheck } from "./lib/startup/readinessCheck";
 import { seedCoreAgents } from "./lib/agentEcosystem/seedCoreAgents";

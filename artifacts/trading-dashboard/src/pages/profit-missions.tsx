@@ -1651,7 +1651,7 @@ function TradeDraftRow({ draft, missionId }: { draft: TradeDraft; missionId: num
           </Button>
           <p className="text-[11px] text-muted-foreground">
             Execution routes only through the standard instant-trade pipeline and
-            the full 18-gate safety check. Demo and paper missions never contact the
+            the full 21-gate safety check. Demo and paper missions never contact the
             live broker.
           </p>
         </div>
@@ -1706,7 +1706,7 @@ function TradeDraftRow({ draft, missionId }: { draft: TradeDraft; missionId: num
           <p className="text-[11px] text-muted-foreground">
             Protective exits (partial close, break-even, trailing stop, structure /
             news / target close) route only through the standard instant-trade
-            pipeline and the full 18-gate safety check.
+            pipeline and the full 21-gate safety check.
           </p>
         </div>
       ) : draft.effectiveStatus === "expired" ? (

@@ -1,6 +1,8 @@
 // Phase 6 — venue gate parity.
 //
-// The 18-gate dispatch wall in `livePhaseBDispatchGate.ts` is MT5-live-shaped:
+// The dispatch wall in `livePhaseBDispatchGate.ts` (18 Phase B gates, plus the
+// three venue-independent foundation gates #19-#21) is MT5-live-shaped in its
+// transport rows:
 // gates 6-12 read EA bridge facts (heartbeat age, EA version, EnableLiveExecution,
 // ReadOnlyMode, terminalConnected, algoTradingAllowed) that simply do not exist
 // for a Deriv WebSocket session, and gate 6 BLOCKS anything that is not a
@@ -35,7 +37,7 @@ import type { LivePhaseBGateKey } from "./livePhaseBDispatchGate.js";
  * `BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED` is in the gate-key union but is NOT
  * a gate: the evaluator appends it as an audit/grep sentinel when the master
  * switch is off (livePhaseBDispatchGate.ts, after the gate list). Excluding it
- * is what makes the real gate count 18 rather than 19.
+ * is what makes the real gate count 21 rather than 22.
  */
 export const LIVE_PHASE_B_GATE_SENTINEL = "BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED" as const;
 
@@ -44,7 +46,7 @@ export type LivePhaseBGateOnlyKey = Exclude<
   typeof LIVE_PHASE_B_GATE_SENTINEL
 >;
 
-/** The 18 real gates, in the order the evaluator pushes them. */
+/** The 21 real gates, in the order the evaluator pushes them. */
 export const LIVE_PHASE_B_GATE_KEYS = [
   "LIVE_BROKER_EXECUTION_DISABLED",   // 1  server master switch
   "USER_NOT_ARMED_FOR_LIVE",          // 2  per-user arming
@@ -64,9 +66,12 @@ export const LIVE_PHASE_B_GATE_KEYS = [
   "MISSING_STOP_LOSS",                // 16 protection required
   "MISSING_TAKE_PROFIT",              // 17 protection required
   "DISCLOSURE_NOT_ACCEPTED",          // 18 risk disclosure
+  "PROVENANCE_UNPROVEN",              // 19 decision-data provenance proven
+  "STRATEGY_NOT_LIVE_PROMOTED",       // 20 edge owner-promoted for live
+  "CAPITAL_TIER_EXCEEDED",            // 21 per-user capital tier cap
 ] as const satisfies readonly LivePhaseBGateOnlyKey[];
 
-export const LIVE_PHASE_B_GATE_COUNT = 18 as const;
+export const LIVE_PHASE_B_GATE_COUNT = 21 as const;
 
 /**
  * Compile-time proof the list above covers EVERY gate key. If a new gate is

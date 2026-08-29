@@ -52,7 +52,7 @@ export function FloatingActionPanel() {
                 <FabAction label="Start Demo Test"   icon={FlaskConical} href="/demo-trading"             onClick={close} />
                 <FabAction label="Autopilot Observe" icon={Bot}          href="/autopilot-control-center" onClick={close} />
                 <FabAction label="Self-Trade AI"     icon={Bot}          href="/self-trade-ai"            onClick={close} />
-                <FabAction label="Shadow Mode"       icon={Eye}          href="/shadow-mode"              onClick={close} />
+                <FabAction label="Shadow Mode"       icon={Eye}          href="/testing-lab?tab=shadow"              onClick={close} />
                 <FabAction label="Live Intent Queue" icon={ListChecks}   href="/live-intent-queue"        onClick={close} />
                 <FabAction label="System Health"     icon={Heart}        href="/admin/system-health"      onClick={close} />
               </>

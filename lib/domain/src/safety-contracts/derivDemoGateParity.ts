@@ -1,4 +1,5 @@
-// Phase 6 — the Deriv DEMO venue's disposition for each of the 18 Phase B gates.
+// Phase 6 — the Deriv DEMO venue's disposition for each Phase B gate (18
+// original + foundation gates #19-#21).
 //
 // Read venueGateParity.ts first for why this file exists. In short: the 18-gate
 // wall is MT5-live-shaped, so a second venue must declare, gate by gate, how it
@@ -190,5 +191,40 @@ export const DERIV_DEMO_GATE_PARITY: VenueGateParityMap = {
       "The same append-only risk-disclosure acceptance required for MT5 live dispatch is required " +
       "here before any guided order may dispatch; the existing record is reused, not duplicated.",
     enforcedBy: "Existing live_risk_disclosure_acceptances record",
+  },
+
+  // 19-21 — the foundation gates are venue-INDEPENDENT: they read the
+  // command's own provenance envelope, the promotion ledger, and the user's
+  // capital tier — server-side platform facts with no transport component.
+  // Every venue runs them in the same shared evaluator, so parity is the
+  // evaluator itself, not a venue-native re-implementation.
+
+  // 19 — decision-data provenance.
+  PROVENANCE_UNPROVEN: {
+    kind: "EQUIVALENT",
+    reason:
+      "Provenance is a property of the command, not the venue: the envelope is attached at command " +
+      "creation and evaluated in the shared Phase B evaluator identically for every venue, so no " +
+      "venue-native counterpart exists or is needed.",
+    enforcedBy: "Foundation gate #19 in the shared livePhaseBDispatchGate evaluator",
+  },
+
+  // 20 — edge promotion.
+  STRATEGY_NOT_LIVE_PROMOTED: {
+    kind: "EQUIVALENT",
+    reason:
+      "The promotion ledger is read server-side at dispatch time by the shared evaluator for every " +
+      "venue alike; its tier semantics (live enforced, demo evaluated-and-logged) are the " +
+      "evaluator's own and do not vary by venue.",
+    enforcedBy: "Foundation gate #20 in the shared livePhaseBDispatchGate evaluator",
+  },
+
+  // 21 — capital admissibility.
+  CAPITAL_TIER_EXCEEDED: {
+    kind: "EQUIVALENT",
+    reason:
+      "Per-user capital tier caps are platform facts applied to the command volume in the shared " +
+      "evaluator before any venue adapter is reached; no venue can see a command that breached them.",
+    enforcedBy: "Foundation gate #21 in the shared livePhaseBDispatchGate evaluator",
   },
 };
