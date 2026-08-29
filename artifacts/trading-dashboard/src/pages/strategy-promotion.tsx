@@ -9,7 +9,7 @@ import { AccessCheckingShell, AccessDeniedCard, SHADOW_ADMIN_DENIED_NOTE, shadow
 type StratGate = { strategy: string; level: string; demotion: string | null; updatedAt: string; lastReason: string; eligibleFor: string | null; stats: { sample: number; tracked: number; winRate: number; avgR: number; drawdownR: number; rgViolations: number; expectancy: number } };
 type Resp = { strategies: StratGate[]; demotionSuggestions: Array<{ strategy: string; suggested: string | null; reasons: string[] }> };
 
-const LEVEL_COLOR: Record<string, string> = { TESTING: "bg-slate-500/20 text-slate-300", WATCHLIST: "bg-blue-500/20 text-blue-400", PAPER_APPROVED: "bg-amber-500/20 text-amber-400", DEMO_APPROVED: "bg-emerald-500/20 text-emerald-400", LIVE_INTENT_APPROVED: "bg-violet-500/20 text-violet-300", FUTURE_MT5_LIVE_LOCKED: "bg-rose-500/20 text-rose-400" };
+const LEVEL_COLOR: Record<string, string> = { TESTING: "bg-muted text-txt-secondary", WATCHLIST: "bg-blue-500/20 text-blue-400", PAPER_APPROVED: "bg-warning/20 text-warning", DEMO_APPROVED: "bg-success/20 text-success", LIVE_INTENT_APPROVED: "bg-premium/20 text-premium", FUTURE_MT5_LIVE_LOCKED: "bg-danger/20 text-danger" };
 
 async function api(path: string, init?: RequestInit) { return fetch(path, { headers: { "content-type": "application/json", ...(init?.headers ?? {}) }, ...init }).then((r) => r.json()); }
 
@@ -74,7 +74,7 @@ export default function StrategyPromotion() {
                 <span className="font-semibold">{s.strategy}</span>
                 <Badge className={LEVEL_COLOR[s.level]}>{s.level === "PAPER_APPROVED" ? "DEMO_APPROVED" : s.level}</Badge>
                 {s.demotion && <Badge variant="destructive">demotion: {s.demotion}</Badge>}
-                {s.eligibleFor && <Badge className="bg-emerald-500/20 text-emerald-400">eligible → {s.eligibleFor}</Badge>}
+                {s.eligibleFor && <Badge className="bg-success/20 text-success">eligible → {s.eligibleFor}</Badge>}
                 <span className="ml-auto text-muted-foreground">n={s.stats.sample} tracked={s.stats.tracked} wr={(s.stats.winRate * 100).toFixed(0)}% avgR={s.stats.avgR.toFixed(2)} exp={s.stats.expectancy.toFixed(2)}</span>
               </div>
               <div className="flex gap-2">

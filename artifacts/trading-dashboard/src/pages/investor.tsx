@@ -133,13 +133,13 @@ function EmptyState({ icon: Icon, title, body }: { icon: typeof Info; title: str
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
-    ACTIVE: "bg-emerald-500/15 text-emerald-400",
-    APPROVED: "bg-emerald-500/15 text-emerald-400",
-    SETTLED: "bg-emerald-500/15 text-emerald-400",
-    PENDING_APPROVAL: "bg-amber-500/15 text-amber-400",
-    PENDING: "bg-amber-500/15 text-amber-400",
-    REVIEWING: "bg-amber-500/15 text-amber-400",
-    UNDER_REVIEW: "bg-amber-500/15 text-amber-400",
+    ACTIVE: "bg-success/15 text-success",
+    APPROVED: "bg-success/15 text-success",
+    SETTLED: "bg-success/15 text-success",
+    PENDING_APPROVAL: "bg-warning/15 text-warning",
+    PENDING: "bg-warning/15 text-warning",
+    REVIEWING: "bg-warning/15 text-warning",
+    UNDER_REVIEW: "bg-warning/15 text-warning",
     REJECTED: "bg-red-500/15 text-red-400",
     CANCELLED: "bg-muted text-muted-foreground",
     SUPERSEDED: "bg-muted text-muted-foreground",
@@ -162,8 +162,8 @@ function FreshnessBadge({
 }) {
   const f = (freshness ?? "MISSING").toUpperCase();
   const map: Record<string, { cls: string; label: string }> = {
-    FRESH: { cls: "bg-emerald-500/15 text-emerald-400", label: "Live" },
-    DELAYED: { cls: "bg-amber-500/15 text-amber-400", label: "Delayed" },
+    FRESH: { cls: "bg-success/15 text-success", label: "Live" },
+    DELAYED: { cls: "bg-warning/15 text-warning", label: "Delayed" },
     STALE: { cls: "bg-red-500/15 text-red-400", label: "Stale" },
     UNDER_REVIEW: { cls: "bg-sky-500/15 text-sky-400", label: "Under review" },
     MISSING: { cls: "bg-muted text-muted-foreground", label: "Unavailable" },
@@ -185,7 +185,7 @@ function FreshnessBadge({
 // A signed money figure that colours gains green and losses red.
 function PnlValue({ value, currency }: { value: number | null | undefined; currency: string }) {
   if (value == null) return <span className="tabular-nums">—</span>;
-  const cls = value > 0 ? "text-emerald-400" : value < 0 ? "text-red-400" : "";
+  const cls = value > 0 ? "text-success" : value < 0 ? "text-red-400" : "";
   const sign = value > 0 ? "+" : "";
   return (
     <span className={`tabular-nums ${cls}`}>
@@ -276,7 +276,7 @@ function OverviewTab() {
   return (
     <div className="space-y-4" data-testid="investor-overview">
       {overview.status === "paused" && (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-300">
+        <div className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm text-warning">
           Allocation changes are paused on your account.
           {overview.pausedReason ? ` ${overview.pausedReason}` : ""}
         </div>
@@ -284,7 +284,7 @@ function OverviewTab() {
 
       {valueStatus && valueStatus.status !== "FRESH" && (
         <div
-          className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-300"
+          className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm text-warning"
           data-testid="value-status-banner"
         >
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -589,7 +589,7 @@ function InvestorTierCard() {
           <div className="flex items-center gap-2">
             <Badge variant="outline" data-testid="investor-tier-label">{t.activeTierLabel}</Badge>
             {isDynamic && (
-              <Badge className="bg-amber-500/15 text-amber-400 text-[11px]">Dynamic</Badge>
+              <Badge className="bg-warning/15 text-warning text-[11px]">Dynamic</Badge>
             )}
           </div>
         </div>
@@ -819,7 +819,7 @@ function AllocationTab() {
       )}
 
       {data.pending && (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-300">
+        <div className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm text-warning">
           <div className="flex items-center gap-2 font-semibold">
             <Clock className="h-4 w-4" /> Request awaiting review
           </div>
@@ -831,7 +831,7 @@ function AllocationTab() {
       )}
 
       {data.allocationPaused && (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-300">
+        <div className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm text-warning">
           Allocation changes are paused on your account.
           {data.pausedReason ? ` ${data.pausedReason}` : ""}
         </div>
@@ -980,8 +980,8 @@ function SleeveBar({
     <div className="space-y-1">
       <div className="flex h-3 w-full overflow-hidden rounded-full bg-muted">
         <div className="bg-sky-500" style={{ width: `${conservativePct}%` }} />
-        <div className="bg-indigo-500" style={{ width: `${balancedPct}%` }} />
-        <div className="bg-amber-500" style={{ width: `${aggressivePct}%` }} />
+        <div className="bg-primary" style={{ width: `${balancedPct}%` }} />
+        <div className="bg-warning" style={{ width: `${aggressivePct}%` }} />
       </div>
       <div className="flex justify-between text-[11px] text-muted-foreground">
         <span>Conservative {conservativePct}%</span>
@@ -1412,7 +1412,7 @@ function DepositForm({
 
         {error && <p className="text-sm text-red-400">{error}</p>}
         {submitted && (
-          <p className="text-sm text-emerald-400" data-testid="deposit-success">
+          <p className="text-sm text-success" data-testid="deposit-success">
             Your deposit request was submitted for review.
           </p>
         )}
@@ -1588,7 +1588,7 @@ function WithdrawalForm({
               Available to withdraw: {fmtMoney(result.availableForWithdrawal)}
             </p>
             {overAvailable && (
-              <p className="text-xs text-amber-400">
+              <p className="text-xs text-warning">
                 This exceeds your currently available balance and may settle in part or after
                 review.
               </p>
@@ -1614,7 +1614,7 @@ function WithdrawalForm({
 
         {error && <p className="text-sm text-red-400">{error}</p>}
         {submitted && (
-          <p className="text-sm text-emerald-400" data-testid="withdrawal-success">
+          <p className="text-sm text-success" data-testid="withdrawal-success">
             Your withdrawal request was submitted for review.
           </p>
         )}
@@ -1750,7 +1750,7 @@ function ActivityTab() {
             </div>
             {it.amount != null && (
               <span
-                className={`font-bold tabular-nums ${it.amount < 0 ? "text-red-400" : "text-emerald-400"}`}
+                className={`font-bold tabular-nums ${it.amount < 0 ? "text-red-400" : "text-success"}`}
               >
                 {fmtMoney(it.amount)}
               </span>
@@ -1811,7 +1811,7 @@ function DocumentsTab() {
                 )}
                 {d.summary && <p className="text-xs text-muted-foreground">{d.summary}</p>}
                 {d.note && (
-                  <p className="mt-1 text-xs text-amber-400" data-testid={`document-note-${d.id}`}>
+                  <p className="mt-1 text-xs text-warning" data-testid={`document-note-${d.id}`}>
                     {d.note}
                   </p>
                 )}
@@ -1882,8 +1882,8 @@ function weekLabel(periodStart: string, periodEnd: string): string {
 
 function freshnessTone(freshness: string): string {
   const f = freshness.toUpperCase();
-  if (f === "FRESH") return "bg-emerald-500/15 text-emerald-400";
-  if (f === "STALE") return "bg-amber-500/15 text-amber-400";
+  if (f === "FRESH") return "bg-success/15 text-success";
+  if (f === "STALE") return "bg-warning/15 text-warning";
   return "bg-muted text-muted-foreground";
 }
 
@@ -1904,7 +1904,7 @@ export function WeeklyStoryReport({ report }: { report: WeeklyReportDto }) {
                 {n.dataQuality.freshness}
               </Badge>
               {underReview && (
-                <Badge className="bg-amber-500/15 text-amber-400" data-testid="weekly-under-review">
+                <Badge className="bg-warning/15 text-warning" data-testid="weekly-under-review">
                   Under review
                 </Badge>
               )}
@@ -1918,7 +1918,7 @@ export function WeeklyStoryReport({ report }: { report: WeeklyReportDto }) {
           <p className="text-muted-foreground">{n.summary}</p>
           {(underReview || stale) && (
             <div
-              className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-300"
+              className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 p-3 text-xs text-warning"
               data-testid="weekly-quality-note"
             >
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -1939,7 +1939,7 @@ export function WeeklyStoryReport({ report }: { report: WeeklyReportDto }) {
                 <p className="text-xs text-muted-foreground">Net change</p>
                 <p
                   className={`text-lg font-bold tabular-nums ${
-                    (ei.netChange ?? 0) < 0 ? "text-red-400" : "text-emerald-400"
+                    (ei.netChange ?? 0) < 0 ? "text-red-400" : "text-success"
                   }`}
                 >
                   {fmtMoney(ei.netChange)}
@@ -1953,7 +1953,7 @@ export function WeeklyStoryReport({ report }: { report: WeeklyReportDto }) {
                 <p className="text-xs text-muted-foreground">From market performance</p>
                 <p
                   className={`text-lg font-bold tabular-nums ${
-                    (ei.marketChange ?? 0) < 0 ? "text-red-400" : "text-emerald-400"
+                    (ei.marketChange ?? 0) < 0 ? "text-red-400" : "text-success"
                   }`}
                 >
                   {fmtMoney(ei.marketChange)}
@@ -1973,7 +1973,7 @@ export function WeeklyStoryReport({ report }: { report: WeeklyReportDto }) {
             </div>
           ) : (
             <div
-              className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-300"
+              className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 p-3 text-xs text-warning"
               data-testid="weekly-change-withheld"
             >
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -2020,7 +2020,7 @@ export function WeeklyStoryReport({ report }: { report: WeeklyReportDto }) {
                   <div className="flex items-center gap-2">
                     <p className="truncate font-medium">{p.name}</p>
                     {p.underReview && (
-                      <Badge className="bg-amber-500/15 text-amber-400">Under review</Badge>
+                      <Badge className="bg-warning/15 text-warning">Under review</Badge>
                     )}
                   </div>
                   <p className="text-xs text-muted-foreground">
@@ -2032,7 +2032,7 @@ export function WeeklyStoryReport({ report }: { report: WeeklyReportDto }) {
                   {p.floatingPlShare != null && (
                     <p
                       className={`text-xs tabular-nums ${
-                        p.floatingPlShare < 0 ? "text-red-400" : "text-emerald-400"
+                        p.floatingPlShare < 0 ? "text-red-400" : "text-success"
                       }`}
                     >
                       {fmtMoney(p.floatingPlShare)} open P/L
@@ -2050,7 +2050,7 @@ export function WeeklyStoryReport({ report }: { report: WeeklyReportDto }) {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center gap-1 text-sm">
-                <ArrowUpRight className="h-4 w-4 text-emerald-400" /> Top contributors
+                <ArrowUpRight className="h-4 w-4 text-success" /> Top contributors
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2 text-sm" data-testid="weekly-top-positive">
@@ -2060,7 +2060,7 @@ export function WeeklyStoryReport({ report }: { report: WeeklyReportDto }) {
                 n.topPositive.map((c) => (
                   <div key={c.poolKey} className="flex items-center justify-between">
                     <span className="truncate">{c.name}</span>
-                    <span className="font-semibold tabular-nums text-emerald-400">
+                    <span className="font-semibold tabular-nums text-success">
                       {fmtMoney(c.floatingPlShare)}
                     </span>
                   </div>
@@ -2104,7 +2104,7 @@ export function WeeklyStoryReport({ report }: { report: WeeklyReportDto }) {
               <span className="text-muted-foreground">Drawdown</span>
               <span
                 className={`font-semibold tabular-nums ${
-                  n.risk.elevated ? "text-amber-400" : "text-foreground"
+                  n.risk.elevated ? "text-warning" : "text-foreground"
                 }`}
               >
                 {fmtPct(n.risk.drawdownPercent)}
@@ -2117,7 +2117,7 @@ export function WeeklyStoryReport({ report }: { report: WeeklyReportDto }) {
               </div>
             )}
             {n.risk.elevated && (
-              <p className="text-xs text-amber-400">Drawdown is elevated relative to recent peaks.</p>
+              <p className="text-xs text-warning">Drawdown is elevated relative to recent peaks.</p>
             )}
           </CardContent>
         </Card>

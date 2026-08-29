@@ -111,7 +111,7 @@ export default function NotificationsPage() {
           </span>
         )}
       </div>
-      <p className="text-sm text-gray-500">Trade, risk, and system alerts for your account. This page never places trades — it only shows what your bot or operator already did.</p>
+      <p className="text-sm text-txt-muted">Trade, risk, and system alerts for your account. This page never places trades — it only shows what your bot or operator already did.</p>
 
       <PushSettingsCard />
 
@@ -151,14 +151,14 @@ export default function NotificationsPage() {
         <button disabled={busy} onClick={() => call("/api/notifications/demo", { method: "POST" })}
           className="px-3 py-1.5 bg-primary hover:bg-primary text-foreground rounded text-sm">Generate demo</button>
         <button disabled={busy} onClick={() => call("/api/notifications/ingest", { method: "POST", body: "{}" })}
-          className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-foreground rounded text-sm">Ingest from system</button>
+          className="px-3 py-1.5 bg-primary hover:bg-primary/15 text-foreground rounded text-sm">Ingest from system</button>
         <button disabled={busy} onClick={() => call("/api/notifications/mark-all-read", { method: "POST" })}
-          className="px-3 py-1.5 bg-gray-600 hover:bg-gray-700 text-foreground rounded text-sm">Mark all read</button>
+          className="px-3 py-1.5 bg-muted hover:bg-muted text-foreground rounded text-sm">Mark all read</button>
         <button disabled={busy} onClick={() => call("/api/notifications/digest/generate", { method: "POST", body: "{}" })}
           className="px-3 py-1.5 bg-success hover:bg-success text-foreground rounded text-sm">Generate digest</button>
         <button disabled={busy} onClick={refresh}
-          className="px-3 py-1.5 bg-gray-500 hover:bg-gray-600 text-foreground rounded text-sm">Refresh</button>
-        {msg && <span className="text-xs text-gray-500">{msg}</span>}
+          className="px-3 py-1.5 bg-muted hover:bg-muted text-foreground rounded text-sm">Refresh</button>
+        {msg && <span className="text-xs text-txt-muted">{msg}</span>}
       </div>
 
       {/* Filters */}
@@ -180,16 +180,16 @@ export default function NotificationsPage() {
 
       {/* List */}
       <div className="border rounded">
-        <div className="p-2 font-semibold bg-gray-100 dark:bg-gray-800">Notifications ({visible.length})</div>
+        <div className="p-2 font-semibold bg-muted dark:bg-secondary">Notifications ({visible.length})</div>
         <div className="divide-y">
           {visible.map(n => (
             <div key={n.notificationId} className="p-3 flex flex-col sm:flex-row sm:items-start gap-2">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className={`px-2 py-0.5 rounded text-xs ${SEV_COLOR[n.severity]}`}>{n.severity}</span>
-                  <span className="px-2 py-0.5 rounded text-xs bg-gray-200 dark:bg-gray-700">{n.type}</span>
-                  <span className="px-2 py-0.5 rounded text-xs bg-gray-200 dark:bg-gray-700">{n.sourceBuild}</span>
-                  <span className="px-2 py-0.5 rounded text-xs bg-gray-200 dark:bg-gray-700">{n.status}</span>
+                  <span className="px-2 py-0.5 rounded text-xs bg-muted dark:bg-muted">{n.type}</span>
+                  <span className="px-2 py-0.5 rounded text-xs bg-muted dark:bg-muted">{n.sourceBuild}</span>
+                  <span className="px-2 py-0.5 rounded text-xs bg-muted dark:bg-muted">{n.status}</span>
                   {n.repeatCount > 1 && <span className="px-2 py-0.5 rounded text-xs bg-warning text-warning">×{n.repeatCount}</span>}
                   {n.symbol && <span className="text-xs opacity-60">{n.symbol}</span>}
                   <span className="text-xs opacity-50 ml-auto">{safeDate(n.createdAt)}</span>
@@ -202,14 +202,14 @@ export default function NotificationsPage() {
               <div className="flex gap-1 flex-wrap shrink-0">
                 {n.status === "UNREAD" && (
                   <button disabled={busy} onClick={() => call(`/api/notifications/${n.notificationId}/read`, { method: "POST" })}
-                    className="px-2 py-1 bg-gray-500 hover:bg-gray-600 text-foreground rounded text-xs">Read</button>
+                    className="px-2 py-1 bg-muted hover:bg-muted text-foreground rounded text-xs">Read</button>
                 )}
                 <button disabled={busy} onClick={() => call(`/api/notifications/${n.notificationId}/acknowledge`, { method: "POST" })}
                   className="px-2 py-1 bg-success hover:bg-success text-foreground rounded text-xs">Ack</button>
                 <button disabled={busy} onClick={() => call(`/api/notifications/${n.notificationId}/snooze`, { method: "POST", body: JSON.stringify({ minutes: 60 }) })}
                   className="px-2 py-1 bg-warning hover:bg-warning text-foreground rounded text-xs">Snooze 1h</button>
                 <button disabled={busy} onClick={() => call(`/api/notifications/${n.notificationId}/dismiss`, { method: "POST" })}
-                  className="px-2 py-1 bg-gray-400 hover:bg-gray-500 text-foreground rounded text-xs">Dismiss</button>
+                  className="px-2 py-1 bg-muted hover:bg-muted text-foreground rounded text-xs">Dismiss</button>
               </div>
             </div>
           ))}

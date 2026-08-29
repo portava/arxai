@@ -67,7 +67,7 @@ export default function AdminIssues() {
                 <Badge className="font-mono text-[10px]">{i.feedbackId}</Badge>
                 <Badge variant="outline">{i.category}</Badge>
                 <Badge className={sevTone(i.severity)}>{i.severity}</Badge>
-                <Badge className="bg-violet-500/20 text-violet-300 font-mono">{i.priority}</Badge>
+                <Badge className="bg-premium/20 text-premium font-mono">{i.priority}</Badge>
                 <Badge className={tone(i.status)}>{i.status}</Badge>
                 <span className="ml-auto text-[10px] font-normal text-muted-foreground">{new Date(i.createdAt).toLocaleString()}</span>
               </CardTitle>

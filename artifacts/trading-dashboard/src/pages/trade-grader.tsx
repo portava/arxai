@@ -18,12 +18,12 @@ type Sniper = {
 };
 
 const GRADE_COLORS: Record<string, string> = {
-  "A+": "bg-emerald-500/10 text-emerald-400 border-emerald-500/40",
-  "A":  "bg-emerald-500/10 text-emerald-400 border-emerald-500/40",
+  "A+": "bg-success/10 text-success border-success/40",
+  "A":  "bg-success/10 text-success border-success/40",
   "B":  "bg-blue-500/10 text-blue-400 border-blue-500/40",
-  "C":  "bg-amber-500/10 text-amber-400 border-amber-500/40",
+  "C":  "bg-warning/10 text-warning border-warning/40",
   "D":  "bg-orange-500/10 text-orange-400 border-orange-500/40",
-  "F":  "bg-rose-500/10 text-rose-400 border-rose-500/40",
+  "F":  "bg-danger/10 text-danger border-danger/40",
 };
 
 export default function TradeGrader() {
@@ -94,7 +94,7 @@ export default function TradeGrader() {
           <div className="md:col-span-3">
             <Button disabled={busy} onClick={run}>{busy ? "Grading…" : "Grade this trade"}</Button>
           </div>
-          {err && <p className="text-sm text-rose-400 md:col-span-3">{err}</p>}
+          {err && <p className="text-sm text-danger md:col-span-3">{err}</p>}
         </CardContent>
       </Card>
 
@@ -132,15 +132,15 @@ export default function TradeGrader() {
             <CardHeader><CardTitle>Diagnostics</CardTitle></CardHeader>
             <CardContent className="grid md:grid-cols-3 gap-4 text-sm">
               <div>
-                <h4 className="font-semibold mb-2 flex items-center gap-1"><ThumbsUp className="h-4 w-4 text-emerald-400" /> Strengths</h4>
+                <h4 className="font-semibold mb-2 flex items-center gap-1"><ThumbsUp className="h-4 w-4 text-success" /> Strengths</h4>
                 <ul className="space-y-1">{grade.strengths.length === 0 ? <li className="text-muted-foreground">none</li> : grade.strengths.map((s) => <li key={s}>· {s}</li>)}</ul>
               </div>
               <div>
-                <h4 className="font-semibold mb-2 flex items-center gap-1"><ThumbsDown className="h-4 w-4 text-rose-400" /> Weaknesses</h4>
+                <h4 className="font-semibold mb-2 flex items-center gap-1"><ThumbsDown className="h-4 w-4 text-danger" /> Weaknesses</h4>
                 <ul className="space-y-1">{grade.weaknesses.length === 0 ? <li className="text-muted-foreground">none</li> : grade.weaknesses.map((s) => <li key={s}>· {s}</li>)}</ul>
               </div>
               <div>
-                <h4 className="font-semibold mb-2 flex items-center gap-1"><AlertTriangle className="h-4 w-4 text-amber-400" /> Mistakes detected</h4>
+                <h4 className="font-semibold mb-2 flex items-center gap-1"><AlertTriangle className="h-4 w-4 text-warning" /> Mistakes detected</h4>
                 <ul className="space-y-1">{grade.mistakesDetected.map((s) => <li key={s}>· {s}</li>)}</ul>
               </div>
             </CardContent>

@@ -9,7 +9,7 @@ import { AccessCheckingShell, AccessDeniedCard, SHADOW_ADMIN_DENIED_NOTE, shadow
 type Status = { enabled: boolean; startedAt: string | null; totalsObserved: number; totalDecisions: number; tracking: number; wins: number; losses: number; breakevens: number; expired: number; rejected: number; waits: number };
 type Dec = { id: string; ts: string; symbol: string; strategy: string; marketCondition: string; action: string; entry: number; sl: number; tp: number; confidence: number; status: string; pnlR?: number; reason: string; reasonToAvoid: string; riskGovernor: { approved: boolean; level: string; hardBlocks: string[] } };
 
-const STATUS_COLOR: Record<string, string> = { SHADOW_WIN: "bg-emerald-500/20 text-emerald-400", SHADOW_LOSS: "bg-rose-500/20 text-rose-400", SHADOW_BREAKEVEN: "bg-slate-500/20 text-slate-300", SHADOW_TRACKING_OUTCOME: "bg-blue-500/20 text-blue-400", SHADOW_REJECTED: "bg-amber-500/20 text-amber-400", SHADOW_WAIT: "bg-slate-500/20 text-slate-300", SHADOW_EXPIRED: "bg-slate-500/20 text-slate-300" };
+const STATUS_COLOR: Record<string, string> = { SHADOW_WIN: "bg-success/20 text-success", SHADOW_LOSS: "bg-danger/20 text-danger", SHADOW_BREAKEVEN: "bg-muted text-txt-secondary", SHADOW_TRACKING_OUTCOME: "bg-blue-500/20 text-blue-400", SHADOW_REJECTED: "bg-warning/20 text-warning", SHADOW_WAIT: "bg-muted text-txt-secondary", SHADOW_EXPIRED: "bg-muted text-txt-secondary" };
 
 async function api(path: string, init?: RequestInit) {
   return fetch(path, { headers: { "content-type": "application/json", ...(init?.headers ?? {}) }, ...init }).then((r) => r.json());
@@ -67,7 +67,7 @@ export default function ShadowMode() {
           <p className="text-sm text-muted-foreground">AI generates trade ideas and tracks hypothetical outcomes. No simulator orders, no broker calls.</p>
         </div>
         <Badge variant="outline">SHADOW</Badge>
-        {s && <Badge className={s.enabled ? "bg-emerald-500/20 text-emerald-400" : ""}>{s.enabled ? "RUNNING" : "STOPPED"}</Badge>}
+        {s && <Badge className={s.enabled ? "bg-success/20 text-success" : ""}>{s.enabled ? "RUNNING" : "STOPPED"}</Badge>}
       </div>
 
       {s && (
@@ -115,7 +115,7 @@ export default function ShadowMode() {
               </div>
               <div className="text-muted-foreground mt-1">entry {d.entry.toFixed(5)} sl {d.sl.toFixed(5)} tp {d.tp.toFixed(5)}</div>
               <div className="text-muted-foreground">{d.reason}</div>
-              {d.reasonToAvoid && <div className="text-rose-400">avoid: {d.reasonToAvoid}</div>}
+              {d.reasonToAvoid && <div className="text-danger">avoid: {d.reasonToAvoid}</div>}
             </div>
           ))}
           {decs.length === 0 && <p className="text-xs text-muted-foreground">Start shadow mode to populate decisions.</p>}

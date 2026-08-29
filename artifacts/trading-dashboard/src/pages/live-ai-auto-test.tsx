@@ -94,7 +94,7 @@ const OUTCOME_COPY: Record<Outcome, { label: string; detail: string; tone: strin
   REJECTED_BY_RISK: {
     label: "Rejected by tester risk check",
     detail: "The server-side tester caps refused this intent. Nothing was captured as ready and no order was placed.",
-    tone: "text-amber-300",
+    tone: "text-warning",
   },
   FORBIDDEN: {
     label: "Access denied",
@@ -251,7 +251,7 @@ export default function LiveAiAutoTestPage() {
               <div className="rounded border border-border p-2"><div className="text-muted-foreground">MT5 connected</div><div className="font-mono">{String(lastResult?.mt5Connected ?? perm?.testerAccess?.mt5Connected ?? false)}</div></div>
             </div>
             {defStatus?.deferred && (
-              <div className="text-[11px] text-amber-300">{defStatus.bannerText}</div>
+              <div className="text-[11px] text-warning">{defStatus.bannerText}</div>
             )}
           </CardContent>
         </Card>
@@ -287,7 +287,7 @@ export default function LiveAiAutoTestPage() {
             <div key={i} className="text-[11px] font-mono border-b border-border/30 py-1">
               <span className="text-muted-foreground">{new Date(d.ts).toLocaleTimeString()}</span> · <span>{d.action}</span> · {d.symbol}
               {d.outcome && <> · <span className={OUTCOME_COPY[d.outcome].tone}>{OUTCOME_COPY[d.outcome].label}</span></>}
-              {d.status && <> · status=<span className="text-amber-300">{d.status}</span></>}
+              {d.status && <> · status=<span className="text-warning">{d.status}</span></>}
               {d.reason && <> · {d.reason}</>}
             </div>
           ))}

@@ -91,8 +91,8 @@ export default function RuleContractsPage() {
   return (
     <div className="space-y-4 p-4">
       <header>
-        <h1 className="text-xl font-semibold text-slate-100">Rule contracts & accountability</h1>
-        <p className="text-xs text-slate-400">Soft warnings to support discipline. Does not enforce hard trade locks or guarantee profits.</p>
+        <h1 className="text-xl font-semibold text-foreground">Rule contracts & accountability</h1>
+        <p className="text-xs text-txt-secondary">Soft warnings to support discipline. Does not enforce hard trade locks or guarantee profits.</p>
       </header>
 
       {!contract && <RuleContractBuilder onSubmit={create.mutate} saving={create.isPending} />}
@@ -112,24 +112,24 @@ export default function RuleContractsPage() {
             </div>
             <div className="space-y-3">
               {evalQ.data && <AccountabilityScoreCard score={evalQ.data.summary.accountabilityScore} hardCount={evalQ.data.summary.hardCount} />}
-              <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-4">
-                <h3 className="text-sm font-semibold text-slate-100">Active contract</h3>
-                <dl className="mt-2 space-y-1 text-[11px] text-slate-300">
-                  <div className="flex justify-between"><dt className="text-slate-500">Name</dt><dd>{contract.contractName}</dd></div>
-                  <div className="flex justify-between"><dt className="text-slate-500">Max trades/day</dt><dd>{contract.maxTradesPerDay ?? "—"}</dd></div>
-                  <div className="flex justify-between"><dt className="text-slate-500">Max daily loss</dt><dd>{contract.maxDailyLossPercent != null ? `${(contract.maxDailyLossPercent*100).toFixed(2)}%` : "—"}</dd></div>
-                  <div className="flex justify-between"><dt className="text-slate-500">Max risk/trade</dt><dd>{contract.maxRiskPerTradePercent != null ? `${(contract.maxRiskPerTradePercent*100).toFixed(2)}%` : "—"}</dd></div>
-                  <div className="flex justify-between"><dt className="text-slate-500">Sessions</dt><dd className="font-mono">{contract.allowedSessions}</dd></div>
-                  <div className="flex justify-between"><dt className="text-slate-500">Symbols</dt><dd className="font-mono">{contract.allowedSymbols || "any"}</dd></div>
-                  <div className="flex justify-between"><dt className="text-slate-500">Min R:R</dt><dd>{contract.requiredRrMinimum ?? "—"}</dd></div>
-                  <div className="flex justify-between"><dt className="text-slate-500">Cooldown</dt><dd>{contract.cooldownAfterLosses ?? "—"} losses</dd></div>
+              <div className="rounded-lg border border-border bg-muted/40 p-4">
+                <h3 className="text-sm font-semibold text-foreground">Active contract</h3>
+                <dl className="mt-2 space-y-1 text-[11px] text-txt-secondary">
+                  <div className="flex justify-between"><dt className="text-txt-muted">Name</dt><dd>{contract.contractName}</dd></div>
+                  <div className="flex justify-between"><dt className="text-txt-muted">Max trades/day</dt><dd>{contract.maxTradesPerDay ?? "—"}</dd></div>
+                  <div className="flex justify-between"><dt className="text-txt-muted">Max daily loss</dt><dd>{contract.maxDailyLossPercent != null ? `${(contract.maxDailyLossPercent*100).toFixed(2)}%` : "—"}</dd></div>
+                  <div className="flex justify-between"><dt className="text-txt-muted">Max risk/trade</dt><dd>{contract.maxRiskPerTradePercent != null ? `${(contract.maxRiskPerTradePercent*100).toFixed(2)}%` : "—"}</dd></div>
+                  <div className="flex justify-between"><dt className="text-txt-muted">Sessions</dt><dd className="font-mono">{contract.allowedSessions}</dd></div>
+                  <div className="flex justify-between"><dt className="text-txt-muted">Symbols</dt><dd className="font-mono">{contract.allowedSymbols || "any"}</dd></div>
+                  <div className="flex justify-between"><dt className="text-txt-muted">Min R:R</dt><dd>{contract.requiredRrMinimum ?? "—"}</dd></div>
+                  <div className="flex justify-between"><dt className="text-txt-muted">Cooldown</dt><dd>{contract.cooldownAfterLosses ?? "—"} losses</dd></div>
                 </dl>
               </div>
             </div>
           </div>
 
-          <details className="rounded-lg border border-slate-700 bg-slate-900/40 p-4">
-            <summary className="cursor-pointer text-xs font-semibold text-slate-300">Edit contract</summary>
+          <details className="rounded-lg border border-border bg-muted/40 p-4">
+            <summary className="cursor-pointer text-xs font-semibold text-txt-secondary">Edit contract</summary>
             <div className="mt-3">
               <RuleContractBuilder initial={{
                 contractName: contract.contractName,

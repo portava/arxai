@@ -228,7 +228,7 @@ export default function LoginPage() {
           {/* Animated 3-slide showcase */}
           <LoginShowcase />
 
-          <p className="relative z-10 text-xs text-slate-500">
+          <p className="relative z-10 text-xs text-txt-muted">
             Trading involves risk. ARX AI is built to support disciplined
             decisions, not guarantee results.
           </p>
@@ -247,7 +247,7 @@ export default function LoginPage() {
               <h2 className="mt-7 text-2xl sm:text-3xl font-black">
                 Welcome back
               </h2>
-              <p className="mt-1 text-sm text-slate-400">
+              <p className="mt-1 text-sm text-txt-secondary">
                 Sign in to continue to your ARX AI account.
               </p>
             </div>
@@ -266,7 +266,7 @@ export default function LoginPage() {
                 <div className="relative">
                   <Mail
                     aria-hidden
-                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-txt-secondary"
                   />
                   <Input
                     id="email"
@@ -282,7 +282,7 @@ export default function LoginPage() {
                     onBlur={(e) => {
                       if (e.target.value) validateEmail(e.target.value);
                     }}
-                    className="pl-10 h-12 bg-black/25 border-white/15 text-white placeholder:text-slate-500 focus-visible:border-blue-400 focus-visible:ring-blue-500/20"
+                    className="pl-10 h-12 bg-black/25 border-white/15 text-white placeholder:text-txt-muted focus-visible:border-blue-400 focus-visible:ring-blue-500/20"
                     aria-invalid={!!emailError}
                     aria-describedby={emailError ? "email-error" : undefined}
                     data-testid="input-email"
@@ -307,7 +307,7 @@ export default function LoginPage() {
                 <div className="relative">
                   <Lock
                     aria-hidden
-                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-txt-secondary"
                   />
                   <Input
                     id="password"
@@ -317,7 +317,7 @@ export default function LoginPage() {
                     placeholder="Enter your password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="pl-10 pr-12 h-12 bg-black/25 border-white/15 text-white placeholder:text-slate-500 focus-visible:border-blue-400 focus-visible:ring-blue-500/20"
+                    className="pl-10 pr-12 h-12 bg-black/25 border-white/15 text-white placeholder:text-txt-muted focus-visible:border-blue-400 focus-visible:ring-blue-500/20"
                     data-testid="input-password"
                   />
                   <button
@@ -327,7 +327,7 @@ export default function LoginPage() {
                       showPassword ? "Hide password" : "Show password"
                     }
                     aria-pressed={showPassword}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-300 hover:text-white hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex h-8 w-8 items-center justify-center rounded-md text-txt-secondary hover:text-white hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                     data-testid="button-toggle-password"
                   >
                     {showPassword ? (
@@ -341,7 +341,7 @@ export default function LoginPage() {
 
               {/* Remember + forgot */}
               <div className="flex items-center justify-between text-sm">
-                <label className="flex items-center gap-2 text-slate-300 cursor-pointer select-none">
+                <label className="flex items-center gap-2 text-txt-secondary cursor-pointer select-none">
                   <Checkbox
                     id="remember"
                     checked={remember}
@@ -394,7 +394,7 @@ export default function LoginPage() {
             </form>
 
             {/* OR divider */}
-            <div className="my-6 flex items-center gap-4 text-xs uppercase tracking-wider text-slate-500">
+            <div className="my-6 flex items-center gap-4 text-xs uppercase tracking-wider text-txt-muted">
               <div className="h-px flex-1 bg-white/10" />
               OR
               <div className="h-px flex-1 bg-white/10" />
@@ -425,7 +425,7 @@ export default function LoginPage() {
             </div>
 
             {/* Ruby note */}
-            <div className="mt-6 rounded-2xl border border-white/10 bg-black/20 p-3 text-xs leading-5 text-slate-300">
+            <div className="mt-6 rounded-2xl border border-white/10 bg-black/20 p-3 text-xs leading-5 text-txt-secondary">
               <span className="font-bold text-blue-300">{name}</span> helps
               analyze markets, risk, and execution — but{" "}
               <span className="font-bold text-blue-300">final control</span>{" "}
@@ -433,15 +433,15 @@ export default function LoginPage() {
             </div>
 
             {/* Footer */}
-            <p className="mt-6 text-center text-xs text-slate-500">
+            <p className="mt-6 text-center text-xs text-txt-muted">
               Your data is encrypted. Your permissions protect everything.
             </p>
             <p className="mt-1 text-center text-sm">
               <span className="text-blue-400 font-semibold">Secure.</span>{" "}
-              <span className="text-slate-300">Private.</span>{" "}
-              <span className="text-slate-400">Yours.</span>
+              <span className="text-txt-secondary">Private.</span>{" "}
+              <span className="text-txt-secondary">Yours.</span>
             </p>
-            <p className="mt-6 text-center text-xs text-slate-500">
+            <p className="mt-6 text-center text-xs text-txt-muted">
               ARX AI is invite-only. Use your invite code, or request access
               and an operator will review your account.
             </p>
@@ -460,7 +460,7 @@ export default function LoginPage() {
         <DialogContent className="bg-[#0a1428] border-blue-400/20 text-white">
           <DialogHeader>
             <DialogTitle>Reset your password</DialogTitle>
-            <DialogDescription className="text-slate-400">
+            <DialogDescription className="text-txt-secondary">
               Enter the email address on your account and we'll send a link to
               reset your password.
             </DialogDescription>
@@ -468,7 +468,7 @@ export default function LoginPage() {
 
           {forgotDone ? (
             <div
-              className="flex items-start gap-3 rounded-lg border border-emerald-400/20 bg-emerald-500/10 p-4 text-sm text-emerald-100"
+              className="flex items-start gap-3 rounded-lg border border-success/20 bg-success/10 p-4 text-sm text-success"
               data-testid="forgot-password-success"
             >
               <CheckCircle2 className="h-5 w-5 mt-0.5 shrink-0" />
@@ -494,7 +494,7 @@ export default function LoginPage() {
                 <div className="relative">
                   <Mail
                     aria-hidden
-                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-txt-secondary"
                   />
                   <Input
                     id="forgot-email"
@@ -503,7 +503,7 @@ export default function LoginPage() {
                     placeholder="you@example.com"
                     value={forgotEmail}
                     onChange={(e) => setForgotEmail(e.target.value)}
-                    className="pl-10 h-12 bg-black/25 border-white/15 text-white placeholder:text-slate-500 focus-visible:border-blue-400 focus-visible:ring-blue-500/20"
+                    className="pl-10 h-12 bg-black/25 border-white/15 text-white placeholder:text-txt-muted focus-visible:border-blue-400 focus-visible:ring-blue-500/20"
                     data-testid="input-forgot-email"
                   />
                 </div>
@@ -547,7 +547,7 @@ export default function LoginPage() {
         <DialogContent className="bg-[#0a1428] border-blue-400/20 text-white">
           <DialogHeader>
             <DialogTitle>Use an invite code</DialogTitle>
-            <DialogDescription className="text-slate-400">
+            <DialogDescription className="text-txt-secondary">
               Paste the invite code you received. We’ll take you to the
               registration page to finish setting up your account.
             </DialogDescription>
@@ -561,7 +561,7 @@ export default function LoginPage() {
               value={inviteCode}
               onChange={(e) => setInviteCode(e.target.value)}
               placeholder="e.g. ARX-XXXX-XXXX"
-              className="bg-black/25 border-white/15 text-white placeholder:text-slate-500 focus-visible:border-blue-400 focus-visible:ring-blue-500/20"
+              className="bg-black/25 border-white/15 text-white placeholder:text-txt-muted focus-visible:border-blue-400 focus-visible:ring-blue-500/20"
               autoComplete="off"
               data-testid="input-invite-code"
             />
@@ -599,7 +599,7 @@ export default function LoginPage() {
         <DialogContent className="bg-[#0a1428] border-blue-400/20 text-white">
           <DialogHeader>
             <DialogTitle>Request access</DialogTitle>
-            <DialogDescription className="text-slate-400">
+            <DialogDescription className="text-txt-secondary">
               ARX AI is invite-only. Tell us how to reach you and an operator
               will review your request.
             </DialogDescription>
@@ -607,7 +607,7 @@ export default function LoginPage() {
 
           {reqDone ? (
             <div
-              className="rounded-lg border border-emerald-400/20 bg-emerald-500/10 p-4 text-sm text-emerald-100"
+              className="rounded-lg border border-success/20 bg-success/10 p-4 text-sm text-success"
               data-testid="request-access-success"
             >
               Thanks — your request has been received. If you’re a fit, an
@@ -625,28 +625,28 @@ export default function LoginPage() {
                   value={reqEmail}
                   onChange={(e) => setReqEmail(e.target.value)}
                   placeholder="you@example.com"
-                  className="bg-black/25 border-white/15 text-white placeholder:text-slate-500 focus-visible:border-blue-400 focus-visible:ring-blue-500/20"
+                  className="bg-black/25 border-white/15 text-white placeholder:text-txt-muted focus-visible:border-blue-400 focus-visible:ring-blue-500/20"
                   autoComplete="email"
                   data-testid="input-request-email"
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="req-name" className="text-sm">
-                  Name <span className="text-slate-500">(optional)</span>
+                  Name <span className="text-txt-muted">(optional)</span>
                 </Label>
                 <Input
                   id="req-name"
                   value={reqName}
                   onChange={(e) => setReqName(e.target.value)}
                   placeholder="Your name"
-                  className="bg-black/25 border-white/15 text-white placeholder:text-slate-500 focus-visible:border-blue-400 focus-visible:ring-blue-500/20"
+                  className="bg-black/25 border-white/15 text-white placeholder:text-txt-muted focus-visible:border-blue-400 focus-visible:ring-blue-500/20"
                   autoComplete="name"
                   data-testid="input-request-name"
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="req-note" className="text-sm">
-                  Note <span className="text-slate-500">(optional)</span>
+                  Note <span className="text-txt-muted">(optional)</span>
                 </Label>
                 <textarea
                   id="req-note"
@@ -655,7 +655,7 @@ export default function LoginPage() {
                   placeholder="A short note about your trading background."
                   rows={3}
                   maxLength={1000}
-                  className="w-full rounded-md bg-black/25 border border-white/15 text-white placeholder:text-slate-500 px-3 py-2 text-sm focus-visible:outline-none focus-visible:border-blue-400 focus-visible:ring-2 focus-visible:ring-blue-500/20"
+                  className="w-full rounded-md bg-black/25 border border-white/15 text-white placeholder:text-txt-muted px-3 py-2 text-sm focus-visible:outline-none focus-visible:border-blue-400 focus-visible:ring-2 focus-visible:ring-blue-500/20"
                   data-testid="input-request-note"
                 />
               </div>

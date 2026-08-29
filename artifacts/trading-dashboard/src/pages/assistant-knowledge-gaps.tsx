@@ -136,13 +136,13 @@ export default function AssistantKnowledgeGaps() {
       </header>
 
       {error && (
-        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-300 flex gap-2">
+        <div className="rounded-md border border-warning/40 bg-warning/10 p-3 text-xs text-warning flex gap-2">
           <AlertTriangle size={14} className="shrink-0 mt-0.5" /> {error}
         </div>
       )}
 
       {!loading && gaps.length === 0 && !error && (
-        <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-4 text-sm text-emerald-300 flex gap-2">
+        <div className="rounded-md border border-success/30 bg-success/5 p-4 text-sm text-success flex gap-2">
           <CheckCircle2 size={16} className="shrink-0 mt-0.5" />
           No outstanding knowledge gaps. The assistant has answered every recent question.
         </div>

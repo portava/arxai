@@ -32,46 +32,46 @@ const MULTI_SYMBOLS = "EURUSD,GBPUSD,USDJPY,XAUUSD,GBPJPY,USDCAD";
 // ── Colour helpers ───────────────────────────────────────────────────────────
 
 function heatBg(score: number): string {
-  if (score >= 80) return "bg-emerald-500/20 border-emerald-500/30 text-emerald-400";
-  if (score >= 60) return "bg-amber-500/20 border-amber-500/30 text-amber-400";
+  if (score >= 80) return "bg-success/20 border-success/30 text-success";
+  if (score >= 60) return "bg-warning/20 border-warning/30 text-warning";
   if (score >= 40) return "bg-blue-500/20 border-blue-500/30 text-blue-400";
-  return "bg-zinc-500/10 border-zinc-500/20 text-zinc-400";
+  return "bg-muted border-border/20 text-txt-secondary";
 }
 
 function heatBar(score: number): string {
-  if (score >= 80) return "bg-emerald-500";
-  if (score >= 60) return "bg-amber-500";
+  if (score >= 80) return "bg-success";
+  if (score >= 60) return "bg-warning";
   if (score >= 40) return "bg-blue-500";
-  return "bg-zinc-500";
+  return "bg-muted";
 }
 
 function gradeColor(grade: string): string {
-  if (grade === "A+" || grade === "A") return "bg-emerald-500/20 text-emerald-400 border-emerald-500/40";
+  if (grade === "A+" || grade === "A") return "bg-success/20 text-success border-success/40";
   if (grade === "B") return "bg-blue-500/20 text-blue-400 border-blue-500/40";
-  if (grade === "C") return "bg-amber-500/20 text-amber-400 border-amber-500/40";
+  if (grade === "C") return "bg-warning/20 text-warning border-warning/40";
   if (grade === "D") return "bg-orange-500/20 text-orange-400 border-orange-500/40";
-  return "bg-rose-500/20 text-rose-400 border-rose-500/40";
+  return "bg-danger/20 text-danger border-danger/40";
 }
 
 function permissionColor(perm: string): string {
-  if (perm === "GO") return "bg-emerald-500/20 text-emerald-400 border-emerald-500/40";
-  if (perm === "WAIT_FOR_ENTRY" || perm === "WAIT_NEWS") return "bg-amber-500/20 text-amber-400 border-amber-500/40";
-  return "bg-rose-500/20 text-rose-400 border-rose-500/40";
+  if (perm === "GO") return "bg-success/20 text-success border-success/40";
+  if (perm === "WAIT_FOR_ENTRY" || perm === "WAIT_NEWS") return "bg-warning/20 text-warning border-warning/40";
+  return "bg-danger/20 text-danger border-danger/40";
 }
 
 function actionColor(action: string): string {
-  if (action === "BUY") return "bg-emerald-500/20 text-emerald-400 border-emerald-500/40";
-  if (action === "SELL") return "bg-rose-500/20 text-rose-400 border-rose-500/40";
-  if (action.startsWith("WAIT")) return "bg-amber-500/20 text-amber-400 border-amber-500/40";
-  if (action === "STAND_DOWN") return "bg-rose-500/20 text-rose-400 border-rose-500/40";
-  return "bg-zinc-500/10 text-zinc-400 border-zinc-500/20";
+  if (action === "BUY") return "bg-success/20 text-success border-success/40";
+  if (action === "SELL") return "bg-danger/20 text-danger border-danger/40";
+  if (action.startsWith("WAIT")) return "bg-warning/20 text-warning border-warning/40";
+  if (action === "STAND_DOWN") return "bg-danger/20 text-danger border-danger/40";
+  return "bg-muted text-txt-secondary border-border/20";
 }
 
 function flowVerdict(verdict: string): string {
-  if (verdict === "ALIGNED") return "bg-emerald-500/20 text-emerald-400 border-emerald-500/40";
-  if (verdict === "CONFLICTED" || verdict === "OPPOSING") return "bg-rose-500/20 text-rose-400 border-rose-500/40";
-  if (verdict === "NEUTRAL") return "bg-zinc-500/10 text-zinc-400 border-zinc-500/20";
-  return "bg-zinc-500/10 text-zinc-400 border-zinc-500/20";
+  if (verdict === "ALIGNED") return "bg-success/20 text-success border-success/40";
+  if (verdict === "CONFLICTED" || verdict === "OPPOSING") return "bg-danger/20 text-danger border-danger/40";
+  if (verdict === "NEUTRAL") return "bg-muted text-txt-secondary border-border/20";
+  return "bg-muted text-txt-secondary border-border/20";
 }
 
 function humanizePermission(perm: string): string {
@@ -184,10 +184,10 @@ function HonestEmpty({ message }: { message?: string }) {
 
 function DataQualityBadge({ label }: { label: string }) {
   const cls =
-    label === "real" ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40"
-    : label === "partial" ? "bg-amber-500/20 text-amber-400 border-amber-500/40"
+    label === "real" ? "bg-success/20 text-success border-success/40"
+    : label === "partial" ? "bg-warning/20 text-warning border-warning/40"
     : label === "basic_timing_estimate" ? "bg-blue-500/20 text-blue-400 border-blue-500/40"
-    : "bg-zinc-500/10 text-zinc-400 border-zinc-500/20";
+    : "bg-muted text-txt-secondary border-border/20";
   const labels: Record<string, string> = {
     real: "Real data",
     partial: "Partial data",
@@ -204,9 +204,9 @@ function NowTab({ data, isLoading, symbol }: { data: MarketTimingRead | undefine
   if (!data) return <HonestEmpty message={`No timing data available for ${symbol || "the selected symbol"}.`} />;
 
   const biasIcon =
-    data.pressureBias === "BUY" ? <TrendingUp className="h-3.5 w-3.5 text-emerald-400" />
-    : data.pressureBias === "SELL" ? <TrendingDown className="h-3.5 w-3.5 text-rose-400" />
-    : <Minus className="h-3.5 w-3.5 text-zinc-400" />;
+    data.pressureBias === "BUY" ? <TrendingUp className="h-3.5 w-3.5 text-success" />
+    : data.pressureBias === "SELL" ? <TrendingDown className="h-3.5 w-3.5 text-danger" />
+    : <Minus className="h-3.5 w-3.5 text-txt-secondary" />;
 
   return (
     <div className="space-y-4">
@@ -245,7 +245,7 @@ function NowTab({ data, isLoading, symbol }: { data: MarketTimingRead | undefine
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             <ScorePill label="Tradeability" value={Math.round(data.tradeabilityScore)} />
             <ScorePill label="Edge" value={Math.round(data.edgeScore)} />
-            <ScorePill label="Danger" value={Math.round(data.dangerScore)} cls="border-rose-500/20" />
+            <ScorePill label="Danger" value={Math.round(data.dangerScore)} cls="border-danger/20" />
             <ScorePill label="Trap prob." value={`${Math.round(data.trapProbability * 100)}%`} />
             <ScorePill label="Room to move" value={Math.round(data.roomToMove)} />
             <ScorePill
@@ -368,13 +368,13 @@ function TodayTab({ data, multiData }: { data: MarketTimingRead | undefined; mul
                     >
                       <div className="flex items-center gap-1.5 mb-1.5">
                         {isCurrent && (
-                          <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                          <span className="inline-block h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
                         )}
                         <span className={cn("font-medium", isCurrent ? "text-foreground" : "text-muted-foreground")}>
                           {name}
                         </span>
                         {isCurrent && (
-                          <Badge variant="outline" className="text-[9px] px-1 py-0 border-emerald-500/40 text-emerald-400">
+                          <Badge variant="outline" className="text-[9px] px-1 py-0 border-success/40 text-success">
                             Active
                           </Badge>
                         )}
@@ -520,7 +520,7 @@ function SessionCard({
           </CardTitle>
           <div className="flex items-center gap-1.5">
             {session.isKillZoneActive && (
-              <Badge variant="outline" className="text-[10px] bg-amber-500/20 text-amber-400 border-amber-500/40">
+              <Badge variant="outline" className="text-[10px] bg-warning/20 text-warning border-warning/40">
                 Kill zone active
               </Badge>
             )}
@@ -547,7 +547,7 @@ function SessionCard({
             <div className="text-[10px] text-muted-foreground mb-1">Best this session</div>
             <div className="flex flex-wrap gap-1">
               {session.bestSymbols.map((s) => (
-                <Badge key={s} variant="outline" className="text-[10px] bg-emerald-500/10 text-emerald-400 border-emerald-500/30">
+                <Badge key={s} variant="outline" className="text-[10px] bg-success/10 text-success border-success/30">
                   {s}
                 </Badge>
               ))}
@@ -559,7 +559,7 @@ function SessionCard({
             <div className="text-[10px] text-muted-foreground mb-1">Caution this session</div>
             <div className="flex flex-wrap gap-1">
               {session.dangerSymbols.map((s) => (
-                <Badge key={s} variant="outline" className="text-[10px] bg-rose-500/10 text-rose-400 border-rose-500/30">
+                <Badge key={s} variant="outline" className="text-[10px] bg-danger/10 text-danger border-danger/30">
                   {s}
                 </Badge>
               ))}
@@ -615,12 +615,12 @@ function BuySellWindowsTab({ data }: { data: MarketTimingRead | undefined }) {
           {/* Visual meter */}
           <div className="space-y-1">
             <div className="flex justify-between text-xs font-medium">
-              <span className="text-emerald-400">Buyers</span>
-              <span className="text-rose-400">Sellers</span>
+              <span className="text-success">Buyers</span>
+              <span className="text-danger">Sellers</span>
             </div>
             <div className="relative h-4 rounded-full overflow-hidden bg-muted flex">
-              <div className="h-full bg-emerald-500/70 transition-all" style={{ width: `${buy}%` }} />
-              <div className="h-full bg-rose-500/70 transition-all" style={{ width: `${sell}%` }} />
+              <div className="h-full bg-success/70 transition-all" style={{ width: `${buy}%` }} />
+              <div className="h-full bg-danger/70 transition-all" style={{ width: `${sell}%` }} />
             </div>
             <div className="flex justify-between text-xs text-muted-foreground font-mono tabular-nums">
               <span>{Math.round(buy)}</span>
@@ -631,13 +631,13 @@ function BuySellWindowsTab({ data }: { data: MarketTimingRead | undefined }) {
           {/* Bias verdict */}
           <div className={cn(
             "rounded-lg border p-3 flex items-center gap-3",
-            bias === "BUY" ? "bg-emerald-500/10 border-emerald-500/30"
-            : bias === "SELL" ? "bg-rose-500/10 border-rose-500/30"
-            : "bg-zinc-500/10 border-zinc-500/20"
+            bias === "BUY" ? "bg-success/10 border-success/30"
+            : bias === "SELL" ? "bg-danger/10 border-danger/30"
+            : "bg-muted border-border/20"
           )}>
-            {bias === "BUY" ? <TrendingUp className="h-5 w-5 text-emerald-400 shrink-0" />
-              : bias === "SELL" ? <TrendingDown className="h-5 w-5 text-rose-400 shrink-0" />
-              : <Minus className="h-5 w-5 text-zinc-400 shrink-0" />}
+            {bias === "BUY" ? <TrendingUp className="h-5 w-5 text-success shrink-0" />
+              : bias === "SELL" ? <TrendingDown className="h-5 w-5 text-danger shrink-0" />
+              : <Minus className="h-5 w-5 text-txt-secondary shrink-0" />}
             <div>
               <div className="text-sm font-semibold">
                 {bias === "BUY" ? "Buyer control" : bias === "SELL" ? "Seller control" : "Neutral pressure"}
@@ -650,13 +650,13 @@ function BuySellWindowsTab({ data }: { data: MarketTimingRead | undefined }) {
           <div className="grid grid-cols-2 gap-2">
             <ScorePill
               label="Buy pressure"
-              value={<span className="text-emerald-400">{Math.round(buy)}</span>}
-              cls="border-emerald-500/20"
+              value={<span className="text-success">{Math.round(buy)}</span>}
+              cls="border-success/20"
             />
             <ScorePill
               label="Sell pressure"
-              value={<span className="text-rose-400">{Math.round(sell)}</span>}
-              cls="border-rose-500/20"
+              value={<span className="text-danger">{Math.round(sell)}</span>}
+              cls="border-danger/20"
             />
           </div>
         </CardContent>
@@ -691,20 +691,20 @@ function DangerWindowsTab({ data, results }: { data: MarketTimingRead | undefine
   return (
     <div className="space-y-4">
       {data && (
-        <Card className={cn("border", data.dangerScore >= 60 ? "border-rose-500/30 bg-rose-500/5" : "")}>
+        <Card className={cn("border", data.dangerScore >= 60 ? "border-danger/30 bg-danger/5" : "")}>
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <CardTitle className="text-sm flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 text-rose-400" />
+                <AlertTriangle className="h-4 w-4 text-danger" />
                 {data.symbol} — Danger Window
               </CardTitle>
               <Badge
                 variant="outline"
                 className={cn(
                   "text-xs",
-                  data.dangerScore >= 70 ? "bg-rose-500/20 text-rose-400 border-rose-500/40"
-                  : data.dangerScore >= 40 ? "bg-amber-500/20 text-amber-400 border-amber-500/40"
-                  : "bg-zinc-500/10 text-zinc-400 border-zinc-500/20"
+                  data.dangerScore >= 70 ? "bg-danger/20 text-danger border-danger/40"
+                  : data.dangerScore >= 40 ? "bg-warning/20 text-warning border-warning/40"
+                  : "bg-muted text-txt-secondary border-border/20"
                 )}
               >
                 Danger {Math.round(data.dangerScore)}
@@ -713,24 +713,24 @@ function DangerWindowsTab({ data, results }: { data: MarketTimingRead | undefine
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              <ScorePill label="Danger score" value={Math.round(data.dangerScore)} cls={data.dangerScore >= 60 ? "border-rose-500/20" : ""} />
-              <ScorePill label="Trap prob." value={`${Math.round(data.trapProbability * 100)}%`} cls={data.trapProbability >= 0.5 ? "border-amber-500/20" : ""} />
+              <ScorePill label="Danger score" value={Math.round(data.dangerScore)} cls={data.dangerScore >= 60 ? "border-danger/20" : ""} />
+              <ScorePill label="Trap prob." value={`${Math.round(data.trapProbability * 100)}%`} cls={data.trapProbability >= 0.5 ? "border-warning/20" : ""} />
               <ScorePill label="Move stage" value={humanizeMoveStage(data.moveStage)} />
             </div>
             {data.newsOverlay.blocksTrade && (
-              <div className="rounded-md border border-rose-500/30 bg-rose-500/10 p-2.5 text-xs text-rose-400 flex items-center gap-2">
+              <div className="rounded-md border border-danger/30 bg-danger/10 p-2.5 text-xs text-danger flex items-center gap-2">
                 <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
                 News event is blocking trade — active event: {data.newsOverlay.eventName ?? "economic event"}
               </div>
             )}
             {data.entryPermission === "STAND_DOWN" && (
-              <div className="rounded-md border border-rose-500/30 bg-rose-500/10 p-2.5 text-xs text-rose-400 flex items-center gap-2">
+              <div className="rounded-md border border-danger/30 bg-danger/10 p-2.5 text-xs text-danger flex items-center gap-2">
                 <XCircle className="h-3.5 w-3.5 shrink-0" />
                 Entry permission: Stand down — this is a high-risk window
               </div>
             )}
             {data.dangerScore < 40 && !data.newsOverlay.blocksTrade && (
-              <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 p-2.5 text-xs text-emerald-400 flex items-center gap-2">
+              <div className="rounded-md border border-success/30 bg-success/10 p-2.5 text-xs text-success flex items-center gap-2">
                 <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
                 Low danger — no active danger window detected
               </div>
@@ -755,14 +755,14 @@ function DangerWindowsTab({ data, results }: { data: MarketTimingRead | undefine
                     <div
                       className={cn(
                         "h-full rounded-full",
-                        r.dangerScore >= 70 ? "bg-rose-500" : r.dangerScore >= 40 ? "bg-amber-500" : "bg-zinc-500"
+                        r.dangerScore >= 70 ? "bg-danger" : r.dangerScore >= 40 ? "bg-warning" : "bg-muted"
                       )}
                       style={{ width: `${r.dangerScore}%` }}
                     />
                   </div>
                   <span className="text-xs font-mono tabular-nums w-8 text-right">{Math.round(r.dangerScore)}</span>
                   {r.trapProbability >= 0.5 && (
-                    <Badge variant="outline" className="text-[9px] px-1 bg-amber-500/10 text-amber-400 border-amber-500/30">
+                    <Badge variant="outline" className="text-[9px] px-1 bg-warning/10 text-warning border-warning/30">
                       Trap
                     </Badge>
                   )}
@@ -790,7 +790,7 @@ function NewsHeatTab({ data }: { data: MarketTimingRead | undefined }) {
 
   return (
     <div className="space-y-4">
-      <Card className={cn("border", news.blocksTrade ? "border-rose-500/30 bg-rose-500/5" : hasEvent ? "border-amber-500/30 bg-amber-500/5" : "")}>
+      <Card className={cn("border", news.blocksTrade ? "border-danger/30 bg-danger/5" : hasEvent ? "border-warning/30 bg-warning/5" : "")}>
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <CardTitle className="text-sm flex items-center gap-2">
@@ -801,9 +801,9 @@ function NewsHeatTab({ data }: { data: MarketTimingRead | undefined }) {
               variant="outline"
               className={cn(
                 "text-[10px]",
-                news.blocksTrade ? "bg-rose-500/20 text-rose-400 border-rose-500/40"
-                : hasEvent ? "bg-amber-500/20 text-amber-400 border-amber-500/40"
-                : "bg-zinc-500/10 text-zinc-400 border-zinc-500/20"
+                news.blocksTrade ? "bg-danger/20 text-danger border-danger/40"
+                : hasEvent ? "bg-warning/20 text-warning border-warning/40"
+                : "bg-muted text-txt-secondary border-border/20"
               )}
             >
               {humanizeNewsPhase(news.phase)}
@@ -812,7 +812,7 @@ function NewsHeatTab({ data }: { data: MarketTimingRead | undefined }) {
           {data.dataQuality.hasNewsData ? (
             <CardDescription className="text-xs">Live news data</CardDescription>
           ) : (
-            <CardDescription className="text-xs text-amber-400/80">
+            <CardDescription className="text-xs text-warning/80">
               No live news feed connected — showing basic timing estimate only
             </CardDescription>
           )}
@@ -821,7 +821,7 @@ function NewsHeatTab({ data }: { data: MarketTimingRead | undefined }) {
           {hasEvent && news.eventName ? (
             <>
               <div className="flex items-start gap-2">
-                <AlertTriangle className={cn("h-4 w-4 mt-0.5 shrink-0", news.blocksTrade ? "text-rose-400" : "text-amber-400")} />
+                <AlertTriangle className={cn("h-4 w-4 mt-0.5 shrink-0", news.blocksTrade ? "text-danger" : "text-warning")} />
                 <div>
                   <div className="text-sm font-medium">{news.eventName}</div>
                   <div className="text-xs text-muted-foreground mt-0.5">
@@ -836,7 +836,7 @@ function NewsHeatTab({ data }: { data: MarketTimingRead | undefined }) {
                 <ScorePill
                   label="Heat adjustment"
                   value={news.heatAdjustment >= 0 ? `+${news.heatAdjustment}` : `${news.heatAdjustment}`}
-                  cls={news.heatAdjustment > 0 ? "border-amber-500/20" : ""}
+                  cls={news.heatAdjustment > 0 ? "border-warning/20" : ""}
                 />
                 {news.surpriseScore != null && (
                   <ScorePill label="Surprise score" value={`${Math.round(news.surpriseScore * 100)}%`} />
@@ -844,16 +844,16 @@ function NewsHeatTab({ data }: { data: MarketTimingRead | undefined }) {
                 <ScorePill
                   label="Blocks trade"
                   value={news.blocksTrade ? "Yes" : "No"}
-                  cls={news.blocksTrade ? "border-rose-500/20" : "border-emerald-500/20"}
+                  cls={news.blocksTrade ? "border-danger/20" : "border-success/20"}
                 />
               </div>
             </>
           ) : (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+              <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
               No active news events detected for {data.symbol}.
               {!data.dataQuality.hasNewsData && (
-                <span className="text-amber-400/80"> (No live news feed)</span>
+                <span className="text-warning/80"> (No live news feed)</span>
               )}
             </div>
           )}
@@ -907,7 +907,7 @@ function BroadFlowTab({ data }: { data: MarketTimingRead | undefined }) {
           {data.dataQuality.hasBroadFlowData ? (
             <CardDescription className="text-xs">Live cross-asset data</CardDescription>
           ) : (
-            <CardDescription className="text-xs text-amber-400/80">Basic estimate — no cross-asset feed connected</CardDescription>
+            <CardDescription className="text-xs text-warning/80">Basic estimate — no cross-asset feed connected</CardDescription>
           )}
         </CardHeader>
         <CardContent className="space-y-3">
@@ -923,7 +923,7 @@ function BroadFlowTab({ data }: { data: MarketTimingRead | undefined }) {
                 <ScorePill
                   label="Competing catalyst"
                   value={flow.competingCatalyst ? "Yes" : "No"}
-                  cls={flow.competingCatalyst ? "border-amber-500/20" : "border-emerald-500/20"}
+                  cls={flow.competingCatalyst ? "border-warning/20" : "border-success/20"}
                 />
               </div>
 
@@ -938,9 +938,9 @@ function BroadFlowTab({ data }: { data: MarketTimingRead | undefined }) {
                           variant="outline"
                           className={cn(
                             "text-[9px] px-1.5",
-                            asset.direction === "BULL" ? "text-emerald-400 border-emerald-500/30"
-                            : asset.direction === "BEAR" ? "text-rose-400 border-rose-500/30"
-                            : "text-zinc-400 border-zinc-500/20"
+                            asset.direction === "BULL" ? "text-success border-success/30"
+                            : asset.direction === "BEAR" ? "text-danger border-danger/30"
+                            : "text-txt-secondary border-border/20"
                           )}
                         >
                           {asset.direction}
@@ -950,9 +950,9 @@ function BroadFlowTab({ data }: { data: MarketTimingRead | undefined }) {
                           variant="outline"
                           className={cn(
                             "text-[9px] px-1.5",
-                            asset.contribution === "CONFIRMS" ? "text-emerald-400 border-emerald-500/30"
-                            : asset.contribution === "CONFLICTS" ? "text-rose-400 border-rose-500/30"
-                            : "text-zinc-400 border-zinc-500/20"
+                            asset.contribution === "CONFIRMS" ? "text-success border-success/30"
+                            : asset.contribution === "CONFLICTS" ? "text-danger border-danger/30"
+                            : "text-txt-secondary border-border/20"
                           )}
                         >
                           {asset.contribution.toLowerCase()}
@@ -1014,7 +1014,7 @@ type ReplayData = {
 };
 
 function replayGradeColor(g: string): string {
-  if (g === "A+" || g === "A") return "text-emerald-400";
+  if (g === "A+" || g === "A") return "text-success";
   if (g === "B") return "text-primary";
   if (g === "C") return "text-yellow-400";
   if (g === "D") return "text-orange-400";
@@ -1024,7 +1024,7 @@ function heatStateLabel(s: string): string {
   return s.replace(/_/g, " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
 }
 function eventIcon(type: string) {
-  if (type === "best_entry") return <Star className="h-3.5 w-3.5 text-emerald-400" />;
+  if (type === "best_entry") return <Star className="h-3.5 w-3.5 text-success" />;
   if (type === "heat_rising") return <Flame className="h-3.5 w-3.5 text-orange-400" />;
   if (type === "flow_confirm") return <TrendingUp className="h-3.5 w-3.5 text-primary" />;
   if (type === "fakeout") return <AlertTriangle className="h-3.5 w-3.5 text-warning" />;
@@ -1295,13 +1295,13 @@ function AdminDataStatusTab({ data, isLoading }: { data: MarketTimingRead | unde
                     key={label}
                     className={cn(
                       "rounded-lg border p-2 flex flex-col items-center gap-1",
-                      ok ? "border-emerald-500/30 bg-emerald-500/5" : "border-zinc-500/20 bg-zinc-500/5",
+                      ok ? "border-success/30 bg-success/5" : "border-border/20 bg-muted",
                     )}
                   >
                     {ok ? (
-                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                      <CheckCircle2 className="h-3.5 w-3.5 text-success" />
                     ) : (
-                      <XCircle className="h-3.5 w-3.5 text-zinc-400" />
+                      <XCircle className="h-3.5 w-3.5 text-txt-secondary" />
                     )}
                     <span className="text-[10px] text-center text-muted-foreground leading-tight">{label}</span>
                   </div>

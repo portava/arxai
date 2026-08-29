@@ -42,7 +42,7 @@ export default function SecurityCenter() {
           <h2 className="font-semibold mb-2">Mode & Live Trading</h2>
           <div className="text-sm">App mode: <span className="font-mono">{s.appMode}</span></div>
           <div className="text-sm">Live trading: <span className="font-mono text-red-600">{s.liveTradingStatus}</span></div>
-          <div className="text-xs text-gray-500 mt-2">No live trading controls are exposed in the UI.</div>
+          <div className="text-xs text-txt-muted mt-2">No live trading controls are exposed in the UI.</div>
         </div>
         <div className="border rounded p-4">
           <h2 className="font-semibold mb-2">Auth Status</h2>
@@ -65,17 +65,17 @@ export default function SecurityCenter() {
       </div>
       <div className="border rounded p-4">
         <h2 className="font-semibold mb-2">Warnings ({s.warnings.length})</h2>
-        {s.warnings.length === 0 ? <div className="text-sm text-gray-500">None.</div> : (
+        {s.warnings.length === 0 ? <div className="text-sm text-txt-muted">None.</div> : (
           <ul className="text-sm list-disc ml-6">{s.warnings.map((w) => <li key={w}>{w}</li>)}</ul>
         )}
       </div>
       <div className="border rounded p-4">
         <h2 className="font-semibold mb-2">Recommended Actions</h2>
-        {s.recommendedActions.length === 0 ? <div className="text-sm text-gray-500">No actions.</div> : (
+        {s.recommendedActions.length === 0 ? <div className="text-sm text-txt-muted">No actions.</div> : (
           <ul className="text-sm list-disc ml-6">{s.recommendedActions.map((r) => <li key={r}>{r}</li>)}</ul>
         )}
       </div>
-      <div className="text-xs text-gray-500">Status ID: <span className="font-mono">{s.security_status_id}</span></div>
+      <div className="text-xs text-txt-muted">Status ID: <span className="font-mono">{s.security_status_id}</span></div>
     </div>
   );
 }

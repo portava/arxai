@@ -128,7 +128,7 @@ export default function AssistantKnowledgeConsole() {
 
       <section className="rounded-md border bg-card/50 p-3">
         <h2 className="text-sm font-semibold mb-2">Recent assistant gaps (last 20)</h2>
-        {error && <p className="text-xs text-amber-500">{error}</p>}
+        {error && <p className="text-xs text-warning">{error}</p>}
         {loading && <Loader2 className="h-4 w-4 animate-spin" />}
         {items && items.length === 0 && !error && (
           <p className="text-xs text-muted-foreground">No gaps logged.</p>
@@ -155,7 +155,7 @@ export default function AssistantKnowledgeConsole() {
                 <div className="font-mono text-[10px] text-muted-foreground">{s.type} · status: {s.status}</div>
                 <div className="font-medium">{s.suggestedTitle}</div>
                 <div className="text-muted-foreground">{s.draftExplanation}</div>
-                <div className="text-[10px] text-amber-300/90 italic">Safety draft: {s.draftSafety}</div>
+                <div className="text-[10px] text-warning/90 italic">Safety draft: {s.draftSafety}</div>
                 <div className="text-[10px] text-muted-foreground">Reason: {s.reason}</div>
               </li>
             ))}
@@ -229,7 +229,7 @@ function RuntimeDiagnosticsPanel() {
             {all.slice(0, 5).map((d) => (
               <li key={d.id} className="border border-border/40 rounded p-1.5">
                 <span className="font-mono text-[10px] text-muted-foreground">[{d.category}]</span> {d.explanation}
-                <div className="text-[10px] text-emerald-300/90">→ {d.safeNextStep}</div>
+                <div className="text-[10px] text-success/90">→ {d.safeNextStep}</div>
               </li>
             ))}
           </ul>

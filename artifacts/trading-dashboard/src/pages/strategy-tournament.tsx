@@ -60,7 +60,7 @@ export default function StrategyTournament() {
         <Swords className="h-6 w-6 text-primary" />
         <div className="flex-1"><h1 className="text-2xl font-bold">Strategy Tournament</h1></div>
         <Badge variant="outline">SHADOW</Badge>
-        {r && <Badge className={r.running ? "bg-emerald-500/20 text-emerald-400" : ""}>{r.running ? "RUNNING" : "IDLE"}</Badge>}
+        {r && <Badge className={r.running ? "bg-success/20 text-success" : ""}>{r.running ? "RUNNING" : "IDLE"}</Badge>}
       </div>
       <Card>
         <CardHeader><CardTitle className="text-base">Controls</CardTitle></CardHeader>

@@ -204,12 +204,12 @@ export default function LiveAiAssistPage() {
 
           {/* Honest empty states — never a fabricated setup */}
           {feed.kind === "nodata" && (
-            <Card className="border-amber-500/30" data-testid="ai-nodata">
-              <CardContent className="pt-4 text-xs flex items-start gap-2 text-amber-200">
+            <Card className="border-warning/30" data-testid="ai-nodata">
+              <CardContent className="pt-4 text-xs flex items-start gap-2 text-warning">
                 <WifiOff className="w-4 h-4 mt-0.5 shrink-0" />
                 <div>
                   <p className="font-semibold">Awaiting feed</p>
-                  <p className="text-amber-200/80">{feed.reason}</p>
+                  <p className="text-warning/80">{feed.reason}</p>
                 </div>
               </CardContent>
             </Card>
@@ -230,7 +230,7 @@ export default function LiveAiAssistPage() {
                 <div className="grid grid-cols-3 gap-1 font-mono">
                   <div className="rounded border border-border p-1.5"><div className="text-muted-foreground">Entry</div>{card.entry || "—"}</div>
                   <div className="rounded border border-red-500/30 p-1.5"><div className="text-muted-foreground">SL</div>{card.stopLoss || "—"}</div>
-                  <div className="rounded border border-emerald-500/30 p-1.5"><div className="text-muted-foreground">TP</div>{card.takeProfit || "—"}</div>
+                  <div className="rounded border border-success/30 p-1.5"><div className="text-muted-foreground">TP</div>{card.takeProfit || "—"}</div>
                 </div>
                 <div className="grid grid-cols-2 gap-1">
                   <div className="rounded border border-border p-1.5"><div className="text-muted-foreground">Confidence</div>{card.signalStrength}</div>
@@ -255,7 +255,7 @@ export default function LiveAiAssistPage() {
           )}
 
           {resp && (
-            <Card className={resp.accepted ? "border-emerald-500/40 bg-emerald-500/5" : "border-red-500/40 bg-red-500/5"}>
+            <Card className={resp.accepted ? "border-success/40 bg-success/5" : "border-red-500/40 bg-red-500/5"}>
               <CardContent className="pt-4 text-xs space-y-1" data-testid="ai-assist-response">
                 <p className="font-semibold flex items-center gap-2"><ShieldAlert className="w-4 h-4" />status: {resp.status}</p>
                 <p className="text-muted-foreground">{resp.reason}</p>
@@ -270,7 +270,7 @@ export default function LiveAiAssistPage() {
               <CardContent className="pt-3 text-xs">
                 <p className="font-semibold mb-1">Permission state (admin diagnostics)</p>
                 <div className="font-mono text-[11px]">canExecuteRealBrokerOrder: <span className="text-red-400">{String(perm?.testerAccess?.canExecuteRealBrokerOrder ?? false)}</span></div>
-                <div className="font-mono text-[11px]">canSubmitLiveIntent: <span className="text-emerald-400">{String(perm?.testerAccess?.canSubmitLiveIntent ?? true)}</span></div>
+                <div className="font-mono text-[11px]">canSubmitLiveIntent: <span className="text-success">{String(perm?.testerAccess?.canSubmitLiveIntent ?? true)}</span></div>
                 <div className="font-mono text-[11px]">mt5Connected: {String(perm?.testerAccess?.mt5Connected ?? false)}</div>
               </CardContent>
             </Card>

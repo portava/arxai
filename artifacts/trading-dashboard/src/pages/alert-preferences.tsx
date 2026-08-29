@@ -88,7 +88,7 @@ export default function AlertPreferencesPage() {
             <option value="critical">Critical only</option>
           </select>
           {(prefs as { minimumPushSeverity?: string }).minimumPushSeverity === "critical" && (
-            <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-200">
+            <div className="rounded-md border border-warning/40 bg-warning/10 p-3 text-xs text-warning">
               You will only receive push alerts for critical events (live-risk
               emergencies, MT5 disconnects during open live trades, broker
               rejections). Routine watch/warning alerts will still appear

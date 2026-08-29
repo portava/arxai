@@ -133,7 +133,7 @@ export default function PaperTestingLaunch() {
                 actions={pre.hardBlocks.length === 0 && <StatusPill status="SAFE_TO_PAPER_TEST" size="xs" />}
               />
               {pre.hardBlocks.length === 0
-                ? <p className="text-sm text-emerald-600">None — safe to start.</p>
+                ? <p className="text-sm text-success">None — safe to start.</p>
                 : <ul className="list-disc pl-5 text-sm text-red-600 space-y-0.5">{pre.hardBlocks.map((b,i)=><li key={i}><span className="font-mono text-xs">[{b.source}]</span> {b.code} — {b.message}</li>)}</ul>}
             </CardContent>
           </Card>
@@ -141,7 +141,7 @@ export default function PaperTestingLaunch() {
             <Card className="md:col-span-2">
               <CardContent className="pt-4">
                 <SectionHeader title={`Warnings (${pre.warnings.length})`} />
-                <ul className="list-disc pl-5 text-sm text-amber-600 space-y-0.5">{pre.warnings.map((b,i)=><li key={i}><span className="font-mono text-xs">[{b.source}]</span> {b.code} — {b.message}</li>)}</ul>
+                <ul className="list-disc pl-5 text-sm text-warning space-y-0.5">{pre.warnings.map((b,i)=><li key={i}><span className="font-mono text-xs">[{b.source}]</span> {b.code} — {b.message}</li>)}</ul>
               </CardContent>
             </Card>
           )}

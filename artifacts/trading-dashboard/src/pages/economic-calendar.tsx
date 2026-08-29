@@ -169,11 +169,11 @@ function EventTimingHeat({ affectedSymbols }: { affectedSymbols: string[] }) {
   if (!results || results.length === 0) return null;
 
   const permColor: Record<string, string> = {
-    GO: "border-emerald-500/40 bg-emerald-500/10 text-emerald-400",
-    WAIT_FOR_ENTRY: "border-amber-500/40 bg-amber-500/10 text-amber-400",
+    GO: "border-success/40 bg-success/10 text-success",
+    WAIT_FOR_ENTRY: "border-warning/40 bg-warning/10 text-warning",
     WAIT_NEWS: "border-orange-500/40 bg-orange-500/10 text-orange-400",
-    NO_TRADE: "border-rose-500/40 bg-rose-500/10 text-rose-400",
-    STAND_DOWN: "border-rose-600/50 bg-rose-600/15 text-rose-300",
+    NO_TRADE: "border-danger/40 bg-danger/10 text-danger",
+    STAND_DOWN: "border-danger/50 bg-danger/15 text-danger",
   };
   return (
     <div className="mt-2 rounded-lg border border-border/50 bg-background/30 p-2">
@@ -419,30 +419,30 @@ export default function EconomicCalendarPage() {
       {!providerStatus.isLoading && providerStatus.data && (
         providerStatus.data.configured ? (
           providerStatus.data.connected ? (
-            <div className="flex items-center gap-2 rounded-xl border border-emerald-500/25 bg-emerald-500/5 px-4 py-2.5 text-xs text-emerald-400">
-              <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_4px_1px_rgba(52,211,153,0.4)]" />
+            <div className="flex items-center gap-2 rounded-xl border border-success/25 bg-success/5 px-4 py-2.5 text-xs text-success">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-success shadow-[0_0_4px_1px_rgba(52,211,153,0.4)]" />
               <span className="font-semibold">{providerLabel(providerStatus.data.provider)} connected</span>
-              <span className="text-emerald-600">·</span>
-              <span className="text-emerald-600">
+              <span className="text-success">·</span>
+              <span className="text-success">
                 {providerStatus.data.eventCount} event{providerStatus.data.eventCount !== 1 ? "s" : ""} in window
                 {providerStatus.data.lastFetchAt && ` · fetched ${new Date(providerStatus.data.lastFetchAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}
               </span>
             </div>
           ) : (
-            <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-2.5 text-xs text-amber-300">
+            <div className="rounded-xl border border-warning/30 bg-warning/5 px-4 py-2.5 text-xs text-warning">
               <span className="font-semibold">{providerLabel(providerStatus.data.provider)} is configured but the last fetch failed.</span>{" "}
               Calendar events below are from the local database (last Sync). Click "Sync events" to retry.
               {providerStatus.data.lastErrorMessage && (
-                <span className="block mt-1 font-mono text-amber-500/70">{providerStatus.data.lastErrorMessage}</span>
+                <span className="block mt-1 font-mono text-warning/70">{providerStatus.data.lastErrorMessage}</span>
               )}
             </div>
           )
         ) : (
-          <div className="rounded-xl border border-slate-600/40 bg-slate-800/30 px-4 py-2.5 text-xs text-slate-400">
-            <span className="font-semibold text-slate-300">No live calendar provider configured.</span>{" "}
+          <div className="rounded-xl border border-border/40 bg-muted/30 px-4 py-2.5 text-xs text-txt-secondary">
+            <span className="font-semibold text-txt-secondary">No live calendar provider configured.</span>{" "}
             Events shown below are manually-synced only. Configure an economic calendar provider to
             enable live data. The absence of an event is{" "}
-            <span className="font-semibold text-slate-200">not an all-clear</span>.
+            <span className="font-semibold text-foreground">not an all-clear</span>.
           </div>
         )
       )}
@@ -623,10 +623,10 @@ export default function EconomicCalendarPage() {
                             SETTLED: "Market settled",
                           };
                           const phaseColor: Record<string, string> = {
-                            PRE_EVENT: "border-amber-500/40 bg-amber-500/10 text-amber-400",
-                            AT_EVENT: "border-rose-500/40 bg-rose-500/10 text-rose-400",
+                            PRE_EVENT: "border-warning/40 bg-warning/10 text-warning",
+                            AT_EVENT: "border-danger/40 bg-danger/10 text-danger",
                             POST_EVENT: "border-orange-500/40 bg-orange-500/10 text-orange-400",
-                            SETTLED: "border-emerald-500/40 bg-emerald-500/10 text-emerald-400",
+                            SETTLED: "border-success/40 bg-success/10 text-success",
                           };
                           if (!phase && !hasSurprise) return null;
                           return (
@@ -640,8 +640,8 @@ export default function EconomicCalendarPage() {
                               {hasSurprise && (
                                 <span className={cn(
                                   "inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-semibold",
-                                  surpNumer! > 0 ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
-                                    : "border-rose-500/40 bg-rose-500/10 text-rose-400",
+                                  surpNumer! > 0 ? "border-success/40 bg-success/10 text-success"
+                                    : "border-danger/40 bg-danger/10 text-danger",
                                 )}>
                                   Surprise: {surpNumer! > 0 ? "+" : ""}{surpNumer!.toFixed(2)}
                                 </span>

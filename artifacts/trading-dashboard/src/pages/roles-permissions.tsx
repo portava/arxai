@@ -34,14 +34,14 @@ export default function RolesPermissions() {
                 </td>
                 {roles.map((r) => {
                   const ok = matrix[r.roleKey]?.[p.permissionKey] ?? false;
-                  return <td key={r.id} className={`p-1 text-center ${p.isForbidden ? "text-red-600 font-bold" : ok ? "text-green-600" : "text-gray-300"}`}>{p.isForbidden ? "✕" : ok ? "✓" : "·"}</td>;
+                  return <td key={r.id} className={`p-1 text-center ${p.isForbidden ? "text-red-600 font-bold" : ok ? "text-green-600" : "text-txt-secondary"}`}>{p.isForbidden ? "✕" : ok ? "✓" : "·"}</td>;
                 })}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      <div className="text-xs text-gray-500">
+      <div className="text-xs text-txt-muted">
         Forbidden permissions (red) can never be granted to any role; attempts are logged as CRITICAL security events.
       </div>
     </div>

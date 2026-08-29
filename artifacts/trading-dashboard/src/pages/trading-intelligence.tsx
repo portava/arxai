@@ -111,7 +111,7 @@ function DnaTab() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-1.5">
-              <TrendingUp className="h-4 w-4 text-emerald-500" /> Top Symbols
+              <TrendingUp className="h-4 w-4 text-success" /> Top Symbols
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -145,7 +145,7 @@ function DnaTab() {
               <div key={ses} className="rounded border p-2 text-xs">
                 <div className="font-medium capitalize mb-0.5">{ses}</div>
                 <div className="text-muted-foreground">{d.count} trades</div>
-                <div className={d.netPnl >= 0 ? "text-emerald-500" : "text-red-400"}>
+                <div className={d.netPnl >= 0 ? "text-success" : "text-red-400"}>
                   {d.netPnl >= 0 ? "+" : ""}${d.netPnl.toFixed(2)}
                 </div>
               </div>
@@ -203,7 +203,7 @@ function MoodTab() {
                   rounded-lg border p-2.5 text-center text-xs transition cursor-pointer
                   ${selectedMood === m.value
                     ? m.risk === "high"    ? "border-red-500 bg-red-500/10"
-                    : m.risk === "caution" ? "border-amber-500 bg-amber-500/10"
+                    : m.risk === "caution" ? "border-warning bg-warning/10"
                     :                        "border-primary bg-primary/10"
                     : "border-border hover:border-muted-foreground/50"}
                 `}
@@ -211,7 +211,7 @@ function MoodTab() {
                 <div className="text-xl mb-0.5">{m.emoji}</div>
                 <div className="font-medium">{m.label}</div>
                 <div className={`text-[10px] mt-0.5 ${
-                  m.risk === "high" ? "text-red-400" : m.risk === "caution" ? "text-amber-400" : "text-emerald-400"
+                  m.risk === "high" ? "text-red-400" : m.risk === "caution" ? "text-warning" : "text-success"
                 }`}>
                   {m.risk === "high" ? "High risk" : m.risk === "caution" ? "Caution" : "Safe"}
                 </div>
@@ -270,7 +270,7 @@ function MoodTab() {
                   <span className="flex-1">{m.label}</span>
                   <div className="w-24 bg-muted rounded-full h-1.5">
                     <div
-                      className={`h-1.5 rounded-full ${m.riskLevel === "high" ? "bg-red-500" : m.riskLevel === "caution" ? "bg-amber-500" : "bg-emerald-500"}`}
+                      className={`h-1.5 rounded-full ${m.riskLevel === "high" ? "bg-red-500" : m.riskLevel === "caution" ? "bg-warning" : "bg-success"}`}
                       style={{ width: `${m.pct}%` }}
                     />
                   </div>
@@ -290,7 +290,7 @@ function MoodTab() {
               <div key={c.id} className="flex items-start gap-2 text-xs">
                 <span className="text-base">{c.emoji}</span>
                 <div className="flex-1 min-w-0">
-                  <span className={`font-medium ${c.riskLevel === "high" ? "text-red-400" : c.riskLevel === "caution" ? "text-amber-400" : ""}`}>
+                  <span className={`font-medium ${c.riskLevel === "high" ? "text-red-400" : c.riskLevel === "caution" ? "text-warning" : ""}`}>
                     {c.label}
                   </span>
                   {c.note && <p className="text-muted-foreground truncate">{c.note}</p>}
@@ -348,7 +348,7 @@ function TradeHistoryTab() {
   }
 
   const qualityColor = (s: string) =>
-    s === "GOOD" ? "text-emerald-500" : s === "ACCEPTABLE" ? "text-amber-500" : "text-red-400";
+    s === "GOOD" ? "text-success" : s === "ACCEPTABLE" ? "text-warning" : "text-red-400";
 
   return (
     <div className="space-y-4">
@@ -431,7 +431,7 @@ function TradeHistoryTab() {
                       </p>
                     )}
                     {importResult.warnings?.map((w, i) => (
-                      <p key={i} className="text-xs text-amber-400">⚠ {w}</p>
+                      <p key={i} className="text-xs text-warning">⚠ {w}</p>
                     ))}
                   </>
                 ) : (

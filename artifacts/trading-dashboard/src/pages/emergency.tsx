@@ -66,7 +66,7 @@ function severityClass(sev: string): string {
 }
 
 function linkHealthClass(h: string): string {
-  if (h === "OK") return "bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border border-emerald-500/40";
+  if (h === "OK") return "bg-success/20 text-success dark:text-success border border-success/40";
   if (h === "DEGRADED") return "bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 border border-yellow-500/40";
   return "bg-destructive/20 text-destructive border border-destructive/40";
 }

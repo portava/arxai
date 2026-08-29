@@ -105,7 +105,7 @@ export default function LiveTradingControl() {
     locked: "bg-red-600 text-white",
     ready: "bg-yellow-500 text-black",
     armed: "bg-black border-2 border-red-500 text-red-400",
-    loading: "bg-gray-600 text-white",
+    loading: "bg-muted text-white",
   } as const;
 
   return (
@@ -127,7 +127,7 @@ export default function LiveTradingControl() {
         <div className="bg-card border rounded-lg p-4">
           <h3 className="font-semibold text-sm text-muted-foreground">CURRENT MODE</h3>
           <p className="text-2xl font-bold mt-1">{state?.mode ?? "—"}</p>
-          <p className="text-xs mt-1">Armed: <span className={state?.armed ? "text-red-600 font-bold" : "text-emerald-600"}>{String(state?.armed)}</span></p>
+          <p className="text-xs mt-1">Armed: <span className={state?.armed ? "text-red-600 font-bold" : "text-success"}>{String(state?.armed)}</span></p>
         </div>
         <div className="bg-card border rounded-lg p-4">
           <h3 className="font-semibold text-sm text-muted-foreground">READINESS</h3>
@@ -136,7 +136,7 @@ export default function LiveTradingControl() {
         </div>
         <div className="bg-card border rounded-lg p-4">
           <h3 className="font-semibold text-sm text-muted-foreground">KILL SWITCH</h3>
-          <p className={`text-2xl font-bold mt-1 ${state?.killSwitchActive ? "text-red-600" : "text-emerald-600"}`}>
+          <p className={`text-2xl font-bold mt-1 ${state?.killSwitchActive ? "text-red-600" : "text-success"}`}>
             {state?.killSwitchActive ? "ACTIVE" : "OFF"}
           </p>
           <p className="text-xs mt-1 truncate">{state?.killSwitchReason ?? "no reason logged"}</p>
@@ -150,7 +150,7 @@ export default function LiveTradingControl() {
             <ul className="text-sm space-y-1">
               {readiness.blockers.map((b, i) => <li key={i} className="text-red-600">• {b}</li>)}
             </ul>
-          ) : <p className="text-sm text-emerald-600">No blockers.</p>}
+          ) : <p className="text-sm text-success">No blockers.</p>}
         </div>
         <div className="bg-card border rounded-lg p-4">
           <h3 className="font-semibold mb-2">Required actions ({readiness?.requiredActions.length ?? 0})</h3>
@@ -175,7 +175,7 @@ export default function LiveTradingControl() {
             ARM MICRO-LIVE
           </button>
           <button disabled={busy} onClick={() => action("disarm", { reason: "manual" })}
-            className="px-4 py-2 bg-emerald-600 text-white rounded font-bold disabled:opacity-50">
+            className="px-4 py-2 bg-success text-white rounded font-bold disabled:opacity-50">
             DISARM (return to DEMO_ONLY)
           </button>
         </div>
@@ -194,7 +194,7 @@ export default function LiveTradingControl() {
             🛑 ENGAGE KILL SWITCH
           </button>
           <button disabled={busy} onClick={() => action("reset-kill-switch", { reason: killReason || "post-investigation reset" })}
-            className="px-4 py-2 bg-gray-700 text-white rounded font-bold disabled:opacity-50">
+            className="px-4 py-2 bg-muted text-white rounded font-bold disabled:opacity-50">
             Reset Kill Switch (ADMIN, requires readiness)
           </button>
         </div>
@@ -221,7 +221,7 @@ export default function LiveTradingControl() {
               {approvals.map(a => (
                 <tr key={a.approvalId} className="border-b">
                   <td className="font-mono">{a.approvalId.slice(0, 12)}…</td>
-                  <td><span className="px-2 py-0.5 rounded bg-gray-100">{a.status}</span></td>
+                  <td><span className="px-2 py-0.5 rounded bg-muted">{a.status}</span></td>
                   <td>{a.symbol}</td><td>{a.direction}</td>
                   <td>{a.lotSize}</td><td>{a.riskPercent}%</td><td>{a.confidenceScore}</td>
                 </tr>
@@ -237,7 +237,7 @@ export default function LiveTradingControl() {
           {audit.map(e => (
             <div key={e.eventId} className="flex gap-2 border-b pb-1">
               <span className="text-muted-foreground">{new Date(e.createdAt).toISOString().slice(11, 19)}</span>
-              <span className={`font-bold ${e.severity === "CRITICAL" ? "text-red-600" : e.severity === "HIGH" ? "text-orange-600" : e.severity === "WARNING" ? "text-yellow-600" : "text-emerald-600"}`}>
+              <span className={`font-bold ${e.severity === "CRITICAL" ? "text-red-600" : e.severity === "HIGH" ? "text-orange-600" : e.severity === "WARNING" ? "text-yellow-600" : "text-success"}`}>
                 [{e.severity}]
               </span>
               <span className="font-bold">{e.eventType}</span>
@@ -248,7 +248,7 @@ export default function LiveTradingControl() {
       </div>
 
       {lastResult && (
-        <div className="bg-gray-100 border rounded-lg p-3 text-xs font-mono break-all">
+        <div className="bg-muted border rounded-lg p-3 text-xs font-mono break-all">
           <strong>Last action result:</strong> {lastResult}
         </div>
       )}

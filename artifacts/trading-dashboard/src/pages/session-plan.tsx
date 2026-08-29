@@ -45,9 +45,9 @@ export default function SessionPlanPage() {
             <CardContent><p className="text-sm">{plan.summary}</p></CardContent></Card>
 
           <div className="grid gap-3 md:grid-cols-3">
-            <Card><CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-1 text-emerald-400"><Target className="h-4 w-4" /> Best symbols</CardTitle></CardHeader>
+            <Card><CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-1 text-success"><Target className="h-4 w-4" /> Best symbols</CardTitle></CardHeader>
               <CardContent>{plan.bestSymbols.length ? plan.bestSymbols.map((s) => <Badge key={s} className="mr-1 mb-1">{s}</Badge>) : <span className="text-sm text-muted-foreground">none</span>}</CardContent></Card>
-            <Card><CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-1 text-rose-400"><AlertTriangle className="h-4 w-4" /> Avoid</CardTitle></CardHeader>
+            <Card><CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-1 text-danger"><AlertTriangle className="h-4 w-4" /> Avoid</CardTitle></CardHeader>
               <CardContent>{plan.symbolsToAvoid.length ? plan.symbolsToAvoid.map((s) => <Badge key={s} variant="destructive" className="mr-1 mb-1">{s}</Badge>) : <span className="text-sm text-muted-foreground">none</span>}</CardContent></Card>
             <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Preferred strategy</CardTitle></CardHeader>
               <CardContent><p className="font-semibold">{plan.preferredStrategy}</p></CardContent></Card>

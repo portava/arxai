@@ -15,8 +15,8 @@ type Alert = {
 
 const SEV: Record<string, string> = {
   info: "bg-blue-500/20 text-blue-400 border-blue-500/40",
-  warning: "bg-amber-500/20 text-amber-400 border-amber-500/40",
-  critical: "bg-rose-500/20 text-rose-400 border-rose-500/40",
+  warning: "bg-warning/20 text-warning border-warning/40",
+  critical: "bg-danger/20 text-danger border-danger/40",
 };
 
 async function api(path: string, init?: RequestInit) {

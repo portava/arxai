@@ -266,7 +266,7 @@ export default function PerformanceScorecard() {
                 {heatReport.bestWindow && (
                   <div className="rounded-xl border border-border bg-secondary/40 p-2.5">
                     <div className="text-[11px] text-txt-muted">Best Entry Window</div>
-                    <div className="mt-1 font-mono text-base font-bold text-emerald-400">{heatReport.bestWindow.symbol}</div>
+                    <div className="mt-1 font-mono text-base font-bold text-success">{heatReport.bestWindow.symbol}</div>
                     <div className="text-[11px] text-txt-muted">grade {heatReport.bestWindow.grade} · heat {heatReport.bestWindow.heatScore}</div>
                   </div>
                 )}

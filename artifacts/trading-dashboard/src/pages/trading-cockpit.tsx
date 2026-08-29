@@ -63,7 +63,7 @@ function StatusBadge({ status }: { status?: string }) {
   const tone = s === "PASS" || s === "PASS_WITH_WARNINGS" || s === "PAPER_ALLOWED" || s === "PAPER_CAUTION" || s === "ACTIVE" || s === "OK"
     ? "bg-green-500/15 text-green-700 dark:text-green-400 border-green-500/30"
     : s === "PAPER_PAUSED" || s === "PAUSED" || s === "WATCH_ONLY" || s === "DEGRADED"
-    ? "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30"
+    ? "bg-warning/15 text-warning dark:text-warning border-warning/30"
     : s === "FAIL" || s === "BLOCKED" || s === "LOCKED" || s === "UNSAFE"
     ? "bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/30"
     : "bg-muted text-muted-foreground border-border";
@@ -85,7 +85,7 @@ function SafetyHeader({ s }: { s: CockpitSummary }) {
         <span className="text-xs text-muted-foreground">Security</span>
         {s.security.rolesSeeded && s.security.forbiddenLocked
           ? <Badge variant="outline" className="bg-green-500/15 text-green-700 dark:text-green-400 border-green-500/30">OK</Badge>
-          : <Badge variant="outline" className="bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30">WARN</Badge>}
+          : <Badge variant="outline" className="bg-warning/15 text-warning dark:text-warning border-warning/30">WARN</Badge>}
         <span className="text-xs text-muted-foreground">Session</span>
         <StatusBadge status={s.activeSession?.status ?? "NONE"} />
         {critical && (
@@ -142,7 +142,7 @@ function PrimaryActionCard({ s, onAction, busy }: { s: CockpitSummary; onAction:
           )}
         </div>
         {s.warnings.length > 0 && (
-          <ul className="text-xs text-amber-700 dark:text-amber-400 list-disc pl-5 space-y-0.5">
+          <ul className="text-xs text-warning dark:text-warning list-disc pl-5 space-y-0.5">
             {s.warnings.slice(0, 3).map((w, i) => <li key={i}>{w}</li>)}
           </ul>
         )}
@@ -182,7 +182,7 @@ function ActiveSessionPanel({ s }: { s: CockpitSummary }) {
           <div><div className="text-[10px] uppercase text-muted-foreground">Win rate</div><div className="font-mono text-xs">{a.winRate}%</div></div>
         </div>
         {a.activeWarnings.length > 0 && (
-          <ul className="text-xs text-amber-700 dark:text-amber-400 list-disc pl-5">
+          <ul className="text-xs text-warning dark:text-warning list-disc pl-5">
             {a.activeWarnings.map((w, i) => <li key={i}>{w.message}</li>)}
           </ul>
         )}
@@ -325,7 +325,7 @@ function HealthPanel({ s }: { s: CockpitSummary }) {
           <div><div className="text-[10px] uppercase text-muted-foreground">Last check</div><div className="font-mono text-[10px]">{h.lastReadinessAt ? new Date(h.lastReadinessAt).toLocaleTimeString() : "—"}</div></div>
         </div>
         {h.majorWarnings.length > 0 && (
-          <ul className="text-xs text-amber-700 dark:text-amber-400 list-disc pl-5">
+          <ul className="text-xs text-warning dark:text-warning list-disc pl-5">
             {h.majorWarnings.slice(0, 3).map((w, i) => <li key={i}>{w.message}</li>)}
           </ul>
         )}

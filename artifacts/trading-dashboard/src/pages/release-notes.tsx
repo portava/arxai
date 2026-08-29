@@ -18,7 +18,7 @@ export default function ReleaseNotes() {
           <ul className="space-y-1 text-sm">
             {items.map((s, i) => (
               <li key={i} className="flex items-start gap-2">
-                <span className={tone === "ok" ? "text-emerald-400" : tone === "warn" ? "text-amber-400" : "text-cyan-400"}>•</span>
+                <span className={tone === "ok" ? "text-success" : tone === "warn" ? "text-warning" : "text-ruby"}>•</span>
                 <span>{s}</span>
               </li>
             ))}
@@ -32,8 +32,8 @@ export default function ReleaseNotes() {
     <div className="space-y-4 p-1" data-testid="page-release-notes">
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-bold">Release Notes</h1>
-        <Badge className="bg-cyan-500/20 text-cyan-300 font-mono">{n.version}</Badge>
-        <Badge className="bg-amber-500/20 text-amber-300">{n.stage}</Badge>
+        <Badge className="bg-ruby/20 text-ruby font-mono">{n.version}</Badge>
+        <Badge className="bg-warning/20 text-warning">{n.stage}</Badge>
       </div>
       {n.brand && (
         <Card data-testid="release-brand-card">
@@ -49,10 +49,10 @@ export default function ReleaseNotes() {
               <li><strong>eXecute:</strong> {n.brand.meaning.execute}</li>
             </ul>
             <div className="flex flex-wrap gap-2 pt-2">
-              {n.brand.ownerTesterAccess && <Badge className="bg-emerald-500/20 text-emerald-300">Owner Tester Access Active</Badge>}
-              {n.brand.mt5Deferred && <Badge className="bg-amber-500/20 text-amber-300">MT5 Deferred</Badge>}
-              {n.brand.simulatorReady && <Badge className="bg-cyan-500/20 text-cyan-300">Simulator Ready</Badge>}
-              {n.brand.realBrokerExecutionLocked && <Badge className="bg-zinc-500/20 text-zinc-300">Real broker execution locked</Badge>}
+              {n.brand.ownerTesterAccess && <Badge className="bg-success/20 text-success">Owner Tester Access Active</Badge>}
+              {n.brand.mt5Deferred && <Badge className="bg-warning/20 text-warning">MT5 Deferred</Badge>}
+              {n.brand.simulatorReady && <Badge className="bg-ruby/20 text-ruby">Simulator Ready</Badge>}
+              {n.brand.realBrokerExecutionLocked && <Badge className="bg-muted text-txt-secondary">Real broker execution locked</Badge>}
             </div>
           </CardContent>
         </Card>

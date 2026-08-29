@@ -152,8 +152,8 @@ export default function LiveSharedPage() {
   // exact blocking reason).
   const modeChip = mode.envelope
     ? (mode.isLiveShared && !mode.cleanBlockedReason
-        ? <Badge className="bg-rose-500/15 text-rose-300 border border-rose-500/40" data-testid="ls-mode-chip">{mode.cleanModeLabel}</Badge>
-        : <Badge variant="outline" className="border-amber-500/40 text-amber-300" data-testid="ls-mode-chip">{mode.cleanModeLabel}{mode.cleanBlockedReason ? " · blocked" : ""}</Badge>)
+        ? <Badge className="bg-danger/15 text-danger border border-danger/40" data-testid="ls-mode-chip">{mode.cleanModeLabel}</Badge>
+        : <Badge variant="outline" className="border-warning/40 text-warning" data-testid="ls-mode-chip">{mode.cleanModeLabel}{mode.cleanBlockedReason ? " · blocked" : ""}</Badge>)
     : <Badge variant="outline">loading…</Badge>;
 
   return (
@@ -208,7 +208,7 @@ export default function LiveSharedPage() {
               </Button>
               {access.loaded && !access.canTrade && (
                 <details className="text-xs">
-                  <summary className="cursor-pointer text-amber-300">Trade blocked — why?</summary>
+                  <summary className="cursor-pointer text-warning">Trade blocked — why?</summary>
                   <div className="mt-1 text-muted-foreground">
                     {access.message ?? mode.cleanBlockedReason ?? "Live shared trading is not available on your account right now."}
                   </div>
@@ -241,7 +241,7 @@ export default function LiveSharedPage() {
         <TabsContent value="sltp" className="mt-3">
           <Card><CardHeader className="pb-2"><CardTitle className="text-sm">SL / TP Manager</CardTitle></CardHeader><CardContent className="space-y-2">
             {!access.canTrade && access.loaded && (
-              <div className="text-xs text-amber-300 flex items-center gap-2">
+              <div className="text-xs text-warning flex items-center gap-2">
                 <ShieldAlert className="h-3.5 w-3.5" /> SL/TP modification is admin-gated.
               </div>
             )}
@@ -278,12 +278,12 @@ export default function LiveSharedPage() {
             {trades !== null && trades.length > 0 && (
               <ul className="space-y-1 text-xs">
                 {trades.map((t) => (
-                  <li key={t.id} className="flex items-center gap-2 border-b border-zinc-800/40 py-1">
+                  <li key={t.id} className="flex items-center gap-2 border-b border-border/40 py-1">
                     <Badge variant={t.status === "open" ? "default" : t.status === "rejected" ? "destructive" : "outline"} className="text-[10px]">{t.status}</Badge>
                     <span className="font-mono">{t.symbol} {t.side} {String(t.lotSize)}</span>
                     <span className="text-muted-foreground hidden sm:inline">SL {String(t.stopLoss ?? "—")} · TP {String(t.takeProfit ?? "—")}</span>
                     {t.rejectionReason && (
-                      <details className="text-rose-300">
+                      <details className="text-danger">
                         <summary className="cursor-pointer">why blocked?</summary>
                         <div className="text-[10px] mt-1">{humanizeReason(t.rejectionReason)}</div>
                       </details>
@@ -323,13 +323,13 @@ function CommandList({ rows, loading, actions }: {
   return (
     <ul className="space-y-1 text-xs">
       {rows.map((c) => (
-        <li key={c.commandId} className="flex items-center gap-2 border-b border-zinc-800/40 py-1">
+        <li key={c.commandId} className="flex items-center gap-2 border-b border-border/40 py-1">
           <Badge variant={c.status === "LIVE_BLOCKED" ? "destructive" : "outline"} className="text-[10px]">{c.status}</Badge>
           <span className="font-mono">{c.symbol ?? "—"} {c.side ?? ""} {String(c.requestedVolume ?? "")}</span>
           <span className="text-muted-foreground hidden sm:inline">SL {String(c.stopLoss ?? "—")} · TP {String(c.takeProfit ?? "—")}</span>
-          {c.brokerTicket && <span className="font-mono text-emerald-300">#{c.brokerTicket}</span>}
+          {c.brokerTicket && <span className="font-mono text-success">#{c.brokerTicket}</span>}
           {c.rejectionReason && (
-            <details className="text-rose-300">
+            <details className="text-danger">
               <summary className="cursor-pointer">why blocked?</summary>
               <div className="text-[10px] mt-1">{humanizeReason(c.rejectionReason)}</div>
             </details>
@@ -348,7 +348,7 @@ function SLTPRow({ command, busy, onSubmit }: {
   const [sl, setSL] = useState(command.stopLoss != null ? String(command.stopLoss) : "");
   const [tp, setTP] = useState(command.takeProfit != null ? String(command.takeProfit) : "");
   return (
-    <li className="grid grid-cols-[1fr_auto_auto_auto] gap-2 items-end border border-zinc-800 rounded p-2">
+    <li className="grid grid-cols-[1fr_auto_auto_auto] gap-2 items-end border border-border rounded p-2">
       <div className="text-xs">
         <div className="font-mono">{command.symbol} {command.side} #{command.brokerTicket}</div>
         <div className="text-muted-foreground">vol {String(command.requestedVolume ?? "")}</div>

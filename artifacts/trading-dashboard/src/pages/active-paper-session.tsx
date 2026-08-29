@@ -55,7 +55,7 @@ export default function ActivePaperSession() {
           <p className="text-sm text-muted-foreground">{s.paper_session_id}</p>
         </div>
         <div className="flex gap-2">
-          <span className="px-2 py-1 rounded bg-emerald-100 text-emerald-800 text-xs">{s.status}</span>
+          <span className="px-2 py-1 rounded bg-success/10 text-success text-xs">{s.status}</span>
           <span className="px-2 py-1 rounded bg-blue-100 text-blue-800 text-xs">PAPER_ONLY</span>
           <span className="px-2 py-1 rounded bg-red-100 text-red-800 text-xs">LIVE DISABLED</span>
         </div>
@@ -74,10 +74,10 @@ export default function ActivePaperSession() {
 
       <div className="flex gap-2">
         {s.status === "ACTIVE" && (
-          <button onClick={() => void action("pause", "manual pause")} disabled={busy} className="px-4 py-2 rounded bg-amber-500 text-white">Pause</button>
+          <button onClick={() => void action("pause", "manual pause")} disabled={busy} className="px-4 py-2 rounded bg-warning text-white">Pause</button>
         )}
         {s.status === "PAUSED" && (
-          <button onClick={() => void action("resume", "manual resume")} disabled={busy} className="px-4 py-2 rounded bg-emerald-600 text-white">Resume</button>
+          <button onClick={() => void action("resume", "manual resume")} disabled={busy} className="px-4 py-2 rounded bg-success text-white">Resume</button>
         )}
         {(s.status === "ACTIVE" || s.status === "PAUSED") && (
           <button onClick={() => void action("end", "manual end")} disabled={busy} className="px-4 py-2 rounded bg-red-600 text-white">End session</button>
@@ -87,7 +87,7 @@ export default function ActivePaperSession() {
       {s.activeWarnings.length > 0 && (
         <div className="rounded border p-4">
           <div className="font-semibold">Active warnings ({s.activeWarnings.length})</div>
-          <ul className="list-disc pl-5 text-sm text-amber-700">{s.activeWarnings.map((w,i)=><li key={i}>[{w.source}] {w.code} — {w.message}</li>)}</ul>
+          <ul className="list-disc pl-5 text-sm text-warning">{s.activeWarnings.map((w,i)=><li key={i}>[{w.source}] {w.code} — {w.message}</li>)}</ul>
         </div>
       )}
 

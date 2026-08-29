@@ -60,13 +60,13 @@ export default function AiMentorPage() {
     <div className="space-y-4 p-4">
       <header className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h1 className="text-xl font-semibold text-slate-100">AI Mentor</h1>
-          <p className="text-xs text-slate-400">
+          <h1 className="text-xl font-semibold text-foreground">AI Mentor</h1>
+          <p className="text-xs text-txt-secondary">
             Personalized daily guidance tied to your skill level, rules, and recent data. Behavior coaching only — no profit promises.
           </p>
         </div>
         <button onClick={() => generate.mutate(undefined)} disabled={generate.isPending}
-          className="rounded bg-violet-600 px-3 py-1 text-xs font-semibold text-white hover:bg-violet-500 disabled:opacity-40">
+          className="rounded bg-premium px-3 py-1 text-xs font-semibold text-white hover:bg-premium disabled:opacity-40">
           {generate.isPending ? "Generating…" : "Generate now (auto-detect)"}
         </button>
       </header>
@@ -74,14 +74,14 @@ export default function AiMentorPage() {
       <div className="flex flex-wrap gap-1">
         {TYPES.map((t) => (
           <button key={t} onClick={() => generate.mutate(t)} disabled={generate.isPending}
-            className="rounded border border-slate-700 bg-slate-900 px-2 py-0.5 text-[10px] font-semibold text-slate-300 hover:bg-slate-800">
+            className="rounded border border-border bg-card px-2 py-0.5 text-[10px] font-semibold text-txt-secondary hover:bg-secondary">
             + {t.replace("_"," ")}
           </button>
         ))}
       </div>
 
       {!session ? (
-        <p className="rounded border border-dashed border-slate-700 p-6 text-center text-xs text-slate-500">
+        <p className="rounded border border-dashed border-border p-6 text-center text-xs text-txt-muted">
           Building your first mentor session…
         </p>
       ) : (
@@ -89,7 +89,7 @@ export default function AiMentorPage() {
           <MentorWarningCard session={session} />
           <DailyMentorBriefingCard session={session} />
           <section>
-            <h3 className="mb-2 text-sm font-semibold text-slate-200">Action items</h3>
+            <h3 className="mb-2 text-sm font-semibold text-foreground">Action items</h3>
             <MentorActionItems items={items}
               onChangeStatus={(id, status) => updateStatus.mutate({ id, status })} />
           </section>
@@ -97,7 +97,7 @@ export default function AiMentorPage() {
       )}
 
       <section>
-        <h3 className="mb-2 text-sm font-semibold text-slate-200">Recent sessions</h3>
+        <h3 className="mb-2 text-sm font-semibold text-foreground">Recent sessions</h3>
         <MentorHistory sessions={history.data?.sessions ?? []} />
       </section>
     </div>

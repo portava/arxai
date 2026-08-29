@@ -71,7 +71,7 @@ export default function ResetPasswordPage() {
             ANALYZE. RISK. eXECUTE.
           </p>
           <h2 className="mt-7 text-2xl font-black">Set a new password</h2>
-          <p className="mt-1 text-sm text-slate-400">
+          <p className="mt-1 text-sm text-txt-secondary">
             Choose a new password for your ARX AI account.
           </p>
         </div>
@@ -79,7 +79,7 @@ export default function ResetPasswordPage() {
         {done ? (
           <div className="mt-8 space-y-5">
             <div
-              className="flex items-start gap-3 rounded-lg border border-emerald-400/20 bg-emerald-500/10 p-4 text-sm text-emerald-100"
+              className="flex items-start gap-3 rounded-lg border border-success/20 bg-success/10 p-4 text-sm text-success"
               data-testid="reset-password-success"
             >
               <CheckCircle2 className="h-5 w-5 mt-0.5 shrink-0" />
@@ -105,7 +105,7 @@ export default function ResetPasswordPage() {
             {missingToken && (
               <div
                 role="alert"
-                className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-200"
+                className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning"
               >
                 <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
                 <span>
@@ -122,7 +122,7 @@ export default function ResetPasswordPage() {
               <div className="relative">
                 <Lock
                   aria-hidden
-                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-txt-secondary"
                 />
                 <Input
                   id="new-password"
@@ -132,7 +132,7 @@ export default function ResetPasswordPage() {
                   placeholder={`At least ${MIN_PASSWORD} characters`}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="pl-10 pr-12 h-12 bg-black/25 border-white/15 text-white placeholder:text-slate-500 focus-visible:border-blue-400 focus-visible:ring-blue-500/20"
+                  className="pl-10 pr-12 h-12 bg-black/25 border-white/15 text-white placeholder:text-txt-muted focus-visible:border-blue-400 focus-visible:ring-blue-500/20"
                   data-testid="input-new-password"
                 />
                 <button
@@ -140,7 +140,7 @@ export default function ResetPasswordPage() {
                   onClick={() => setShowPassword((v) => !v)}
                   aria-label={showPassword ? "Hide password" : "Show password"}
                   aria-pressed={showPassword}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-300 hover:text-white hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex h-8 w-8 items-center justify-center rounded-md text-txt-secondary hover:text-white hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                   data-testid="button-toggle-new-password"
                 >
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -155,7 +155,7 @@ export default function ResetPasswordPage() {
               <div className="relative">
                 <Lock
                   aria-hidden
-                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-txt-secondary"
                 />
                 <Input
                   id="confirm-password"
@@ -165,7 +165,7 @@ export default function ResetPasswordPage() {
                   placeholder="Re-enter your new password"
                   value={confirm}
                   onChange={(e) => setConfirm(e.target.value)}
-                  className="pl-10 h-12 bg-black/25 border-white/15 text-white placeholder:text-slate-500 focus-visible:border-blue-400 focus-visible:ring-blue-500/20"
+                  className="pl-10 h-12 bg-black/25 border-white/15 text-white placeholder:text-txt-muted focus-visible:border-blue-400 focus-visible:ring-blue-500/20"
                   data-testid="input-confirm-password"
                 />
               </div>
@@ -190,7 +190,7 @@ export default function ResetPasswordPage() {
               {reset.isPending ? "Resetting…" : "Reset password"}
             </Button>
 
-            <p className="text-center text-sm text-slate-400">
+            <p className="text-center text-sm text-txt-secondary">
               <Link
                 href="/login"
                 className="text-blue-300 hover:text-blue-200 underline-offset-4 hover:underline"

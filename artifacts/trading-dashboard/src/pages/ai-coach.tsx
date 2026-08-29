@@ -46,18 +46,18 @@ export default function AiCoach() {
         </Button>
       </div>
 
-      {err && <p className="text-sm text-rose-400">{err}</p>}
+      {err && <p className="text-sm text-danger">{err}</p>}
       {!coach && !err && <p className="text-sm text-muted-foreground">Loading coach summary…</p>}
 
       {coach && (
         <>
           <div className="grid gap-4 md:grid-cols-2">
-            <Card className="border-emerald-500/30">
-              <CardHeader><CardTitle className="text-emerald-400 flex items-center gap-2"><Trophy className="h-5 w-5" /> What the AI is doing well</CardTitle></CardHeader>
+            <Card className="border-success/30">
+              <CardHeader><CardTitle className="text-success flex items-center gap-2"><Trophy className="h-5 w-5" /> What the AI is doing well</CardTitle></CardHeader>
               <CardContent><p className="text-sm">{coach.doingWell}</p></CardContent>
             </Card>
-            <Card className="border-rose-500/30">
-              <CardHeader><CardTitle className="text-rose-400 flex items-center gap-2"><AlertTriangle className="h-5 w-5" /> What the AI is doing poorly</CardTitle></CardHeader>
+            <Card className="border-danger/30">
+              <CardHeader><CardTitle className="text-danger flex items-center gap-2"><AlertTriangle className="h-5 w-5" /> What the AI is doing poorly</CardTitle></CardHeader>
               <CardContent><p className="text-sm">{coach.doingPoorly}</p></CardContent>
             </Card>
           </div>
