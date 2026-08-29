@@ -302,7 +302,8 @@
     "test:broker-hub-contracts": "tsx ./src/brokerHubContractsTest.ts && tsx ./src/ci/check-broker-hub-no-execution.test.ts",
     "test:broker-hub-metadata-db": "tsx ./src/brokerHubMetadataIntegrationTest.ts",
     "verify:secret-provisioning": "tsx ./src/verifySecretProvisioning.ts",
-    "test:approval-ticket-race-db": "tsx ./src/ci/run-approval-ticket-race-db.ts"
+    "test:approval-ticket-race-db": "tsx ./src/ci/run-approval-ticket-race-db.ts",
+    "test:conformal-bounds": "node --import tsx --test --test-force-exit src/__qa__/conformalBounds.test.ts"
   },
   "devDependencies": {
     "@types/node": "catalog:",

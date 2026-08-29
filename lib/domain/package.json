@@ -40,6 +40,7 @@
     "./agent-system": "./src/agent-system/index.ts",
     "./handshake": "./src/handshake/index.ts",
     "./execution-preview": "./src/execution-preview/index.ts",
+    "./execution-policy": "./src/execution-policy/index.ts",
     "./ruby-quality": "./src/ruby-quality/index.ts",
     "./conditional-execution": "./src/conditional-execution/index.ts",
     "./shadow-lab": "./src/shadow-lab/index.ts",
