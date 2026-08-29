@@ -39,7 +39,7 @@ function DirectionBadge({ direction }: { direction: string }) {
     );
   if (direction === "SELL")
     return (
-      <Badge className="bg-red-500/20 text-red-400 border-red-500/40 text-base px-4 py-1.5 font-bold tracking-wider">
+      <Badge className="bg-danger/20 text-danger border-danger/40 text-base px-4 py-1.5 font-bold tracking-wider">
         <TrendingDown size={16} className="mr-1.5" /> SELL
       </Badge>
     );
@@ -54,7 +54,7 @@ function BiasChip({ bias }: { bias: string }) {
   const isBull = bias === "Bullish" || bias === "Positive" || bias === "Risk-On";
   const isBear = bias === "Bearish" || bias === "Negative" || bias === "Risk-Off" || bias === "Not news-driven";
   return (
-    <span className={cn("px-2 py-0.5 rounded text-xs font-semibold border", isBull && "bg-success/15 text-success border-success/30", isBear && "bg-red-500/15 text-red-400 border-red-500/30", !isBull && !isBear && "bg-muted/50 text-txt-secondary border-border/40")}>
+    <span className={cn("px-2 py-0.5 rounded text-xs font-semibold border", isBull && "bg-success/15 text-success border-success/30", isBear && "bg-danger/15 text-danger border-danger/30", !isBull && !isBear && "bg-muted/50 text-txt-secondary border-border/40")}>
       {bias}
     </span>
   );
@@ -62,7 +62,7 @@ function BiasChip({ bias }: { bias: string }) {
 
 function ConfidenceBar({ value, max = 100 }: { value: number; max?: number }) {
   const pct = Math.max(0, Math.min(100, (value / max) * 100));
-  const color = pct >= 70 ? "bg-success" : pct >= 50 ? "bg-warning" : "bg-red-500";
+  const color = pct >= 70 ? "bg-success" : pct >= 50 ? "bg-warning" : "bg-danger";
   return (
     <div className="flex items-center gap-2">
       <div className="flex-1 h-2 bg-secondary rounded-full overflow-hidden">
@@ -121,7 +121,7 @@ function TechnicalPanel({ data }: { data: MarketBrainResult["technicalDetails"] 
         <div>
           <p className="text-[10px] text-txt-muted uppercase tracking-wider mb-1">Resistance Levels</p>
           <div className="flex flex-wrap gap-1">
-            {d.resistanceLevels.map((l: number, i: number) => <span key={i} className="px-1.5 py-0.5 bg-red-900/30 border border-red-700/30 rounded text-red-400 text-xs font-mono">{l.toFixed(5)}</span>)}
+            {d.resistanceLevels.map((l: number, i: number) => <span key={i} className="px-1.5 py-0.5 bg-danger/30 border border-danger/30 rounded text-danger text-xs font-mono">{l.toFixed(5)}</span>)}
           </div>
         </div>
       )}
@@ -216,15 +216,15 @@ function ScoringPanel({ result }: { result: MarketBrainResult }) {
           <p className="text-[10px] text-txt-muted uppercase tracking-wider">Deductions</p>
           {deductions.filter((d) => d.value > 0).map(({ label, value }) => (
             <div key={label} className="flex justify-between text-xs">
-              <span className="text-red-400">{label}</span>
-              <span className="text-red-400 font-mono">-{value}</span>
+              <span className="text-danger">{label}</span>
+              <span className="text-danger font-mono">-{value}</span>
             </div>
           ))}
         </div>
       )}
       <div className="pt-3 border-t border-border flex items-center justify-between">
         <span className="text-txt-secondary font-semibold">Final Confidence</span>
-        <span className={cn("text-lg font-bold font-mono", scoring.confidence >= 70 ? "text-success" : scoring.confidence >= 55 ? "text-warning" : "text-red-400")}>
+        <span className={cn("text-lg font-bold font-mono", scoring.confidence >= 70 ? "text-success" : scoring.confidence >= 55 ? "text-warning" : "text-danger")}>
           {scoring.confidence}%
         </span>
       </div>
@@ -338,7 +338,7 @@ export default function BrainAnalysis() {
       {result && (
         <div className="space-y-4">
           {/* Decision Bar */}
-          <Card className={cn("border-2", result.direction === "BUY" ? "border-success/50 bg-success/20" : result.direction === "SELL" ? "border-red-600/50 bg-red-950/20" : "border-border/50 bg-muted/40")}>
+          <Card className={cn("border-2", result.direction === "BUY" ? "border-success/50 bg-success/20" : result.direction === "SELL" ? "border-danger/50 bg-danger/20" : "border-border/50 bg-muted/40")}>
             <CardContent className="pt-5">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-4">
@@ -351,7 +351,7 @@ export default function BrainAnalysis() {
                 <div className="flex items-center gap-6 text-sm">
                   <div className="text-center">
                     <p className="text-[10px] text-txt-muted uppercase tracking-wider">Confidence</p>
-                    <p className={cn("text-xl font-bold font-mono", result.confidence >= 70 ? "text-success" : result.confidence >= 55 ? "text-warning" : "text-red-400")}>{result.confidence}%</p>
+                    <p className={cn("text-xl font-bold font-mono", result.confidence >= 70 ? "text-success" : result.confidence >= 55 ? "text-warning" : "text-danger")}>{result.confidence}%</p>
                   </div>
                   <div className="text-center">
                     <p className="text-[10px] text-txt-muted uppercase tracking-wider">R:R</p>
@@ -359,7 +359,7 @@ export default function BrainAnalysis() {
                   </div>
                   <div className="text-center">
                     <p className="text-[10px] text-txt-muted uppercase tracking-wider">Risk</p>
-                    <Badge variant="outline" className={cn("text-xs", result.riskApproved ? "border-success/50 text-success" : "border-red-600/50 text-red-400")}>
+                    <Badge variant="outline" className={cn("text-xs", result.riskApproved ? "border-success/50 text-success" : "border-danger/50 text-danger")}>
                       {result.riskApproved ? "✓ Approved" : "✗ Blocked"}
                     </Badge>
                   </div>
@@ -375,7 +375,7 @@ export default function BrainAnalysis() {
                   </div>
                   <div className="text-center">
                     <p className="text-[10px] text-txt-muted uppercase tracking-wider mb-1">Stop Loss</p>
-                    <p className="font-mono text-sm text-red-400">{result.stopLoss}</p>
+                    <p className="font-mono text-sm text-danger">{result.stopLoss}</p>
                   </div>
                   <div className="text-center">
                     <p className="text-[10px] text-txt-muted uppercase tracking-wider mb-1">Take Profit</p>
@@ -425,11 +425,11 @@ export default function BrainAnalysis() {
               </div>
             </SectionCard>
 
-            <SectionCard title="News Risk" icon={Newspaper} className={result.newsDetails?.blockTrading ? "border-red-800/50" : ""}>
+            <SectionCard title="News Risk" icon={Newspaper} className={result.newsDetails?.blockTrading ? "border-danger/50" : ""}>
               <div className="space-y-2 text-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-txt-secondary">Risk Level</span>
-                  <Badge variant="outline" className={cn("text-xs", (result.newsDetails as any)?.riskLevel === "Critical" ? "border-red-600 text-red-400" : (result.newsDetails as any)?.riskLevel === "High" ? "border-warning text-warning" : (result.newsDetails as any)?.riskLevel === "Medium" ? "border-yellow-600 text-yellow-400" : "border-success/40 text-success")}>
+                  <Badge variant="outline" className={cn("text-xs", (result.newsDetails as any)?.riskLevel === "Critical" ? "border-danger text-danger" : (result.newsDetails as any)?.riskLevel === "High" ? "border-warning text-warning" : (result.newsDetails as any)?.riskLevel === "Medium" ? "border-warning text-warning" : "border-success/40 text-success")}>
                     {(result.newsDetails as any)?.riskLevel}
                   </Badge>
                 </div>

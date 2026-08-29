@@ -31,7 +31,7 @@ export default function LiveTrades() {
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:gap-3 max-w-full min-w-0">
           {mt5?.connected ? (
-            <Badge className="bg-green-500/20 text-green-500 gap-1"><Wifi size={12} /> System MT5 Connected{mt5.account ? ` • ${mt5.account}` : ""}</Badge>
+            <Badge className="bg-success/20 text-success gap-1"><Wifi size={12} /> System MT5 Connected{mt5.account ? ` • ${mt5.account}` : ""}</Badge>
           ) : (
             <Badge variant="outline" className="text-muted-foreground gap-1"><WifiOff size={12} /> System MT5 Offline</Badge>
           )}
@@ -72,7 +72,7 @@ export default function LiveTrades() {
               {mt5.positions.map((p) => (
                 <div key={p.ticket} className="flex justify-between items-center p-2 rounded border border-border/50 text-sm font-mono">
                   <span>#{p.ticket} {p.symbol} {p.side} {p.lot} @ {p.entry}</span>
-                  <span className={(p.profit ?? 0) >= 0 ? "text-green-500" : "text-destructive"}>{(p.profit ?? 0).toFixed(2)}</span>
+                  <span className={(p.profit ?? 0) >= 0 ? "text-success" : "text-destructive"}>{(p.profit ?? 0).toFixed(2)}</span>
                 </div>
               ))}
             </div>

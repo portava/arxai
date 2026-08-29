@@ -18,7 +18,7 @@ import { LoadingState, EmptyState, ErrorState } from "@/components/ss/States";
  *  and inventing new StatusKinds for page-local labels would pollute it. */
 function Pill({ label, tone }: { label: string; tone: "neutral" | "warning" | "danger" | "positive" }) {
   const cls =
-    tone === "danger" ? "bg-red-500/15 text-red-600 border-red-500/30"
+    tone === "danger" ? "bg-danger/15 text-danger border-danger/30"
       : tone === "warning" ? "bg-warning/15 text-warning border-warning/30"
         : tone === "positive" ? "bg-success/15 text-success border-success/30"
           : "bg-muted text-muted-foreground border-border";

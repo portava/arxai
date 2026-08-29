@@ -34,7 +34,7 @@ export default function SecurityEvents() {
           <thead className="bg-muted"><tr><th className="p-2 text-left">When</th><th className="p-2 text-left">Type</th><th className="p-2 text-left">Severity</th><th className="p-2 text-left">Role</th><th className="p-2 text-left">Permission</th><th className="p-2 text-left">Message</th></tr></thead>
           <tbody>
             {filtered.map((e) => (
-              <tr key={e.id} className={e.severity === "CRITICAL" ? "bg-red-50" : e.severity === "WARNING" ? "bg-yellow-50" : ""}>
+              <tr key={e.id} className={e.severity === "CRITICAL" ? "bg-danger/10" : e.severity === "WARNING" ? "bg-warning/10" : ""}>
                 <td className="p-2 font-mono">{new Date(e.createdAt).toLocaleString()}</td>
                 <td className="p-2">{e.eventType}</td>
                 <td className="p-2 font-bold">{e.severity}</td>

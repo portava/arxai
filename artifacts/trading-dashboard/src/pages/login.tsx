@@ -218,9 +218,9 @@ export default function LoginPage() {
           {/* Brand header */}
           <div className="relative z-10">
             <div className="text-4xl font-black tracking-tight">
-              ARX <span className="text-blue-400">AI</span>
+              ARX <span className="text-primary">AI</span>
             </div>
-            <p className="mt-3 text-xs tracking-[0.28em] text-blue-200">
+            <p className="mt-3 text-xs tracking-[0.28em] text-primary">
               ANALYZE. RISK. eXECUTE.
             </p>
           </div>
@@ -236,12 +236,12 @@ export default function LoginPage() {
 
         {/* ───────── Right: sign-in card ───────── */}
         <section className="flex items-center justify-center p-4 sm:p-8 lg:p-12">
-          <div className="w-full max-w-xl rounded-[2rem] border border-blue-300/30 bg-white/[0.035] p-6 sm:p-8 lg:p-10 shadow-[0_0_70px_rgba(37,99,235,0.18)] backdrop-blur-xl">
+          <div className="w-full max-w-xl rounded-[2rem] border border-primary/30 bg-white/[0.035] p-6 sm:p-8 lg:p-10 shadow-[0_0_70px_rgba(37,99,235,0.18)] backdrop-blur-xl">
             <div className="text-center">
               <div className="text-4xl sm:text-5xl font-black tracking-tight">
-                ARX <span className="text-blue-400">AI</span>
+                ARX <span className="text-primary">AI</span>
               </div>
-              <p className="mt-2 text-[11px] tracking-[0.28em] text-blue-200">
+              <p className="mt-2 text-[11px] tracking-[0.28em] text-primary">
                 ANALYZE. RISK. eXECUTE.
               </p>
               <h2 className="mt-7 text-2xl sm:text-3xl font-black">
@@ -282,7 +282,7 @@ export default function LoginPage() {
                     onBlur={(e) => {
                       if (e.target.value) validateEmail(e.target.value);
                     }}
-                    className="pl-10 h-12 bg-black/25 border-white/15 text-white placeholder:text-txt-muted focus-visible:border-blue-400 focus-visible:ring-blue-500/20"
+                    className="pl-10 h-12 bg-black/25 border-white/15 text-white placeholder:text-txt-muted focus-visible:border-primary focus-visible:ring-primary/20"
                     aria-invalid={!!emailError}
                     aria-describedby={emailError ? "email-error" : undefined}
                     data-testid="input-email"
@@ -291,7 +291,7 @@ export default function LoginPage() {
                 {emailError && (
                   <p
                     id="email-error"
-                    className="text-xs text-red-300"
+                    className="text-xs text-danger"
                     data-testid="text-email-error"
                   >
                     {emailError}
@@ -317,7 +317,7 @@ export default function LoginPage() {
                     placeholder="Enter your password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="pl-10 pr-12 h-12 bg-black/25 border-white/15 text-white placeholder:text-txt-muted focus-visible:border-blue-400 focus-visible:ring-blue-500/20"
+                    className="pl-10 pr-12 h-12 bg-black/25 border-white/15 text-white placeholder:text-txt-muted focus-visible:border-primary focus-visible:ring-primary/20"
                     data-testid="input-password"
                   />
                   <button
@@ -327,7 +327,7 @@ export default function LoginPage() {
                       showPassword ? "Hide password" : "Show password"
                     }
                     aria-pressed={showPassword}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex h-8 w-8 items-center justify-center rounded-md text-txt-secondary hover:text-white hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex h-8 w-8 items-center justify-center rounded-md text-txt-secondary hover:text-white hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-primary/40"
                     data-testid="button-toggle-password"
                   >
                     {showPassword ? (
@@ -346,7 +346,7 @@ export default function LoginPage() {
                     id="remember"
                     checked={remember}
                     onCheckedChange={(v) => setRemember(v === true)}
-                    className="border-white/30 data-[state=checked]:bg-blue-500 data-[state=checked]:border-blue-500"
+                    className="border-white/30 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
                     data-testid="checkbox-remember"
                   />
                   <span>Remember me</span>
@@ -358,7 +358,7 @@ export default function LoginPage() {
                     setForgotEmail(email.trim());
                     setForgotOpen(true);
                   }}
-                  className="text-blue-300 hover:text-blue-200 underline-offset-4 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500/40 rounded"
+                  className="text-primary hover:text-primary underline-offset-4 hover:underline focus:outline-none focus:ring-2 focus:ring-primary/40 rounded"
                   data-testid="button-forgot-password"
                 >
                   Forgot password?
@@ -369,7 +369,7 @@ export default function LoginPage() {
               {formError && (
                 <div
                   role="alert"
-                  className="flex items-start gap-2 rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200"
+                  className="flex items-start gap-2 rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger"
                 >
                   <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
                   <span data-testid="text-login-error">{formError}</span>
@@ -380,7 +380,7 @@ export default function LoginPage() {
               <Button
                 type="submit"
                 disabled={login.isPending}
-                className="w-full h-12 text-base font-bold bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500 shadow-lg shadow-blue-500/20 disabled:opacity-70"
+                className="w-full h-12 text-base font-bold bg-gradient-to-r from-primary to-primary hover:from-primary hover:to-primary shadow-lg shadow-blue-500/20 disabled:opacity-70"
                 data-testid="button-submit-login"
               >
                 {login.isPending ? (
@@ -426,9 +426,9 @@ export default function LoginPage() {
 
             {/* Ruby note */}
             <div className="mt-6 rounded-2xl border border-white/10 bg-black/20 p-3 text-xs leading-5 text-txt-secondary">
-              <span className="font-bold text-blue-300">{name}</span> helps
+              <span className="font-bold text-primary">{name}</span> helps
               analyze markets, risk, and execution — but{" "}
-              <span className="font-bold text-blue-300">final control</span>{" "}
+              <span className="font-bold text-primary">final control</span>{" "}
               stays protected by your permissions.
             </div>
 
@@ -437,7 +437,7 @@ export default function LoginPage() {
               Your data is encrypted. Your permissions protect everything.
             </p>
             <p className="mt-1 text-center text-sm">
-              <span className="text-blue-400 font-semibold">Secure.</span>{" "}
+              <span className="text-primary font-semibold">Secure.</span>{" "}
               <span className="text-txt-secondary">Private.</span>{" "}
               <span className="text-txt-secondary">Yours.</span>
             </p>
@@ -457,7 +457,7 @@ export default function LoginPage() {
           if (!open) resetForgot();
         }}
       >
-        <DialogContent className="bg-[#0a1428] border-blue-400/20 text-white">
+        <DialogContent className="bg-[#0a1428] border-primary/20 text-white">
           <DialogHeader>
             <DialogTitle>Reset your password</DialogTitle>
             <DialogDescription className="text-txt-secondary">
@@ -503,7 +503,7 @@ export default function LoginPage() {
                     placeholder="you@example.com"
                     value={forgotEmail}
                     onChange={(e) => setForgotEmail(e.target.value)}
-                    className="pl-10 h-12 bg-black/25 border-white/15 text-white placeholder:text-txt-muted focus-visible:border-blue-400 focus-visible:ring-blue-500/20"
+                    className="pl-10 h-12 bg-black/25 border-white/15 text-white placeholder:text-txt-muted focus-visible:border-primary focus-visible:ring-primary/20"
                     data-testid="input-forgot-email"
                   />
                 </div>
@@ -512,7 +512,7 @@ export default function LoginPage() {
               {forgotError && (
                 <div
                   role="alert"
-                  className="flex items-start gap-2 rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200"
+                  className="flex items-start gap-2 rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger"
                 >
                   <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
                   <span data-testid="text-forgot-error">{forgotError}</span>
@@ -531,7 +531,7 @@ export default function LoginPage() {
                 <Button
                   type="submit"
                   disabled={forgot.isPending || !forgotEmail.trim()}
-                  className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500"
+                  className="bg-gradient-to-r from-primary to-primary hover:from-primary hover:to-primary"
                   data-testid="button-submit-forgot"
                 >
                   {forgot.isPending ? "Sending…" : "Send reset link"}
@@ -544,7 +544,7 @@ export default function LoginPage() {
 
       {/* ───────── Invite code modal ───────── */}
       <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
-        <DialogContent className="bg-[#0a1428] border-blue-400/20 text-white">
+        <DialogContent className="bg-[#0a1428] border-primary/20 text-white">
           <DialogHeader>
             <DialogTitle>Use an invite code</DialogTitle>
             <DialogDescription className="text-txt-secondary">
@@ -561,7 +561,7 @@ export default function LoginPage() {
               value={inviteCode}
               onChange={(e) => setInviteCode(e.target.value)}
               placeholder="e.g. ARX-XXXX-XXXX"
-              className="bg-black/25 border-white/15 text-white placeholder:text-txt-muted focus-visible:border-blue-400 focus-visible:ring-blue-500/20"
+              className="bg-black/25 border-white/15 text-white placeholder:text-txt-muted focus-visible:border-primary focus-visible:ring-primary/20"
               autoComplete="off"
               data-testid="input-invite-code"
             />
@@ -579,7 +579,7 @@ export default function LoginPage() {
               type="button"
               onClick={openInviteFromCode}
               disabled={!inviteCode.trim()}
-              className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500"
+              className="bg-gradient-to-r from-primary to-primary hover:from-primary hover:to-primary"
               data-testid="button-continue-invite"
             >
               Continue
@@ -596,7 +596,7 @@ export default function LoginPage() {
           if (!open) resetRequestAccess();
         }}
       >
-        <DialogContent className="bg-[#0a1428] border-blue-400/20 text-white">
+        <DialogContent className="bg-[#0a1428] border-primary/20 text-white">
           <DialogHeader>
             <DialogTitle>Request access</DialogTitle>
             <DialogDescription className="text-txt-secondary">
@@ -617,7 +617,7 @@ export default function LoginPage() {
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="req-email" className="text-sm">
-                  Email <span className="text-red-400">*</span>
+                  Email <span className="text-danger">*</span>
                 </Label>
                 <Input
                   id="req-email"
@@ -625,7 +625,7 @@ export default function LoginPage() {
                   value={reqEmail}
                   onChange={(e) => setReqEmail(e.target.value)}
                   placeholder="you@example.com"
-                  className="bg-black/25 border-white/15 text-white placeholder:text-txt-muted focus-visible:border-blue-400 focus-visible:ring-blue-500/20"
+                  className="bg-black/25 border-white/15 text-white placeholder:text-txt-muted focus-visible:border-primary focus-visible:ring-primary/20"
                   autoComplete="email"
                   data-testid="input-request-email"
                 />
@@ -639,7 +639,7 @@ export default function LoginPage() {
                   value={reqName}
                   onChange={(e) => setReqName(e.target.value)}
                   placeholder="Your name"
-                  className="bg-black/25 border-white/15 text-white placeholder:text-txt-muted focus-visible:border-blue-400 focus-visible:ring-blue-500/20"
+                  className="bg-black/25 border-white/15 text-white placeholder:text-txt-muted focus-visible:border-primary focus-visible:ring-primary/20"
                   autoComplete="name"
                   data-testid="input-request-name"
                 />
@@ -655,12 +655,12 @@ export default function LoginPage() {
                   placeholder="A short note about your trading background."
                   rows={3}
                   maxLength={1000}
-                  className="w-full rounded-md bg-black/25 border border-white/15 text-white placeholder:text-txt-muted px-3 py-2 text-sm focus-visible:outline-none focus-visible:border-blue-400 focus-visible:ring-2 focus-visible:ring-blue-500/20"
+                  className="w-full rounded-md bg-black/25 border border-white/15 text-white placeholder:text-txt-muted px-3 py-2 text-sm focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20"
                   data-testid="input-request-note"
                 />
               </div>
               {reqError && (
-                <p className="text-sm text-red-400" data-testid="request-access-error">
+                <p className="text-sm text-danger" data-testid="request-access-error">
                   {reqError}
                 </p>
               )}
@@ -672,7 +672,7 @@ export default function LoginPage() {
               <Button
                 type="button"
                 onClick={() => setRequestOpen(false)}
-                className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500"
+                className="bg-gradient-to-r from-primary to-primary hover:from-primary hover:to-primary"
                 data-testid="button-request-done"
               >
                 Done
@@ -691,7 +691,7 @@ export default function LoginPage() {
                   type="button"
                   onClick={() => void submitRequestAccess()}
                   disabled={reqSubmitting || !reqEmail.trim()}
-                  className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500"
+                  className="bg-gradient-to-r from-primary to-primary hover:from-primary hover:to-primary"
                   data-testid="button-submit-request"
                 >
                   {reqSubmitting ? "Submitting…" : "Submit request"}

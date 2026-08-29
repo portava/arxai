@@ -62,12 +62,12 @@ export default function ResetPasswordPage() {
 
   return (
     <main className="min-h-screen w-full bg-[#050914] text-white flex items-center justify-center p-4 sm:p-8">
-      <div className="w-full max-w-md rounded-[2rem] border border-blue-300/30 bg-white/[0.035] p-6 sm:p-8 lg:p-10 shadow-[0_0_70px_rgba(37,99,235,0.18)] backdrop-blur-xl">
+      <div className="w-full max-w-md rounded-[2rem] border border-primary/30 bg-white/[0.035] p-6 sm:p-8 lg:p-10 shadow-[0_0_70px_rgba(37,99,235,0.18)] backdrop-blur-xl">
         <div className="text-center">
           <div className="text-3xl sm:text-4xl font-black tracking-tight">
-            ARX <span className="text-blue-400">AI</span>
+            ARX <span className="text-primary">AI</span>
           </div>
-          <p className="mt-2 text-[11px] tracking-[0.28em] text-blue-200">
+          <p className="mt-2 text-[11px] tracking-[0.28em] text-primary">
             ANALYZE. RISK. eXECUTE.
           </p>
           <h2 className="mt-7 text-2xl font-black">Set a new password</h2>
@@ -92,7 +92,7 @@ export default function ResetPasswordPage() {
             <Button
               type="button"
               onClick={() => navigate("/login")}
-              className="w-full h-12 text-base font-bold bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500"
+              className="w-full h-12 text-base font-bold bg-gradient-to-r from-primary to-primary hover:from-primary hover:to-primary"
               data-testid="button-go-to-login"
             >
               <span className="inline-flex items-center gap-2">
@@ -132,7 +132,7 @@ export default function ResetPasswordPage() {
                   placeholder={`At least ${MIN_PASSWORD} characters`}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="pl-10 pr-12 h-12 bg-black/25 border-white/15 text-white placeholder:text-txt-muted focus-visible:border-blue-400 focus-visible:ring-blue-500/20"
+                  className="pl-10 pr-12 h-12 bg-black/25 border-white/15 text-white placeholder:text-txt-muted focus-visible:border-primary focus-visible:ring-primary/20"
                   data-testid="input-new-password"
                 />
                 <button
@@ -140,7 +140,7 @@ export default function ResetPasswordPage() {
                   onClick={() => setShowPassword((v) => !v)}
                   aria-label={showPassword ? "Hide password" : "Show password"}
                   aria-pressed={showPassword}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex h-8 w-8 items-center justify-center rounded-md text-txt-secondary hover:text-white hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex h-8 w-8 items-center justify-center rounded-md text-txt-secondary hover:text-white hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-primary/40"
                   data-testid="button-toggle-new-password"
                 >
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -165,7 +165,7 @@ export default function ResetPasswordPage() {
                   placeholder="Re-enter your new password"
                   value={confirm}
                   onChange={(e) => setConfirm(e.target.value)}
-                  className="pl-10 h-12 bg-black/25 border-white/15 text-white placeholder:text-txt-muted focus-visible:border-blue-400 focus-visible:ring-blue-500/20"
+                  className="pl-10 h-12 bg-black/25 border-white/15 text-white placeholder:text-txt-muted focus-visible:border-primary focus-visible:ring-primary/20"
                   data-testid="input-confirm-password"
                 />
               </div>
@@ -174,7 +174,7 @@ export default function ResetPasswordPage() {
             {formError && (
               <div
                 role="alert"
-                className="flex items-start gap-2 rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200"
+                className="flex items-start gap-2 rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger"
               >
                 <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
                 <span data-testid="text-reset-error">{formError}</span>
@@ -184,7 +184,7 @@ export default function ResetPasswordPage() {
             <Button
               type="submit"
               disabled={reset.isPending || missingToken}
-              className="w-full h-12 text-base font-bold bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500 shadow-lg shadow-blue-500/20 disabled:opacity-70"
+              className="w-full h-12 text-base font-bold bg-gradient-to-r from-primary to-primary hover:from-primary hover:to-primary shadow-lg shadow-blue-500/20 disabled:opacity-70"
               data-testid="button-submit-reset"
             >
               {reset.isPending ? "Resetting…" : "Reset password"}
@@ -193,7 +193,7 @@ export default function ResetPasswordPage() {
             <p className="text-center text-sm text-txt-secondary">
               <Link
                 href="/login"
-                className="text-blue-300 hover:text-blue-200 underline-offset-4 hover:underline"
+                className="text-primary hover:text-primary underline-offset-4 hover:underline"
                 data-testid="link-back-to-login"
               >
                 Back to sign in

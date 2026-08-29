@@ -14,7 +14,7 @@ type Alert = {
 };
 
 const SEV: Record<string, string> = {
-  info: "bg-blue-500/20 text-blue-400 border-blue-500/40",
+  info: "bg-primary/20 text-primary border-primary/40",
   warning: "bg-warning/20 text-warning border-warning/40",
   critical: "bg-danger/20 text-danger border-danger/40",
 };

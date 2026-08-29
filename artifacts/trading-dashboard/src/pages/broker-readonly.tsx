@@ -154,7 +154,7 @@ function BrokerReadOnlyContent() {
               />
               <div className="text-muted-foreground">latency {snap.dataQuality.latencyMs}ms</div>
               {snap.dataQuality.warnings.length > 0 && <ul className="text-warning list-disc pl-5">{snap.dataQuality.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>}
-              {snap.dataQuality.errors.length > 0 && <ul className="text-red-600 list-disc pl-5">{snap.dataQuality.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>}
+              {snap.dataQuality.errors.length > 0 && <ul className="text-danger list-disc pl-5">{snap.dataQuality.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>}
               <p className="text-xs text-muted-foreground italic border-t pt-2">No live execution buttons. Live trading remains disabled.</p>
             </CardContent>
           </Card>

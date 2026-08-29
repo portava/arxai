@@ -60,14 +60,14 @@ function severityClass(sev: string): string {
   switch (sev) {
     case "CRITICAL": return "bg-destructive text-destructive-foreground";
     case "DANGER": return "bg-destructive/80 text-destructive-foreground";
-    case "WARN": return "bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 border border-yellow-500/40";
+    case "WARN": return "bg-warning/20 text-warning dark:text-warning border border-warning/40";
     default: return "bg-muted text-muted-foreground";
   }
 }
 
 function linkHealthClass(h: string): string {
   if (h === "OK") return "bg-success/20 text-success dark:text-success border border-success/40";
-  if (h === "DEGRADED") return "bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 border border-yellow-500/40";
+  if (h === "DEGRADED") return "bg-warning/20 text-warning dark:text-warning border border-warning/40";
   return "bg-destructive/20 text-destructive border border-destructive/40";
 }
 

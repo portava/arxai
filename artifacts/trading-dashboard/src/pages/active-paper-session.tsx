@@ -56,8 +56,8 @@ export default function ActivePaperSession() {
         </div>
         <div className="flex gap-2">
           <span className="px-2 py-1 rounded bg-success/10 text-success text-xs">{s.status}</span>
-          <span className="px-2 py-1 rounded bg-blue-100 text-blue-800 text-xs">PAPER_ONLY</span>
-          <span className="px-2 py-1 rounded bg-red-100 text-red-800 text-xs">LIVE DISABLED</span>
+          <span className="px-2 py-1 rounded bg-primary/10 text-primary text-xs">PAPER_ONLY</span>
+          <span className="px-2 py-1 rounded bg-danger/10 text-danger text-xs">LIVE DISABLED</span>
         </div>
       </div>
 
@@ -80,7 +80,7 @@ export default function ActivePaperSession() {
           <button onClick={() => void action("resume", "manual resume")} disabled={busy} className="px-4 py-2 rounded bg-success text-white">Resume</button>
         )}
         {(s.status === "ACTIVE" || s.status === "PAUSED") && (
-          <button onClick={() => void action("end", "manual end")} disabled={busy} className="px-4 py-2 rounded bg-red-600 text-white">End session</button>
+          <button onClick={() => void action("end", "manual end")} disabled={busy} className="px-4 py-2 rounded bg-danger text-white">End session</button>
         )}
       </div>
 

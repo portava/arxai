@@ -26,8 +26,8 @@ async function jget(url: string, init?: RequestInit) {
 function pill(s: CheckStatus) {
   switch (s) {
     case "pass": return <Badge className="bg-success/15 text-success border-success/30"><CheckCircle2 className="w-3 h-3 mr-1" />pass</Badge>;
-    case "fail": return <Badge className="bg-red-500/15 text-red-300 border-red-500/30"><XCircle className="w-3 h-3 mr-1" />fail</Badge>;
-    case "running": return <Badge className="bg-blue-500/15 text-blue-300 border-blue-500/30 animate-pulse">running…</Badge>;
+    case "fail": return <Badge className="bg-danger/15 text-danger border-danger/30"><XCircle className="w-3 h-3 mr-1" />fail</Badge>;
+    case "running": return <Badge className="bg-primary/15 text-primary border-primary/30 animate-pulse">running…</Badge>;
     default: return <Badge variant="outline" className="text-xs"><Clock className="w-3 h-3 mr-1" />idle</Badge>;
   }
 }
@@ -321,7 +321,7 @@ function TestingControlCenterPageInner() {
                 <span>provider: <code className="font-mono">{defStatus.brokerProvider}</code></span>
                 <span>bridge connected: <code className="font-mono">{String(defStatus.bridgeConnected)}</code></span>
                 <span>account readable: <code className="font-mono">{String(defStatus.accountReadable)}</code></span>
-                <span>live execution: <code className="font-mono text-red-300">locked</code></span>
+                <span>live execution: <code className="font-mono text-danger">locked</code></span>
               </div>
             </div>
           </CardContent>
@@ -371,11 +371,11 @@ function TestingControlCenterPageInner() {
       </Card>
 
       {/* Hard rules reminder */}
-      <Card className="border border-red-500/30 bg-red-500/5">
+      <Card className="border border-danger/30 bg-danger/5">
         <CardContent className="pt-4 text-sm flex items-start gap-3">
-          <ShieldAlert className="w-5 h-5 text-red-400 mt-0.5" />
+          <ShieldAlert className="w-5 h-5 text-danger mt-0.5" />
           <div>
-            <p className="font-semibold text-red-300">Inviolable rules — even with simulator unlocked.</p>
+            <p className="font-semibold text-danger">Inviolable rules — even with simulator unlocked.</p>
             <ul className="list-disc pl-5 text-muted-foreground text-xs mt-1 space-y-0.5">
               <li>Demo simulator never mutates <code>live_positions</code> or <code>mt5_commands</code>.</li>
               <li>Demo simulator never sends real orders or fakes a broker connection.</li>

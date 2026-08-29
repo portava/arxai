@@ -108,7 +108,7 @@ export default function TradingReadinessPage() {
               <StartTradingButton status={evald.status}
                 disabled={submit.isPending}
                 onProceed={() => submit.mutate()} />
-              {submit.isError && <p className="text-[11px] text-red-400">{(submit.error as Error).message}</p>}
+              {submit.isError && <p className="text-[11px] text-danger">{(submit.error as Error).message}</p>}
             </div>
           )}
           {latest.data && (

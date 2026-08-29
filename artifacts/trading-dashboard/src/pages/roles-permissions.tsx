@@ -28,13 +28,13 @@ export default function RolesPermissions() {
           </thead>
           <tbody>
             {perms.map((p) => (
-              <tr key={p.id} className={p.isForbidden ? "bg-red-50" : ""}>
+              <tr key={p.id} className={p.isForbidden ? "bg-danger/10" : ""}>
                 <td className="p-1 font-mono sticky left-0 bg-inherit">
-                  {p.permissionKey} {p.isForbidden && <span className="ml-1 text-red-600 font-bold">[FORBIDDEN-LOCKED]</span>}
+                  {p.permissionKey} {p.isForbidden && <span className="ml-1 text-danger font-bold">[FORBIDDEN-LOCKED]</span>}
                 </td>
                 {roles.map((r) => {
                   const ok = matrix[r.roleKey]?.[p.permissionKey] ?? false;
-                  return <td key={r.id} className={`p-1 text-center ${p.isForbidden ? "text-red-600 font-bold" : ok ? "text-green-600" : "text-txt-secondary"}`}>{p.isForbidden ? "✕" : ok ? "✓" : "·"}</td>;
+                  return <td key={r.id} className={`p-1 text-center ${p.isForbidden ? "text-danger font-bold" : ok ? "text-success" : "text-txt-secondary"}`}>{p.isForbidden ? "✕" : ok ? "✓" : "·"}</td>;
                 })}
               </tr>
             ))}

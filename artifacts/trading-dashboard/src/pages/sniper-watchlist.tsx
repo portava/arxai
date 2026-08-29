@@ -30,7 +30,7 @@ type WatchItem = {
 const tierStyle: Record<string, string> = {
   urgent: "border-danger/40 bg-danger/5 text-danger",
   warning: "border-warning/40 bg-warning/5 text-warning",
-  watch: "border-blue-700 bg-blue-500/5 text-blue-300",
+  watch: "border-primary/40 bg-primary/5 text-primary",
   info: "border-border bg-muted text-txt-secondary",
 };
 

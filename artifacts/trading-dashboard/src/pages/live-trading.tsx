@@ -16,7 +16,7 @@ export default function LiveTradingPage() {
     <div className="p-3 sm:p-4 md:p-6 max-w-7xl mx-auto w-full space-y-4">
       <header>
         <h1 className="text-2xl font-bold flex items-center gap-2">
-          <ShieldAlert className="h-6 w-6 text-red-400" /> Live Trading
+          <ShieldAlert className="h-6 w-6 text-danger" /> Live Trading
         </h1>
         <p className="text-sm text-muted-foreground">
           Protected, gated, logged, reversible. Demo trading is unaffected by anything on this page.

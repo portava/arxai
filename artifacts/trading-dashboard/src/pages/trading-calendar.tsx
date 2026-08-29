@@ -259,8 +259,8 @@ export default function TradingCalendarPage() {
                         decision_id: {t.decision_id ?? "—"} · entry: {t.entry_price} · exit: {t.exit_price ?? "—"} · SL: {t.stop_loss} · TP: {t.take_profit}
                       </div>
                       {t.decision && <div className="text-xs mt-1">AA: {t.decision.action} (conf {t.decision.confidence}, risk {t.decision.risk_score}, window {t.decision.trade_window_status})</div>}
-                      {t.debrief && <div className="text-xs mt-1 text-blue-300">BB lesson: {t.debrief.lesson}</div>}
-                      {t.learning && <div className="text-xs text-purple-300">CC: {t.learning.lesson}</div>}
+                      {t.debrief && <div className="text-xs mt-1 text-primary">BB lesson: {t.debrief.lesson}</div>}
+                      {t.learning && <div className="text-xs text-premium">CC: {t.learning.lesson}</div>}
                       {t.ai_followed_own_decision === false && <div className="text-xs text-warning">⚠️ AI did not follow its own decision</div>}
                     </div>
                   ))}

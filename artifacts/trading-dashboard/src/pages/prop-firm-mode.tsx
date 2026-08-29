@@ -11,7 +11,7 @@ type Status = {
   dailyDrawdownRemainingUsd: number; totalDrawdownRemainingUsd: number;
   passed: string[]; failed: string[]; status: "ACTIVE" | "WARNING" | "FAILED" | "PASSED";
 };
-const STATUS_COLOR: Record<string, string> = { ACTIVE: "bg-blue-500/20 text-blue-400", WARNING: "bg-warning/20 text-warning", FAILED: "bg-danger/20 text-danger", PASSED: "bg-success/20 text-success" };
+const STATUS_COLOR: Record<string, string> = { ACTIVE: "bg-primary/20 text-primary", WARNING: "bg-warning/20 text-warning", FAILED: "bg-danger/20 text-danger", PASSED: "bg-success/20 text-success" };
 
 async function api(path: string, init?: RequestInit) {
   const r = await fetch(path, { headers: { "x-security-role": "ADMIN", "content-type": "application/json", ...(init?.headers ?? {}) }, ...init });

@@ -170,7 +170,7 @@ type MarketContextResponse = {
 
 const severityColor: Record<string, string> = {
   info: "border-border text-txt-secondary",
-  watch: "border-blue-700 text-blue-300",
+  watch: "border-primary/40 text-primary",
   warning: "border-warning/40 text-warning",
   urgent: "border-danger/40 text-danger",
 };
@@ -683,7 +683,7 @@ export default function TradeDetailPage() {
       <Card data-testid="market-context-section">
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
-            <Activity className="h-4 w-4 text-sky-400" /> Market Context
+            <Activity className="h-4 w-4 text-ruby" /> Market Context
             {marketCtx?.classification?.label && (
               <Badge variant="outline" className="text-[10px]">{marketCtx.classification.label}</Badge>
             )}

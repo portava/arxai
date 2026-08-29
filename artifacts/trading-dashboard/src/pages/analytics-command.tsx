@@ -56,7 +56,7 @@ export default function AnalyticsCommandCenter() {
           </p>
         </div>
         <button onClick={() => generate.mutate()} disabled={generate.isPending}
-          className="rounded bg-sky-600 px-3 py-1 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-40">
+          className="rounded bg-ruby px-3 py-1 text-xs font-semibold text-white hover:bg-ruby disabled:opacity-40">
           {generate.isPending ? "Computing…" : "Recompute snapshot"}
         </button>
       </header>
@@ -112,7 +112,7 @@ export default function AnalyticsCommandCenter() {
 }
 
 function Stat({ label, v, tone }: { label: string; v: string; tone?: "emerald"|"red" }) {
-  const t = tone === "emerald" ? "text-success" : tone === "red" ? "text-red-300" : "text-foreground";
+  const t = tone === "emerald" ? "text-success" : tone === "red" ? "text-danger" : "text-foreground";
   return (
     <div className="rounded border border-border bg-muted/50 p-2 text-center">
       <div className="text-[10px] uppercase tracking-wide text-txt-secondary">{label}</div>
@@ -121,7 +121,7 @@ function Stat({ label, v, tone }: { label: string; v: string; tone?: "emerald"|"
   );
 }
 function Highlight({ label, v, tone }: { label: string; v: string | null; tone: "emerald"|"red" }) {
-  const t = tone === "emerald" ? "border-success/40 bg-success/30 text-success" : "border-red-700 bg-red-950/30 text-red-100";
+  const t = tone === "emerald" ? "border-success/40 bg-success/30 text-success" : "border-danger/40 bg-danger/30 text-danger";
   return (
     <div className={`rounded border p-3 ${t}`}>
       <div className="text-[10px] uppercase tracking-wide opacity-80">{label}</div>

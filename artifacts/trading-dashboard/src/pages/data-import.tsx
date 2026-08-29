@@ -89,7 +89,7 @@ export default function DataImportPage() {
                         <div className="text-xs grid grid-cols-3 gap-1">
                           <div>recv <b>{i.candlesReceived}</b></div>
                           <div>valid <b className="text-success">{i.candlesValid}</b></div>
-                          <div>rej <b className="text-red-600">{i.candlesRejected}</b></div>
+                          <div>rej <b className="text-danger">{i.candlesRejected}</b></div>
                         </div>
                         <div className="text-xs">quality: <b>{i.dataQuality?.status}</b></div>
                         {i.canUseForReplay && (
@@ -119,7 +119,7 @@ export default function DataImportPage() {
                             <td className="text-center"><StatusPill status="READ_ONLY" size="xs" label={i.status.toUpperCase()} /></td>
                             <td className="text-center tabular-nums">{i.candlesReceived}</td>
                             <td className="text-center tabular-nums text-success">{i.candlesValid}</td>
-                            <td className="text-center tabular-nums text-red-600">{i.candlesRejected}</td>
+                            <td className="text-center tabular-nums text-danger">{i.candlesRejected}</td>
                             <td className="text-center">{i.dataQuality?.status}</td>
                             <td className="text-center">{i.canUseForReplay ? "✓" : "—"}</td>
                             <td className="text-center">{i.canUseAsDDFallback ? "✓" : "—"}</td>

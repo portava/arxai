@@ -107,7 +107,7 @@ export default function PropChallengePage() {
           <button onClick={()=>create.mutate()} disabled={create.isPending} className="rounded bg-warning px-3 py-1.5 text-xs font-semibold text-white hover:bg-warning disabled:opacity-50">
             {create.isPending ? "Creating…" : "Start practice challenge"}
           </button>
-          {create.isError && <p className="text-[11px] text-red-400">{(create.error as Error).message}</p>}
+          {create.isError && <p className="text-[11px] text-danger">{(create.error as Error).message}</p>}
         </div>
       )}
 
@@ -124,7 +124,7 @@ export default function PropChallengePage() {
             {(active.status === "ACTIVE" || active.status === "PAUSED") && (
               <button onClick={()=>transition.mutate("CANCELED")} className="rounded bg-muted px-3 py-1 text-xs text-white hover:bg-muted">Cancel</button>
             )}
-            <button onClick={()=>evalQ.refetch()} className="rounded bg-sky-700 px-3 py-1 text-xs text-white hover:bg-sky-600">Re-evaluate</button>
+            <button onClick={()=>evalQ.refetch()} className="rounded bg-ruby/15 px-3 py-1 text-xs text-white hover:bg-ruby">Re-evaluate</button>
           </div>
           {evalQ.data && (
             <>

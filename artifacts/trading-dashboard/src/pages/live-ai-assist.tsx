@@ -224,12 +224,12 @@ export default function LiveAiAssistPage() {
           )}
 
           {card && (
-            <Card className="border-blue-500/30">
+            <Card className="border-primary/30">
               <CardHeader><CardTitle className="text-sm flex justify-between">{card.symbol} <Badge>{card.direction}</Badge></CardTitle><CardDescription>{card.setup}</CardDescription></CardHeader>
               <CardContent className="space-y-2 text-xs">
                 <div className="grid grid-cols-3 gap-1 font-mono">
                   <div className="rounded border border-border p-1.5"><div className="text-muted-foreground">Entry</div>{card.entry || "—"}</div>
-                  <div className="rounded border border-red-500/30 p-1.5"><div className="text-muted-foreground">SL</div>{card.stopLoss || "—"}</div>
+                  <div className="rounded border border-danger/30 p-1.5"><div className="text-muted-foreground">SL</div>{card.stopLoss || "—"}</div>
                   <div className="rounded border border-success/30 p-1.5"><div className="text-muted-foreground">TP</div>{card.takeProfit || "—"}</div>
                 </div>
                 <div className="grid grid-cols-2 gap-1">
@@ -255,7 +255,7 @@ export default function LiveAiAssistPage() {
           )}
 
           {resp && (
-            <Card className={resp.accepted ? "border-success/40 bg-success/5" : "border-red-500/40 bg-red-500/5"}>
+            <Card className={resp.accepted ? "border-success/40 bg-success/5" : "border-danger/40 bg-danger/5"}>
               <CardContent className="pt-4 text-xs space-y-1" data-testid="ai-assist-response">
                 <p className="font-semibold flex items-center gap-2"><ShieldAlert className="w-4 h-4" />status: {resp.status}</p>
                 <p className="text-muted-foreground">{resp.reason}</p>
@@ -269,7 +269,7 @@ export default function LiveAiAssistPage() {
             <Card className="border border-border">
               <CardContent className="pt-3 text-xs">
                 <p className="font-semibold mb-1">Permission state (admin diagnostics)</p>
-                <div className="font-mono text-[11px]">canExecuteRealBrokerOrder: <span className="text-red-400">{String(perm?.testerAccess?.canExecuteRealBrokerOrder ?? false)}</span></div>
+                <div className="font-mono text-[11px]">canExecuteRealBrokerOrder: <span className="text-danger">{String(perm?.testerAccess?.canExecuteRealBrokerOrder ?? false)}</span></div>
                 <div className="font-mono text-[11px]">canSubmitLiveIntent: <span className="text-success">{String(perm?.testerAccess?.canSubmitLiveIntent ?? true)}</span></div>
                 <div className="font-mono text-[11px]">mt5Connected: {String(perm?.testerAccess?.mt5Connected ?? false)}</div>
               </CardContent>

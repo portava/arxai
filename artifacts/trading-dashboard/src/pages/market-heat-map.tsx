@@ -34,22 +34,22 @@ const MULTI_SYMBOLS = "EURUSD,GBPUSD,USDJPY,XAUUSD,GBPJPY,USDCAD";
 function heatBg(score: number): string {
   if (score >= 80) return "bg-success/20 border-success/30 text-success";
   if (score >= 60) return "bg-warning/20 border-warning/30 text-warning";
-  if (score >= 40) return "bg-blue-500/20 border-blue-500/30 text-blue-400";
+  if (score >= 40) return "bg-primary/20 border-primary/30 text-primary";
   return "bg-muted border-border/20 text-txt-secondary";
 }
 
 function heatBar(score: number): string {
   if (score >= 80) return "bg-success";
   if (score >= 60) return "bg-warning";
-  if (score >= 40) return "bg-blue-500";
+  if (score >= 40) return "bg-primary";
   return "bg-muted";
 }
 
 function gradeColor(grade: string): string {
   if (grade === "A+" || grade === "A") return "bg-success/20 text-success border-success/40";
-  if (grade === "B") return "bg-blue-500/20 text-blue-400 border-blue-500/40";
+  if (grade === "B") return "bg-primary/20 text-primary border-primary/40";
   if (grade === "C") return "bg-warning/20 text-warning border-warning/40";
-  if (grade === "D") return "bg-orange-500/20 text-orange-400 border-orange-500/40";
+  if (grade === "D") return "bg-warning/20 text-warning border-warning/40";
   return "bg-danger/20 text-danger border-danger/40";
 }
 
@@ -186,7 +186,7 @@ function DataQualityBadge({ label }: { label: string }) {
   const cls =
     label === "real" ? "bg-success/20 text-success border-success/40"
     : label === "partial" ? "bg-warning/20 text-warning border-warning/40"
-    : label === "basic_timing_estimate" ? "bg-blue-500/20 text-blue-400 border-blue-500/40"
+    : label === "basic_timing_estimate" ? "bg-primary/20 text-primary border-primary/40"
     : "bg-muted text-txt-secondary border-border/20";
   const labels: Record<string, string> = {
     real: "Real data",
@@ -870,7 +870,7 @@ function NewsHeatTab({ data }: { data: MarketTimingRead | undefined }) {
         <Card className="border-border/50">
           <CardContent className="pt-4">
             <div className="flex items-start gap-2 text-xs text-muted-foreground">
-              <Info className="h-3.5 w-3.5 shrink-0 mt-0.5 text-blue-400" />
+              <Info className="h-3.5 w-3.5 shrink-0 mt-0.5 text-primary" />
               <span>
                 Real-time news heat requires a connected news/economic calendar provider.
                 Timing estimates are still available — they're labelled as "basic timing estimate."
@@ -976,7 +976,7 @@ function BroadFlowTab({ data }: { data: MarketTimingRead | undefined }) {
         <Card className="border-border/50">
           <CardContent className="pt-4">
             <div className="flex items-start gap-2 text-xs text-muted-foreground">
-              <Info className="h-3.5 w-3.5 shrink-0 mt-0.5 text-blue-400" />
+              <Info className="h-3.5 w-3.5 shrink-0 mt-0.5 text-primary" />
               <span>
                 Institutional flow scores require cross-asset data (indices, bonds, commodities).
                 When unavailable, timing estimates are still provided from session and candle analysis.
@@ -1016,8 +1016,8 @@ type ReplayData = {
 function replayGradeColor(g: string): string {
   if (g === "A+" || g === "A") return "text-success";
   if (g === "B") return "text-primary";
-  if (g === "C") return "text-yellow-400";
-  if (g === "D") return "text-orange-400";
+  if (g === "C") return "text-warning";
+  if (g === "D") return "text-warning";
   return "text-danger";
 }
 function heatStateLabel(s: string): string {
@@ -1025,10 +1025,10 @@ function heatStateLabel(s: string): string {
 }
 function eventIcon(type: string) {
   if (type === "best_entry") return <Star className="h-3.5 w-3.5 text-success" />;
-  if (type === "heat_rising") return <Flame className="h-3.5 w-3.5 text-orange-400" />;
+  if (type === "heat_rising") return <Flame className="h-3.5 w-3.5 text-warning" />;
   if (type === "flow_confirm") return <TrendingUp className="h-3.5 w-3.5 text-primary" />;
   if (type === "fakeout") return <AlertTriangle className="h-3.5 w-3.5 text-warning" />;
-  if (type === "news_hit") return <Newspaper className="h-3.5 w-3.5 text-yellow-400" />;
+  if (type === "news_hit") return <Newspaper className="h-3.5 w-3.5 text-warning" />;
   if (type === "exhaustion") return <XCircle className="h-3.5 w-3.5 text-danger" />;
   return <Zap className="h-3.5 w-3.5 text-muted-foreground" />;
 }

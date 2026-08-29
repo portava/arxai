@@ -20,9 +20,9 @@ type Sniper = {
 const GRADE_COLORS: Record<string, string> = {
   "A+": "bg-success/10 text-success border-success/40",
   "A":  "bg-success/10 text-success border-success/40",
-  "B":  "bg-blue-500/10 text-blue-400 border-blue-500/40",
+  "B":  "bg-primary/10 text-primary border-primary/40",
   "C":  "bg-warning/10 text-warning border-warning/40",
-  "D":  "bg-orange-500/10 text-orange-400 border-orange-500/40",
+  "D":  "bg-warning/10 text-warning border-warning/40",
   "F":  "bg-danger/10 text-danger border-danger/40",
 };
 

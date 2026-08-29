@@ -62,7 +62,7 @@ export default function OnboardingPage() {
   return (
     <div className="space-y-4 px-1 sm:px-0 pb-8">
       <div className="flex flex-wrap items-center gap-2">
-        <Badge variant="outline" className="bg-blue-500/15 text-blue-700 border-blue-500/30"><Lock className="h-3 w-3 mr-1" />ADMIN-CONTROLLED MODE</Badge>
+        <Badge variant="outline" className="bg-primary/15 text-primary border-primary/30"><Lock className="h-3 w-3 mr-1" />ADMIN-CONTROLLED MODE</Badge>
       </div>
       <div>
         <h1 className="text-xl font-bold flex items-center gap-2"><GraduationCap className="h-5 w-5" />Guided Onboarding</h1>
@@ -119,7 +119,7 @@ export default function OnboardingPage() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <h4 className="font-semibold text-sm">{s.title}</h4>
                       {s.required && <Badge variant="outline" className="text-[10px]">REQUIRED</Badge>}
-                      {isCompleted && <Badge variant="outline" className="text-[10px] bg-green-500/15 text-green-700 border-green-500/30"><Check className="h-3 w-3 mr-0.5" />Done</Badge>}
+                      {isCompleted && <Badge variant="outline" className="text-[10px] bg-success/15 text-success border-success/30"><Check className="h-3 w-3 mr-0.5" />Done</Badge>}
                       {isSkipped && <Badge variant="outline" className="text-[10px]">Skipped</Badge>}
                       {isCurrent && !isCompleted && <Badge variant="outline" className="text-[10px] bg-primary/15">Current</Badge>}
                     </div>

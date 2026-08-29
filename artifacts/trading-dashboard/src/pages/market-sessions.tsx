@@ -13,7 +13,7 @@ type Clock = {
 };
 const COLOR: Record<string, string> = {
   QUIET: "bg-muted text-txt-secondary",
-  NORMAL: "bg-blue-500/20 text-blue-400",
+  NORMAL: "bg-primary/20 text-primary",
   ACTIVE: "bg-success/20 text-success",
   HIGH_VOLATILITY: "bg-warning/20 text-warning",
   AVOID: "bg-danger/20 text-danger",

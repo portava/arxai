@@ -47,7 +47,7 @@ export default function BrokerReconciliationPage() {
           <h1 className="text-2xl font-bold">Broker Reconciliation</h1>
           <p className="text-sm text-muted-foreground">Compare local OMS state vs MT5 bridge state.</p>
         </div>
-        <Badge className="bg-purple-500/20 text-purple-400">MT5 DEFERRED</Badge>
+        <Badge className="bg-premium/20 text-premium">MT5 DEFERRED</Badge>
       </div>
 
       {!r ? <p className="text-sm text-muted-foreground">Loading…</p> : (

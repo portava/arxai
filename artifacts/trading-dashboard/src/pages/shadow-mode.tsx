@@ -9,7 +9,7 @@ import { AccessCheckingShell, AccessDeniedCard, SHADOW_ADMIN_DENIED_NOTE, shadow
 type Status = { enabled: boolean; startedAt: string | null; totalsObserved: number; totalDecisions: number; tracking: number; wins: number; losses: number; breakevens: number; expired: number; rejected: number; waits: number };
 type Dec = { id: string; ts: string; symbol: string; strategy: string; marketCondition: string; action: string; entry: number; sl: number; tp: number; confidence: number; status: string; pnlR?: number; reason: string; reasonToAvoid: string; riskGovernor: { approved: boolean; level: string; hardBlocks: string[] } };
 
-const STATUS_COLOR: Record<string, string> = { SHADOW_WIN: "bg-success/20 text-success", SHADOW_LOSS: "bg-danger/20 text-danger", SHADOW_BREAKEVEN: "bg-muted text-txt-secondary", SHADOW_TRACKING_OUTCOME: "bg-blue-500/20 text-blue-400", SHADOW_REJECTED: "bg-warning/20 text-warning", SHADOW_WAIT: "bg-muted text-txt-secondary", SHADOW_EXPIRED: "bg-muted text-txt-secondary" };
+const STATUS_COLOR: Record<string, string> = { SHADOW_WIN: "bg-success/20 text-success", SHADOW_LOSS: "bg-danger/20 text-danger", SHADOW_BREAKEVEN: "bg-muted text-txt-secondary", SHADOW_TRACKING_OUTCOME: "bg-primary/20 text-primary", SHADOW_REJECTED: "bg-warning/20 text-warning", SHADOW_WAIT: "bg-muted text-txt-secondary", SHADOW_EXPIRED: "bg-muted text-txt-secondary" };
 
 async function api(path: string, init?: RequestInit) {
   return fetch(path, { headers: { "content-type": "application/json", ...(init?.headers ?? {}) }, ...init }).then((r) => r.json());

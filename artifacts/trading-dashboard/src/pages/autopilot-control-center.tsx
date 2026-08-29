@@ -33,11 +33,11 @@ type Lock = { code: string; tripped: boolean; reason?: string };
 
 const MODE_COLOR: Record<string, string> = {
   OFF: "bg-muted text-txt-secondary",
-  OBSERVE_ONLY: "bg-blue-500/20 text-blue-400",
+  OBSERVE_ONLY: "bg-primary/20 text-primary",
   AI_ASSIST: "bg-ruby/20 text-ruby",
   DEMO_AUTO_SIMULATOR: "bg-success/20 text-success",
   LIVE_INTENT_AUTO_TESTER: "bg-warning/20 text-warning",
-  FUTURE_MT5_LIVE_AUTO_LOCKED: "bg-purple-500/20 text-purple-400",
+  FUTURE_MT5_LIVE_AUTO_LOCKED: "bg-premium/20 text-premium",
 };
 
 async function api(path: string, init?: RequestInit) {

@@ -62,7 +62,7 @@ export default function EdgeDiscoveryPage() {
           {GROUPS.map((g) => (
             <button key={g} onClick={() => setGroupBy(g)}
               className={`rounded px-2 py-0.5 text-[11px] font-semibold transition ${
-                groupBy === g ? "bg-sky-600 text-white" : "bg-secondary text-txt-secondary hover:bg-muted"}`}>
+                groupBy === g ? "bg-ruby text-white" : "bg-secondary text-txt-secondary hover:bg-muted"}`}>
               {g}
             </button>
           ))}
@@ -92,7 +92,7 @@ export default function EdgeDiscoveryPage() {
       </section>
 
       <section>
-        <h2 className="mb-2 text-sm font-semibold text-red-200">⚠ Weakest areas</h2>
+        <h2 className="mb-2 text-sm font-semibold text-danger">⚠ Weakest areas</h2>
         <div className="grid grid-cols-1 gap-2 md:grid-cols-2 lg:grid-cols-3">
           {(weakest.data?.reports ?? []).slice(0, 6).map((r) => (
             <WeakestAreaCard key={r.id} report={r} />

@@ -180,9 +180,9 @@ export default function AssistantKnowledgeConsole() {
 
 function StatCard({ label, value, hint, bad, testId }: { label: string; value: string; hint?: string; bad?: boolean; testId?: string }) {
   return (
-    <div className={`rounded-md border p-3 ${bad ? "border-red-500/40 bg-red-500/5" : "border-border bg-card/40"}`} data-testid={testId}>
+    <div className={`rounded-md border p-3 ${bad ? "border-danger/40 bg-danger/5" : "border-border bg-card/40"}`} data-testid={testId}>
       <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
-      <div className={`text-lg font-semibold ${bad ? "text-red-400" : ""}`}>{value}</div>
+      <div className={`text-lg font-semibold ${bad ? "text-danger" : ""}`}>{value}</div>
       {hint && <div className="text-[10px] text-muted-foreground mt-0.5 line-clamp-3">{hint}</div>}
     </div>
   );

@@ -9,7 +9,7 @@ import { AccessCheckingShell, AccessDeniedCard, SHADOW_ADMIN_DENIED_NOTE, shadow
 type StratGate = { strategy: string; level: string; demotion: string | null; updatedAt: string; lastReason: string; eligibleFor: string | null; stats: { sample: number; tracked: number; winRate: number; avgR: number; drawdownR: number; rgViolations: number; expectancy: number } };
 type Resp = { strategies: StratGate[]; demotionSuggestions: Array<{ strategy: string; suggested: string | null; reasons: string[] }> };
 
-const LEVEL_COLOR: Record<string, string> = { TESTING: "bg-muted text-txt-secondary", WATCHLIST: "bg-blue-500/20 text-blue-400", PAPER_APPROVED: "bg-warning/20 text-warning", DEMO_APPROVED: "bg-success/20 text-success", LIVE_INTENT_APPROVED: "bg-premium/20 text-premium", FUTURE_MT5_LIVE_LOCKED: "bg-danger/20 text-danger" };
+const LEVEL_COLOR: Record<string, string> = { TESTING: "bg-muted text-txt-secondary", WATCHLIST: "bg-primary/20 text-primary", PAPER_APPROVED: "bg-warning/20 text-warning", DEMO_APPROVED: "bg-success/20 text-success", LIVE_INTENT_APPROVED: "bg-premium/20 text-premium", FUTURE_MT5_LIVE_LOCKED: "bg-danger/20 text-danger" };
 
 async function api(path: string, init?: RequestInit) { return fetch(path, { headers: { "content-type": "application/json", ...(init?.headers ?? {}) }, ...init }).then((r) => r.json()); }
 

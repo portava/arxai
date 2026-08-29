@@ -107,8 +107,8 @@ async function api<T>(method: string, path: string, body?: unknown): Promise<T> 
 
 function StatusBadge({ s }: { s: string }) {
   const map: Record<string, string> = {
-    planned: "bg-muted", open: "bg-blue-600",
-    closed: "bg-success/15", cancelled: "bg-muted", failed: "bg-red-700",
+    planned: "bg-muted", open: "bg-primary",
+    closed: "bg-success/15", cancelled: "bg-muted", failed: "bg-danger/15",
   };
   return <Badge className={map[s] ?? "bg-muted"}>{s}</Badge>;
 }
@@ -308,7 +308,7 @@ export default function MyPaperTradesPage() {
           </Alert>
           {riskStatus && (
             <div className="grid gap-3 md:grid-cols-4">
-              <Card><CardHeader className="pb-1"><CardDescription>Today P&amp;L</CardDescription><CardTitle className={riskStatus.today.pnl >= 0 ? "text-success" : "text-red-500"}>{riskStatus.today.pnl.toFixed(2)}</CardTitle></CardHeader><CardContent className="text-xs text-muted-foreground">{riskStatus.today.trades} trades · {riskStatus.today.openTrades} open</CardContent></Card>
+              <Card><CardHeader className="pb-1"><CardDescription>Today P&amp;L</CardDescription><CardTitle className={riskStatus.today.pnl >= 0 ? "text-success" : "text-danger"}>{riskStatus.today.pnl.toFixed(2)}</CardTitle></CardHeader><CardContent className="text-xs text-muted-foreground">{riskStatus.today.trades} trades · {riskStatus.today.openTrades} open</CardContent></Card>
               <Card><CardHeader className="pb-1"><CardDescription>Consecutive losses</CardDescription><CardTitle>{riskStatus.today.consecutiveLosses} / {riskStatus.settings.maxConsecutiveLosses}</CardTitle></CardHeader><CardContent className="text-xs text-muted-foreground">{riskStatus.settings.blockAfterConsecutiveLosses ? "Block after cap" : "Warn only"}</CardContent></Card>
               <Card><CardHeader className="pb-1"><CardDescription>Cooldown</CardDescription><CardTitle className={riskStatus.cooldown.active ? "text-warning" : ""}>{riskStatus.cooldown.active ? `${riskStatus.cooldown.minutesRemaining}m` : "—"}</CardTitle></CardHeader><CardContent className="text-xs text-muted-foreground">After loss: {riskStatus.settings.cooldownAfterLossMinutes}m</CardContent></Card>
               <Card><CardHeader className="pb-1"><CardDescription>Live contract</CardDescription><CardTitle className="text-sm flex items-center gap-1"><Lock className="h-3 w-3"/>locked</CardTitle></CardHeader><CardContent className="text-xs text-muted-foreground">demo_only · no broker writes</CardContent></Card>
@@ -366,7 +366,7 @@ export default function MyPaperTradesPage() {
               {riskEvents.length === 0 ? <p className="text-sm text-muted-foreground">No risk events yet — your governor is quiet.</p>
                 : riskEvents.slice(0, 25).map((e) => (
                 <div key={e.id} className="flex items-start gap-2 text-sm border-b pb-2">
-                  {e.severity === "critical" ? <Ban className="h-4 w-4 text-red-500 mt-0.5"/>
+                  {e.severity === "critical" ? <Ban className="h-4 w-4 text-danger mt-0.5"/>
                     : e.severity === "warning" ? <AlertTriangle className="h-4 w-4 text-warning mt-0.5"/>
                     : <CheckCircle2 className="h-4 w-4 text-success mt-0.5"/>}
                   <div className="flex-1">
@@ -421,7 +421,7 @@ export default function MyPaperTradesPage() {
                 <div><span className="text-muted-foreground">Risk:</span> {t.riskAmount ?? "—"}</div>
                 {t.status === "closed" && (<>
                   <div><span className="text-muted-foreground">Exit:</span> {t.exitPrice}</div>
-                  <div className={t.pnl != null && t.pnl >= 0 ? "text-success" : "text-red-500"}>
+                  <div className={t.pnl != null && t.pnl >= 0 ? "text-success" : "text-danger"}>
                     <span className="text-muted-foreground">PnL:</span> {t.pnl}
                   </div>
                 </>)}
@@ -439,10 +439,10 @@ export default function MyPaperTradesPage() {
                       <Badge variant="outline" className="text-xs">Educational only</Badge>
                     </div>
                     {reviews[t.id].strengths.length > 0 && <div><span className="text-success font-medium">What went well:</span> <span className="text-muted-foreground">{reviews[t.id].strengths.join(" · ")}</span></div>}
-                    {reviews[t.id].weaknesses.length > 0 && <div><span className="text-red-400 font-medium">What to fix:</span> <span className="text-muted-foreground">{reviews[t.id].weaknesses.join(" · ")}</span></div>}
+                    {reviews[t.id].weaknesses.length > 0 && <div><span className="text-danger font-medium">What to fix:</span> <span className="text-muted-foreground">{reviews[t.id].weaknesses.join(" · ")}</span></div>}
                     {reviews[t.id].mistakeTags.length > 0 && <div className="flex gap-1 flex-wrap"><span className="text-muted-foreground">Mistake tags:</span>{reviews[t.id].mistakeTags.map((m) => <Badge key={m} variant="destructive" className="text-xs">{m}</Badge>)}</div>}
                     {reviews[t.id].improvementPlan.length > 0 && <ul className="list-disc list-inside text-muted-foreground">{reviews[t.id].improvementPlan.map((p, i) => <li key={i}>{p}</li>)}</ul>}
-                    {reviews[t.id].nextTradeFocus && <div><span className="text-blue-400 font-medium">Next trade focus:</span> {reviews[t.id].nextTradeFocus}</div>}
+                    {reviews[t.id].nextTradeFocus && <div><span className="text-primary font-medium">Next trade focus:</span> {reviews[t.id].nextTradeFocus}</div>}
                   </div>
                 )}
               </CardContent>
@@ -480,9 +480,9 @@ export default function MyPaperTradesPage() {
           {summary && (
             <Card><CardContent className="p-4 grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
               <div><div className="text-muted-foreground">Trades</div><div className="text-xl font-semibold">{summary.totalTrades}</div></div>
-              <div><div className="text-muted-foreground">P/L</div><div className={`text-xl font-semibold ${summary.totalPnl >= 0 ? "text-success" : "text-red-500"}`}>{summary.totalPnl}</div></div>
+              <div><div className="text-muted-foreground">P/L</div><div className={`text-xl font-semibold ${summary.totalPnl >= 0 ? "text-success" : "text-danger"}`}>{summary.totalPnl}</div></div>
               <div><div className="text-muted-foreground">Wins</div><div className="text-xl font-semibold text-success">{summary.wins}</div></div>
-              <div><div className="text-muted-foreground">Losses</div><div className="text-xl font-semibold text-red-500">{summary.losses}</div></div>
+              <div><div className="text-muted-foreground">Losses</div><div className="text-xl font-semibold text-danger">{summary.losses}</div></div>
               <div><div className="text-muted-foreground">Win rate</div><div className="text-xl font-semibold">{summary.winRate}%</div></div>
             </CardContent></Card>
           )}
@@ -495,12 +495,12 @@ export default function MyPaperTradesPage() {
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
               {days.map((d) => {
                 const tone = d.totalPnl > 0 ? "border-success/60 bg-success/5"
-                  : d.totalPnl < 0 ? "border-red-500/60 bg-red-500/5" : "border-border/40";
+                  : d.totalPnl < 0 ? "border-danger/60 bg-danger/5" : "border-border/40";
                 return (
                   <Card key={d.date} className={`border ${tone}`}>
                     <CardContent className="p-3">
                       <div className="text-xs text-muted-foreground">{d.date}</div>
-                      <div className={`text-lg font-semibold ${d.totalPnl >= 0 ? "text-success" : "text-red-500"}`}>{d.totalPnl}</div>
+                      <div className={`text-lg font-semibold ${d.totalPnl >= 0 ? "text-success" : "text-danger"}`}>{d.totalPnl}</div>
                       <div className="text-xs">{d.wins}W / {d.losses}L · {d.tradesCount} trades</div>
                     </CardContent>
                   </Card>
@@ -521,8 +521,8 @@ export default function MyPaperTradesPage() {
               <Card><CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><Sparkles className="h-4 w-4"/>Performance Insights</CardTitle><CardDescription>Across {insights.sampleSize} trades · educational only</CardDescription></CardHeader>
                 <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                   <div><div className="text-muted-foreground">Avg win</div><div className="text-success font-semibold">{insights.averages.avgWin}</div></div>
-                  <div><div className="text-muted-foreground">Avg loss</div><div className="text-red-500 font-semibold">{insights.averages.avgLoss}</div></div>
-                  <div><div className="text-muted-foreground">Expectancy</div><div className={`font-semibold ${insights.averages.expectancy >= 0 ? "text-success" : "text-red-500"}`}>{insights.averages.expectancy}</div></div>
+                  <div><div className="text-muted-foreground">Avg loss</div><div className="text-danger font-semibold">{insights.averages.avgLoss}</div></div>
+                  <div><div className="text-muted-foreground">Expectancy</div><div className={`font-semibold ${insights.averages.expectancy >= 0 ? "text-success" : "text-danger"}`}>{insights.averages.expectancy}</div></div>
                   <div><div className="text-muted-foreground">Best day</div><div>{insights.bestDay ? `${insights.bestDay.date} (${insights.bestDay.pnl})` : "—"}</div></div>
                 </CardContent>
               </Card>
@@ -565,7 +565,7 @@ export default function MyPaperTradesPage() {
               <Card><CardHeader><CardTitle className="text-base flex items-center gap-2"><GraduationCap className="h-4 w-4"/>{coaching.traderProfile}</CardTitle><CardDescription>Based on {coaching.sampleSize} of your trades · educational guidance only</CardDescription></CardHeader>
                 <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
                   <div><div className="text-success font-medium mb-1">Top strengths</div><ul className="list-disc list-inside text-muted-foreground">{coaching.topStrengths.length ? coaching.topStrengths.map((s) => <li key={s}>{s}</li>) : <li>Build a track record first</li>}</ul></div>
-                  <div><div className="text-red-400 font-medium mb-1">Top weaknesses</div><ul className="list-disc list-inside text-muted-foreground">{coaching.topWeaknesses.length ? coaching.topWeaknesses.map((s) => <li key={s}>{s}</li>) : <li>None detected yet</li>}</ul></div>
+                  <div><div className="text-danger font-medium mb-1">Top weaknesses</div><ul className="list-disc list-inside text-muted-foreground">{coaching.topWeaknesses.length ? coaching.topWeaknesses.map((s) => <li key={s}>{s}</li>) : <li>None detected yet</li>}</ul></div>
                   <div><div className="text-warning font-medium mb-1">Top mistakes to fix</div><ul className="list-disc list-inside text-muted-foreground">{coaching.topMistakes.length ? coaching.topMistakes.map((s) => <li key={s}>{s}</li>) : <li>Clean record so far</li>}</ul></div>
                 </CardContent>
               </Card>
@@ -611,7 +611,7 @@ export default function MyPaperTradesPage() {
                 <div><span className="text-muted-foreground">Entry:</span> {p.entryModel || "—"}</div>
                 <div><span className="text-muted-foreground">Exit:</span> {p.exitModel || "—"}</div>
                 <div><span className="text-muted-foreground">Risk:</span> {p.riskModel || "—"}</div>
-                {p.avoidRules.length > 0 && <div><span className="text-red-400">Avoid:</span> {p.avoidRules.join(" · ")}</div>}
+                {p.avoidRules.length > 0 && <div><span className="text-danger">Avoid:</span> {p.avoidRules.join(" · ")}</div>}
                 {p.notice && <Alert><AlertDescription className="text-xs">{p.notice}</AlertDescription></Alert>}
               </CardContent>
             </Card>
@@ -649,7 +649,7 @@ export default function MyPaperTradesPage() {
                   <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2">
                     {pcResult.decision === "pass" && <><CheckCircle2 className="h-4 w-4 text-success"/><span className="text-success">PASS</span></>}
                     {pcResult.decision === "warning" && <><AlertTriangle className="h-4 w-4 text-warning"/><span className="text-warning">WARNING</span></>}
-                    {pcResult.decision === "block" && <><Ban className="h-4 w-4 text-red-500"/><span className="text-red-500">BLOCK (advisory, demo-only)</span></>}
+                    {pcResult.decision === "block" && <><Ban className="h-4 w-4 text-danger"/><span className="text-danger">BLOCK (advisory, demo-only)</span></>}
                     <Badge variant="outline">Score {pcResult.score}/100</Badge>
                     <Badge variant="outline" className="text-xs">{pcResult.passedRequiredCount}/{pcResult.passedRequiredCount + pcResult.failedRequiredCount} required passed</Badge>
                   </CardTitle></CardHeader>
@@ -658,8 +658,8 @@ export default function MyPaperTradesPage() {
                     <div className="space-y-1">
                       {pcResult.checklistResult.map((c, i) => (
                         <div key={i} className="flex items-start gap-2">
-                          {c.passed ? <CheckCircle2 className="h-4 w-4 text-success mt-0.5"/> : <Ban className="h-4 w-4 text-red-500 mt-0.5"/>}
-                          <span className={c.passed ? "" : "text-red-400"}>{c.rule}</span>
+                          {c.passed ? <CheckCircle2 className="h-4 w-4 text-success mt-0.5"/> : <Ban className="h-4 w-4 text-danger mt-0.5"/>}
+                          <span className={c.passed ? "" : "text-danger"}>{c.rule}</span>
                           <Badge variant="outline" className="text-xs ml-auto">{c.severity}</Badge>
                         </div>
                       ))}

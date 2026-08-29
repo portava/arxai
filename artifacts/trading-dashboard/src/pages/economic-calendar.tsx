@@ -110,7 +110,7 @@ function openRubyLiveChat() {
 const IMPACT_TONE: Record<ImpactLevel, { text: string; dot: string; chip: string; label: string }> = {
   CRITICAL: { text: "text-[#E11D48]", dot: "bg-[#E11D48]", chip: "border-[#E11D48]/40 bg-[#E11D48]/10 text-[#E11D48]", label: "Critical" },
   HIGH:     { text: "text-warning",   dot: "bg-warning",   chip: "border-warning/40 bg-warning/10 text-warning",       label: "High" },
-  MEDIUM:   { text: "text-yellow-400",dot: "bg-yellow-400",chip: "border-yellow-400/40 bg-yellow-400/10 text-yellow-400", label: "Medium" },
+  MEDIUM:   { text: "text-warning",dot: "bg-warning",chip: "border-warning/40 bg-warning/10 text-warning", label: "Medium" },
   LOW:      { text: "text-primary",   dot: "bg-primary",   chip: "border-primary/40 bg-primary/10 text-primary",       label: "Low" },
 };
 const IMPACT_RANK: Record<ImpactLevel, number> = { LOW: 1, MEDIUM: 2, HIGH: 3, CRITICAL: 4 };
@@ -171,7 +171,7 @@ function EventTimingHeat({ affectedSymbols }: { affectedSymbols: string[] }) {
   const permColor: Record<string, string> = {
     GO: "border-success/40 bg-success/10 text-success",
     WAIT_FOR_ENTRY: "border-warning/40 bg-warning/10 text-warning",
-    WAIT_NEWS: "border-orange-500/40 bg-orange-500/10 text-orange-400",
+    WAIT_NEWS: "border-warning/40 bg-warning/10 text-warning",
     NO_TRADE: "border-danger/40 bg-danger/10 text-danger",
     STAND_DOWN: "border-danger/50 bg-danger/15 text-danger",
   };
@@ -342,7 +342,7 @@ export default function EconomicCalendarPage() {
     const next = upcoming[0] ?? null;
     const maxRank = dayEvents.reduce((m, e) => Math.max(m, IMPACT_RANK[e.impactLevel]), 0);
     const overall = maxRank >= 4 ? "Critical" : maxRank === 3 ? "High" : maxRank === 2 ? "Medium" : maxRank === 1 ? "Low" : "Low";
-    const overallTone = maxRank >= 4 ? "text-[#E11D48]" : maxRank === 3 ? "text-warning" : maxRank === 2 ? "text-yellow-400" : "text-primary";
+    const overallTone = maxRank >= 4 ? "text-[#E11D48]" : maxRank === 3 ? "text-warning" : maxRank === 2 ? "text-warning" : "text-primary";
     const affected = next?.affectedSymbols ?? [];
     return { count: dayEvents.length, critical, high, next, overall, overallTone, affected };
   }, [allEvents]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -472,7 +472,7 @@ export default function EconomicCalendarPage() {
                   <span className={cn("grid h-12 w-12 place-items-center rounded-full ring-1",
                     summary.overall === "Critical" ? "bg-[#E11D48]/15 text-[#E11D48] ring-[#E11D48]/30"
                     : summary.overall === "High" ? "bg-warning/15 text-warning ring-warning/30"
-                    : summary.overall === "Medium" ? "bg-yellow-400/15 text-yellow-400 ring-yellow-400/30"
+                    : summary.overall === "Medium" ? "bg-warning/15 text-warning ring-warning/30"
                     : "bg-primary/15 text-primary ring-primary/30")}>
                     <ShieldAlert className="h-6 w-6" />
                   </span>
@@ -625,7 +625,7 @@ export default function EconomicCalendarPage() {
                           const phaseColor: Record<string, string> = {
                             PRE_EVENT: "border-warning/40 bg-warning/10 text-warning",
                             AT_EVENT: "border-danger/40 bg-danger/10 text-danger",
-                            POST_EVENT: "border-orange-500/40 bg-orange-500/10 text-orange-400",
+                            POST_EVENT: "border-warning/40 bg-warning/10 text-warning",
                             SETTLED: "border-success/40 bg-success/10 text-success",
                           };
                           if (!phase && !hasSurprise) return null;
