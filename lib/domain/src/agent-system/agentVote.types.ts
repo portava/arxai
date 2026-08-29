@@ -142,6 +142,14 @@ export interface CouncilRunArtifact {
   redTeam: RedTeamReport;
   blueTeam: BlueTeamReport;
   disagreementScore01: number;
+  /** Evidence-diversity discount view of the disagreement score. Present when
+   *  the caller supplied historical diversity weights; the discount can only
+   *  RAISE disagreement (add caution), never lower it. */
+  diversity?: {
+    applied: boolean;
+    unadjustedScore01: number;
+    clusters: string[][];
+  };
   conflictSeverity: ConflictSeverityResult;
   decision: CouncilDecision;
   blockerHierarchy: RankedBlocker[];

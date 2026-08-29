@@ -13,7 +13,10 @@ import {
   computeFreshness,
   computeMasterScore,
   computeSpeedValidity,
+  computeUncertaintyChannels,
+  computeWaitAdvisory,
   detectConflictsAndCohesion,
+  estimateChannelResolutionRates,
   evaluateAaciHardGate,
   isSignalExpired,
   resolveRecommendedAction,
@@ -24,13 +27,23 @@ import {
   type AaciRecommendedAction,
   type AaciSharedTruthSnapshot,
   type AaciStrategyKind,
+  type AaciUncertaintyEvidence,
 } from "@workspace/domain/aaci";
 import { randomUUID } from "node:crypto";
 import { db, aaciDecisions } from "@workspace/db";
 import type { AaciTrustEntityType } from "@workspace/db";
 import { logger } from "../logger.js";
+import { getQuote } from "../marketDataLayer.js";
 import { getLatestAaciLatencyRecords } from "./latencyMonitor.js";
-import { getLearnedTrustForDecision } from "./learning/trustStore.js";
+import {
+  getLearnedTrustForDecision,
+  getUncertaintySampleEvidence,
+} from "./learning/trustStore.js";
+import { recordSpreadSample, getSpreadRelHistory } from "./spreadHistoryRecorder.js";
+import {
+  recordUncertaintyObservation,
+  getResolutionPairs,
+} from "./uncertaintyResolutionRecorder.js";
 
 export interface BuildAaciDecisionInput {
   snapshot: AaciSharedTruthSnapshot;
@@ -50,6 +63,34 @@ export interface BuildAaciDecisionInput {
   // for sensitive flows; it never gates plain advisory reads). The downstream
   // 16-gate pipeline + per-user approval remain authoritative either way.
   securityHandshakePass?: boolean;
+}
+
+// Decisions where "wait one more bar" is a meaningful alternative — the
+// gate-blocked / reconcile / admin outcomes are not wait-vs-act questions.
+const WAIT_CAPABLE_ACTIONS = new Set<AaciRecommendedAction>([
+  "ALLOW",
+  "ALLOW_REDUCED_SIZE",
+  "PREPARE_ONLY",
+  "WAIT_FOR_CONFIRMATION",
+  "WATCH_ONLY",
+]);
+
+// One bar's length for the decision's timeframe. Unknown timeframes use the
+// one-minute floor — a modeling constant (the shortest bar the advisory
+// reasons about), not a fabricated market fact; the journal records which
+// timeframe the wait was computed for.
+const BAR_MS: Record<string, number> = {
+  M1: 60_000,
+  M5: 5 * 60_000,
+  M15: 15 * 60_000,
+  M30: 30 * 60_000,
+  H1: 60 * 60_000,
+  H4: 4 * 60 * 60_000,
+  D1: 24 * 60 * 60_000,
+};
+function barLengthMs(timeframe: string | undefined): number {
+  if (!timeframe) return 60_000;
+  return BAR_MS[timeframe.toUpperCase()] ?? 60_000;
 }
 
 // Compose the binary HARD_GATE factors from the snapshot. Genuine safety factors
@@ -173,6 +214,34 @@ export async function buildAaciDecision(input: BuildAaciDecisionInput): Promise<
     }));
   }
 
+  // ── Uncertainty-channel evidence (FAIL-CLOSED). Sample counts + learning
+  // age come from the trust store; spread history from the in-process quote
+  // recorder. Any unreadable input stays null → that channel takes its FULL
+  // penalty in UNCERTAINTY_CONFIDENCE (adds caution, never confidence).
+  const sampleEvidence = await getUncertaintySampleEvidence(
+    learnedScopeKeys.map((k) => ({ ...k, userId: 0 })),
+  );
+  if (input.symbol) {
+    // Feed the recorder with this cycle's quote (refused when the quote is
+    // degenerate — bad quotes never become evidence).
+    try {
+      const q = getQuote(input.symbol);
+      if (!q.isStale) recordSpreadSample(input.symbol, q.spread, q.mid, now);
+    } catch {
+      // A failed quote read is simply no new sample.
+    }
+  }
+  const uncertaintyEvidence: AaciUncertaintyEvidence = {
+    outcomeSampleCount: sampleEvidence.minEvidenceCount,
+    spreadRelHistory: input.symbol
+      ? getSpreadRelHistory(input.symbol, { nowMs: now })
+      : null,
+    learningAgeMs:
+      sampleEvidence.newestOutcomeAtMs == null
+        ? null
+        : Math.max(0, now - sampleEvidence.newestOutcomeAtMs),
+  };
+
   const breakdown = buildScoreBreakdown({
     snapshot,
     freshness,
@@ -181,6 +250,7 @@ export async function buildAaciDecision(input: BuildAaciDecisionInput): Promise<
     speedValidity,
     learnedTrustScore: learned.learnedTrustScore,
     driftScore: learned.driftScore,
+    uncertaintyEvidence,
   });
 
   const finalScore = computeMasterScore(breakdown, hardGate.value);
@@ -193,6 +263,30 @@ export async function buildAaciDecision(input: BuildAaciDecisionInput): Promise<
     speedState: edge.speedState,
     signalExpired: isSignalExpired(edge.speedState),
   });
+
+  // ── Value-of-information (JOURNAL-ONLY). Record this cycle's uncertainty
+  // decomposition (the recorder is the evidence base for resolution rates),
+  // then, for WAIT-capable decisions, compute the wait-vs-act numbers. The
+  // advisory NEVER changes recommendedAction or any gate. Without enough
+  // recorded history the advisory is an honest INSUFFICIENT_HISTORY.
+  let voiAdvisory: Record<string, unknown> | undefined;
+  if (input.symbol) {
+    try {
+      const channels = computeUncertaintyChannels(snapshot, cohesion, uncertaintyEvidence);
+      recordUncertaintyObservation(userId, input.symbol, channels, now);
+      if (WAIT_CAPABLE_ACTIONS.has(recommendedAction)) {
+        const advisory = computeWaitAdvisory({
+          channels,
+          resolutionRates: estimateChannelResolutionRates(getResolutionPairs()),
+          halfLifeMs: edge.halfLifeMs,
+          waitMs: barLengthMs(input.timeframe),
+        });
+        voiAdvisory = { ...advisory, timeframe: input.timeframe ?? null };
+      }
+    } catch (err) {
+      logger.warn({ err }, "aaci: VOI advisory computation failed (journal-only, non-fatal)");
+    }
+  }
 
   const handshakes = buildHandshakes(snapshot);
   const staleInputs = freshness.staleSources;
@@ -236,6 +330,7 @@ export async function buildAaciDecision(input: BuildAaciDecisionInput): Promise<
     requiredFollowUps: buildFollowUps(recommendedAction, cohesion.positionMismatch),
     handshakes,
     createdAuditEvent: false,
+    ...(voiAdvisory ? { voiAdvisory } : {}),
   };
 
   if (input.persist !== false) {

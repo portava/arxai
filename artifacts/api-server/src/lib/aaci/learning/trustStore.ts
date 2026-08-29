@@ -99,6 +99,36 @@ export async function getLearnedTrustForDecision(
   }
 }
 
+/**
+ * Uncertainty-channel evidence for a decision's trust scopes:
+ *   - minEvidenceCount: reconciled outcomes backing the MOST data-poor scope
+ *     (the honest bound on sample history);
+ *   - newestOutcomeAtMs: the most recent learning outcome across the scopes.
+ * FAIL-CLOSED: no scopes, no rows, or any read error → nulls, which upstream
+ * turns into the channels' FULL penalties, never silent confidence.
+ */
+export async function getUncertaintySampleEvidence(
+  keys: TrustScopeKey[],
+): Promise<{ minEvidenceCount: number | null; newestOutcomeAtMs: number | null }> {
+  if (keys.length === 0) return { minEvidenceCount: null, newestOutcomeAtMs: null };
+  try {
+    const rows = await Promise.all(keys.map((k) => getTrustRow(db, k)));
+    let minEvidence: number | null = null;
+    let newestOutcomeAtMs: number | null = null;
+    for (const row of rows) {
+      const evidence = row?.evidenceCount ?? 0; // never-observed scope = 0 samples
+      minEvidence = minEvidence == null ? evidence : Math.min(minEvidence, evidence);
+      const at = row?.lastOutcomeAt?.getTime();
+      if (at != null && Number.isFinite(at)) {
+        newestOutcomeAtMs = newestOutcomeAtMs == null ? at : Math.max(newestOutcomeAtMs, at);
+      }
+    }
+    return { minEvidenceCount: minEvidence, newestOutcomeAtMs };
+  } catch {
+    return { minEvidenceCount: null, newestOutcomeAtMs: null };
+  }
+}
+
 /** Insert a neutral-prior row if none exists, returning the current row. */
 async function ensureTrustRow(tx: Tx, key: TrustScopeKey): Promise<AaciTrustScoreRow> {
   const existing = await getTrustRow(tx, key);

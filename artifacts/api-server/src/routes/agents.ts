@@ -27,6 +27,7 @@ import {
   type AgentCouncilVote,
 } from "@workspace/domain/agent-system";
 import { shadowCapture } from "../lib/auditVault";
+import { loadCouncilDiversityWeights } from "../lib/agentStanceHistory";
 
 const router: IRouter = Router();
 
@@ -211,8 +212,13 @@ router.post("/agents/council/evaluate", async (req: Request, res: Response) => {
   const decisionId = `cd_${now.getTime()}_${randomBytes(4).toString("hex")}`;
   const snap = buildSnapshot(body, now);
 
+  // Evidence-diversity discount from PERSISTED per-agent vote history.
+  // Fail-open to null = classic unadjusted score; the discount itself can only
+  // RAISE the disagreement score (adds caution) — enforced in the domain.
+  const diversityWeights = await loadCouncilDiversityWeights();
+
   let artifact;
-  try { artifact = runCouncil(snap, decisionId); }
+  try { artifact = runCouncil(snap, decisionId, { diversityWeights }); }
   catch (err) {
     req.log.error({ err: String(err) }, "council pipeline threw");
     res.status(500).json({ error: "council pipeline failed", detail: String(err) });

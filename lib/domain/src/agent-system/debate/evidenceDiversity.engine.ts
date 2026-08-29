@@ -1,0 +1,231 @@
+// evidenceDiversity — diversity-adjusted disagreement scoring. Pure.
+//
+// PROBLEM: two agents that always vote identically are ONE source of evidence
+// wearing two hats. Unweighted, a cluster of correlated agents fabricates
+// consensus (drowning a genuinely independent dissenter) — false certainty.
+//
+// FIX: from PERSISTED historical per-agent stance records, measure pairwise
+// agreement; agents whose observed agreement clears a high threshold (with
+// enough shared cases) form a correlation cluster, and each member's
+// contribution is DISCOUNTED to 1/clusterSize — the cluster's combined weight
+// collapses toward one vote. Discounting is one-directional:
+//
+//   * a multiplier is NEVER above 1 — no agent's weight ever increases;
+//   * the adjusted disagreement score is floored at the unadjusted score —
+//     the diversity view can only ADD disagreement (caution), never hide it;
+//   * with no history (or independent agents) nothing changes — absence of
+//     evidence of correlation is not treated as correlation.
+//
+// Pure & deterministic. No IO. Callers supply the persisted records.
+
+import { disagreementScore, type DisagreementBreakdown } from "./disagreementScore.engine";
+import type { AgentVerdict, DirectionVerdict } from "../agentSystem.types";
+
+/** One persisted historical stance of one agent on one shared case. */
+export interface AgentStanceObservation {
+  /** Shared decision/case id (two agents on the same caseId are comparable). */
+  caseId: string;
+  agentId: string;
+  /** The agent's recorded stance for that case (vote token, direction, …). */
+  stance: string;
+}
+
+export interface PairwiseAgreement {
+  agentA: string;
+  agentB: string;
+  sharedCases: number;
+  /** Fraction of shared cases with an identical stance, 0..1. */
+  agreementRate: number;
+}
+
+export const DIVERSITY_DEFAULT_CORRELATION_THRESHOLD = 0.9;
+export const DIVERSITY_DEFAULT_MIN_SHARED_CASES = 10;
+
+/** Pairwise agreement over all agent pairs that share ≥1 case. */
+export function computePairwiseAgreements(
+  observations: AgentStanceObservation[],
+): PairwiseAgreement[] {
+  // caseId → agentId → stance (last write wins; duplicates are rare and equal).
+  const byCase = new Map<string, Map<string, string>>();
+  for (const o of observations) {
+    if (!o.caseId || !o.agentId) continue;
+    let m = byCase.get(o.caseId);
+    if (!m) {
+      m = new Map();
+      byCase.set(o.caseId, m);
+    }
+    m.set(o.agentId, o.stance);
+  }
+
+  const pairStats = new Map<string, { a: string; b: string; shared: number; agreed: number }>();
+  for (const stances of byCase.values()) {
+    const agents = Array.from(stances.keys()).sort();
+    for (let i = 0; i < agents.length; i++) {
+      for (let j = i + 1; j < agents.length; j++) {
+        const a = agents[i]!;
+        const b = agents[j]!;
+        const key = `${a}\u0000${b}`;
+        let s = pairStats.get(key);
+        if (!s) {
+          s = { a, b, shared: 0, agreed: 0 };
+          pairStats.set(key, s);
+        }
+        s.shared += 1;
+        if (stances.get(a) === stances.get(b)) s.agreed += 1;
+      }
+    }
+  }
+
+  return Array.from(pairStats.values()).map((s) => ({
+    agentA: s.a,
+    agentB: s.b,
+    sharedCases: s.shared,
+    agreementRate: s.shared > 0 ? s.agreed / s.shared : 0,
+  }));
+}
+
+export interface DiversityWeights {
+  /** Per-agent weight multiplier, ALWAYS in (0, 1]. Absent agent = 1. */
+  multipliers: Record<string, number>;
+  /** Correlation clusters found (size ≥ 2 only). */
+  clusters: string[][];
+  reasons: string[];
+}
+
+export interface DeriveDiversityWeightsOptions {
+  /** Agreement rate at/above which a pair counts as correlated. */
+  correlationThreshold?: number; // default 0.9
+  /** Minimum shared cases before a pair's agreement is trusted at all. */
+  minSharedCases?: number; // default 10
+}
+
+/**
+ * Cluster correlated agents (union-find over qualifying pairs) and derive the
+ * per-agent discount: member of a size-n cluster → multiplier 1/n. Multipliers
+ * never exceed 1; agents without proven correlation keep 1 (unaffected).
+ */
+export function deriveDiversityWeights(
+  agreements: PairwiseAgreement[],
+  opts: DeriveDiversityWeightsOptions = {},
+): DiversityWeights {
+  const threshold = opts.correlationThreshold ?? DIVERSITY_DEFAULT_CORRELATION_THRESHOLD;
+  const minShared = opts.minSharedCases ?? DIVERSITY_DEFAULT_MIN_SHARED_CASES;
+
+  const parent = new Map<string, string>();
+  const find = (x: string): string => {
+    let r = x;
+    while (parent.get(r) !== undefined && parent.get(r) !== r) r = parent.get(r)!;
+    parent.set(x, r);
+    return r;
+  };
+  const union = (a: string, b: string): void => {
+    if (!parent.has(a)) parent.set(a, a);
+    if (!parent.has(b)) parent.set(b, b);
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent.set(ra, rb);
+  };
+
+  const reasons: string[] = [];
+  for (const p of agreements) {
+    if (p.sharedCases >= minShared && p.agreementRate >= threshold) {
+      union(p.agentA, p.agentB);
+      reasons.push(
+        `${p.agentA}~${p.agentB}: agreement ${(p.agreementRate * 100).toFixed(0)}% over ${p.sharedCases} shared cases ≥ ${(threshold * 100).toFixed(0)}%`,
+      );
+    }
+  }
+
+  const members = new Map<string, string[]>();
+  for (const agent of parent.keys()) {
+    const root = find(agent);
+    const list = members.get(root) ?? [];
+    list.push(agent);
+    members.set(root, list);
+  }
+
+  const multipliers: Record<string, number> = {};
+  const clusters: string[][] = [];
+  for (const list of members.values()) {
+    if (list.length < 2) continue;
+    const sorted = [...list].sort();
+    clusters.push(sorted);
+    for (const agent of sorted) multipliers[agent] = 1 / sorted.length;
+  }
+
+  return { multipliers, clusters, reasons };
+}
+
+export interface DiversityAdjustedDisagreement extends DisagreementBreakdown {
+  unadjustedScore01: number;
+  /** True when a discount actually changed the directional computation. */
+  adjustmentApplied: boolean;
+}
+
+function multiplierFor(weights: DiversityWeights | null | undefined, agentId: string): number {
+  const m = weights?.multipliers[agentId];
+  if (typeof m !== "number" || !Number.isFinite(m)) return 1;
+  // A multiplier may only DISCOUNT. Anything ≥1 is clamped to 1; anything ≤0
+  // is treated as the smallest honest positive discount.
+  return Math.min(1, Math.max(m, 1e-6));
+}
+
+/**
+ * disagreementScore with correlated agents' convictions discounted in the
+ * directional split. SAFETY: the returned score01 is the MAX of the adjusted
+ * and unadjusted scores — the diversity view can only ADD disagreement
+ * (which downstream can only escalate severity), never suppress it.
+ */
+export function diversityAdjustedDisagreementScore(
+  verdicts: AgentVerdict[],
+  weights: DiversityWeights | null | undefined,
+): DiversityAdjustedDisagreement {
+  const unadjusted = disagreementScore(verdicts);
+  const hasDiscount =
+    weights != null && Object.values(weights.multipliers).some((m) => m < 1);
+  if (!hasDiscount) {
+    return { ...unadjusted, unadjustedScore01: unadjusted.score01, adjustmentApplied: false };
+  }
+
+  const dir = verdicts.filter(
+    (v): v is DirectionVerdict => v.category === "DIRECTION" && v.direction !== "ABSTAIN",
+  );
+  let directional01 = 0;
+  const reasons = [...unadjusted.reasons];
+  if (dir.length >= 2) {
+    const buy = dir
+      .filter((v) => v.direction === "BUY")
+      .reduce((s, v) => s + v.conviction * multiplierFor(weights, v.agentId), 0);
+    const sell = dir
+      .filter((v) => v.direction === "SELL")
+      .reduce((s, v) => s + v.conviction * multiplierFor(weights, v.agentId), 0);
+    const total = buy + sell;
+    if (total > 0) directional01 = (2 * Math.min(buy, sell)) / total;
+    reasons.push(
+      `diversity-adjusted directional: ${buy.toFixed(0)} BUY-conv vs ${sell.toFixed(0)} SELL-conv (clusters: ${weights!.clusters.map((c) => c.join("+")).join(", ") || "none"})`,
+    );
+  }
+
+  const adjustedScore01 = Math.max(
+    0,
+    Math.min(1, 0.6 * directional01 + 0.3 * unadjusted.quality01 + 0.1 * unadjusted.block01),
+  );
+  // Floor at the unadjusted score: discounting may only ADD caution.
+  const score01 = Math.max(adjustedScore01, unadjusted.score01);
+  const adjustmentApplied = score01 !== unadjusted.score01;
+  if (adjustmentApplied) {
+    reasons.push(
+      `diversity discount raised disagreement ${unadjusted.score01.toFixed(2)} → ${score01.toFixed(2)} (correlated agents collapse toward one vote)`,
+    );
+  }
+
+  return {
+    score01,
+    directional01: Math.max(directional01, unadjusted.directional01),
+    quality01: unadjusted.quality01,
+    block01: unadjusted.block01,
+    reasons,
+    unadjustedScore01: unadjusted.score01,
+    adjustmentApplied,
+  };
+}

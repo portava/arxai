@@ -19,6 +19,7 @@ import { startEconomicReconciliationWorker } from "./lib/accounting/economicReco
 import { startIntelligenceRoiWorker } from "./lib/intelligence/intelligenceRoiWorker.js";
 import { startChampionChallengerWorker } from "./lib/championChallengerWorker.js";
 import { startMetaStrategyControllerWorker } from "./lib/metaStrategyController.js";
+import { startChangePointDriverWorker } from "./lib/changePointDriver.js";
 import { computeEnvChecklist, summarizeEnvChecklist } from "./lib/startup/envChecklist";
 import { runStartupReadinessCheck } from "./lib/startup/readinessCheck";
 import { seedCoreAgents } from "./lib/agentEcosystem/seedCoreAgents";
@@ -219,6 +220,11 @@ ensureSafetyCoreInitialized()
       startIntelligenceRoiWorker();
       startChampionChallengerWorker();
       startMetaStrategyControllerWorker();
+      // Change-point watchdog: CUSUM + Page–Hinkley over outcome/spread series
+      // the system already produces. Read-only + journal + quarantine feed
+      // (authority reduction only — recovery stays owner-gated). Opt-out via
+      // ARX_CHANGEPOINT_DRIVER_ENABLED (logged loudly).
+      startChangePointDriverWorker();
       // Eagerly bootstrap the Deriv WebSocket so synthetic-index candles
       // (V10/V25/V50/V75/V100, 1Hz variants, Boom/Crash, Step) are ready
       // before the first scanner pass. Non-blocking; lazy ensureConnection
