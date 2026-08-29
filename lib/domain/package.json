@@ -66,6 +66,7 @@
     "./red-team": "./src/red-team/index.ts",
     "./rl-sandbox": "./src/rl-sandbox/index.ts",
     "./strategy-constitution": "./src/strategy-constitution/index.ts",
+    "./strategy-factory": "./src/strategy-factory/index.ts",
     "./compliance-log": "./src/compliance-log/index.ts",
     "./control-tower": "./src/control-tower/index.ts",
     "./ai-economy": "./src/ai-economy/index.ts",

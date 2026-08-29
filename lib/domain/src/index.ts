@@ -58,6 +58,7 @@ export * as blueTeam from "./blue-team";
 export * as redTeam from "./red-team";
 export * as rlSandbox from "./rl-sandbox";
 export * as strategyConstitution from "./strategy-constitution";
+export * as strategyFactory from "./strategy-factory";
 export * as complianceLog from "./compliance-log";
 export * as controlTower from "./control-tower";
 export * as aiEconomy from "./ai-economy";
