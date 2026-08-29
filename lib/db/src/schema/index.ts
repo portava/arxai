@@ -500,3 +500,7 @@ export * from "./riskPendingIncreases";
 // ── Institutional hierarchy (capability #50) — org/legal-entity model ──
 // Additive-only; applied via docs/migrations-pending/build-institutional.sql.
 export * from "./institutional";
+// ── Learning flywheel (B0–B7) — SHADOW-ONLY evidence/journal tables ──
+// Additive-only; applied via docs/migrations-pending/build-flywheel-machinery.sql.
+// The allocation journal + OPE reports are APPEND-ONLY (check-vault-mutations).
+export * from "./flywheel";

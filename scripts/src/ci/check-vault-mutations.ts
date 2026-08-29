@@ -63,6 +63,12 @@ const VAULT_TABLES = [
   // erase the very disagreement the reconciliation pass exists to surface.
   "economicPostingsTable",
   "economicDiscrepanciesTable",
+  // Learning flywheel (B3/B6) — the SHADOW allocation journal and the OPE
+  // report ledger. Both are journals of what the learner intended/estimated
+  // at a moment in time; mutating one would let a later pass rewrite what
+  // the flywheel claimed to have learned.
+  "flywheelAllocationJournalTable",
+  "flywheelOpeReportsTable",
 ];
 
 // Raw-SQL append-only surfaces, keyed by physical table name.
@@ -88,6 +94,9 @@ const APPEND_ONLY_SQL_TABLES = [
   // Economic truth spine — same append-only contract in raw-SQL form.
   "economic_postings",
   "economic_discrepancies",
+  // Learning flywheel journals — same append-only contract in raw-SQL form.
+  "flywheel_allocation_journal",
+  "flywheel_ope_reports",
 ];
 
 const FORBIDDEN_OPS = [
