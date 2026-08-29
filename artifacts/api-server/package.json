@@ -244,7 +244,12 @@
     "certify:tier1-demo": "node --import tsx src/scripts/tier1DemoCertify.ts",
     "tier1:seed": "node --import tsx src/scripts/tier1SeedCertificationTicket.ts",
     "test:execution-policy-shadow": "node --import tsx --test --test-force-exit src/lib/execution/__qa__/executionPolicyShadow.test.ts",
-    "test:incident-replay": "node --import tsx --test --test-force-exit src/lib/replaySim/__qa__/incidentReplay.test.ts"
+    "test:incident-replay": "node --import tsx --test --test-force-exit src/lib/replaySim/__qa__/incidentReplay.test.ts",
+    "test:authority-grants": "node --import tsx --test --test-force-exit src/lib/__qa__/authorityGrants.test.ts",
+    "test:risk-delayed-increase": "node --import tsx --test --test-force-exit src/lib/riskVault/__qa__/delayedIncrease.test.ts",
+    "test:manual-takeover": "node --import tsx --test --test-force-exit src/lib/__qa__/manualTakeover.test.ts",
+    "test:origin-attribution": "node --import tsx --test --test-force-exit src/lib/attribution/__qa__/originClassAnalytics.test.ts",
+    "test:escape-route": "node --import tsx --test --test-force-exit src/lib/brokerHub/__qa__/escapeRoute.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

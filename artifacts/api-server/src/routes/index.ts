@@ -625,4 +625,21 @@ router.use(brokerCatalogRouter);
 import adminOwnerDecisionsRouter from "./adminOwnerDecisions.js";
 router.use(adminOwnerDecisionsRouter);
 
+// ── Self-trading polish (build/product-polish) ──────────────────────────────
+// #37 — unified owner-grantable authority ledger (scoped, expiring grants).
+// Grants only PERMIT later explicit raises through existing gated seams.
+import meAuthorityRouter from "./meAuthority.js";
+router.use(meAuthorityRouter);
+// #42 — delayed risk increases live inside riskRouter (asymmetric PATCH +
+// /risk/pending-increases lifecycle); no separate router needed.
+// #44 — manual takeover: per-position control state + explicit release.
+import mePositionControlRouter from "./mePositionControl.js";
+router.use(mePositionControlRouter);
+// #45 — origin-class comparative analytics (read-only, honest UNTAGGED bucket).
+import meOriginAnalyticsRouter from "./meOriginAnalytics.js";
+router.use(meOriginAnalyticsRouter);
+// #46 — broker-native escape route (read-only safety surface, never flagged off).
+import meEscapeRouteRouter from "./meEscapeRoute.js";
+router.use(meEscapeRouteRouter);
+
 export default router;

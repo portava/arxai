@@ -487,3 +487,7 @@ export * from "./phase6GuidedExecution";
 // ── Engine drivers (capabilities #58/#34/#15/#16/#5) — evidence + probation ──
 // Additive-only; applied via docs/migrations-pending/build-engine-drivers.sql.
 export * from "./engineDrivers";
+// ── Self-trading polish (capabilities #37/#42) — authority + delayed risk ────
+// Additive-only; applied via docs/migrations-pending/build-product-polish.sql.
+export * from "./authorityGrants";
+export * from "./riskPendingIncreases";

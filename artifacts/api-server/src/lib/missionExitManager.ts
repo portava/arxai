@@ -43,6 +43,7 @@ import {
   type CompoundingMode,
   type MissionMode,
 } from "@workspace/domain/profit-mission";
+import { checkAutomatedCommandAllowed } from "@workspace/domain/self-trade";
 import {
   executeInstant,
   type InstantTradeIntent,
@@ -556,6 +557,9 @@ export type ManageMissionExitResult =
   | { ok: false; kind: "draft_not_found" }
   | { ok: false; kind: "not_executed"; status: string }
   | { ok: false; kind: "no_open_position" }
+  /** Capability #44 — the position is under explicit manual control; automated
+   *  strategy management must refuse until the owner releases it. */
+  | { ok: false; kind: "manual_control"; brokerTicket: string | null }
   | {
       ok: false;
       kind: "execution_rejected";
@@ -698,6 +702,22 @@ export async function manageMissionTradeExit(
     return false;
   });
   if (!match) return { ok: false, kind: "no_open_position" };
+
+  // Capability #44 — manual takeover gate. When the owner has explicitly taken
+  // this position over (management_state = MANUAL_CONTROL), automated exit
+  // management REFUSES here with a typed reason — before any decision is even
+  // composed, so no automated command can race the owner's control. Monitoring
+  // and reconciliation are unaffected; only automated ACTION stops. The total
+  // normalizer treats legacy/NULL state as STRATEGY_MANAGED, so pre-migration
+  // rows behave exactly as before.
+  {
+    const controlVerdict = checkAutomatedCommandAllowed(
+      (match as { managementState?: unknown }).managementState,
+    );
+    if (!controlVerdict.allowed) {
+      return { ok: false, kind: "manual_control", brokerTicket: match.brokerTicket ?? null };
+    }
+  }
 
   // Lazy draft→fill backfill: a position matched via commandId whose draft is
   // still missing its broker ticket gets the ticket stamped now (best-effort,

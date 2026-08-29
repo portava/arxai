@@ -56,7 +56,8 @@
     "test:mission-honest-labelling": "vitest run src/pages/profit-missions.honest-labelling.test.ts",
     "test:approval-inbox-honesty": "vitest run src/pages/approval-inbox.honesty.test.ts",
     "test:scalp-scan": "vitest run src/components/scanner/RubyScalpScan.test.tsx",
-    "test:surface-consolidation": "vitest run src/knowledge/surfaceConsolidation.test.ts"
+    "test:surface-consolidation": "vitest run src/knowledge/surfaceConsolidation.test.ts",
+    "test:escape-route-page": "vitest run src/pages/escape-route.honesty.test.ts"
   },
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",

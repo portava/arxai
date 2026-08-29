@@ -24,6 +24,8 @@ import {
 } from "@workspace/db";
 import { getProfileSpec } from "./profiles.js";
 import { writeSelfTradeAudit } from "./audit.js";
+import { checkLevelChange, AUTHORITY_BASELINES } from "@workspace/domain/safety-contracts/authorityGrants";
+import { readAuthorityCeiling } from "../authority/authorityService.js";
 import { enforceSensitiveAction } from "../security/handshake.js";
 import { mirrorCriticalEvent } from "../security/events.js";
 
@@ -209,6 +211,43 @@ export async function setAutonomyLevel(
       .where(eq(selfTradeAgentsTable.id, agentId))
       .limit(1);
     if (!before[0]) return { ok: false, error: "AGENT_NOT_FOUND", message: "Agent not found." };
+
+    // Capability #37 — unified authority read-through (raise side). Raising
+    // autonomy above the L0 baseline requires an active, unexpired,
+    // owner-pressed grant (ACCOUNT- or STRATEGY:<agentId>-scoped) in the
+    // authority ledger. Reductions never consult it. An unreadable ledger
+    // fails CLOSED for the increase.
+    if (level > before[0].autonomyLevel && level > AUTHORITY_BASELINES.AGENT_AUTONOMY_LEVEL) {
+      const governingUserId = before[0].ownerId ?? before[0].createdByUserId ?? actor.userId;
+      const read = await readAuthorityCeiling({
+        userId: governingUserId,
+        kind: "AGENT_AUTONOMY_LEVEL",
+        scopeType: "STRATEGY",
+        scopeRef: String(agentId),
+      });
+      const verdict = read.ok
+        ? checkLevelChange({ currentLevel: before[0].autonomyLevel, targetLevel: level, ceiling: read.ceiling })
+        : null;
+      if (verdict == null || !verdict.allowed) {
+        await writeSelfTradeAudit(tx, {
+          agentId,
+          eventType: "SET_AUTONOMY_BLOCKED",
+          actorUserId: actor.userId,
+          actorRole: actor.role,
+          severity: "WARNING",
+          beforeState: { autonomyLevel: before[0].autonomyLevel },
+          afterState: { requestedLevel: level },
+          reason: read.ok ? "AUTHORITY_GRANT_REQUIRED" : read.reason,
+        });
+        return {
+          ok: false,
+          error: "AUTHORITY_GRANT_REQUIRED",
+          message: read.ok
+            ? `Raising autonomy to L${level} requires an active owner-pressed authority grant (current ceiling L${read.ceiling.ceiling}). Reductions apply instantly.`
+            : "The authority ledger could not be read — autonomy increases fail closed. Reductions still apply instantly.",
+        };
+      }
+    }
 
     await tx
       .update(selfTradeAgentsTable)

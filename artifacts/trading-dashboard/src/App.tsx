@@ -75,6 +75,7 @@ const ReplaySimulator = lazy(() => import("@/pages/replay-simulator"));
 const StrategyLab = lazy(() => import("@/pages/strategy-lab"));
 const DataImport = lazy(() => import("@/pages/data-import"));
 const BrokerReadOnly = lazy(() => import("@/pages/broker-readonly"));
+const EscapeRoutePage = lazy(() => import("@/pages/escape-route"));
 const Notifications = lazy(() => import("@/pages/notifications"));
 const EconomicCalendar = lazy(() => import("@/pages/economic-calendar"));
 const Alerts = lazy(() => import("@/pages/alerts"));
@@ -300,6 +301,7 @@ function Router() {
           <Route path="/strategy-lab" component={StrategyLab} />
           <Route path="/data-import" component={DataImport} />
           <Route path="/broker-readonly" component={BrokerReadOnly} />
+          <Route path="/escape-route" component={EscapeRoutePage} />
           <Route path="/notifications" component={Notifications} />
           <Route path="/economic-calendar" component={EconomicCalendar} />
           <Route path="/alerts" component={Alerts} />

@@ -20,6 +20,7 @@ import { startIntelligenceRoiWorker } from "./lib/intelligence/intelligenceRoiWo
 import { startChampionChallengerWorker } from "./lib/championChallengerWorker.js";
 import { startMetaStrategyControllerWorker } from "./lib/metaStrategyController.js";
 import { startChangePointDriverWorker } from "./lib/changePointDriver.js";
+import { startAuthorityExpirySweepWorker } from "./lib/authority/authorityExpirySweepWorker.js";
 import { computeEnvChecklist, summarizeEnvChecklist } from "./lib/startup/envChecklist";
 import { runStartupReadinessCheck } from "./lib/startup/readinessCheck";
 import { seedCoreAgents } from "./lib/agentEcosystem/seedCoreAgents";
@@ -225,6 +226,13 @@ ensureSafetyCoreInitialized()
       // (authority reduction only — recovery stays owner-gated). Opt-out via
       // ARX_CHANGEPOINT_DRIVER_ENABLED (logged loudly).
       startChangePointDriverWorker();
+      // Capability #37 — authority expiry sweep. REDUCE-ONLY: persisted
+      // automation/autonomy levels whose backing owner-pressed grant has
+      // expired or been revoked are lowered back to baseline and journaled.
+      // Fail-inert on an unreadable grants ledger (a DB blip must never
+      // mass-demote); raise-time checks are the fail-closed side. Opt-out via
+      // ARX_AUTHORITY_SWEEP_ENABLED (logged loudly).
+      startAuthorityExpirySweepWorker();
       // Eagerly bootstrap the Deriv WebSocket so synthetic-index candles
       // (V10/V25/V50/V75/V100, 1Hz variants, Boom/Crash, Step) are ready
       // before the first scanner pass. Non-blocking; lazy ensureConnection

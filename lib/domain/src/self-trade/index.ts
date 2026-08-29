@@ -65,3 +65,18 @@ export type {
   PositionManagementInput,
   PositionManagementVerdict,
 } from "./positionManagement.js";
+// Capability #44 — manual takeover as a first-class per-position state.
+export {
+  POSITION_MANAGEMENT_STATES,
+  DEFAULT_POSITION_MANAGEMENT_STATE,
+  normalizeManagementState,
+  planTakeover,
+  planRelease,
+  checkAutomatedCommandAllowed,
+} from "./manualTakeover.js";
+export type {
+  PositionManagementState,
+  TakeoverPlan,
+  ReleasePlan,
+  AutomatedCommandVerdict,
+} from "./manualTakeover.js";
