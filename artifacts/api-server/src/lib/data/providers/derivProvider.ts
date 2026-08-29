@@ -15,6 +15,7 @@
 //     never fabricates synthetic candles.
 
 import { getDerivWsClient, type DerivCandle, type DerivGranularity } from "./derivWsClient.js";
+import { getInstrumentPassport, venueCodeSymbol } from "@workspace/domain/market";
 
 export interface DerivSyntheticSymbol {
   symbol: string;          // ARX-internal label
@@ -23,30 +24,57 @@ export interface DerivSyntheticSymbol {
   oneHertz: boolean;       // 1Hz tick stream
 }
 
-/** Canonical synthetic-index symbol map. */
+/**
+ * D3b — build an entry for an APPROVED market by reading THROUGH its
+ * Instrument Passport (`@workspace/domain/market`): the ARX symbol, the Deriv
+ * venue id and the display name are passport facts, no longer a copy that can
+ * drift. A canonical named here without a passport is a wiring bug — fail
+ * loudly at module load rather than serve a symbol map that lies.
+ */
+function fromPassport(canonical: string, oneHertz: boolean): DerivSyntheticSymbol {
+  const pp = getInstrumentPassport(canonical);
+  if (!pp) {
+    throw new Error(`DERIV_SYNTHETIC_SYMBOLS: "${canonical}" has no Instrument Passport`);
+  }
+  return {
+    symbol: pp.canonicalSymbol,
+    derivId: venueCodeSymbol(pp),
+    displayName: pp.displayName,
+    oneHertz,
+  };
+}
+
+/**
+ * Canonical synthetic-index symbol map — the venue's capability list.
+ *
+ * Approved (Focus) symbols derive from their Instrument Passport. The four
+ * literal entries (V25, V10_1S, V100_1S, STEP) are Deriv symbols the feed can
+ * discover that are NOT in the approved ARX Focus universe — venue-only
+ * facts, so the passport deliberately does not own them.
+ */
 export const DERIV_SYNTHETIC_SYMBOLS: DerivSyntheticSymbol[] = [
-  { symbol: "V10",      derivId: "R_10",      displayName: "Volatility 10 Index",       oneHertz: false },
+  fromPassport("V10", false),
   { symbol: "V25",      derivId: "R_25",      displayName: "Volatility 25 Index",       oneHertz: false },
-  { symbol: "V50",      derivId: "R_50",      displayName: "Volatility 50 Index",       oneHertz: false },
-  { symbol: "V75",      derivId: "R_75",      displayName: "Volatility 75 Index",       oneHertz: false },
-  { symbol: "V100",     derivId: "R_100",     displayName: "Volatility 100 Index",      oneHertz: false },
+  fromPassport("V50", false),
+  fromPassport("V75", false),
+  fromPassport("V100", false),
   { symbol: "V10_1S",   derivId: "1HZ10V",    displayName: "Volatility 10 (1s) Index",  oneHertz: true  },
-  { symbol: "V25_1S",   derivId: "1HZ25V",    displayName: "Volatility 25 (1s) Index",  oneHertz: true  },
-  { symbol: "V50_1S",   derivId: "1HZ50V",    displayName: "Volatility 50 (1s) Index",  oneHertz: true  },
-  { symbol: "V75_1S",   derivId: "1HZ75V",    displayName: "Volatility 75 (1s) Index",  oneHertz: true  },
+  fromPassport("V25_1S", true),
+  fromPassport("V50_1S", true),
+  fromPassport("V75_1S", true),
   { symbol: "V100_1S",  derivId: "1HZ100V",   displayName: "Volatility 100 (1s) Index", oneHertz: true  },
-  { symbol: "BOOM300",  derivId: "BOOM300N",  displayName: "Boom 300 Index",            oneHertz: false },
-  { symbol: "BOOM500",  derivId: "BOOM500",   displayName: "Boom 500 Index",            oneHertz: false },
-  { symbol: "BOOM1000", derivId: "BOOM1000",  displayName: "Boom 1000 Index",           oneHertz: false },
-  { symbol: "CRASH300", derivId: "CRASH300N", displayName: "Crash 300 Index",           oneHertz: false },
-  { symbol: "CRASH500", derivId: "CRASH500",  displayName: "Crash 500 Index",           oneHertz: false },
-  { symbol: "CRASH1000",derivId: "CRASH1000", displayName: "Crash 1000 Index",          oneHertz: false },
+  fromPassport("BOOM300", false),
+  fromPassport("BOOM500", false),
+  fromPassport("BOOM1000", false),
+  fromPassport("CRASH300", false),
+  fromPassport("CRASH500", false),
+  fromPassport("CRASH1000", false),
   { symbol: "STEP",     derivId: "stpRNG",    displayName: "Step Index",                oneHertz: false },
-  { symbol: "JUMP10",   derivId: "JD10",      displayName: "Jump 10 Index",             oneHertz: false },
-  { symbol: "JUMP25",   derivId: "JD25",      displayName: "Jump 25 Index",             oneHertz: false },
-  { symbol: "JUMP50",   derivId: "JD50",      displayName: "Jump 50 Index",             oneHertz: false },
-  { symbol: "JUMP75",   derivId: "JD75",      displayName: "Jump 75 Index",             oneHertz: false },
-  { symbol: "JUMP100",  derivId: "JD100",     displayName: "Jump 100 Index",            oneHertz: false },
+  fromPassport("JUMP10", false),
+  fromPassport("JUMP25", false),
+  fromPassport("JUMP50", false),
+  fromPassport("JUMP75", false),
+  fromPassport("JUMP100", false),
 ];
 
 export interface DerivFeedStatus {
