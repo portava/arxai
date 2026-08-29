@@ -58,7 +58,9 @@
     "test:approval-inbox-honesty": "vitest run src/pages/approval-inbox.honesty.test.ts",
     "test:scalp-scan": "vitest run src/components/scanner/RubyScalpScan.test.tsx",
     "test:surface-consolidation": "vitest run src/knowledge/surfaceConsolidation.test.ts",
-    "test:escape-route-page": "vitest run src/pages/escape-route.honesty.test.ts"
+    "test:escape-route-page": "vitest run src/pages/escape-route.honesty.test.ts",
+    "test:ledger-basis-strip": "vitest run src/components/money/LedgerBasisStrip.test.tsx",
+    "test:unwired-capabilities": "vitest run src/pages/unwiredCapabilities.reachability.test.ts"
   },
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",

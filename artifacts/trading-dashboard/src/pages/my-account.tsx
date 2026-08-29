@@ -15,6 +15,7 @@ import { useTradingMode } from "@/hooks/useTradingMode";
 import { useLiveAccountSnapshot } from "@/hooks/useLiveAccountSnapshot";
 import { CanonicalBalancePanel } from "@/components/account/CanonicalBalancePanel";
 import { OneClickToggleCard } from "@/components/mt5/OneClickToggleCard";
+import { LedgerBasisStrip } from "@/components/money/LedgerBasisStrip";
 import { safeLabel } from "@/lib/safeFormat";
 
 type ShellResponse = {
@@ -277,6 +278,13 @@ export default function MyAccountPage() {
         )}
       </Card>
 
+      {/* Basis of the money figures below: whether the posting ledger has been
+          reconciled against the broker's own reported balance. The
+          reconciliation worker's CRITICAL "your ledger disagrees with the
+          broker" verdict previously reached a table and a log line and no
+          human. */}
+      <LedgerBasisStrip />
+
       {/* My P/L */}
       <Card data-testid="my-pnl-card" className="rounded-2xl border-border bg-card">
         <CardHeader className="pb-3">
@@ -426,13 +434,35 @@ function BridgePreferenceCard({ sharedAttached }: { sharedAttached: boolean }) {
       <CardContent className="space-y-3">
         <div className="flex items-start justify-between gap-3 rounded-md border p-3">
           <div className="space-y-1">
-            <div className="text-sm font-medium">Use my own MT5 bridge</div>
+            <div className="flex items-center gap-2">
+              <div className="text-sm font-medium">Use my own MT5 bridge</div>
+              {!d.personalBridgeEnabled && (
+                <Badge variant="outline" className="text-[10px]" data-testid="badge-personal-bridge-disabled">
+                  Disabled by your operator
+                </Badge>
+              )}
+            </div>
             <div className="text-xs text-txt-secondary">
               Your trades route through the MT5 EA installed on your machine. This is the default and recommended path.
             </div>
+            {/* The server refuses a switch to USER_OWNED_MT5 while
+                personalBridgeEnabled is false. The card used to fetch that
+                flag and ignore it, so a user whose operator had disabled the
+                personal bridge still read "Active" — and toggling off the
+                shared bridge failed with a bare error and no explanation of
+                why the option had been offered. State it here instead. */}
+            {!d.personalBridgeEnabled && (
+              <div className="text-xs text-warning" data-testid="text-personal-bridge-disabled-note">
+                Your operator has disabled the personal bridge for this account, so ARX cannot route your trades
+                through it. Switching back to it is refused until they re-enable it.
+              </div>
+            )}
           </div>
-          <Badge variant={!onShared ? "default" : "outline"} data-testid="badge-personal-bridge-state">
-            {!onShared ? "Active" : "Available"}
+          <Badge
+            variant={!onShared && d.personalBridgeEnabled ? "default" : "outline"}
+            data-testid="badge-personal-bridge-state"
+          >
+            {!d.personalBridgeEnabled ? "Unavailable" : !onShared ? "Active" : "Available"}
           </Badge>
         </div>
 
@@ -456,7 +486,15 @@ function BridgePreferenceCard({ sharedAttached }: { sharedAttached: boolean }) {
           </div>
           <Switch
             checked={onShared}
-            disabled={!d.sharedBridgeApproved || m.isPending}
+            // Offering a control the server will refuse is a lie by omission.
+            // Turning the shared bridge OFF means switching to USER_OWNED_MT5,
+            // which meBridgePreference refuses while personalBridgeEnabled is
+            // false — so that direction is disabled, not attempted.
+            disabled={
+              m.isPending
+              || (!onShared && !d.sharedBridgeApproved)
+              || (onShared && !d.personalBridgeEnabled)
+            }
             onCheckedChange={(checked) => {
               m.mutate(checked ? "SHARED_MASTER_MT5" : "USER_OWNED_MT5");
             }}

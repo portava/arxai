@@ -669,5 +669,11 @@ router.use(adminOrgStructureRouter);
 // the lifecycle-relevant routes (learning-version approve, risk templates).
 import adminLifecycleRolesRouter from "./adminLifecycleRoles.js";
 router.use(adminLifecycleRolesRouter);
+// The human end of the economic reconciliation spine (#29/#30/#31). The
+// worker's DISCREPANCY verdict ("your ledger disagrees with the broker")
+// previously reached only a table and a log line; this read is what lets a
+// person see it. Read-only, per-user, honest NEVER_RUN state.
+import meEconomicReconciliationRouter from "./meEconomicReconciliation.js";
+router.use(meEconomicReconciliationRouter);
 
 export default router;

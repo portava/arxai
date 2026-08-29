@@ -282,7 +282,8 @@
     "test:opportunity-spine": "node --import tsx --test --test-force-exit src/lib/__qa__/opportunitySpineDomain.test.ts",
     "test:flywheel-case-reward": "node --import tsx --test --test-force-exit src/lib/flywheel/__qa__/flywheelCaseReward.test.ts",
     "test:flywheel-posterior-bandit": "node --import tsx --test --test-force-exit src/lib/flywheel/__qa__/flywheelPosteriorBandit.test.ts",
-    "test:flywheel-ope-ledger": "node --import tsx --test --test-force-exit src/lib/flywheel/__qa__/flywheelOpeLedger.test.ts"
+    "test:flywheel-ope-ledger": "node --import tsx --test --test-force-exit src/lib/flywheel/__qa__/flywheelOpeLedger.test.ts",
+    "test:economic-reconciliation-read": "node --import tsx --test --test-force-exit src/routes/__qa__/meEconomicReconciliation.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

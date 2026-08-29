@@ -181,6 +181,12 @@ const buildNavGroups = (name: string): NavGroup[] => [
     defaultOpen: false,
     items: [
       { href: "/my-account", label: "Account",  icon: Wallet },
+      // approvedOnly: these three are in the APPROVED-trader allowlist only.
+      // A pending trader has no live position to take over and no automation
+      // to authorise, and showing them would be a dead end for that tier.
+      { href: "/authority",        label: "Automation Authority", icon: Shield, approvedOnly: true },
+      { href: "/position-control", label: "Manual Takeover",      icon: Briefcase, approvedOnly: true },
+      { href: "/escape-route",     label: "Broker Escape Route",  icon: Plug, approvedOnly: true },
       { href: "/settings",   label: "Settings", icon: Settings },
       { href: "/help",       label: "Help",     icon: HelpCircle },
     ],

@@ -76,6 +76,11 @@ const StrategyLab = lazy(() => import("@/pages/strategy-lab"));
 const DataImport = lazy(() => import("@/pages/data-import"));
 const BrokerReadOnly = lazy(() => import("@/pages/broker-readonly"));
 const EscapeRoutePage = lazy(() => import("@/pages/escape-route"));
+// Capability #37 / #44 — the two user-facing surfaces whose backends shipped
+// without a screen. /authority is the press the mission-promotion blocker text
+// tells the user to make; /position-control is the manual-takeover affordance.
+const AuthorityPage = lazy(() => import("@/pages/authority"));
+const PositionControlPage = lazy(() => import("@/pages/position-control"));
 const Notifications = lazy(() => import("@/pages/notifications"));
 const EconomicCalendar = lazy(() => import("@/pages/economic-calendar"));
 const Alerts = lazy(() => import("@/pages/alerts"));
@@ -152,6 +157,12 @@ const AdminMasterBridge = lazy(() => import("@/pages/admin/master-bridge"));
 const AdminAuditCenter = lazy(() => import("@/pages/admin/audit-center"));
 const AdminLaunchReadiness = lazy(() => import("@/pages/admin/launch-readiness"));
 const AdminReconciliationCenter = lazy(() => import("@/pages/admin/reconciliation-center"));
+// Admin surfacing of five shipped-but-unreachable backends (#50/#51/#52,
+// #23 edge capacity, #27 execution-policy press, #15/#16/#34/#58 drivers).
+const AdminGovernance = lazy(() => import("@/pages/admin/governance"));
+const AdminOrgStructure = lazy(() => import("@/pages/admin/org-structure"));
+const AdminEngineDrivers = lazy(() => import("@/pages/admin/engine-drivers"));
+const AdminEdgeCapacity = lazy(() => import("@/pages/admin/edge-capacity"));
 const AdminLiveTestReadiness = lazy(() => import("@/pages/admin/live-test-readiness"));
 const AdminLiveShared = lazy(() => import("@/pages/admin/live-shared"));
 const AdminLiveSharedActivation = lazy(() => import("@/pages/admin/live-shared-activation"));
@@ -302,6 +313,8 @@ function Router() {
           <Route path="/data-import" component={DataImport} />
           <Route path="/broker-readonly" component={BrokerReadOnly} />
           <Route path="/escape-route" component={EscapeRoutePage} />
+          <Route path="/authority" component={AuthorityPage} />
+          <Route path="/position-control" component={PositionControlPage} />
           <Route path="/notifications" component={Notifications} />
           <Route path="/economic-calendar" component={EconomicCalendar} />
           <Route path="/alerts" component={Alerts} />
@@ -376,6 +389,10 @@ function Router() {
           <Route path="/admin/audit-center" component={AdminAuditCenter} />
           <Route path="/admin/launch-readiness" component={AdminLaunchReadiness} />
           <Route path="/admin/reconciliation-center" component={AdminReconciliationCenter} />
+          <Route path="/admin/governance" component={AdminGovernance} />
+          <Route path="/admin/org-structure" component={AdminOrgStructure} />
+          <Route path="/admin/engine-drivers" component={AdminEngineDrivers} />
+          <Route path="/admin/edge-capacity" component={AdminEdgeCapacity} />
           <Route path="/admin/ea-health" component={AdminEaHealth} />
           <Route path="/admin/bridge-v2-monitor" component={AdminBridgeV2Monitor} />
           <Route path="/admin/ea-updates" component={AdminEaUpdates} />

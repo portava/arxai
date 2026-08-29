@@ -2377,6 +2377,31 @@ function MissionTestingLab({ mission }: { mission: ProfitMission }): ReactElemen
             </ul>
           )}
 
+          {/* Closes a dead end: missionPromotionService refuses an automation
+              INCREASE with "requires an active owner-pressed authority grant",
+              and the grant is created by POST /api/me/authority/grants — a
+              call no screen made until /authority shipped. Without this link
+              the documented blocker told the user to do something with no
+              destination. */}
+          {(
+            gates.some((g) =>
+              `${readStr(g, "name") ?? ""} ${readStr(g, "detail") ?? ""}`.includes("authority_grant"),
+            ) || (error ?? "").includes("authority")
+          ) && (
+            <div
+              className="rounded-md border border-warning/30 bg-warning/5 p-3 text-sm"
+              data-testid="authority-grant-blocker-link"
+            >
+              Raising automation above the baseline needs an active owner-pressed authority grant on your
+              account.{" "}
+              <a href="/authority" className="font-medium underline">
+                Open Automation Authority
+              </a>{" "}
+              to press one, then apply the level again. A grant only permits the raise — every safety gate
+              still runs.
+            </div>
+          )}
+
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <Label>Target automation level</Label>

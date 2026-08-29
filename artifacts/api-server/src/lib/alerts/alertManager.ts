@@ -1,3 +1,22 @@
+// NOTE — the Build L "smart alert rule engine" (lib/alerts/ruleEngine.ts) was
+// REMOVED, not wired. Do not rebuild it against this module.
+//
+// It implemented 8 proactive safety rules (broker disconnected, position near
+// stop loss, risk lock active, near daily loss limit, …) and had zero callers:
+// no route, no worker, no scheduler. Wiring it looked like the obvious fix and
+// is not, because `alerts` is a GLOBAL table with no userId column, while the
+// rules read global tables and embed per-user detail in the message — symbols,
+// live position ids, plan ids, today's realised loss. Those rows are read back
+// by getCriticalUnread(), which reaches any authenticated caller through
+// POST /api/help/why-blocked. Firing the engine would have leaked one user's
+// open positions and P/L into another user's "Why am I blocked?" drawer —
+// precisely the global-scope leak Phase 22C closed when it neutralised
+// routes/alerts.ts.
+//
+// Proactive safety alerts are therefore NOT a delivered capability. Rebuilding
+// them belongs on the per-user surface (routes/meNotifications.ts), which is
+// the canonical successor named by routes/alerts.ts.
+
 import {
   db,
   alertsTable,
