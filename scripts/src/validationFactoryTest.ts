@@ -52,6 +52,9 @@ import {
   normalInv,
   ksTestNormal,
   type TrialResult,
+  buildCostModel,
+  netReturns,
+  costEvidence,
 } from "@workspace/validation";
 import { isEntrypoint, type CiTestResultLike } from "./ci/inProcessAppHarness.js";
 
@@ -369,11 +372,27 @@ export async function run(): Promise<CiTestResultLike> {
     );
     assert(variants.length >= 40, `the grid is a real search, not a token one (${variants.length} variants)`);
 
-    const trials: TrialResult[] = variants.map((v) => ({
-      key: v.key,
-      familyKey: v.familyKey,
-      returns: strategyReturns(v.positions(bars), closes),
-    }));
+    // C7: the factory certifies NET of costs only, so the search runs through
+    // the declared V75 cost model, each variant charged along its own position
+    // path. Costs only make the bar higher — "zero edges" net is implied by
+    // zero gross, and the killer-net lane (killerNetCostsTest) additionally
+    // pins the gross-only path to zero survivors by construction.
+    const v75CostModel = buildCostModel({
+      instrument: "Volatility 75 Index",
+      instrumentClass: "synthetic",
+      venue: "deriv",
+    });
+    const trials: TrialResult[] = variants.map((v) => {
+      const pos = v.positions(bars);
+      return {
+        key: v.key,
+        familyKey: v.familyKey,
+        returns: netReturns(strategyReturns(pos, closes), v75CostModel, {
+          kind: "positions",
+          positions: pos,
+        }).net,
+      };
+    });
 
     // Sanity: the search must actually TRADE, or "zero edges" is vacuous. This
     // is checked per FAMILY as well as overall, because a silently inactive
@@ -400,9 +419,11 @@ export async function run(): Promise<CiTestResultLike> {
       `at least 75% of variants take positions (${active.length}/${trials.length}) — otherwise "no edge" is largely vacuous`,
     );
 
+    const v75Evidence = costEvidence(v75CostModel, "positions");
     const report = validateFamily("ALL_FAMILIES_V75", trials, {
       cpcv: { nGroups: 6, p: 2, horizon: 5, embargo: 5 },
       pboBlocks: 10,
+      costs: v75Evidence,
     });
 
     console.log(`    ${report.detail}`);
@@ -429,19 +450,27 @@ export async function run(): Promise<CiTestResultLike> {
     assert(/^[0-9a-f]{64}$/.test(report.reportHash), "the report carries a sha256 chain hash");
     const again = validateFamily("ALL_FAMILIES_V75", trials, {
       cpcv: { nGroups: 6, p: 2, horizon: 5, embargo: 5 }, pboBlocks: 10,
+      costs: v75Evidence,
     });
     assert(again.reportHash === report.reportHash, "…and the same inputs give the same hash");
 
     // THE TEST MUST BE ABLE TO FAIL. A candidate with a genuine, large,
     // persistent edge injected into the same field MUST survive — otherwise
     // "zero edges" would be an artefact of thresholds nothing can clear.
-    const edgeReturns = trials[0]!.returns.map((_, i) => 0.004 + (i % 7) * 1e-5);
+    // The planted edge pays the SAME costs as everything else (held at constant
+    // full exposure), so its survival proves the NET bar is clearable too.
+    const plantedGross = trials[0]!.returns.map((_, i) => 0.004 + (i % 7) * 1e-5);
+    const edgeReturns = netReturns(plantedGross, v75CostModel, {
+      kind: "positions",
+      positions: new Array<number>(plantedGross.length).fill(1),
+    }).net;
     const withPlanted: TrialResult[] = [
       { key: "PLANTED_EDGE", familyKey: "PlantedEdge", returns: edgeReturns },
       ...trials,
     ];
     const plantedReport = validateFamily("ALL_FAMILIES_V75_PLUS_PLANTED", withPlanted, {
       cpcv: { nGroups: 6, p: 2, horizon: 5, embargo: 5 }, pboBlocks: 10,
+      costs: v75Evidence,
     });
     const planted = plantedReport.candidates.find((c) => c.key === "PLANTED_EDGE")!;
     console.log(
