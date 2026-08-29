@@ -54,6 +54,7 @@ import {
   MULTI_BRIDGE_CONTENTION_NOTE,
 } from "./providers/mt5Provider.js";
 import { getMarketProvider } from "../assistant/marketProvider.js";
+import { foldAssistantQuoteTick } from "./chart/assistantFormingBridge.js";
 import { readCachedCandles } from "./candleCache.js";
 import {
   MT5_BROKER_MIRROR_SOURCE,
@@ -517,6 +518,18 @@ async function tryAssistantQuote(symbol: string): Promise<ProviderAttempt & { qu
       spread: (r.bid != null && r.ask != null) ? r.ask - r.bid : undefined,
       timestamp: r.asOf ?? new Date().toISOString(),
     };
+    // R1 residual: fold this REAL quote observation into the forming-bar
+    // composer so assistant_real-served charts get a live (poll-cadence) tip.
+    // REALTIME only — a DELAYED/STALE/DEMO reading folded "now" would claim a
+    // liveness the provider never reported. The bridge dedupes cache replays
+    // and the composer/chart service enforce basis coherence downstream.
+    if (r.freshness === "REALTIME") {
+      foldAssistantQuoteTick(symbol, {
+        price: r.price ?? null,
+        bid: r.bid ?? null,
+        asOf: r.asOf ?? null,
+      });
+    }
     return {
       provider: `assistant_real:${r.source}`, ok: true, reason: null, candleCount: 0, ms: Date.now() - t0, quote,
       // The adapter's freshness verdict is threaded, not re-judged: DELAYED /
