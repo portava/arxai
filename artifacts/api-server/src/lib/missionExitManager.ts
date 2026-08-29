@@ -56,6 +56,7 @@ import {
   type MissionRiskState,
 } from "./missionRiskService.js";
 import { getRunning } from "./intelligence/mfeTracker.js";
+import type { MissionExitSignalUnavailability } from "./missionExitSignals.js";
 
 type MissionRow = typeof profitMissionsTable.$inferSelect;
 
@@ -541,6 +542,15 @@ export interface MissionExitSignals {
   atr?: number | null;
   /** Whether the broker/symbol supports partial closes (for the plan). */
   brokerSupportsPartialClose?: boolean;
+  /**
+   * Signals the caller ATTEMPTED to read and could not, with why. An absent
+   * boolean above is ambiguous on its own — "read, nothing seen" and "never
+   * read" look identical — so a caller that knows the difference (the
+   * unattended mission driver, via `assembleMissionExitSignals`) states it
+   * here. Carried into the pure decision as declared blindness so a partially
+   * blind evaluation never reads as an all-clear. It changes no verdict.
+   */
+  unavailable?: readonly MissionExitSignalUnavailability[];
 }
 
 export type ManageMissionExitResult =
@@ -781,6 +791,10 @@ export async function manageMissionTradeExit(
     highImpactNewsImminent: signals.highImpactNewsImminent,
     unstableSpread: signals.unstableSpread,
     structureBreak: signals.structureBreak,
+    // Declared blindness — the signals the caller tried to read and could not.
+    // The engine turns each into an explicit warning so an unattended decision
+    // never presents "no trigger fired" as "nothing was wrong".
+    unobservedSignals: (signals.unavailable ?? []).map((u) => `${u.signal} (${u.reason})`),
   });
   const partialPlan = buildPartialPlan({
     side: position.side,

@@ -117,6 +117,10 @@ import {
 import { buildFoundationGateInputs } from "./foundationGateInputs.js";
 import { upsertAlertOnce } from "../../routes/meAlerts.js";
 import { type CommandActorType } from "@workspace/domain/security";
+import {
+  classifyDraftActorType,
+  type LiveAutonomousOrigin,
+} from "@workspace/domain/safety-contracts/autonomyProvenance";
 
 // Gap A — Phase B disclosure gate input loader. Returns true iff the user
 // has ANY append-only row in live_risk_disclosure_acceptances. Default-deny.
@@ -1047,6 +1051,17 @@ export interface LiveDraftInput {
   edgeId?: number | null;
   /** Mission attribution for the provenance envelope (additive, optional). */
   missionId?: number | null;
+  /**
+   * AUTONOMY PROVENANCE (foundation gates #20/#23). Set by a producer that
+   * placed this order with NO human press — today only the unattended mission
+   * driver ("MISSION_DRIVER"). It classifies the command's actor as SYSTEM, so
+   * the autonomy gates that demand a promoted edge + a recorded capacity
+   * estimate BIND on it. Absent (every human press, including a user-pressed
+   * mission trade) keeps the USER actor and the documented human exemption.
+   * Additive + tighten-only: the only classification it can produce is a
+   * STRICTER one. See @workspace/domain/safety-contracts/autonomyProvenance.
+   */
+  autonomousOrigin?: LiveAutonomousOrigin | null;
 }
 
 export interface LiveDraftRefusal {
@@ -1888,7 +1903,14 @@ export async function createLiveDraft(
   // provenance is never fabricated).
   const isEntryDraft = input.commandType === "PLACE_LIVE_MARKET_ORDER"
     || input.commandType === "PLACE_LIVE_PENDING_ORDER";
-  const draftOriginActorType = input.selfTradeAgentId != null ? "SELF_TRADE_AGENT" as const : "USER" as const;
+  // AUTONOMY PROVENANCE — an order placed with no human press (the unattended
+  // mission driver) is classified SYSTEM, not USER, so foundation gates #20/#23
+  // bind it. Same classifier feeds the integrity envelope's actorType below, so
+  // the envelope and the row can never disagree about who placed the order.
+  const draftOriginActorType = classifyDraftActorType({
+    selfTradeAgentId: input.selfTradeAgentId,
+    autonomousOrigin: input.autonomousOrigin,
+  });
   let provenanceEnvelope: CommandProvenanceEnvelope | null =
     input.provenance != null ? parseCommandProvenanceEnvelope(input.provenance) : null;
   if (provenanceEnvelope == null && isEntryDraft) {
@@ -1968,7 +1990,10 @@ export async function createLiveDraft(
   // HMAC signature) in the SAME insert. Advisory-additive: re-verified before
   // the 16-gate at dispatch. Actor = the per-user owner; SELF_TRADE_AGENT when
   // an agent originated the draft.
-  const draftActorType: CommandActorType = input.selfTradeAgentId != null ? "SELF_TRADE_AGENT" : "USER";
+  // Same classifier as the provenance envelope above: SELF_TRADE_AGENT for an
+  // agent draft, SYSTEM for an unattended (driver-placed) one, USER for a human
+  // press. This is the value foundation gates #20/#23 read at dispatch.
+  const draftActorType: CommandActorType = draftOriginActorType;
   const integrity: CommandIntegrityFields = buildCommandIntegrityFields({
     commandId,
     userId: input.userId,

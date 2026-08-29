@@ -8,7 +8,13 @@
 // FOUNDATION gates: #19 PROVENANCE_UNPROVEN (entry decision-data provenance
 // must be present, tradeable-origin, fresh, and integrity-covered), #20
 // STRATEGY_NOT_LIVE_PROMOTED (autonomous entries require an owner-pressed
-// LIVE_CANDIDATE production_edges row), #21 CAPITAL_TIER_EXCEEDED (per-user
+// LIVE_CANDIDATE production_edges row; "autonomous" means the command's
+// actor_type is SELF_TRADE_AGENT or SYSTEM — an order placed with NO human
+// press, which includes an order placed by the unattended mission driver on
+// its own tick. A mission trade the owner PRESSES is a USER actor and keeps
+// the human exemption. Origin is classified by
+// ./autonomyProvenance.ts at draft time and is tighten-only: it can move a
+// command from USER to SYSTEM, never the reverse), #21 CAPITAL_TIER_EXCEEDED (per-user
 // capital-tier caps; tighten-only vs existing caps), #22
 // TENANT_CONTEXT_VIOLATION (every tenant-scoped fact must be stamped as read
 // for the command's OWNER; proven cross-tenant leakage refuses every command

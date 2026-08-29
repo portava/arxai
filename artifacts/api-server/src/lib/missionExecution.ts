@@ -48,6 +48,10 @@ import {
 } from "./live/instantTrade.js";
 import { refreshMissionRisk, type MissionLiveSignals } from "./missionRiskService.js";
 import {
+  AUTONOMOUS_ENTRY_REFUSAL_NOTE,
+  type LiveAutonomousOrigin,
+} from "@workspace/domain/safety-contracts/autonomyProvenance";
+import {
   evaluatePhase7PreChecks,
   exposureBudgetFrom,
   type Phase7Evaluator,
@@ -124,6 +128,21 @@ export interface DispatchApprovedDraftArgs {
   /** Live runtime signals fed to the mission risk read (fail-safe defaults). */
   signals?: MissionLiveSignals;
   nowMs?: number;
+  /**
+   * AUTONOMY PROVENANCE — true ONLY when the unattended mission driver reached
+   * this hook on its own tick, with no human press anywhere in the chain. It
+   * stamps `autonomousOrigin: "MISSION_DRIVER"` on the routed intent, which
+   * classifies the live command's actor as SYSTEM so foundation gates #20
+   * (promoted edge) and #23 (recorded edge capacity) BIND on the order.
+   *
+   * A user-PRESSED mission trade leaves this absent and is unchanged: it stays
+   * a USER actor and keeps the documented human exemption from #20/#23.
+   *
+   * Tighten-only. It cannot relax any gate; the only thing it can do is cause
+   * MORE gates to apply, which is why an unattended entry now refuses without
+   * a promoted edge + a capacity estimate (see AUTONOMOUS_ENTRY_REFUSAL_NOTE).
+   */
+  driverOriginated?: boolean;
 }
 
 export interface DispatchApprovedDraftOpts {
@@ -165,6 +184,15 @@ const DEFAULT_SIGNALS: MissionLiveSignals = {
   feedStatus: "live",
   quoteFresh: true,
 };
+
+/** Foundation-gate refusals that bind ONLY on an autonomously-originated entry
+ *  (#20 promoted edge, #23 recorded edge capacity). Used solely to decide
+ *  whether the journal should spell out the human-vs-unattended distinction —
+ *  it never changes a verdict. */
+const AUTONOMY_GATE_REASONS: ReadonlySet<string> = new Set([
+  "STRATEGY_NOT_LIVE_PROMOTED",
+  "EDGE_CAPACITY_EXCEEDED",
+]);
 
 async function journalMissionEvent(args: {
   missionId: number;
@@ -390,6 +418,11 @@ export async function dispatchApprovedDraft(
   // ── The ONE intent shape (source "mission"), shared by live + simulated. ─────
   // Only a LIVE mission ever gains the live accountMode; the simulated leg
   // receives the identical intent WITHOUT any account-mode claim.
+  // AUTONOMY PROVENANCE — a driver tick reached here with no human press, so
+  // the intent says so and the live command is stamped SYSTEM (gates #20/#23
+  // bind). A user press leaves it null and the command stays a USER actor.
+  const autonomousOrigin: LiveAutonomousOrigin | null =
+    args.driverOriginated === true ? "MISSION_DRIVER" : null;
   const baseIntent: Omit<InstantTradeIntent, "accountMode"> = {
     source: "mission",
     missionId: args.missionId,
@@ -398,6 +431,7 @@ export async function dispatchApprovedDraft(
     volume: draft.lot ?? undefined,
     stopLoss: draft.stopLoss,
     takeProfit: draft.takeProfit,
+    autonomousOrigin,
   };
 
   await auditMission({
@@ -472,15 +506,25 @@ export async function dispatchApprovedDraft(
           eq(missionTradeDraftsTable.status, "executed"),
         ),
       );
+    // When the refusal landed on an UNATTENDED order, say plainly why the
+    // same setup pressed by hand would not have refused — an autonomy gate
+    // firing is a designed rule, not a malfunction, and the owner should not
+    // have to reverse-engineer that from a bare reason code.
+    const autonomyNote =
+      autonomousOrigin != null
+      && AUTONOMY_GATE_REASONS.has(String(result.primaryReason ?? result.error))
+        ? ` ${AUTONOMOUS_ENTRY_REFUSAL_NOTE}`
+        : "";
     await journalMissionEvent({
       missionId: args.missionId,
       type: "draft_execution_rejected",
-      message: `Live dispatch rejected for ${draft.symbol} ${draft.direction}: ${result.primaryReason ?? result.error}. Draft remains approved.`,
+      message: `Live dispatch rejected for ${draft.symbol} ${draft.direction}: ${result.primaryReason ?? result.error}. Draft remains approved.${autonomyNote}`,
       metadata: {
         draftId: draft.draftId,
         error: result.error,
         primaryReason: result.primaryReason,
         httpStatus: result.httpStatus,
+        autonomousOrigin,
       },
     });
     return {

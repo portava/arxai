@@ -38,6 +38,7 @@ import { liveBrokerExecutionEnabled } from "./phaseBConfig.js";
 import { resolveBrokerSymbol } from "../mt5/symbolDirectory.js";
 import { recordManualAaciAdvisory } from "../aaci/manualAdvisory.js";
 import type { CommandProvenanceEnvelope } from "../provenance/commandProvenance.js";
+import type { LiveAutonomousOrigin } from "@workspace/domain/safety-contracts/autonomyProvenance";
 import { enforceSensitiveAction } from "../security/handshake.js";
 
 export const INSTANT_TRADE_SOURCES = [
@@ -103,6 +104,14 @@ export type InstantTradeIntent = {
   // deny). Neither field can ever relax a gate.
   provenance?: CommandProvenanceEnvelope | null;
   edgeId?: number | null;
+  // AUTONOMY PROVENANCE (foundation gates #20/#23). Stamped by a producer that
+  // routes an order with NO human press — today only the unattended mission
+  // driver ("MISSION_DRIVER"). It classifies the resulting live command's actor
+  // as SYSTEM so the autonomy gates (promoted edge + recorded edge capacity)
+  // BIND. Absent for every human press — including a user-PRESSED mission trade,
+  // which stays a USER actor exactly as before. Additive + tighten-only: it can
+  // never relax a gate, only cause more of them to apply.
+  autonomousOrigin?: LiveAutonomousOrigin | null;
 };
 
 // Reasons surfaced by the Ruby authorization layer. Each is AND-gated on TOP of
@@ -476,6 +485,9 @@ async function executeOpen(args: {
       provenance: intent.provenance ?? null,
       edgeId: intent.edgeId ?? null,
       missionId: intent.missionId ?? null,
+      // Autonomy provenance — carried verbatim so the draft's actor_type tells
+      // the truth about whether a human pressed this order (gates #20/#23).
+      autonomousOrigin: intent.autonomousOrigin ?? null,
     });
     if (!("ok" in draft) || draft.ok !== true) return { stage: "draft" as const, result: draft };
     // Task #213 — autonomy L1 (prepareOnly): the supervisor-approved draft is
