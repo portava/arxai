@@ -10,7 +10,7 @@
 // never through parallel re-implementations and never through live services:
 //   - price staleness   → readPriceSensor (lib/domain live-inputs), via its
 //                         existing `stalenessSeconds` parameter,
-//   - risk caps         → evaluateLivePhaseBDispatchGate (the real 21-gate
+//   - risk caps         → evaluateLivePhaseBDispatchGate (the real 23-gate
 //                         evaluator), via its existing `dailyLossLimitUsd` /
 //                         `maxLotForSymbol` inputs,
 //   - idempotency       → buildLiveIdempotencyKey (lib/live/phaseBConfig),
@@ -220,7 +220,7 @@ export async function replayIncident(
         continue;
       }
 
-      // 3) Risk caps — the REAL 21-gate evaluator; only the safeguard-
+      // 3) Risk caps — the REAL 23-gate evaluator; only the safeguard-
       //    relevant inputs are overridden, the rest replay as captured.
       const gate = evaluateLivePhaseBDispatchGate({
         ...fixture.gateBaseline,

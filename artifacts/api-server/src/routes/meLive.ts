@@ -90,7 +90,7 @@ function envelope() {
 /**
  * P0-1 — serialize ONE user's in-flight live submissions.
  *
- * `dispatchLiveCommand` reads the command row, runs all 21 Phase B gates, and
+ * `dispatchLiveCommand` reads the command row, runs all 23 Phase B gates, and
  * only then writes SENT_TO_MT5_LIVE. Two concurrent requests from the same
  * user (double-tap, retried fetch, two tabs, Ruby racing a manual click) both
  * enter that window. The compare-and-set inside the pipeline is the

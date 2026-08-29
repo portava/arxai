@@ -19,7 +19,7 @@
 //                         MANUALLY armed (`arx_live_arming.is_armed`).
 //                         Attachment NEVER implies execution — arming is
 //                         always a separate, manual step, and every
-//                         dispatch still re-runs the 21 Phase B gates.
+//                         dispatch still re-runs the 23 Phase B gates.
 //
 // This route does NOT rewrite the readiness system: it composes the
 // existing platform-bridge-mode + per-user access gate + arming
@@ -205,10 +205,10 @@ router.get("/me/live-readiness", requireUser, async (req, res) => {
     execNextStep = "Reset the kill switch before arming again.";
   } else if (!armed) {
     execHeadline = "Arm live trading to execute";
-    execNextStep = "Open Live Arming and complete the manual arming gate. Every dispatch still re-checks all 21 safety gates.";
+    execNextStep = "Open Live Arming and complete the manual arming gate. Every dispatch still re-checks all 23 safety gates.";
   } else {
     execHeadline = "Live execution is ready";
-    execNextStep = "Place trades from the Live Trade Ticket. All 21 Phase B gates are re-checked per dispatch.";
+    execNextStep = "Place trades from the Live Trade Ticket. All 23 Phase B gates are re-checked per dispatch.";
   }
 
   // User-safe payload only. NO bridge tokens, account numbers, EA hashes,

@@ -3514,9 +3514,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
     }
   }
 
-  // ── Foundation gates #19–#21 — assemble dispatch-time inputs ───────────
+  // ── Foundation gates #19–#23 — assemble dispatch-time inputs ───────────
   // Provenance (typed column vs payload-hash-covered copy), promotion-ledger
-  // state (production_edges, read-only), and capital-tier exposure facts.
+  // state (production_edges, read-only), capital-tier exposure facts, the
+  // tenant-context ownership stamps (#22), and the edge-capacity facts (#23).
   // Assembled HERE (dispatch time, not draft time) so revocations/retirements
   // between draft and dispatch are honoured, exactly like every other
   // evaluator input. Every unresolvable fact arrives as the honest "unknown"
@@ -3531,7 +3532,25 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
       provenanceEnvelope: row.provenanceEnvelope ?? null,
       edgeId: row.edgeId ?? null,
       payload: row.payload ?? null,
+      // #22 — the owner AS THE ROW ITSELF STATES IT (never echoed from args).
+      ownerUserId: row.userId ?? null,
     },
+    // #22 — tenant stamps for the scoped facts THIS function read before the
+    // evaluator runs. Each stamp is written beside its own query: the command
+    // row was loaded scoped by args.userId (loadOwned), and the arming/kill-
+    // switch row was loaded scoped by args.userId (getMyArming).
+    extraTenantStamps: [
+      {
+        fact: "live_command_row",
+        scopedToUserId: args.userId,
+        rowOwnerUserIds: [row.userId],
+      },
+      {
+        fact: "live_arming_kill_switch",
+        scopedToUserId: args.userId,
+        rowOwnerUserIds: arming ? [arming.userId] : [],
+      },
+    ],
   });
 
   // Capability #52 — compliance-eligibility consult, assembled at DISPATCH
@@ -3615,9 +3634,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
     // Honest owner/admin waiver of the disclosure requirement (distinct from
     // acceptance — recorded on user_master_live_access as an operator override).
     disclosureWaivedByOperator,
-    // Foundation gates #19–#21 — ALWAYS supplied on the dispatch path (the
+    // Foundation gates #19–#23 — ALWAYS supplied on the dispatch path (the
     // evaluator's null branch exists only for readiness previews with no
-    // command context). Pinned by test:foundation-gates.
+    // command context). Pinned by test:foundation-gates and
+    // test:tenant-capacity-gates.
     foundation: foundationInputs,
   });
 
@@ -3631,8 +3651,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
     verdicts: phaseBGate.gates.filter((g) =>
       g.key === "PROVENANCE_UNPROVEN"
       || g.key === "STRATEGY_NOT_LIVE_PROMOTED"
-      || g.key === "CAPITAL_TIER_EXCEEDED"),
-  }, "Foundation gates #19-#21 evaluated");
+      || g.key === "CAPITAL_TIER_EXCEEDED"
+      || g.key === "TENANT_CONTEXT_VIOLATION"
+      || g.key === "EDGE_CAPACITY_EXCEEDED"),
+  }, "Foundation gates #19-#23 evaluated");
 
   const snapshot = {
     phaseA: phaseAGate,
