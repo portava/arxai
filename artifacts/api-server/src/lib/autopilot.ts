@@ -175,6 +175,94 @@ export function setKillSwitch(on: boolean) {
   else clearLock("KILL_SWITCH");
 }
 
+// ── Lock release (rank-43 audit finding) ──────────────────────────────────
+//
+// WHAT WAS WRONG: `setKillSwitch(true)` had exactly one caller (the
+// EMERGENCY_STOP human override) and `setKillSwitch(false)` had ZERO callers
+// anywhere in the server. startSession and runDecisionPipeline both hard-refuse
+// while KILL_SWITCH is tripped, and startSession does not clear locks — so one
+// press of the red Emergency Stop permanently bricked the Autopilot Control
+// Center for the life of the process, with no reset control on any surface.
+// The same permanent latch applied to DAILY_LOSS / WEEKLY_LOSS /
+// CONSECUTIVE_LOSSES: one bad day tripped DAILY_LOSS forever.
+//
+// WHAT IS CORRECT: locks are released two ways, and never by simply retrying.
+//   1. An EXPLICIT operator reset (resetSafetyLock), admin-gated at the route.
+//      A stop is not cleared by the thing it stopped.
+//   2. Their own scope expiring — a DAILY limit that outlives the day was
+//      never a daily limit. This is expiry, not widening: nothing here clears a
+//      lock inside the window it governs, and startSession still refuses while
+//      any of these is tripped rather than clearing them to get going.
+
+const LOCK_CODES = Object.keys(safetyLocks);
+export function safetyLockCodes(): string[] { return [...LOCK_CODES]; }
+
+function dayKey(iso: string) { return iso.slice(0, 10); }
+function weekKey(iso: string) {
+  const d = new Date(iso);
+  // ISO week: Thursday of the current week identifies the year+week.
+  const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  t.setUTCDate(t.getUTCDate() + 4 - (t.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
+  const week = Math.ceil((((t.getTime() - yearStart.getTime()) / 86_400_000) + 1) / 7);
+  return `${t.getUTCFullYear()}-W${week}`;
+}
+
+/**
+ * Release time-scoped loss locks whose window has rolled over. Called before
+ * every gate that reads them so a tripped DAILY_LOSS cannot outlive its day.
+ * Returns the codes it released (for the audit trail).
+ */
+export function expireTimeScopedLocks(nowIsoStr = nowIso()): string[] {
+  const released: string[] = [];
+  const daily = safetyLocks.DAILY_LOSS;
+  if (daily?.tripped && daily.ts && dayKey(daily.ts) !== dayKey(nowIsoStr)) {
+    clearLock("DAILY_LOSS"); released.push("DAILY_LOSS");
+  }
+  const weekly = safetyLocks.WEEKLY_LOSS;
+  if (weekly?.tripped && weekly.ts && weekKey(weekly.ts) !== weekKey(nowIsoStr)) {
+    clearLock("WEEKLY_LOSS"); released.push("WEEKLY_LOSS");
+  }
+  if (released.length > 0) {
+    pushDecision({
+      type: "AUTOPILOT_LOCK_EXPIRED",
+      summary: `Safety lock window rolled over: ${released.join(", ")}`,
+      payload: { released, at: nowIsoStr },
+    });
+  }
+  return released;
+}
+
+export interface ResetSafetyLockResult {
+  ok: boolean;
+  code: string;
+  reason: string;
+  locks: SafetyLock[];
+}
+
+/**
+ * Explicit operator release of ONE safety lock. `resetBy` is recorded so the
+ * audit trail answers "who released the autopilot stop". Route-level
+ * authorisation is the caller's job (routes/autopilot.ts requires ADMIN/OWNER).
+ */
+export function resetSafetyLock(code: string, resetBy: string): ResetSafetyLockResult {
+  const lock = safetyLocks[code];
+  if (!lock) {
+    return { ok: false, code, reason: `Unknown safety lock '${code}'.`, locks: Object.values(safetyLocks) };
+  }
+  if (!lock.tripped) {
+    return { ok: true, code, reason: `Safety lock ${code} was not tripped.`, locks: Object.values(safetyLocks) };
+  }
+  const previousReason = lock.reason ?? null;
+  clearLock(code);
+  pushDecision({
+    type: "AUTOPILOT_LOCK_RESET",
+    summary: `Safety lock ${code} released by ${resetBy}`,
+    payload: { code, resetBy, previousReason, at: nowIso() },
+  });
+  return { ok: true, code, reason: `Safety lock ${code} released.`, locks: Object.values(safetyLocks) };
+}
+
 // ── Session lifecycle ──────────────────────────────────────────────────────
 export interface StartSessionInput {
   name: string;
@@ -190,7 +278,12 @@ export function startSession(input: StartSessionInput): AutopilotSession | { err
   if (input.mode === "FUTURE_MT5_LIVE_AUTO_LOCKED") {
     return { error: "FUTURE_MT5_LIVE_AUTO_LOCKED is locked until MT5 bridge is connected, verified, risk approved, and manually armed." };
   }
-  if (safetyLocks.KILL_SWITCH.tripped) return { error: "Kill switch active." };
+  expireTimeScopedLocks();
+  // The kill switch is NOT cleared here — a stop is never released by the thing
+  // it stopped. The operator clears it explicitly (POST /autopilot/reset-lock).
+  if (safetyLocks.KILL_SWITCH.tripped) {
+    return { error: "Kill switch active. An ADMIN/OWNER must release it (Autopilot → Reset safety lock) before a session can start." };
+  }
   // Stop any prior session.
   if (activeSessionId) stopSession();
   const s: AutopilotSession = {
@@ -272,7 +365,10 @@ export function runDecisionPipeline(opts: RunPipelineOptions = {}): AutopilotDec
   if (session.status === "STOPPED") return { error: "Session stopped." };
   if (session.status === "PAUSED" && !opts.force) return { error: "Session paused." };
   if (currentMode === "OFF") return { error: "Autopilot OFF." };
-  if (safetyLocks.KILL_SWITCH.tripped) return { error: "Kill switch active." };
+  expireTimeScopedLocks();
+  if (safetyLocks.KILL_SWITCH.tripped) {
+    return { error: "Kill switch active. An ADMIN/OWNER must release it (Autopilot → Reset safety lock)." };
+  }
 
   if (cooldownUntil && Date.now() < cooldownUntil && !opts.force) {
     transition("COOLDOWN", "Cooldown in effect");
@@ -566,6 +662,23 @@ export function generateReport(sessionId?: string) {
 
 // Hook position closes into consecutive-loss tracking (called on tick).
 export function recordTradeOutcome(realizedPnL: number) {
-  if (realizedPnL > 0) { consecutiveLosses = 0; cooldownUntil = Date.now() + DEFAULT_RULES.cooldownAfterWinSec * 1000; }
-  else if (realizedPnL < 0) { consecutiveLosses += 1; cooldownUntil = Date.now() + DEFAULT_RULES.cooldownAfterLossSec * 1000; }
+  if (realizedPnL > 0) {
+    consecutiveLosses = 0;
+    cooldownUntil = Date.now() + DEFAULT_RULES.cooldownAfterWinSec * 1000;
+    // The CONSECUTIVE_LOSSES lock's own condition is "N losses in a row". A win
+    // ends the streak, so the condition is no longer true and the lock is
+    // released. Without this the lock latched forever after one bad run and the
+    // counter it reports (0) contradicted the lock it left standing.
+    if (safetyLocks.CONSECUTIVE_LOSSES?.tripped) {
+      clearLock("CONSECUTIVE_LOSSES");
+      pushDecision({
+        type: "AUTOPILOT_LOCK_EXPIRED",
+        summary: "Safety lock CONSECUTIVE_LOSSES released — loss streak ended by a winning trade",
+        payload: { released: ["CONSECUTIVE_LOSSES"], at: nowIso() },
+      });
+    }
+  } else if (realizedPnL < 0) {
+    consecutiveLosses += 1;
+    cooldownUntil = Date.now() + DEFAULT_RULES.cooldownAfterLossSec * 1000;
+  }
 }

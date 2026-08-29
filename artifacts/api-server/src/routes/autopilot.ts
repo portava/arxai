@@ -11,6 +11,7 @@ import {
   status, startSession, pauseSession, resumeSession, stopSession,
   runDecisionPipeline, listDecisions, listSessions, getSession,
   humanOverride, markDecision, getStateMachine, getSafetyLocks, generateReport,
+  resetSafetyLock, safetyLockCodes,
 } from "../lib/autopilot.js";
 
 const router = Router();
@@ -100,6 +101,27 @@ router.post("/autopilot/mark-decision", requireAdmin, (req, res) => {
   const r = markDecision(p.data.decisionId, p.data.mark, p.data.note);
   if (!r) return res.status(404).json({ error: "not found" });
   return res.json(r);
+});
+
+// POST /autopilot/reset-lock — release ONE tripped safety lock.
+//
+// Rank-43 audit finding: setKillSwitch(false) had zero callers anywhere, so one
+// press of the Autopilot Emergency Stop bricked the Autopilot Control Center
+// for the life of the process — the page showed "Kill switch is engaged —
+// autopilot cannot start." with no reset control on any surface. This is that
+// control. ADMIN/OWNER only (same gate as every other mutating autopilot
+// endpoint) and the acting role is recorded on the decision log, so the audit
+// answers who released the stop.
+router.post("/autopilot/reset-lock", requireAdmin, (req, res) => {
+  const Body = z.object({ code: z.string().min(1) });
+  const p = Body.safeParse(req.body ?? {});
+  if (!p.success) {
+    return res.status(400).json({ error: "invalid", issues: p.error.issues, knownCodes: safetyLockCodes() });
+  }
+  const role = readRoleFromRequest(req);
+  const actor = req.authUser ? `user:${req.authUser.id}(${role})` : `role:${role}(no user session)`;
+  const r = resetSafetyLock(p.data.code, actor);
+  return res.status(r.ok ? 200 : 400).json({ ...r, knownCodes: safetyLockCodes() });
 });
 
 export default router;

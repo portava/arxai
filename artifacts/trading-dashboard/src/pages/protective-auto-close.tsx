@@ -4,8 +4,12 @@
 //   * Default is OFF. Saving prefs NEVER unlocks execution by itself.
 //   * Enabling requires explicit `acknowledgedRiskOfAutoClose:true` in the
 //     PUT body (backend enforces 400 if missing).
-//   * Effective status is ALERT_ONLY unless every gate passes — this UI
-//     shows the gate list and never lies about the live state.
+//   * Effective status is ALERT_ONLY, FIXED, in this build. The page separates
+//     SYSTEM LOCKS (properties of the build — no auto-close order path exists,
+//     live execution not unlocked) from YOUR GATES (conditions you control).
+//     The locks are not status reads and are never rendered as checks that
+//     might flip on their own; the earlier version showed them as failing gate
+//     rows, so a user with a healthy MT5 bridge was told the bridge was down.
 
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -73,6 +77,27 @@ function GateRow({ ok, label, detail }: { ok: boolean; label: string; detail: st
   );
 }
 
+// A SYSTEM LOCK is not a status read. It is a fixed property of this build, so
+// it must not be dressed as a check that might one day flip on its own — the
+// audit found two locks rendered as gate rows, telling users with a healthy,
+// connected MT5 bridge that "MT5 bridge is not connected".
+function LockRow({ label, detail }: { label: string; detail: string }) {
+  return (
+    <div className="flex items-start gap-3 py-1.5">
+      <span className="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold bg-muted text-muted-foreground">
+        ⛔
+      </span>
+      <div className="flex-1">
+        <div className="text-sm text-foreground">{label}</div>
+        <div className="text-xs text-muted-foreground">{detail}</div>
+      </div>
+      <Badge variant="outline" className="text-[10px] border-border text-muted-foreground">
+        SYSTEM LOCK
+      </Badge>
+    </div>
+  );
+}
+
 export default function ProtectiveAutoClosePage() {
   const qc = useQueryClient();
   const [acknowledged, setAcknowledged] = useState(false);
@@ -124,21 +149,37 @@ export default function ProtectiveAutoClosePage() {
   const effectiveMode = pendingMode ?? s.mode;
   const effectiveThreshold = pendingThreshold ?? s.inactivityThresholdMin;
 
-  // Gates — every one must PASS for real auto-close to fire. We deliberately
-  // hard-code bridgeConnected:false until a real MT5 bridge is wired.
+  // SYSTEM LOCKS — fixed properties of this build, NOT status reads.
+  //
+  // The audit found these two rendered as gate rows with ok:false, so a user
+  // with a healthy, connected MT5 bridge was told "MT5 bridge is not connected"
+  // as if it were a live check that might pass tomorrow. It is not: this build
+  // has no auto-close placement path at all (CLAUDE.md: "Auto-close is
+  // ALERT_ONLY. The system never closes a position on a user's behalf."), so
+  // ARMED is unreachable by construction and every row below it can never
+  // combine into a firing policy. They are labelled as locks and excluded from
+  // the pass/fail arithmetic, which now says plainly why the answer is fixed.
+  const systemLocks = [
+    { label: "Auto-close placement path", detail: "This build has no auto-close order path. The system never closes a position on your behalf — every decision is ALERT_ONLY, regardless of the settings below." },
+    { label: "Live execution unlocked", detail: "Live execution is not unlocked for auto-close in this build. This is a fixed lock, not a check that can pass." },
+  ];
+
+  // Gates — your own conditions. Even with every one PASS, the system locks
+  // above hold the effective status at ALERT_ONLY.
   const gates = [
-    { label: "Broker bridge connected", ok: false, detail: "MT5 bridge is not connected (demo-only system lock). Without the bridge, the AI cannot send a close order." },
     { label: "User opt-in saved", ok: s.enabled === true, detail: s.enabled ? "You have opted in to Protective Auto-Close." : "You have not opted in. Toggle ENABLE below and acknowledge the risk." },
     { label: "Risk acknowledgement", ok: s.enabled === true, detail: "Enabling required the acknowledgement that the AI may close or partially close your trades under your pre-authorized policy when you are inactive." },
     { label: "Activity status known", ok: act.status !== "UNKNOWN", detail: `Current activity: ${act.status}. ${act.reason}` },
     { label: "Inactivity confirmed", ok: act.status === "INACTIVE", detail: act.status === "INACTIVE" ? `Inactive for ${Math.round((act.inactiveDurationMs ?? 0) / 60_000)} min ≥ threshold ${s.inactivityThresholdMin} min.` : "Auto-close fires only when you are confirmed INACTIVE for longer than your threshold." },
     { label: "Multi-signal confirmation required", ok: s.requireMultiSignal === true, detail: s.requireMultiSignal ? "Auto-close requires ≥2 independent reversal signals." : "Multi-signal confirmation is OFF — recommend turning it ON." },
-    { label: "Live execution unlocked", ok: false, detail: "Live execution remains system-locked (demo-only). Until ARX explicitly unlocks live trading, every decision is ALERT_ONLY." },
-    { label: "Kill switch not engaged", ok: s.killSwitchEngaged === false, detail: s.killSwitchEngaged ? "Kill switch is ENGAGED. Auto-close cannot fire." : "Kill switch is clear." },
+    { label: "Kill switch not engaged", ok: s.killSwitchEngaged === false, detail: s.killSwitchEngaged ? "Auto-close kill switch is ENGAGED. This switch stops Protective Auto-Close only — it is not the platform kill switch." : "Auto-close kill switch is clear. (This switch stops Protective Auto-Close only.)" },
     { label: "Duplicate-action protection active", ok: s.cooldownMin >= 1 && s.maxAutoClosesPerTrade >= 1, detail: `Cooldown ${s.cooldownMin} min between actions, max ${s.maxAutoClosesPerTrade} auto-close action(s) per trade. The engine refuses to re-fire inside the cooldown or after the cap.` },
   ];
-  const allPass = gates.every((g) => g.ok);
-  const effectiveStatus: "ALERT_ONLY" | "ARMED" = allPass ? "ARMED" : "ALERT_ONLY";
+  const yourGatesPass = gates.every((g) => g.ok);
+  // ARMED is unreachable while any system lock stands, and both stand in this
+  // build. Stated as such rather than implied by an all-gates count that a user
+  // could reasonably expect to satisfy.
+  const effectiveStatus: "ALERT_ONLY" | "ARMED" = "ALERT_ONLY";
 
   return (
     <div className="space-y-4 max-w-4xl">
@@ -161,22 +202,34 @@ export default function ProtectiveAutoClosePage() {
             <strong> and</strong> a reversal pattern is confirmed. Default is <strong>OFF</strong>.
             Saving preferences does <strong>not</strong> unlock execution by itself.
           </p>
-          {effectiveStatus === "ALERT_ONLY" && (
-            <div className="rounded border border-warning/30 bg-warning/10 p-3 flex gap-2">
-              <AlertTriangle className="h-4 w-4 text-warning mt-0.5 shrink-0" />
-              <div className="text-warning text-xs">
-                <strong>Alert Only</strong> — the AI can warn you, but cannot close this trade.
-                At least one gate below is BLOCKED.
-              </div>
+          <div className="rounded border border-warning/30 bg-warning/10 p-3 flex gap-2" data-testid="pac-alert-only-notice">
+            <AlertTriangle className="h-4 w-4 text-warning mt-0.5 shrink-0" />
+            <div className="text-warning text-xs">
+              <strong>Alert Only — and fixed that way in this build.</strong> The AI can warn you; it
+              cannot close a trade. Two system locks below hold this status, so the Mode, close-type and
+              protection settings on this page are saved as your preferences but <strong>cannot fire</strong> yet.
+              {yourGatesPass && " Your own gates all pass; the locks are what remain."}
             </div>
-          )}
+          </div>
         </CardContent>
       </Card>
 
-      {/* GATES */}
+      {/* SYSTEM LOCKS — fixed in this build, not status reads */}
       <Card className="bg-card border-border">
-        <CardHeader className="pb-2"><CardTitle className="text-white text-sm">Required gates</CardTitle></CardHeader>
-        <CardContent className="divide-y divide-border">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-white text-sm">System locks (fixed in this build)</CardTitle>
+        </CardHeader>
+        <CardContent className="divide-y divide-border" data-testid="pac-system-locks">
+          {systemLocks.map((l) => <LockRow key={l.label} {...l} />)}
+        </CardContent>
+      </Card>
+
+      {/* GATES — the user's own conditions */}
+      <Card className="bg-card border-border">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-white text-sm">Your gates</CardTitle>
+        </CardHeader>
+        <CardContent className="divide-y divide-border" data-testid="pac-user-gates">
           {gates.map((g) => <GateRow key={g.label} {...g} />)}
         </CardContent>
       </Card>
@@ -225,9 +278,13 @@ export default function ProtectiveAutoClosePage() {
                 data-testid="select-pac-mode"
               >
                 <option value="ALERT_ONLY">ALERT_ONLY (warn me — never close)</option>
-                <option value="CONFIRM_IF_ACTIVE">CONFIRM_IF_ACTIVE (ask if I'm at the keyboard)</option>
-                <option value="AUTO_IF_INACTIVE">AUTO_IF_INACTIVE (auto when inactive — all gates required)</option>
+                <option value="CONFIRM_IF_ACTIVE">CONFIRM_IF_ACTIVE — inert in this build</option>
+                <option value="AUTO_IF_INACTIVE">AUTO_IF_INACTIVE — inert in this build</option>
               </select>
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Only ALERT_ONLY has an effect today. The other two are stored as your preference and
+                behave as ALERT_ONLY until the system locks above are lifted.
+              </p>
             </div>
           </div>
 
@@ -253,13 +310,22 @@ export default function ProtectiveAutoClosePage() {
             </Button>
             {!s.killSwitchEngaged ? (
               <Button variant="destructive" onClick={() => killMutation.mutate()} disabled={killMutation.isPending} data-testid="button-pac-kill">
-                <ZapOff className="h-4 w-4 mr-1" /> Engage kill switch
+                <ZapOff className="h-4 w-4 mr-1" /> Engage auto-close kill switch
               </Button>
             ) : (
               <Button variant="outline" onClick={() => clearKillMutation.mutate()} disabled={clearKillMutation.isPending} data-testid="button-pac-clear-kill">
-                <Zap className="h-4 w-4 mr-1" /> Clear kill switch
+                <Zap className="h-4 w-4 mr-1" /> Clear auto-close kill switch
               </Button>
             )}
+          </div>
+
+          {/* WHICH STOP IS THIS? — see the same statement on /emergency and
+              /live-trading-control. Four kill-switch surfaces exist; each names
+              its own reach so an operator cannot pick the wrong one by accident. */}
+          <div className="text-xs rounded border border-border bg-muted/30 p-2 space-y-1" data-testid="pac-stop-scope">
+            <p><strong>This switch stops:</strong> Protective Auto-Close decisions for your account only.</p>
+            <p><strong>It does not stop:</strong> any order dispatch. To halt live orders use the{" "}
+              <a href="/emergency" className="underline">Emergency kill switch</a>.</p>
           </div>
 
           <div className="text-xs text-muted-foreground italic">

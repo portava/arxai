@@ -381,6 +381,17 @@ export function preTradeCheck(t: PreTradeInput): PreTradeResult {
 }
 
 // ── Trading pause / resume ────────────────────────────────────────────────
+//
+// SCOPE (do not overstate this in any UI copy — the audit caught the Risk
+// Command Center claiming "Pause/resume halts every dispatch surface"):
+//   `tradingPaused` is a MODULE-LEVEL boolean. Its only readers are
+//   lib/acceptance.ts and this file's own preTradeCheck — i.e. the in-memory
+//   simulator OMS and shadow mode. NOTHING in lib/live/ or lib/phase6/ imports
+//   this module, so pausing here does NOT stop MT5 live dispatch or the Deriv
+//   guided path. It is process-wide (not per user) and is lost on restart.
+//   The control that halts live dispatch is the safety-core kill switch
+//   (/emergency → safety_core.kill_switch_engaged), which liveCommandPipeline
+//   and guidedDispatchEntry both read fail-closed.
 export function pauseTrading(reason: string) { tradingPaused = true; pauseReason = reason; emitEvent({ rule: "PAUSE", severity: "BLOCK", decision: "PAUSED", explanation: reason }); return { paused: tradingPaused, reason }; }
 export function resumeTrading() { tradingPaused = false; pauseReason = null; emitEvent({ rule: "RESUME", severity: "INFO", decision: "RESUMED", explanation: "Trading resumed" }); return { paused: false }; }
 export function isPaused() { return { paused: tradingPaused, reason: pauseReason }; }

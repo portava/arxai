@@ -1129,10 +1129,15 @@ export default function RiskSettings() {
                       <p>This will immediately:</p>
                       <ul className="list-disc list-inside space-y-1 text-foreground/80">
                         <li>Stop all active bot scanning</li>
-                        <li>Cancel every open mock trade</li>
+                        <li>Engage the platform kill switch — new live dispatch is blocked on every venue</li>
                         <li>Set bot mode to <strong>OFF</strong></li>
                         <li>Require manual restart to resume</li>
                       </ul>
+                      <p className="text-warning font-medium pt-2">
+                        It does <strong>not</strong> close anything. Open positions stay open and no close
+                        command is sent to your broker — close those from your broker or the live close
+                        screen. Your trade history is not modified.
+                      </p>
                       <p className="text-danger font-medium pt-2">Are you sure?</p>
                     </DialogDescription>
                   </DialogHeader>
