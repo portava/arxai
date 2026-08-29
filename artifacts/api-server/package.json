@@ -47,6 +47,7 @@
     "test:edge-promotion": "node --import tsx --test --test-force-exit src/lib/learning/__qa__/edgePromotion.test.ts",
     "test:foundation-gates": "node --import tsx --test --test-force-exit src/lib/live/__qa__/foundationGates.test.ts",
     "test:feature-snapshot": "node --import tsx --test --test-force-exit src/lib/features/__qa__/featureSnapshot.test.ts",
+    "test:blackbox-parity": "node --import tsx --test --test-force-exit src/lib/features/__qa__/blackboxParity.test.ts",
     "test:gap-estimator": "node --import tsx --test --test-force-exit src/lib/marketModel/__qa__/gapEstimator.test.ts",
     "test:expected-move-pips": "node --import tsx --test --test-force-exit src/lib/marketModel/__qa__/expectedMovePips.test.ts",
     "test:scanner-tp-targets": "node --import tsx --test --test-force-exit src/lib/assistant/__qa__/liveScannerTpTargets.test.ts",
