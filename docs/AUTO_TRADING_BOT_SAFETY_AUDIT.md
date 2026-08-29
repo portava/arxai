@@ -57,7 +57,7 @@
 | Position Manager | `artifacts/api-server/src/lib/selfTrade/livePositionManager.ts` | L2: alerts only. L3+: MOVE_TO_BE/TIGHTEN_SL/EXIT via `executeInstant`. |
 | Agent Ledger | `artifacts/api-server/src/lib/selfTrade/agentLedger.ts` | Append-only capital accounting. Realized P/L posted only from real fills. |
 | Service Layer | `artifacts/api-server/src/lib/selfTrade/service.ts` | CRUD for agents, kill switches, autonomy levels. Every mutation audit-wrapped. |
-| 18-Gate Phase B Dispatch | `lib/domain/src/safety-contracts/livePhaseBDispatchGate.ts` | Pure function. ALL 23 gates must PASS or dispatch is BLOCKED. |
+| 23-Gate Phase B Dispatch | `lib/domain/src/safety-contracts/livePhaseBDispatchGate.ts` | Pure function. ALL 23 gates must PASS or dispatch is BLOCKED. |
 | Synthetic Live Floor | `lib/domain/src/safety-contracts/syntheticLiveFloor.ts` | Hard floor: synthetics blocked for non-owner or non-Deriv broker. |
 | Live Command Pipeline | `artifacts/api-server/src/lib/live/liveCommandPipeline.ts` | Full pipeline: preflight → draft → confirm → dispatch. 23-gate eval. |
 | Symbol Feed Verdict | `artifacts/api-server/src/lib/data/symbolFeedVerdict.ts` | LIVE/LIVE_DELAYED/AWAITING. Must be LIVE for autonomous entry (entryDataSufficiency). |
@@ -128,9 +128,9 @@ flowchart TD
     AB --> AC[executeInstant userId=executingUserId\nSource: self_trade]
     AC --> AD[createLiveDraft preflight\nARXFocus check, SL/TP sanity, pool gates,\nbroker symbol rules, feed verdict]
     AD --> AE[confirmLiveDraft]
-    AE --> AF[dispatchLiveCommand\n23-gate Phase B evaluator\nALL 18 must PASS]
+    AE --> AF[dispatchLiveCommand\n23-gate Phase B evaluator\nALL 23 must PASS]
 
-    AF -- PASS all 18 --> AG[SENT_TO_MT5_LIVE → EA bridge]
+    AF -- PASS all 23 --> AG[SENT_TO_MT5_LIVE → EA bridge]
     AF -- ANY gate FAIL --> AH[LIVE_BLOCKED primaryReason]
 
     AG --> AI[EA executes → LIVE_FILLED + brokerTicket\nOR LIVE_REJECTED / LIVE_FAILED / LIVE_EXPIRED]
@@ -267,7 +267,7 @@ Every input the bot reads before proposing or placing a trade:
 | Synthetic live floor | `evaluateSyntheticLiveFloor` — hard block for non-owner/non-Deriv |
 | Broker symbol rules | `evaluatePreTradeBrokerGuard` — min/max volume, freeze distance, SL/TP proximity |
 
-### Layer 4 — 18-Gate Phase B Dispatch Evaluator (pure, all must PASS)
+### Layer 4 — 23-Gate Phase B Dispatch Evaluator (pure, all must PASS)
 | Gate # | Key | What it checks |
 |---|---|---|
 | 1 | `LIVE_BROKER_EXECUTION_DISABLED` | env master switch |
@@ -455,7 +455,7 @@ Each score /100 reflects the depth and correctness of implementation, honesty of
 ### Justification
 
 **What qualifies it for demo:**
-- All 18 execution gates are enforced and tested.
+- All 23 execution gates are enforced and tested.
 - No always-on autonomous loop; admin-trigger-only with full audit trail.
 - Decision intelligence uses real signals (Ruby Market Edge), not fabricated data.
 - Exactly-once idempotency, TOCTOU kill switch, anomaly screen fail-safe.

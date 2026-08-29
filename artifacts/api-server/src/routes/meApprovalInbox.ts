@@ -332,7 +332,7 @@ router.post("/me/approval-tickets", requireUser, async (req, res) => {
     expiresAt: new Date(Date.now() + PROPOSAL_TTL_MS),
     constitutionVersion: conRow.version,
     // What was ACTUALLY evaluated, named as such. The earlier version wrote
-    // gateVerdictsPassed: true unconditionally — a record asserting all 18
+    // gateVerdictsPassed: true unconditionally — a record asserting all 23
     // gates passed when only the Constitution had been consulted.
     gateVerdicts: {
       constitution: { decision: "PERMIT", version: conRow.version },

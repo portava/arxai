@@ -8,7 +8,7 @@ The sufficiency verdict is a DATA-QUALITY gate, not a trade-permission engine. I
 
 ## NON-NEGOTIABLE RULES
 
-1. **ADD a gate; remove/weaken NONE.** The sufficiency check is ANDed in FRONT of the entire existing live chain — the 23-gate evaluator, `evaluateSyntheticLiveFloor`, SL policy (`requireStopLoss`/`MISSING_STOP_LOSS`), caps, kill switch, master-live access, the per-symbol live-confirmation, Focus lock. Every one of those still runs and still has final say. If sufficiency passes, NOTHING downstream changes. If sufficiency fails, the trade is blocked BEFORE reaching them.
+1. **ADD a gate; remove/weaken NONE.** The sufficiency check is ANDed in FRONT of the entire existing live chain — the 18-gate evaluator, `evaluateSyntheticLiveFloor`, SL policy (`requireStopLoss`/`MISSING_STOP_LOSS`), caps, kill switch, master-live access, the per-symbol live-confirmation, Focus lock. Every one of those still runs and still has final say. If sufficiency passes, NOTHING downstream changes. If sufficiency fails, the trade is blocked BEFORE reaching them.
 2. **NEVER grant.** There is no code path where the sufficiency verdict causes a trade to be allowed that the existing gates would have blocked. It can only add a block. Prove this.
 3. **`canShowTradeSetup` / `tradeSetupAllowed` is NOT execution permission.** Do not read it as authorization to dispatch. The trade ticket may use it to decide whether to SHOW the setup / enable the build affordance; the actual placement still goes through the full gate chain regardless.
 4. **Lockstep at preflight AND dispatch.** Like the synthetic floor, the sufficiency block must be evaluated at BOTH the preflight (`createLiveDraft`) and dispatch (`dispatchLiveCommand`) stages on the row's own symbol+timeframe — so a draft that was sufficient at build time but goes insufficient before dispatch is re-blocked at dispatch (no TOCTOU hole). Mirror exactly how `evaluateSyntheticLiveFloor` is wired at both stages.
@@ -64,7 +64,7 @@ The preflight + dispatch sufficiency checks (side by side, same condition, locks
 ## COMPLETION STANDARD — all must be true
 
 - The sufficiency verdict blocks NEW live entries on insufficient/partial/stale/blocked data at BOTH preflight and dispatch (lockstep, `INSUFFICIENT_DATA_FOR_ENTRY`), and the trade-ticket UI shows the honest disabled state — never an armed Buy/Sell on insufficient data.
-- The gate is ADDITIVE and BLOCK-ONLY: a `sufficient` order still passes through the full existing chain (synthetic floor + SL + 23 gates) which retains final authority; there is no path where sufficiency GRANTS a trade the gates would block.
+- The gate is ADDITIVE and BLOCK-ONLY: a `sufficient` order still passes through the full existing chain (synthetic floor + SL + 18 gates) which retains final authority; there is no path where sufficiency GRANTS a trade the gates would block.
 - Position management (close/modify/cancel) is NOT blocked by sufficiency.
 - Backtest shows an honest reliability badge driven by the same verdict; it does not block runs and does not touch live execution.
 - The engine is the Phase-1 one (not re-derived); no field reads as execution permission.

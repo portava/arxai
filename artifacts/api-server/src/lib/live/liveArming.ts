@@ -448,7 +448,7 @@ export async function armLiveForUser(input: LiveArmingInput & { ip?: string }) {
   // Task #737 — the per-user arming confirmation phrase ("ENABLE LIVE TRADING")
   // IS the trader's personal live-confirmation. Completing it honestly
   // satisfies the new LIVE_EXECUTION_ACTIVATION_GATE precondition (source
-  // `user_confirmation`). This never bypasses any of the 18 dispatch gates —
+  // `user_confirmation`). This never bypasses any of the 23 dispatch gates —
   // approval, allocation, heartbeat, kill-switch, etc. all still run. We only
   // UPDATE an existing access row (arming alone never creates approval state):
   // if no row exists the resolver still reports not-approved and the gate

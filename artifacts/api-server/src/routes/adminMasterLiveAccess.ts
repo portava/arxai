@@ -598,7 +598,7 @@ router.post("/admin/master-live/users/:userId/approve", async (req, res) => {
 // real-money-execution acknowledgement.
 //
 // SAFETY: this NEVER opens a second execution path and NEVER weakens, skips, or
-// ORs any of the 18 Phase B dispatch gates or the additive
+// ORs any of the 23 Phase B dispatch gates or the additive
 // LIVE_EXECUTION_ACTIVATION_GATE. It only sets honest preconditions:
 //   - approves the trader for the shared live bridge (status APPROVED + caps);
 //   - on full activation, sets live_execution_enabled = true,
@@ -917,7 +917,7 @@ router.post("/admin/traders/:userId/approve-live", async (req, res) => {
 //
 // SAFETY: never touches unapproved users, hard-skips bots/agents/system and
 // investors, and skips DISABLED/SUSPENDED/REVOKED/RISK_LOCKED access rows. It
-// NEVER weakens or ORs any of the 18 Phase B gates or the additive
+// NEVER weakens or ORs any of the 23 Phase B gates or the additive
 // LIVE_EXECUTION_ACTIVATION_GATE — every order still re-gates at dispatch. Safe
 // to run repeatedly.
 const bulkActivateBody = z.object({

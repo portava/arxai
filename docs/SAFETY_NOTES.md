@@ -10,10 +10,14 @@ _Originally written 2026-05-11 (Build B). Headline status reconciled 2026-06-12 
 >   switch + per-user arming + admin approval + kill switch. `canPlaceTrades:false`
 >   holds **only on the advisory / intelligence APIs** (still CI-enforced), not the
 >   whole system. THIS environment sets `ARX_LIVE_BROKER_EXECUTION_ENABLED="true"`
->   for controlled owner/admin live testing (satisfies only gate #1 of 18).
-> - **Live gate count is 18** (the original 16 + **#17 `MISSING_TAKE_PROFIT`** and
->   **#18 `DISCLOSURE_NOT_ACCEPTED`**, both governance-conditional). See replit.md
->   "Current safety gates".
+>   for controlled owner/admin live testing (satisfies only gate #1 of 23).
+> - **Live gate count is 23** — the original 16, + **#17 `MISSING_TAKE_PROFIT`**
+>   and **#18 `DISCLOSURE_NOT_ACCEPTED`** (both governance-conditional), + the
+>   five FOUNDATION gates **#19 `PROVENANCE_UNPROVEN`**,
+>   **#20 `STRATEGY_NOT_LIVE_PROMOTED`**, **#21 `CAPITAL_TIER_EXCEEDED`**,
+>   **#22 `TENANT_CONTEXT_VIOLATION`**, **#23 `EDGE_CAPACITY_EXCEEDED`**. The
+>   count is settled by code, not prose: `evaluateLivePhaseBDispatchGate` pushes
+>   exactly 23 entries into `gates[]`. See replit.md "Current safety gates".
 > - **MT5 bridge auth is per-user only.** The legacy server-wide `MT5_BRIDGE_TOKEN`
 >   env value is **rejected** everywhere; the "503 when `MT5_BRIDGE_TOKEN` unset"
 >   behavior described in §3/§5 below is historical.

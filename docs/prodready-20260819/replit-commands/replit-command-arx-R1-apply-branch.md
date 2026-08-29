@@ -10,7 +10,7 @@ The branch reverts that clobber file-by-file (`.replit` kept at HEAD to preserve
 
 ## Branch contents (commit order)
 
-1. `P0 fixpack` — production `SESSION_SECRET` hard-fail; production CORS same-origin lockdown (`ARX_CORS_ALLOWED_ORIGINS` escape hatch); stale-doc corrections (23 gates, 56 guards, 7 strategies, bridge-v2 endpoints live, isolation status).
+1. `P0 fixpack` — production `SESSION_SECRET` hard-fail; production CORS same-origin lockdown (`ARX_CORS_ALLOWED_ORIGINS` escape hatch); stale-doc corrections (18 gates, 56 guards, 7 strategies, bridge-v2 endpoints live, isolation status).
 2. `Revert clobber 9185c8b` — the restore described above.
 3. Round A repair commits (see `fixpack/ROUND_A_NOTES.md` in this delivery for the itemized list).
 

@@ -128,7 +128,7 @@ export const userMasterLiveAccessTable = pgTable(
     //
     // SAFETY: these fields drive the NEW `LIVE_EXECUTION_ACTIVATION_GATE` only.
     // That gate ADDS a precondition to the live order path — it never weakens,
-    // skips, or ORs around any of the 18 Phase B dispatch gates, the kill
+    // skips, or ORs around any of the 23 Phase B dispatch gates, the kill
     // switch, per-user allocation, the risk governor, symbol approval, or
     // account status. Real-money execution remains default-deny.
     //

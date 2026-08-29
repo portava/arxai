@@ -8,7 +8,7 @@
 //
 // SAFETY (inviolable):
 //   * This is a DESCRIBE-only aggregator. It NEVER grants execution. Every live
-//     order still routes instant-trade router → live pipeline → the 18 Phase B
+//     order still routes instant-trade router → live pipeline → the 23 Phase B
 //     dispatch gates + LIVE_EXECUTION_ACTIVATION_GATE + kill switch + allocation
 //     + risk + symbol checks. `liveEntryEligible: true` here is a readiness hint;
 //     dispatch fully re-gates.

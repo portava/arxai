@@ -1,7 +1,7 @@
 // CI guard — live-dispatch-cas (P0-1: live-dispatch double-send race)
 //
 // WHY THIS EXISTS
-//   `dispatchLiveCommand` reads the command row, evaluates all 18 Phase B
+//   `dispatchLiveCommand` reads the command row, evaluates all 23 Phase B
 //   gates, and then UPDATEs the row to SENT_TO_MT5_LIVE. That read-then-write
 //   is a TOCTOU window: two concurrent dispatches of the same LIVE_APPROVED
 //   command both observe status=LIVE_APPROVED, both pass all 23 gates (no gate

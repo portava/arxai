@@ -27,7 +27,7 @@ label, keeps `bias`. The bug recurs because the design treats direction as
   `mayShowDirection` / `mayShowBias` / `mayShowConfidence` (all `=== status === "sufficient"`)
   reusing `humanReason`. These flags are **DISPLAY-ONLY** — they may only
   hide/neutralize; they must NEVER be read by any execution path
-  (`livePhaseBDispatchGate`, the 16/18 live gates, `canShowTradeSetup` for
+  (`livePhaseBDispatchGate`, the 23 live gates, `canShowTradeSetup` for
   trade-setup eligibility stay the execution authorities).
 - Fix at the SOURCE so frontends have nothing to leak:
   - `aiBrain.ts` `analyzeCore` (reached via `analyzeMarketFromCandles` L88) emits

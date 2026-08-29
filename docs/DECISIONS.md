@@ -209,14 +209,19 @@ it never discovers positions on its own, so it cannot become a bulk flattener.
 
 **Ruling 19 — Phase 6 authorized, including the Deriv execution seam
 (2026-08-27).** *Lifts, for guided and demo execution only, the standing holds
-"no `DerivExecutionAdapter`, no dispatch through the 23-gate path" recorded at
+"no `DerivExecutionAdapter`, no dispatch through the 18-gate path" recorded at
 the end of Ruling 18. Ruling 18's other holds are NOT lifted.*
+
+> *Editorial note (added 2026-08-29, not part of the ruling): "18-gate" is left
+> as written — it was the count when Rulings 16–19 were made. The count is now
+> **23** (same evaluator, foundation gates #19–#23 added since); see "Finding of
+> fact" below. Only the count changed, never the hold.*
 
 Owner's words: *"AUTHORIZE PHASE 6 — SELF-TRADING GUIDED MODE, INCLUDING THE
 DERIV EXECUTION SEAM."*
 
 **Authorized to build and wire:** Personal Trading Constitution; Approval Inbox
-with expiring tickets; `DerivExecutionAdapter`; the existing 23-gate dispatch
+with expiring tickets; `DerivExecutionAdapter`; the existing 18-gate dispatch
 boundary; guided confirm → execute; position/reconciliation integration;
 journal/debrief integration.
 
@@ -256,7 +261,7 @@ existing unknown reconciler. `Mt5EaBridgeAdapter` never produces it, so the MT5
 path keeps byte-equivalent behaviour.
 
 **Decision 2 — venue gate parity, fail-closed on any unmapped gate.** Each of
-the 23 gates gets an explicit audited disposition for the Deriv demo venue:
+the 18 gates gets an explicit audited disposition for the Deriv demo venue:
 `EQUIVALENT`, `STRICTER`, or `NOT_APPLICABLE` **with a recorded reason**. No
 gate may be silently dropped. Gate 6 **inverts and tightens** for the demo tier
 — the account must be demonstrably DEMO, via Phase 5's certified allow-list

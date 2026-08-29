@@ -17,7 +17,7 @@
 //     owner-press admin seams (typed-confirmation admin routes), one stage
 //     per press, with a minimum dwell per stage.
 //   * This layer is ADDITIVE and stricter-only: it can refuse or shrink,
-//     never grant. Every existing wall (kill switch, 18/23-gate dispatch,
+//     never grant. Every existing wall (kill switch, 23-gate dispatch,
 //     per-user governor, mission gate, Phase 7) runs unchanged underneath.
 //
 // FAILURE POSTURE:

@@ -11,9 +11,12 @@
 //
 // Proven here:
 //   (59) DEMO/PAPER never touches the live broker — a non-live mission runs the
-//        SAME gate chain and dispatches onto the SIMULATED recorder seam
-//        (`sim:` command id, journaled + audited); the LIVE executor seam is
-//        never called and no fill/price/P&L is fabricated. Demo stays demo.
+//        MISSION-LAYER gates (probation, mission gate, Phase 7, single-flight)
+//        and then dispatches onto the SIMULATED recorder seam (`sim:` command
+//        id, journaled + audited). It does NOT run the live chain: the pipeline
+//        pre-gates, the per-user governor and the 23-gate Phase B evaluator are
+//        never reached, because they sit behind the LIVE executor seam — which
+//        is never called. No fill/price/P&L is fabricated. Demo stays demo.
 //   (61) Mission cannot bypass the live execution gates — a live dispatch routes
 //        through the SAME instant-trade seam with source "mission"; when that
 //        seam rejects (a downstream gate block), the draft stays `approved` and
@@ -252,10 +255,11 @@ after(async () => {
   await cleanup();
 });
 
-// (59) DEMO / PAPER missions never touch the live broker: the SAME gate chain
-//      runs, then the dispatch lands on the SIMULATED recorder — never the
-//      live executor seam — and no fill/price/P&L is fabricated.
-test("59: demo/paper dispatch runs the same gates but never touches the live broker", async () => {
+// (59) DEMO / PAPER missions never touch the live broker: the MISSION-LAYER
+//      gates run, then the dispatch lands on the SIMULATED recorder — never the
+//      live executor seam, so the 23 Phase B gates are not evaluated at all —
+//      and no fill/price/P&L is fabricated.
+test("59: demo/paper dispatch runs the mission-layer gates only and never touches the live broker", async () => {
   for (const mode of ["paper", "demo"] as const) {
     const missionId = await seedMission(userAId, mode);
     const draftId = `exec-nonlive-${mode}`;

@@ -95,9 +95,12 @@ export type MissionExecutor = (args: {
  * default implementation journals + audits the accepted intent and returns a
  * `sim:` command id — nothing else. No row is ever created in
  * `arx_live_positions` with that command id, so the exit manager can never
- * match the draft to a position, `recordMissionDraftClose` (whose only producer
- * is the live fill/close path in `liveCommandPipeline`) is never called, and the
- * draft's `pnl` / `closedAt` stay NULL forever. A paper/demo mission therefore
+ * match the draft to a position. The ONLY writer of a draft's `pnl`/`closedAt`
+ * is `recordMissionTradeClose` (`missionExitManager.ts`), and its only producer
+ * is `recordMissionTradeCloseByBrokerTicket` (same file), called from the live
+ * fill/close path in `liveCommandPipeline.ts`. A `sim:` draft never acquires a
+ * brokerTicket, so neither function ever fires for it and the draft's `pnl` /
+ * `closedAt` stay NULL forever. A paper/demo mission therefore
  * produces NO realised result, NO protective-exit management and NO progress
  * toward its target, and cannot complete. That is the honest degraded state, not
  * a bug to be papered over by inventing an outcome.

@@ -8,7 +8,7 @@
 //   * Not-activated human → LIVE_EXECUTION_ACTIVATION_GATE.
 //
 // The gate is a PRECONDITION only — it never weakens, skips, or ORs any of the
-// 18 Phase B dispatch gates.
+// 23 Phase B dispatch gates.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {

@@ -1121,7 +1121,7 @@ async function preflight(input: LiveDraftInput): Promise<LiveDraftRefusal | { ok
 
   // ── Task #737 — live-execution activation pre-condition (lockstep with the
   // dispatch-time re-check below). Additive: this never weakens/skips/ORs any
-  // of the 18 Phase B dispatch gates — those still run on top of a PASS here.
+  // of the 23 Phase B dispatch gates — those still run on top of a PASS here.
   // Fail-closed via the shared resolver: a non-activated trader, or a
   // bot/agent/system/investor account, is refused before a draft is created.
   const activation = await evaluateLiveExecutionActivationGate(input.userId);
@@ -2822,7 +2822,7 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   // cap-driven gates (SYMBOL_NOT_ALLOWED, VOLUME_EXCEEDS_MAX_LIVE_LOT,
   // DAILY_LOSS_LIMIT_REACHED, MISSING_STOP_LOSS/MISSING_TAKE_PROFIT)
   // trivially pass. The remaining 12 gates run as-is. The evaluator
-  // itself is unchanged (its 18/18 truth table still holds).
+  // itself is unchanged (its 23/23 truth table still holds).
   const dispatchProfile = await getUserRiskProfile(args.userId);
   const isOwnerUnrestrictedDispatch = dispatchProfile.isOwnerUnrestricted;
 

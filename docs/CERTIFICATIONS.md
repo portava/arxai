@@ -382,13 +382,13 @@ All counts below were re-run in this audit at HEAD.
 
 ## Certified — Grade D (compile-time contract, not a runtime gate)
 
-### Venue gate parity, 18/18 dispositions
+### Venue gate parity, 23/23 dispositions
 - **Artifacts:** `lib/domain/src/safety-contracts/venueGateParity.ts` and
   `derivDemoGateParity.ts`. `VenueGateParityMap` is a
   `Record<LivePhaseBGateOnlyKey, VenueGateDisposition>`, so **every one of the
   23 gate keys must carry a disposition or the build fails.** A `NOT_APPLICABLE`
   requires a written reason.
-- **What this genuinely guarantees:** adding a nineteenth gate to the live path
+- **What this genuinely guarantees:** adding a twenty-fourth gate to the live path
   breaks compilation until someone maps it. Weakening by silent omission is
   structurally impossible.
 - **What it does NOT guarantee — read this before citing it as a gate.**
@@ -399,11 +399,11 @@ All counts below were re-run in this audit at HEAD.
   ```
   Nothing in `artifacts/api-server` evaluates the parity map at dispatch time.
   The design document's phrasing — *"the venue evaluator refuses to dispatch if
-  any of the 18 keys has no disposition"* — describes a **build-time** refusal,
+  any of the 23 keys has no disposition"* — describes a **build-time** refusal,
   not a dispatch-time one.
 
-### The gate count is 18
-- Settled by code, not prose: `evaluateLivePhaseBDispatchGate` pushes exactly 18
+### The gate count is 23
+- Settled by code, not prose: `evaluateLivePhaseBDispatchGate` pushes exactly 23
   entries into `gates[]`
   (`lib/domain/src/safety-contracts/livePhaseBDispatchGate.ts:126-231`).
   `BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED` (`:236-240`) is a sentinel appended

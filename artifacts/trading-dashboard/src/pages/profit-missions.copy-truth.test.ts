@@ -153,7 +153,61 @@ describe("honest copy — the gate count is 23 and is pinned to the code", () =>
     expect(gateContract).toMatch(/pushes exactly 23 entries/);
   });
 
-  const STALE = /18[- ]gates?\b/;
+  // A COUNT of 18 gates, in every phrasing this repo has actually used.
+  //
+  // WHY A FAMILY AND NOT ONE REGEX: the first version of this suite pinned only
+  // /18[- ]gates?\b/. That literal misses every phrasing with a word between
+  // the numeral and "gates" — and liveArming.ts said "the 18 dispatch gates",
+  // so the suite reported that file CLEAN while the stale count sat in it. A
+  // guard that cannot fail on the file it names is worse than no guard: it
+  // manufactures assurance. Each pattern below is proved to bite by the
+  // self-test underneath, which is the real defence — extend BOTH together.
+  //
+  // These match a TOTAL, never a gate INDEX: "Gate 18", "gate #18" and
+  // "#18 DISCLOSURE_NOT_ACCEPTED" name the disclosure gate and are legitimate.
+  const STALE_PATTERNS: Array<[string, RegExp]> = [
+    ["N-gate(s)", /\b18[-\s](?:dispatch\s+|Phase\s+B\s+|execution\s+|live\s+)?gates?\b/i],
+    ["all 18", /\ball\s+18\b/i],
+    ["of 18 / of the 18", /\bof\s+(?:the\s+)?18\b/i],
+    ["18/18 truth table or dispositions", /\b18\/18\b/],
+    ["18 must PASS", /\b18\s+must\s+PASS\b/i],
+    ["18 total", /\b18\s+total\b/i],
+    ["nineteenth gate", /\bnineteenth\s+gate\b/i],
+  ];
+
+  // The guard must be able to FAIL. If a phrasing stops matching, this goes red
+  // before any file check can report a false CLEAN.
+  it("the stale-count patterns actually match every phrasing the repo has used", () => {
+    const knownBad = [
+      "This never bypasses any of the 18 dispatch gates —", // liveArming.ts:451
+      "evaluates all 18 Phase B gates, and only THEN writes",
+      "the 18-gate Phase B evaluator remains the only path",
+      "ALL 18 must PASS",
+      "that satisfies gate #1 of 18",
+      "its 18/18 truth table still holds",
+      "## Current safety gates (Phase B, 18 total)",
+      "adding a nineteenth gate to the live",
+      "All 18 Phase B dispatch gates still apply on every order.",
+      "Venue gate parity, 18/18 dispositions",
+    ];
+    const missed = knownBad.filter((s) => !STALE_PATTERNS.some(([, re]) => re.test(s)));
+    expect(missed).toEqual([]);
+  });
+
+  // ...and must NOT fire on a legitimate gate INDEX or an unrelated 18.
+  it("the stale-count patterns do not fire on a gate index or an unrelated 18", () => {
+    const knownGood = [
+      "// ── GATE 18, before anything can claim the ticket ───────",
+      "#18 `DISCLOSURE_NOT_ACCEPTED`, and the five FOUNDATION",
+      "per-user access gate and Phase B gate #18 honor either acceptance OR waiver.",
+      "assignedAllocation: 181.58,",
+      'check("A18  honesty trigger \'prop firm mode is on\' still gated",',
+      "gateVerdicts: { g1: \"PASS\", g18: \"PASS\" },",
+    ];
+    const falsePositives = knownGood.filter((s) => STALE_PATTERNS.some(([, re]) => re.test(s)));
+    expect(falsePositives).toEqual([]);
+  });
+
   const SWEPT: Array<[string, string]> = [
     ["missionExecution.ts", execution],
     ["missionExecutionModeService.ts", modeService],
@@ -165,42 +219,162 @@ describe("honest copy — the gate count is 23 and is pinned to the code", () =>
     ["missionAutomation.ts", automation],
     ["profit-missions.tsx", pageSrc],
     ["openapi.yaml", read("lib/api-spec/openapi.yaml")],
+    // Added after the first sweep reported CLEAN on files it had not corrected.
+    ["liveCommandCas.ts", read("artifacts/api-server/src/lib/live/liveCommandCas.ts")],
+    ["liveCommandPipeline.ts", read("artifacts/api-server/src/lib/live/liveCommandPipeline.ts")],
+    [
+      "unifiedLiveReadinessDecision.ts",
+      read("artifacts/api-server/src/lib/live/unifiedLiveReadinessDecision.ts"),
+    ],
+    [
+      "approvedTraderLiveState.ts",
+      read("artifacts/api-server/src/lib/live/approvedTraderLiveState.ts"),
+    ],
+    ["meApprovalInbox.ts", read("artifacts/api-server/src/routes/meApprovalInbox.ts")],
+    ["adminMasterLiveAccess.ts", read("artifacts/api-server/src/routes/adminMasterLiveAccess.ts")],
+    [
+      "MasterLiveUserAccessTable.tsx",
+      read("artifacts/trading-dashboard/src/components/admin/MasterLiveUserAccessTable.tsx"),
+    ],
+    ["recoveryProbation.ts", read("artifacts/api-server/src/lib/recoveryProbation.ts")],
+    ["check-live-dispatch-cas.ts", read("scripts/src/ci/check-live-dispatch-cas.ts")],
+    ["missionExecutionRoute.test.ts", read("artifacts/api-server/src/routes/__qa__/missionExecutionRoute.test.ts")],
   ];
 
   for (const [name, src] of SWEPT) {
-    it(`no stale "18-gate"/"18 gates" survives in ${name}`, () => {
-      // The gate contract is allowed to NAME the stale counts when explaining
-      // that they are stale; nothing else may state one as fact.
-      const lines = src.split("\n").filter((l) => STALE.test(l));
-      const offending = lines.filter((l) => !/stale|superseded|previously/i.test(l));
+    it(`no stale 18-gate count survives in ${name}`, () => {
+      // A line may NAME a stale count when it is explaining that the count is
+      // stale, historical, or how the current 23 were composed ("the original
+      // 18 + #19..#23"). Nothing else may state one as fact.
+      const offending = src
+        .split("\n")
+        .filter((l) => STALE_PATTERNS.some(([, re]) => re.test(l)))
+        .filter((l) => !/stale|superseded|previously|original|at the time|audit time|was 18|Editorial note/i.test(l));
       expect(offending).toEqual([]);
     });
   }
 });
 
+// ── 2b. Dated records are corrected by annotation, never by rewriting ────────
+//
+// The first sweep blind-replaced "18-gate" -> "23-gate" inside verbatim archives
+// (docs/history/, attached_assets/, docs/prodready-20260819/) and inside dated
+// owner Rulings 16-19 — including inside a QUOTED hold. That makes a
+// point-in-time record assert something that was not true when it was written,
+// which is the exact failure mode this branch exists to remove. Dated text keeps
+// its numeral; an editorial note carries the current count.
+
+describe("honest copy — dated records keep their numerals and gain a marker", () => {
+  const ownerDecisions = read("docs/OWNER_DECISIONS.md");
+  const decisions = read("docs/DECISIONS.md");
+
+  it("the owner rulings still read as written and carry an editorial marker", () => {
+    expect(ownerDecisions).toMatch(/the 18-gate Phase B evaluator remains/);
+    expect(ownerDecisions).toMatch(/no dispatch through the 18-gate path/);
+    expect(flat(ownerDecisions)).toMatch(
+      /Editorial note \(added 2026-08-29, not part of the ruling\)[\s\S]{0,240}?The count is now \*\*23\*\*/,
+    );
+  });
+
+  it("DECISIONS.md keeps Ruling 19's quoted hold intact and dates its correction", () => {
+    expect(decisions).toMatch(/no dispatch through the 18-gate path" recorded at/);
+    expect(decisions).toMatch(/the gate count is 23 \(was 18 when this ruling was first/);
+  });
+});
+
 // ── 3. Comments: the paper/demo conflation must not come back ────────────────
 
 describe("honest copy — comments state which chain each mode runs", () => {
-  const CONFLATION = /paper\/demo run the SAME gate chain|runs the SAME gate chain/i;
+  // The conflation is "a non-live mission runs the same gates as a live one".
+  // The first version pinned only the exact phrase "runs the SAME gate chain",
+  // so the variant "runs the same gates" survived — in a TEST TITLE, in a file
+  // the same commit had edited. Match the claim, not one spelling of it.
+  //
+  // Two traps this has to survive, both of which bit the first version:
+  //   * the sentence WRAPS across comment lines, so "runs the" and "SAME gate
+  //     chain" sit on different physical lines with a `//` between them. Every
+  //     check below therefore runs against prose(), never the raw source.
+  //   * the emphatic capital "SAME gate chain" is itself the tell. Honest
+  //     phrasing names WHICH chain ("the MISSION-LAYER chain"), so an
+  //     unqualified "SAME gate chain" in these files is always the conflation.
+  const CONFLATION_PATTERNS: RegExp[] = [
+    /SAME gate chain/,
+    /\bruns? the same gates\b/i,
+    /(?:paper|demo|non-live)[^.]{0,80}?\bruns? the same gate(?: chain|s)\b/i,
+  ];
+  const conflates = (s: string) => CONFLATION_PATTERNS.some((re) => re.test(prose(s)));
 
   const COMMENTED: Array<[string, string]> = [
     ["missionExecution.ts", execution],
     ["missionExecutionModeService.ts", modeService],
     ["api-server/src/index.ts", bootIndex],
     ["missionDriver.ts", driver],
+    // Added after the conflation was found surviving here — including as a test
+    // NAME, which is copy a reader trusts more than a comment, not less.
+    [
+      "missionExecutionRoute.test.ts",
+      read("artifacts/api-server/src/routes/__qa__/missionExecutionRoute.test.ts"),
+    ],
+    ["routes/profitMissions.ts", read("artifacts/api-server/src/routes/profitMissions.ts")],
   ];
 
   for (const [name, src] of COMMENTED) {
     it(`${name} does not claim paper/demo run the SAME gate chain`, () => {
-      expect(src).not.toMatch(CONFLATION);
+      expect(conflates(src), `${name} conflates the mode chains`).toBe(false);
     });
   }
+
+  // The guard must be able to FAIL on the exact strings that slipped past the
+  // first version, INCLUDING the ones that only exist as wrapped fragments.
+  it("the conflation pattern actually matches the variants that slipped through", () => {
+    const knownBad = [
+      "//        SAME gate chain and dispatches onto the SIMULATED recorder seam",
+      "// (59) DEMO / PAPER missions never touch the live broker: the SAME gate chain",
+      'test("59: demo/paper dispatch runs the same gates but never touches the live broker"',
+      "a non-live mission runs the SAME gate chain",
+      "paper/demo run the SAME gate chain",
+      // the wrap that defeated the line-based version
+      "//   (59) DEMO/PAPER never touches the live broker — a non-live mission runs the\n//        SAME gate chain and dispatches onto the SIMULATED recorder seam",
+    ];
+    const missed = knownBad.filter((s) => !conflates(s));
+    expect(missed).toEqual([]);
+  });
+
+  it("the conflation pattern does not fire on the corrected, qualified phrasing", () => {
+    const knownGood = [
+      "// runs the MISSION-LAYER gates (probation, mission gate, Phase 7, single-flight)",
+      "// BOTH modes run the MISSION-LAYER chain; ONLY `live` then calls `executor`",
+      "the 23 gates are NOT evaluated for it",
+    ];
+    const falsePositives = knownGood.filter((s) => conflates(s));
+    expect(falsePositives).toEqual([]);
+  });
 
   it("missionExecution names the mission-layer chain vs the live-only chain", () => {
     const p = prose(execution);
     expect(p).toMatch(/BOTH modes run the MISSION-LAYER chain/);
     expect(p).toMatch(/ONLY `live` then calls `executor`/);
     expect(p).toMatch(/NONE of those run for paper\/demo/);
+  });
+
+  // A comment that names a function is only useful if a reader can grep it. The
+  // first draft of this comment named `recordMissionDraftClose`, which exists
+  // nowhere in the repo — an invented identifier, in the file whose purpose is
+  // deleting invented claims. Pin the real symbols to their real home.
+  it("the no-result explanation names functions that actually exist", () => {
+    const exitManager = read("artifacts/api-server/src/lib/missionExitManager.ts");
+    const pipeline = read("artifacts/api-server/src/lib/live/liveCommandPipeline.ts");
+
+    expect(execution).not.toMatch(/recordMissionDraftClose/);
+
+    for (const fn of ["recordMissionTradeClose", "recordMissionTradeCloseByBrokerTicket"]) {
+      expect(execution, `comment must name ${fn}`).toMatch(new RegExp(`\\b${fn}\\b`));
+      expect(exitManager, `${fn} must be exported where the comment says`).toMatch(
+        new RegExp(`export async function ${fn}\\b`),
+      );
+    }
+    // ...and the live fill/close path really is the caller the comment claims.
+    expect(pipeline).toMatch(/recordMissionTradeCloseByBrokerTicket/);
   });
 
   it("missionExecution states the no-result consequence at the recorder seam", () => {

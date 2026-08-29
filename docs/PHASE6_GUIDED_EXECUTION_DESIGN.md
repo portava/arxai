@@ -79,7 +79,7 @@ times and "23-gate" 17 times. Repo-wide "16-gate" appears **416** times against
 "15-gate".
 
 Only the code settles it. `evaluateLivePhaseBDispatchGate` pushes exactly
-**18** entries into `gates[]`. That is the real count, and every prose mention
+**23** entries into `gates[]`. That is the real count, and every prose mention
 of 15 or 16 is stale.
 
 More importantly, **the 23-gate evaluator is not the dispatch boundary** — it is
@@ -101,7 +101,7 @@ boundary while appearing to honour it.
 
 ## Finding 2 — the 23 gates are MT5-live-specific, and seven cannot mean anything for Deriv demo
 
-There are **exactly 18** gates, in
+There are **exactly 23** gates, in
 `lib/domain/src/safety-contracts/livePhaseBDispatchGate.ts:126-231`: fifteen
 numbered, plus stop-loss, take-profit and risk-disclosure.
 `BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED` is a sentinel appended for audit greps
@@ -128,7 +128,7 @@ demo venue. A gate may be:
   that has no Deriv counterpart.
 
 No gate may be silently dropped. The venue evaluator **refuses to dispatch if
-any of the 18 keys has no disposition**, so adding a nineteenth gate to the live
+any of the 23 keys has no disposition**, so adding a twenty-fourth gate to the live
 path fails Deriv closed until someone maps it. Weakening is structurally
 impossible: `NOT_APPLICABLE` requires a written reason and is itself asserted by
 tests.
@@ -162,7 +162,7 @@ typecheck clean):
 
 | Component | Where |
 |---|---|
-| Venue gate parity + Deriv demo map (18/18) | `lib/domain/src/safety-contracts/{venueGateParity,derivDemoGateParity}.ts` |
+| Venue gate parity + Deriv demo map (23/23) | `lib/domain/src/safety-contracts/{venueGateParity,derivDemoGateParity}.ts` |
 | Personal Trading Constitution | `lib/domain/src/safety-contracts/tradingConstitution.ts` |
 | Approval ticket lifecycle + terms binding | `lib/domain/src/safety-contracts/approvalTicket.ts` |
 | Execution tier | `lib/domain/src/safety-contracts/executionTier.ts` |

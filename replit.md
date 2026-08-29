@@ -114,7 +114,7 @@ runtime.
   `blockReasons` while the switch is unset/false (so grep + audit + CI guards
   continue to see it).
 - `ARX_LIVE_BROKER_EXECUTION_ENABLED` defaults to `false` in code — Phase B
-  server master switch (gate #1 of 18). Resolution is env `AND` db, never OR
+  server master switch (gate #1 of 23). Resolution is env `AND` db, never OR
   (`resolveLiveBrokerExecutionEnabled`); ON only lets the 23-gate evaluator
   *consider* PASSing and bypasses nothing. Live dispatch still requires the DB arm
   flag `globalTradingSettings.liveBrokerExecutionArmed`, all 23 gates, and
@@ -211,7 +211,7 @@ rejected).
 
 The full per-suite QA command list and last-known pass counts are in the history archive.
 
-## Current safety gates (Phase B, 18 total)
+## Current safety gates (Phase B, 23 total)
 
 Live broker dispatch is runtime-gated and **default-deny**; the chokepoint is the
 23-gate decision in `lib/domain/src/safety-contracts/livePhaseBDispatchGate.ts`,
@@ -243,8 +243,23 @@ gate, pipeline, schema, EA-facing and user-facing live endpoints) is in the
 18. Live-trading risk disclosure accepted (`DISCLOSURE_NOT_ACCEPTED`) —
     append-only row in `live_risk_disclosure_acceptances`
 
+FOUNDATION gates #19–#23, added after the original 18:
+
+19. Entry decision-data provenance proven (`PROVENANCE_UNPROVEN`) — binds
+    EVERY live entry, whoever originated it
+20. Autonomous entry's edge owner-promoted LIVE (`STRATEGY_NOT_LIVE_PROMOTED`)
+    — binds only entries whose recorded `actorType` is `SELF_TRADE_AGENT` or
+    `SYSTEM`. **Known gap:** the Profit-Mission driver stamps `USER`, so this
+    gate does not bind mission-driver orders today
+21. Per-user capital tier cap respected (`CAPITAL_TIER_EXCEEDED`) — binds
+    EVERY live entry regardless of actor
+22. Command evaluated inside its owner's tenant context
+    (`TENANT_CONTEXT_VIOLATION`) — unresolvable context refuses the entry
+23. Per-edge capacity ceiling respected (`EDGE_CAPACITY_EXCEEDED`) — binds
+    autonomous entries and any entry carrying an `edgeId`
+
 ANY single gate failing → `LIVE_BLOCKED:<exact gate reason>`. No code path can
-dispatch live without a positive PASS on all 18.
+dispatch live without a positive PASS on all 23.
 
 ## EA install (MQL5) — v1.55 live (remote-managed)
 

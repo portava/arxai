@@ -220,7 +220,7 @@ lineage-sweeper 19, **tier0-product 33 (32 pass / 1 fail)**, surfaces 14.
 ### Certified and committed (Phase 6)
 | Component | Location |
 |---|---|
-| Venue gate parity contract + Deriv demo map (18/18 dispositions) | `lib/domain/src/safety-contracts/{venueGateParity,derivDemoGateParity}.ts` |
+| Venue gate parity contract + Deriv demo map (23/23 dispositions) | `lib/domain/src/safety-contracts/{venueGateParity,derivDemoGateParity}.ts` |
 | Personal Trading Constitution | `lib/domain/src/safety-contracts/tradingConstitution.ts` |
 | Approval ticket lifecycle + material-terms binding | `lib/domain/src/safety-contracts/approvalTicket.ts` |
 | Execution tier resolver | `lib/domain/src/safety-contracts/executionTier.ts` |
@@ -334,9 +334,9 @@ inside `lib/domain/src/safety-contracts/` (and the compiled `dist/`). Nothing in
 
 The map is therefore a **compile-time totality contract plus a tested pure
 function** — real, but not a runtime gate. The design document's promise that
-"the venue evaluator refuses to dispatch if any of the 18 keys has no
+"the venue evaluator refuses to dispatch if any of the 23 keys has no
 disposition" is enforced by TypeScript's exhaustive `Record` type and by tests,
-**not by a check executed on the dispatch path.** Adding a nineteenth gate would
+**not by a check executed on the dispatch path.** Adding a twenty-fourth gate would
 fail the build, which is the intended protection; it would not fail a dispatch.
 
 ### B5 — Guided-path equivalence to the MT5 pre-gates is unestablished
@@ -385,7 +385,7 @@ this document.
 | Variable | Value | Effect |
 |---|---|---|
 | `ARX_EXECUTION_TIER` | `TIER_1_DEMO_GUIDED` | **Tier 1 is armed.** Only the exact literal resolves; anything else falls back to `TIER_0_DRY_RUN` |
-| `ARX_LIVE_BROKER_EXECUTION_ENABLED` | `true` | Phase B gate #1 of 18 only; bypasses nothing |
+| `ARX_LIVE_BROKER_EXECUTION_ENABLED` | `true` | Phase B gate #1 of 23 only; bypasses nothing |
 | `ARX_DERIV_OWNER_USER_ID` | `1` | — |
 | `DERIV_ENABLED` | `True` | — |
 | `DERIV_API_MODE` | `new` | New-generation API path (Ruling 15a) |

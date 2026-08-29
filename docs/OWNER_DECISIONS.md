@@ -322,8 +322,14 @@ decision, not an implementation detail, and no run in this program has ever
 placed one.
 
 Standing holds that survive this ruling: no `DerivExecutionAdapter`, no live
-dispatch through the new transport, and the 23-gate Phase B evaluator remains
+dispatch through the new transport, and the 18-gate Phase B evaluator remains
 the only path to a live order.
+
+> *Editorial note (added 2026-08-29, not part of the ruling): the rulings below
+> say "18-gate" because that was the evaluator's count when they were written.
+> The count is now **23** — the same evaluator, with foundation gates #19–#23
+> added since. The numeral is left as written so the record is not falsified;
+> only the count has changed, never the hold. This note covers Rulings 16–19.*
 
 Evidence: `pnpm --filter @workspace/api-server run certify:deriv-new-api`,
 2026-08-25 17:50 UTC, 17/17. Re-runnable; it places no trade by construction.
@@ -356,7 +362,7 @@ between quote and buy, and a hold long enough to move the P/L off zero.
 
 **What this ruling does NOT authorise.** Buy/sell semantics are certified for
 a single manual demo order. It does not authorise autonomous execution, live
-money, a DerivExecutionAdapter, or dispatch through the 23-gate path. All
+money, a DerivExecutionAdapter, or dispatch through the 18-gate path. All
 standing holds from Ruling 16 remain.
 
 ## Ruling 18 — reconciliation proven on a NON-ZERO P/L; keepalive and recovery added (2026-08-25)
@@ -415,20 +421,20 @@ flattener.
 REQUOTE between quote and buy. Until those are covered, buy/sell is certified
 for the HAPPY PATH only. All standing holds from Rulings 16 and 17 remain:
 no autonomous execution, no live money, no `DerivExecutionAdapter`, no dispatch
-through the 23-gate path.
+through the 18-gate path.
 
 ---
 
 ## Ruling 19 — Phase 6 authorized, including the Deriv execution seam (2026-08-27)
 
 The standing holds recorded at the end of Ruling 18 — "no `DerivExecutionAdapter`,
-no dispatch through the 23-gate path" — are **explicitly lifted for guided and
+no dispatch through the 18-gate path" — are **explicitly lifted for guided and
 demo execution**. Ruling 18's other holds are NOT lifted.
 
 The owner's authorization, in their words: *"AUTHORIZE PHASE 6 — SELF-TRADING
 GUIDED MODE, INCLUDING THE DERIV EXECUTION SEAM."* Authorized to build and wire:
 Personal Trading Constitution; Approval Inbox with expiring tickets;
-`DerivExecutionAdapter`; the existing 23-gate dispatch boundary; guided
+`DerivExecutionAdapter`; the existing 18-gate dispatch boundary; guided
 confirm → execute; position/reconciliation integration; journal/debrief
 integration.
 

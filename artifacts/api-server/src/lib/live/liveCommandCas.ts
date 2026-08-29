@@ -3,7 +3,7 @@
 // WHY THIS MODULE EXISTS
 //
 // `dispatchLiveCommand` (liveCommandPipeline.ts) READS the command row,
-// evaluates all 18 Phase B gates, and only THEN writes the row to
+// evaluates all 23 Phase B gates, and only THEN writes the row to
 // SENT_TO_MT5_LIVE. That read-then-write is a TOCTOU window. Two concurrent
 // dispatches of the SAME LIVE_APPROVED command — a double-tap, a retried
 // fetch, two browser tabs, Ruby racing a manual click — both read

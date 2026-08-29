@@ -354,7 +354,7 @@ export async function buildApprovedTraderLiveState(
 /**
  * Reason codes the LIVE_EXECUTION_ACTIVATION_GATE can fail with. These are
  * additive PRE-conditions on the live order path — they never weaken, skip, or
- * OR any of the existing 18 Phase B dispatch gates. The order path still runs
+ * OR any of the existing 23 Phase B dispatch gates. The order path still runs
  * the full instant-trade router → live pipeline → 23-gate dispatch on top of a
  * PASS here.
  */

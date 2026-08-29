@@ -17,7 +17,7 @@ Implement the execution-epistemology series from `audit-execution.md` on branch 
 - **S6** Durable idempotency: intent-level idempotency key (not minute-bucketed) whose partial unique index INCLUDES `UNKNOWN` so unknown outcomes block duplicate submission.
 - **S7** Adapter seam: extract the EA mailbox mirror behind an interface so future broker adapters reuse the same state machine.
 
-Binding rules: the pure 23-gate evaluator (`livePhaseBDispatchGate.ts`) is untouched except where the audit plan explicitly adds inputs; every slice lands with its red-fail test proven red before the fix and green after; `pnpm run ci` green between slices; no schema drops; append-only tables get no UPDATE/DELETE paths.
+Binding rules: the pure 18-gate evaluator (`livePhaseBDispatchGate.ts`) is untouched except where the audit plan explicitly adds inputs; every slice lands with its red-fail test proven red before the fix and green after; `pnpm run ci` green between slices; no schema drops; append-only tables get no UPDATE/DELETE paths.
 
 ---
 
