@@ -19,6 +19,7 @@ import {
   type OpportunityLabel,
 } from "../marketScanner.js";
 import type { LiveCandidate, TakeProfitTarget } from "../assistant/liveScanner.js";
+import { staticPipSize } from "../marketModel/instrumentSpec.js";
 
 // ── Banding (exact same thresholds as liveScanner + marketScanner) ──────────
 
@@ -67,6 +68,7 @@ export function deriveTakeProfitTargets(
   action: TradeDirection | null,
   entry: number,
   stopLoss: number,
+  symbol?: string,
 ): DerivedTakeProfit {
   if (!action) {
     return {
@@ -86,6 +88,10 @@ export function deriveTakeProfitTargets(
     };
   }
   const dir = action === "BUY" ? 1 : -1;
+  // Per-symbol pip math (instrumentSpec unit contract): honest null when the
+  // symbol is unknown or has no static pip convention — never the old blanket
+  // ×10000, which was wrong for JPY, gold and synthetics.
+  const pipSize = symbol ? staticPipSize(symbol) : null;
   const mk = (
     mult: number,
     label: TakeProfitTarget["label"],
@@ -94,13 +100,14 @@ export function deriveTakeProfitTargets(
     reason: string,
   ): TakeProfitTarget => {
     const price = round(entry + dir * stopDist * mult);
+    const dist = Math.abs(price - entry);
     return {
       label,
       price,
       reason,
       rr: mult,
-      distancePoints: Math.abs(price - entry),
-      distancePips: Math.abs(price - entry) * 10000,
+      distancePoints: dist,
+      distancePips: pipSize != null ? Math.round((dist / pipSize) * 10) / 10 : null,
       suggestedAction,
       confidence,
     };
@@ -193,7 +200,7 @@ export function projectOpportunitySetup(o: ScannerOpportunity): ProjectedOpportu
       riskRewardRatio: null,
     };
   }
-  const tp = deriveTakeProfitTargets(normalizeTradeDirection(o.recommendedAction), o.entry, o.stopLoss);
+  const tp = deriveTakeProfitTargets(normalizeTradeDirection(o.recommendedAction), o.entry, o.stopLoss, o.symbol);
   return {
     setupWithheld: false,
     withheldReason: null,
