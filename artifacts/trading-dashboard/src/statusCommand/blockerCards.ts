@@ -7,6 +7,7 @@
  * a safe next step, and an optional related-route button.
  */
 import { resolveRoute } from "@/knowledge/routeKnowledge";
+import { isNormalUserAllowedPath } from "@/lib/routeAccess";
 import type { RuntimeContext } from "@/assistant/runtimeContextTypes";
 import type { ChecklistItem } from "@/knowledge/setupChecklist";
 
@@ -43,8 +44,15 @@ export interface BlockerCard {
   evidence: string[];
 }
 
+// RANK 51 — same defect as setupWizard.safeRoute: resolveRoute() validates
+// against the assistant's DOCUMENTATION registry, not App.tsx's routes and not
+// the trader allowlist. Every blocker card's "Open …" button pointed at an
+// admin-only surface, so the fix-first affordance on the ARX Status page was
+// un-followable for the exact audience it was built for. A card whose target is
+// unreachable now renders with NO button rather than a silent redirect.
 function withRoute(label: string, route: string | undefined): BlockerCard["relatedRoute"] {
   if (!route) return undefined;
+  if (!isNormalUserAllowedPath(route)) return undefined;
   const rk = resolveRoute(route);
   return rk ? { label, route } : undefined;
 }
@@ -77,7 +85,7 @@ export function buildBlockerCards(ctx: RuntimeContext, checklist: ChecklistItem[
       howToCheck: "Open the Readiness Checklist to see which gates remain.",
       safeNextStep: "Continue in simulator/demo mode.",
       doNotDo: "Do not attempt to flip this from the UI — it is server-enforced.",
-      relatedRoute: withRoute("Open Readiness Checklist", "/readiness-checklist"),
+      relatedRoute: withRoute("Open ARX Status", "/status-command-center"),
       evidence: ["LIVE TRADING DISABLED"],
     });
   }
@@ -92,7 +100,7 @@ export function buildBlockerCards(ctx: RuntimeContext, checklist: ChecklistItem[
       howToCheck: "Open Broker Read-only and review the badge.",
       safeNextStep: "Stay in read-only mode and reconcile positions.",
       doNotDo: "Do not attempt to enable execution from the UI.",
-      relatedRoute: withRoute("Open Broker Read-only", "/broker-readonly"),
+      relatedRoute: withRoute("Open MT5 Setup", "/mt5-setup"),
       evidence: ["brokerExecutionDisabled=true"],
     });
   }
@@ -107,7 +115,7 @@ export function buildBlockerCards(ctx: RuntimeContext, checklist: ChecklistItem[
       howToCheck: "Open MT5 Bridge to read the EA setup steps.",
       safeNextStep: "If you intend to connect MT5, configure the bridge server-side. Otherwise, simulator is the safe default.",
       doNotDo: "Do not assume MT5 is connected — heartbeat is the source of truth.",
-      relatedRoute: withRoute("Open MT5 Bridge", "/mt5-bridge"),
+      relatedRoute: withRoute("Open MT5 Setup", "/mt5-setup"),
       evidence: [`bridgeMode=${ctx.bridge?.bridgeMode ?? "unknown"}`],
     });
   }
@@ -122,7 +130,7 @@ export function buildBlockerCards(ctx: RuntimeContext, checklist: ChecklistItem[
       howToCheck: "Open Replay Simulator to compare with historical data.",
       safeNextStep: "Use simulator to validate strategies and dashboards. P&L is not real.",
       doNotDo: "Do not interpret simulator P&L as real money.",
-      relatedRoute: withRoute("Open Replay Simulator", "/replay-simulator"),
+      relatedRoute: withRoute("Open Testing Lab", "/testing-lab"),
       evidence: ["SIMULATOR MODE"],
     });
   }
@@ -137,7 +145,7 @@ export function buildBlockerCards(ctx: RuntimeContext, checklist: ChecklistItem[
       howToCheck: "Open Broker Read-only and confirm the badge.",
       safeNextStep: "Stay read-only and reconcile balance/positions against the broker terminal.",
       doNotDo: "Do not attempt to relax read-only from the UI.",
-      relatedRoute: withRoute("Open Broker Read-only", "/broker-readonly"),
+      relatedRoute: withRoute("Open MT5 Setup", "/mt5-setup"),
       evidence: ["BROKER READ-ONLY"],
     });
   }
@@ -152,7 +160,7 @@ export function buildBlockerCards(ctx: RuntimeContext, checklist: ChecklistItem[
       howToCheck: "Open MT5 Bridge to verify EA + token + URL allow-list.",
       safeNextStep: "Bring the EA back online server-side. ARX cannot fake a heartbeat.",
       doNotDo: "Do not assume the bridge is healthy without a fresh heartbeat.",
-      relatedRoute: withRoute("Open MT5 Bridge", "/mt5-bridge"),
+      relatedRoute: withRoute("Open MT5 Setup", "/mt5-setup"),
       evidence: [`heartbeatPresent=false`, `bridgeMode=${ctx.bridge?.bridgeMode ?? "unknown"}`],
     });
   }
@@ -167,7 +175,7 @@ export function buildBlockerCards(ctx: RuntimeContext, checklist: ChecklistItem[
       howToCheck: "Open MT5 Bridge and verify EA + token header + WebRequest allow-list.",
       safeNextStep: "Restore the EA server-side. ARX stays in simulator/demo mode meanwhile.",
       doNotDo: "Do not retry MT5 actions until the EA reports in.",
-      relatedRoute: withRoute("Open MT5 Bridge", "/mt5-bridge"),
+      relatedRoute: withRoute("Open MT5 Setup", "/mt5-setup"),
       evidence: [`bridgeMode=disconnected`],
     });
   }
@@ -182,7 +190,7 @@ export function buildBlockerCards(ctx: RuntimeContext, checklist: ChecklistItem[
       howToCheck: "Open Readiness Checklist and address gates one at a time.",
       safeNextStep: "Resolve gates as legitimate state changes — do not force-complete.",
       doNotDo: "Do not force-complete gates to look ready.",
-      relatedRoute: withRoute("Open Readiness Checklist", "/readiness-checklist"),
+      relatedRoute: withRoute("Open ARX Status", "/status-command-center"),
       evidence: ["readiness=incomplete"],
     });
   }
@@ -203,7 +211,7 @@ export function buildBlockerCards(ctx: RuntimeContext, checklist: ChecklistItem[
       howToCheck: "Open Readiness Checklist and inspect the red gates.",
       safeNextStep: "Fix the failing gate; autopilot will unblock when readiness is green.",
       doNotDo: "Do not bypass autopilot gating.",
-      relatedRoute: withRoute("Open Readiness Checklist", "/readiness-checklist"),
+      relatedRoute: withRoute("Open ARX Status", "/status-command-center"),
       evidence: ["AUTOPILOT BLOCKED"],
     });
   }
@@ -234,7 +242,7 @@ export function buildBlockerCards(ctx: RuntimeContext, checklist: ChecklistItem[
       howToCheck: "Open System Health and confirm the service is up.",
       safeNextStep: "Hard-refresh; if it persists, report the issue (the safe context is auto-attached).",
       doNotDo: "Do not retry destructive requests blindly.",
-      relatedRoute: withRoute("Open System Health", "/system-health"),
+      relatedRoute: withRoute("Open ARX Status", "/status-command-center"),
       evidence: failed,
     });
   }

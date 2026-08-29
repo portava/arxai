@@ -24,6 +24,7 @@ import type { BlockerCard } from "@/statusCommand/blockerCards";
 import { buildSetupWizard } from "@/statusCommand/setupWizard";
 import type { WizardStep } from "@/statusCommand/setupWizard";
 import { resolveRoute } from "@/knowledge/routeKnowledge";
+import { useCanOpenRoute } from "@/lib/useCanOpenRoute";
 import type { AskContext } from "@/knowledge/answerEngine";
 import type { RuntimeContext } from "@/assistant/runtimeContextTypes";
 
@@ -210,6 +211,7 @@ function LiveSharedReadinessBanner({
 }
 
 function FixFirstBlock({ primary, alternates }: { primary: ReturnType<typeof fixFirst>["primary"]; alternates: ReturnType<typeof fixFirst>["alternates"] }) {
+  const canOpen = useCanOpenRoute();
   if (!primary) {
     return (
       <div className="rounded-md border border-success/40 bg-success/40 px-4 py-3 text-sm text-success" data-testid="scc-fix-first-empty">
@@ -229,10 +231,10 @@ function FixFirstBlock({ primary, alternates }: { primary: ReturnType<typeof fix
             <li><span className="text-warning">Safe next:</span> {primary.safeNextStep}</li>
             <li><span className="text-warning">Don't:</span> {primary.doNotDo}</li>
           </ul>
-          {primary.relatedRoute && (
-            <Link href={primary.relatedRoute}>
+          {canOpen(primary.relatedRoute) && (
+            <Link href={primary.relatedRoute!}>
               <a className="inline-block mt-2 px-3 py-1.5 rounded bg-warning/15 hover:bg-warning/15 text-warning" data-testid="scc-fix-first-route">
-                Open {resolveRoute(primary.relatedRoute)?.title ?? primary.relatedRoute}
+                Open {resolveRoute(primary.relatedRoute!)?.title ?? primary.relatedRoute}
               </a>
             </Link>
           )}
@@ -284,6 +286,7 @@ function ScoreRow({ section }: { section: ReadinessSection }) {
 }
 
 function ChecklistCard({ items, progress }: { items: ReturnType<typeof buildSetupChecklist>; progress: { complete: number; total: number; percent: number } }) {
+  const canOpen = useCanOpenRoute();
   return (
     <div className="rounded-md border border-border bg-background/40 p-4" data-testid="scc-checklist-card">
       <div className="flex items-center justify-between">
@@ -302,10 +305,10 @@ function ChecklistCard({ items, progress }: { items: ReturnType<typeof buildSetu
               <div className="mt-1 text-xs text-txt-secondary">{item.explanation}</div>
               <div className="mt-1 text-xs text-txt-secondary"><span className="text-txt-muted">Why:</span> {item.safeNextAction}</div>
               {item.blockerReason && <div className="text-xs text-danger">Blocker: {item.blockerReason}</div>}
-              {item.related && (
-                <Link href={item.related.route}>
+              {canOpen(item.related?.route) && (
+                <Link href={item.related!.route}>
                   <a className="inline-block mt-1 text-xs px-2 py-1 rounded bg-secondary hover:bg-muted text-foreground" data-testid={`scc-checklist-route-${item.id}`}>
-                    Open {item.related.label}
+                    Open {item.related!.label}
                   </a>
                 </Link>
               )}
@@ -318,6 +321,7 @@ function ChecklistCard({ items, progress }: { items: ReturnType<typeof buildSetu
 }
 
 function BlockersCard({ cards }: { cards: BlockerCard[] }) {
+  const canOpen = useCanOpenRoute();
   return (
     <div className="rounded-md border border-border bg-background/40 p-4" data-testid="scc-blockers-card">
       <div className="flex items-center justify-between">
@@ -344,10 +348,10 @@ function BlockersCard({ cards }: { cards: BlockerCard[] }) {
                 <div className="text-xs text-txt-secondary"><span className="text-txt-muted">How to check:</span> {b.howToCheck}</div>
                 <div className="text-xs text-success"><span className="text-txt-muted">Safe next:</span> {b.safeNextStep}</div>
                 <div className="text-xs text-danger"><span className="text-txt-muted">Don't:</span> {b.doNotDo}</div>
-                {b.relatedRoute && (
-                  <Link href={b.relatedRoute.route}>
+                {canOpen(b.relatedRoute?.route) && (
+                  <Link href={b.relatedRoute!.route}>
                     <a className="inline-block mt-2 text-xs px-2 py-1 rounded bg-secondary hover:bg-muted text-foreground" data-testid={`scc-blocker-route-${b.kind}`}>
-                      {b.relatedRoute.label}
+                      {b.relatedRoute!.label}
                     </a>
                   </Link>
                 )}
@@ -389,14 +393,15 @@ function RuntimeSummaryCard({ ctx, status }: { ctx: RuntimeContext; status: Retu
 }
 
 function SafestNextCard({ primaryStep, nextRoute }: { primaryStep: string; nextRoute?: string }) {
+  const canOpen = useCanOpenRoute();
   return (
     <div className="rounded-md border border-success/40 bg-success/40 p-4" data-testid="scc-safest-next">
       <h2 className="font-semibold text-success">Safest next step</h2>
       <p className="mt-2 text-sm text-success/90">{primaryStep}</p>
-      {nextRoute && (
-        <Link href={nextRoute}>
+      {canOpen(nextRoute) && (
+        <Link href={nextRoute!}>
           <a className="inline-block mt-2 text-sm px-3 py-1.5 rounded bg-success/15 hover:bg-success/15 text-success" data-testid="scc-safest-next-route">
-            Open {resolveRoute(nextRoute)?.title ?? nextRoute}
+            Open {resolveRoute(nextRoute!)?.title ?? nextRoute}
           </a>
         </Link>
       )}
@@ -406,6 +411,7 @@ function SafestNextCard({ primaryStep, nextRoute }: { primaryStep: string; nextR
 }
 
 function WizardCard({ steps }: { steps: WizardStep[] }) {
+  const canOpen = useCanOpenRoute();
   const [openId, setOpenId] = useState<string | null>(steps[0]?.id ?? null);
   const [acked, setAcked] = useState<Set<string>>(new Set());
   return (
@@ -440,8 +446,8 @@ function WizardCard({ steps }: { steps: WizardStep[] }) {
                   <p><span className="text-txt-muted">Status:</span> {step.statusText}</p>
                   <p><span className="text-txt-muted">Done when:</span> {step.completionCondition}</p>
                   <div className="flex flex-wrap gap-2 pt-1">
-                    {step.pageRoute && (
-                      <Link href={step.pageRoute}>
+                    {canOpen(step.pageRoute) && (
+                      <Link href={step.pageRoute!}>
                         <a className="text-xs px-2 py-1 rounded bg-secondary hover:bg-muted" data-testid={`scc-wizard-route-${step.id}`}>
                           Open {step.pageLabel}
                         </a>
@@ -482,6 +488,7 @@ function WizardCard({ steps }: { steps: WizardStep[] }) {
 }
 
 function DiagnosticsCard({ diagnoses, reportContext }: { diagnoses: number; reportContext: Record<string, unknown> }) {
+  const canOpen = useCanOpenRoute();
   const [show, setShow] = useState(false);
   return (
     <div className="rounded-md border border-border bg-background/40 p-4" data-testid="scc-diagnostics-card">
@@ -494,11 +501,15 @@ function DiagnosticsCard({ diagnoses, reportContext }: { diagnoses: number; repo
         or attach this safe context when you submit feedback.
       </p>
       <div className="mt-2 flex flex-wrap gap-2">
-        <Link href="/feedback-center">
-          <a className="text-xs px-2 py-1 rounded bg-secondary hover:bg-muted text-foreground" data-testid="scc-diagnostics-report">
-            Open Feedback Center
-          </a>
-        </Link>
+        {/* RANK 51/76: /feedback-center is on no human-trader allowlist, so
+            this button silently redirected every non-admin home. */}
+        {canOpen("/feedback-center") && (
+          <Link href="/feedback-center">
+            <a className="text-xs px-2 py-1 rounded bg-secondary hover:bg-muted text-foreground" data-testid="scc-diagnostics-report">
+              Open Feedback Center
+            </a>
+          </Link>
+        )}
         <button
           type="button"
           onClick={() => setShow((v) => !v)}

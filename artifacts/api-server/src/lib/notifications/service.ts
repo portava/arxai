@@ -8,8 +8,9 @@ import {
   db,
   notificationsTable, notificationPreferencesTable,
   notificationLogsTable, notificationDigestsTable,
+  userNotificationPreferencesTable,
 } from "@workspace/db";
-import { and, desc, eq, gte } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, type SQL } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type { NotifyInput } from "./rules.js";
 
@@ -80,19 +81,72 @@ export async function setPreferences(userId: number, input: Partial<Omit<Prefs, 
   return getPreferences(userId);
 }
 
-function categoryEnabled(prefs: Prefs, type: string): boolean {
+// RANK 77 — three competing preference stores for one job.
+//
+//   * `alert_preferences`            — a single GLOBAL row, surfaced by the
+//                                      (dead) /alert-preferences page.
+//   * `notification_preferences`     — per-user, read by THIS category gate,
+//                                      with no UI consumer at all.
+//   * `user_notification_preferences`— per-user, honoured by push delivery
+//                                      (sendService.ts), also with no UI.
+//
+// The only screen a user could reach wrote to the first; the two that actually
+// gate delivery had no screen. Turning off "AI coach alerts" and still
+// receiving them was unexplainable, because the switch and the gate were
+// looking at different tables.
+//
+// /alert-preferences now writes `user_notification_preferences` (the store the
+// push gate already honours), and this in-app category gate reads THAT SAME row
+// so one switch governs both channels. `notification_preferences` is kept for
+// its non-category fields (digest cadence) and as the fallback when a user has
+// no canonical row yet — never as a second source of category truth.
+//
+// The category names on the left are the LL notification types; the columns on
+// the right are what the user actually sees on the preferences screen.
+export interface CategoryGatePrefs {
+  inAppEnabled: boolean;
+  riskAlertsEnabled: boolean;
+  tradeEventsEnabled: boolean;
+  aiCoachingEnabled: boolean;
+  mt5StatusEnabled: boolean;
+}
+
+export function categoryEnabled(prefs: CategoryGatePrefs, type: string): boolean {
   switch (type) {
-    case "SAFETY":   return true; // always on
-    case "RISK":     return prefs.safetyAlertsEnabled;
-    case "TRADE":    return prefs.tradeAlertsEnabled;
-    case "LEARNING": return prefs.learningAlertsEnabled;
-    case "COACH":    return prefs.coachAlertsEnabled;
-    case "REPLAY":   return prefs.replayAlertsEnabled;
-    case "DATA":     return prefs.dataAlertsEnabled;
-    case "BROKER":   return prefs.brokerAlertsEnabled;
+    // SAFETY and SYSTEM are inviolable: no preference may suppress them.
+    case "SAFETY":   return true;
     case "SYSTEM":   return true;
+    case "RISK":     return prefs.riskAlertsEnabled;
+    case "TRADE":    return prefs.tradeEventsEnabled;
+    case "LEARNING": return prefs.aiCoachingEnabled;
+    case "COACH":    return prefs.aiCoachingEnabled;
+    case "REPLAY":   return prefs.aiCoachingEnabled;
+    case "DATA":     return prefs.mt5StatusEnabled;
+    case "BROKER":   return prefs.mt5StatusEnabled;
     default:         return true;
   }
+}
+
+/**
+ * The canonical category gate for a user, read from the one row the
+ * /alert-preferences screen writes.
+ *
+ * Returns null when the user has no canonical row — the caller then FAILS OPEN
+ * for delivery (an alert we cannot prove was silenced must still be shown; the
+ * inverse would hide a risk alert on a missing read).
+ */
+async function canonicalCategoryPrefs(userId: number | null): Promise<CategoryGatePrefs | null> {
+  if (typeof userId !== "number") return null;
+  const [row] = await db.select({
+    inAppEnabled: userNotificationPreferencesTable.inAppEnabled,
+    riskAlertsEnabled: userNotificationPreferencesTable.riskAlertsEnabled,
+    tradeEventsEnabled: userNotificationPreferencesTable.tradeEventsEnabled,
+    aiCoachingEnabled: userNotificationPreferencesTable.aiCoachingEnabled,
+    mt5StatusEnabled: userNotificationPreferencesTable.mt5StatusEnabled,
+  }).from(userNotificationPreferencesTable)
+    .where(eq(userNotificationPreferencesTable.userId, userId))
+    .limit(1);
+  return row ?? null;
 }
 
 // ── core notify (upsert by dedupe_key, with severity-aware reactivation) ────
@@ -102,28 +156,61 @@ export interface NotifyResult {
   reason?: string;
 }
 
+/**
+ * RANK 34 — the dedupe key is per-USER, not global.
+ *
+ * THE DEFECT
+ *   The dedupe lookup was `where(eq(notificationsTable.dedupeKey, input.dedupeKey))`
+ *   with NO userId, and `notifications_dedupe_key_idx` is a GLOBAL unique index.
+ *   Many rule dedupe keys are user-independent by construction — rules.ts emits
+ *   `HH:DAILY_LOSS_HIT:${date}`, `HH:DAILY_LOSS_NEAR:${date}`,
+ *   `DD:${event}:${symbol}:${bucket}`. So when two users hit their daily loss
+ *   limit on the same day, the second user's CRITICAL risk notification found
+ *   the FIRST user's row, took the merge branch, and bumped that row's
+ *   repeatCount. The second user was never told. The user with the losing
+ *   account is precisely the one who never got the alert.
+ *
+ * THE FIX
+ *   The stored key is namespaced with the owner before it is ever written or
+ *   looked up, so the existing global unique index becomes a per-user unique
+ *   index for free — no index rebuild, no destructive migration. The lookup
+ *   ALSO filters on userId, so a legacy row written under the old un-namespaced
+ *   key can never be merged into a different user's alert.
+ *
+ *   `null` (system-wide) keeps its own namespace, distinct from every user.
+ */
+export function scopedDedupeKey(userId: number | null | undefined, dedupeKey: string): string {
+  return `${typeof userId === "number" ? `u${userId}` : "system"}::${dedupeKey}`;
+}
+
 export async function notify(input: NotifyInput & { userId?: number | null }, opts: { idempotent?: boolean } = {}): Promise<NotifyResult> {
-  // Phase-2: notifications without an explicit userId stay null (system-wide
-  // events). When a userId is supplied, preferences are read for that user;
-  // otherwise we fall back to user_id=1 (legacy / system) so secret-redaction,
-  // category gating, and dedupe all keep working without per-call churn.
-  const prefsUserId = typeof input.userId === "number" ? input.userId : 1;
-  const prefs = await getPreferences(prefsUserId);
+  const ownerId = typeof input.userId === "number" ? input.userId : null;
   const isCritical = input.severity === "CRITICAL";
 
   await logEvent(null, "EVENT_RECEIVED", input.severity, `Event from ${input.sourceBuild} type=${input.type} dedupe=${input.dedupeKey}`, {
     type: input.type, sourceBuild: input.sourceBuild,
   });
 
-  // Preference gate (CRITICAL bypasses)
-  if (!isCritical) {
-    if (!prefs.inAppEnabled) {
-      await logEvent(null, "PREF_BLOCKED", "INFO", "in_app_enabled=false", { dedupeKey: input.dedupeKey });
-      return { status: "SKIPPED", notification: null, reason: "in_app_enabled=false" };
-    }
-    if (!categoryEnabled(prefs, input.type)) {
-      await logEvent(null, "PREF_BLOCKED", "INFO", `category ${input.type} disabled`, { dedupeKey: input.dedupeKey });
-      return { status: "SKIPPED", notification: null, reason: `category ${input.type} disabled` };
+  // Preference gate (CRITICAL bypasses).
+  //
+  // RANK 77: this used to read `notification_preferences` — a table with no UI
+  // consumer — and, for a system-wide event with no userId, fell back to
+  // user_id=1's row, letting one user's settings gate everyone's alerts. It now
+  // reads the canonical per-user row that /alert-preferences writes, and a
+  // system-wide event (ownerId === null) is gated by nothing but its severity.
+  if (!isCritical && ownerId !== null) {
+    const prefs = await canonicalCategoryPrefs(ownerId);
+    // A missing row FAILS OPEN: not being able to read a preference is never
+    // permission to withhold a risk alert.
+    if (prefs) {
+      if (!prefs.inAppEnabled) {
+        await logEvent(null, "PREF_BLOCKED", "INFO", "in_app_enabled=false", { dedupeKey: input.dedupeKey });
+        return { status: "SKIPPED", notification: null, reason: "in_app_enabled=false" };
+      }
+      if (!categoryEnabled(prefs, input.type)) {
+        await logEvent(null, "PREF_BLOCKED", "INFO", `category ${input.type} disabled`, { dedupeKey: input.dedupeKey });
+        return { status: "SKIPPED", notification: null, reason: `category ${input.type} disabled` };
+      }
     }
   }
 
@@ -132,9 +219,12 @@ export async function notify(input: NotifyInput & { userId?: number | null }, op
   const safeMessage = scrubString(input.message);
   const safeMetadata = scrubObject(input.metadata ?? {}) as Record<string, unknown>;
 
-  // Dedupe lookup
+  // Dedupe lookup — per-owner, never global. See scopedDedupeKey above.
+  const storedDedupeKey = scopedDedupeKey(ownerId, input.dedupeKey);
+  const ownerMatch: SQL | undefined =
+    ownerId === null ? isNull(notificationsTable.userId) : eq(notificationsTable.userId, ownerId);
   const [existing] = await db.select().from(notificationsTable)
-    .where(eq(notificationsTable.dedupeKey, input.dedupeKey)).limit(1);
+    .where(and(eq(notificationsTable.dedupeKey, storedDedupeKey), ownerMatch)).limit(1);
 
   if (existing) {
     // Idempotent ingest re-runs of unchanged source rows must NOT bump repeat_count.
@@ -181,7 +271,7 @@ export async function notify(input: NotifyInput & { userId?: number | null }, op
   const expiresAt = input.expiresAtMs ? new Date(input.expiresAtMs) : null;
   const [created] = await db.insert(notificationsTable).values({
     notificationId,
-    userId: typeof input.userId === "number" ? input.userId : null,
+    userId: ownerId,
     type: input.type,
     severity: input.severity,
     status: "UNREAD",
@@ -199,7 +289,7 @@ export async function notify(input: NotifyInput & { userId?: number | null }, op
     recommendedAction: input.recommendedAction ?? null,
     actionUrl: input.actionUrl ?? null,
     metadata: safeMetadata,
-    dedupeKey: input.dedupeKey,
+    dedupeKey: storedDedupeKey,
     repeatCount: 1,
     expiresAt,
   }).returning();
@@ -280,10 +370,32 @@ export async function markAllRead(userId: number) {
 }
 
 // ── digest ──────────────────────────────────────────────────────────────────
-export async function generateDigest(rangeHours = 24) {
+//
+// RANK 35 — the digest was a cross-user leak on a page that promised the
+// opposite.
+//
+// THE DEFECT
+//   generateDigest() selected `where(gte(createdAt, start))` with NO user
+//   filter, and latestDigest() returned the newest digest row in the whole
+//   table. routes/notifications.ts wired GET /notifications/digest with `_req`
+//   — the authenticated user was explicitly discarded. The Notification Center
+//   then rendered `summary.topCritical` — the literal TITLES of other users'
+//   CRITICAL alerts — a few lines under copy reading "We never show other
+//   users' notifications or global admin alerts." Pressing "Generate digest"
+//   recomputed platform-wide counts over everyone's data.
+//
+// THE FIX
+//   Both functions take a userId and are scoped to it, and the row records its
+//   owner. Legacy rows (user_id IS NULL) are cross-user aggregates: they are
+//   never returned to a per-user reader, because a NULL owner cannot be proven
+//   to be this user's data.
+export async function generateDigest(userId: number, rangeHours = 24) {
   const end = new Date();
   const start = new Date(end.getTime() - rangeHours * 3_600_000);
-  const rows = await db.select().from(notificationsTable).where(gte(notificationsTable.createdAt, start));
+  const rows = await db.select().from(notificationsTable).where(and(
+    gte(notificationsTable.createdAt, start),
+    eq(notificationsTable.userId, userId),
+  ));
   const summary = {
     bySeverity: {} as Record<string, number>,
     byType: {} as Record<string, number>,
@@ -301,7 +413,7 @@ export async function generateDigest(rangeHours = 24) {
   }
   const digestId = `digest_${randomUUID()}`;
   const [created] = await db.insert(notificationDigestsTable).values({
-    digestId, rangeStart: start, rangeEnd: end,
+    userId, digestId, rangeStart: start, rangeEnd: end,
     totalNotifications: rows.length,
     criticalCount: summary.bySeverity["CRITICAL"] ?? 0,
     warningCount: summary.bySeverity["WARNING"] ?? 0,
@@ -314,13 +426,20 @@ export async function generateDigest(rangeHours = 24) {
   return created;
 }
 
-export async function latestDigest() {
+export async function latestDigest(userId: number) {
   const [row] = await db.select().from(notificationDigestsTable)
+    .where(eq(notificationDigestsTable.userId, userId))
     .orderBy(desc(notificationDigestsTable.createdAt)).limit(1);
   return row ?? null;
 }
 
 // ── logs ────────────────────────────────────────────────────────────────────
+//
+// notification_logs is an operator/debug trail: rows carry a notificationId but
+// no owner column, and the messages describe the delivery pipeline rather than
+// a user's alerts. It is admin-only at the route layer (see
+// routes/notifications.ts) — a per-user caller must never receive it, because
+// nothing here can be proven to belong to them.
 export async function listLogs(limit = 50) {
   return db.select().from(notificationLogsTable)
     .orderBy(desc(notificationLogsTable.createdAt)).limit(limit);
@@ -329,9 +448,20 @@ export async function listLogs(limit = 50) {
 // ── demo seeding ────────────────────────────────────────────────────────────
 // Phase-2: every seeded demo notification is stamped with the supplied userId
 // so different test users get isolated demo data.
+//
+// RANK 79 — these rows are FABRICATED safety alerts, two of them CRITICAL
+// ("Risk Governor LOCKED", "Unsafe BROKER_MODE rejected"). Written unmarked
+// into a real inbox they were indistinguishable from a genuine governor lock,
+// and they immediately fired the red critical banner. Every seeded row is now
+// prefixed with an unmistakable DEMO marker in the title AND carries
+// `metadata.demo = true` so any renderer can badge it. The route is
+// admin-gated; this stamping is the second line of defence, so a demo row is
+// still identifiable if one is ever seeded by another path.
+export const DEMO_TITLE_PREFIX = "[DEMO] ";
+
 export async function seedDemo(userId: number) {
   const stamp = Date.now();
-  const inputs: NotifyInput[] = [
+  const rawInputs: NotifyInput[] = [
     { type: "SAFETY",   severity: "CRITICAL", sourceBuild: "HH", title: "Risk Governor LOCKED",     message: "Demo: governor LOCKED by hard block.", actionRequired: true, recommendedAction: "Review hard blocks.", actionUrl: "/risk-settings", dedupeKey: `DEMO:HH:LOCKED:${stamp}` },
     { type: "SAFETY",   severity: "CRITICAL", sourceBuild: "KK", title: "Unsafe BROKER_MODE rejected", message: "Demo: BROKER_MODE=write refused.", actionRequired: true, actionUrl: "/broker-readonly", dedupeKey: `DEMO:KK:UNSAFE:${stamp}` },
     { type: "RISK",     severity: "HIGH",     sourceBuild: "HH", title: "Approaching daily loss limit", message: "Demo: 80% of limit reached.", dedupeKey: `DEMO:HH:LOSS_NEAR:${stamp}` },
@@ -343,6 +473,11 @@ export async function seedDemo(userId: number) {
     { type: "COACH",    severity: "INFO",     sourceBuild: "II", title: "Trader Coach report ready",   message: "Demo: weekly coach report.", actionUrl: "/trader-coach", dedupeKey: `DEMO:II:REPORT:${stamp}` },
     { type: "REPLAY",   severity: "INFO",     sourceBuild: "JJ", title: "Replay report ready",         message: "Demo: replay rrun_demo_1 finished.", relatedReplayRunId: "rrun_demo_1", actionUrl: "/replay-simulator", dedupeKey: `DEMO:JJ:REPORT:${stamp}` },
   ];
+  const inputs: NotifyInput[] = rawInputs.map((i) => ({
+    ...i,
+    title: `${DEMO_TITLE_PREFIX}${i.title}`,
+    metadata: { ...(i.metadata ?? {}), demo: true },
+  }));
   const results: NotifyResult[] = [];
   for (const i of inputs) results.push(await notify({ ...i, userId }));
   return { count: results.length, statuses: results.map(r => r.status) };

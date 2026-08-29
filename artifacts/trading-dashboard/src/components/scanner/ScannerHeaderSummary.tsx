@@ -125,7 +125,22 @@ function formatPrice(p: number | null): string {
   return p.toLocaleString(undefined, { maximumFractionDigits: p >= 100 ? 2 : 5 });
 }
 
-export function ScannerHeaderSummary({ running }: { running: boolean }) {
+/**
+ * RANK 92 — the status chip read "Idle" throughout a successful user scan.
+ *
+ * `running` was fed ONLY the operator engine's `status.running` (the background
+ * auto-scan loop). A user pressing Scan drives the page's own request, which
+ * that flag knows nothing about — so the header said "Idle" while results were
+ * actively being fetched and then rendered. Two different things were being
+ * conflated under one word.
+ *
+ * They are separate now: `busy` is THIS user's in-flight scan, `running` is the
+ * background auto-scan engine. The chip reports whichever is true, and says
+ * which.
+ */
+export function ScannerHeaderSummary({ running, busy = false }: { running: boolean; busy?: boolean }) {
+  const activityLabel = busy ? "Scanning…" : running ? "Auto scan on" : "Idle";
+  const activityActive = busy || running;
   const [symbol] = useChartSymbol();
   const bare = bareSymbol(symbol);
   const [timeframe] = useScannerTimeframe();
@@ -250,7 +265,13 @@ export function ScannerHeaderSummary({ running }: { running: boolean }) {
         <Dot />
         <span className="font-mono">{price}</span>
         <Dot />
-        <span className={cn("font-medium", running ? "text-primary" : "text-txt-muted")}>{running ? "Scanning" : "Idle"}</span>
+        <span
+          className={cn("font-medium", activityActive ? "text-primary" : "text-txt-muted")}
+          data-testid="scanner-activity-chip"
+          title={busy ? "Your scan is running now." : running ? "The background auto-scan engine is running." : "No scan in progress."}
+        >
+          {activityLabel}
+        </span>
         {biasLabel && (<><Dot /><span className={cn("font-semibold", biasTone)}>{biasLabel}</span></>)}
         {stageLabel && (<><Dot /><span className="text-txt-secondary">{stageLabel}</span></>)}
       </div>

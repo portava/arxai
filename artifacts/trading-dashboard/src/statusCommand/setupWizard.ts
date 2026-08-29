@@ -4,6 +4,7 @@
  * The wizard NEVER enables live trading or changes broker/MT5 state.
  */
 import { resolveRoute } from "@/knowledge/routeKnowledge";
+import { isNormalUserAllowedPath } from "@/lib/routeAccess";
 import type { RuntimeContext } from "@/assistant/runtimeContextTypes";
 
 export type WizardStepStatus = "complete" | "attention" | "blocked" | "info";
@@ -21,9 +22,25 @@ export interface WizardStep {
   completionCondition: string;
 }
 
+// RANK 51 — safeRoute only ever asked "is this route DOCUMENTED?".
+//
+// resolveRoute() consults ROUTE_KNOWLEDGE, which is the assistant's
+// documentation registry — not App.tsx's route table and not the trader route
+// allowlist. So a step could name a route that is documented, has no <Route>
+// at all (/dashboard: the dashboard lives at "/"), and is on no allowlist —
+// and safeRoute would happily return it. 9 of the 10 wizard steps targeted such
+// a route, and their audience is precisely the new or pending trader following
+// the wizard, so the advertised onboarding path could not be completed.
+//
+// It now requires the route to be reachable by a human trader as well as
+// documented. The page additionally re-checks each surviving route against the
+// VIEWER's own tier before rendering the link (status-command-center.tsx), so a
+// pending trader is never handed an approved-only destination.
 function safeRoute(route: string): { route: string; label: string } | undefined {
   const r = resolveRoute(route);
-  return r ? { route, label: r.title } : undefined;
+  if (!r) return undefined;
+  if (!isNormalUserAllowedPath(route)) return undefined;
+  return { route, label: r.title };
 }
 
 export function buildSetupWizard(ctx: RuntimeContext): WizardStep[] {
@@ -37,7 +54,7 @@ export function buildSetupWizard(ctx: RuntimeContext): WizardStep[] {
   {
     const mode = ctx.tradingMode;
     const known = mode !== "unknown";
-    const x = r("/dashboard", "Dashboard");
+    const x = r("/", "Cockpit");
     steps.push({
       id: "wz-mode",
       title: "Understand the current ARX mode",
@@ -67,7 +84,7 @@ export function buildSetupWizard(ctx: RuntimeContext): WizardStep[] {
   // 3. Check simulator/demo mode
   {
     const ok = ctx.paperOnly || ctx.simulatorMode;
-    const x = r("/demo-trading", "Demo Trading");
+    const x = r("/mt5-setup", "MT5 Setup");
     steps.push({
       id: "wz-demo-sim",
       title: "Check simulator / demo mode",
@@ -83,7 +100,7 @@ export function buildSetupWizard(ctx: RuntimeContext): WizardStep[] {
   // 4. Check MT5 bridge status
   {
     const mode = ctx.bridge?.bridgeMode ?? "unknown";
-    const x = r("/mt5-bridge", "MT5 Bridge");
+    const x = r("/mt5-setup", "MT5 Setup");
     steps.push({
       id: "wz-mt5",
       title: "Check MT5 bridge status",
@@ -99,7 +116,7 @@ export function buildSetupWizard(ctx: RuntimeContext): WizardStep[] {
   // 5. Check heartbeat
   {
     const present = ctx.heartbeatPresent;
-    const x = r("/mt5-status", "MT5 Status");
+    const x = r("/mt5-setup", "MT5 Setup");
     steps.push({
       id: "wz-heartbeat",
       title: "Check heartbeat",
@@ -114,7 +131,7 @@ export function buildSetupWizard(ctx: RuntimeContext): WizardStep[] {
 
   // 6. Review broker mode
   {
-    const x = r("/broker-readonly", "Broker Read-only");
+    const x = r("/mt5-setup", "MT5 Setup");
     steps.push({
       id: "wz-broker-mode",
       title: "Review broker mode",
@@ -129,7 +146,7 @@ export function buildSetupWizard(ctx: RuntimeContext): WizardStep[] {
 
   // 7. Review readiness
   {
-    const x = r("/readiness-checklist", "Readiness Checklist");
+    const x = r("/status-command-center", "ARX Status");
     steps.push({
       id: "wz-readiness",
       title: "Review readiness",
@@ -144,7 +161,7 @@ export function buildSetupWizard(ctx: RuntimeContext): WizardStep[] {
 
   // 8. Review risk controls
   {
-    const x = r("/risk-governor", "Risk Governor");
+    const x = r("/risk-command-center", "Risk Command Center");
     steps.push({
       id: "wz-risk",
       title: "Review risk controls",
@@ -174,7 +191,7 @@ export function buildSetupWizard(ctx: RuntimeContext): WizardStep[] {
 
   // 10. Practice only in demo/simulator
   {
-    const x = r("/demo-trading", "Demo Trading");
+    const x = r("/mt5-setup", "MT5 Setup");
     steps.push({
       id: "wz-practice",
       title: "Practice only in demo/simulator",
@@ -189,7 +206,7 @@ export function buildSetupWizard(ctx: RuntimeContext): WizardStep[] {
 
   // 11. Report unresolved issues
   {
-    const x = r("/feedback-center", "Feedback Center");
+    const x = r("/help", "Help Center");
     steps.push({
       id: "wz-report",
       title: "Report unresolved issues",

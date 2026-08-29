@@ -44,6 +44,8 @@ import { cn } from "@/lib/utils";
 import { DisclaimerBanner } from "@/components/compliance/DisclaimerBanner";
 import { useLiveAccountSnapshot } from "@/hooks/useLiveAccountSnapshot";
 import { CanonicalBalancePanel } from "@/components/account/CanonicalBalancePanel";
+import { PendingIncreasesPanel } from "@/components/risk/PendingIncreasesPanel";
+import { classifyRiskSave, saveHeadline, type RiskSettingsPatchResponse } from "@/components/risk/riskLimitSave";
 
 // ── Risk mode config ─────────────────────────────────────────────────────────
 
@@ -330,13 +332,50 @@ export default function RiskSettings() {
 
   // ── Handlers ───────────────────────────────────────────────────────────────
 
+  // RANK 16 — both of these used to toast an unconditional success.
+  //
+  // PATCH /risk/settings and POST /risk/mode apply TIGHTENINGS immediately and
+  // queue every LOOSENING behind a waiting period, reporting which is which in
+  // `appliedNow` / `pendingIncreases` / `queueFailure`. This page discarded all
+  // of that and said "All risk limits updated." / "Risk parameters updated." —
+  // so a user who raised Max Daily Loss % believed the looser limit was live
+  // when it was not, and (if `queueFailure` was set) when it never would be.
+  //
+  // The response is classified now and the toast states what actually happened
+  // per field. The queued list is rendered by <PendingIncreasesPanel/> below,
+  // which also provides the confirm/cancel actions that had no UI at all.
+  function reportSaveOutcome(fields: string[], res: unknown, fallbackTitle: string) {
+    const body = (res ?? {}) as RiskSettingsPatchResponse;
+    const outcomes = classifyRiskSave(fields, body);
+    const head = saveHeadline(outcomes);
+    const queued = outcomes.filter((o) => o.kind === "queued");
+    const dropped = outcomes.filter((o) => o.kind === "dropped");
+    toast({
+      title: outcomes.length === 0 ? fallbackTitle : head.title,
+      description:
+        dropped.length > 0
+          ? dropped[0].message
+          : queued.length > 0
+            ? queued.map((o) => `${o.field}: ${o.message}`).join(" ")
+            : undefined,
+      variant: head.tone === "error" ? "destructive" : undefined,
+    });
+    queryClient.invalidateQueries({ queryKey: ["risk", "pending-increases"] });
+  }
+
   function handleApplyMode(mode: "Conservative" | "Balanced" | "Aggressive") {
     applyMode.mutate(
       { data: { mode } },
       {
         onSuccess: (res) => {
           queryClient.setQueryData(getGetRiskSettingsQueryKey(), res);
-          toast({ title: `${mode} mode applied`, description: "All risk limits updated." });
+          // A preset that loosens anything is only PARTIALLY applied — the
+          // server keeps riskMode "Custom" in that case rather than stamping
+          // the preset name, precisely so the label never claims a looser
+          // posture than what is in force.
+          const body = (res ?? {}) as unknown as RiskSettingsPatchResponse;
+          const touched = [...(body.appliedNow ?? []), ...(body.pendingIncreases ?? []).map((p) => p.field)];
+          reportSaveOutcome(touched, res, `${mode} mode applied`);
         },
         onError: () => toast({ title: "Failed to apply mode", variant: "destructive" }),
       }
@@ -350,7 +389,7 @@ export default function RiskSettings() {
         onSuccess: (res) => {
           queryClient.setQueryData(getGetRiskSettingsQueryKey(), res);
           queryClient.invalidateQueries({ queryKey: getGetRiskAuditQueryKey() });
-          toast({ title: "Custom limits saved", description: "Risk parameters updated." });
+          reportSaveOutcome(Object.keys(data), res, "Custom limits saved");
         },
         onError: () => toast({ title: "Save failed", variant: "destructive" }),
       }
@@ -801,14 +840,37 @@ export default function RiskSettings() {
                     )} />
                 </CardContent>
 
-                <CardFooter className="bg-muted/10 border-t border-border/50 p-4 flex justify-end">
-                  <Button type="submit" disabled={updateSettings.isPending} className="gap-2">
-                    Save Custom Limits
-                  </Button>
+                <CardFooter className="bg-muted/10 border-t border-border/50 p-4 flex flex-col items-stretch gap-3">
+                  {/* RANK 16 — lowering a limit applies now; RAISING one is
+                      queued for a waiting period and must be confirmed again.
+                      This page said "Risk parameters updated." either way. */}
+                  <p className="text-xs text-muted-foreground">
+                    Lowering a limit applies immediately. <strong>Raising</strong> one is queued and
+                    must be confirmed after its waiting period — until then your current, tighter
+                    limit stays in force.
+                  </p>
+                  <div className="flex justify-end">
+                    <Button type="submit" disabled={updateSettings.isPending} className="gap-2">
+                      Save Custom Limits
+                    </Button>
+                  </div>
                 </CardFooter>
               </Card>
             </form>
           </Form>
+
+          <Card className="border-border/50">
+            <CardHeader className="bg-muted/20 border-b border-border/50">
+              <CardTitle className="text-base">Increases waiting for confirmation</CardTitle>
+              <CardDescription className="text-xs">
+                Queued risk increases are NOT in force. Confirm one here after its waiting period,
+                or cancel it.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-4">
+              <PendingIncreasesPanel />
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* ══════════════════════════════════════════════════════════════════

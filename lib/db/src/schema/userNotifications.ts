@@ -58,6 +58,20 @@ export const userNotificationPreferencesTable = pgTable("user_notification_prefe
   quietHoursStart: text("quiet_hours_start"), // "22:00"
   quietHoursEnd: text("quiet_hours_end"),
   timezone: text("timezone"),
+  // RANK 77 — the push-delivery severity floor.
+  //
+  // sendService.ts:127 has always read `minimumPushSeverity` off THIS row
+  // (`(prefs as { minimumPushSeverity?: string })`) — but the column did not
+  // exist here, only on the two RETIRED preference tables (alert_preferences,
+  // notification_preferences). The cast therefore always produced `undefined`
+  // and the gate silently defaulted to "info" for every user: the threshold was
+  // real code that could never be reached by any value, and no surface in the
+  // app could set it.
+  //
+  // info | warning | critical. CRITICAL alerts still bypass this gate entirely
+  // (sendService only consults it for non-critical severities), so raising the
+  // floor can never silence a live-risk emergency.
+  minimumPushSeverity: text("minimum_push_severity").notNull().default("info"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => ({

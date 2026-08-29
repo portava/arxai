@@ -9,10 +9,39 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Star, Plus, Trash2, ListChecks } from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { STATUS_COLORS, directionTone } from "@/lib/design-tokens";
-import { suggestApprovedSymbols, type ResolvedSymbol } from "@/lib/symbolRegistry";
+import {
+  suggestApprovedSymbols, groupByMarketType, SYMBOL_REGISTRY,
+  type ResolvedSymbol, type MarketType,
+} from "@/lib/symbolRegistry";
 
-const CATEGORIES = ["Forex Majors", "Forex Minors", "US Indices", "Stocks", "Synthetic Volatility", "Custom"];
-const MARKET_TYPES = ["forex", "index", "stock", "synthetic", "crypto"];
+// RANK 92 — both of these lists were hand-written and disagreed with the server.
+//
+//   * CATEGORIES offered "Stocks", and MARKET_TYPES offered "stock". The server
+//     rejects any symbol outside the 43-market ARX Focus registry, which
+//     contains no equities — so a user could create a "Stocks" watchlist and
+//     then have every symbol they tried to add refused, with no explanation for
+//     why the category existed.
+//   * MARKET_TYPES omitted "metals" entirely, although the server seeds XAUUSD
+//     with that type — so gold could be listed but not added by hand.
+//   * The spellings were wrong too: the registry's types are plural
+//     ("indices", "stocks", "metals"), not "index"/"stock".
+//
+// Both are DERIVED from the one source of truth now (ARX_FOCUS_MARKETS via
+// SYMBOL_REGISTRY), so a market the server will not accept can never appear as
+// an option. Pinned by watchlistMarkets.test.ts.
+const MARKET_TYPES: MarketType[] = (Object.entries(groupByMarketType(SYMBOL_REGISTRY)) as [MarketType, unknown[]][])
+  .filter(([, entries]) => entries.length > 0)
+  .map(([type]) => type)
+  .sort();
+
+const MARKET_TYPE_LABEL: Record<string, string> = {
+  forex: "Forex", metals: "Metals", indices: "Indices", crypto: "Crypto",
+  stocks: "Stocks", energy: "Energy", commodities: "Commodities", synthetic: "Synthetics",
+};
+
+// Categories are just folder names, but they must not advertise a market ARX
+// does not support. "Custom" plus one label per market type ARX actually has.
+const CATEGORIES = ["Custom", ...MARKET_TYPES.map((t) => MARKET_TYPE_LABEL[t] ?? t)];
 
 export default function Watchlists() {
   const { data: lists, isLoading } = useGetWatchlists({ query: { queryKey: getGetWatchlistsQueryKey(), refetchInterval: 10000 } });
@@ -64,10 +93,18 @@ export default function Watchlists() {
         </div>
       </div>
 
-      {isLoading ? <Skeleton className="h-64 w-full" /> :
+      {/* RANK 92: a first-time visitor saw the Create box above an empty void —
+          no list, no explanation, nothing to indicate the page was working. */}
+      {isLoading ? <Skeleton className="h-64 w-full" /> : (lists ?? []).length === 0 ?
+        <EmptyState
+          icon={ListChecks}
+          title="You have no watchlists yet."
+          description="Create one above, then add symbols to it. Watchlists are private to your account, and only ARX-approved markets can be added."
+          data-testid="watchlists-empty"
+        /> :
         <div className="grid gap-4 lg:grid-cols-2 lg:gap-6">
           {(lists ?? []).map((wl) => {
-            const a = adding[wl.id] ?? { sym: "", type: "forex" };
+            const a = adding[wl.id] ?? { sym: "", type: MARKET_TYPES[0] ?? "forex" };
             const suggestions = addSuggestions[wl.id] ?? [];
             const onAdd = async (symbol?: string, marketType?: string) => {
               const sym = (symbol ?? a.sym).trim();
@@ -132,7 +169,7 @@ export default function Watchlists() {
                     <Input placeholder="Symbol" value={a.sym} onChange={(e) => setAdding({ ...adding, [wl.id]: { ...a, sym: e.target.value } })} className="flex-1" data-testid={`input-add-symbol-${wl.id}`} />
                     <Select value={a.type} onValueChange={(v) => setAdding({ ...adding, [wl.id]: { ...a, type: v } })}>
                       <SelectTrigger className="w-[110px]"><SelectValue /></SelectTrigger>
-                      <SelectContent>{MARKET_TYPES.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
+                      <SelectContent>{MARKET_TYPES.map((m) => <SelectItem key={m} value={m}>{MARKET_TYPE_LABEL[m] ?? m}</SelectItem>)}</SelectContent>
                     </Select>
                     <Button onClick={() => onAdd()} disabled={!a.sym.trim() || addItem.isPending} data-testid={`button-add-item-${wl.id}`}><Plus size={16} /></Button>
                   </div>

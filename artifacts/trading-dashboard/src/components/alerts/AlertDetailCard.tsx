@@ -4,77 +4,81 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AlertOctagon, AlertTriangle, Bell, CheckCircle2, Info } from "lucide-react";
-
-// API Alert shape (subset we render).
-interface AlertLike {
-  id: number;
-  type: string;
-  priority?: string | null;
-  severity: string;
-  title: string;
-  message: string;
-  symbol?: string | null;
-  relatedTradeId?: number | null;
-  relatedPositionId?: number | null;
-  relatedTradePlanId?: number | null;
-  actionRequired?: boolean | null;
-  read: number;
-  createdAt?: string | null;
-}
+import { isNormalUserAllowedPath } from "@/lib/routeAccess";
+import type { UserAlert } from "./meAlerts";
 
 interface Props {
-  alert: AlertLike;
+  alert: UserAlert;
   onMarkRead: (id: number) => void | Promise<void>;
 }
 
-// (L) Map related ids to the primary destination so a click takes the user
-// directly to the page where they can act on the alert.
-function relatedHref(a: AlertLike): string | null {
-  if (a.relatedTradePlanId) return `/trade-plan-builder?planId=${a.relatedTradePlanId}`;
-  if (a.relatedPositionId)  return `/portfolio`;
-  if (a.relatedTradeId)     return `/trade-logs`;
-  if (a.type === "WEEKLY_REVIEW")    return "/weekly-review";
-  if (a.type === "BROKER_HEALTH" || a.type === "MT5_DISCONNECTED") return "/mt5-bridge";
-  if (a.type === "RISK_LOCK") return "/risk-settings";
-  if (a.type === "MARKET_CONDITION") return "/scanner";
-  if (a.type === "POSITION_WARNING") return "/portfolio";
-  if (a.type === "AI_COACH" || a.type === "REPLAY_DRILL") return "/learning";
-  if (a.type === "EXECUTION_SAFETY" || a.type === "KILL_SWITCH_ACTIVATED") return "/emergency";
-  return null;
+// RANK 76 (same class) — every "Open" target here used to be hand-written and
+// several pointed at paths on NO trader allowlist (/portfolio, /learning,
+// /mt5-bridge, /risk-settings, /scanner's old spelling). RouteAccessGuard
+// silently redirects a non-allowlisted path home, so the button looked like it
+// worked and quietly dumped the user back on the cockpit.
+//
+// Two changes:
+//   1. the per-user store carries its own `actionTarget` (set by the code that
+//      raised the alert), so that is preferred over any guess here;
+//   2. every candidate — stored or mapped — is validated against
+//      isNormalUserAllowedPath BEFORE the button renders. A target we cannot
+//      guarantee is reachable produces NO button rather than a dead end.
+// Pinned by inAppHrefAllowlist.test.ts.
+const TYPE_ROUTES: Record<string, string> = {
+  mt5_disconnected: "/mt5-setup",
+  mt5_stale: "/mt5-setup",
+  bridge_health: "/mt5-setup",
+  risk_block: "/risk-command-center",
+  risk_lock: "/risk-command-center",
+  cooldown_started: "/risk-command-center",
+  daily_loss_warning: "/risk-command-center",
+  session_no_journal: "/journal",
+  trade_no_review: "/trade-logs",
+  playbook_missing: "/journal",
+  checklist_failed: "/risk-command-center",
+  coaching_updated: "/ai-coach",
+  kill_switch_activated: "/emergency",
+  execution_safety: "/emergency",
+};
+
+/** The destination for this alert, or null when we cannot promise it resolves. */
+export function alertHref(a: Pick<UserAlert, "alertType" | "actionTarget">): string | null {
+  const candidate = a.actionTarget?.trim() || TYPE_ROUTES[String(a.alertType).toLowerCase()] || null;
+  if (!candidate || !candidate.startsWith("/")) return null;
+  return isNormalUserAllowedPath(candidate) ? candidate : null;
 }
 
-function priorityBadge(p?: string | null) {
-  switch (p) {
-    case "CRITICAL": return <Badge variant="destructive" data-testid="badge-priority-critical">CRITICAL</Badge>;
-    case "HIGH":     return <Badge className="bg-warning text-white" data-testid="badge-priority-high">HIGH</Badge>;
-    case "MEDIUM":   return <Badge variant="secondary" data-testid="badge-priority-medium">MEDIUM</Badge>;
-    case "LOW":      return <Badge variant="outline" data-testid="badge-priority-low">LOW</Badge>;
-    default:         return null;
+function severityBadge(s: string) {
+  switch (String(s).toLowerCase()) {
+    case "critical": return <Badge variant="destructive" data-testid="badge-severity-critical">CRITICAL</Badge>;
+    case "warning":  return <Badge className="bg-warning text-white" data-testid="badge-severity-warning">WARNING</Badge>;
+    default:         return <Badge variant="outline" data-testid="badge-severity-info">INFO</Badge>;
   }
 }
 
 function icon(severity: string) {
-  switch (severity) {
-    case "danger":  return <AlertOctagon className="h-4 w-4 text-danger" />;
-    case "warning": return <AlertTriangle className="h-4 w-4 text-warning" />;
-    case "success": return <CheckCircle2 className="h-4 w-4 text-success" />;
-    case "info":    return <Info className="h-4 w-4 text-primary" />;
-    default:        return <Bell className="h-4 w-4 text-muted-foreground" />;
+  switch (String(severity).toLowerCase()) {
+    case "critical": return <AlertOctagon className="h-4 w-4 text-danger" />;
+    case "warning":  return <AlertTriangle className="h-4 w-4 text-warning" />;
+    case "success":  return <CheckCircle2 className="h-4 w-4 text-success" />;
+    case "info":     return <Info className="h-4 w-4 text-primary" />;
+    default:         return <Bell className="h-4 w-4 text-muted-foreground" />;
   }
 }
 
 export function AlertDetailCard({ alert, onMarkRead }: Props) {
-  const href = relatedHref(alert);
+  const href = alertHref(alert);
   const ts = alert.createdAt ? new Date(alert.createdAt).toLocaleString() : "";
+  const isUnread = alert.status === "unread";
   return (
-    <Card className={`p-3 ${alert.read === 0 ? "border-l-4 border-l-blue-500" : "opacity-70"}`} data-testid={`card-alert-${alert.id}`}>
+    <Card className={`p-3 ${isUnread ? "border-l-4 border-l-blue-500" : "opacity-70"}`} data-testid={`card-alert-${alert.id}`}>
       <div className="flex items-start gap-2">
         <div className="pt-0.5">{icon(alert.severity)}</div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            {priorityBadge(alert.priority)}
-            <Badge variant="outline" className="text-[10px]">{alert.type}</Badge>
-            {alert.actionRequired ? <Badge className="bg-warning text-white text-[10px]">ACTION</Badge> : null}
+            {severityBadge(alert.severity)}
+            <Badge variant="outline" className="text-[10px]">{alert.alertType}</Badge>
             <span className="text-xs text-muted-foreground ml-auto">{ts}</span>
           </div>
           <div className="font-medium text-sm mt-1" data-testid={`text-alert-title-${alert.id}`}>{alert.title}</div>
@@ -83,11 +87,11 @@ export function AlertDetailCard({ alert, onMarkRead }: Props) {
             {href ? (
               <Link href={href}>
                 <Button size="sm" variant="ghost" className="h-7 text-xs" data-testid={`button-alert-open-${alert.id}`}>
-                  Open
+                  {alert.actionLabel || "Open"}
                 </Button>
               </Link>
             ) : null}
-            {alert.read === 0 ? (
+            {isUnread ? (
               <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => onMarkRead(alert.id)} data-testid={`button-alert-mark-${alert.id}`}>
                 Mark read
               </Button>

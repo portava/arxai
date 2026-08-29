@@ -34,7 +34,12 @@ export const ROUTE_KNOWLEDGE: RouteKnowledge[] = [
   // /live-market removed — never declared in App.tsx. The realtime market view
   // is /live-chart (single symbol) and /market-scanner (ranked signals).
   { route: "/live-chart", title: "Live Chart", purpose: "Single-symbol live chart with overlays.", related: ["/charts"] },
-  { route: "/charts", title: "Charts", purpose: "Multi-chart workspace with annotation tools.", related: ["/live-chart"] },
+  // RANK 74: described as a "Multi-chart workspace with annotation tools".
+  // App.tsx:350 renders LiveChartPage for /charts — the SAME single-symbol
+  // chart as /live-chart. There is no multi-chart workspace and no annotation
+  // tool anywhere in this build. It is an alias, and says so (matching how
+  // /calendar, /backtest and /news-risk are already handled).
+  { route: "/charts", title: "Charts (alias)", purpose: "Alias of the Live Chart — the same single-symbol chart. There is no multi-chart workspace in this build.", related: ["/live-chart"] },
   { route: "/market-scanner", title: "Market Scanner", purpose: "Scans configured symbols and ranks signals by confidence.", controls: ["Strategy filter", "Min confidence"], related: ["/scanner", "/strategy-settings"] },
   { route: "/scanner", title: "Scanner", purpose: "Lighter scanner view with the same signal source.", related: ["/market-scanner"] },
   { route: "/market-health", title: "Market Health", purpose: "Volatility, spread, and session quality indicators.", related: ["/market-sessions"] },
@@ -45,13 +50,30 @@ export const ROUTE_KNOWLEDGE: RouteKnowledge[] = [
   { route: "/news-risk", title: "News Risk (moved)", purpose: "Redirects to the Economic Calendar's News Risk tab — same real calendar-backed verdicts.", related: ["/economic-calendar"] },
 
   // ── AI ─────────────────────────────────────────────────────────────────
-  { route: "/ai-trading", title: "AI Trade Setup", purpose: "AI-assisted entry / exit / risk suggestions for the current symbol.", safety: "Suggestions only — orders never auto-send.", related: ["/ai-decisions", "/ai-readiness-score"] },
+  // RANK 74: /ai-trading renders LiveAiAssistPage (App.tsx:357) — the Live AI
+  // Assist tester, not a per-symbol suggestion surface.
+  { route: "/ai-trading", title: "AI Trading (alias)", purpose: "Alias of the Live AI Assist tester. Suggestions are reviewed and confirmed by you; nothing auto-sends.", safety: "Suggestions only — orders never auto-send.", related: ["/live-ai-assist"] },
   { route: "/ai-coach", title: "AI Coach", purpose: "Behavioral feedback on your discipline and journal.", questions: ["What does the AI Coach do?"], related: ["/trader-coach", "/post-trade-debriefs"] },
   { route: "/ai-mentor", title: "AI Mentor", purpose: "Explains setups and concepts in plain language.", related: ["/ai-coach"] },
-  { route: "/ai-decisions", title: "AI Decisions", purpose: "Audit trail of every AI decision: inputs, score, gates, outcome.", related: ["/ai-trading"] },
+  // RANK 74 — this was the most misleading entry in the registry. It promised
+  // "Audit trail of every AI decision: inputs, score, gates, outcome"; App.tsx:359
+  // renders LiveAiAutoTestPage — the live-intent TEST HARNESS. Someone
+  // following the assistant here looking for a decision audit trail found a
+  // test tool. The real per-decision record lives in the Audit Log / Records
+  // page (/audit-log).
+  { route: "/ai-decisions", title: "AI Decisions (alias)", purpose: "Alias of the Live AI Auto tester. This is NOT a decision audit trail — decision records live in Records (/audit-log).", related: ["/live-ai-auto-test", "/audit-log"] },
   { route: "/ai-command-center", title: "AI Command Center", purpose: "Top-level AI status: models, prompts, intents, calibration.", related: ["/ai-decisions", "/confidence-calibration"] },
-  { route: "/ai-readiness-score", title: "AI Readiness Score", purpose: "AI's confidence that the current setup is trade-worthy.", related: ["/readiness"] },
-  { route: "/ai-autopilot", title: "AI Autopilot", purpose: "Hands-free auto-execution path. Disabled until every safety gate is green.", safety: "Autopilot stays demo-only unless live execution is explicitly unlocked.", related: ["/autopilot-control-center", "/readiness"] },
+  // RANK 74 — the single most dangerous description in the registry. It said
+  // this number was "the AI's confidence that the current setup is trade-worthy",
+  // i.e. a direct nudge to take the trade in front of you. It measures nothing
+  // about any chart or setup: /api/ai-readiness-score is an ADMIN-ONLY,
+  // system-wide composite of shadow-mode statistics (pages/ai-readiness-score.tsx
+  // renders an access-denied card for non-admins).
+  { route: "/ai-readiness-score", title: "Discipline Score (admin)", purpose: "Admin-only, system-wide composite of shadow-mode statistics. It is NOT a per-setup confidence score and says nothing about whether the trade in front of you is worth taking.", safety: "Never treat this number as a signal to enter a trade.", related: ["/testing-lab"] },
+  // RANK 74: described as a "hands-free auto-execution path". App.tsx:358
+  // renders LiveAiAutoTestPage — the same live-intent test harness /ai-decisions
+  // resolves to. There is no hands-free execution surface at this path.
+  { route: "/ai-autopilot", title: "AI Autopilot (alias)", purpose: "Alias of the Live AI Auto tester. The autopilot configuration surface is /autopilot-control-center.", related: ["/live-ai-auto-test", "/autopilot-control-center"] },
   { route: "/autopilot-control-center", title: "Autopilot Control Center", purpose: "Detailed autopilot configuration, kill switches, and audit." },
   { route: "/live-ai-assist", title: "Live AI Assist", purpose: "Real-time AI co-pilot during a session." },
   { route: "/live-ai-auto-test", title: "Live AI Auto-Test", purpose: "Smoke-tests the live AI assist pipeline end-to-end." },
@@ -80,10 +102,15 @@ export const ROUTE_KNOWLEDGE: RouteKnowledge[] = [
 
   // ── Bot / Live execution ───────────────────────────────────────────────
   { route: "/bot-control", title: "Bot Control", purpose: "Start, pause, stop the bot. Toggle Demo / LIVE mode.", safety: "LIVE requires multi-step confirmation and is gated by every safety check.", related: ["/emergency", "/readiness"] },
-  { route: "/live-trading", title: "Live Trading", purpose: "Live execution overview. Disabled until the MT5 bridge + safety gates pass.", safety: "LIVE TRADING DISABLED is server-enforced and cannot be flipped from the UI or assistant. The page is informational only.", controls: ["status panel", "readiness summary", "go-to-readiness link"], related: ["/readiness-checklist", "/mt5-bridge", "/risk-governor"] },
+  // RANK 4 (same lie, assistant surface): "LIVE TRADING DISABLED is
+  // server-enforced" told the assistant to tell users live trading is
+  // impossible. It is default-DENY, not disabled — real orders dispatch when
+  // the operator has armed execution, the user is approved and armed, and all
+  // 23 Phase B gates pass for that order.
+  { route: "/live-trading", title: "Live Trading", purpose: "Live execution overview and arming state for your account.", safety: "Live dispatch is default-deny: it requires the operator's master switch, an admin approval for you, your own arming record, an accepted risk disclosure, and all 23 Phase B gates passing for that specific order. The assistant can never arm any of these.", controls: ["status panel", "readiness summary", "go-to-readiness link"], related: ["/readiness-checklist", "/mt5-setup", "/risk-command-center"] },
   { route: "/live-trading-control", title: "Live Trading Control", purpose: "Granular live-execution controls and gates." },
   { route: "/live-manual", title: "Live Manual", purpose: "Manual live order entry surface (gated)." },
-  { route: "/demo-trading", title: "Demo Trading", purpose: "Demo execution surface — never sends real orders." },
+  { route: "/demo-trading", title: "Demo Trading", purpose: "Simulator sandbox: every order is simulated inside ARX and never reaches a broker.", safety: "Simulated only. Per-user demo execution against a real demo MT5 account lives on /mt5-setup." },
 
   // ── Simulator ──────────────────────────────────────────────────────────
   // Paper Trading routes (/paper-trading, /paper-testing-launch,
@@ -128,7 +155,7 @@ export const ROUTE_KNOWLEDGE: RouteKnowledge[] = [
   { route: "/portfolio", title: "Portfolio", purpose: "Aggregate positions, P&L, and allocations." },
 
   // ── MT5 / Broker ───────────────────────────────────────────────────────
-  { route: "/mt5-bridge", title: "MT5 Bridge", purpose: "MT5 bridge configuration, EA download, and connectivity status.", safety: "Bridge is off by default. Even when the EA is connected, LIVE TRADING DISABLED + BROKER READ-ONLY locks remain in force until each is individually cleared server-side.", controls: ["bridge status", "EA download", "heartbeat indicator", "token field"], related: ["/readiness-checklist", "/risk-governor", "/safety-logs"], questions: ["How do I connect MT5?", "Why is MT5 deferred?"] },
+  { route: "/mt5-bridge", title: "MT5 Bridge", purpose: "MT5 bridge configuration, EA download, and connectivity status.", safety: "The bridge is off by default. A connected EA is not permission to trade: live dispatch additionally requires the operator master switch, your live approval and arming, and every Phase B gate.", controls: ["bridge status", "EA download", "heartbeat indicator", "token field"], related: ["/readiness-checklist", "/risk-governor", "/safety-logs"], questions: ["How do I connect MT5?", "Why is MT5 deferred?"] },
   { route: "/mt5-setup", title: "MT5 Setup", purpose: "Step-by-step EA install and WebRequest allow-listing." },
   { route: "/mt5-status", title: "MT5 Status", purpose: "Live heartbeat, last sync, and bridge diagnostics.", related: ["/mt5-bridge"] },
   { route: "/broker", title: "Broker", purpose: "Broker connection summary and account info." },
@@ -157,6 +184,14 @@ export const ROUTE_KNOWLEDGE: RouteKnowledge[] = [
 
   // ── Admin / Security / System ──────────────────────────────────────────
   { route: "/admin-control", title: "Admin Control", purpose: "Top-level admin landing." },
+  // These four are declared in App.tsx and are already the target of `related`
+  // chips elsewhere in this registry — but had no entry, so resolveRoute()
+  // returned null and the assistant's related-chips led nowhere. Caught by
+  // declaredRoutes.test.ts ("every `related` route still resolves").
+  { route: "/admin", title: "Admin Hub", purpose: "Tabbed index of every admin tool.", related: ["/admin/cockpit"] },
+  { route: "/admin/users", title: "Users & Accounts", purpose: "Admin: trader and investor accounts, approvals, and trading permissions.", related: ["/admin/cockpit"] },
+  { route: "/admin/audit-center", title: "Admin · Audit Center", purpose: "Admin: consolidated audit timeline across trading, bridge, and operator actions.", related: ["/audit-log"] },
+  { route: "/live-shared", title: "Live Shared", purpose: "Shared master-account live view: bridge state, approved users, open trades.", related: ["/admin/live-shared"] },
   { route: "/admin/cockpit", title: "Admin Cockpit", purpose: "Admin/owner-only control room unifying traders, investors, bridge/MT5, open trades & exposure, risk alerts, capital/pool/NAV, approval/activation, the admin-only Pattern Sync comparator, and the audit timeline.", controls: ["Approve / full-activation / suspend / restore / emergency-close a trader (reason-gated)", "Freeze / unfreeze an investor (reason-gated)", "Add an operator note", "Refresh all panels"], safety: "READ + operator control only. Every mutation routes through the existing audited admin handlers plus a cockpit audit row — no new execution path, relaxes no gate. Broker account values are masked unless the session is OWNER.", questions: ["Who is approved for live?", "What is the master bridge doing?", "What is our total open exposure?", "What are the active risk alerts?", "What is the pool NAV?"], related: ["/admin", "/admin/users", "/admin/live-shared", "/admin/audit-center"] },
   { route: "/admin/data-management", title: "Data Management", purpose: "Manage stored data, exports, retention." },
   { route: "/admin/diagnostics", title: "Diagnostics", purpose: "Server diagnostics: bridge probe, queue depth, error counts." },
@@ -172,11 +207,15 @@ export const ROUTE_KNOWLEDGE: RouteKnowledge[] = [
   { route: "/system-health", title: "System Health", purpose: "Public system health view." },
   { route: "/status-command-center", title: "ARX Status Command Center", purpose: "Aggregated readiness, blockers, fix-first, setup checklist, and guided wizard.", controls: ["Readiness score", "Setup checklist", "Blocker cards", "Safe Setup wizard"], safety: "Read-only. Does not enable live trading or change broker/MT5/risk state.", questions: ["What should I fix first?", "Explain my readiness score", "Start safe setup", "Explain active blockers"], related: ["/help", "/readiness-checklist", "/mt5-bridge", "/emergency"] },
   { route: "/arx-status", title: "ARX Status", purpose: "Alias of the ARX Status Command Center.", related: ["/status-command-center"] },
-  { route: "/audit-log", title: "Audit Log", purpose: "Append-only log of safety/admin events." },
-  { route: "/audit-vault", title: "Audit Vault", purpose: "Long-term audit storage with retention." },
+  // RANK 74 — /audit-log, /audit-vault and /safety-logs all render the SAME
+  // AuditLog page (App.tsx:330, 367, 368). Three different descriptions for one
+  // page made the assistant claim three products exist. One canonical entry,
+  // two labelled aliases.
+  { route: "/audit-log", title: "Records", purpose: "Append-only record of safety and admin events. The same page also serves /audit-vault and /safety-logs.", related: ["/audit-vault", "/safety-logs"] },
+  { route: "/audit-vault", title: "Records (alias)", purpose: "Alias of Records (/audit-log) — the same page, not a separate long-term store.", related: ["/audit-log"] },
   { route: "/security-center", title: "Security Center", purpose: "User-visible security settings and posture." },
   { route: "/security-events", title: "Security Events", purpose: "Stream of security-relevant events." },
-  { route: "/safety-logs", title: "Safety Logs", purpose: "Trace of every safety-gate decision." },
+  { route: "/safety-logs", title: "Records (alias)", purpose: "Alias of Records (/audit-log) — the same page, not a separate safety-gate trace.", related: ["/audit-log"] },
   { route: "/data-import", title: "Data Import", purpose: "Upload CSV / JSON market data and journal data." },
   { route: "/data-protection", title: "Data Protection", purpose: "Privacy & data-handling controls." },
   { route: "/data-quality", title: "Data Quality", purpose: "Detects gaps, spikes, and anomalies in data feeds." },

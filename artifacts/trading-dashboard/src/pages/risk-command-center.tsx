@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { Link } from "wouter";
+import { useCanOpenRoute } from "@/lib/useCanOpenRoute";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +15,16 @@ import { STATUS_COLORS } from "@/lib/design-tokens";
 type Profile = Record<string, unknown> & { profileName: string; preset: string; maxRiskPerTradeUsd: number; maxDailyLossUsd: number; maxLotSize: number; minRiskReward: number };
 type Budget = { dailyRiskLimit: number; dailyRiskUsed: number; dailyRiskRemaining: number; weeklyRiskLimit: number; weeklyRiskUsed: number; openRisk: number; currentDrawdownUsd: number; maxDrawdownAllowed: number; riskStatus: string };
 type Cards = { riskStatus: string; dailyRiskRemaining: number; openRisk: number; drawdownStatus: string; exposureStatus: string; overtradingRisk: string; activeRiskLocks: string[]; aiRiskDiscipline: number; permissions: { aiTrading: boolean; manualTrading: boolean; simulator: boolean; liveTesterIntent: boolean; futureMt5: boolean; pauseReason: string | null }; propFirm: { status: string; profitTargetProgress: number } | null };
+
+// The audit destinations, minus the one that pointed back at this page.
+// /risk-profile is routed to RiskCommandCenter itself in App.tsx:421, so
+// "Edit profile JSON →" navigated the user to where they already were and the
+// JSON editor it promised exists nowhere in the build.
+const AUDIT_LINKS: { href: string; label: string }[] = [
+  { href: "/risk-events", label: "Risk events log" },
+  { href: "/audit-log", label: "Full audit log" },
+  { href: "/risk-settings", label: "Detailed risk settings" },
+];
 
 // Status → semantic badge classes from STATUS_COLORS (correct in both themes).
 const STATUS_COLOR: Record<string, string> = {
@@ -41,6 +53,7 @@ async function api(path: string, init?: RequestInit) {
  * MT5 broker permission stays OFF regardless of what tab is open.
  */
 export default function RiskCommandCenter() {
+  const canOpen = useCanOpenRoute();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [budget, setBudget] = useState<Budget | null>(null);
   const [cards, setCards] = useState<Cards | null>(null);
@@ -197,11 +210,27 @@ export default function RiskCommandCenter() {
 
       <Card>
         <CardHeader className="pb-2"><CardTitle className="text-base">Audit links</CardTitle></CardHeader>
+        {/* RANK 92 — four defects in four lines.
+            * "Edit profile JSON →" pointed at /risk-profile, which App.tsx
+              routes back to THIS page: the click full-reloaded the page you
+              were already on, and the promised JSON editor does not exist
+              anywhere in the build.
+            * /risk-events, /audit-log and /risk-settings are admin-only
+              surfaces on no human-trader allowlist, so for a normal trader all
+              three silently redirected to the cockpit.
+            * All four were plain <a href> in a wouter SPA — a full page reload
+              rather than a route change.
+            Each link is now a wouter <Link>, and only rendered when the current
+            viewer can actually reach it. */}
         <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
-          <a className="underline text-primary" href="/risk-events">Risk events log →</a>
-          <a className="underline text-primary" href="/risk-profile">Edit profile JSON →</a>
-          <a className="underline text-primary" href="/audit-log">Full audit log →</a>
-          <a className="underline text-primary" href="/risk-settings">Detailed risk settings →</a>
+          {AUDIT_LINKS.filter((l) => canOpen(l.href)).map((l) => (
+            <Link key={l.href} className="underline text-primary" href={l.href}>{l.label} →</Link>
+          ))}
+          {AUDIT_LINKS.every((l) => !canOpen(l.href)) && (
+            <span className="text-xs text-txt-muted">
+              The detailed risk audit surfaces are operator-only on this account.
+            </span>
+          )}
         </CardContent>
       </Card>
     </div>

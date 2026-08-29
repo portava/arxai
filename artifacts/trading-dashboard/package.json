@@ -58,7 +58,15 @@
     "test:approval-inbox-honesty": "vitest run src/pages/approval-inbox.honesty.test.ts",
     "test:scalp-scan": "vitest run src/components/scanner/RubyScalpScan.test.tsx",
     "test:surface-consolidation": "vitest run src/knowledge/surfaceConsolidation.test.ts",
-    "test:escape-route-page": "vitest run src/pages/escape-route.honesty.test.ts"
+    "test:escape-route-page": "vitest run src/pages/escape-route.honesty.test.ts",
+    "test:app-g-nav-palette-parity": "vitest run src/components/layout/navPaletteTierParity.test.ts",
+    "test:app-g-inapp-hrefs": "vitest run src/lib/inAppHrefAllowlist.test.ts",
+    "test:app-g-me-alerts": "vitest run src/components/alerts/meAlerts.contract.test.ts",
+    "test:app-g-alert-prefs": "vitest run src/pages/alertPreferences.contract.test.ts",
+    "test:app-g-risk-save": "vitest run src/components/risk/riskLimitSave.test.ts",
+    "test:app-g-route-knowledge": "vitest run src/knowledge/declaredRoutes.test.ts",
+    "test:app-g-assistant-trigger": "vitest run src/components/help/mountedAssistantTrigger.test.ts",
+    "test:app-g-watchlist-markets": "vitest run src/pages/watchlistMarkets.test.ts"
   },
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",

@@ -3,7 +3,11 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Link } from "wouter";
 import { ShieldAlert, AlertTriangle } from "lucide-react";
+import { isHumanTraderAllowedPath } from "@/lib/routeAccess";
+import { useTraderTier } from "@/hooks/useTraderTier";
+import { useViewMode } from "@/hooks/useViewMode";
 
 const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
@@ -19,15 +23,29 @@ interface Explanation {
   recommendedFixes: string[];
   safeNextStep: string;
   links: { label: string; href: string }[];
-  liveTradingStatus: "DISABLED";
+  // RANK 4: this was the literal type "DISABLED" — the shape could not express
+  // any other answer, on a build that dispatches real broker orders. The server
+  // now reports the user's real state, including UNKNOWN when a read failed.
+  liveTradingStatus: "ALLOWED" | "BLOCKED" | "UNKNOWN";
   generatedAt: string;
 }
+
+const LIVE_STATUS_COPY: Record<Explanation["liveTradingStatus"], string> = {
+  ALLOWED: "Live trading: every account-level prerequisite is met on your account. Individual orders are still gated.",
+  BLOCKED: "Live trading: at least one prerequisite is not met — the reasons are listed below.",
+  UNKNOWN: "Live trading: your status could not be read. Treat this as unknown, not as safe.",
+};
 
 export function WhyBlockedDrawer({ defaultAction = "START_PAPER_SESSION" as BlockedAction, trigger }: { defaultAction?: BlockedAction; trigger?: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const [action, setAction] = useState<BlockedAction>(defaultAction);
   const [exp, setExp] = useState<Explanation | null>(null);
   const [loading, setLoading] = useState(false);
+  const { effectiveIsAdmin: isAdmin } = useViewMode();
+  const { isApprovedTrader } = useTraderTier();
+  const visibleLinks = (exp?.links ?? []).filter(
+    (l) => isAdmin || isHumanTraderAllowedPath(l.href, { isApprovedTrader }),
+  );
 
   async function load(a: BlockedAction) {
     setLoading(true); setAction(a);
@@ -48,7 +66,9 @@ export function WhyBlockedDrawer({ defaultAction = "START_PAPER_SESSION" as Bloc
         <SheetContent className="overflow-y-auto w-full sm:max-w-md">
           <SheetHeader>
             <SheetTitle className="flex items-center gap-2"><ShieldAlert className="h-4 w-4" />Why am I blocked?</SheetTitle>
-            <SheetDescription>Plain-English safety explanation. Live trading remains DISABLED.</SheetDescription>
+            {/* RANK 4: this line read "Live trading remains DISABLED." on every
+                open, regardless of the user's actual mode. */}
+            <SheetDescription>Plain-English explanation of what is stopping this action, and what would change it.</SheetDescription>
           </SheetHeader>
           <div className="mt-3 flex flex-wrap gap-1">
             {(["START_PAPER_SESSION","START_AUTOPILOT","OPEN_PAPER_TRADE","ENABLE_LIVE_TRADING","USE_BROKER_EXECUTION"] as BlockedAction[]).map(a => {
@@ -78,16 +98,23 @@ export function WhyBlockedDrawer({ defaultAction = "START_PAPER_SESSION" as Bloc
                   <ul className="text-sm list-disc pl-5 space-y-1">{exp.recommendedFixes.map((r, i) => <li key={i}>{r}</li>)}</ul>
                 </div>
                 <div className="text-xs"><span className="font-semibold">Safest next step: </span>{exp.safeNextStep}</div>
-                {exp.links.length > 0 && (
+                {/* RANK 51: these were plain <a href> full page loads, and the
+                    old link set pointed at /trading-cockpit, /risk-settings and
+                    /paper-testing-launch — routes that either do not exist or
+                    are not on any trader allowlist, so the click silently
+                    bounced the user home. wouter <Link> now, and only rendered
+                    when the destination is reachable for THIS viewer's tier. */}
+                {visibleLinks.length > 0 && (
                   <div className="flex flex-wrap gap-2">
-                    {exp.links.map((l, i) => <a key={i} className="text-xs underline" href={`${BASE}${l.href}`}>{l.label} →</a>)}
+                    {visibleLinks.map((l, i) => <Link key={i} className="text-xs underline" href={l.href}>{l.label} →</Link>)}
                   </div>
                 )}
                 <details className="text-[10px] text-muted-foreground">
                   <summary className="cursor-pointer">Technical detail</summary>
                   <ul className="pl-4 mt-1 space-y-0.5 font-mono">{exp.technicalReasons.map((r, i) => <li key={i}>{r}</li>)}</ul>
                 </details>
-                <p className="text-[10px] italic text-muted-foreground">explanation_id {exp.explanation_id} · {new Date(exp.generatedAt).toLocaleString()} · liveTradingStatus=DISABLED</p>
+                <p className="text-xs text-muted-foreground">{LIVE_STATUS_COPY[exp.liveTradingStatus]}</p>
+                <p className="text-[10px] italic text-muted-foreground">explanation_id {exp.explanation_id} · {new Date(exp.generatedAt).toLocaleString()}</p>
               </>
             )}
           </div>

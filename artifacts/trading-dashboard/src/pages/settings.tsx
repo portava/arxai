@@ -1,62 +1,40 @@
 import { useState, useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Link } from "wouter";
+import { useQueryClient } from "@tanstack/react-query";
 import {
-  getGetBotSettingsQueryKey,
-  getGetRiskSettingsQueryKey,
   getGetMeAssistantSettingsQueryKey,
-  useGetRiskSettings,
-  useUpdateRiskSettings,
   useUpdateMeAssistantSettings,
   useChangeMyPassword,
-  type RiskSettingsUpdate,
 } from "@workspace/api-client-react";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PageTabs, type PageTab } from "@/components/ui/PageTabs";
-import { cn } from "@/lib/utils";
 import { STATUS_COLORS } from "@/lib/design-tokens";
 import { useTradingMode } from "@/hooks/useTradingMode";
 import { useProductRole } from "@/hooks/useProductRole";
+import { useTraderTier } from "@/hooks/useTraderTier";
+import { useViewMode } from "@/hooks/useViewMode";
 import { useToast } from "@/hooks/use-toast";
 import { OneClickToggleCard } from "@/components/mt5/OneClickToggleCard";
+import { RiskLimitsEditor } from "@/components/risk/RiskLimitsEditor";
 import {
   useAssistantName,
   validateAssistantName,
   DEFAULT_ASSISTANT_NAME,
 } from "@/lib/assistant-name";
 
-const SYMBOLS_BY_MARKET = {
-  "Synthetic Indices": ["Volatility 75 Index", "Volatility 75 1s Index", "Volatility 25 1s Index"],
-  "Forex Majors": ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD"],
-  "Forex Minors": ["EURJPY", "GBPJPY", "EURGBP", "AUDJPY", "CADJPY", "EURCAD"],
-  "Global Indices": ["US30", "NAS100", "SPX500", "GER40", "UK100", "JP225"],
-  "Stocks": ["AAPL", "MSFT", "NVDA", "TSLA", "AMZN", "GOOGL", "META", "JPM"],
-};
+// RANK 15: the symbol grid (SYMBOLS_BY_MARKET) and the seven-strategy list
+// (ALL_STRATEGIES / DEFAULT_ENABLED_STRATEGIES) that used to live here backed
+// the Strategies tab. Both wrote bot_settings.symbol / bot_settings.
+// enabledStrategies, which no scanner, decision or execution path reads. The
+// tab and its data are removed rather than left as a convincing but inert
+// control panel.
 
-const ALL_STRATEGIES = [
-  { id: "trend_continuation", label: "Trend Continuation", description: "EMA 20/50/200 alignment + RSI filter" },
-  { id: "break_of_structure", label: "Break of Structure", description: "Swing high/low breakout confirmation" },
-  { id: "liquidity_sweep", label: "Liquidity Sweep Reversal", description: "Wick rejection from swept levels" },
-  { id: "volatility_expansion", label: "Volatility Expansion", description: "ATR expansion with body ratio filter" },
-  { id: "pullback_continuation", label: "Pullback Continuation", description: "EMA20 zone pullback in trend" },
-  { id: "mean_reversion", label: "Mean Reversion", description: "Range extreme RSI + wick reversal" },
-  { id: "session_breakout", label: "Session Breakout", description: "London/NY open Asia range breakout" },
-];
-
-const DEFAULT_ENABLED_STRATEGIES = ["trend_continuation", "break_of_structure", "liquidity_sweep", "volatility_expansion"];
-
-// Numeric per-user risk fields editable on the Risk tab. Keys must match the
-// /api/risk/settings schema (RiskSettingsUpdate).
-const RISK_FIELDS: { key: keyof RiskSettingsUpdate & ("riskPerTradePct" | "maxDailyLossPct" | "maxWeeklyLossPct" | "maxLotSize" | "maxOpenTrades" | "minConfidenceScore"); label: string }[] = [
-  { key: "riskPerTradePct", label: "Risk Per Trade (%)" },
-  { key: "maxDailyLossPct", label: "Max Daily Loss (%)" },
-  { key: "maxWeeklyLossPct", label: "Max Weekly Loss (%)" },
-  { key: "maxLotSize", label: "Max Lot Size" },
-  { key: "maxOpenTrades", label: "Max Open Trades" },
-  { key: "minConfidenceScore", label: "Min Confidence (%)" },
-];
+// The RISK_FIELDS list moved to components/risk/RiskLimitsEditor.tsx, where it
+// lives next to the save-outcome handling it needs (rank 16). Both this page
+// and /risk-settings render that one component so the two cannot drift.
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -336,31 +314,42 @@ function AboutArxCard() {
   );
 }
 
-// Only routes inside the relevant role allowlist (see routeAccess.ts) so a
-// link never bounces the user to a redirect/404. Investors are confined to
-// /my-account, /help, /settings, /investor — so they never see the /alerts link.
-const ACCOUNT_LINKS: { href: string; label: string; desc: string; investorSafe: boolean }[] = [
+// RANK 76 — "Only routes inside the relevant role allowlist" was the intent
+// here, and it was true for INVESTOR but not for the two human-trader tiers:
+// `/alerts` is on the APPROVED allowlist only, so a PENDING trader opening
+// Settings saw "Alerts & Notifications", clicked it, and was silently bounced
+// back to the cockpit. Each link now declares the lowest tier that can actually
+// reach it, and the filter honours it. Pinned by inAppHrefAllowlist.test.ts.
+const ACCOUNT_LINKS: {
+  href: string; label: string; desc: string;
+  investorSafe: boolean;
+  /** true when the target is on the APPROVED allowlist only. */
+  approvedOnly?: boolean;
+}[] = [
   { href: "/my-account", label: "My Account", desc: "Profile, bridge preference, and account details", investorSafe: true },
-  { href: "/alerts", label: "Alerts & Notifications", desc: "Review alerts and notification activity", investorSafe: false },
+  { href: "/notifications", label: "Notifications", desc: "Your alert history and delivery preferences", investorSafe: false },
+  { href: "/alerts", label: "Alerts", desc: "Review and acknowledge your open alerts", investorSafe: false, approvedOnly: true },
   { href: "/help", label: "Help & Guides", desc: "How ARX works and how to get support", investorSafe: true },
 ];
 
-function AccountLinksCard({ isInvestor }: { isInvestor: boolean }) {
-  const base = (import.meta.env.BASE_URL ?? "/").replace(/\/+$/, "");
-  const links = ACCOUNT_LINKS.filter((l) => !isInvestor || l.investorSafe);
+function AccountLinksCard({ isInvestor, isApprovedTrader }: { isInvestor: boolean; isApprovedTrader: boolean }) {
+  const links = ACCOUNT_LINKS
+    .filter((l) => !isInvestor || l.investorSafe)
+    .filter((l) => !l.approvedOnly || isApprovedTrader);
   return (
     <Section title="More Account Settings">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         {links.map((l) => (
-          <a
+          // wouter <Link>, not a full page reload — these are in-app routes.
+          <Link
             key={l.href}
-            href={`${base}${l.href}`}
+            href={l.href}
             className="block rounded-lg bg-muted/40 p-3 transition-colors hover:bg-muted/70"
             data-testid={`link-account-${l.href.replace(/\//g, "")}`}
           >
             <div className="text-sm font-medium text-foreground">{l.label}</div>
             <div className="text-xs text-txt-muted">{l.desc}</div>
-          </a>
+          </Link>
         ))}
       </div>
     </Section>
@@ -371,42 +360,16 @@ export default function SettingsPage() {
   const qc = useQueryClient();
   const mode = useTradingMode();
   const { isInvestor } = useProductRole();
+  const { effectiveIsAdmin } = useViewMode();
+  const { isApprovedTrader: approvedTier } = useTraderTier();
+  // Admins bypass both trader tiers, exactly as RouteAccessGuard does.
+  const isApprovedTrader = effectiveIsAdmin || approvedTier;
   const { toast } = useToast();
   const [saved, setSaved] = useState(false);
 
-  const { data: botSettings } = useQuery({
-    queryKey: getGetBotSettingsQueryKey(),
-    queryFn: () => fetch("/api/bot/settings").then((r) => r.json()),
-    enabled: !isInvestor,
-  });
-
-  // Filters are persisted in bot_settings and read straight from the query, so
-  // they survive a refresh (toggle → PATCH → invalidate → re-read on load).
-  const enabledStrategies: string[] = botSettings?.enabledStrategies ?? DEFAULT_ENABLED_STRATEGIES;
-  const newsFilter: boolean = botSettings?.newsFilter ?? true;
-  const sessionFilter: boolean = botSettings?.sessionFilter ?? true;
-
-  const { data: riskSettings } = useGetRiskSettings({
-    query: { queryKey: getGetRiskSettingsQueryKey(), enabled: !isInvestor },
-  });
-
-  const updateBot = useMutation({
-    mutationFn: (body: object) => fetch("/api/bot/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json()),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: getGetBotSettingsQueryKey() }); },
-  });
-
-  const updateRisk = useUpdateRiskSettings({
-    mutation: {
-      onSuccess: () => { qc.invalidateQueries({ queryKey: getGetRiskSettingsQueryKey() }); setSaved(true); setTimeout(() => setSaved(false), 2000); },
-      onError: () => toast({ title: "Save failed", description: "Risk settings were not saved.", variant: "destructive" }),
-    },
-  });
-
-  function toggleStrategy(id: string) {
-    const current: string[] = botSettings?.enabledStrategies ?? DEFAULT_ENABLED_STRATEGIES;
-    const next = current.includes(id) ? current.filter((s) => s !== id) : [...current, id];
-    updateBot.mutate({ enabledStrategies: next });
-  }
+  // The /api/bot/settings query, its PATCH mutation and toggleStrategy() were
+  // removed with the Trading/Strategies controls above: every one of them wrote
+  // to a store with no reader. Nothing on this page reads bot_settings now.
 
   const header = (
     <div className="flex items-center justify-between">
@@ -415,7 +378,7 @@ export default function SettingsPage() {
         <p className="text-sm text-muted-foreground">
           {isInvestor
             ? "Your account overview and help. Trading configuration is managed by your operator."
-            : "Configure bot strategies, risk parameters, filters, and market preferences"}</p>
+            : "Your profile, risk limits, and connection settings."}</p>
       </div>
       {saved && <Badge className={`animate-in fade-in ${STATUS_COLORS.success.badge}`}>Saved ✓</Badge>}
     </div>
@@ -431,7 +394,7 @@ export default function SettingsPage() {
         <AboutArxCard />
         <AssistantNameCard />
         <ChangePasswordCard />
-        <AccountLinksCard isInvestor={isInvestor} />
+        <AccountLinksCard isInvestor={isInvestor} isApprovedTrader={isApprovedTrader} />
       </div>
     ),
   };
@@ -447,122 +410,89 @@ export default function SettingsPage() {
     );
   }
 
+  // RANK 15 (high) — the Trading and Strategies tabs were an entire fake bot.
+  //
+  // THE DEFECT
+  //   Every control on both tabs PATCHed /api/bot/settings, which writes
+  //   `bot_settings` and echoes the row straight back. Nothing reads that table.
+  //   A repo-wide grep for `botSettingsTable` outside routes/bot.ts returns
+  //   exactly three hits: trades.ts:3 (an import), trades.ts:302
+  //   (`void botSettingsTable;` — a deliberate unused-var suppression) and
+  //   tradeDecision.ts:33 (imported, never referenced). routes/learning.ts:351
+  //   already says it outright: mutating them "would only pretend the bot
+  //   changed behavior".
+  //
+  //   So a user could switch a red 🔴 LIVE trading mode, enable Auto-Trade, set
+  //   a 5-second scan interval and pick strategies; the buttons lit up and the
+  //   values survived a refresh — and no scanner, decision or execution path
+  //   read a single one of them. They believed they had armed an automated bot
+  //   that does not exist, and — far worse on a platform that dispatches real
+  //   orders — that they could DISARM it the same way.
+  //
+  // WHY THESE CONTROLS ARE GONE RATHER THAN REWORDED
+  //   A disclaimer under a working-looking 🔴 LIVE button is not honesty; the
+  //   button still reads as an arming control. Wiring bot_settings into the
+  //   scanner/decision/execution path is a real feature, not a copy fix, and it
+  //   is not this change. So the inert controls are removed and replaced by the
+  //   truth plus the surfaces that ARE real: mode is read-only here (it is set
+  //   by your operator, and /api/me/account-mode is its single source), and
+  //   risk lives on the Risk tab, which writes per-user risk_settings that the
+  //   gate chain genuinely enforces.
+  //
+  //   The Strategies tab is removed for the same reason: symbol selection and
+  //   the seven strategy switches wrote `bot_settings.symbol` /
+  //   `enabledStrategies`, which nothing consumes.
   const tradingTab: PageTab = {
     id: "trading",
     label: "Trading",
     content: (
       <div className="space-y-6">
-        <Section title="Bot Settings">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs text-txt-secondary mb-1 block">Trading Mode</label>
-              <div className="flex gap-2">
-                {["DEMO", "LIVE"].map((m) => (
-                  <button key={m} onClick={() => updateBot.mutate({ mode: m })} className={cn("px-4 py-2 rounded-md text-sm font-semibold transition-colors", botSettings?.mode === m ? (m === "LIVE" ? "bg-danger text-white" : "bg-primary text-primary-foreground") : "bg-secondary text-txt-secondary hover:bg-secondary/80")}>
-                    {m === "LIVE" ? "🔴 LIVE" : "DEMO"}
-                  </button>
-                ))}
-              </div>
+        <Section title="Your trading mode">
+          <div className="space-y-3 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-txt-secondary">Current mode:</span>
+              {mode.envelope ? (
+                <Badge
+                  className={mode.isLiveShared ? STATUS_COLORS.danger.badge : mode.isDemo ? "bg-primary/10 text-primary border-primary/25" : STATUS_COLORS.info.badge}
+                  data-testid="settings-mode-badge"
+                >
+                  {mode.cleanModeLabel}
+                </Badge>
+              ) : (
+                <Badge className={STATUS_COLORS.warning.badge} data-testid="settings-mode-unknown">
+                  Unavailable
+                </Badge>
+              )}
             </div>
-            <div>
-              <label className="text-xs text-txt-secondary mb-1 block">Risk Mode</label>
-              <div className="flex gap-2">
-                {["Conservative", "Balanced", "Aggressive"].map((r) => (
-                  <button key={r} onClick={() => updateBot.mutate({ riskMode: r })} className={cn("px-3 py-2 rounded-md text-xs font-semibold transition-colors", botSettings?.riskMode === r ? "bg-primary text-primary-foreground" : "bg-secondary text-txt-secondary hover:bg-secondary/80")}>
-                    {r}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <label className="text-xs text-txt-secondary mb-1 block">Scan Interval (seconds)</label>
-              <div className="flex gap-2 items-center">
-                <Input type="number" defaultValue={botSettings?.scanIntervalSeconds ?? 5} min={1} max={60} className="w-28 tabular-nums" onBlur={(e) => updateBot.mutate({ scanIntervalSeconds: parseInt(e.target.value) })} />
-                <span className="text-txt-muted text-xs">seconds between scans</span>
-              </div>
-            </div>
-            <div>
-              <label className="text-xs text-txt-secondary mb-1 block">Auto-Trade</label>
-              <div className="flex items-center gap-3">
-                <Switch checked={botSettings?.autoTrade ?? false} onCheckedChange={(v) => updateBot.mutate({ autoTrade: v })} />
-                <span className="text-txt-secondary text-xs">{botSettings?.autoTrade ? "Auto-trade enabled — bot executes signals automatically" : "Manual mode — review signals before trading"}</span>
-              </div>
-            </div>
+            <p className="text-txt-secondary">
+              {mode.envelope
+                ? mode.cleanUserMessage
+                : "Your trading mode could not be read right now. This is not a statement that trading is off — it means we could not determine your mode."}
+            </p>
+            {mode.cleanBlockedReason && <p className="text-warning text-xs">{mode.cleanBlockedReason}</p>}
+            <p className="text-txt-muted text-xs">
+              Trading mode is set by your operator, not from this page. There is no switch here that
+              can arm or disarm live execution — see <Link className="underline" href="/my-account">My Account</Link> for
+              your permissions and <Link className="underline" href="/help">Help</Link> for the full gate chain.
+            </p>
           </div>
         </Section>
 
-        <Section title="Smart Filters">
-          <div className="space-y-3">
-            <div className="flex items-center justify-between rounded-lg bg-muted/40 p-3">
-              <div>
-                <div className="text-foreground text-sm font-medium">News Avoidance Mode</div>
-                <div className="text-txt-muted text-xs">Block forex/indices signals during high-impact news windows (08:15, 12:30, 18:45 UTC)</div>
-              </div>
-              <Switch checked={newsFilter} onCheckedChange={(v) => updateBot.mutate({ newsFilter: v })} />
-            </div>
-            <div className="flex items-center justify-between rounded-lg bg-muted/40 p-3">
-              <div>
-                <div className="text-foreground text-sm font-medium">Session Filter</div>
-                <div className="text-txt-muted text-xs">Only allow Session Breakout strategy during London and NY opens</div>
-              </div>
-              <Switch checked={sessionFilter} onCheckedChange={(v) => updateBot.mutate({ sessionFilter: v })} />
-            </div>
-            <div className="flex items-center justify-between rounded-lg bg-muted/40 p-3">
-              <div>
-                <div className="text-foreground text-sm font-medium">No Trade Filter</div>
-                <div className="text-txt-muted text-xs">Block all signals during sideways/choppy conditions or abnormal ATR — always active</div>
-              </div>
-              <div className="text-success text-xs font-semibold pr-2">Always On</div>
-            </div>
+        <Section title="Automation">
+          <div className="space-y-2 text-sm">
+            <p className="text-txt-secondary">
+              This page has no automation controls. An Auto-Trade switch, a scan interval and a
+              DEMO/LIVE selector used to live here; they wrote to a settings row that no scanner,
+              decision or execution path reads, so they never armed or disarmed anything.
+            </p>
+            <p className="text-txt-muted text-xs">
+              The controls that do take effect are your per-user risk limits on the Risk tab, and
+              the emergency stop at <Link className="underline" href="/emergency">Emergency Stop</Link>.
+            </p>
           </div>
         </Section>
 
         <OneClickToggleCard />
-      </div>
-    ),
-  };
-
-  const strategiesTab: PageTab = {
-    id: "strategies",
-    label: "Strategies",
-    content: (
-      <div className="space-y-6">
-        <Section title="Symbol Configuration">
-          <div className="space-y-4">
-            {Object.entries(SYMBOLS_BY_MARKET).map(([market, symbols]) => (
-              <div key={market}>
-                <div className="text-xs text-txt-muted font-semibold mb-2 uppercase tracking-wide">{market}</div>
-                <div className="flex flex-wrap gap-2">
-                  {symbols.map((sym) => {
-                    const isActive = botSettings?.symbol === sym;
-                    return (
-                      <button key={sym} onClick={() => updateBot.mutate({ symbol: sym })} className={cn("px-3 py-1.5 rounded-md text-xs font-medium transition-colors border", isActive ? "bg-primary text-primary-foreground border-primary" : "bg-secondary text-txt-secondary border-border hover:text-foreground")}>
-                        {isActive ? "✓ " : ""}{sym}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
-        </Section>
-
-        <Section title="Active Strategies">
-          <div className="space-y-3">
-            {ALL_STRATEGIES.map((s) => {
-              const on = enabledStrategies.includes(s.id);
-              return (
-                <div key={s.id} className="flex items-center justify-between rounded-lg bg-muted/40 p-3 transition-colors">
-                  <div>
-                    <div className="text-foreground text-sm font-medium">{s.label}</div>
-                    <div className="text-txt-muted text-xs">{s.description}</div>
-                  </div>
-                  <Switch checked={on} onCheckedChange={() => toggleStrategy(s.id)} />
-                </div>
-              );
-            })}
-          </div>
-        </Section>
       </div>
     ),
   };
@@ -573,16 +503,7 @@ export default function SettingsPage() {
     content: (
       <div className="space-y-6">
         <Section title="Risk Parameters">
-          {riskSettings && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {RISK_FIELDS.map(({ key, label }) => (
-                <div key={key}>
-                  <label className="text-xs text-txt-secondary mb-1 block">{label}</label>
-                  <Input type="number" defaultValue={riskSettings[key]} step="0.01" className="tabular-nums" onBlur={(e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) updateRisk.mutate({ data: { [key]: v } as RiskSettingsUpdate }); }} />
-                </div>
-              ))}
-            </div>
-          )}
+          <RiskLimitsEditor />
         </Section>
 
         <Section title="Protective Auto-Close">
@@ -591,13 +512,25 @@ export default function SettingsPage() {
               Lets the AI close or tighten your trades when you are inactive and a reversal is confirmed.
               Default is OFF. Saving preferences does NOT unlock execution by itself — every safety gate must pass.
             </p>
-            <a
-              href={`${(import.meta.env.BASE_URL ?? "/").replace(/\/+$/, "")}/protective-auto-close`}
-              className="inline-block text-primary hover:underline text-sm"
-              data-testid="link-protective-auto-close"
-            >
-              Open Protective Auto-Close settings →
-            </a>
+            {/* RANK 76: this was a plain <a href> full page load to a path on
+                no trader allowlist — the reload landed on RouteAccessGuard,
+                which bounced the user straight back to the cockpit. wouter
+                <Link> now; /protective-auto-close is allowlisted for APPROVED
+                traders, so the link is gated on that tier rather than shown to
+                a pending trader who would just be redirected home. */}
+            {isApprovedTrader ? (
+              <Link
+                href="/protective-auto-close"
+                className="inline-block text-primary hover:underline text-sm"
+                data-testid="link-protective-auto-close"
+              >
+                Open Protective Auto-Close settings →
+              </Link>
+            ) : (
+              <p className="text-xs text-txt-muted">
+                Protective Auto-Close becomes available once your account is approved for trading.
+              </p>
+            )}
           </div>
         </Section>
       </div>
@@ -623,7 +556,7 @@ export default function SettingsPage() {
                 Your trades route through the shared master MT5 bridge. You don&apos;t need to configure a personal MT5 EA — it&apos;s already handled by your operator.
               </div>
               <div className="text-txt-muted text-[11px]">
-                You can optionally set up a personal MT5 bridge as an alternative on <a className="underline" href="/my-account">My Account → Bridge Preference</a>.
+                You can optionally set up a personal MT5 bridge as an alternative on <Link className="underline" href="/my-account">My Account → Bridge Preference</Link>.
               </div>
             </div>
           ) : (
@@ -633,7 +566,11 @@ export default function SettingsPage() {
                 <span className="text-txt-secondary text-sm">Personal MT5 bridge: Not configured</span>
               </div>
               <div className="text-txt-muted text-xs leading-relaxed">
-                Generate a per-user bridge token from <a className="underline" href="/mt5-setup">MT5 Setup</a> and paste it into your EA inputs. Personal MT5 bridge is optional — most users route through the shared master in live mode.
+                {isApprovedTrader ? (
+                  <>Generate a per-user bridge token from <Link className="underline" href="/mt5-setup">MT5 Setup</Link> and paste it into your EA inputs. Personal MT5 bridge is optional — most users route through the shared master in live mode.</>
+                ) : (
+                  <>Bridge setup becomes available once your account is approved for trading. A personal MT5 bridge is optional — most users route through the shared master in live mode.</>
+                )}
               </div>
             </div>
           )}
@@ -646,7 +583,7 @@ export default function SettingsPage() {
     <div className="mx-auto w-full max-w-[1280px] space-y-6">
       {header}
       <PageTabs
-        tabs={[profileTab, tradingTab, strategiesTab, riskTab, connectionsTab]}
+        tabs={[profileTab, tradingTab, riskTab, connectionsTab]}
         storageKey="settings"
       />
     </div>

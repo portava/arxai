@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTradingMode } from "@/hooks/useTradingMode";
 
 interface Status {
   status: {
@@ -17,6 +18,7 @@ interface Status {
 }
 
 export default function SecurityCenter() {
+  const mode = useTradingMode();
   const [data, setData] = useState<Status | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -42,7 +44,34 @@ export default function SecurityCenter() {
           <h2 className="font-semibold mb-2">Mode & Live Trading</h2>
           <div className="text-sm">App mode: <span className="font-mono">{s.appMode}</span></div>
           <div className="text-sm">Live trading: <span className="font-mono text-danger">{s.liveTradingStatus}</span></div>
-          <div className="text-xs text-txt-muted mt-2">No live trading controls are exposed in the UI.</div>
+          {/* RANK 78 — this asserted "No live trading controls are exposed in
+              the UI." App.tsx routes /live-trading-control, /live-trading,
+              /live-manual, /live-trades, /admin/trading-control,
+              /admin/master-bridge, /admin/live-shared/activation and
+              /admin/one-click-controls, eight of which the Admin Hub's Live
+              Controls tab links directly. An operator opening the Security
+              Center to assess posture was told the opposite of what the app one
+              click away offers. The line is replaced by the mode this account
+              is ACTUALLY in, read from the same source every other page uses
+              (/api/me/account-mode via useTradingMode). */}
+          <div className="mt-2 text-xs" data-testid="security-center-live-posture">
+            {mode.envelope ? (
+              <>
+                <div className="text-txt-secondary">Your account: <span className="font-mono">{mode.cleanModeLabel}</span></div>
+                <div className="text-txt-muted">{mode.cleanUserMessage}</div>
+                {mode.cleanBlockedReason && <div className="text-warning">{mode.cleanBlockedReason}</div>}
+              </>
+            ) : (
+              <div className="text-warning">
+                Your live-trading posture could not be read. Treat it as unknown — this page is not
+                asserting that live trading is off.
+              </div>
+            )}
+            <div className="text-txt-muted mt-1">
+              Live execution is default-deny, not absent: operator arming, per-user approval, your own
+              arming record and all 23 Phase B gates must pass for any order to dispatch.
+            </div>
+          </div>
         </div>
         <div className="border rounded p-4">
           <h2 className="font-semibold mb-2">Auth Status</h2>
