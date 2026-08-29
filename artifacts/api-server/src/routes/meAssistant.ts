@@ -363,6 +363,9 @@ const explainSignalSchema = z.object({
   timeframe: z.string().min(1).max(10).optional(),
   recommendedAction: z.string().min(1).max(20),
   bias: z.string().min(1).max(40),
+  // Canonical name (signalStrength) accepted alongside the deprecated
+  // confidenceScore alias — both carry the same uncalibrated 0..100 heuristic.
+  signalStrength: z.number().min(0).max(100).optional(),
   confidenceScore: z.number().min(0).max(100).optional(),
   riskScore: z.number().min(0).max(100).optional(),
   entrySniperScore: z.number().min(0).max(100).optional(),
@@ -422,7 +425,7 @@ router.post("/me/assistant/explain-signal", requireUser, safe(async (req, res) =
   const side: "BUY" | "SELL" | "NEUTRAL" =
     s.recommendedAction.toUpperCase() === "BUY" ? "BUY" :
     s.recommendedAction.toUpperCase() === "SELL" ? "SELL" : "NEUTRAL";
-  const conf = s.confidenceScore ?? 0;
+  const conf = s.signalStrength ?? s.confidenceScore ?? 0;
   const confidenceLabel = conf >= 75 ? "High" : conf >= 50 ? "Medium" : conf >= 25 ? "Low" : "Very Low";
   const hedge = side === "BUY"
     ? "This looks like a possible buy setup."
@@ -592,7 +595,8 @@ router.post("/me/assistant/explain-signal", requireUser, safe(async (req, res) =
       possibleTpArea,
       suggestedStopArea,
       confidenceLabel,
-      confidenceScore: conf,
+      signalStrength: conf,
+      confidenceScore: conf, // backward-compat: equals signalStrength
       cautions,
       deskView,
       disclaimer: "Decision support only — confirm live readiness and risk before trading.",
