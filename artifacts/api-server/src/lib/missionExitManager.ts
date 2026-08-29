@@ -733,18 +733,20 @@ export async function refreshMissionProtection(args: {
       await tx.insert(missionEventsTable).values({
         missionId: args.missionId,
         type: "mission_target_locked",
+        // Two independent qualifiers, both load-bearing: WHICH BOOKS the figure
+        // came from (simulated paper/demo vs broker-reconciled money) and
+        // WHETHER that set is complete (every closed trade confirmed).
         message: outcomesConfirmed
-          ? `Target reached — ${missionCompleted ? "mission completed and profit locked" : "profit locked"} (${milestone.lockedProfit}).`
-          : `Target reached on the confirmed results only (${milestone.lockedProfit}) — the mission is stopped, and completion is held until every closed trade has a broker-confirmed result.`,
+          ? `Target reached — ${missionCompleted ? "mission completed and profit locked" : "profit locked"} (${milestone.lockedProfit})${accountingBasis === "SIMULATED" ? " on SIMULATED outcomes (paper/demo — not money)" : ""}.`
+          : `Target reached on the confirmed results only (${milestone.lockedProfit})${accountingBasis === "SIMULATED" ? " on SIMULATED outcomes (paper/demo — not money)" : ""} — the mission is stopped, and completion is held until every closed trade has a broker-confirmed result.`,
         metadataJson: {
           lockedProfit: milestone.lockedProfit,
           missionCompleted,
+          accountingBasis,
           outcomesConfirmed,
           pendingOutcomeCount: milestone.outcomeCompleteness.pendingOutcomeCount,
           unreconciledCloseCount: milestone.outcomeCompleteness.unreconciledCloseCount,
         },
-        message: `Target reached — ${missionCompleted ? "mission completed and profit locked" : "profit locked"} (${milestone.lockedProfit})${accountingBasis === "SIMULATED" ? " on SIMULATED outcomes (paper/demo — not money)" : ""}.`,
-        metadataJson: { lockedProfit: milestone.lockedProfit, missionCompleted, accountingBasis },
       });
     }
 
