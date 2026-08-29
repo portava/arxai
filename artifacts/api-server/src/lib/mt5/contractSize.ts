@@ -28,8 +28,9 @@
 // applies the 100,000-unit FX lot to them — mis-sizing gold by 1,000× and
 // silver by 20×. BOTH halves of the symbol must be real ISO-4217 fiat codes
 // before the FX standard lot may be assumed. This classifier was previously
-// inlined in `routes/meLiveAccount.ts` for exactly this reason; it now lives
-// here so there is a single definition and the two cannot drift.
+// inlined in `routes/meLiveAccount.ts` for exactly this reason; the single
+// definition now lives in `./forexPair.ts` (pure, so pip-unit consumers can
+// import it without @workspace/db) and is re-exported here unchanged.
 //
 // HONESTY CONTRACT (default-deny)
 //
@@ -40,39 +41,14 @@
 
 import { and, eq } from "drizzle-orm";
 import { db, arxSymbolSpecsTable } from "@workspace/db";
+import { splitForexPair, FX_STANDARD_LOT_UNITS } from "./forexPair.js";
 
-/**
- * ISO-4217 fiat codes ARX trades or quotes against. Deliberately a fixed
- * allowlist: metals (XAU/XAG/XPT/XPD), crypto (BTC/ETH/…) and index tickers
- * must NOT be in here, or they inherit the 100,000-unit FX lot.
- */
-export const FIAT_CODES: ReadonlySet<string> = new Set([
-  "USD", "EUR", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF", "SEK", "NOK", "DKK",
-  "SGD", "HKD", "ZAR", "MXN", "PLN", "TRY", "CZK", "HUF", "CNH", "CNY", "RUB",
-  "INR", "THB", "ILS", "KRW",
-]);
-
-/** The standard FX lot: 100,000 units of the base currency. */
-export const FX_STANDARD_LOT_UNITS = 100_000;
-
-/**
- * Split a symbol into ISO-4217 base/quote, tolerating a broker suffix
- * (`EURUSD.raw`, `EURUSD_i`, `EURUSD-ECN`). Returns null unless BOTH halves are
- * real fiat codes — so XAUUSD, BTCUSD and US30 all return null.
- */
-export function splitForexPair(symbol: string): { base: string; quote: string } | null {
-  const m = /^([A-Z]{3})([A-Z]{3})([._-][A-Z0-9]+)?$/.exec(symbol.trim().toUpperCase());
-  if (!m) return null;
-  const base = m[1]!;
-  const quote = m[2]!;
-  if (!FIAT_CODES.has(base) || !FIAT_CODES.has(quote)) return null;
-  return { base, quote };
-}
-
-/** Strict forex classifier: BOTH halves must be ISO-4217 fiat currency codes. */
-export function isForexPair(symbol: string): boolean {
-  return splitForexPair(symbol) != null;
-}
+// The strict ISO-4217 classifier now lives in ./forexPair.ts (pure — importable
+// without @workspace/db at module init, which pip-unit consumers need). It is
+// re-exported here VERBATIM so every existing importer keeps its one
+// definition; the single-source guarantee is preserved because this module no
+// longer defines anything of its own.
+export { FIAT_CODES, FX_STANDARD_LOT_UNITS, splitForexPair, isForexPair } from "./forexPair.js";
 
 export type ContractSizeSource = "BROKER_SPEC" | "FX_STANDARD_LOT";
 

@@ -480,6 +480,7 @@ export async function runMissionScan(args: {
   const phase7ByProposalId = await annotateScanProposals({
     userId,
     budget: exposureBudgetFrom(DEFAULT_MISSION_RISK_BUDGET),
+    nowMs,
     proposals: reviewed.map((p) => ({
       proposalId: p.proposalId,
       symbol: p.symbol,
@@ -488,6 +489,7 @@ export async function runMissionScan(args: {
       dataSource: oppByProposalId.get(p.proposalId)?.dataSource ?? "AWAITING_FEED",
       riskAmount: sizedRiskByProposalId.get(p.proposalId) ?? p.riskPlan.riskAmount,
       expectedR: p.riskPlan.expectedR,
+      entryPrice: p.entryPlan.entryPrice,
       isSelected: p.proposalId === selectedId,
     })),
   });

@@ -55,6 +55,7 @@ import type { BrokerHealthStatus } from "@workspace/domain/broker-health";
 import type { SymbolFeedVerdict } from "@workspace/domain/safety-contracts/syntheticLiveFloor";
 import { getBrokerHealthVerdict } from "../routes/brokerHealth.js";
 import { evaluateEntryDataSufficiency } from "./live/entryDataSufficiency.js";
+import { resolveExpectedMovePips } from "./marketModel/expectedMovePips.js";
 import type { MissionLiveSignals } from "./missionRiskService.js";
 
 // Net-profit blockers that are fail-closed "we could not verify" states rather
@@ -325,6 +326,24 @@ export const evaluatePhase7PreChecks: Phase7Evaluator = async (args) => {
   const health = composeExecutionHealthGate(healthInput);
 
   // ── Execution quality (honest microstructure; unknowns never read "good"). ──
+  // Expected move over the trade's timeframe: honestly producible for
+  // Volatility-N synthetics (closed-form σ, broker-point pip unit) at the
+  // draft's entry price; everything unresolvable stays null — never a guess.
+  let expectedMovePips: number | null = null;
+  try {
+    expectedMovePips = (
+      await resolveExpectedMovePips({
+        userId: args.userId,
+        symbol: draft.symbol,
+        timeframe: draft.timeframe,
+        price: draft.entryPrice,
+        nowMs: args.nowMs,
+      })
+    ).pips;
+  } catch {
+    // Honest unknown — a failed pip/spec read never fabricates a move.
+    expectedMovePips = null;
+  }
   const executionQuality = computeExecutionQuality({
     isScalp,
     direction: draft.direction,
@@ -333,7 +352,7 @@ export const evaluatePhase7PreChecks: Phase7Evaluator = async (args) => {
     // dispatch boundary; left unknown rather than fabricated. The coarse spread
     // regime is enforced by the execution-health gate above.
     spreadPips: null,
-    expectedMovePips: null,
+    expectedMovePips,
     atrPips: null,
     volumeRatio: null,
     isNewsWindow: signals.highImpactNews === true,
@@ -523,6 +542,12 @@ export interface ScanProposalAnnotationInput {
   dataSource: string;
   riskAmount: number | null;
   expectedR: number | null;
+  /**
+   * The proposal's planned entry price when it has one (additive; drives the
+   * expected-move-in-pips production for synthetics). null/absent ⇒ the move
+   * honestly stays unknown.
+   */
+  entryPrice?: number | null;
   /** True for the Judge-selected proposal (gets the exposure verdict). */
   isSelected: boolean;
 }
@@ -543,22 +568,41 @@ export async function annotateScanProposals(args: {
   userId: number;
   budget: ExposureBudget;
   proposals: ScanProposalAnnotationInput[];
+  /** Scan instant (defaults to now) — anchors the expected-move horizon. */
+  nowMs?: number;
 }): Promise<Map<string, ScanProposalAnnotation>> {
   const out = new Map<string, ScanProposalAnnotation>();
   if (args.proposals.length === 0) return out;
 
   const hasSelected = args.proposals.some((p) => p.isSelected);
   const open = hasSelected ? await loadOpenExposure(args.userId) : [];
+  const nowMs = args.nowMs ?? Date.now();
 
   for (const p of args.proposals) {
     const isScalp = isScalpTimeframe(p.timeframe);
+    // Expected move over the proposal's timeframe at its planned entry —
+    // honestly producible for synthetics only (closed-form σ); null otherwise.
+    let expectedMovePips: number | null = null;
+    try {
+      expectedMovePips = (
+        await resolveExpectedMovePips({
+          userId: args.userId,
+          symbol: p.symbol,
+          timeframe: p.timeframe,
+          price: p.entryPrice ?? null,
+          nowMs,
+        })
+      ).pips;
+    } catch {
+      expectedMovePips = null; // honest unknown — never fabricated
+    }
     const executionQuality = computeExecutionQuality({
       isScalp,
       direction: p.direction,
       quoteFreshness: quoteFreshnessFromDataSource(p.dataSource),
       // Per-symbol microstructure is not honestly observable at scan time.
       spreadPips: null,
-      expectedMovePips: null,
+      expectedMovePips,
       atrPips: null,
       volumeRatio: null,
       serverLatencyMs: null,

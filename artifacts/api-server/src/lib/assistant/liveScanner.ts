@@ -6,8 +6,11 @@
 // data. Output candidates are tagged with the provider name (e.g. "finnhub").
 // Order placement is unaffected: this only ranks candidates for the assistant.
 
+import { expectedMoveOverHorizon } from "@workspace/markets";
 import { getMarketProvider, getMarketStatus, type Candle } from "./marketProvider.js";
 import { routeCandles, routeQuote } from "../data/marketDataRouter.js";
+import { staticPipSize } from "../marketModel/instrumentSpec.js";
+import { timeframeMinutes } from "../marketModel/expectedMovePips.js";
 import type { Candle as RouterCandle } from "../data/types.js";
 
 const LIVE_TIMEFRAMES = ["M15", "H1"] as const;
@@ -47,7 +50,10 @@ export interface TakeProfitTarget {
   reason: string;
   rr: number;                                  // reward / risk; 0 if SL missing
   distancePoints: number;                      // absolute price distance from entry
-  distancePips: number;                        // approximate pips (10x for JPY would need symbol meta — kept as price-units * 10000)
+  /** Distance in pips via per-symbol pip math (instrumentSpec unit contract);
+   *  null when the symbol's pip unit cannot be honestly resolved — never the
+   *  old blanket ×10000 guess, which was wrong for JPY, gold and synthetics. */
+  distancePips: number | null;
   suggestedAction: "partial" | "full" | "runner";
   confidence: "low" | "medium" | "high";
 }
@@ -86,23 +92,51 @@ export interface LiveCandidate {
  * Phase TW — compute TP1/TP2/TP3 from real-candle-derived stop distance.
  * Direction-validated. Returns [] only when stopDist is non-finite or zero
  * (which would make every target invalid).
+ *
+ * Volatility awareness (tighten-only): when an expected-range projection is
+ * available (`expectedRunnerRange` — the analytic/measured expected range over
+ * the runner horizon), it CAPS the TP3 runner: the projection becomes
+ * min(avgRange heuristic, expected range), never more. A runner past what the
+ * instrument's own volatility can plausibly deliver flatters the draft; the
+ * cap can only pull the target in. When no expected range exists the legacy
+ * heuristic stands unchanged — an absent read never invents a cap.
+ *
+ * `pipSize` drives per-symbol pip math (null ⇒ distancePips is an honest
+ * null). Exported for tests — the tighten-only property is pinned in
+ * __qa__/liveScannerTpTargets.test.ts.
  */
-function buildTpTargets(
+export function buildTpTargets(
   action: "BUY" | "SELL",
   entry: number,
   stopDist: number,
   swingHigh: number,
   swingLow: number,
   atrProjection: number,
+  opts: { pipSize: number | null; expectedRunnerRange: number | null } = {
+    pipSize: null,
+    expectedRunnerRange: null,
+  },
 ): { targets: TakeProfitTarget[]; bestLabel: "TP1" | "TP2" | "TP3" | null; reason: string | null } {
   if (!Number.isFinite(stopDist) || stopDist <= 0 || !Number.isFinite(entry)) {
     return { targets: [], bestLabel: null, reason: "Insufficient market structure to compute take-profit targets — stop distance unavailable." };
   }
   const dir = action === "BUY" ? 1 : -1;
+  const pips = (dist: number): number | null =>
+    opts.pipSize != null && Number.isFinite(opts.pipSize) && opts.pipSize > 0
+      ? Math.round((dist / opts.pipSize) * 10) / 10
+      : null;
   const tp1Price = round(entry + dir * stopDist * 1);
   const tp2Price = round(entry + dir * stopDist * 2);
-  // TP3 uses ATR projection if it extends beyond 2R, else 3R fallback.
-  const tp3RawDist = Math.max(stopDist * 3, atrProjection);
+  // TP3 uses the runner projection if it extends beyond 2R, else 3R fallback.
+  // The projection is the avgRange heuristic, CAPPED by the expected range
+  // when one is honestly available (tighten-only — see the doc comment).
+  const emCapped =
+    opts.expectedRunnerRange != null &&
+    Number.isFinite(opts.expectedRunnerRange) &&
+    opts.expectedRunnerRange > 0 &&
+    opts.expectedRunnerRange < atrProjection;
+  const runnerProjection = emCapped ? opts.expectedRunnerRange! : atrProjection;
+  const tp3RawDist = Math.max(stopDist * 3, runnerProjection);
   const tp3Price = round(entry + dir * tp3RawDist);
 
   // Reason annotations — anchor to the swing extreme on the opposite side
@@ -114,14 +148,16 @@ function buildTpTargets(
     : "1R from entry — conservative target; insufficient structure data to anchor to liquidity";
   const tp2Reason = `2R from entry — primary target; balanced reward vs follow-through risk`;
   const tp3Reason = tp3RawDist > stopDist * 3
-    ? `ATR-projected extension (${(tp3RawDist / stopDist).toFixed(1)}R) — runner; lower-certainty extended target`
+    ? emCapped
+      ? `Expected-range-capped extension (${(tp3RawDist / stopDist).toFixed(1)}R) — runner held inside the horizon's expected range`
+      : `ATR-projected extension (${(tp3RawDist / stopDist).toFixed(1)}R) — runner; lower-certainty extended target`
     : "3R from entry — runner; extended target conditional on momentum continuation";
 
   // Direction guard — drop any target that violates direction rule (defensive).
   const all: TakeProfitTarget[] = [
-    { label: "TP1", price: tp1Price, reason: tp1Reason, rr: 1.0, distancePoints: Math.abs(tp1Price - entry), distancePips: Math.abs(tp1Price - entry) * 10000, suggestedAction: "partial", confidence: "high" },
-    { label: "TP2", price: tp2Price, reason: tp2Reason, rr: 2.0, distancePoints: Math.abs(tp2Price - entry), distancePips: Math.abs(tp2Price - entry) * 10000, suggestedAction: "full",    confidence: "medium" },
-    { label: "TP3", price: tp3Price, reason: tp3Reason, rr: Number((tp3RawDist / stopDist).toFixed(2)), distancePoints: Math.abs(tp3Price - entry), distancePips: Math.abs(tp3Price - entry) * 10000, suggestedAction: "runner",  confidence: "low" },
+    { label: "TP1", price: tp1Price, reason: tp1Reason, rr: 1.0, distancePoints: Math.abs(tp1Price - entry), distancePips: pips(Math.abs(tp1Price - entry)), suggestedAction: "partial", confidence: "high" },
+    { label: "TP2", price: tp2Price, reason: tp2Reason, rr: 2.0, distancePoints: Math.abs(tp2Price - entry), distancePips: pips(Math.abs(tp2Price - entry)), suggestedAction: "full",    confidence: "medium" },
+    { label: "TP3", price: tp3Price, reason: tp3Reason, rr: Number((tp3RawDist / stopDist).toFixed(2)), distancePoints: Math.abs(tp3Price - entry), distancePips: pips(Math.abs(tp3Price - entry)), suggestedAction: "runner",  confidence: "low" },
   ];
   const candidates: TakeProfitTarget[] = all.filter((t) => action === "BUY" ? t.price > entry : t.price < entry);
 
@@ -160,7 +196,31 @@ function scoreCandles(
   const spreadPenalty = clamp(Math.round((spread / Math.max(mid, 0.0001)) * 100000), 0, 60);
   const setupQ = clamp(40 + trendStrength / 2 - spreadPenalty / 2);
   const entryQ = clamp(50 + (volatilityRatio < 1.3 ? 25 : -15));
-  const riskScore = clamp(20 + spreadPenalty + (bias === "choppy" ? 30 : 0));
+
+  // Volatility-model read (advisory, tighten-only). Anchored to the newest
+  // candle's own timestamp so the read replays from the same bars; available
+  // only where σ is honest (closed-form synthetics today — a measured-σ FX
+  // read would need the feature path, and absence stays absence, no guess).
+  const tfMinutes = timeframeMinutes(timeframe);
+  const lastBarMs = Date.parse(candles[candles.length - 1]!.t);
+  const anchorMs = Number.isFinite(lastBarMs) ? lastBarMs : Date.now();
+  const emBar = tfMinutes != null && Number.isFinite(mid) && mid > 0
+    ? expectedMoveOverHorizon({ instrument: symbol, nowMs: anchorMs, horizonMinutes: tfMinutes, price: mid, flavor: "range" })
+    : null;
+  const expectedBarRange = emBar?.available === true ? emBar.expectedRange : null;
+  // Runner horizon = 4 bars, matching the legacy avgRange×4 projection's span.
+  const emRunner = tfMinutes != null && Number.isFinite(mid) && mid > 0
+    ? expectedMoveOverHorizon({ instrument: symbol, nowMs: anchorMs, horizonMinutes: tfMinutes * 4, price: mid, flavor: "range" })
+    : null;
+  const expectedRunnerRange = emRunner?.available === true ? emRunner.expectedRange : null;
+
+  const stopDist = avgRange * 1.5;
+  // Noise-stop floor check (spec §7 RISK): a stop tighter than one bar's
+  // expected range gets taken out by ordinary noise. Widening the stop is
+  // forbidden (stop semantics never loosen), so the finding can only TIGHTEN:
+  // it raises the risk score and is said out loud in reasonToAvoid.
+  const noiseStopRisk = expectedBarRange != null && stopDist < expectedBarRange;
+  const riskScore = clamp(20 + spreadPenalty + (bias === "choppy" ? 30 : 0) + (noiseStopRisk ? 15 : 0));
   const confidence = clamp(Math.round((setupQ + entryQ + (100 - riskScore)) / 3));
 
   let action: LiveCandidate["recommendedAction"] = "WAIT";
@@ -168,17 +228,21 @@ function scoreCandles(
   else if (bias === "bullish") action = "BUY";
   else if (bias === "bearish") action = "SELL";
 
-  const stopDist = avgRange * 1.5;
   const stopLoss = round(action === "BUY" ? mid - stopDist : mid + stopDist);
   const takeProfit = round(action === "BUY" ? mid + stopDist * 2 : mid - stopDist * 2);
   const rr = 2.0;
 
-  // Phase TW — TP1/TP2/TP3 targets from same real candles.
+  // Phase TW — TP1/TP2/TP3 targets from same real candles, with per-symbol
+  // pip math and the expected-range runner cap (both honestly absent when
+  // unresolvable — see buildTpTargets).
   const swingHigh = Math.max(...candles.map((c) => c.h));
   const swingLow = Math.min(...candles.map((c) => c.l));
   const atrProjection = avgRange * 4; // ATR-based runner projection
   const tpBuilt = (action === "BUY" || action === "SELL")
-    ? buildTpTargets(action, mid, stopDist, swingHigh, swingLow, atrProjection)
+    ? buildTpTargets(action, mid, stopDist, swingHigh, swingLow, atrProjection, {
+        pipSize: staticPipSize(symbol),
+        expectedRunnerRange,
+      })
     : { targets: [] as TakeProfitTarget[], bestLabel: null, reason: "No actionable direction — TP targets not applicable." };
 
   const score = clamp(Math.round(confidence * 0.5 + setupQ * 0.3 + entryQ * 0.2));
@@ -206,7 +270,11 @@ function scoreCandles(
     riskScore,
     riskRewardRatio: rr,
     reasonForTrade: `${bias} on ${symbol} ${timeframe} from ${candles.length} real candles; trend=${trendStrength}, vol=${volatilityRatio.toFixed(2)}`,
-    reasonToAvoid: action === "REJECT" ? "Choppy or high-risk conditions" : "",
+    reasonToAvoid: action === "REJECT"
+      ? "Choppy or high-risk conditions"
+      : noiseStopRisk
+        ? `Stop distance is inside one ${timeframe} bar's expected range — ordinary noise may stop this out`
+        : "",
     statusBadge,
     opportunityLabel,
     entry: round(mid),

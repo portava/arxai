@@ -51,3 +51,13 @@ export {
   NET_COEFF,
   MINUTES_PER_YEAR,
 } from "./expectedMove.js";
+export { expectedMoveOverHorizon, resolveSigma1min } from "./expectedMoveService.js";
+export type {
+  ExpectedMoveFlavor,
+  ExpectedMoveQuery,
+  ExpectedMoveResult,
+  ExpectedMoveAvailable,
+  ExpectedMoveUnavailable,
+  ExpectedMoveUnavailableReason,
+  SigmaProvenance,
+} from "./expectedMoveService.js";
