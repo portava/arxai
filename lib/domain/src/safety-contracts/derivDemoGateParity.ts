@@ -1,5 +1,5 @@
 // Phase 6 — the Deriv DEMO venue's disposition for each Phase B gate (18
-// original + foundation gates #19-#21).
+// original + foundation gates #19-#23).
 //
 // Read venueGateParity.ts first for why this file exists. In short: the 18-gate
 // wall is MT5-live-shaped, so a second venue must declare, gate by gate, how it
@@ -193,11 +193,12 @@ export const DERIV_DEMO_GATE_PARITY: VenueGateParityMap = {
     enforcedBy: "Existing live_risk_disclosure_acceptances record",
   },
 
-  // 19-21 — the foundation gates are venue-INDEPENDENT: they read the
-  // command's own provenance envelope, the promotion ledger, and the user's
-  // capital tier — server-side platform facts with no transport component.
-  // Every venue runs them in the same shared evaluator, so parity is the
-  // evaluator itself, not a venue-native re-implementation.
+  // 19-23 — the foundation gates are venue-INDEPENDENT: they read the
+  // command's own provenance envelope, the promotion ledger, the user's
+  // capital tier, the tenant-ownership stamps on every assembled fact, and
+  // the edge's recorded capacity — server-side platform facts with no
+  // transport component. Every venue runs them in the same shared evaluator,
+  // so parity is the evaluator itself, not a venue-native re-implementation.
 
   // 19 — decision-data provenance.
   PROVENANCE_UNPROVEN: {
@@ -226,5 +227,27 @@ export const DERIV_DEMO_GATE_PARITY: VenueGateParityMap = {
       "Per-user capital tier caps are platform facts applied to the command volume in the shared " +
       "evaluator before any venue adapter is reached; no venue can see a command that breached them.",
     enforcedBy: "Foundation gate #21 in the shared livePhaseBDispatchGate evaluator",
+  },
+
+  // 22 — tenant-context plane.
+  TENANT_CONTEXT_VIOLATION: {
+    kind: "EQUIVALENT",
+    reason:
+      "Tenant isolation is a property of how the platform assembles facts, not of any venue: the " +
+      "ownership stamps on every tenant-scoped read are evaluated in the shared evaluator " +
+      "identically for every venue, so a command evaluated against another user's caps or " +
+      "kill-switch is refused before any transport is reached.",
+    enforcedBy: "Foundation gate #22 in the shared livePhaseBDispatchGate evaluator",
+  },
+
+  // 23 — per-edge capacity ceiling.
+  EDGE_CAPACITY_EXCEEDED: {
+    kind: "EQUIVALENT",
+    reason:
+      "Edge capacity is a platform fact (the recorded ruin/capacity-simulator estimate plus the " +
+      "cumulative USD size deployed on the edge) read server-side by the shared evaluator for " +
+      "every venue alike; its tier semantics (live enforced, demo evaluated-and-logged) are the " +
+      "evaluator's own and do not vary by venue.",
+    enforcedBy: "Foundation gate #23 in the shared livePhaseBDispatchGate evaluator",
   },
 };

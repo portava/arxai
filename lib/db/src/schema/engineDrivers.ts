@@ -6,7 +6,7 @@
 //     row in any of these tables can place, modify, or close an order. The
 //     workers that write them compose EXISTING gated services and pure
 //     domain engines; every order still routes through the existing gated
-//     dispatch (18/21-gate wall untouched).
+//     dispatch (18/23-gate wall untouched).
 //   - AUTHORITY DIRECTION: rows that describe authority (recovery_probations,
 //     meta_strategy_states) may be moved toward LESS authority automatically;
 //     movement toward MORE authority is recorded only through the owner-press
