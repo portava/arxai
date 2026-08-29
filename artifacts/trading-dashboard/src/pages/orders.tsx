@@ -4,8 +4,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { ListChecks, Send, X, PlusCircle } from "lucide-react";
-import { EmptyState } from "@/components/trading/EmptyState";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { CollapsibleSection } from "@/components/ui/CollapsibleSection";
 import { humanizeReason } from "@/lib/friendlyLabels";
+import { STATUS_COLORS, directionTone, type StatusTone } from "@/lib/design-tokens";
 
 type Order = {
   orderId: string; environment: string; source: string;
@@ -15,15 +17,20 @@ type Order = {
   confidenceScore?: number; riskRewardRatio?: number; createdAt: string;
 };
 
-const STATUS_COLOR: Record<string, string> = {
-  RISK_REJECTED: "border-danger/40 bg-danger/10 text-danger",
-  APPROVED_FOR_SIMULATION: "border-primary/40 bg-primary/10 text-primary",
-  FILLED_SIMULATOR: "border-success/40 bg-success/10 text-success",
-  PENDING_MT5_CONNECTION: "border-ruby/40 bg-ruby/10 text-ruby",
-  CANCELLED: "border-border bg-secondary/40 text-txt-muted",
-  CLOSED: "border-border bg-secondary/40 text-txt-secondary",
-  ERROR: "border-danger/40 bg-danger/10 text-danger",
+// Status → semantic tone; badge class strings come from STATUS_COLORS so both
+// themes render correctly. Approved keeps the brand-blue accent.
+const STATUS_TONE: Record<string, StatusTone> = {
+  RISK_REJECTED: "danger",
+  FILLED_SIMULATOR: "success",
+  PENDING_MT5_CONNECTION: "info",
+  CANCELLED: "inactive",
+  CLOSED: "neutral",
+  ERROR: "danger",
 };
+const APPROVED_BADGE = "bg-primary/10 text-primary border-primary/25";
+const statusBadgeClass = (s: string) =>
+  s === "APPROVED_FOR_SIMULATION" ? APPROVED_BADGE : STATUS_COLORS[STATUS_TONE[s] ?? "inactive"].badge;
+
 // Human-readable status labels (logic still uses the raw enum values).
 const STATUS_LABEL: Record<string, string> = {
   RISK_REJECTED: "Rejected",
@@ -49,6 +56,8 @@ const FILTERS = [
   { k: "AI", label: "AI" },
   { k: "MANUAL", label: "Manual" },
 ];
+
+const SELECT_CLASS = "h-9 rounded-md border border-input bg-transparent px-2.5 text-sm shadow-xs outline-none focus:border-ring focus:ring-2 focus:ring-ring/25";
 
 async function api(path: string, init?: RequestInit) {
   const r = await fetch(path, {
@@ -95,28 +104,31 @@ export default function OrdersPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-[1280px] space-y-4 p-4 md:p-6 pb-32 md:pb-6">
+    <div className="mx-auto w-full max-w-[1280px] space-y-6 pb-32 md:pb-6">
       <div className="flex items-center gap-3">
         <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/25">
           <ListChecks className="h-5 w-5" />
         </span>
         <div className="flex-1">
-          <h1 className="text-2xl font-bold leading-tight">Orders</h1>
-          <p className="text-sm text-txt-secondary">Pending, queued, filled, and cancelled order records. Open positions live under Open Trades.</p>
+          <h1 className="text-2xl font-bold leading-tight tracking-tight">Orders</h1>
+          <p className="text-sm text-muted-foreground">Pending, queued, filled, and cancelled order records. Open positions live under Open Trades.</p>
         </div>
       </div>
 
-      <div className="rounded-2xl border border-border bg-card p-4">
-        <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold"><PlusCircle className="h-4 w-4" /> Quick create</h2>
+      <CollapsibleSection
+        title="Quick create"
+        description="Manually enter an order for the simulator or intent queue."
+        storageKey="orders.quickCreate"
+      >
         <div className="grid gap-2 md:grid-cols-6">
-          <select className="rounded-lg border border-border bg-background/40 px-2.5 py-1.5 text-sm" value={form.environment} onChange={(e) => setForm({ ...form, environment: e.target.value })}>
+          <select className={SELECT_CLASS} value={form.environment} onChange={(e) => setForm({ ...form, environment: e.target.value })}>
             <option value="PAPER">DEMO</option><option value="DEMO_SIMULATOR">DEMO_SIMULATOR</option><option value="LIVE_TESTER_INTENT">LIVE_TESTER_INTENT</option>
           </select>
-          <select className="rounded-lg border border-border bg-background/40 px-2.5 py-1.5 text-sm" value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })}>
+          <select className={SELECT_CLASS} value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })}>
             <option>MANUAL</option><option>AI_ASSIST</option><option>AI_AUTO</option><option>SCANNER</option>
           </select>
           <Input value={form.symbol} onChange={(e) => setForm({ ...form, symbol: e.target.value.toUpperCase() })} />
-          <select className="rounded-lg border border-border bg-background/40 px-2.5 py-1.5 text-sm" value={form.direction} onChange={(e) => setForm({ ...form, direction: e.target.value })}>
+          <select className={SELECT_CLASS} value={form.direction} onChange={(e) => setForm({ ...form, direction: e.target.value })}>
             <option>BUY</option><option>SELL</option>
           </select>
           <Input type="number" step="0.01" value={form.lotSize} onChange={(e) => setForm({ ...form, lotSize: Number(e.target.value) })} placeholder="lot" />
@@ -126,18 +138,24 @@ export default function OrdersPage() {
           <Input type="number" value={form.confidenceScore} onChange={(e) => setForm({ ...form, confidenceScore: Number(e.target.value) })} placeholder="conf" />
           <Button onClick={create} className="md:col-span-3"><PlusCircle className="h-4 w-4 mr-1" />Create order</Button>
         </div>
-      </div>
+      </CollapsibleSection>
 
-      <div className="flex flex-wrap gap-1">
+      <div className="flex flex-wrap gap-1.5">
         {FILTERS.map((f) => (
-          <Button key={f.k} size="sm" variant={filter === f.k ? "default" : "outline"} onClick={() => setFilter(f.k)}>{f.label}</Button>
+          <Button
+            key={f.k}
+            size="sm"
+            variant="outline"
+            className={cn(filter === f.k && "border-primary/40 bg-primary/10 text-primary")}
+            onClick={() => setFilter(f.k)}
+          >{f.label}</Button>
         ))}
-        <span className="ml-auto text-xs text-muted-foreground self-center">{filtered.length} of {orders.length}</span>
+        <span className="ml-auto self-center text-xs text-muted-foreground tabular-nums">{filtered.length} of {orders.length}</span>
       </div>
 
       <div className="space-y-2">
         {filtered.length === 0 && (
-          <div className="rounded-2xl border border-border bg-card p-2">
+          <div className="rounded-xl border border-card-border bg-card p-2 shadow-sm">
             <EmptyState
               icon={ListChecks}
               title="No pending orders yet."
@@ -146,21 +164,21 @@ export default function OrdersPage() {
           </div>
         )}
         {filtered.map((o) => (
-          <div key={o.orderId} className="rounded-xl border border-border bg-card p-3">
+          <div key={o.orderId} className="rounded-xl border border-card-border bg-card p-3 shadow-sm">
             <div className="flex flex-wrap items-center gap-2 text-sm">
               <Badge variant="outline" className="font-mono text-[10px]">{o.orderId.slice(-8)}</Badge>
-              <span className={cn("rounded-md border px-1.5 py-0.5 text-[10px] font-semibold", STATUS_COLOR[o.status] ?? "border-border bg-secondary/40 text-txt-muted")}>{statusLabel(o.status)}</span>
+              <span className={cn("rounded-full border px-2.5 py-0.5 text-[11px] font-medium", statusBadgeClass(o.status))}>{statusLabel(o.status)}</span>
               <Badge variant="outline">{o.environment === "PAPER" ? "DEMO" : o.environment}</Badge>
               <Badge variant="outline">{o.source}</Badge>
               <span className="font-semibold">{o.symbol}</span>
-              <span className={cn("rounded-md px-1.5 py-0.5 text-[10px] font-semibold", o.direction === "BUY" ? "bg-success/15 text-success" : "bg-danger/15 text-danger")}>{o.direction}</span>
-              <span className="text-xs text-txt-muted">×{o.lotSize}</span>
-              {o.entryPrice && <span className="text-xs text-txt-secondary">entry {o.entryPrice}</span>}
-              {o.stopLoss && <span className="text-xs text-txt-secondary">SL {o.stopLoss}</span>}
-              {o.takeProfit && <span className="text-xs text-txt-secondary">TP {o.takeProfit}</span>}
-              {o.riskRewardRatio != null && <span className="text-xs text-txt-muted">RR {o.riskRewardRatio}</span>}
+              <span className={cn("rounded-full px-2.5 py-0.5 text-[11px] font-medium", STATUS_COLORS[directionTone(o.direction)].bg, STATUS_COLORS[directionTone(o.direction)].text)}>{o.direction}</span>
+              <span className="text-xs text-txt-muted tabular-nums">×{o.lotSize}</span>
+              {o.entryPrice && <span className="text-xs text-txt-secondary tabular-nums">entry {o.entryPrice}</span>}
+              {o.stopLoss && <span className="text-xs text-txt-secondary tabular-nums">SL {o.stopLoss}</span>}
+              {o.takeProfit && <span className="text-xs text-txt-secondary tabular-nums">TP {o.takeProfit}</span>}
+              {o.riskRewardRatio != null && <span className="text-xs text-txt-muted tabular-nums">RR {o.riskRewardRatio}</span>}
               {o.rejectionReason && <span className="text-xs text-danger">⚠ {humanizeReason(o.rejectionReason)}</span>}
-              <span className="ml-auto text-xs text-txt-muted">{new Date(o.createdAt).toLocaleTimeString()}</span>
+              <span className="ml-auto text-xs text-txt-muted tabular-nums">{new Date(o.createdAt).toLocaleTimeString()}</span>
               {o.status === "APPROVED_FOR_SIMULATION" && (
                 <Button size="sm" variant="outline" className="h-7" onClick={() => submit(o)}>
                   <Send className="h-3 w-3 mr-1" />Fill simulator

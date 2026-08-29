@@ -7,7 +7,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Star, Plus, Trash2, ListChecks } from "lucide-react";
-import { EmptyState } from "@/components/trading/EmptyState";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { STATUS_COLORS, directionTone } from "@/lib/design-tokens";
 import { suggestApprovedSymbols, type ResolvedSymbol } from "@/lib/symbolRegistry";
 
 const CATEGORIES = ["Forex Majors", "Forex Minors", "US Indices", "Stocks", "Synthetic Volatility", "Custom"];
@@ -38,33 +39,33 @@ export default function Watchlists() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-[1280px] space-y-5 p-4 md:p-6 pb-32 md:pb-6 animate-in fade-in duration-500">
+    <div className="mx-auto w-full max-w-[1280px] space-y-6 animate-in fade-in duration-500">
       <div className="flex items-start gap-3">
         <span className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/25">
           <ListChecks className="h-5 w-5" />
         </span>
         <div>
-          <h1 className="text-2xl font-bold leading-tight">Watchlists</h1>
-          <p className="text-sm text-txt-secondary">Track symbols across multiple markets with live signals.</p>
+          <h1 className="text-2xl font-bold tracking-tight">Watchlists</h1>
+          <p className="text-sm text-muted-foreground">Track symbols across multiple markets with live signals.</p>
         </div>
       </div>
 
-      <div className="rounded-2xl border border-border bg-card p-4">
-        <h2 className="mb-3 text-sm font-semibold">Create Watchlist</h2>
+      <div className="rounded-xl border border-card-border bg-card p-6 shadow-sm">
+        <h2 className="mb-4 text-base font-semibold tracking-tight">Create Watchlist</h2>
         <div className="flex flex-col gap-2 sm:flex-row">
           <Input placeholder="Name (e.g. My Setup)" value={newName} onChange={(e) => setNewName(e.target.value)} className="flex-1" data-testid="input-new-watchlist-name" />
           <Select value={newCat} onValueChange={setNewCat}>
             <SelectTrigger className="w-full sm:w-[200px]" data-testid="select-new-category"><SelectValue /></SelectTrigger>
             <SelectContent>{CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
           </Select>
-          <Button onClick={onCreate} disabled={create.isPending || !newName.trim()} data-testid="button-create-watchlist" className="gap-2 bg-primary text-white hover:bg-primary/90">
+          <Button onClick={onCreate} disabled={create.isPending || !newName.trim()} data-testid="button-create-watchlist" className="gap-2">
             <Plus size={16} /> Create
           </Button>
         </div>
       </div>
 
       {isLoading ? <Skeleton className="h-64 w-full" /> :
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid gap-4 lg:grid-cols-2 lg:gap-6">
           {(lists ?? []).map((wl) => {
             const a = adding[wl.id] ?? { sym: "", type: "forex" };
             const suggestions = addSuggestions[wl.id] ?? [];
@@ -91,10 +92,10 @@ export default function Watchlists() {
               }
             };
             return (
-              <div key={wl.id} className="rounded-2xl border border-border bg-card p-4">
+              <div key={wl.id} className="rounded-xl border border-card-border bg-card p-6 shadow-sm">
                 <div className="flex flex-row items-center justify-between pb-3">
                   <div>
-                    <h3 className="text-base font-semibold">{wl.name}</h3>
+                    <h3 className="text-base font-semibold tracking-tight">{wl.name}</h3>
                     <Badge variant="outline" className="mt-1 text-xs">{wl.category}</Badge>
                   </div>
                   <Button variant="ghost" size="icon" onClick={async () => { await del.mutateAsync({ id: wl.id }); refresh(); }} data-testid={`button-delete-watchlist-${wl.id}`}>
@@ -112,14 +113,14 @@ export default function Watchlists() {
                       />
                     ) :
                       wl.items.map((it) => (
-                        <div key={it.id} className="flex items-center gap-2 p-2 rounded border border-border/50" data-testid={`watchlist-item-${it.id}`}>
+                        <div key={it.id} className="flex items-center gap-2 rounded-md bg-muted/40 p-2" data-testid={`watchlist-item-${it.id}`}>
                           <Button variant="ghost" size="icon" className="h-6 w-6" onClick={async () => { await fav.mutateAsync({ id: it.id }); refresh(); }} data-testid={`button-favorite-${it.id}`}>
                             <Star size={14} className={it.favorite ? "fill-warning text-warning" : "text-muted-foreground"} />
                           </Button>
                           <span className="font-mono font-bold text-sm flex-1">{it.symbol}</span>
                           <Badge variant="outline" className="text-[10px]">{it.marketType}</Badge>
-                          {it.signal ? <Badge className={`text-[10px] ${it.signal === "BUY" ? "bg-success/20 text-success" : it.signal === "SELL" ? "bg-destructive/20 text-destructive" : "bg-muted"}`}>{it.signal} {it.confidence}%</Badge> : null}
-                          {it.newsRisk && it.newsRisk !== "none" ? <Badge variant="outline" className="text-[10px] text-warning border-warning/30">News: {it.newsRisk}</Badge> : null}
+                          {it.signal ? <Badge className={`text-[10px] tabular-nums ${STATUS_COLORS[directionTone(it.signal)].badge}`}>{it.signal} {it.confidence}%</Badge> : null}
+                          {it.newsRisk && it.newsRisk !== "none" ? <Badge variant="outline" className="text-[10px] text-warning border-warning/25">News: {it.newsRisk}</Badge> : null}
                           <Button variant="ghost" size="icon" className="h-6 w-6" onClick={async () => { await delItem.mutateAsync({ id: it.id }); refresh(); }} data-testid={`button-delete-item-${it.id}`}>
                             <Trash2 size={12} className="text-muted-foreground" />
                           </Button>

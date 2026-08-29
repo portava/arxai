@@ -81,7 +81,7 @@ export function QuickTradePanel({
           <input
             value={symbol}
             onChange={(e) => setSymbol(e.target.value.toUpperCase())}
-            className="h-10 w-full rounded-lg border border-border bg-background/40 px-3 font-mono text-sm outline-none focus:border-primary"
+            className="h-10 w-full rounded-md border border-input bg-transparent px-3 font-mono text-sm shadow-xs outline-none focus:border-ring focus:ring-2 focus:ring-ring/25"
             data-testid="trade-symbol-input"
           />
         </Field>
@@ -89,7 +89,7 @@ export function QuickTradePanel({
           <select
             value={timeframe}
             onChange={(e) => setTimeframe(e.target.value)}
-            className="h-10 w-full rounded-lg border border-border bg-background/40 px-3 text-sm outline-none focus:border-primary"
+            className="h-10 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus:border-ring focus:ring-2 focus:ring-ring/25"
             data-testid="trade-tf-input"
           >
             {TIMEFRAMES.map((t) => <option key={t} value={t}>{t}</option>)}
@@ -99,7 +99,7 @@ export function QuickTradePanel({
           <select
             value={orderType}
             onChange={(e) => setOrderType(e.target.value)}
-            className="h-10 w-full rounded-lg border border-border bg-background/40 px-3 text-sm outline-none focus:border-primary"
+            className="h-10 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus:border-ring focus:ring-2 focus:ring-ring/25"
             data-testid="trade-order-type"
           >
             {ORDER_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
@@ -108,18 +108,18 @@ export function QuickTradePanel({
       </div>
 
       {/* Price strip — SELL | spread | BUY */}
-      <div className="mt-3 grid grid-cols-3 items-center rounded-xl border border-border bg-background/40 px-4 py-3">
+      <div className="mt-3 grid grid-cols-3 items-center rounded-lg bg-muted/40 px-4 py-3">
         <div>
           <div className="text-[11px] font-semibold uppercase tracking-wide text-danger">Sell</div>
-          <div className="font-mono text-lg font-bold text-danger">{sell ?? "—"}</div>
+          <div className="font-mono text-lg font-bold tabular-nums text-danger">{sell ?? "—"}</div>
         </div>
         <div className="text-center">
           <div className="text-[11px] uppercase tracking-wide text-txt-muted">Spread</div>
-          <div className="font-mono text-sm">{spread ?? "—"}</div>
+          <div className="font-mono text-sm tabular-nums">{spread ?? "—"}</div>
         </div>
         <div className="text-right">
           <div className="text-[11px] font-semibold uppercase tracking-wide text-success">Buy</div>
-          <div className="font-mono text-lg font-bold text-success">{buy ?? "—"}</div>
+          <div className="font-mono text-lg font-bold tabular-nums text-success">{buy ?? "—"}</div>
         </div>
       </div>
 
@@ -129,7 +129,7 @@ export function QuickTradePanel({
           <input
             value={lot}
             onChange={(e) => setLot(e.target.value)}
-            className="h-10 w-full rounded-lg border border-border bg-background/40 px-3 font-mono text-sm outline-none focus:border-primary"
+            className="h-10 w-full rounded-md border border-input bg-transparent px-3 font-mono text-sm shadow-xs outline-none focus:border-ring focus:ring-2 focus:ring-ring/25"
             data-testid="trade-lot-input"
           />
         </Field>
@@ -144,7 +144,7 @@ export function QuickTradePanel({
         </div>
         <div className="text-right">
           <div className="text-[11px] uppercase tracking-wide text-txt-muted">Risk approx.</div>
-          <div className="font-mono text-sm font-semibold">{riskApprox}</div>
+          <div className="font-mono text-sm font-semibold tabular-nums">{riskApprox}</div>
         </div>
       </div>
 
@@ -154,7 +154,7 @@ export function QuickTradePanel({
             key={p}
             onClick={() => setLot(p)}
             className={cn(
-              "h-9 rounded-lg border text-sm font-medium transition-colors",
+              "h-9 rounded-md border text-sm font-medium transition-colors",
               lot === p ? "border-primary bg-primary/15 text-primary" : "border-border text-txt-secondary hover:bg-secondary/50",
             )}
             data-testid={`trade-lot-preset-${p}`}
@@ -176,11 +176,11 @@ export function QuickTradePanel({
         <div className="mt-3 grid grid-cols-2 gap-3">
           <Field label="Stop Loss (optional)">
             <input value={stopLoss} onChange={(e) => setStopLoss(e.target.value)} placeholder="—"
-              className="h-10 w-full rounded-lg border border-border bg-background/40 px-3 font-mono text-sm outline-none focus:border-primary" data-testid="trade-sl-input" />
+              className="h-10 w-full rounded-md border border-input bg-transparent px-3 font-mono text-sm shadow-xs outline-none focus:border-ring focus:ring-2 focus:ring-ring/25" data-testid="trade-sl-input" />
           </Field>
           <Field label="Take Profit (optional)">
             <input value={takeProfit} onChange={(e) => setTakeProfit(e.target.value)} placeholder="—"
-              className="h-10 w-full rounded-lg border border-border bg-background/40 px-3 font-mono text-sm outline-none focus:border-primary" data-testid="trade-tp-input" />
+              className="h-10 w-full rounded-md border border-input bg-transparent px-3 font-mono text-sm shadow-xs outline-none focus:border-ring focus:ring-2 focus:ring-ring/25" data-testid="trade-tp-input" />
           </Field>
         </div>
       )}
@@ -189,20 +189,20 @@ export function QuickTradePanel({
       {canTrade ? (
         <div className="mt-4 grid grid-cols-[1fr_auto_1fr] gap-2">
           <button onClick={goTicket} data-testid="trade-action-sell"
-            className="flex h-12 items-center justify-center gap-2 rounded-xl bg-danger font-semibold text-white hover:bg-danger/90">
+            className="flex h-12 items-center justify-center gap-2 rounded-md bg-danger font-semibold text-white shadow-xs hover:bg-danger/90">
             <TrendingDown className="h-4 w-4" /> SELL {sell ?? ""}
           </button>
           <button onClick={goTicket} data-testid="trade-action-cancel"
-            className="flex h-12 items-center justify-center rounded-xl border border-border px-5 font-medium text-txt-secondary hover:bg-secondary/50">
+            className="flex h-12 items-center justify-center rounded-md border border-border px-5 font-medium text-txt-secondary hover:bg-secondary/50">
             Cancel
           </button>
           <button onClick={goTicket} data-testid="trade-action-buy"
-            className="flex h-12 items-center justify-center gap-2 rounded-xl bg-success font-semibold text-white hover:bg-success/90">
+            className="flex h-12 items-center justify-center gap-2 rounded-md bg-success font-semibold text-white shadow-xs hover:bg-success/90">
             <TrendingUp className="h-4 w-4" /> BUY {buy ?? ""}
           </button>
         </div>
       ) : (
-        <div className="mt-4 rounded-xl border border-warning/30 bg-warning/10 p-3 text-center text-sm font-medium text-warning" data-testid="trade-action-blocked">
+        <div className="mt-4 rounded-lg border border-warning/25 bg-warning/10 p-3 text-center text-sm font-medium text-warning" data-testid="trade-action-blocked">
           {blockedLabel}
         </div>
       )}
@@ -213,7 +213,7 @@ export function QuickTradePanel({
 function Field({ label, children, className }: { label: string; children: ReactNode; className?: string }) {
   return (
     <label className={cn("block", className)}>
-      <span className="mb-1 block text-[11px] uppercase tracking-wide text-txt-muted">{label}</span>
+      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</span>
       {children}
     </label>
   );

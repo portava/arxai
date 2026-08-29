@@ -251,7 +251,7 @@ function LinkCard({ link }: { link: AdminLink }) {
   return (
     <Link href={link.href}>
       <a
-        className="group flex items-start justify-between gap-3 rounded-xl border border-border bg-background/40 p-3 transition-colors hover:border-primary/40"
+        className="group flex items-start justify-between gap-3 rounded-lg bg-muted/40 p-3 transition-colors hover:bg-muted/70"
         data-testid={`admin-hub-link-${link.href.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "")}`}
       >
         <span className="min-w-0">
@@ -266,12 +266,12 @@ function LinkCard({ link }: { link: AdminLink }) {
 
 function TabBody({ tab }: { tab: AdminTabDef }) {
   return (
-    <div className="space-y-5">
-      {tab.intro && <p className="text-sm text-txt-secondary">{tab.intro}</p>}
+    <div className="space-y-6">
+      {tab.intro && <p className="text-sm text-muted-foreground">{tab.intro}</p>}
       {tab.groups.map((group, gi) => (
-        <div key={gi} className="rounded-2xl border border-border bg-card p-4">
+        <div key={gi} className="rounded-xl border border-card-border bg-card p-6 shadow-sm">
           {group.heading && (
-            <h3 className="mb-3 text-sm font-semibold text-foreground">{group.heading}</h3>
+            <h3 className="mb-4 text-base font-semibold tracking-tight text-foreground">{group.heading}</h3>
           )}
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {group.links.map((l) => (
@@ -298,14 +298,14 @@ export default function AdminHubPage() {
       pageDescription="The Admin Hub"
       userSafeMessage="This is the operator control hub. Your account does not require any action here."
     >
-      <div className="mx-auto w-full max-w-[1280px] space-y-5 p-4 md:p-6 pb-32 md:pb-6" data-testid="page-admin-hub">
+      <div className="mx-auto w-full max-w-[1280px] space-y-6" data-testid="page-admin-hub">
         <div className="flex items-start gap-3">
           <span className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/25">
             <LayoutDashboard className="h-5 w-5" />
           </span>
           <div>
-            <h1 className="text-2xl font-bold leading-tight">Admin Hub</h1>
-            <p className="text-sm text-txt-secondary">
+            <h1 className="text-2xl font-bold tracking-tight">Admin Hub</h1>
+            <p className="text-sm text-muted-foreground">
               One organized place for every operator and OWNER control. Choose a section below.
             </p>
           </div>

@@ -134,28 +134,28 @@ function getMirrorStatus(
 
 const MIRROR_STYLE: Record<MirrorStatus, { dot: string; text: string; label: string }> = {
   Mirrored: {
-    dot: "bg-emerald-400",
-    text: "text-emerald-300",
+    dot: "bg-success",
+    text: "text-success",
     label: "Mirrored",
   },
   Refreshing: {
-    dot: "bg-sky-400 animate-pulse",
-    text: "text-sky-300",
+    dot: "bg-ruby animate-pulse",
+    text: "text-ruby",
     label: "Refreshing",
   },
   Syncing: {
-    dot: "bg-amber-400 animate-pulse",
-    text: "text-amber-300",
+    dot: "bg-warning animate-pulse",
+    text: "text-warning",
     label: "Syncing",
   },
   Stale: {
-    dot: "bg-amber-400",
-    text: "text-amber-300",
+    dot: "bg-warning",
+    text: "text-warning",
     label: "Stale",
   },
   Conflict: {
-    dot: "bg-red-400",
-    text: "text-red-300",
+    dot: "bg-danger",
+    text: "text-danger",
     label: "Conflict",
   },
 };
@@ -791,15 +791,15 @@ export function ARXNativeChart({
     }
 
     const lineColor = (bias: string): string =>
-      bias === "bullish" ? "#22c55e" : bias === "bearish" ? "#ef4444" : "#94a3b8";
+      bias === "bullish" ? "#42E6A4" : bias === "bearish" ? "#FF4D5E" : "#9AA6B5";
     const markerColor = (kind: string): string =>
       kind === "break"
-        ? "#ef4444"
+        ? "#FF4D5E"
         : kind === "reclaim"
-          ? "#22c55e"
+          ? "#42E6A4"
           : kind === "retest"
-            ? "#f59e0b"
-            : "#94a3b8";
+            ? "#FFCC4D"
+            : "#9AA6B5";
 
     const lines: ChartStructureLine[] = overlay.lines.map((ln) => ({
       id: ln.id,
@@ -882,13 +882,13 @@ export function ARXNativeChart({
   const isEmpty = !isInitialLoading && !isError && !hasCandles;
 
   return (
-    <Card data-testid="arx-native-chart" className="overflow-hidden border-zinc-800 bg-zinc-950/40">
+    <Card data-testid="arx-native-chart" className="overflow-hidden border-border bg-background/40">
       <CardHeader className="py-3 px-3 md:px-4">
         <CardTitle className="flex flex-wrap items-center justify-between gap-2 text-sm">
           <div className="flex flex-wrap items-center gap-2">
             <CandlestickChart className="h-4 w-4 text-primary" />
             <Badge variant="outline" className="text-[10px]">ARX NATIVE</Badge>
-            <span data-testid="arx-native-symbol" className="text-base font-semibold text-zinc-100">
+            <span data-testid="arx-native-symbol" className="text-base font-semibold text-foreground">
               {resolvedSymbol}
             </span>
             {mode && (
@@ -904,7 +904,7 @@ export function ARXNativeChart({
             {positionCount > 0 && (
               <Badge
                 variant="outline"
-                className="border-blue-500/40 text-[10px] text-blue-300"
+                className="border-primary/25 text-[10px] text-primary"
                 data-testid="arx-native-pos-count"
               >
                 {positionCount} open
@@ -921,7 +921,7 @@ export function ARXNativeChart({
             {showNotAiConfirmed && (
               <Badge
                 variant="outline"
-                className="flex items-center gap-1 border-amber-500/50 bg-amber-500/10 text-[10px] text-amber-200"
+                className="flex items-center gap-1 border-warning/25 bg-warning/10 text-[10px] text-warning"
                 data-testid="arx-native-not-ai"
               >
                 <ShieldAlert className="h-3 w-3" /> Not AI-confirmed
@@ -930,7 +930,7 @@ export function ARXNativeChart({
             {marketFrozen && (
               <Badge
                 variant="outline"
-                className="flex items-center gap-1 border-amber-500/50 bg-amber-500/10 text-[10px] text-amber-200"
+                className="flex items-center gap-1 border-warning/25 bg-warning/10 text-[10px] text-warning"
                 data-testid="arx-native-market-closed"
                 title="The broker is replaying its last quote — the market is closed (derived from real tick broker-time staleness, not a calendar)."
               >
@@ -945,7 +945,7 @@ export function ARXNativeChart({
             {streamWatchdog.stalled && !marketFrozen && (
               <Badge
                 variant="outline"
-                className="flex items-center gap-1 border-amber-500/50 bg-amber-500/10 text-[10px] text-amber-200"
+                className="flex items-center gap-1 border-warning/25 bg-warning/10 text-[10px] text-warning"
                 data-testid="arx-native-stream-reconnecting"
                 title="The live tick stream stopped delivering and is being reopened. Prices shown are the last received — they are not updating right now."
               >
@@ -982,7 +982,7 @@ export function ARXNativeChart({
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-7 px-2 text-[11px] text-zinc-500 hover:text-zinc-300"
+                className="h-7 px-2 text-[11px] text-txt-muted hover:text-txt-secondary"
                 onClick={resetScale}
                 title="Reset scale — restore default visible range"
                 data-testid="arx-native-reset-scale"
@@ -1002,7 +1002,7 @@ export function ARXNativeChart({
           When unlocked: "Inspection mode" badge — chart may diverge.
           This is purely informational; it never gates candles or trades. */}
       <div
-        className="flex items-center gap-2 border-b border-zinc-800/60 bg-zinc-950/20 px-3 py-1.5 text-[10px]"
+        className="flex items-center gap-2 border-b border-border bg-background/20 px-3 py-1.5 text-[10px]"
         data-testid="arx-mirror-layer"
       >
         {/* Status dot + label */}
@@ -1013,22 +1013,22 @@ export function ARXNativeChart({
           {mirrorStatus}
         </span>
         {/* Symbol · Timeframe */}
-        <span className="text-zinc-500">
+        <span className="text-txt-muted">
           {resolvedSymbol} · {timeframe}
         </span>
         {/* Mirror state detail */}
         {mirrorStatus === "Conflict" && (
-          <span className="rounded border border-red-500/40 bg-red-500/10 px-1.5 py-0.5 text-[9px] text-red-300" data-testid="arx-mirror-conflict">
+          <span className="rounded border border-danger/25 bg-danger/10 px-1.5 py-0.5 text-[9px] text-danger" data-testid="arx-mirror-conflict">
             Data integrity failed — use TradingView for reference
           </span>
         )}
         {mirrorStatus === "Stale" && (
-          <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[9px] text-amber-300" data-testid="arx-mirror-stale">
+          <span className="rounded border border-warning/25 bg-warning/10 px-1.5 py-0.5 text-[9px] text-warning" data-testid="arx-mirror-stale">
             Feed is stale
           </span>
         )}
         {mirrorStatus === "Syncing" && (
-          <span className="rounded border border-zinc-700 bg-zinc-800/40 px-1.5 py-0.5 text-[9px] text-zinc-400" data-testid="arx-mirror-syncing">
+          <span className="rounded border border-border bg-muted/40 px-1.5 py-0.5 text-[9px] text-muted-foreground" data-testid="arx-mirror-syncing">
             Waiting for data
           </span>
         )}
@@ -1036,7 +1036,7 @@ export function ARXNativeChart({
           {!mirrorLocked && (
             <Badge
               variant="outline"
-              className="border-amber-500/40 bg-amber-500/10 text-[9px] text-amber-300"
+              className="border-warning/25 bg-warning/10 text-[9px] text-warning"
               data-testid="arx-mirror-inspection"
             >
               <GitMerge className="mr-0.5 h-2.5 w-2.5" />
@@ -1047,8 +1047,8 @@ export function ARXNativeChart({
             type="button"
             className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9px] transition-colors ${
               mirrorLocked
-                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20"
-                : "border-zinc-600 bg-zinc-800/40 text-zinc-400 hover:bg-zinc-700/40"
+                ? "border-success/25 bg-success/10 text-success hover:bg-success/10"
+                : "border-border bg-muted/40 text-muted-foreground hover:bg-muted/40"
             }`}
             onClick={() => setMirrorLocked((l) => !l)}
             title={mirrorLocked ? "Mirror Lock ON — click to inspect freely" : "Mirror Lock OFF — click to re-lock"}
@@ -1086,8 +1086,8 @@ export function ARXNativeChart({
                 data-testid="arx-native-pnl-bubble"
                 className={`absolute right-16 -translate-y-1/2 rounded-md border px-2 py-0.5 font-mono text-[11px] shadow-sm backdrop-blur-sm ${
                   b.pnl >= 0
-                    ? "border-emerald-500/40 bg-emerald-950/70 text-emerald-200"
-                    : "border-red-500/40 bg-red-950/70 text-red-200"
+                    ? "border-success/25 bg-success/10 text-success"
+                    : "border-danger/25 bg-danger/10 text-danger"
                 }`}
                 style={{ top: b.y }}
               >
@@ -1109,13 +1109,13 @@ export function ARXNativeChart({
             state. We never invent a safe state or pretend the data is clean. */}
         {isSafeMode && (
           <div
-            className="absolute inset-x-0 top-0 z-20 flex flex-wrap items-start gap-3 bg-red-950/80 px-3 py-3 text-xs backdrop-blur-sm"
+            className="absolute inset-x-0 top-0 z-20 flex flex-wrap items-start gap-3 bg-danger/10 px-3 py-3 text-xs backdrop-blur-sm"
             data-testid="arx-native-safe-mode"
           >
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-300" />
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-danger" />
             <div className="flex-1 min-w-0">
-              <div className="font-semibold text-red-100">Chart Safe Mode — data validation failed</div>
-              <div className="mt-0.5 text-[11px] text-red-300/90">
+              <div className="font-semibold text-danger">Chart Safe Mode — data validation failed</div>
+              <div className="mt-0.5 text-[11px] text-danger/90">
                 {warning || "Candle integrity checks failed. This chart is not confirmed for AI analysis or live decisions."}
               </div>
             </div>
@@ -1123,7 +1123,7 @@ export function ARXNativeChart({
               <Button
                 size="sm"
                 variant="outline"
-                className="h-7 shrink-0 border-red-500/40 px-2 text-xs text-red-200 hover:bg-red-950/60"
+                className="h-7 shrink-0 border-danger/25 px-2 text-xs text-danger hover:bg-danger/10"
                 onClick={onRequestFallback}
                 data-testid="arx-native-fallback-safemode"
               >
@@ -1140,11 +1140,11 @@ export function ARXNativeChart({
             returning data, it just lacks meaningful OHLC spread. */}
         {hasCandles && !ohlcAvailable && !isSafeMode && (
           <div
-            className="absolute inset-x-0 top-0 z-20 flex items-center gap-2 bg-amber-950/70 px-3 py-2 text-xs backdrop-blur-sm"
+            className="absolute inset-x-0 top-0 z-20 flex items-center gap-2 bg-warning/10 px-3 py-2 text-xs backdrop-blur-sm"
             data-testid="arx-native-line-mode"
           >
-            <LineChart className="h-3.5 w-3.5 shrink-0 text-amber-300" />
-            <span className="text-amber-200">
+            <LineChart className="h-3.5 w-3.5 shrink-0 text-warning" />
+            <span className="text-warning">
               Line mode — OHLC candles are flat on this feed. Price action shown, no spread.
             </span>
           </div>
@@ -1158,10 +1158,10 @@ export function ARXNativeChart({
             data-severity={conf.severity}
             className={`absolute inset-x-0 top-0 flex flex-wrap items-center gap-2 px-3 py-2 text-xs backdrop-blur-sm ${
               conf.severity === "danger"
-                ? "bg-red-950/70 text-red-100"
+                ? "bg-danger/10 text-danger"
                 : conf.severity === "caution"
-                  ? "bg-amber-950/60 text-amber-100"
-                  : "bg-zinc-900/70 text-zinc-100"
+                  ? "bg-warning/10 text-warning"
+                  : "bg-card/70 text-foreground"
             }`}
           >
             <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
@@ -1194,7 +1194,7 @@ export function ARXNativeChart({
 
         {isError && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background/95 p-4 text-center" data-testid="arx-native-error">
-            <AlertTriangle className="h-6 w-6 text-amber-500" />
+            <AlertTriangle className="h-6 w-6 text-warning" />
             <p className="text-sm font-semibold">Native chart unavailable</p>
             <p className="max-w-md text-xs text-muted-foreground">
               Couldn't load native candles for {resolvedSymbol}. Your data and connection are unaffected.

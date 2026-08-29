@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PageTabs, type PageTab } from "@/components/ui/PageTabs";
 import { cn } from "@/lib/utils";
+import { STATUS_COLORS } from "@/lib/design-tokens";
 import { useTradingMode } from "@/hooks/useTradingMode";
 import { useProductRole } from "@/hooks/useProductRole";
 import { useToast } from "@/hooks/use-toast";
@@ -59,8 +60,8 @@ const RISK_FIELDS: { key: keyof RiskSettingsUpdate & ("riskPerTradePct" | "maxDa
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-2xl border border-border bg-card p-4">
-      <h3 className="mb-3 text-sm font-semibold text-foreground">{title}</h3>
+    <div className="rounded-xl border border-card-border bg-card p-6 shadow-sm">
+      <h3 className="mb-4 text-base font-semibold tracking-tight text-foreground">{title}</h3>
       <div>{children}</div>
     </div>
   );
@@ -110,11 +111,11 @@ export function AssistantNameCard() {
   }
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-4" data-testid="assistant-name-card">
-      <div className="mb-3 flex items-center gap-2">
-        <h3 className="text-sm font-semibold text-foreground">AI Assistant</h3>
+    <div className="rounded-xl border border-card-border bg-card p-6 shadow-sm" data-testid="assistant-name-card">
+      <div className="mb-4 flex items-center gap-2">
+        <h3 className="text-base font-semibold tracking-tight text-foreground">AI Assistant</h3>
         {savedName && (
-          <Badge className="animate-in fade-in bg-success/15 text-success border-success/30">Saved ✓</Badge>
+          <Badge className={`animate-in fade-in ${STATUS_COLORS.success.badge}`}>Saved ✓</Badge>
         )}
       </div>
       <div className="space-y-3 text-sm">
@@ -133,7 +134,7 @@ export function AssistantNameCard() {
               placeholder={DEFAULT_ASSISTANT_NAME}
               maxLength={24}
               onChange={(e) => setValue(e.target.value)}
-              className="bg-secondary border-border text-foreground sm:max-w-xs"
+              className="sm:max-w-xs"
               data-testid="input-assistant-name"
             />
             <div className="flex gap-2">
@@ -141,7 +142,6 @@ export function AssistantNameCard() {
                 type="button"
                 onClick={handleSave}
                 disabled={!canSave}
-                className="bg-primary text-white hover:bg-primary/90"
                 data-testid="button-save-assistant-name"
               >
                 Save
@@ -223,11 +223,11 @@ export function ChangePasswordCard() {
   }
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-4" data-testid="change-password-card">
-      <div className="mb-3 flex items-center gap-2">
-        <h3 className="text-sm font-semibold text-foreground">Password</h3>
+    <div className="rounded-xl border border-card-border bg-card p-6 shadow-sm" data-testid="change-password-card">
+      <div className="mb-4 flex items-center gap-2">
+        <h3 className="text-base font-semibold tracking-tight text-foreground">Password</h3>
         {saved && (
-          <Badge className="animate-in fade-in bg-success/15 text-success border-success/30">
+          <Badge className={`animate-in fade-in ${STATUS_COLORS.success.badge}`}>
             Changed ✓
           </Badge>
         )}
@@ -247,7 +247,7 @@ export function ChangePasswordCard() {
             autoComplete="current-password"
             value={current}
             onChange={(e) => setCurrent(e.target.value)}
-            className="bg-secondary border-border text-foreground sm:max-w-xs"
+            className="sm:max-w-xs"
             data-testid="input-current-password"
           />
         </div>
@@ -261,7 +261,7 @@ export function ChangePasswordCard() {
             autoComplete="new-password"
             value={next}
             onChange={(e) => setNext(e.target.value)}
-            className="bg-secondary border-border text-foreground sm:max-w-xs"
+            className="sm:max-w-xs"
             data-testid="input-new-password"
           />
         </div>
@@ -275,7 +275,7 @@ export function ChangePasswordCard() {
             autoComplete="new-password"
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
-            className="bg-secondary border-border text-foreground sm:max-w-xs"
+            className="sm:max-w-xs"
             data-testid="input-confirm-password"
           />
         </div>
@@ -294,7 +294,6 @@ export function ChangePasswordCard() {
         <Button
           type="submit"
           disabled={!canSubmit}
-          className="bg-primary text-white hover:bg-primary/90"
           data-testid="button-change-password"
         >
           {change.isPending ? "Changing…" : "Change password"}
@@ -307,13 +306,13 @@ export function ChangePasswordCard() {
 function AboutArxCard() {
   const mode = useTradingMode();
   const badgeClass = mode.isLiveShared
-    ? "bg-danger/15 text-danger border-danger/30"
+    ? STATUS_COLORS.danger.badge
     : mode.isDemo
-      ? "bg-primary/15 text-primary border-primary/30"
-      : "bg-ruby/15 text-ruby border-ruby/30";
+      ? "bg-primary/10 text-primary border-primary/25"
+      : STATUS_COLORS.info.badge;
   return (
-    <div className="rounded-2xl border border-border bg-card p-4" data-testid="about-arx-ai">
-      <h3 className="mb-3 text-sm font-semibold text-foreground">About ARX AI</h3>
+    <div className="rounded-xl border border-card-border bg-card p-6 shadow-sm" data-testid="about-arx-ai">
+      <h3 className="mb-4 text-base font-semibold tracking-tight text-foreground">About ARX AI</h3>
       <div className="space-y-3 text-sm">
         <div>
           <div className="text-2xl font-bold tracking-wider">ARX AI</div>
@@ -325,7 +324,7 @@ function AboutArxCard() {
           <li><strong className="text-foreground">Risk</strong> — Protect the account before any trade is accepted: Risk Governor, max-loss limits, drawdown protection, exposure control, kill switch.</li>
           <li><strong className="text-foreground">eXecute</strong> — Act only when setup, risk, and rules align: review and confirm trades, AI-assisted trades, live shared dispatch, journal, learning loop.</li>
         </ul>
-        <div className="space-y-1 rounded-xl border border-border bg-background/40 p-3 text-xs">
+        <div className="space-y-1 rounded-lg bg-muted/40 p-3 text-xs">
           <div className="flex items-center gap-2">Current mode: <Badge className={badgeClass} data-testid="about-mode-badge">{mode.cleanModeLabel}</Badge></div>
           <div className="text-txt-muted">{mode.cleanUserMessage}</div>
           {mode.cleanBlockedReason && (
@@ -356,7 +355,7 @@ function AccountLinksCard({ isInvestor }: { isInvestor: boolean }) {
           <a
             key={l.href}
             href={`${base}${l.href}`}
-            className="block rounded-xl border border-border bg-background/40 p-3 transition-colors hover:border-primary/40"
+            className="block rounded-lg bg-muted/40 p-3 transition-colors hover:bg-muted/70"
             data-testid={`link-account-${l.href.replace(/\//g, "")}`}
           >
             <div className="text-sm font-medium text-foreground">{l.label}</div>
@@ -412,13 +411,13 @@ export default function SettingsPage() {
   const header = (
     <div className="flex items-center justify-between">
       <div>
-        <h1 className="text-2xl font-bold leading-tight">Settings</h1>
-        <p className="text-sm text-txt-secondary">
+        <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
+        <p className="text-sm text-muted-foreground">
           {isInvestor
             ? "Your account overview and help. Trading configuration is managed by your operator."
             : "Configure bot strategies, risk parameters, filters, and market preferences"}</p>
       </div>
-      {saved && <Badge className="animate-in fade-in bg-success/15 text-success border-success/30">Saved ✓</Badge>}
+      {saved && <Badge className={`animate-in fade-in ${STATUS_COLORS.success.badge}`}>Saved ✓</Badge>}
     </div>
   );
 
@@ -441,7 +440,7 @@ export default function SettingsPage() {
   // trade configuration. They get the Profile tab only.
   if (isInvestor) {
     return (
-      <div className="mx-auto w-full max-w-[1280px] space-y-5 p-4 md:p-6 pb-32 md:pb-6">
+      <div className="mx-auto w-full max-w-[1280px] space-y-6">
         {header}
         <PageTabs tabs={[profileTab]} storageKey="settings-investor" />
       </div>
@@ -459,7 +458,7 @@ export default function SettingsPage() {
               <label className="text-xs text-txt-secondary mb-1 block">Trading Mode</label>
               <div className="flex gap-2">
                 {["DEMO", "LIVE"].map((m) => (
-                  <button key={m} onClick={() => updateBot.mutate({ mode: m })} className={cn("px-4 py-2 rounded text-sm font-semibold transition-colors", botSettings?.mode === m ? (m === "LIVE" ? "bg-danger text-white" : "bg-primary text-white") : "bg-secondary text-txt-secondary hover:bg-secondary/80")}>
+                  <button key={m} onClick={() => updateBot.mutate({ mode: m })} className={cn("px-4 py-2 rounded-md text-sm font-semibold transition-colors", botSettings?.mode === m ? (m === "LIVE" ? "bg-danger text-white" : "bg-primary text-primary-foreground") : "bg-secondary text-txt-secondary hover:bg-secondary/80")}>
                     {m === "LIVE" ? "🔴 LIVE" : "DEMO"}
                   </button>
                 ))}
@@ -469,7 +468,7 @@ export default function SettingsPage() {
               <label className="text-xs text-txt-secondary mb-1 block">Risk Mode</label>
               <div className="flex gap-2">
                 {["Conservative", "Balanced", "Aggressive"].map((r) => (
-                  <button key={r} onClick={() => updateBot.mutate({ riskMode: r })} className={cn("px-3 py-2 rounded text-xs font-semibold transition-colors", botSettings?.riskMode === r ? "bg-ruby text-white" : "bg-secondary text-txt-secondary hover:bg-secondary/80")}>
+                  <button key={r} onClick={() => updateBot.mutate({ riskMode: r })} className={cn("px-3 py-2 rounded-md text-xs font-semibold transition-colors", botSettings?.riskMode === r ? "bg-primary text-primary-foreground" : "bg-secondary text-txt-secondary hover:bg-secondary/80")}>
                     {r}
                   </button>
                 ))}
@@ -478,7 +477,7 @@ export default function SettingsPage() {
             <div>
               <label className="text-xs text-txt-secondary mb-1 block">Scan Interval (seconds)</label>
               <div className="flex gap-2 items-center">
-                <Input type="number" defaultValue={botSettings?.scanIntervalSeconds ?? 5} min={1} max={60} className="bg-secondary border-border text-foreground w-28" onBlur={(e) => updateBot.mutate({ scanIntervalSeconds: parseInt(e.target.value) })} />
+                <Input type="number" defaultValue={botSettings?.scanIntervalSeconds ?? 5} min={1} max={60} className="w-28 tabular-nums" onBlur={(e) => updateBot.mutate({ scanIntervalSeconds: parseInt(e.target.value) })} />
                 <span className="text-txt-muted text-xs">seconds between scans</span>
               </div>
             </div>
@@ -494,21 +493,21 @@ export default function SettingsPage() {
 
         <Section title="Smart Filters">
           <div className="space-y-3">
-            <div className="flex items-center justify-between p-3 rounded-lg bg-background/40">
+            <div className="flex items-center justify-between rounded-lg bg-muted/40 p-3">
               <div>
                 <div className="text-foreground text-sm font-medium">News Avoidance Mode</div>
                 <div className="text-txt-muted text-xs">Block forex/indices signals during high-impact news windows (08:15, 12:30, 18:45 UTC)</div>
               </div>
               <Switch checked={newsFilter} onCheckedChange={(v) => updateBot.mutate({ newsFilter: v })} />
             </div>
-            <div className="flex items-center justify-between p-3 rounded-lg bg-background/40">
+            <div className="flex items-center justify-between rounded-lg bg-muted/40 p-3">
               <div>
                 <div className="text-foreground text-sm font-medium">Session Filter</div>
                 <div className="text-txt-muted text-xs">Only allow Session Breakout strategy during London and NY opens</div>
               </div>
               <Switch checked={sessionFilter} onCheckedChange={(v) => updateBot.mutate({ sessionFilter: v })} />
             </div>
-            <div className="flex items-center justify-between p-3 rounded-lg bg-background/40">
+            <div className="flex items-center justify-between rounded-lg bg-muted/40 p-3">
               <div>
                 <div className="text-foreground text-sm font-medium">No Trade Filter</div>
                 <div className="text-txt-muted text-xs">Block all signals during sideways/choppy conditions or abnormal ATR — always active</div>
@@ -537,7 +536,7 @@ export default function SettingsPage() {
                   {symbols.map((sym) => {
                     const isActive = botSettings?.symbol === sym;
                     return (
-                      <button key={sym} onClick={() => updateBot.mutate({ symbol: sym })} className={cn("px-3 py-1.5 rounded text-xs font-medium transition-colors border", isActive ? "bg-primary text-white border-primary/50" : "bg-secondary text-txt-secondary border-border hover:border-border hover:text-txt-secondary")}>
+                      <button key={sym} onClick={() => updateBot.mutate({ symbol: sym })} className={cn("px-3 py-1.5 rounded-md text-xs font-medium transition-colors border", isActive ? "bg-primary text-primary-foreground border-primary" : "bg-secondary text-txt-secondary border-border hover:text-foreground")}>
                         {isActive ? "✓ " : ""}{sym}
                       </button>
                     );
@@ -553,7 +552,7 @@ export default function SettingsPage() {
             {ALL_STRATEGIES.map((s) => {
               const on = enabledStrategies.includes(s.id);
               return (
-                <div key={s.id} className="flex items-center justify-between p-3 rounded-lg bg-background/40 hover:border-primary/40 transition-colors">
+                <div key={s.id} className="flex items-center justify-between rounded-lg bg-muted/40 p-3 transition-colors">
                   <div>
                     <div className="text-foreground text-sm font-medium">{s.label}</div>
                     <div className="text-txt-muted text-xs">{s.description}</div>
@@ -579,7 +578,7 @@ export default function SettingsPage() {
               {RISK_FIELDS.map(({ key, label }) => (
                 <div key={key}>
                   <label className="text-xs text-txt-secondary mb-1 block">{label}</label>
-                  <Input type="number" defaultValue={riskSettings[key]} step="0.01" className="bg-secondary border-border text-foreground" onBlur={(e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) updateRisk.mutate({ data: { [key]: v } as RiskSettingsUpdate }); }} />
+                  <Input type="number" defaultValue={riskSettings[key]} step="0.01" className="tabular-nums" onBlur={(e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) updateRisk.mutate({ data: { [key]: v } as RiskSettingsUpdate }); }} />
                 </div>
               ))}
             </div>
@@ -594,7 +593,7 @@ export default function SettingsPage() {
             </p>
             <a
               href={`${(import.meta.env.BASE_URL ?? "/").replace(/\/+$/, "")}/protective-auto-close`}
-              className="inline-block text-success hover:underline text-sm"
+              className="inline-block text-primary hover:underline text-sm"
               data-testid="link-protective-auto-close"
             >
               Open Protective Auto-Close settings →
@@ -615,7 +614,7 @@ export default function SettingsPage() {
             optional alternative, not the headline status. */}
         <Section title="MT5 Bridge Configuration">
           {mode.isLiveShared ? (
-            <div className="bg-success/10 border border-success/40 rounded-lg p-4 space-y-2" data-testid="mt5-bridge-shared-active">
+            <div className="bg-success/10 border border-success/25 rounded-lg p-4 space-y-2" data-testid="mt5-bridge-shared-active">
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-success" />
                 <span className="text-success text-sm font-semibold">Shared master bridge: Active</span>
@@ -628,7 +627,7 @@ export default function SettingsPage() {
               </div>
             </div>
           ) : (
-            <div className="bg-background/40 rounded-lg p-4 space-y-3" data-testid="mt5-bridge-not-configured">
+            <div className="rounded-lg bg-muted/40 p-4 space-y-3" data-testid="mt5-bridge-not-configured">
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-secondary" />
                 <span className="text-txt-secondary text-sm">Personal MT5 bridge: Not configured</span>
@@ -644,7 +643,7 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-[1280px] space-y-5 p-4 md:p-6 pb-32 md:pb-6">
+    <div className="mx-auto w-full max-w-[1280px] space-y-6">
       {header}
       <PageTabs
         tabs={[profileTab, tradingTab, strategiesTab, riskTab, connectionsTab]}

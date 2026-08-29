@@ -3,7 +3,8 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Briefcase, X, Scissors, ArrowDownToLine, TrendingUp } from "lucide-react";
-import { EmptyState } from "@/components/trading/EmptyState";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { STATUS_COLORS, directionTone, pnlTone, type StatusTone } from "@/lib/design-tokens";
 
 type Pos = {
   positionId: string; orderId: string; environment: string;
@@ -20,13 +21,17 @@ type Pnl = {
   wins: number; losses: number; winRate: number; averageR: number; maxDrawdown: number;
 };
 
-const STATUS_COLOR: Record<string, string> = {
-  OPEN: "border-primary/40 bg-primary/10 text-primary",
-  CLOSED: "border-border bg-secondary/40 text-txt-muted",
-  STOPPED_OUT: "border-danger/40 bg-danger/10 text-danger",
-  TAKE_PROFIT_HIT: "border-success/40 bg-success/10 text-success",
-  MANUALLY_CLOSED: "border-border bg-secondary/40 text-txt-secondary",
+// Status → semantic tone (badge classes come from STATUS_COLORS, so both
+// themes render correctly). OPEN keeps the brand-blue accent.
+const STATUS_TONE: Record<string, StatusTone> = {
+  CLOSED: "inactive",
+  STOPPED_OUT: "danger",
+  TAKE_PROFIT_HIT: "success",
+  MANUALLY_CLOSED: "neutral",
 };
+const OPEN_BADGE = "bg-primary/10 text-primary border-primary/25";
+const statusBadgeClass = (s: string) =>
+  s === "OPEN" ? OPEN_BADGE : STATUS_COLORS[STATUS_TONE[s] ?? "inactive"].badge;
 
 const STATUS_LABEL: Record<string, string> = {
   OPEN: "Open", CLOSED: "Closed", STOPPED_OUT: "Stopped out",
@@ -72,19 +77,19 @@ export default function PositionsPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-[1280px] space-y-4 p-4 md:p-6 pb-32 md:pb-6">
+    <div className="mx-auto w-full max-w-[1280px] space-y-6 pb-32 md:pb-6">
       <div className="flex flex-wrap items-center gap-3">
         <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/25">
           <Briefcase className="h-5 w-5" />
         </span>
         <div className="flex-1">
-          <h1 className="text-2xl font-bold leading-tight">Positions</h1>
-          <p className="text-sm text-txt-secondary">Simulated positions tracked live. Real broker positions route through the MT5 bridge.</p>
+          <h1 className="text-2xl font-bold leading-tight tracking-tight">Positions</h1>
+          <p className="text-sm text-muted-foreground">Simulated positions tracked live. Real broker positions route through the MT5 bridge.</p>
         </div>
       </div>
 
       {pnl && (
-        <div className="grid gap-2 md:grid-cols-6">
+        <div className="grid gap-4 grid-cols-2 md:grid-cols-6">
           <Stat label="Daily" value={`$${pnl.dailyPnL}`} />
           <Stat label="Weekly" value={`$${pnl.weeklyPnL}`} />
           <Stat label="Open" value={`$${pnl.openUnrealizedPnL}`} />
@@ -94,9 +99,15 @@ export default function PositionsPage() {
         </div>
       )}
 
-      <div className="flex gap-1">
+      <div className="flex flex-wrap gap-1.5">
         {(["OPEN", "CLOSED", "INTENT", "MT5"] as const).map((t) => (
-          <Button key={t} size="sm" variant={tab === t ? "default" : "outline"} onClick={() => setTab(t)}>
+          <Button
+            key={t}
+            size="sm"
+            variant="outline"
+            className={cn(tab === t && "border-primary/40 bg-primary/10 text-primary")}
+            onClick={() => setTab(t)}
+          >
             {t === "OPEN" && "Open Simulated"}
             {t === "CLOSED" && "Closed"}
             {t === "INTENT" && "Live Tester Intent"}
@@ -106,12 +117,12 @@ export default function PositionsPage() {
       </div>
 
       {tab === "MT5" ? (
-        <div className="rounded-2xl border border-border bg-card p-6 text-sm text-txt-muted">
-          <span className="mr-2 rounded-md border border-ruby/40 bg-ruby/10 px-2 py-0.5 text-xs text-ruby">MT5 deferred</span>
+        <div className="rounded-xl border border-card-border bg-card p-6 text-sm text-txt-muted shadow-sm">
+          <span className={cn("mr-2 rounded-full border px-2.5 py-0.5 text-xs", STATUS_COLORS.info.badge)}>MT5 deferred</span>
           Real broker positions route through the MT5 bridge. This panel activates once the bridge is connected.
         </div>
       ) : visible.length === 0 ? (
-        <div className="rounded-2xl border border-border bg-card p-2">
+        <div className="rounded-xl border border-card-border bg-card p-2 shadow-sm">
           <EmptyState
             icon={Briefcase}
             title="No open positions yet."
@@ -119,15 +130,15 @@ export default function PositionsPage() {
           />
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-4">
           {visible.map((p) => (
-            <div key={p.positionId} className="rounded-xl border border-border bg-card p-4">
+            <div key={p.positionId} className="rounded-xl border border-card-border bg-card p-4 shadow-sm">
               <div className="flex flex-wrap items-center gap-2 pb-2">
-                <span className={cn("rounded-md border px-1.5 py-0.5 text-[10px] font-semibold", STATUS_COLOR[p.status] ?? "border-border bg-secondary/40 text-txt-muted")}>{statusLabel(p.status)}</span>
+                <span className={cn("rounded-full border px-2.5 py-0.5 text-[11px] font-medium", statusBadgeClass(p.status))}>{statusLabel(p.status)}</span>
                 <Badge variant="outline">{p.environment}</Badge>
-                <span className="text-base font-semibold">{p.symbol}</span>
-                <span className={cn("rounded-md px-1.5 py-0.5 text-[10px] font-semibold", p.direction === "BUY" ? "bg-success/15 text-success" : "bg-danger/15 text-danger")}>{p.direction} ×{p.lotSize}</span>
-                <span className={cn("ml-auto font-mono font-bold", (p.unrealizedPnL || p.realizedPnL) >= 0 ? "text-success" : "text-danger")}>
+                <span className="text-base font-semibold tracking-tight">{p.symbol}</span>
+                <span className={cn("rounded-full px-2.5 py-0.5 text-[11px] font-medium tabular-nums", STATUS_COLORS[directionTone(p.direction)].bg, STATUS_COLORS[directionTone(p.direction)].text)}>{p.direction} ×{p.lotSize}</span>
+                <span className={cn("ml-auto font-mono font-bold tabular-nums", STATUS_COLORS[pnlTone(p.status === "OPEN" ? p.unrealizedPnL : p.realizedPnL)].text)}>
                   ${p.status === "OPEN" ? p.unrealizedPnL : p.realizedPnL} {p.rMultiple !== 0 && `(${p.rMultiple}R)`}
                 </span>
               </div>
@@ -139,7 +150,7 @@ export default function PositionsPage() {
                   <Stat small label="TP" value={p.takeProfit ? String(p.takeProfit) : "—"} />
                 </div>
                 {p.status === "OPEN" && p.environment !== "LIVE_TESTER_INTENT" && (
-                  <div className="flex flex-wrap gap-2 border-t border-border pt-2">
+                  <div className="flex flex-wrap gap-2 border-t border-border/60 pt-2">
                     <Button size="sm" variant="outline" className="h-7" onClick={() => closeP(p)}><X className="h-3 w-3 mr-1" />Close</Button>
                     <Button size="sm" variant="outline" className="h-7" onClick={() => partial(p)}><Scissors className="h-3 w-3 mr-1" />½ close</Button>
                     <Button size="sm" variant="outline" className="h-7" onClick={() => be(p)}><ArrowDownToLine className="h-3 w-3 mr-1" />Break-even</Button>
@@ -147,7 +158,7 @@ export default function PositionsPage() {
                   </div>
                 )}
                 {p.environment === "LIVE_TESTER_INTENT" && (
-                  <div className="flex flex-wrap gap-2 border-t border-border pt-2">
+                  <div className="flex flex-wrap gap-2 border-t border-border/60 pt-2">
                     <Button size="sm" variant="outline" disabled>Send to broker (MT5 deferred)</Button>
                   </div>
                 )}
@@ -161,10 +172,15 @@ export default function PositionsPage() {
 }
 
 function Stat({ label, value, small }: { label: string; value: string; small?: boolean }) {
-  return (
-    <div className={cn("rounded-xl border border-border bg-card", small ? "p-2" : "p-3")}>
-      <p className="text-[10px] uppercase text-txt-muted">{label}</p>
-      <p className={small ? "font-mono text-sm" : "text-lg font-bold"}>{value}</p>
+  return small ? (
+    <div className="rounded-lg bg-muted/40 p-2">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className="font-mono text-sm tabular-nums">{value}</p>
+    </div>
+  ) : (
+    <div className="rounded-xl border border-card-border bg-card p-4 shadow-sm">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className="text-lg font-bold tabular-nums">{value}</p>
     </div>
   );
 }

@@ -48,15 +48,15 @@ function resultBadge(
 ): { label: string; tone: string; icon: typeof CheckCircle2 } {
   switch (result) {
     case "WIN":
-      return { label: "Win", tone: "text-emerald-300 border-emerald-500/40", icon: CheckCircle2 };
+      return { label: "Win", tone: "text-success border-success/25", icon: CheckCircle2 };
     case "LOSS":
-      return { label: "Loss", tone: "text-rose-300 border-rose-500/40", icon: XCircle };
+      return { label: "Loss", tone: "text-danger border-danger/25", icon: XCircle };
     case "BREAKEVEN":
       return { label: "Break-even", tone: "text-muted-foreground border-border/60", icon: MinusCircle };
     case "OPEN":
-      return { label: "Still open", tone: "text-sky-300 border-sky-500/40", icon: CircleDot };
+      return { label: "Still open", tone: "text-ruby border-ruby/25", icon: CircleDot };
     default:
-      return { label: "Outcome unclear", tone: "text-amber-300 border-amber-500/40", icon: MinusCircle };
+      return { label: "Outcome unclear", tone: "text-warning border-warning/25", icon: MinusCircle };
   }
 }
 
@@ -65,11 +65,11 @@ function resultBadge(
 // we never got a trustworthy close figure (common on the demo path).
 function plLine(entry: ScalpJournalEntry): { text: string; tone: string; note: string | null } {
   if (entry.plQuality === "KNOWN" && entry.realizedPl != null) {
-    const tone = entry.realizedPl > 0 ? "text-emerald-300" : entry.realizedPl < 0 ? "text-rose-300" : "text-muted-foreground";
+    const tone = entry.realizedPl > 0 ? "text-success" : entry.realizedPl < 0 ? "text-danger" : "text-muted-foreground";
     return { text: fmtMoney(entry.realizedPl), tone, note: null };
   }
   if (entry.plQuality === "ESTIMATED" && entry.lastFloatingPl != null) {
-    const tone = entry.lastFloatingPl > 0 ? "text-emerald-300" : entry.lastFloatingPl < 0 ? "text-rose-300" : "text-muted-foreground";
+    const tone = entry.lastFloatingPl > 0 ? "text-success" : entry.lastFloatingPl < 0 ? "text-danger" : "text-muted-foreground";
     return { text: `${fmtMoney(entry.lastFloatingPl)}`, tone, note: "estimated from the last reading" };
   }
   return { text: "—", tone: "text-muted-foreground", note: "the broker never sent a final figure" };
@@ -176,11 +176,11 @@ function JournalRow({ entry }: { entry: ScalpJournalEntry }) {
           <Icon className="h-3 w-3" /> {badge.label}
         </Badge>
         {entry.isSynthetic && (
-          <Badge variant="outline" className="text-violet-300 border-violet-500/40">
+          <Badge variant="outline" className="text-premium border-premium/25">
             Synthetic
           </Badge>
         )}
-        <span className={`ml-auto font-mono text-sm ${pl.tone}`}>{pl.text}</span>
+        <span className={`ml-auto font-mono tabular-nums text-sm ${pl.tone}`}>{pl.text}</span>
       </div>
 
       {pl.note && (
@@ -236,7 +236,7 @@ function ReviewRow({ entry }: { entry: ScalpJournalEntry }) {
           <Icon className="h-3 w-3" /> {badge.label}
         </Badge>
         <span className="text-[11px] text-muted-foreground/70">Closed {fmtDate(entry.closedAt)}</span>
-        <span className={`ml-auto font-mono text-sm ${pl.tone}`}>{pl.text}</span>
+        <span className={`ml-auto font-mono tabular-nums text-sm ${pl.tone}`}>{pl.text}</span>
       </div>
 
       {pl.note && (
@@ -390,7 +390,7 @@ function ScalpSummaryStrip({ summary }: { summary: ScalpSummary }) {
         <div className="flex flex-col gap-0.5" data-testid="scalp-summary-winrate">
           {summary.winRatePct != null ? (
             <>
-              <span className="text-lg font-semibold leading-none text-emerald-300">
+              <span className="text-lg font-semibold leading-none text-success">
                 {summary.winRatePct}%
               </span>
               <span className="text-[11px] text-muted-foreground">
@@ -412,13 +412,13 @@ function ScalpSummaryStrip({ summary }: { summary: ScalpSummary }) {
         <SummaryStat
           label="wins"
           value={String(summary.wins)}
-          tone="text-emerald-300"
+          tone="text-success"
           testid="scalp-summary-wins"
         />
         <SummaryStat
           label="losses"
           value={String(summary.losses)}
-          tone="text-rose-300"
+          tone="text-danger"
           testid="scalp-summary-losses"
         />
         <SummaryStat
@@ -429,14 +429,14 @@ function ScalpSummaryStrip({ summary }: { summary: ScalpSummary }) {
         <SummaryStat
           label="still open"
           value={String(summary.open)}
-          tone="text-sky-300"
+          tone="text-ruby"
           testid="scalp-summary-open"
         />
         {summary.unknown > 0 && (
           <SummaryStat
             label="outcome unclear"
             value={String(summary.unknown)}
-            tone="text-amber-300"
+            tone="text-warning"
             testid="scalp-summary-unknown"
           />
         )}
@@ -444,13 +444,13 @@ function ScalpSummaryStrip({ summary }: { summary: ScalpSummary }) {
         <SummaryStat
           label="markets still learning"
           value={String(summary.stillLearning)}
-          tone="text-sky-300"
+          tone="text-ruby"
           testid="scalp-summary-still-learning"
         />
         <SummaryStat
           label={`markets ${name} is cautious on`}
           value={String(summary.cautious)}
-          tone="text-amber-300"
+          tone="text-warning"
           testid="scalp-summary-cautious"
         />
       </CardContent>
@@ -472,17 +472,17 @@ function PersonalityRow({ p }: { p: ScalpSymbolPersonality }) {
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-semibold">{p.displayName ?? p.symbol}</span>
         {p.isSynthetic && (
-          <Badge variant="outline" className="text-violet-300 border-violet-500/40">
+          <Badge variant="outline" className="text-premium border-premium/25">
             Synthetic
           </Badge>
         )}
         {stillLearning ? (
-          <Badge variant="outline" className="text-sky-300 border-sky-500/40">
+          <Badge variant="outline" className="text-ruby border-ruby/25">
             Still learning
           </Badge>
         ) : (
           p.cautious && (
-            <Badge variant="outline" className="text-amber-300 border-amber-500/40">
+            <Badge variant="outline" className="text-warning border-warning/25">
               {name} is being more careful here
             </Badge>
           )
@@ -633,11 +633,11 @@ export default function ScalpJournalPage() {
   }
 
   return (
-    <div className="space-y-4" data-testid="scalp-journal-page">
+    <div className="space-y-6" data-testid="scalp-journal-page">
       <div className="flex items-center gap-3">
-        <BookOpen className="h-6 w-6 text-fuchsia-400" />
+        <BookOpen className="h-6 w-6 text-ruby" />
         <div className="flex-1">
-          <h1 className="text-2xl font-bold">Scalp Journal &amp; Lessons</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Scalp Journal &amp; Lessons</h1>
           <p className="text-sm text-muted-foreground">
             Your full scalp record — every signal {name} tracked, the plain-English
             review after each close, and what she has learned about each market.
@@ -770,7 +770,7 @@ export default function ScalpJournalPage() {
             </CardHeader>
             <CardContent className="space-y-3">
               {journal.isError && (
-                <p className="text-sm text-rose-300">
+                <p className="text-sm text-danger">
                   {name} couldn't read your journal right now. Try Refresh in a moment.
                 </p>
               )}
@@ -811,7 +811,7 @@ export default function ScalpJournalPage() {
                 happened and why.
               </p>
               {reviews.isError && (
-                <p className="text-sm text-rose-300">
+                <p className="text-sm text-danger">
                   {name} couldn't read your reviews right now. Try Refresh in a moment.
                 </p>
               )}
@@ -843,13 +843,13 @@ export default function ScalpJournalPage() {
           <Card data-testid="scalp-personality-card">
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center gap-2">
-                <Brain className="h-4 w-4 text-fuchsia-400" />
+                <Brain className="h-4 w-4 text-ruby" />
                 What {name} has learned about each market
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               {personality.isError && (
-                <p className="text-sm text-rose-300">
+                <p className="text-sm text-danger">
                   {name} couldn't load what she's learned right now.
                 </p>
               )}

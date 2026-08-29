@@ -37,20 +37,20 @@ import { useAssistantName } from "@/lib/assistant-name";
 // ── Label + colour maps (never leak raw UPPER_SNAKE tokens to users) ─────────
 
 const GRADE_COLORS: Record<string, string> = {
-  "A+": "bg-emerald-500/20 text-emerald-300 border-emerald-500/40",
-  A: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
-  B: "bg-blue-500/20 text-blue-400 border-blue-500/40",
-  C: "bg-amber-500/20 text-amber-400 border-amber-500/40",
-  D: "bg-orange-500/20 text-orange-400 border-orange-500/40",
-  F: "bg-rose-500/20 text-rose-400 border-rose-500/40",
+  "A+": "bg-success/10 text-success border-success/25",
+  A: "bg-success/10 text-success border-success/25",
+  B: "bg-primary/10 text-primary border-primary/25",
+  C: "bg-warning/10 text-warning border-warning/25",
+  D: "bg-warning/10 text-warning border-warning/25",
+  F: "bg-danger/10 text-danger border-danger/25",
 };
 
 const PERMISSION_COLORS: Record<string, string> = {
-  GO: "bg-emerald-500/20 text-emerald-400 border-emerald-500/40",
-  WAIT_FOR_ENTRY: "bg-amber-500/20 text-amber-400 border-amber-500/40",
-  WAIT_NEWS: "bg-orange-500/20 text-orange-400 border-orange-500/40",
-  NO_TRADE: "bg-zinc-500/20 text-zinc-400 border-zinc-500/40",
-  STAND_DOWN: "bg-rose-500/20 text-rose-400 border-rose-500/40",
+  GO: "bg-success/10 text-success border-success/25",
+  WAIT_FOR_ENTRY: "bg-warning/10 text-warning border-warning/25",
+  WAIT_NEWS: "bg-warning/10 text-warning border-warning/25",
+  NO_TRADE: "bg-muted/60 text-muted-foreground border-border",
+  STAND_DOWN: "bg-danger/10 text-danger border-danger/25",
 };
 
 const PERMISSION_LABELS: Record<string, string> = {
@@ -116,15 +116,15 @@ function ScorePill({
   const color =
     tone === "good"
       ? value >= 65
-        ? "text-emerald-400"
+        ? "text-success"
         : value >= 45
-          ? "text-amber-400"
-          : "text-zinc-400"
+          ? "text-warning"
+          : "text-muted-foreground"
       : value >= 65
-        ? "text-rose-400"
+        ? "text-danger"
         : value >= 45
-          ? "text-orange-400"
-          : "text-zinc-400";
+          ? "text-warning"
+          : "text-muted-foreground";
   return (
     <div className="flex flex-col gap-0.5 rounded-lg border border-border/60 bg-background/40 px-2.5 py-1.5">
       <span className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-txt-muted leading-none">
@@ -316,7 +316,7 @@ export function TimingIntelligenceCard({ symbol }: { symbol: string }) {
                 <span
                   className={cn(
                     "inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-sm font-bold leading-none",
-                    GRADE_COLORS[read.timingGrade] ?? "bg-zinc-500/20 text-zinc-400 border-zinc-500/40",
+                    GRADE_COLORS[read.timingGrade] ?? "bg-muted/60 text-muted-foreground border-border",
                   )}
                   title={`Timing grade: ${read.timingGrade}`}
                   data-testid="timing-intelligence-grade"
@@ -329,7 +329,7 @@ export function TimingIntelligenceCard({ symbol }: { symbol: string }) {
                   className={cn(
                     "inline-flex items-center rounded-lg border px-2 py-1 text-xs font-semibold leading-none",
                     PERMISSION_COLORS[read.entryPermission] ??
-                      "bg-zinc-500/20 text-zinc-400 border-zinc-500/40",
+                      "bg-muted/60 text-muted-foreground border-border",
                   )}
                   title={read.actionReason}
                   data-testid="timing-intelligence-permission"
@@ -372,7 +372,7 @@ export function TimingIntelligenceCard({ symbol }: { symbol: string }) {
               {/* News overlay warning — only when it actually blocks a trade */}
               {newsBlocks && (
                 <div
-                  className="flex items-start gap-1.5 rounded-lg border border-orange-500/40 bg-orange-500/10 px-2.5 py-2 text-xs text-orange-400"
+                  className="flex items-start gap-1.5 rounded-lg border border-warning/25 bg-warning/10 px-2.5 py-2 text-xs text-warning"
                   data-testid="timing-intelligence-news-warning"
                 >
                   <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -420,7 +420,7 @@ export function TimingIntelligenceCard({ symbol }: { symbol: string }) {
                 </span>
                 {read.session.isKillZoneActive && (
                   <span
-                    className="inline-flex items-center gap-1 rounded-lg border border-amber-500/40 bg-amber-500/10 px-2 py-1 font-semibold text-amber-400"
+                    className="inline-flex items-center gap-1 rounded-lg border border-warning/25 bg-warning/10 px-2 py-1 font-semibold text-warning"
                     data-testid="timing-intelligence-killzone"
                   >
                     <Flame className="h-3 w-3" />

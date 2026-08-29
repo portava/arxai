@@ -28,11 +28,11 @@ export interface ScannerTimingContext {
 }
 
 const PERMISSION_COLORS: Record<string, string> = {
-  GO:              "bg-emerald-500/20 text-emerald-400 border-emerald-500/40",
-  WAIT_FOR_ENTRY:  "bg-amber-500/20 text-amber-400 border-amber-500/40",
-  WAIT_NEWS:       "bg-orange-500/20 text-orange-400 border-orange-500/40",
-  NO_TRADE:        "bg-zinc-500/20 text-zinc-400 border-zinc-500/40",
-  STAND_DOWN:      "bg-rose-500/20 text-rose-400 border-rose-500/40",
+  GO:              "bg-success/10 text-success border-success/25",
+  WAIT_FOR_ENTRY:  "bg-warning/10 text-warning border-warning/25",
+  WAIT_NEWS:       "bg-warning/10 text-warning border-warning/25",
+  NO_TRADE:        "bg-muted/60 text-muted-foreground border-border",
+  STAND_DOWN:      "bg-danger/10 text-danger border-danger/25",
 };
 
 const PERMISSION_LABELS: Record<string, string> = {
@@ -44,12 +44,12 @@ const PERMISSION_LABELS: Record<string, string> = {
 };
 
 const GRADE_COLORS: Record<string, string> = {
-  "A+": "bg-emerald-500/20 text-emerald-300 border-emerald-500/40",
-  A:    "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
-  B:    "bg-blue-500/20 text-blue-400 border-blue-500/40",
-  C:    "bg-amber-500/20 text-amber-400 border-amber-500/40",
-  D:    "bg-orange-500/20 text-orange-400 border-orange-500/40",
-  F:    "bg-rose-500/20 text-rose-400 border-rose-500/40",
+  "A+": "bg-success/10 text-success border-success/25",
+  A:    "bg-success/10 text-success border-success/25",
+  B:    "bg-primary/10 text-primary border-primary/25",
+  C:    "bg-warning/10 text-warning border-warning/25",
+  D:    "bg-warning/10 text-warning border-warning/25",
+  F:    "bg-danger/10 text-danger border-danger/25",
 };
 
 const NEWS_PHASE_LABELS: Record<string, string> = {
@@ -63,9 +63,9 @@ const NEWS_PHASE_LABELS: Record<string, string> = {
 function ScorePill({ label, value, lo, hi, tone }: { label: string; value: number; lo: number; hi: number; tone?: "good" | "bad" }) {
   const pct = Math.round(((value - lo) / (hi - lo)) * 100);
   const color = tone === "good"
-    ? value >= 65 ? "text-emerald-400" : value >= 45 ? "text-amber-400" : "text-zinc-400"
+    ? value >= 65 ? "text-success" : value >= 45 ? "text-warning" : "text-muted-foreground"
     : tone === "bad"
-      ? value >= 65 ? "text-rose-400" : value >= 45 ? "text-orange-400" : "text-zinc-400"
+      ? value >= 65 ? "text-danger" : value >= 45 ? "text-warning" : "text-muted-foreground"
       : "text-primary";
   void pct;
   return (
@@ -90,7 +90,7 @@ export function ScannerTimingBadges({ ctx, className, isGold }: { ctx: ScannerTi
         {/* Gold Strategy Mode marker (Task #657) — display-only; advisory, never gates. */}
         {isGold && (
           <span
-            className="inline-flex items-center gap-1 rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-300 leading-none"
+            className="inline-flex items-center gap-1 rounded border border-warning/25 bg-warning/10 px-1.5 py-0.5 text-[10px] font-semibold text-warning leading-none"
             title="Gold Strategy Mode active — gold-specific macro/session/risk context (display-only)"
             data-testid="scanner-gold-badge"
           >
@@ -103,7 +103,7 @@ export function ScannerTimingBadges({ ctx, className, isGold }: { ctx: ScannerTi
         <span
           className={cn(
             "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-bold leading-none",
-            GRADE_COLORS[ctx.timingGrade] ?? "bg-zinc-500/20 text-zinc-400 border-zinc-500/40",
+            GRADE_COLORS[ctx.timingGrade] ?? "bg-muted/60 text-muted-foreground border-border",
           )}
           title={`Timing grade: ${ctx.timingGrade}`}
         >
@@ -115,7 +115,7 @@ export function ScannerTimingBadges({ ctx, className, isGold }: { ctx: ScannerTi
         <span
           className={cn(
             "inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-semibold leading-none",
-            PERMISSION_COLORS[ctx.entryPermission] ?? "bg-zinc-500/20 text-zinc-400 border-zinc-500/40",
+            PERMISSION_COLORS[ctx.entryPermission] ?? "bg-muted/60 text-muted-foreground border-border",
           )}
           title={ctx.actionReason}
         >
@@ -124,7 +124,7 @@ export function ScannerTimingBadges({ ctx, className, isGold }: { ctx: ScannerTi
 
         {/* Kill zone */}
         {ctx.isKillZoneActive && (
-          <span className="inline-flex items-center gap-1 rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-400 leading-none">
+          <span className="inline-flex items-center gap-1 rounded border border-warning/25 bg-warning/10 px-1.5 py-0.5 text-[10px] font-semibold text-warning leading-none">
             <Clock className="h-2.5 w-2.5" />
             Kill zone
           </span>
@@ -132,7 +132,7 @@ export function ScannerTimingBadges({ ctx, className, isGold }: { ctx: ScannerTi
 
         {/* News phase */}
         {showNewsPhase && (
-          <span className="inline-flex items-center gap-1 rounded border border-orange-500/40 bg-orange-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-orange-400 leading-none">
+          <span className="inline-flex items-center gap-1 rounded border border-warning/25 bg-warning/10 px-1.5 py-0.5 text-[10px] font-semibold text-warning leading-none">
             <AlertTriangle className="h-2.5 w-2.5" />
             {NEWS_PHASE_LABELS[ctx.newsPhase]}
           </span>
@@ -144,8 +144,8 @@ export function ScannerTimingBadges({ ctx, className, isGold }: { ctx: ScannerTi
             className={cn(
               "inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-mono font-semibold leading-none",
               ctx.heatBoost > 0
-                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
-                : "border-rose-500/40 bg-rose-500/10 text-rose-400",
+                ? "border-success/25 bg-success/10 text-success"
+                : "border-danger/25 bg-danger/10 text-danger",
             )}
             title="Heat-adjusted score boost"
           >
@@ -185,10 +185,10 @@ export function ScannerTimingBadges({ ctx, className, isGold }: { ctx: ScannerTi
           <span className={cn(
             "inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-semibold leading-none",
             ctx.broadFlowVerdict === "ALIGNED"
-              ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
+              ? "border-success/25 bg-success/10 text-success"
               : ctx.broadFlowVerdict === "OPPOSING"
-                ? "border-rose-500/40 bg-rose-500/10 text-rose-400"
-                : "border-amber-500/40 bg-amber-500/10 text-amber-400",
+                ? "border-danger/25 bg-danger/10 text-danger"
+                : "border-warning/25 bg-warning/10 text-warning",
           )}>
             {ctx.broadFlowVerdict === "ALIGNED" ? "Aligned" : ctx.broadFlowVerdict === "OPPOSING" ? "Opposing" : "Conflicted"}
           </span>

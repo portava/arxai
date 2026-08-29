@@ -38,7 +38,7 @@ export function ChartPositionOverlayPanel({
   if (positions.length === 0) return null;
 
   return (
-    <Card className="border-zinc-800 bg-zinc-950/40" data-testid="chart-position-overlay-panel">
+    <Card className="border-border bg-background/40" data-testid="chart-position-overlay-panel">
       <CardHeader className="py-3 px-3 md:px-4">
         <CardTitle className="flex items-center justify-between gap-2 text-sm">
           <span className="flex items-center gap-2">
@@ -58,22 +58,22 @@ export function ChartPositionOverlayPanel({
             pnl == null
               ? "text-muted-foreground"
               : pnl >= 0
-                ? "text-emerald-400"
-                : "text-red-400";
+                ? "text-success"
+                : "text-danger";
           const busy = busyTicket != null && busyTicket === p.brokerTicket;
           return (
             <div
               key={key}
               data-testid="chart-position-row"
-              className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-zinc-800 bg-zinc-900/40 px-3 py-2"
+              className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-card/40 px-3 py-2"
             >
               <div className="flex flex-wrap items-center gap-2 text-xs">
                 <Badge
                   variant="outline"
                   className={`text-[10px] ${
                     p.side === "BUY"
-                      ? "border-blue-500/40 text-blue-300"
-                      : "border-purple-500/40 text-purple-300"
+                      ? "border-primary/25 text-primary"
+                      : "border-premium/25 text-premium"
                   }`}
                 >
                   {p.side ?? "—"}
@@ -81,17 +81,17 @@ export function ChartPositionOverlayPanel({
                 <Badge variant="outline" className="text-[10px] uppercase text-muted-foreground">
                   {p.accountMode}
                 </Badge>
-                <span className="font-mono text-zinc-300">
+                <span className="font-mono text-txt-secondary">
                   {p.lotSize != null ? `${p.lotSize} lot` : ""}
                 </span>
                 <span className="font-mono text-muted-foreground">
                   @ {fmtPrice(p.entryPrice)}
                 </span>
                 {p.stopLoss != null && (
-                  <span className="font-mono text-red-300/80">SL {fmtPrice(p.stopLoss)}</span>
+                  <span className="font-mono text-danger/80">SL {fmtPrice(p.stopLoss)}</span>
                 )}
                 {p.takeProfit != null && (
-                  <span className="font-mono text-emerald-300/80">TP {fmtPrice(p.takeProfit)}</span>
+                  <span className="font-mono text-success/80">TP {fmtPrice(p.takeProfit)}</span>
                 )}
                 <span className={`font-mono font-semibold ${pnlClass}`} data-testid="chart-position-pnl">
                   {pnl == null ? "P/L —" : `${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}`}

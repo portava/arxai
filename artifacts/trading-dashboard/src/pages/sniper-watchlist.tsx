@@ -3,6 +3,7 @@ import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { Loader2, AlertTriangle, Target, TrendingUp, TrendingDown, RefreshCw } from "lucide-react";
 
 const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
@@ -61,11 +62,11 @@ export default function SniperWatchlistPage() {
   }, []);
 
   return (
-    <div className="space-y-4 p-4">
+    <div className="mx-auto w-full max-w-[1280px] space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Target className="h-5 w-5 text-violet-400" />
-          <h1 className="text-lg font-semibold text-zinc-100">Sniper Watchlist</h1>
+          <Target className="h-5 w-5 text-primary" />
+          <h1 className="text-2xl font-bold tracking-tight">Sniper Watchlist</h1>
           <Badge variant="outline" className="text-[10px] uppercase">{routingMode}</Badge>
         </div>
         <Button size="sm" variant="ghost" onClick={() => void load()} data-testid="watchlist-refresh">
@@ -73,22 +74,23 @@ export default function SniperWatchlistPage() {
         </Button>
       </div>
 
-      <p className="text-xs text-zinc-500">
+      <p className="text-sm text-muted-foreground">
         Open trades flagged by the Sniper Exit engine. Ranked by close urgency. No order is placed
         — this is decision support only. Tap a row to open the trade detail.
       </p>
 
       {loading ? (
-        <Card><CardContent className="flex items-center gap-2 p-6 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Scanning your open trades…</CardContent></Card>
+        <Card><CardContent className="flex items-center gap-2 p-6 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Scanning your open trades…</CardContent></Card>
       ) : err ? (
-        <Card><CardContent className="flex items-center gap-2 p-6 text-rose-400"><AlertTriangle className="h-4 w-4" /> {err}</CardContent></Card>
+        <Card><CardContent className="flex items-center gap-2 p-6 text-danger"><AlertTriangle className="h-4 w-4" /> {err}</CardContent></Card>
       ) : items.length === 0 ? (
         <Card>
-          <CardContent className="p-6 text-sm text-zinc-400" data-testid="watchlist-empty">
-            None of your open trades are flagged for attention right now. The engine watches your
-            trades continuously — if a profit-giveback, reversal, or close-urgency signal fires,
-            it will appear here automatically.
-          </CardContent>
+          <EmptyState
+            icon={Target}
+            title="None of your open trades are flagged for attention right now."
+            description="The engine watches your trades continuously — if a profit-giveback, reversal, or close-urgency signal fires, it will appear here automatically."
+            data-testid="watchlist-empty"
+          />
         </Card>
       ) : (
         <div className="space-y-2" data-testid="watchlist-items">

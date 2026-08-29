@@ -44,14 +44,14 @@ function PanelShell({
 }) {
   return (
     <div
-      className="rounded-md border border-zinc-800 bg-zinc-950/40 p-3 text-[11px] leading-snug"
+      className="rounded-md border border-border bg-background/40 p-3 text-[11px] leading-snug"
       data-testid={testid}
     >
       <div className="flex items-center gap-2">
         <Icon className={`h-3.5 w-3.5 ${accent}`} />
-        <span className="font-semibold text-zinc-200">{title}</span>
+        <span className="font-semibold text-foreground">{title}</span>
         {badge && (
-          <span className="ml-auto rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-400">
+          <span className="ml-auto rounded bg-warning/10 px-1.5 py-0.5 text-[10px] text-warning">
             {badge}
           </span>
         )}
@@ -71,13 +71,13 @@ function Line({
   tone?: string;
 }) {
   return (
-    <div className="rounded border border-zinc-800/70 bg-zinc-900/40 px-2 py-1.5">
+    <div className="rounded border border-border bg-card/40 px-2 py-1.5">
       {label && (
-        <span className="mr-1.5 text-[10px] uppercase tracking-wide text-zinc-500">
+        <span className="mr-1.5 text-[10px] uppercase tracking-wide text-txt-muted">
           {label}
         </span>
       )}
-      <span className={tone ?? "text-zinc-300"}>{children}</span>
+      <span className={tone ?? "text-txt-secondary"}>{children}</span>
     </div>
   );
 }
@@ -85,7 +85,7 @@ function Line({
 function Waiting({ testid }: { testid: string }) {
   return (
     <div
-      className="rounded-md border border-zinc-800 bg-zinc-950/40 p-3 text-[11px] text-zinc-500"
+      className="rounded-md border border-border bg-background/40 p-3 text-[11px] text-txt-muted"
       data-testid={testid}
     >
       Waiting for chart intelligence…
@@ -105,7 +105,7 @@ export function ChartRiskPanel({ state }: { state: ChartState | null }) {
     <PanelShell
       icon={ShieldAlert}
       title="Risk read"
-      accent="text-rose-400"
+      accent="text-danger"
       badge={ds.vetoed ? "veto active" : null}
       testid="chart-risk-panel"
     >
@@ -116,11 +116,11 @@ export function ChartRiskPanel({ state }: { state: ChartState | null }) {
         {ds.actionability.replace("_", " ")}
       </Line>
       {ds.vetoed && readiness.vetoReason && (
-        <Line label="Veto" tone="text-rose-300">
+        <Line label="Veto" tone="text-danger">
           {readiness.vetoReason}
         </Line>
       )}
-      <Line label="Invalidates" tone="text-zinc-400">
+      <Line label="Invalidates" tone="text-muted-foreground">
         {inval.text}
       </Line>
     </PanelShell>
@@ -138,31 +138,31 @@ export function ChartScalpPanel({ state }: { state: ChartState | null }) {
     <PanelShell
       icon={Zap}
       title="Scalp read"
-      accent="text-amber-400"
+      accent="text-warning"
       testid="chart-scalp-panel"
     >
       <Line tone={st.text}>{scalp.text}</Line>
-      <Line label="Freshness" tone="text-zinc-400">
+      <Line label="Freshness" tone="text-muted-foreground">
         {fresh.text}
       </Line>
       <div className="flex flex-wrap gap-1">
         {ff.momentumBurst && (
-          <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-300">
+          <span className="rounded bg-warning/10 px-1.5 py-0.5 text-[10px] text-warning">
             momentum burst
           </span>
         )}
         {ff.nearRecentHigh && (
-          <span className="rounded bg-sky-500/10 px-1.5 py-0.5 text-[10px] text-sky-300">
+          <span className="rounded bg-ruby/10 px-1.5 py-0.5 text-[10px] text-ruby">
             near recent high
           </span>
         )}
         {ff.nearRecentLow && (
-          <span className="rounded bg-sky-500/10 px-1.5 py-0.5 text-[10px] text-sky-300">
+          <span className="rounded bg-ruby/10 px-1.5 py-0.5 text-[10px] text-ruby">
             near recent low
           </span>
         )}
         {!ff.momentumBurst && !ff.nearRecentHigh && !ff.nearRecentLow && (
-          <span className="text-[10px] text-zinc-600">
+          <span className="text-[10px] text-txt-muted">
             no fast-flag triggers
           </span>
         )}
@@ -186,24 +186,24 @@ export function ChartEntryPanel({ state }: { state: ChartState | null }) {
     <PanelShell
       icon={LogIn}
       title="Entry timing"
-      accent="text-emerald-400"
+      accent="text-success"
       badge={fork.downgrade ? "downgraded" : null}
       testid="chart-entry-panel"
     >
       <Line tone={et.text}>{entry.text}</Line>
-      <Line label="Next" tone="text-zinc-300">
+      <Line label="Next" tone="text-txt-secondary">
         {next.text}
       </Line>
       {triggers.map((b, i) => (
-        <Line key={`trig-${i}`} label={b.kind} tone="text-zinc-300">
+        <Line key={`trig-${i}`} label={b.kind} tone="text-txt-secondary">
           {b.text}
           {b.price != null ? ` (${fmt(b.price)})` : ""} ·{" "}
-          <span className="text-zinc-500">{b.likelihood} likelihood</span>
+          <span className="text-txt-muted">{b.likelihood} likelihood</span>
         </Line>
       ))}
       {reasoning.populated &&
         reasoning.improve.slice(0, 2).map((c, i) => (
-          <Line key={`imp-${i}`} label="Strengthens" tone="text-emerald-300">
+          <Line key={`imp-${i}`} label="Strengthens" tone="text-success">
             {c.text}
             {c.price != null ? ` (${fmt(c.price)})` : ""}
           </Line>
@@ -224,7 +224,7 @@ export function ChartExitPanel({ state }: { state: ChartState | null }) {
     <PanelShell
       icon={LogOut}
       title="Exit / targets"
-      accent="text-sky-400"
+      accent="text-ruby"
       testid="chart-exit-panel"
     >
       <Line label="Stop idea" tone={it.text}>
@@ -232,23 +232,23 @@ export function ChartExitPanel({ state }: { state: ChartState | null }) {
       </Line>
       {reasoning.populated &&
         reasoning.invalidate.slice(0, 2).map((c, i) => (
-          <Line key={`inv-${i}`} label="Invalidates" tone="text-rose-300">
+          <Line key={`inv-${i}`} label="Invalidates" tone="text-danger">
             {c.text}
             {c.price != null ? ` (${fmt(c.price)})` : ""}
           </Line>
         ))}
       {levels.nearestResistance && (
-        <Line label="Resistance" tone="text-zinc-300">
+        <Line label="Resistance" tone="text-txt-secondary">
           {fmt(levels.nearestResistance.price)} ·{" "}
-          <span className="text-zinc-500">
+          <span className="text-txt-muted">
             {levels.nearestResistance.personality}
           </span>
         </Line>
       )}
       {levels.nearestSupport && (
-        <Line label="Support" tone="text-zinc-300">
+        <Line label="Support" tone="text-txt-secondary">
           {fmt(levels.nearestSupport.price)} ·{" "}
-          <span className="text-zinc-500">
+          <span className="text-txt-muted">
             {levels.nearestSupport.personality}
           </span>
         </Line>
@@ -258,7 +258,7 @@ export function ChartExitPanel({ state }: { state: ChartState | null }) {
           <Line
             key={`exp-${i}`}
             label={e.horizon === 1 ? "Next candle" : `Next ${e.horizon}`}
-            tone="text-zinc-400"
+            tone="text-muted-foreground"
           >
             {e.text}
           </Line>
@@ -280,11 +280,11 @@ export function ChartAgentConsensusPanel({
       <PanelShell
         icon={Users}
         title="Agent consensus"
-        accent="text-violet-400"
+        accent="text-premium"
         badge="advisory"
         testid="chart-consensus-panel"
       >
-        <Line tone="text-zinc-400">{c.note}</Line>
+        <Line tone="text-muted-foreground">{c.note}</Line>
       </PanelShell>
     );
   }
@@ -292,13 +292,13 @@ export function ChartAgentConsensusPanel({
     <PanelShell
       icon={Users}
       title="Agent consensus"
-      accent="text-violet-400"
+      accent="text-premium"
       badge={c.conflict ? "conflict" : "advisory"}
       testid="chart-consensus-panel"
     >
-      <Line tone="text-zinc-200">{c.headline}</Line>
+      <Line tone="text-foreground">{c.headline}</Line>
       {c.detail && (
-        <Line tone="text-zinc-400" label="Why">
+        <Line tone="text-muted-foreground" label="Why">
           {c.detail}
         </Line>
       )}
@@ -307,7 +307,7 @@ export function ChartAgentConsensusPanel({
           {c.agents.map((a, i) => (
             <span
               key={`ag-${i}`}
-              className="rounded bg-zinc-800/70 px-1.5 py-0.5 text-[10px] text-zinc-300"
+              className="rounded bg-muted/70 px-1.5 py-0.5 text-[10px] text-txt-secondary"
             >
               {a.name}: {a.stance.toLowerCase()}
             </span>
@@ -315,17 +315,17 @@ export function ChartAgentConsensusPanel({
         </div>
       )}
       {c.protective && (
-        <div className="flex items-center gap-1 text-[10px] text-amber-300">
+        <div className="flex items-center gap-1 text-[10px] text-warning">
           <AlertTriangle className="h-3 w-3" /> Governance lowered this read
           protectively.
         </div>
       )}
       {c.cautions.map((ct, i) => (
-        <Line key={`ct-${i}`} tone="text-amber-300">
+        <Line key={`ct-${i}`} tone="text-warning">
           {ct}
         </Line>
       ))}
-      <p className="text-[10px] text-zinc-600">{c.note}</p>
+      <p className="text-[10px] text-txt-muted">{c.note}</p>
     </PanelShell>
   );
 }

@@ -20,8 +20,10 @@
 //      anyway and a button that cannot work is a lie about what is possible.
 
 import { useCallback, useEffect, useState } from "react";
+import { Inbox } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { cn } from "@/lib/utils";
 
 type Ticket = {
@@ -190,9 +192,9 @@ export default function ApprovalInboxPage() {
   const past = tickets.filter((t) => !LIVE_STATES.has(t.state));
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="mx-auto max-w-4xl space-y-6">
       <header>
-        <h1 className="text-2xl font-semibold">Approval inbox</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Approval inbox</h1>
         <p className="text-sm text-muted-foreground">
           Nothing here is sent until you approve it, and approving is not sending — each is a
           separate, explicit step.
@@ -200,22 +202,28 @@ export default function ApprovalInboxPage() {
       </header>
 
       {error && (
-        <div className="rounded border border-destructive/40 bg-destructive/10 p-3 text-sm">{error}</div>
+        <div className="rounded-lg border border-danger/25 bg-danger/10 p-3 text-sm">{error}</div>
       )}
 
       {loadState === "unauthenticated" && (
-        <div className="rounded border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+        <div className="rounded-lg border border-warning/25 bg-warning/10 p-3 text-sm">
           <strong>You are not signed in.</strong> The inbox shows only your own tickets, so sign in
           to the dashboard first — the certification ticket belongs to the account that seeded it.
         </div>
       )}
       {loadState === "error" && (
-        <div className="rounded border border-destructive/40 bg-destructive/10 p-3 text-sm">
+        <div className="rounded-lg border border-danger/25 bg-danger/10 p-3 text-sm">
           The inbox could not be loaded. Refresh; if this persists, the server may still be starting.
         </div>
       )}
       {loadState === "ready" && live.length === 0 && (
-        <p className="text-sm text-muted-foreground">No trades are waiting for your decision.</p>
+        <div className="rounded-xl border border-card-border bg-card shadow-sm">
+          <EmptyState
+            icon={Inbox}
+            title="No trades are waiting for your decision."
+            description="When a trade is proposed for your account, its approval ticket appears here."
+          />
+        </div>
       )}
 
       {live.map((t) => {
@@ -223,7 +231,7 @@ export default function ApprovalInboxPage() {
         const expired = left <= 0;
         const result = results[t.ticketId];
         return (
-          <article key={t.ticketId} className="rounded-lg border p-4 space-y-3">
+          <article key={t.ticketId} className="rounded-xl border border-card-border bg-card p-6 shadow-sm space-y-3">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <Badge variant={t.side === "BUY" ? "default" : "secondary"}>{t.side}</Badge>
@@ -232,12 +240,12 @@ export default function ApprovalInboxPage() {
                   {t.broker} · {t.accountRef}
                 </span>
               </div>
-              <span className={cn("text-sm", expired ? "text-destructive" : "text-muted-foreground")}>
+              <span className={cn("text-sm tabular-nums", expired ? "text-danger" : "text-muted-foreground")}>
                 {countdown(left)}
               </span>
             </div>
 
-            <dl className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-4">
+            <dl className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm tabular-nums sm:grid-cols-4">
               <div><dt className="text-muted-foreground">Stake</dt><dd>{money(t.stakeUsd)}</dd></div>
               <div><dt className="text-muted-foreground">Multiplier</dt><dd>{t.multiplier}×</dd></div>
               <div><dt className="text-muted-foreground">Reference quote</dt><dd>{t.referenceQuote ?? "—"}</dd></div>
@@ -270,7 +278,7 @@ export default function ApprovalInboxPage() {
               warning so it can never be mistaken for "you already accepted this".
             */}
             {t.disclosureWaivedByOperator && (
-              <div className="rounded border border-amber-500/40 bg-amber-500/10 p-2 text-sm">
+              <div className="rounded-lg border border-warning/25 bg-warning/10 p-2 text-sm">
                 The risk disclosure for this account was <strong>waived by an operator</strong>. You
                 have not accepted it yourself.
               </div>
@@ -314,7 +322,7 @@ export default function ApprovalInboxPage() {
             )}
 
             {t.state === "UNRESOLVED" && (
-              <div className="rounded border border-amber-500/40 bg-amber-500/10 p-2 text-sm">
+              <div className="rounded-lg border border-warning/25 bg-warning/10 p-2 text-sm">
                 <strong>Outcome unknown.</strong> An order may exist at the broker. This is not a
                 failed trade and it must not be retried — it is being reconciled.
               </div>
@@ -323,12 +331,12 @@ export default function ApprovalInboxPage() {
             {result && (
               <div
                 className={cn(
-                  "rounded border p-2 text-sm",
+                  "rounded-lg border p-2 text-sm",
                   result.indeterminate
-                    ? "border-amber-500/40 bg-amber-500/10"
+                    ? "border-warning/25 bg-warning/10"
                     : result.ok
-                      ? "border-emerald-500/40 bg-emerald-500/10"
-                      : "border-muted",
+                      ? "border-success/25 bg-success/10"
+                      : "border-border bg-muted/40",
                 )}
               >
                 {result.indeterminate ? (
@@ -353,10 +361,10 @@ export default function ApprovalInboxPage() {
 
       {past.length > 0 && (
         <section className="space-y-2">
-          <h2 className="text-lg font-medium">Recent</h2>
-          <ul className="text-sm space-y-1">
+          <h2 className="text-base font-semibold tracking-tight">Recent</h2>
+          <ul className="text-sm tabular-nums space-y-1">
             {past.map((t) => (
-              <li key={t.ticketId} className="flex justify-between gap-4 border-b py-1">
+              <li key={t.ticketId} className="flex justify-between gap-4 border-b border-border/60 py-1">
                 <span>{t.side} {t.instrument} · {money(t.stakeUsd)}</span>
                 <span className="text-muted-foreground">
                   {t.state.toLowerCase()}

@@ -67,7 +67,7 @@ function PickChip({
       className="text-left rounded-lg border border-border bg-background/40 p-2.5 hover:border-ruby/50 transition-colors"
       data-testid={`scalp-pick-${label.toLowerCase()}`}
     >
-      <div className="flex items-center gap-1.5 text-[11px] text-zinc-400">{icon}{label}</div>
+      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">{icon}{label}</div>
       <div className="font-semibold text-sm truncate">{pick.displayName || pick.symbol}</div>
       <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
         {pick.direction && (
@@ -257,7 +257,7 @@ export function RubyScalpScan({
           </p>
         )}
         {(rank.isError || build.isError) && (
-          <p className="text-sm text-rose-300">
+          <p className="text-sm text-danger">
             {goalActive
               ? `${name} couldn't build a scalp right now. Try again shortly.`
               : `${name} couldn't rank markets right now. Try again shortly.`}

@@ -116,7 +116,7 @@ export function ChartCommandMenu({
     <button
       type="button"
       disabled={busy}
-      className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors hover:bg-zinc-800 disabled:opacity-50 ${tone ?? "text-zinc-200"}`}
+      className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors hover:bg-muted disabled:opacity-50 ${tone ?? "text-foreground"}`}
       onClick={() => {
         onClick();
         onClose();
@@ -127,19 +127,19 @@ export function ChartCommandMenu({
     </button>
   );
 
-  const Divider = () => <div className="my-1 h-px bg-zinc-800" />;
+  const Divider = () => <div className="my-1 h-px bg-muted" />;
 
   return (
     <div
       ref={ref}
       data-testid="scanner-chart-command-menu"
-      className="absolute z-30 max-h-[80vh] w-56 overflow-y-auto rounded-md border border-zinc-700 bg-zinc-950/95 p-1 shadow-xl backdrop-blur"
+      className="absolute z-30 max-h-[80vh] w-56 overflow-y-auto rounded-md border border-border bg-background/95 p-1 shadow-xl backdrop-blur"
       style={{
         left: Math.max(4, Math.min(anchor.x, 9999)),
         top: Math.max(4, anchor.y),
       }}
     >
-      <div className="px-2 py-1 font-mono text-[10px] text-zinc-500">
+      <div className="px-2 py-1 font-mono text-[10px] text-txt-muted">
         @ {fmt(anchor.price)}
       </div>
 
@@ -147,26 +147,26 @@ export function ChartCommandMenu({
       {canTrade ? (
         <>
           <Item
-            icon={<TrendingUp className="h-3.5 w-3.5 text-blue-400" />}
+            icon={<TrendingUp className="h-3.5 w-3.5 text-primary" />}
             label="Plan Buy here"
-            tone="text-blue-200"
+            tone="text-primary"
             onClick={() => onPlan("BUY", anchor.price)}
           />
           <Item
-            icon={<TrendingDown className="h-3.5 w-3.5 text-purple-400" />}
+            icon={<TrendingDown className="h-3.5 w-3.5 text-premium" />}
             label="Plan Sell here"
-            tone="text-purple-200"
+            tone="text-premium"
             onClick={() => onPlan("SELL", anchor.price)}
           />
           {hasDraft ? (
             <>
               <Item
-                icon={<Crosshair className="h-3.5 w-3.5 text-rose-400" />}
+                icon={<Crosshair className="h-3.5 w-3.5 text-danger" />}
                 label="Set invalidation (SL) here"
                 onClick={() => onSetDraftLevel("SL", anchor.price)}
               />
               <Item
-                icon={<Target className="h-3.5 w-3.5 text-emerald-400" />}
+                icon={<Target className="h-3.5 w-3.5 text-success" />}
                 label="Set take-profit here"
                 onClick={() => onSetDraftLevel("TP", anchor.price)}
               />
@@ -184,22 +184,22 @@ export function ChartCommandMenu({
         onClick={() => onAskRuby("analyze", anchor.price)}
       />
       <Item
-        icon={<Lightbulb className="h-3.5 w-3.5 text-amber-300" />}
+        icon={<Lightbulb className="h-3.5 w-3.5 text-warning" />}
         label="Explain this candle"
         onClick={() => onAskRuby("is-this-a-buy", anchor.price)}
       />
       <Item
-        icon={<HelpCircle className="h-3.5 w-3.5 text-sky-300" />}
+        icon={<HelpCircle className="h-3.5 w-3.5 text-ruby" />}
         label="Why not now?"
         onClick={() => onAskRuby("why-not-now", anchor.price)}
       />
       <Item
-        icon={<Lightbulb className="h-3.5 w-3.5 text-sky-300" />}
+        icon={<Lightbulb className="h-3.5 w-3.5 text-ruby" />}
         label={`What would change ${name}'s mind?`}
         onClick={() => onAskRuby("what-changes-my-mind", anchor.price)}
       />
       <Item
-        icon={<ShieldAlert className="h-3.5 w-3.5 text-rose-300" />}
+        icon={<ShieldAlert className="h-3.5 w-3.5 text-danger" />}
         label="What invalidates this?"
         onClick={() => onAskRuby("what-invalidates", anchor.price)}
       />
@@ -218,28 +218,28 @@ export function ChartCommandMenu({
 
       {/* ── Annotations (per-user, read-only) ───────────────────────────── */}
       <Item
-        icon={<ArrowDownToLine className="h-3.5 w-3.5 text-emerald-400" />}
+        icon={<ArrowDownToLine className="h-3.5 w-3.5 text-success" />}
         label="Mark support here"
         onClick={() => onMarkLevel("SUPPORT", anchor.price)}
       />
       <Item
-        icon={<ArrowUpToLine className="h-3.5 w-3.5 text-rose-400" />}
+        icon={<ArrowUpToLine className="h-3.5 w-3.5 text-danger" />}
         label="Mark resistance here"
         onClick={() => onMarkLevel("RESISTANCE", anchor.price)}
       />
       <Item
-        icon={<Eye className="h-3.5 w-3.5 text-cyan-300" />}
+        icon={<Eye className="h-3.5 w-3.5 text-ruby" />}
         label="Create watch zone here"
         onClick={() => onWatchZone(anchor.price)}
       />
       <Divider />
       <Item
-        icon={<Bell className="h-3.5 w-3.5 text-amber-400" />}
+        icon={<Bell className="h-3.5 w-3.5 text-warning" />}
         label="Alert when price ↑ crosses"
         onClick={() => onPriceAlert("above", anchor.price)}
       />
       <Item
-        icon={<Minus className="h-3.5 w-3.5 text-amber-400" />}
+        icon={<Minus className="h-3.5 w-3.5 text-warning" />}
         label="Alert when price ↓ crosses"
         onClick={() => onPriceAlert("below", anchor.price)}
       />
@@ -249,7 +249,7 @@ export function ChartCommandMenu({
         <>
           <Divider />
           <Item
-            icon={<History className="h-3.5 w-3.5 text-zinc-300" />}
+            icon={<History className="h-3.5 w-3.5 text-txt-secondary" />}
             label="Replay from here"
             onClick={() => onReplay()}
           />

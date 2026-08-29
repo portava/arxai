@@ -47,7 +47,7 @@ export function ChartSentencesPanel({
   if (!state) {
     return (
       <div
-        className="rounded-md border border-zinc-800 bg-zinc-950/40 p-3 text-[11px] text-zinc-500"
+        className="rounded-md border border-border bg-background/40 p-3 text-[11px] text-txt-muted"
         data-testid="chart-sentences-empty"
       >
         Waiting for chart intelligence…
@@ -59,14 +59,14 @@ export function ChartSentencesPanel({
 
   return (
     <div
-      className="rounded-md border border-zinc-800 bg-zinc-950/40 p-3 text-[11px] leading-snug"
+      className="rounded-md border border-border bg-background/40 p-3 text-[11px] leading-snug"
       data-testid="chart-sentences-panel"
     >
       <div className="flex items-center gap-2">
-        <MessageSquareText className="h-3.5 w-3.5 text-sky-400" />
-        <span className="font-semibold text-zinc-200">What the chart is saying</span>
+        <MessageSquareText className="h-3.5 w-3.5 text-ruby" />
+        <span className="font-semibold text-foreground">What the chart is saying</span>
         {!sentences.populated && (
-          <span className="ml-auto rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-400">
+          <span className="ml-auto rounded bg-warning/10 px-1.5 py-0.5 text-[10px] text-warning">
             limited data
           </span>
         )}
@@ -84,7 +84,7 @@ export function ChartSentencesPanel({
               data-testid={`chart-sentence-${s.key}`}
             >
               <div className="flex items-baseline gap-1.5">
-                <span className="shrink-0 text-[10px] uppercase tracking-wide text-zinc-500">
+                <span className="shrink-0 text-[10px] uppercase tracking-wide text-txt-muted">
                   {s.label}
                 </span>
               </div>
@@ -94,7 +94,7 @@ export function ChartSentencesPanel({
         })}
       </div>
 
-      <p className="mt-2 text-[10px] text-zinc-600">{sentences.note}</p>
+      <p className="mt-2 text-[10px] text-txt-muted">{sentences.note}</p>
     </div>
   );
 }

@@ -87,9 +87,9 @@ export function RubySetupReason({ signal, dense = false }: { signal: SignalConte
   ]);
 
   const tone =
-    reason?.bias === "BUY" ? "border-emerald-500/40 bg-emerald-500/5" :
-    reason?.bias === "SELL" ? "border-rose-500/40 bg-rose-500/5" :
-    "border-slate-500/40 bg-slate-500/5";
+    reason?.bias === "BUY" ? "border-success/25 bg-success/5" :
+    reason?.bias === "SELL" ? "border-danger/25 bg-danger/5" :
+    "border-border bg-muted/60";
 
   return (
     <div className={`rounded border ${tone} p-2 text-[11px] leading-snug space-y-1`} data-testid="ruby-setup-reason">
@@ -98,7 +98,7 @@ export function RubySetupReason({ signal, dense = false }: { signal: SignalConte
         {name}'s Setup Reason
       </div>
       {!reason && !err && <div className="text-muted-foreground italic">{name} is reading the setup…</div>}
-      {err && <div className="text-rose-400">{name} couldn't load this setup ({err}).</div>}
+      {err && <div className="text-danger">{name} couldn't load this setup ({err}).</div>}
       {reason && (
         <>
           {/* Standardized, always-visible Ruby Reasoning Block — same labeled
@@ -148,7 +148,7 @@ function MasterBridgeNote() {
   }, []);
   if (!show) return null;
   return (
-    <div className="text-[10px] text-amber-300/80 italic pt-1 border-t border-slate-700/40">
+    <div className="text-[10px] text-warning/80 italic pt-1 border-t border-border">
       Orders route through the shared master live bridge. Risk limits apply per your account settings.
     </div>
   );

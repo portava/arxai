@@ -31,13 +31,13 @@ import { useAssistantName } from "@/lib/assistant-name";
 function resultBadge(entry: ScalpJournalEntry): { label: string; tone: string; icon: typeof CheckCircle2 } {
   switch (entry.result) {
     case "WIN":
-      return { label: "Win", tone: "text-success border-emerald-500/40", icon: CheckCircle2 };
+      return { label: "Win", tone: "text-success border-success/25", icon: CheckCircle2 };
     case "LOSS":
-      return { label: "Loss", tone: "text-danger border-rose-500/40", icon: XCircle };
+      return { label: "Loss", tone: "text-danger border-danger/25", icon: XCircle };
     case "BREAKEVEN":
       return { label: "Break-even", tone: "text-muted-foreground border-border/60", icon: MinusCircle };
     default:
-      return { label: "Outcome unclear", tone: "text-warning border-amber-500/40", icon: MinusCircle };
+      return { label: "Outcome unclear", tone: "text-warning border-warning/25", icon: MinusCircle };
   }
 }
 
@@ -119,12 +119,12 @@ function PersonalityRow({ p, name }: { p: ScalpSymbolPersonality; name: string }
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-semibold">{p.displayName ?? p.symbol}</span>
         {p.isSynthetic && (
-          <Badge variant="outline" className="text-violet-300 border-violet-500/40">
+          <Badge variant="outline" className="text-premium border-premium/25">
             Synthetic
           </Badge>
         )}
         {p.cautious && (
-          <Badge variant="outline" className="text-warning border-amber-500/40">
+          <Badge variant="outline" className="text-warning border-warning/25">
             {name} is being more careful here
           </Badge>
         )}

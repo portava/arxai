@@ -56,7 +56,7 @@ export function ChartHistoryBadge({
     return (
       <Badge
         variant="outline"
-        className={`flex items-center gap-1 border-sky-500/40 bg-sky-500/10 text-[10px] text-sky-200 ${className ?? ""}`}
+        className={`flex items-center gap-1 border-ruby/25 bg-ruby/10 text-[10px] text-ruby ${className ?? ""}`}
         data-testid="chart-history-loading"
       >
         <Loader2 className="h-3 w-3 animate-spin" /> Loading history…
@@ -70,7 +70,7 @@ export function ChartHistoryBadge({
     return (
       <Badge
         variant="outline"
-        className={`flex items-center gap-1 border-amber-500/50 bg-amber-500/10 text-[10px] text-amber-200 ${className ?? ""}`}
+        className={`flex items-center gap-1 border-warning/25 bg-warning/10 text-[10px] text-warning ${className ?? ""}`}
         data-testid="chart-history-capped"
         title={limitationReason ?? undefined}
       >
@@ -91,7 +91,7 @@ export function ChartHistoryBadge({
   return (
     <Badge
       variant="outline"
-      className={`flex items-center gap-1 border-zinc-700 bg-zinc-800/40 text-[10px] text-zinc-300 ${className ?? ""}`}
+      className={`flex items-center gap-1 border-border bg-muted/40 text-[10px] text-txt-secondary ${className ?? ""}`}
       data-testid="chart-history-depth"
       title={
         depthTargetDays > 0

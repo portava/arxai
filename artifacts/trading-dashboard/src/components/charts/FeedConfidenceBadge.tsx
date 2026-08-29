@@ -32,18 +32,18 @@ import type { LucideIcon } from "lucide-react";
 // fallback. The component is purely presentational — it never gates anything.
 
 const DOT: Record<FeedSeverity, string> = {
-  clean: "bg-emerald-400",
-  caution: "bg-amber-400",
-  danger: "bg-red-400",
-  unknown: "bg-zinc-400",
+  clean: "bg-success",
+  caution: "bg-warning",
+  danger: "bg-danger",
+  unknown: "bg-muted-foreground",
 };
 
 const CHIP: Record<FeedSeverity, string> = {
   // Compact + quiet when clean; filled + loud when degraded.
-  clean: "border-emerald-500/40 text-emerald-300",
-  caution: "border-amber-500/50 bg-amber-500/10 text-amber-200",
-  danger: "border-red-500/50 bg-red-500/15 text-red-200",
-  unknown: "border-zinc-600/60 bg-zinc-500/10 text-zinc-300",
+  clean: "border-success/25 text-success",
+  caution: "border-warning/25 bg-warning/10 text-warning",
+  danger: "border-danger/25 bg-danger/10 text-danger",
+  unknown: "border-border bg-muted/60 text-txt-secondary",
 };
 
 // Provider trust tier → distinct icon + colour for the source sub-chip. The
@@ -57,10 +57,10 @@ const TIER_ICON: Record<FeedProviderTier, LucideIcon> = {
 };
 
 const TIER_CHIP: Record<FeedProviderTier, string> = {
-  broker: "border-emerald-500/50 bg-emerald-500/15 text-emerald-200",
-  synthetic: "border-violet-500/50 bg-violet-500/15 text-violet-200",
-  thirdParty: "border-sky-500/50 bg-sky-500/15 text-sky-200",
-  none: "border-zinc-600/60 bg-zinc-500/10 text-zinc-300",
+  broker: "border-success/25 bg-success/10 text-success",
+  synthetic: "border-premium/25 bg-premium/10 text-premium",
+  thirdParty: "border-ruby/25 bg-ruby/10 text-ruby",
+  none: "border-border bg-muted/60 text-txt-secondary",
 };
 
 const TIER_LABEL: Record<FeedProviderTier, string> = {
@@ -74,7 +74,7 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-4 text-xs">
       <span className="text-muted-foreground">{label}</span>
-      <span className="font-mono text-zinc-200">{value}</span>
+      <span className="font-mono text-foreground">{value}</span>
     </div>
   );
 }
@@ -182,8 +182,8 @@ export function FeedConfidenceBadge({
       </PopoverTrigger>
       <PopoverContent align="start" className="w-72 space-y-2" data-testid="arx-feed-detail">
         <div className="flex items-center gap-2">
-          <ProviderIcon className="h-4 w-4 text-zinc-300" />
-          <span className="text-sm font-semibold text-zinc-100">{provider.label}</span>
+          <ProviderIcon className="h-4 w-4 text-txt-secondary" />
+          <span className="text-sm font-semibold text-foreground">{provider.label}</span>
           <Badge
             variant="outline"
             className={`ml-auto text-[10px] font-medium ${TIER_CHIP[provider.tier]}`}
@@ -198,11 +198,11 @@ export function FeedConfidenceBadge({
 
         <div className="flex items-center gap-2 pt-0.5">
           <span className={`h-2 w-2 rounded-full ${DOT[conf.severity]}`} />
-          <span className="text-xs font-medium text-zinc-200">{conf.statusLabel} feed</span>
+          <span className="text-xs font-medium text-foreground">{conf.statusLabel} feed</span>
         </div>
         <p className="text-xs text-muted-foreground">{conf.message}</p>
 
-        <div className="space-y-1 rounded-md border border-zinc-800 p-2">
+        <div className="space-y-1 rounded-md border border-border p-2">
           <Row label="Source" value={fs?.source || "—"} />
           <Row label="State" value={fs ? (fs.stale ? "Stale" : fs.isLive ? "Live" : "Delayed") : "—"} />
           <Row label="Latency" value={fs?.latencyMs != null ? `${fs.latencyMs} ms` : "—"} />
@@ -236,9 +236,9 @@ export function FeedConfidenceBadge({
             label="AI-usable"
             value={
               conf.aiUsable ? (
-                <span className="text-emerald-300">Confirmed</span>
+                <span className="text-success">Confirmed</span>
               ) : (
-                <span className="text-amber-300">Not confirmed</span>
+                <span className="text-warning">Not confirmed</span>
               )
             }
           />
@@ -248,7 +248,7 @@ export function FeedConfidenceBadge({
         </div>
 
         {fs?.warning ? (
-          <p className="text-xs text-amber-300" data-testid="arx-feed-warning">{fs.warning}</p>
+          <p className="text-xs text-warning" data-testid="arx-feed-warning">{fs.warning}</p>
         ) : null}
 
         {conf.suggestFallback && showFallback && onRequestFallback ? (

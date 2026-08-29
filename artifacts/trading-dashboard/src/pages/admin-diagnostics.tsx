@@ -3,6 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { CollapsibleSection } from "@/components/ui/CollapsibleSection";
+import { STATUS_COLORS } from "@/lib/design-tokens";
 import { AlertTriangle, Database, Gauge } from "lucide-react";
 import { setPerfTransportEnabled } from "@/lib/perf";
 import { WorkflowHealthCard } from "@/components/admin/WorkflowHealthCard";
@@ -55,10 +57,10 @@ export default function AdminDiagnostics() {
   }
 
   return (
-    <div className="space-y-4 p-1" data-testid="page-admin-diagnostics">
+    <div className="space-y-4" data-testid="page-admin-diagnostics">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
-          <h1 className="text-2xl font-bold">Diagnostics Export</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Diagnostics Export</h1>
           <p className="text-sm text-muted-foreground">Generate a sanitized diagnostic package. Excludes secrets, MT5 tokens, and API keys by construction.</p>
         </div>
         <div className="flex gap-2">
@@ -77,8 +79,8 @@ export default function AdminDiagnostics() {
               Cache & runtime
               <Badge
                 className={cache.mode === "distributed"
-                  ? "bg-success/20 text-success"
-                  : "bg-warning/20 text-warning"}
+                  ? STATUS_COLORS.success.badge
+                  : STATUS_COLORS.warning.badge}
                 data-testid="badge-cache-mode"
               >Current cache mode: {cache.mode}</Badge>
             </CardTitle>
@@ -129,18 +131,19 @@ export default function AdminDiagnostics() {
       )}
       <PerfPanel />
       {pkg && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              Package
-              <Badge className="bg-primary/20 text-primary font-mono">{String(pkg["version"] ?? "?")}</Badge>
-              <Badge className="bg-warning/20 text-warning">{String(pkg["stage"] ?? "?")}</Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <pre className="text-[10px] leading-snug max-h-[60vh] overflow-auto font-mono">{JSON.stringify(pkg, null, 2)}</pre>
-          </CardContent>
-        </Card>
+        <CollapsibleSection
+          title="Package contents"
+          description="Raw sanitized diagnostic JSON — use Download for the full file."
+          storageKey="admin-diagnostics-package"
+          rightSlot={
+            <>
+              <Badge className="bg-primary/10 text-primary border-primary/25 font-mono">{String(pkg["version"] ?? "?")}</Badge>
+              <Badge className={STATUS_COLORS.warning.badge}>{String(pkg["stage"] ?? "?")}</Badge>
+            </>
+          }
+        >
+          <pre className="text-[10px] leading-snug max-h-[60vh] overflow-auto font-mono">{JSON.stringify(pkg, null, 2)}</pre>
+        </CollapsibleSection>
       )}
     </div>
   );
@@ -269,8 +272,11 @@ function PerfPanel() {
           </Alert>
         )}
 
-        <div>
-          <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Top offenders by p95</div>
+        <CollapsibleSection
+          title="Top offenders by p95"
+          storageKey="admin-diagnostics-perf-summary"
+          defaultOpen
+        >
           {top.length === 0 ? (
             <div className="text-xs text-muted-foreground">No actions recorded yet.</div>
           ) : (
@@ -301,10 +307,12 @@ function PerfPanel() {
               </table>
             </div>
           )}
-        </div>
+        </CollapsibleSection>
 
-        <div>
-          <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Recent {slowOnly ? "slow " : ""}actions</div>
+        <CollapsibleSection
+          title={`Recent ${slowOnly ? "slow " : ""}actions`}
+          storageKey="admin-diagnostics-perf-recent"
+        >
           {rows.length === 0 ? (
             <div className="text-xs text-muted-foreground">Nothing recorded {slowOnly ? "above the slow threshold yet" : "yet"}.</div>
           ) : (
@@ -343,7 +351,7 @@ function PerfPanel() {
               </table>
             </div>
           )}
-        </div>
+        </CollapsibleSection>
       </CardContent>
     </Card>
   );
