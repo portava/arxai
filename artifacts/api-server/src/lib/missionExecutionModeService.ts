@@ -25,10 +25,11 @@
 //     evidence fails CLOSED.
 //   - Per-user / per-mission isolation: the row is loaded FOR UPDATE scoped by
 //     (id, userId); every change is journalled + audited in one transaction.
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 import {
   db,
   profitMissionsTable,
+  missionTradeDraftsTable,
   missionEventsTable,
   oneClickAuditTable,
 } from "@workspace/db";
@@ -50,8 +51,78 @@ import {
   type PromotionContext,
 } from "./missionPromotionService.js";
 import { describeEvidenceBasis, PROMOTION_EVIDENCE_LEVEL } from "@workspace/domain/profit-mission";
+import { accountingBasisForMode, type MissionAccountingBasis } from "./missionSimulatedFills.js";
 
 type MissionRow = typeof profitMissionsTable.$inferSelect;
+
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+function isNum(v: unknown): v is number {
+  return typeof v === "number" && Number.isFinite(v);
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+function asRecord(v: unknown): Record<string, unknown> {
+  return v != null && typeof v === "object" && !Array.isArray(v) ? { ...(v as Record<string, unknown>) } : {};
+}
+
+/**
+ * The realised total for ONE accounting basis, read in the mode-change
+ * transaction. The two series are read separately and NEVER summed — a
+ * BROKER_RECONCILED read sees only `simulated = false` rows via their
+ * broker-reconciled `pnl`/`closed_at`; a SIMULATED read sees only
+ * `simulated = true` rows via their `sim_pnl`/`sim_closed_at`.
+ */
+async function readRealisedForBasis(
+  tx: Tx,
+  args: { userId: number; missionId: number },
+  basis: MissionAccountingBasis,
+): Promise<{ profit: number; tradeCount: number }> {
+  if (basis === "BROKER_RECONCILED") {
+    const rows = await tx
+      .select({ pnl: missionTradeDraftsTable.pnl })
+      .from(missionTradeDraftsTable)
+      .where(
+        and(
+          eq(missionTradeDraftsTable.missionId, args.missionId),
+          eq(missionTradeDraftsTable.userId, args.userId),
+          eq(missionTradeDraftsTable.status, "executed"),
+          eq(missionTradeDraftsTable.simulated, false),
+          isNotNull(missionTradeDraftsTable.closedAt),
+        ),
+      );
+    let profit = 0;
+    let tradeCount = 0;
+    for (const r of rows) {
+      if (!isNum(r.pnl)) continue;
+      profit += r.pnl;
+      tradeCount += 1;
+    }
+    return { profit: round2(profit), tradeCount };
+  }
+  const rows = await tx
+    .select({ simPnl: missionTradeDraftsTable.simPnl })
+    .from(missionTradeDraftsTable)
+    .where(
+      and(
+        eq(missionTradeDraftsTable.missionId, args.missionId),
+        eq(missionTradeDraftsTable.userId, args.userId),
+        eq(missionTradeDraftsTable.simulated, true),
+        isNotNull(missionTradeDraftsTable.simClosedAt),
+      ),
+    );
+  let profit = 0;
+  let tradeCount = 0;
+  for (const r of rows) {
+    if (!isNum(r.simPnl)) continue;
+    profit += r.simPnl;
+    tradeCount += 1;
+  }
+  return { profit: round2(profit), tradeCount };
+}
 
 /** Rank for the stepwise ladder. Upgrades move exactly one rung at a time. */
 const MODE_RANK: Record<MissionExecutionMode, number> = { paper: 0, demo: 1, live: 2 };
@@ -202,29 +273,105 @@ export async function applyMissionExecutionMode(args: {
 
     // Downgrading out of live always disables the live-auto opt-in (stricter).
     const leavingLive = currentMode === "live" && targetMode !== "live";
+
+    // ── BASIS REBASE: a mode change that crosses the accounting basis MUST
+    // rebase the mission's money figure. `currentValue` is written by
+    // refreshMissionProtection as startingAmount + the realised total OF THE
+    // CURRENT BASIS, so a demo mission carries a SIMULATED currentValue. Left
+    // alone across demo→live it would be read as the real account balance by
+    // the very next draft (missionDrafts sizes from mission.currentValue) and
+    // by the risk service's drawdown maths — a simulated figure reaching a real
+    // money decision. Neither series is converted into the other: the target
+    // basis is re-read from its own columns, and a fresh live mission therefore
+    // correctly starts at startingAmount + 0 broker-reconciled profit.
+    const priorBasis = accountingBasisForMode(currentMode);
+    const nextBasis = accountingBasisForMode(targetMode);
+    const rebase =
+      nextBasis !== priorBasis
+        ? await readRealisedForBasis(tx, { userId: args.userId, missionId: args.missionId }, nextBasis)
+        : null;
+    const rebasedProgress =
+      rebase == null
+        ? null
+        : (() => {
+            const priorProgress = asRecord(mission.progressJson);
+            const priorAccounting = asRecord(priorProgress.accounting);
+            return {
+              ...priorProgress,
+              accounting: {
+                ...priorAccounting,
+                basis: nextBasis,
+                simulated: nextBasis === "SIMULATED",
+                label:
+                  nextBasis === "SIMULATED"
+                    ? "SIMULATED — outcomes modelled from real quotes on a paper/demo mission. Not broker-reconciled money."
+                    : "Broker-reconciled realised money.",
+                // Only the target series is stated; the other is left to the
+                // next refreshMissionProtection rather than guessed here.
+                ...(nextBasis === "BROKER_RECONCILED"
+                  ? { brokerReconciledProfit: rebase.profit, brokerReconciledTradeCount: rebase.tradeCount }
+                  : { simulatedProfit: rebase.profit, simulatedTradeCount: rebase.tradeCount }),
+                rebasedFromBasis: priorBasis,
+                asOf: new Date().toISOString(),
+              },
+            };
+          })();
+
     await tx
       .update(profitMissionsTable)
       .set({
         executionMode: targetMode,
         ...(leavingLive ? { liveAutoEnabled: false } : {}),
+        ...(rebase != null
+          ? {
+              currentValue: round2(mission.startingAmount + rebase.profit),
+              ...(rebasedProgress != null ? { progressJson: rebasedProgress } : {}),
+            }
+          : {}),
         updatedAt: new Date(),
       })
       .where(and(eq(profitMissionsTable.id, args.missionId), eq(profitMissionsTable.userId, args.userId)));
 
+    const rebaseReason =
+      rebase == null
+        ? []
+        : [
+            `mission value rebased onto ${nextBasis} accounting (was ${priorBasis}): ${round2(mission.startingAmount + rebase.profit)} from ${rebase.tradeCount} closed ${nextBasis === "SIMULATED" ? "simulated" : "broker-reconciled"} trade(s)`,
+          ];
     const reasons = upgrade
       ? [
           `gated upgrade ${currentMode} → ${targetMode} (explicitly confirmed)`,
           ...(evidenceBar
             ? [`ladder evidence bar cleared — ${describeEvidenceBasis(evidenceBar.demoEvidenceBasis)}`]
             : []),
+          ...rebaseReason,
         ]
-      : [`risk-reduction downgrade ${currentMode} → ${targetMode}${leavingLive ? " (live auto disabled)" : ""}`];
+      : [
+          `risk-reduction downgrade ${currentMode} → ${targetMode}${leavingLive ? " (live auto disabled)" : ""}`,
+          ...rebaseReason,
+        ];
 
     await tx.insert(missionEventsTable).values({
       missionId: args.missionId,
       type: "execution_mode_changed",
       message: `Execution mode changed ${currentMode} → ${targetMode}. ${reasons[0]}.`,
-      metadataJson: { from: currentMode, to: targetMode, upgrade, liveAutoDisabled: leavingLive },
+      metadataJson: {
+        from: currentMode,
+        to: targetMode,
+        upgrade,
+        liveAutoDisabled: leavingLive,
+        ...(rebase != null
+          ? {
+              valueRebase: {
+                fromBasis: priorBasis,
+                toBasis: nextBasis,
+                currentValue: round2(mission.startingAmount + rebase.profit),
+                realisedProfit: rebase.profit,
+                realisedTradeCount: rebase.tradeCount,
+              },
+            }
+          : {}),
+      },
     });
     await tx.insert(oneClickAuditTable).values({
       userId: args.userId,

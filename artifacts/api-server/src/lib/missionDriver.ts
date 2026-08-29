@@ -36,7 +36,7 @@
 //   * Opt-out via ARX_MISSION_DRIVER_ENABLED (default enabled — the ladder
 //     itself is what gates autonomy per mission; a level-2 mission is never
 //     advanced into a trade by this worker). Disabling is logged loudly.
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import {
   db,
   profitMissionsTable,
@@ -229,6 +229,16 @@ async function manageOpenExits(
   // Broker positions only exist for a live-mode mission. A paper/demo mission's
   // SIMULATED positions are swept earlier in the tick by sweepSimulatedExits.
   if (mission.executionMode !== "live") return 0;
+  // `simulated = false` is LOAD-BEARING, not hygiene. A simulated draft is
+  // flipped to `executed` by the shared CAS and its broker-reconciled
+  // `closed_at` stays NULL FOREVER by design, so without this predicate every
+  // simulated row a promoted mission carries (the evidence bar requires at
+  // least MIN_DEMO_SAMPLE of them) matches this query. sweepSimulatedExits
+  // returns 0 once the mode is live, so they are never closed out of it either
+  // — after a demo→live promotion they would permanently occupy all
+  // MAX_EXIT_MANAGED_DRAFTS_PER_TICK slots and starve a genuine LIVE open
+  // position of protective exit management. Ordering is pinned so slot
+  // allocation is deterministic (oldest open first) rather than physical order.
   const openDrafts = await db
     .select({ draftId: missionTradeDraftsTable.draftId })
     .from(missionTradeDraftsTable)
@@ -237,9 +247,11 @@ async function manageOpenExits(
         eq(missionTradeDraftsTable.missionId, mission.id),
         eq(missionTradeDraftsTable.userId, mission.userId),
         eq(missionTradeDraftsTable.status, "executed"),
+        eq(missionTradeDraftsTable.simulated, false),
         isNull(missionTradeDraftsTable.closedAt),
       ),
     )
+    .orderBy(asc(missionTradeDraftsTable.id))
     .limit(MAX_EXIT_MANAGED_DRAFTS_PER_TICK);
   let managed = 0;
   for (const d of openDrafts) {

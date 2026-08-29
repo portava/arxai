@@ -2,6 +2,27 @@
 -- Additive only. Apply via raw psql (drizzle-kit push is broken against the dev
 -- DB — pre-existing broker_hub drift). Idempotent: IF NOT EXISTS everywhere.
 --
+-- ══ DEPLOY ORDER — SQL FIRST, THEN CODE. THIS IS A HARD CONSTRAINT. ══════════
+-- These columns are additive to the SCHEMA but NOT optional to the CODE. The
+-- branch adds `simulated = false` predicates to the EXISTING realised-money
+-- readers, so shipping the code against a database that has not run this file
+-- does not merely disable the new paper/demo feature — it raises Postgres 42703
+-- (column "simulated" does not exist) on the LIVE money path and takes out
+-- mission realised stats, the whole protection refresh, and the promotion gate.
+--
+-- Readers that HARD-REQUIRE these columns (each throws 42703 without them):
+--   * missionExitManager.resolveMissionRealisedStats      (`simulated = false`)
+--   * missionExitManager.refreshMissionProtection         (`simulated = false`)
+--   * missionDriver.manageOpenExits                       (`simulated = false`)
+--   * missionExecutionModeService.readRealisedForBasis    (both column families)
+--   * missionPromotionService.readClosedDrafts            (`simulated = false`)
+--   * missionSimulatedFills.readSimulatedClosedDrafts     (`simulated`, sim_*)
+--
+-- Rollback is therefore also ordered: revert the CODE first, then (optionally)
+-- drop the columns. Dropping the columns under running code breaks live
+-- missions. The columns are harmless to a database whose code predates them.
+-- ════════════════════════════════════════════════════════════════════════════
+--
 -- WHY: a paper/demo mission never contacts a broker, so it could never produce
 -- the broker-reconciled outcome columns (pnl / r_multiple / closed_at /
 -- captured_profit / missed_profit) — its drafts froze at `executed` forever and

@@ -140,6 +140,21 @@ throughout. Adds `simulated`, `sim_entry_price`, `sim_exit_price`, `sim_pnl`,
 `sim_opened_at`, `sim_closed_at` to `mission_trade_drafts`, plus two partial
 indexes. No destructive statement; `drizzle-kit push` is not used.
 
+**Deploy order is a hard constraint, not housekeeping: SQL FIRST, THEN CODE.**
+The columns are additive to the schema but *not optional to the code* — the
+branch adds `simulated = false` predicates to the EXISTING realised-money
+readers (`resolveMissionRealisedStats`, `refreshMissionProtection`,
+`manageOpenExits`, `readClosedDrafts`). Against a database that has not run the
+file those readers raise Postgres **42703**, which would take out live mission
+realised stats, the protection refresh and the promotion gate — a regression on
+the money path, not a missing feature on the paper path. Rollback is ordered the
+same way in reverse: revert the code first, then (optionally) drop the columns.
+The banner at the top of the SQL file states this and names each dependent
+reader; `test:mission-demo-ladder-guards` asserts the banner and the reader list
+stay there, and reconciles every added column against the Drizzle mapping (the
+DB-backed suite that would otherwise catch a rename has never been able to run
+offline).
+
 ---
 
 ## 6. Evidence
@@ -154,6 +169,10 @@ indexes. No destructive statement; `drizzle-kit push` is not used.
   `resolveMissionRealisedStats` or `economic_postings`, mission progression and
   completion on the SIMULATED basis, the ladder unlocked by simulated evidence,
   and demo→live refused without the evidence bar.
+- `test:mission-demo-ladder-guards` (offline `ci` lane) — structural guards that
+  need no database: schema ↔ pending-SQL column reconciliation both ways, the
+  deploy-order banner, the driver's `simulated = false` exit-slot predicate and
+  its pinned ORDER BY, and the basis rebase of `currentValue` on a mode change.
 - `check-mission-no-direct-execution` now scans `missionSimulatedFills.ts` too:
   the simulator is held to the same no-direct-execution / no-fabricated-
   randomness bar as every other mission surface.

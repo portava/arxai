@@ -682,3 +682,69 @@ test("a LIVE mission's realised books ignore simulated rows entirely", async () 
   const mission = await missionRow(missionId);
   assert.equal(mission.currentValue, 1025);
 });
+
+// ── 8. No money figure survives a change of accounting basis ────────────────
+//
+// `currentValue` is written by refreshMissionProtection as
+// `startingAmount + the realised total OF THE CURRENT BASIS`, and it is what
+// missionDrafts sizes real positions from (`const accountBalance =
+// mission.currentValue`) and what the risk service derives peak/drawdown from.
+// A mode change that crosses the basis must therefore rebase it, or a simulated
+// figure becomes a real-money account balance on the very next draft.
+//
+// The crossing is exercised here in the live → demo direction because CI keeps
+// the platform live master switch OFF, so demo → live cannot complete in this
+// lane — but it is the SAME rebase branch in applyMissionExecutionMode, keyed
+// off accountingBasisForMode(current) !== accountingBasisForMode(target).
+
+test("a mode change that crosses the accounting basis rebases currentValue onto the target series", async () => {
+  const missionId = await seedMission({ executionMode: "live" });
+  await seedSimulatedEvidence(missionId); // 20 SIMULATED closes @ +10 each
+  // One real broker-reconciled close, so the two series are unmistakably apart.
+  await db.insert(missionTradeDraftsTable).values({
+    draftId: `qa-rebase-real-${missionId}`,
+    missionId,
+    userId,
+    proposalId: `qa-rebase-real-prop-${missionId}`,
+    agentKey: "SCALPER",
+    symbol: "EURUSD",
+    timeframe: "H1",
+    direction: "BUY",
+    status: "executed",
+    pnl: 25,
+    rMultiple: 0.5,
+    closedAt: new Date(Date.now() - 3600_000),
+  });
+
+  // The live mission's value is on the BROKER_RECONCILED series: 1000 + 25.
+  await refreshMissionProtection({ userId, missionId });
+  assert.equal((await missionRow(missionId)).currentValue, 1025);
+
+  // Downgrade to demo — always permitted (risk reduction), and it crosses the
+  // accounting basis.
+  const r = await applyMissionExecutionMode({
+    userId,
+    missionId,
+    targetMode: "demo",
+    confirm: true,
+    ctx: { role: "USER", isNewUser: false },
+  });
+  assert.equal(r.ok, true);
+  assert.equal(r.ok === true && r.applied, true);
+
+  const sim = await resolveMissionSimulatedStats({ userId, missionId });
+  const after = await missionRow(missionId);
+  // Rebased onto the SIMULATED series — and NOT the broker figure it replaced,
+  // and NOT the two summed.
+  assert.equal(after.currentValue, 1000 + sim.simulatedProfit);
+  assert.notEqual(after.currentValue, 1025);
+  assert.notEqual(after.currentValue, 1000 + sim.simulatedProfit + 25);
+
+  // The honesty label travels with the figure, immediately — not a tick later.
+  const accounting = (after.progressJson as Record<string, unknown> | null)?.accounting as
+    | Record<string, unknown>
+    | undefined;
+  assert.equal(accounting?.basis, "SIMULATED");
+  assert.equal(accounting?.simulated, true);
+  assert.equal(accounting?.rebasedFromBasis, "BROKER_RECONCILED");
+});
