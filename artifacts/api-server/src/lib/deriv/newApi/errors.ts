@@ -146,3 +146,16 @@ export function classifyHttpStatus(status: number): DerivNewApiErrorCode {
 export function isRetryableOtpFailure(code: DerivNewApiErrorCode): boolean {
   return code === "DERIV_NEW_API_OTP_EXPIRED";
 }
+
+/**
+ * True when the venue itself ADJUDICATED the request and said no — a
+ * business-rule rejection (trading rules, request validation), as opposed to a
+ * transport failure or timeout where the outcome is unknown. Lives here with
+ * the error type so runtime consumers (guided execution) need not touch the
+ * demo-trade certification harness.
+ */
+export function isAdjudicatedRejection(e: unknown): boolean {
+  return e instanceof DerivNewApiError
+    && (e.code === "DERIV_NEW_API_TRADING_REJECTED"
+      || e.code === "DERIV_NEW_API_REQUEST_REJECTED");
+}

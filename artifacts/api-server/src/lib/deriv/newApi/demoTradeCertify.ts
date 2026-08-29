@@ -31,7 +31,7 @@
 import { type DerivNewApiConfig } from "./restClient.js";
 import { fetchAccounts, selectDemoAccount, isDemoAccount, isRealAccount } from "./accounts.js";
 import { NewDerivTransport, canSendTradingRequest } from "./transport.js";
-import { DerivNewApiError, type DerivNewApiErrorCode } from "./errors.js";
+import { DerivNewApiError, isAdjudicatedRejection, type DerivNewApiErrorCode } from "./errors.js";
 import { type DerivOtpPhase } from "./otp.js";
 import {
   mapProposalRequest, mapBuyRequest, mapSellRequest, mapOpenContractRequest,
@@ -91,11 +91,10 @@ export class DemoTradeRefusal extends Error {}
  * `balance_after` — a balance that cannot exist for a purchase that never
  * completed — so a refusal can never masquerade as a conforming receipt.
  */
-export function isAdjudicatedRejection(e: unknown): boolean {
-  return e instanceof DerivNewApiError
-    && (e.code === "DERIV_NEW_API_TRADING_REJECTED"
-      || e.code === "DERIV_NEW_API_REQUEST_REJECTED");
-}
+// isAdjudicatedRejection moved to ./errors.ts (its natural home beside the
+// error type) so guided execution can classify rejections without importing
+// this trade-placing harness. Re-exported for the certify CLI's convenience.
+export { isAdjudicatedRejection } from "./errors.js";
 
 export interface DemoTradeOptions {
   /** Must equal DEMO_TRADE_AUTHORIZATION. */

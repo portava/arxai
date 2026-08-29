@@ -23,7 +23,7 @@ import { resolveNewApiConfig } from "../newApi/restClient.js";
 import { mapProposalRequest, mapBuyRequest, normalizeProposal, normalizePurchase } from "../newApi/wire.js";
 import type { OrphanReply } from "../newApi/transport.js";
 import { DerivNewApiError } from "../newApi/errors.js";
-import { isAdjudicatedRejection } from "../newApi/demoTradeCertify.js";
+import { isAdjudicatedRejection } from "../newApi/errors.js";
 import type { DerivMultiplierContractIntent } from "@workspace/domain/deriv-contracts";
 
 export interface GuidedBuyOutcome {
