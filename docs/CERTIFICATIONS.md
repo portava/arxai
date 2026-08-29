@@ -274,6 +274,43 @@ run in this session. Its status at HEAD is **UNKNOWN**.
 
 ---
 
+### Black-box feature parity — backtest = shadow = live, byte for byte (D2)
+*(added 2026-08-29, branch `build/blackbox-parity`)*
+- **Claim:** the ONE feature path (`computeFeatures` in `lib/features` behind
+  the `buildFeatureSnapshot` adapter) produces **byte-identical** snapshots —
+  and identical event-chain row hashes — whether driven by backtest replay of
+  a recorded event window, the shadow-mode call-site idiom, or the live
+  scanner call-site idiom, including under different representations of the
+  same content (shuffled/reversed order, volume present/absent). The path
+  reads **no wall clock** and has **no second implementation** anywhere in the
+  repo.
+- **Test:** `test:blackbox-parity`
+  (`artifacts/api-server/src/lib/features/__qa__/blackboxParity.test.ts`, 11
+  tests, wired at the end of the root `ci` chain) over the recorded golden
+  window `goldenWindow.fixture.ts` (61 M1 EURUSD `CANDLE_CLOSE` events; golden
+  anchors `GOLDEN_HEAD_HASH`, `GOLDEN_SNAPSHOT_DATA_HASH`,
+  `GOLDEN_SNAPSHOT_ROW_HASH`). Negative test: a flipped byte in the fixture
+  fails chain-verify as `CHECKSUM_MISMATCH` at the tampered row, and shifts
+  the feature bytes.
+- **Guard-equivalent:** the lane's repo-wide source scan asserts exactly one
+  definition each of `computeFeatures`, `ewmaSigma`, `synthSigma1min`,
+  `candlePointInTimeReader`, `buildFeatureSnapshot`, and one `FEATURE_SET_ID`
+  assignment — a unit test cannot see a second implementation that does not
+  import the first; this scan can. Clock discipline is double-locked: a
+  wall-clock token pin over the path sources **plus** a poisoned-clock run
+  (global `Date.now`/`new Date()`/`performance.now`/`Math.random` throw) that
+  must still land on the golden anchors.
+- **Mutation proof** (all killed against a compiling tree, this session):
+  (A) `EWMA_LAMBDA` 0.94→0.95 — 3 tests red (golden anchors + byte equality);
+  (B) reader's sort removed — parity red (representation dependence caught);
+  (C) `computedAt` switched to `new Date().toISOString()` — 3 tests red
+  (source pin, poisoned clock, byte equality);
+  (D) a second `computeFeatures` definition added — one-implementation scan
+  red.
+- **Scope honesty:** this certifies the FEATURE path's byte equality. It does
+  **not** overturn Ruling 14 — full decision replay determinism remains NOT
+  implemented; decisions are re-runnable, not replayable.
+
 ## Certified — Grade C (deterministic tests, no mutation artifact stored)
 
 All counts below were re-run in this audit at HEAD.
