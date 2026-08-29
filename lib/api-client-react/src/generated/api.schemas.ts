@@ -9089,7 +9089,55 @@ export interface StrategyUpdate {
   parameters?: StrategyUpdateParameters;
 }
 
+/**
+ * Aggregates recomputed over trades CLOSED TODAY ONLY (server-local yyyy-mm-dd of closedAt). The sibling top-level fields on PerformanceSummary are all-time; a surface titled "Today" MUST read this block instead of them.
+ */
+export interface PerformanceTodayBlock {
+  trades: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  pnl: number;
+  /** @nullable */
+  bestTradePnl: number | null;
+  /** @nullable */
+  worstTradePnl: number | null;
+  excludedUnknownCount: number;
+}
+
+export type PerformanceSummaryScopeMode =
+  (typeof PerformanceSummaryScopeMode)[keyof typeof PerformanceSummaryScopeMode];
+
+export const PerformanceSummaryScopeMode = {
+  LIVE: "LIVE",
+  DEMO: "DEMO",
+} as const;
+
+export type PerformanceSummaryScopeModeReason =
+  (typeof PerformanceSummaryScopeModeReason)[keyof typeof PerformanceSummaryScopeModeReason];
+
+export const PerformanceSummaryScopeModeReason = {
+  LIVE_TRADES_PRESENT: "LIVE_TRADES_PRESENT",
+  ONLY_DEMO_TRADES: "ONLY_DEMO_TRADES",
+  NO_TRADES: "NO_TRADES",
+} as const;
+
+export type PerformanceSummaryBaselineSource =
+  (typeof PerformanceSummaryBaselineSource)[keyof typeof PerformanceSummaryBaselineSource];
+
+export const PerformanceSummaryBaselineSource = {
+  ASSIGNED: "ASSIGNED",
+  NOTIONAL: "NOTIONAL",
+  NONE: "NONE",
+} as const;
+
 export interface PerformanceSummary {
+  scopeMode: PerformanceSummaryScopeMode;
+  scopeModeReason: PerformanceSummaryScopeModeReason;
+  otherModeTradeCount: number;
+  baselineSource: PerformanceSummaryBaselineSource;
+  baselineValue: number;
+  today: PerformanceTodayBlock;
   accountBalance: number;
   todayPnl: number;
   todayPnlPct: number;
@@ -9759,6 +9807,14 @@ export interface TradeHealth {
   factors: TradeHealthFactors;
 }
 
+export type TradeSnapshotFloatingPnlStatus =
+  (typeof TradeSnapshotFloatingPnlStatus)[keyof typeof TradeSnapshotFloatingPnlStatus];
+
+export const TradeSnapshotFloatingPnlStatus = {
+  NOT_PRICEABLE: "NOT_PRICEABLE",
+  COMPUTED: "COMPUTED",
+} as const;
+
 export interface SuggestionBreakEven {
   recommended: boolean;
   reason: string;
@@ -9796,7 +9852,10 @@ export interface TradeSnapshot {
   tradeId: number;
   currentPrice: number;
   rMultiple: number;
-  floatingPnl: number;
+  /** @nullable */
+  floatingPnl: number | null;
+  floatingPnlStatus: TradeSnapshotFloatingPnlStatus;
+  priceMove: number;
   health: TradeHealth;
   primarySuggestion: string;
   invalidated: boolean;
@@ -10913,6 +10972,22 @@ export interface DeleteResult {
   deleted: number;
 }
 
+export type PortfolioExposureFloatingPnlStatus =
+  (typeof PortfolioExposureFloatingPnlStatus)[keyof typeof PortfolioExposureFloatingPnlStatus];
+
+export const PortfolioExposureFloatingPnlStatus = {
+  NOT_MARKED_TO_MARKET: "NOT_MARKED_TO_MARKET",
+  COMPUTED: "COMPUTED",
+} as const;
+
+export type PortfolioExposureScopeMode =
+  (typeof PortfolioExposureScopeMode)[keyof typeof PortfolioExposureScopeMode];
+
+export const PortfolioExposureScopeMode = {
+  LIVE: "LIVE",
+  DEMO: "DEMO",
+} as const;
+
 export type PortfolioExposureExposureByMarket = { [key: string]: number };
 
 export type PortfolioExposureExposureByStrategy = { [key: string]: number };
@@ -10925,13 +11000,17 @@ export type PortfolioExposureExposureByCurrencyItem = {
 export interface PortfolioExposure {
   totalOpen: number;
   totalClosed: number;
-  floatingPnl: number;
+  /** @nullable */
+  floatingPnl: number | null;
+  floatingPnlStatus: PortfolioExposureFloatingPnlStatus;
   realizedPnl: number;
+  realizedPnlExcludedUnknownCount: number;
+  scopeMode: PortfolioExposureScopeMode;
   exposureByMarket: PortfolioExposureExposureByMarket;
   exposureByStrategy: PortfolioExposureExposureByStrategy;
   exposureByCurrency: PortfolioExposureExposureByCurrencyItem[];
-  dailyDrawdown: number;
-  weeklyDrawdown: number;
+  netPnlToday: number;
+  netPnlWeek: number;
 }
 
 export type CorrelationWarningDirection =

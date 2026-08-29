@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { tradesTable, userSlotAllocationTable } from "@workspace/db";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import {
   GetPerformanceSummaryResponse,
   GetDailyPerformanceQueryParams,
@@ -9,6 +9,11 @@ import {
   GetStrategyBreakdownResponse,
 } from "@workspace/api-zod";
 import { requireUser } from "../lib/auth/middleware.js";
+import {
+  resolveTradeScope,
+  inScope,
+  countClosedOutOfScope,
+} from "../lib/performance/tradeScope.js";
 
 const router = Router();
 
@@ -21,26 +26,48 @@ const router = Router();
 // presented as the user's real broker balance (that is sourced separately
 // from the live/shared account on the analytics page).
 const LEGACY_NOTIONAL_BASELINE = 10000;
-async function resolveEquityBaseline(userId: number, hasLegacyTrades: boolean): Promise<number> {
+
+export type EquityBaselineSource = "ASSIGNED" | "NOTIONAL" | "NONE";
+export interface EquityBaseline {
+  value: number;
+  source: EquityBaselineSource;
+}
+
+// The chosen anchor is returned WITH its provenance. A NOTIONAL anchor is a
+// shape device, not the user's money: every consumer must be able to tell the
+// difference, and the client is required to label a curve built on it. The
+// previous signature returned a bare number, so `$10,000.00` reached the
+// "Starting Equity" tile with nothing marking it as invented.
+async function resolveEquityBaseline(userId: number, hasLegacyTrades: boolean): Promise<EquityBaseline> {
   const rows = await db
     .select({ allocated: userSlotAllocationTable.allocatedFunds })
     .from(userSlotAllocationTable)
     .where(eq(userSlotAllocationTable.userId, userId))
     .limit(1);
   const allocated = rows[0]?.allocated;
-  if (typeof allocated === "number" && allocated > 0) return allocated;
+  if (typeof allocated === "number" && allocated > 0) return { value: allocated, source: "ASSIGNED" };
   // No operator-assigned capital. Only fall back to the notional baseline when
   // there are real legacy closed trades that need a curve anchor; with neither
   // real capital nor trades there is nothing to anchor, so report 0 rather
   // than fabricating a $10k account balance.
-  return hasLegacyTrades ? LEGACY_NOTIONAL_BASELINE : 0;
+  return hasLegacyTrades
+    ? { value: LEGACY_NOTIONAL_BASELINE, source: "NOTIONAL" }
+    : { value: 0, source: "NONE" };
 }
 
 // GET /performance/summary
 router.get("/performance/summary", requireUser, async (req, res) => {
   try {
-    const trades = await db.select().from(tradesTable)
+    const allTrades = await db.select().from(tradesTable)
       .where(eq(tradesTable.userId, req.authUser!.id));
+
+    // Environment scoping — real broker money and simulator money are never
+    // summed into one figure. Every number below belongs to exactly one
+    // environment, and the client is told which.
+    const scope = resolveTradeScope(allTrades);
+    const otherModeTradeCount = countClosedOutOfScope(allTrades, scope.mode);
+    const trades = inScope(allTrades, scope.mode);
+
     const openTrades = trades.filter((t) => t.status === "OPEN");
     // Phase: PNL_UNKNOWN propagation — any closed row whose realised P/L
     // could not be trusted (pnlStatus="UNKNOWN") is excluded from every
@@ -61,14 +88,37 @@ router.get("/performance/summary", requireUser, async (req, res) => {
     const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? 9.99 : 0;
     const avgConfidence = trades.length > 0 ? trades.reduce((a, t) => a + t.confidence, 0) / trades.length : 0;
 
-    // Today's P&L — UNKNOWN rows already excluded from closedTrades above.
+    // ── TODAY ────────────────────────────────────────────────────────────
+    // Every field above this line is ALL-TIME. A card titled "Today's
+    // Performance" previously read totalTrades/winningTrades/winRate/
+    // bestTradePnl straight off those lifetime fields, so a lifetime 62% win
+    // rate rendered as if it happened today. The today-scoped block below is
+    // the only honest source for a day-scoped surface.
     const today = new Date().toISOString().slice(0, 10);
-    const todayTrades = closedTrades.filter((t) => t.closedAt && t.closedAt.toISOString().slice(0, 10) === today);
+    const isToday = (t: { closedAt: Date | null }) =>
+      !!t.closedAt && t.closedAt.toISOString().slice(0, 10) === today;
+    const todayTrades = closedTrades.filter(isToday);
     const todayPnl = todayTrades.reduce((a, t) => a + (t.pnl ?? 0), 0);
+    const todayWins = todayTrades.filter((t) => t.status === "CLOSED_WIN");
+    const todayLosses = todayTrades.filter((t) => t.status === "CLOSED_LOSS");
+    const todayPnlValues = todayTrades.map((t) => t.pnl ?? 0);
+    const todayBlock = {
+      trades: todayTrades.length,
+      wins: todayWins.length,
+      losses: todayLosses.length,
+      winRate: todayTrades.length > 0 ? (todayWins.length / todayTrades.length) * 100 : 0,
+      pnl: todayPnl,
+      // null, not 0 — "no trade closed today" is not "the best trade was $0".
+      bestTradePnl: todayPnlValues.length > 0 ? Math.max(...todayPnlValues) : null,
+      worstTradePnl: todayPnlValues.length > 0 ? Math.min(...todayPnlValues) : null,
+      excludedUnknownCount: excludedUnknown.filter(isToday).length,
+    };
 
     // Max drawdown (simplified). Anchor to the user's real assigned capital,
-    // never a fabricated account size.
-    const baseline = await resolveEquityBaseline(req.authUser!.id, closedTrades.length > 0);
+    // never a fabricated account size. `baselineSource` travels with the
+    // number so the client can label a notional anchor.
+    const { value: baseline, source: baselineSource } =
+      await resolveEquityBaseline(req.authUser!.id, closedTrades.length > 0);
     let peak = baseline;
     let maxDD = 0;
     let balance = baseline;
@@ -97,6 +147,12 @@ router.get("/performance/summary", requireUser, async (req, res) => {
       profitFactor,
       avgConfidence,
       excludedUnknownCount: excludedUnknown.length,
+      scopeMode: scope.mode,
+      scopeModeReason: scope.reason,
+      otherModeTradeCount,
+      baselineSource,
+      baselineValue: baseline,
+      today: todayBlock,
     });
     res.json(data);
   } catch (err) {
@@ -125,13 +181,20 @@ router.get("/performance/daily", requireUser, async (req, res) => {
     // equity curve has to walk from the assigned-capital baseline forward to
     // get a stable endBalance for each day even when we only return the last
     // `days`.
-    const allClosed = await db.select().from(tradesTable)
+    const everyTrade = await db.select().from(tradesTable)
       .where(eq(tradesTable.userId, userId))
       .orderBy(tradesTable.closedAt);
 
+    // Same deterministic environment scope as /performance/summary — the
+    // equity curve must not walk a balance that adds broker money to
+    // simulator money. GET /performance/summary reports `scopeMode`, which
+    // labels this series on the client.
+    const scope = resolveTradeScope(everyTrade);
+    const allClosed = inScope(everyTrade, scope.mode);
+
     // Honest starting capital — operator-assigned funds, never a fabricated
     // account size (see resolveEquityBaseline).
-    const STARTING_BALANCE = await resolveEquityBaseline(userId, allClosed.length > 0);
+    const { value: STARTING_BALANCE } = await resolveEquityBaseline(userId, allClosed.length > 0);
     // Bucket trusted closes by yyyy-mm-dd. UNKNOWN rows
     // (isRealizedPnlIngestible === false) are skipped.
     const buckets = new Map<string, { pnl: number; trades: number; wins: number; losses: number }>();
@@ -188,13 +251,14 @@ router.get("/performance/daily", requireUser, async (req, res) => {
 router.get("/performance/strategy-breakdown", requireUser, async (req, res) => {
   try {
     const userId = req.authUser!.id;
-    const trades = await db.select().from(tradesTable)
-      .where(and(eq(tradesTable.status, "CLOSED_WIN"), eq(tradesTable.userId, userId)))
-      .then(async (wins) => {
-        const losses = await db.select().from(tradesTable)
-          .where(and(eq(tradesTable.status, "CLOSED_LOSS"), eq(tradesTable.userId, userId)));
-        return [...wins, ...losses];
-      });
+    // Scope has to be resolved over the user's WHOLE trade set (an open LIVE
+    // position still makes the account LIVE), so read everything and filter
+    // in memory rather than pushing the status predicate into SQL.
+    const everyTrade = await db.select().from(tradesTable)
+      .where(eq(tradesTable.userId, userId));
+    const scope = resolveTradeScope(everyTrade);
+    const trades = inScope(everyTrade, scope.mode)
+      .filter((t) => t.status === "CLOSED_WIN" || t.status === "CLOSED_LOSS");
 
     const grouped: Record<string, { wins: number; losses: number; pnl: number }> = {};
     for (const t of trades) {

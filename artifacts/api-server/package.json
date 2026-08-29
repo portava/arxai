@@ -91,6 +91,7 @@
     "test:execution-epistemology": "node --import tsx --test --test-force-exit src/lib/live/__qa__/executionEpistemology.test.ts",
     "test:fallback-honesty": "node --import tsx --test --test-force-exit src/lib/marketData/__qa__/fallbackHonesty.test.ts",
     "test:market-regime-authority": "node --import tsx --test --test-force-exit src/lib/regime/__qa__/marketRegimeAuthority.test.ts",
+    "test:money-basis-honesty": "node --import tsx --test --test-force-exit src/lib/performance/__qa__/moneyBasisHonesty.test.ts",
     "test:risk-pre-gates": "node --import tsx --test --test-force-exit src/lib/live/__qa__/riskPreGates.test.ts",
     "test:mt5-env-token-sweep": "node --import tsx --test --test-force-exit src/routes/__qa__/mt5EnvTokenLegacySweep.test.ts",
     "test:shadow-persistence-wiring": "node --import tsx --test --test-force-exit src/lib/__qa__/shadowPersistenceWiring.test.ts",

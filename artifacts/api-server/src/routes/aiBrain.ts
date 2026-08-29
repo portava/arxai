@@ -116,40 +116,61 @@ router.get("/market-replay/:id", (req, res) => {
 });
 
 // ── Performance scorecard + learning extras (read-only aggregates) ─────────
-import { db, tradeJournalTable, liveIntentsTable, learningInsightsTable } from "@workspace/db";
+import { db, tradeJournalTable, tradesTable, learningInsightsTable } from "@workspace/db";
 import { sql } from "drizzle-orm";
+import { normaliseTradeMode } from "../lib/performance/tradeScope.js";
 
 // Phase 25 — Per-user scope. Was previously reading ALL users' journal rows
 // and returning them to any authed caller (cross-user leak). Now filtered by
-// req.authUser.id and gated by requireUser. liveIntentsTable has no ownership
-// column today, so per-user intent count is honestly reported as 0 with a
-// "ownership-not-tracked" note rather than leaking the system-wide total.
+// req.authUser.id and gated by requireUser.
+//
+// The `environments` block used to be hardcoded: every trade_journal row was
+// bucketed to PAPER (the table has no environment column), DEMO_SIMULATOR was
+// pinned at 0, LIVE_TESTER_INTENT at 0, and REAL_BROKER at the literal
+// { trades: 0, status: "MT5_DEFERRED — never executed" } — while the live
+// pipeline demonstrably executes and writes broker-realised P/L into
+// `trades`. Under a heading that promises "Results are never mixed across
+// environments", that read as a verified statement about the user's real
+// account. Each row below is now derived from a real source, and rows we
+// cannot measure are absent rather than asserted as zero.
+//
+// Win/loss counting: a journal row with no P/L, and a `WAIT` row (a
+// no-trade observation, not a trade), are UNDECIDED — they are excluded from
+// the win-rate denominator instead of silently counting as losses. The
+// denominator is reported so the page can show it.
 router.get("/performance/scorecard", requireUser, async (req, res) => {
   try {
     const userId = req.authUser!.id;
     const journal = await db.select().from(tradeJournalTable)
       .where(eq(tradeJournalTable.userId, userId));
-    const intents: never[] = [];
 
-    const wins = journal.filter((j) => (j.pnl ?? 0) > 0).length;
-    const losses = journal.filter((j) => (j.pnl ?? 0) < 0).length;
+    const isDecided = (j: { pnl: number | null; direction: string }) =>
+      typeof j.pnl === "number" && Number.isFinite(j.pnl) &&
+      String(j.direction).toUpperCase() !== "WAIT";
+    const decided = journal.filter(isDecided);
+    const undecided = journal.length - decided.length;
+
+    const wins = decided.filter((j) => (j.pnl ?? 0) > 0).length;
+    const losses = decided.filter((j) => (j.pnl ?? 0) < 0).length;
     const total = journal.length;
-    const winRate = total ? Math.round((wins / total) * 100) : 0;
-    const pnl = journal.reduce((a, j) => a + (j.pnl ?? 0), 0);
+    const winRate = decided.length ? Math.round((wins / decided.length) * 100) : 0;
+    const pnl = decided.reduce((a, j) => a + (j.pnl ?? 0), 0);
 
     const bySymbol = new Map<string, { count: number; pnl: number }>();
-    for (const j of journal) {
+    for (const j of decided) {
       const k = j.symbol;
       const cur = bySymbol.get(k) ?? { count: 0, pnl: 0 };
       cur.count++; cur.pnl += j.pnl ?? 0;
       bySymbol.set(k, cur);
     }
     const symRows = Array.from(bySymbol.entries()).map(([symbol, v]) => ({ symbol, ...v }));
-    const bestSymbol = symRows.sort((a, b) => b.pnl - a.pnl)[0]?.symbol ?? null;
-    const worstSymbol = symRows.sort((a, b) => a.pnl - b.pnl)[0]?.symbol ?? null;
+    // With no decided rows there is no best/worst — never crown a symbol on a
+    // pile of zeroes.
+    const bestSymbol = symRows.length ? symRows.slice().sort((a, b) => b.pnl - a.pnl)[0]!.symbol : null;
+    const worstSymbol = symRows.length ? symRows.slice().sort((a, b) => a.pnl - b.pnl)[0]!.symbol : null;
 
     const byStrategy = new Map<string, { count: number; pnl: number }>();
-    for (const j of journal) {
+    for (const j of decided) {
       const k = j.strategy;
       const cur = byStrategy.get(k) ?? { count: 0, pnl: 0 };
       cur.count++; cur.pnl += j.pnl ?? 0;
@@ -165,21 +186,72 @@ router.get("/performance/scorecard", requireUser, async (req, res) => {
       mistakeDist.set(tag, (mistakeDist.get(tag) ?? 0) + 1);
     }
 
+    // ── Executed environments, derived from `trades.mode` ────────────────
+    const executed = await db.select().from(tradesTable)
+      .where(eq(tradesTable.userId, userId));
+    function envRow(mode: "DEMO" | "LIVE") {
+      const rows = executed.filter(
+        (t) => normaliseTradeMode(t.mode) === mode &&
+          t.status !== "OPEN" && t.status !== "CANCELLED",
+      );
+      // pnlStatus="UNKNOWN" — broker never reported a usable close fill.
+      const unknown = rows.filter((t) => t.pnlStatus === "UNKNOWN");
+      const trusted = rows.filter((t) => t.pnlStatus !== "UNKNOWN");
+      const w = trusted.filter((t) => t.status === "CLOSED_WIN").length;
+      const l = trusted.filter((t) => t.status === "CLOSED_LOSS").length;
+      const p = trusted.reduce((a, t) => a + (t.pnl ?? 0), 0);
+      const open = executed.filter(
+        (t) => normaliseTradeMode(t.mode) === mode && t.status === "OPEN",
+      ).length;
+      const notes: string[] = [];
+      if (unknown.length > 0) notes.push(`${unknown.length} excluded — P/L unavailable`);
+      if (open > 0) notes.push(`${open} still open`);
+      return {
+        trades: trusted.length,
+        wins: w,
+        losses: l,
+        winRate: trusted.length ? Math.round((w / trusted.length) * 100) : 0,
+        pnl: Math.round(p * 100) / 100,
+        excludedUnknown: unknown.length,
+        openTrades: open,
+        source: `trades.mode=${mode}`,
+        note: notes.join(" · "),
+      };
+    }
+
     return res.json({
       environments: {
-        PAPER: { trades: total, wins, losses, winRate, pnl: Math.round(pnl * 100) / 100 },
-        DEMO_SIMULATOR: { trades: 0, note: "Demo simulator results stored in paper-execution table." },
-        LIVE_TESTER_INTENT: { trades: intents.length, note: "Intent rows only — not executed." },
-        REAL_BROKER: { trades: 0, status: "MT5_DEFERRED — never executed" },
+        // Journal is a user-written log, not an execution environment; its
+        // P/L is whatever the user typed.
+        PAPER_JOURNAL: {
+          trades: decided.length,
+          wins, losses, winRate,
+          pnl: Math.round(pnl * 100) / 100,
+          source: "trade_journal (self-reported)",
+          note: undecided > 0 ? `${undecided} undecided (no P/L or WAIT) not counted` : "",
+        },
+        DEMO: envRow("DEMO"),
+        LIVE: envRow("LIVE"),
       },
-      headline: { winRate, totalPnl: Math.round(pnl * 100) / 100, totalTrades: total },
+      // Headline is the JOURNAL scope only — it is never a sum across
+      // environments. The client must not add these rows together.
+      headline: {
+        scope: "PAPER_JOURNAL",
+        winRate,
+        wins,
+        losses,
+        totalPnl: Math.round(pnl * 100) / 100,
+        totalTrades: total,
+        decidedTrades: decided.length,
+        undecidedTrades: undecided,
+      },
       bestSymbol, worstSymbol,
       strategyRanking,
       mistakeDistribution: Object.fromEntries(mistakeDist),
       gradeDistribution: { note: "Grades computed on-demand via /api/ai/grade-trade" },
-      dataSource: "SIMULATOR_AND_TESTER_INTENTS",
+      dataSource: "trade_journal (self-reported) + trades.mode (executed)",
       perUserScoped: true,
-      intentsNote: "Live-intent count not shown — liveIntentsTable has no per-user ownership column.",
+      intentsNote: "Live-tester intents are not reported here — liveIntentsTable has no per-user ownership column, so no per-user count can be derived.",
       isEmpty: total === 0,
       emptyMessage: total === 0 ? "No journal entries yet. Add a paper trade or journal entry to start building your scorecard." : undefined,
       generatedAt: new Date().toISOString(),

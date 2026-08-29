@@ -103,7 +103,7 @@ export default function Analytics() {
       </div>
 
       {/* Summary strip */}
-      <AccountSummaryStrip equity={equity} openPnl={openPnl} />
+      <AccountSummaryStrip equity={equity} openPnl={openPnl} summary={summary} />
 
       {/* Tabs */}
       <div className="flex gap-1.5 overflow-x-auto pb-1">
@@ -133,13 +133,32 @@ export default function Analytics() {
 }
 
 // ── Summary strip ───────────────────────────────────────────────────────────
-function AccountSummaryStrip({ equity, openPnl }: { equity: number | null; openPnl: number | null }) {
+// The "Risk: Low" chip that used to live here was a string literal — nothing
+// on this page ever evaluated margin, exposure or drawdown to produce that
+// word, so a trader in genuine trouble read a green "Low" on the first page
+// they would check. It is replaced by the basis of the figures beside it
+// (which environment they belong to), which IS computed.
+function AccountSummaryStrip({ equity, openPnl, summary }: { equity: number | null; openPnl: number | null; summary: any }) {
+  const scope = summary?.scopeMode as "LIVE" | "DEMO" | undefined;
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-border bg-card px-4 py-2 text-sm">
-      <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-success" /><span className="text-txt-secondary">Account status</span></span>
       <span className="text-txt-muted">Equity <span className="text-foreground font-medium">{equity != null ? plain(equity) : "—"}</span></span>
       <span className="text-txt-muted">Open P/L <span className={cn("font-medium", openPnl != null ? pnlTone(openPnl) : "text-foreground")}>{openPnl != null ? money(openPnl) : "—"}</span></span>
-      <span className="text-txt-muted">Risk <span className="text-success font-medium">Low</span></span>
+      {scope ? (
+        <span className={cn(
+          "inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs font-semibold",
+          scope === "LIVE" ? "border-danger/40 bg-danger/10 text-danger" : "border-primary/40 bg-primary/10 text-primary",
+        )}>
+          {scope === "LIVE" ? "LIVE — real money" : "DEMO — simulated"}
+        </span>
+      ) : (
+        <span className="text-txt-muted">Basis <span className="text-txt-muted font-medium">—</span></span>
+      )}
+      {summary?.otherModeTradeCount > 0 && (
+        <span className="text-[11px] text-txt-muted">
+          {summary.otherModeTradeCount} {scope === "LIVE" ? "demo" : "live"} trade{summary.otherModeTradeCount === 1 ? "" : "s"} not included
+        </span>
+      )}
     </div>
   );
 }
@@ -189,6 +208,17 @@ function OverviewTab({ summary, daily, loadingDaily, balance, equity, openPnl, p
   const totalTrades = summary?.totalTrades ?? 0;
   const profitFactor = summary?.profitFactor ?? null;
   const hasAcct = balance != null || equity != null;
+  // Closed trades the server dropped from EVERY aggregate above because the
+  // broker never reported a usable close fill (pnlStatus="UNKNOWN"). Without
+  // this the percentages look complete while being computed on a truncated
+  // set, and Trade Logs (which shows "P/L unavailable" per row) disagrees on
+  // the trade count with nothing explaining the gap.
+  const excludedUnknown = summary?.excludedUnknownCount ?? 0;
+  const scope = summary?.scopeMode as "LIVE" | "DEMO" | undefined;
+  const basisSuffix = scope ? ` (${scope})` : "";
+  // NOTIONAL means the equity anchor is an invented $10,000 used only for the
+  // shape of the curve — it is not the user's broker balance.
+  const notionalAnchor = summary?.baselineSource === "NOTIONAL";
 
   const equitySeries = daily.map((d: DailyRow) => ({ label: format(new Date(d.date), "MMM dd"), equity: d.endBalance }));
   const startEq = equitySeries[0]?.equity ?? null;
@@ -203,21 +233,34 @@ function OverviewTab({ summary, daily, loadingDaily, balance, equity, openPnl, p
       {/* 1+2: Account Health + Ruby read */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
+          {/* The "Healthy" badge here was a literal shown whenever balance or
+              equity was non-null — it never evaluated anything. It now states
+              what the card actually knows: whether account data was read. */}
           <CardTitle icon={<ShieldCheck className="h-4 w-4 text-primary" />} title="Account Health"
-            action={hasAcct ? <span className="rounded-md border border-success/40 bg-success/10 px-2 py-0.5 text-xs text-success">Healthy</span> : <span className="rounded-md border border-border bg-secondary/40 px-2 py-0.5 text-xs text-txt-muted">Checking</span>} />
+            action={hasAcct
+              ? <span className="rounded-md border border-border bg-secondary/40 px-2 py-0.5 text-xs text-txt-secondary">Account data available</span>
+              : <span className="rounded-md border border-border bg-secondary/40 px-2 py-0.5 text-xs text-txt-muted">No account data</span>} />
           {!hasAcct ? (
             <p className="mt-3 text-sm text-txt-muted">Account health will appear once MT5/account data is available.</p>
           ) : (
-            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <Metric label="Balance" value={balance != null ? plain(balance) : "—"} />
-              <Metric label="Equity" value={equity != null ? plain(equity) : "—"} />
-              <Metric label="Open P/L" value={openPnl != null ? money(openPnl) : "—"} tone={openPnl != null ? pnlTone(openPnl) : undefined} />
-              <Metric label="Realized P/L" value={realized != null ? money(realized) : "—"} tone={realized != null ? pnlTone(realized) : undefined} />
-              <Metric label="Max Drawdown" value={maxDD != null ? formatPercent(maxDD) : "—"} tone="text-danger" />
-              <Metric label="Total Trades" value={String(totalTrades)} />
-              <Metric label="Profit Factor" value={profitFactor != null ? profitFactor.toFixed(2) : "—"} />
-              <Metric label="Open Positions" value={String(positions.length)} />
-            </div>
+            <>
+              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <Metric label="Balance" value={balance != null ? plain(balance) : "—"} />
+                <Metric label="Equity" value={equity != null ? plain(equity) : "—"} />
+                <Metric label="Open P/L" value={openPnl != null ? money(openPnl) : "—"} tone={openPnl != null ? pnlTone(openPnl) : undefined} />
+                <Metric label={`Realized P/L${basisSuffix}`} value={realized != null ? money(realized) : "—"} tone={realized != null ? pnlTone(realized) : undefined} />
+                <Metric label="Max Drawdown" value={maxDD != null ? formatPercent(maxDD) : "—"} tone="text-danger" />
+                <Metric label={`Total Trades${basisSuffix}`} value={String(totalTrades)} />
+                <Metric label="Profit Factor" value={profitFactor != null ? profitFactor.toFixed(2) : "—"} />
+                <Metric label="Open Positions" value={String(positions.length)} />
+              </div>
+              {excludedUnknown > 0 && (
+                <p className="mt-2 rounded-lg border border-warning/30 bg-warning/5 px-2.5 py-1.5 text-[11px] text-warning">
+                  {excludedUnknown} closed trade{excludedUnknown === 1 ? " is" : "s are"} excluded from every figure above — P/L unavailable
+                  (the broker never reported a usable close fill). Trade Logs lists {excludedUnknown === 1 ? "it" : "them"}.
+                </p>
+              )}
+            </>
           )}
         </Card>
 
@@ -231,9 +274,17 @@ function OverviewTab({ summary, daily, loadingDaily, balance, equity, openPnl, p
               {realized != null ? (realized >= 0 ? "Realized P/L is positive over the recorded window." : "Realized P/L is negative over the recorded window — focus on quality setups.") : ""}
             </p>
           )}
+          {/* Drawdown tone now follows the value (it was pinned to green even
+              when it read "Watch"). The "Margin: Healthy" chip is gone —
+              nothing on this page reads a margin level, so it asserted a
+              margin verdict from the mere presence of account data. */}
           <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-            <Chip label="Drawdown" value={maxDD != null && maxDD < 5 ? "Low" : maxDD != null ? "Watch" : "—"} tone="text-success" />
-            <Chip label="Margin" value={hasAcct ? "Healthy" : "—"} tone="text-success" />
+            <Chip
+              label="Drawdown"
+              value={maxDD == null ? "—" : maxDD < 5 ? "Low" : "Watch"}
+              tone={maxDD == null ? "text-txt-muted" : maxDD < 5 ? "text-success" : "text-warning"}
+            />
+            <Chip label="Margin" value="Not read" tone="text-txt-muted" />
             <Chip label="Exposure" value={positions.length === 0 ? "Clear" : "Active"} tone={positions.length === 0 ? "text-success" : "text-warning"} />
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
@@ -246,7 +297,20 @@ function OverviewTab({ summary, daily, loadingDaily, balance, equity, openPnl, p
 
       {/* 3: Equity Curve */}
       <Card>
-        <CardTitle icon={<Activity className="h-4 w-4 text-primary" />} title="Equity Curve" />
+        <CardTitle
+          icon={<Activity className="h-4 w-4 text-primary" />}
+          title={notionalAnchor ? "Equity Curve (relative)" : `Equity Curve${basisSuffix}`}
+        />
+        {/* When the server reports baselineSource="NOTIONAL" the whole series
+            is anchored to a fixed $10,000 that is NOT the user's money. The
+            curve still shows a true shape, so it is kept — but every absolute
+            dollar read off it has to say so. */}
+        {notionalAnchor && (
+          <p className="mt-1 rounded-lg border border-warning/30 bg-warning/5 px-2.5 py-1.5 text-[11px] text-warning">
+            Relative curve — anchored to a notional {plain(summary?.baselineValue ?? 10000)} starting figure because no capital is
+            assigned to your account. The dollar values below are not your broker balance; only the shape and the change are real.
+          </p>
+        )}
         {loadingDaily ? (
           <p className="py-12 text-center text-sm text-txt-muted">Loading…</p>
         ) : equitySeries.length === 0 ? (
@@ -265,10 +329,17 @@ function OverviewTab({ summary, daily, loadingDaily, balance, equity, openPnl, p
               </ResponsiveContainer>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
-              <Metric label="Starting Equity" value={startEq != null ? plain(startEq) : "—"} />
-              <Metric label="Current Equity" value={curEq != null ? plain(curEq) : "—"} tone="text-success" />
-              <Metric label="High" value={high != null ? plain(high) : "—"} tone="text-success" />
-              <Metric label="Low" value={low != null ? plain(low) : "—"} tone="text-danger" />
+              <Metric label={notionalAnchor ? "Starting (notional)" : "Starting Equity"} value={startEq != null ? plain(startEq) : "—"} />
+              {/* Current Equity prefers the real broker equity read; only
+                  when that is absent does it fall back to the notional
+                  series, and then it must be labelled. */}
+              <Metric
+                label={notionalAnchor && equity == null ? "Current (notional)" : "Current Equity"}
+                value={curEq != null ? plain(curEq) : "—"}
+                tone={notionalAnchor && equity == null ? "text-txt-secondary" : "text-foreground"}
+              />
+              <Metric label={notionalAnchor ? "High (notional)" : "High"} value={high != null ? plain(high) : "—"} tone="text-success" />
+              <Metric label={notionalAnchor ? "Low (notional)" : "Low"} value={low != null ? plain(low) : "—"} tone="text-danger" />
               <Metric label="Net Change" value={netChange != null ? money(netChange) : "—"} tone={netChange != null ? pnlTone(netChange) : undefined} />
             </div>
           </>
@@ -458,10 +529,17 @@ function CalendarPLTab({ daily, loading, summary, navigate }: any) {
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Metric label="Month to Date" value={money(net)} tone={pnlTone(net)} />
-          <Metric label="Trades" value={String(summary?.totalTrades ?? 0)} />
-          <Metric label="Win Rate" value={summary?.winRate != null ? `${summary.winRate}%` : "—"} />
-          <Metric label="Profit Factor" value={summary?.profitFactor != null ? summary.profitFactor.toFixed(2) : "—"} />
+          {/* Trades / Win Rate / Profit Factor come from the summary endpoint
+              and are ALL-TIME within the stated environment, not month-to-date. */}
+          <Metric label={`Trades (all-time${summary?.scopeMode ? `, ${summary.scopeMode}` : ""})`} value={String(summary?.totalTrades ?? 0)} />
+          <Metric label="Win Rate (all-time)" value={summary?.winRate != null ? `${Math.round(summary.winRate)}%` : "—"} />
+          <Metric label="Profit Factor (all-time)" value={summary?.profitFactor != null ? summary.profitFactor.toFixed(2) : "—"} />
         </div>
+        {(summary?.excludedUnknownCount ?? 0) > 0 && (
+          <p className="text-[11px] text-warning">
+            {summary.excludedUnknownCount} closed trade{summary.excludedUnknownCount === 1 ? "" : "s"} excluded — P/L unavailable.
+          </p>
+        )}
       </div>
 
       <Card>
@@ -502,6 +580,7 @@ function Row({ k, v, tone }: { k: string; v: string; tone?: string }) {
 function RiskTab({ summary }: any) {
   const { name } = useAssistantName();
   const maxDD = summary?.maxDrawdown ?? null;
+  const scopeSuffix = summary?.scopeMode ? ` (${summary.scopeMode})` : "";
   return (
     <div className="space-y-4">
       <Card>
@@ -510,12 +589,18 @@ function RiskTab({ summary }: any) {
           <p className="mt-3 text-sm text-txt-muted">Risk analytics will appear once risk events or account exposure are recorded.</p>
         ) : (
           <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <Metric label="Account Risk" value="Low" tone="text-success" />
+            {/* "Account Risk: Low" was a hardcoded green literal. Nothing here
+                reads a risk configuration, exposure or margin level, so the
+                only honest value is that it is not computed. */}
+            <Metric label="Account Risk" value="Not computed" tone="text-txt-muted" />
             <Metric label="Max Drawdown" value={formatPercent(maxDD)} tone="text-danger" />
-            <Metric label="Total Trades" value={String(summary?.totalTrades ?? 0)} />
+            <Metric label={`Total Trades${scopeSuffix}`} value={String(summary?.totalTrades ?? 0)} />
             <Metric label="Profit Factor" value={summary?.profitFactor != null ? summary.profitFactor.toFixed(2) : "—"} />
           </div>
         )}
+        <p className="mt-3 text-[11px] text-txt-muted">
+          Risk level is not evaluated on this page. Configured caps live under Risk Settings.
+        </p>
       </Card>
       <Card>
         <CardTitle icon={<Sparkles className="h-4 w-4 text-ruby" />} title={`${name}’s Risk Read`} tone="text-ruby" />

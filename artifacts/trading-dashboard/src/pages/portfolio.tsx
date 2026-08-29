@@ -36,14 +36,57 @@ export default function Portfolio() {
         <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2">
           <Briefcase className="text-primary" /> Portfolio Exposure
         </h2>
-        <p className="text-muted-foreground">Risk distribution across markets, strategies, and currencies.</p>
+        <p className="text-muted-foreground">
+          Risk distribution across markets, strategies, and currencies.{" "}
+          <span className={exp.scopeMode === "LIVE" ? "font-semibold text-destructive" : "font-semibold text-primary"}>
+            {exp.scopeMode === "LIVE" ? "LIVE — real money." : "DEMO — simulated."}
+          </span>{" "}
+          Environments are never summed into one figure.
+        </p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
         <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Open Trades</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold font-mono">{exp.totalOpen}</div></CardContent></Card>
-        <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Floating P&L</CardTitle></CardHeader><CardContent><div className={`text-2xl font-bold font-mono ${exp.floatingPnl >= 0 ? "text-success" : "text-destructive"}`}>${exp.floatingPnl.toFixed(2)}</div></CardContent></Card>
-        <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Realized P&L</CardTitle></CardHeader><CardContent><div className={`text-2xl font-bold font-mono ${exp.realizedPnl >= 0 ? "text-success" : "text-destructive"}`}>${exp.realizedPnl.toFixed(2)}</div></CardContent></Card>
-        <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground flex items-center gap-1"><TrendingDown size={12}/>Daily Drawdown</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold font-mono text-destructive">${Math.abs(exp.dailyDrawdown).toFixed(2)}</div></CardContent></Card>
+
+        {/* Floating P&L is null whenever nothing marks an open row to market.
+            It used to sum `trades.pnl` over OPEN rows — but every writer of
+            that column writes only at close, so it rendered a permanent,
+            confident "$0.00" beside genuinely open positions. */}
+        <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Floating P&L</CardTitle></CardHeader>
+          <CardContent>
+            {exp.floatingPnl == null ? (
+              <>
+                <div className="text-2xl font-bold font-mono text-muted-foreground">—</div>
+                <p className="mt-1 text-[11px] leading-tight text-muted-foreground">
+                  Not marked to market{exp.totalOpen > 0 ? ` · ${exp.totalOpen} position${exp.totalOpen === 1 ? "" : "s"} open` : ""}
+                </p>
+              </>
+            ) : (
+              <div className={`text-2xl font-bold font-mono ${exp.floatingPnl >= 0 ? "text-success" : "text-destructive"}`}>${exp.floatingPnl.toFixed(2)}</div>
+            )}
+          </CardContent></Card>
+
+        <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Realized P&L</CardTitle></CardHeader>
+          <CardContent>
+            <div className={`text-2xl font-bold font-mono ${exp.realizedPnl >= 0 ? "text-success" : "text-destructive"}`}>${exp.realizedPnl.toFixed(2)}</div>
+            {exp.realizedPnlExcludedUnknownCount > 0 && (
+              <p className="mt-1 text-[11px] leading-tight text-warning">
+                {exp.realizedPnlExcludedUnknownCount} closed trade{exp.realizedPnlExcludedUnknownCount === 1 ? "" : "s"} excluded — P/L unavailable
+              </p>
+            )}
+          </CardContent></Card>
+
+        {/* Was "Daily Drawdown" computed as min(0, sum of today's closed P/L)
+            — a net figure that cannot see an intraday peak-to-trough, so a day
+            that ran +$500 then -$300 showed $0.00 drawdown. Renamed to what it
+            actually is. */}
+        <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground flex items-center gap-1"><TrendingDown size={12}/>Net P/L today</CardTitle></CardHeader>
+          <CardContent>
+            <div className={`text-2xl font-bold font-mono ${exp.netPnlToday >= 0 ? "text-success" : "text-destructive"}`}>
+              {exp.netPnlToday >= 0 ? "" : "-"}${Math.abs(exp.netPnlToday).toFixed(2)}
+            </div>
+            <p className="mt-1 text-[11px] leading-tight text-muted-foreground">Closed trades only — not an intraday drawdown</p>
+          </CardContent></Card>
       </div>
 
       {warns && warns.length > 0 ? (

@@ -53,6 +53,7 @@ import {
 import { useTradingMode } from "@/hooks/useTradingMode";
 import { useActiveSymbol } from "@/lib/symbol-context";
 import { useAssistantName } from "@/lib/assistant-name";
+import { resolveRiskLevelRow } from "@/lib/moneyBasis";
 import { formatPnl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { CockpitCard, StatTile, Pill, ActionButton, SectionLink } from "./primitives";
@@ -364,7 +365,8 @@ export function TradingPermissionSummaryCard() {
   const status = frozen
     ? { label: "Paused", tone: "warning" as const }
     : blocked
-      ? { label: "Bridge disconnected", tone: "danger" as const }
+      // Not a connectivity claim — see the blockRow comment below.
+      ? { label: "Trading blocked", tone: "danger" as const }
       : waitingApproval
         ? { label: "Waiting for approval", tone: "warning" as const }
         : mode.canManualTrade
@@ -376,7 +378,31 @@ export function TradingPermissionSummaryCard() {
     : mode.cleanUserMessage || "Your account is approved for trading.";
 
   const sessionActive = !mode.isLoading && !frozen;
-  const bridge = blocked ? "Disconnected" : "Connected";
+
+  // Risk level, derived from the actual caps — see lib/moneyBasis.ts for why
+  // the previous `userRiskCaps ? "Managed" : "Low"` was a constant that showed
+  // its most reassuring value precisely when the read had FAILED.
+  const risk = resolveRiskLevelRow({
+    isError: mode.isError,
+    hasEnvelope: Boolean(mode.envelope),
+    caps: mode.envelope?.userRiskCaps,
+  });
+  const RISK_TONE_CLASS: Record<typeof risk.tone, string> = {
+    success: "text-success",
+    warning: "text-warning",
+    unknown: "text-txt-muted",
+  };
+
+  // Bridge/EA health is NOT read anywhere in this app. `cleanBlockedReason`
+  // covers operator-set DISABLED, SIMULATED/DEMO mode, a non-ACTIVE trading
+  // status, a pending shared-master assignment, the server master switch and
+  // incomplete live confirmation — none of which is a bridge fault. Reporting
+  // it as "Bridge: Disconnected" sent users to debug MT5 connectivity that was
+  // never broken, and its absence asserted a green "Connected" from no health
+  // signal at all. The row now states the block, not a connectivity verdict.
+  const blockRow = blocked
+    ? { label: "Blocked", value: "Yes", cls: "text-danger" }
+    : { label: "Blocked", value: "No", cls: "text-success" };
 
   return (
     <CockpitCard
@@ -392,8 +418,8 @@ export function TradingPermissionSummaryCard() {
       <p className="mt-1 text-sm text-txt-secondary">{headline}</p>
 
       <dl className="mt-4 space-y-2.5 text-sm">
-        <Row label="Risk level" value={mode.envelope?.userRiskCaps ? "Managed" : "Low"} valueClass="text-success" />
-        <Row label="Bridge" value={bridge} valueClass={blocked ? "text-danger" : "text-success"} />
+        <Row label="Risk level" value={risk.value} valueClass={RISK_TONE_CLASS[risk.tone]} />
+        <Row label={blockRow.label} value={blockRow.value} valueClass={blockRow.cls} />
         <Row label="Session" value={sessionActive ? "Active" : "Inactive"} valueClass={sessionActive ? "text-success" : "text-txt-muted"} />
         <Row label="Market" value={active} valueClass="text-foreground font-mono" />
       </dl>
@@ -733,8 +759,16 @@ export function OpenPositionsCard() {
 export function TodayPerformanceCard() {
   const perfQ = useGetPerformanceSummary();
   const p = perfQ.data;
-  const trades = p?.totalTrades ?? 0;
-  const empty = !p || trades === 0;
+  // TODAY means today. Every tile here previously read the LIFETIME fields
+  // (totalTrades / winningTrades / losingTrades / winRate / bestTradePnl) and
+  // rendered them under a card titled "Today's Performance" beside a
+  // genuinely-today Realized P/L — so a lifetime 62% win rate over 214 trades
+  // looked like it happened today, and day-level decisions (stop trading,
+  // size down) got made on the wrong numbers. `today` is the server's
+  // day-scoped block; the empty gate is day-scoped too.
+  const t = p?.today;
+  const empty = !p || !t || t.trades === 0;
+  const basis = p?.scopeMode;
 
   return (
     <CockpitCard
@@ -746,29 +780,42 @@ export function TodayPerformanceCard() {
     >
       {empty ? (
         <div className="py-4 text-center text-sm text-txt-secondary">
-          Place or close your first trade to build today's performance summary.
+          No trade has closed today yet.
+          {p && p.totalTrades > 0
+            ? ` Your ${p.totalTrades} all-time closed trade${p.totalTrades === 1 ? " is" : "s are"} on the analytics page.`
+            : " Place or close your first trade to build today's summary."}
         </div>
       ) : (
         <>
           <div className="grid grid-cols-4 gap-2 text-center">
-            <MiniStat label="Trades" value={String(p!.totalTrades)} />
-            <MiniStat label="Wins" value={String(p!.winningTrades)} valueClass="text-success" />
-            <MiniStat label="Losses" value={String(p!.losingTrades)} valueClass="text-danger" />
-            <MiniStat label="Win rate" value={`${Math.round(p!.winRate)}%`} />
+            <MiniStat label="Trades" value={String(t!.trades)} />
+            <MiniStat label="Wins" value={String(t!.wins)} valueClass="text-success" />
+            <MiniStat label="Losses" value={String(t!.losses)} valueClass="text-danger" />
+            <MiniStat label="Win rate" value={`${Math.round(t!.winRate)}%`} />
           </div>
           <div className="mt-3 flex items-center justify-between border-t border-border/60 pt-3 text-sm">
             <div>
-              <div className="text-[11px] uppercase tracking-wide text-txt-muted">Realized P/L</div>
-              <div className={cn("font-mono text-lg font-bold", pnlClass(p!.todayPnl))}>{formatPnl(p!.todayPnl)}</div>
+              <div className="text-[11px] uppercase tracking-wide text-txt-muted">
+                Realized P/L{basis ? ` · ${basis}` : ""}
+              </div>
+              <div className={cn("font-mono text-lg font-bold", pnlClass(t!.pnl))}>{formatPnl(t!.pnl)}</div>
             </div>
             <div className="text-right">
-              <div className="text-[11px] uppercase tracking-wide text-txt-muted">Best trade</div>
-              <div className={cn("font-mono font-semibold", pnlClass(p!.bestTradePnl))}>
-                {p!.bestTradePnl ? formatPnl(p!.bestTradePnl) : "—"}
+              <div className="text-[11px] uppercase tracking-wide text-txt-muted">Best trade today</div>
+              <div className={cn("font-mono font-semibold", pnlClass(t!.bestTradePnl ?? 0))}>
+                {t!.bestTradePnl != null ? formatPnl(t!.bestTradePnl) : "—"}
               </div>
             </div>
           </div>
         </>
+      )}
+      {/* Trades the broker never priced are excluded from every figure above.
+          Say so — Trade Logs shows them as "P/L unavailable" and the two
+          pages would otherwise disagree on the count with no explanation. */}
+      {(t?.excludedUnknownCount ?? 0) > 0 && (
+        <p className="mt-2 text-[11px] text-warning">
+          {t!.excludedUnknownCount} trade{t!.excludedUnknownCount === 1 ? "" : "s"} closed today excluded — P/L unavailable.
+        </p>
       )}
       <SectionLink href="/journal" data-testid="performance-journal">Open journal</SectionLink>
     </CockpitCard>

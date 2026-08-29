@@ -442,18 +442,40 @@ export function pnlDaily(env?: Environment) {
   return Array.from(map.values()).sort((a, b) => a.day.localeCompare(b.day));
 }
 
-// ── Broker reconciliation placeholder ──────────────────────────────────────
+// ── Broker reconciliation: NOT IMPLEMENTED, reported as such ───────────────
+//
+// This function used to return `brokerOrders: []`, `brokerPositions: []` and
+// `mismatches: []` — empty arrays that the page rendered as "Broker orders 0 /
+// Broker positions 0 / Mismatches 0". Nothing had been compared against any
+// broker, so those zeros were a fabricated reconciliation result on a page
+// titled "Compare local OMS state vs MT5 bridge state".
+//
+// Counts we cannot measure are now `null` with an explicit reason, and the
+// local counts are labelled with what they actually are: the process-local
+// in-memory simulator Maps, which are wiped on restart and are not a
+// persisted book.
 export function brokerReconStatus() {
   return {
+    brokerConnected: false,
+    // Kept for older clients; same meaning, same value.
     mt5Connected: false,
-    brokerOrders: [] as unknown[],
-    brokerPositions: [] as unknown[],
+    /** null = never read. NOT "zero broker orders". */
+    brokerOrders: null,
+    brokerPositions: null,
+    /** null = no comparison was performed, so no mismatch count exists. */
+    mismatches: null,
+    comparisonPerformed: false,
+    comparisonUnavailableReason:
+      "No broker snapshot has been read. Nothing on this endpoint has been compared against a broker.",
     localOrders: orders.size,
     localPositions: positions.size,
     localLiveIntents: Array.from(orders.values()).filter((o) => o.environment === "LIVE_TESTER_INTENT").length,
-    mismatches: [] as unknown[],
-    syncStatus: "DEFERRED",
-    notice: "Broker reconciliation activates after MT5 bridge is connected.",
+    localSource: "IN_MEMORY_SIMULATOR",
+    localSourceNote:
+      "Local counts come from this server process's in-memory simulator and reset when the process restarts.",
+    syncStatus: "NOT_IMPLEMENTED",
+    notice:
+      "Broker reconciliation is not implemented on this endpoint. No broker state has been read and no comparison has been made.",
   };
 }
 

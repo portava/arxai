@@ -312,7 +312,19 @@ export function LiveTradeCard({ trade, onCoach }: { trade: Trade; onCoach?: () =
             <div className="grid grid-cols-3 gap-2 text-xs font-mono">
               <div><div className="text-muted-foreground">Entry</div><div>{trade.entryPrice.toFixed(5)}</div></div>
               <div><div className="text-muted-foreground">Current</div><div>{snap.currentPrice.toFixed(5)}</div></div>
-              <div><div className="text-muted-foreground">P&L</div><div className={snap.floatingPnl >= 0 ? "text-success" : "text-destructive"}>${snap.floatingPnl.toFixed(2)}</div></div>
+              {/* No dollar P/L on this path: the snapshot has no contract
+                  size or pip value, so it reports a signed price move only.
+                  Showing "$0.00" or an invented amount here would be a
+                  fabricated money figure. */}
+              <div>
+                <div className="text-muted-foreground">Move</div>
+                <div
+                  className={snap.priceMove >= 0 ? "text-success" : "text-destructive"}
+                  title="Price distance from entry. Dollar P/L is not available for this trade."
+                >
+                  {snap.priceMove >= 0 ? "+" : ""}{snap.priceMove.toFixed(5)}
+                </div>
+              </div>
               <div><div className="text-muted-foreground">SL</div><div className="text-destructive">{trade.stopLoss.toFixed(5)}</div></div>
               <div><div className="text-muted-foreground">TP</div><div className="text-success">{trade.takeProfit.toFixed(5)}</div></div>
               <div><div className="text-muted-foreground">R</div><div className={snap.rMultiple >= 0 ? "text-success" : "text-destructive"}>{snap.rMultiple.toFixed(2)}R</div></div>

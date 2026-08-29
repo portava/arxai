@@ -9,6 +9,7 @@
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
+    "test:money-basis": "vitest run src/lib/moneyBasis.test.ts",
     "test:pnl-cell": "vitest run src/components/trade-logs/PnlCell.test.tsx",
     "test:approval-path": "vitest run src/lib/approvalPath.test.ts src/components/dashboard/cockpit/ApprovalPathCard.test.tsx",
     "test:allocation-view-card": "vitest run src/components/sharedAccount/SharedAccountCard.allocationView.test.tsx",

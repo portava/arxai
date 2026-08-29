@@ -5,8 +5,18 @@
  * ARX AI — Analyze. Risk. eXecute. — API
  * OpenAPI spec version: 0.1.0
  */
+import type { PerformanceSummaryBaselineSource } from "./performanceSummaryBaselineSource";
+import type { PerformanceSummaryScopeMode } from "./performanceSummaryScopeMode";
+import type { PerformanceSummaryScopeModeReason } from "./performanceSummaryScopeModeReason";
+import type { PerformanceTodayBlock } from "./performanceTodayBlock";
 
 export interface PerformanceSummary {
+  scopeMode: PerformanceSummaryScopeMode;
+  scopeModeReason: PerformanceSummaryScopeModeReason;
+  otherModeTradeCount: number;
+  baselineSource: PerformanceSummaryBaselineSource;
+  baselineValue: number;
+  today: PerformanceTodayBlock;
   accountBalance: number;
   todayPnl: number;
   todayPnlPct: number;

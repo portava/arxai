@@ -8,15 +8,21 @@
 import type { PortfolioExposureExposureByCurrencyItem } from "./portfolioExposureExposureByCurrencyItem";
 import type { PortfolioExposureExposureByMarket } from "./portfolioExposureExposureByMarket";
 import type { PortfolioExposureExposureByStrategy } from "./portfolioExposureExposureByStrategy";
+import type { PortfolioExposureFloatingPnlStatus } from "./portfolioExposureFloatingPnlStatus";
+import type { PortfolioExposureScopeMode } from "./portfolioExposureScopeMode";
 
 export interface PortfolioExposure {
   totalOpen: number;
   totalClosed: number;
-  floatingPnl: number;
+  /** @nullable */
+  floatingPnl: number | null;
+  floatingPnlStatus: PortfolioExposureFloatingPnlStatus;
   realizedPnl: number;
+  realizedPnlExcludedUnknownCount: number;
+  scopeMode: PortfolioExposureScopeMode;
   exposureByMarket: PortfolioExposureExposureByMarket;
   exposureByStrategy: PortfolioExposureExposureByStrategy;
   exposureByCurrency: PortfolioExposureExposureByCurrencyItem[];
-  dailyDrawdown: number;
-  weeklyDrawdown: number;
+  netPnlToday: number;
+  netPnlWeek: number;
 }

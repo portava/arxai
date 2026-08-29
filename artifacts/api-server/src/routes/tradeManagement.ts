@@ -86,22 +86,40 @@ router.post("/trade-management/:id/close", async (req, res) => {
   void liveAllowed;
 
   const snap = await evaluateTrade(trade);
-  const status: "CLOSED_WIN" | "CLOSED_LOSS" = snap.floatingPnl >= 0 ? "CLOSED_WIN" : "CLOSED_LOSS";
+  // Win/loss direction is honest — it is the SIGN of the price move, which
+  // needs no contract size. The DOLLAR amount is not: this path has no pip
+  // value or quote-currency conversion, so it writes NO pnl and marks the row
+  // pnlStatus="UNKNOWN". Every money aggregate (/performance/summary,
+  // /performance/daily, /performance/strategy-breakdown, /portfolio/exposure)
+  // already excludes UNKNOWN rows and the Trade Logs UI renders
+  // "P/L unavailable" for them. A number labelled "(mock)" in its own
+  // response must never enter a money aggregate.
+  const status: "CLOSED_WIN" | "CLOSED_LOSS" = snap.priceMove >= 0 ? "CLOSED_WIN" : "CLOSED_LOSS";
   const updated = await db.update(tradesTable).set({
-    status, pnl: Number(snap.floatingPnl.toFixed(2)), closedAt: new Date(),
+    status,
+    pnl: null,
+    pnlStatus: "UNKNOWN",
+    dataQualityFlag: "SIMULATED_CLOSE_NO_PRICED_PNL",
+    closedAt: new Date(),
   }).where(eq(tradesTable.id, id)).returning();
+
+  const detail =
+    `${trade.symbol} ${trade.direction} closed at ${snap.currentPrice.toFixed(5)} ` +
+    `(${snap.priceMove >= 0 ? "+" : ""}${snap.priceMove.toFixed(5)} from entry). ` +
+    `P/L unavailable — this simulated close is not priced in account currency.`;
 
   await createAlert({
     type: "TRADE_CLOSED",
     severity: status === "CLOSED_WIN" ? "success" : "warning",
-    title: `Trade closed (${status === "CLOSED_WIN" ? "win" : "loss"})`,
-    message: `${trade.symbol} ${trade.direction} closed at ${snap.currentPrice.toFixed(5)} for ${snap.floatingPnl.toFixed(2)} (mock).`,
+    title: `Trade closed (${status === "CLOSED_WIN" ? "in profit" : "at a loss"})`,
+    message: detail,
     symbol: trade.symbol,
   });
 
   res.json({
     success: true,
-    message: `Trade closed at ${snap.currentPrice.toFixed(5)} for ${snap.floatingPnl.toFixed(2)} (mock).`,
+    message: detail,
+    pnlStatus: "UNKNOWN",
     trade: serialiseTrade(updated[0]),
   });
 });
