@@ -10,6 +10,7 @@
 export * from "./confidenceHealth.engine";
 export * from "./strategyTrust.engine";
 export * from "./liveSanityCheck.engine";
+export * from "./distributionOod.engine";
 export * from "./evidenceDecay.engine";
 export * from "./strategyQuarantine.engine";
 export * from "./validationMemory.engine";

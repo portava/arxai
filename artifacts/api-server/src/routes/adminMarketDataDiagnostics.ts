@@ -22,6 +22,7 @@ import { buildCandleDepthReport } from "../lib/data/candleDepthDiagnostics.js";
 import { getBrokerCandleCoverage } from "../lib/data/brokerCandleStore.js";
 import { getIngestRejections } from "../lib/data/ingestRejectionCounter.js";
 import { getEconomicCalendarDiagnostics } from "../lib/news/calendar/economicCalendarService.js";
+import { evaluateLiveDistributionOod } from "../lib/ood/distributionOodService.js";
 import { getAllApprovedArxMarkets } from "@workspace/domain/market";
 
 const router: Router = Router();
@@ -303,6 +304,41 @@ router.get("/admin/market-data/economic-calendar", async (req, res) => {
     req.log.error({ err }, "economic-calendar diagnostics failed");
     res.status(500).json({
       error: "CALENDAR_DIAGNOSTICS_FAILED",
+      message: String((err as Error).message ?? err).slice(0, 280),
+    });
+  }
+});
+
+// GET /api/admin/market-data/distribution-ood/:symbol
+//
+// Distribution-level OOD diagnostics (capability #3): compares the live tail
+// window of the symbol's own candle/spread history against reference
+// distributions certified from the older part of that same history
+// (PSI + KS via the pure continuous-validation engine).
+//
+// ADVISORY ONLY — the verdict carries advisoryOnly:true, is not a gate key,
+// and no execution path consults it. Thin history returns the engine's typed
+// insufficiency statuses; a failed read returns a typed UNREADABLE report —
+// never a fabricated verdict. Read-only telemetry: touches no execution path,
+// no arx_live_* table, no balance/fill, and no safety gate.
+router.get("/admin/market-data/distribution-ood/:symbol", async (req, res) => {
+  const admin = requireAdmin(req, res);
+  if (!admin) return;
+
+  const symbol = String(req.params.symbol ?? "").trim();
+  if (!symbol || symbol.length > 64) {
+    res.status(400).json({ error: "INVALID_SYMBOL" });
+    return;
+  }
+  const rawTf = typeof req.query.timeframe === "string" ? req.query.timeframe.trim() : "M15";
+  const timeframe = /^(M1|M5|M15|M30|H1|H4|D1)$/.test(rawTf) ? rawTf : "M15";
+
+  try {
+    res.json({ ok: true, report: evaluateLiveDistributionOod(symbol, timeframe) });
+  } catch (err) {
+    req.log.error({ err, symbol }, "distribution-ood diagnostics failed");
+    res.status(500).json({
+      error: "DISTRIBUTION_OOD_FAILED",
       message: String((err as Error).message ?? err).slice(0, 280),
     });
   }

@@ -7,3 +7,4 @@ export * from "./scoring";
 export * from "./learning";
 export * from "./uncertainty";
 export * from "./valueOfInformation";
+export * from "./uncertaintyTaxonomy";

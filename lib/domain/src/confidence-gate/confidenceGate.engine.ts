@@ -4,6 +4,7 @@ import {
   type ConformalAdvisoryEvidence,
   type OverrideRecord, type Recommendation, type ReplayRecord, type ScoreReport,
 } from "./confidenceGate.types";
+import type { HorizonFrameEvidence } from "../horizons";
 import { scoreStrategyEdge      } from "./strategyEdgeScore.engine";
 import { scoreMarketRegime      } from "./marketRegimeScore.engine";
 import { scoreMultiTimeframe    } from "./multiTimeframeScore.engine";
@@ -111,6 +112,22 @@ export function attachConformalAdvisory(
   return {
     ...result,
     advisory: { ...result.advisory, conformal },
+  };
+}
+
+// ── Horizon-frame advisory (capability #10) — evidence, never authority ────
+// Rides the unified horizon frame (microstructure → capital, each with state
+// age + reliability) on the gate result as journal/display evidence, exactly
+// like the conformal advisory: PURE COPY, every verdict-bearing field passes
+// through unchanged whatever the horizons say. Stale or unreliable horizons
+// are for the operator's eyes and downstream caution — never for dispatch.
+export function attachHorizonAdvisory(
+  result: ConfidenceGateResult,
+  horizons: HorizonFrameEvidence,
+): ConfidenceGateResult {
+  return {
+    ...result,
+    advisory: { ...result.advisory, horizons },
   };
 }
 

@@ -3,6 +3,7 @@ export * from "./sensorAdapter";
 export * from "./shadowRunner";
 export * from "./shadowOrchestrator";
 export * from "./disagreementStore";
+export * from "./disagreementCalibration";
 export * from "./validationMetrics";
 export * from "./simulationMode";
 export * from "./replayValidator";
