@@ -14,13 +14,16 @@
 //     If it blocks, no order is attempted and the draft stays `approved`. The
 //     real per-user governor + 18-gate live dispatch still run unconditionally
 //     inside `executeInstant` — the mission gate can only ADD strictness.
-//   - DEMO never touches the live broker: a non-live mission (`paper`/`demo`)
-//     audits + journals the intent and returns without ever calling the live
-//     pipeline. Demo stays demo.
+//   - DEMO/PAPER never touch the live broker: a non-live mission runs the SAME
+//     gate chain (mission gate + Phase 7 + the single-flight claim) and then
+//     records its dispatch through the simulated executor, which journals +
+//     audits the intent and returns WITHOUT ever calling the live pipeline. No
+//     fill, price, or P/L is ever fabricated for a simulated dispatch — the
+//     draft is marked executed with a `sim:` command id and nothing more.
 //   - Per-user / per-mission isolation: mission + draft are loaded `FOR UPDATE`
 //     scoped by (id, userId); the executed-flip is a CAS on the still-approved
 //     row inside one transaction (fail-closed).
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import {
   db,
   profitMissionsTable,
@@ -56,6 +59,55 @@ export type MissionExecutor = (args: {
   ua?: string | null;
 }) => Promise<InstantTradeResult>;
 
+/**
+ * The injectable SIMULATED executor seam for non-live (`paper`/`demo`) missions.
+ * It receives the SAME intent shape (minus accountMode — a non-live mission has
+ * no live account mode to claim) after the full gate chain + single-flight claim
+ * have run, and must NEVER contact a broker, insert a broker command, or
+ * fabricate a fill/price/P&L. The default implementation journals + audits the
+ * accepted intent and returns a `sim:` command id — nothing else.
+ */
+export type MissionSimulatedExecutor = (args: {
+  userId: number;
+  missionId: number;
+  executionMode: "paper" | "demo";
+  draft: MissionTradeDraftRow;
+  intent: Omit<InstantTradeIntent, "accountMode">;
+  ip?: string | null;
+  ua?: string | null;
+  nowMs: number;
+}) => Promise<InstantTradeResult>;
+
+/**
+ * Default simulated dispatch recorder. HONESTY: this records that the intent
+ * PASSED every mission-side gate and was accepted into the mission's journal —
+ * it does not simulate a market, a fill, or an outcome, so no realised P/L can
+ * ever originate here. The live broker is never contacted.
+ */
+export const recordSimulatedMissionDispatch: MissionSimulatedExecutor = async (args) => {
+  const commandId = `sim:${args.executionMode}:${args.draft.draftId}:${args.nowMs}`;
+  await auditMission({
+    userId: args.userId,
+    action: "mission_draft_dispatch_simulated",
+    ip: args.ip,
+    ua: args.ua,
+    metadata: {
+      missionId: args.missionId,
+      draftId: args.draft.draftId,
+      executionMode: args.executionMode,
+      commandId,
+      intent: args.intent,
+    },
+  });
+  await journalMissionEvent({
+    missionId: args.missionId,
+    type: "draft_dispatch_simulated",
+    message: `Draft dispatched through the gated path in ${args.executionMode} mode for ${args.draft.symbol} ${args.draft.direction} — intent recorded only; the live broker is never contacted and no fill or profit is simulated.`,
+    metadata: { draftId: args.draft.draftId, executionMode: args.executionMode, commandId },
+  });
+  return { ok: true, commandId, action: args.intent.action };
+};
+
 export interface DispatchApprovedDraftArgs {
   userId: number;
   missionId: number;
@@ -71,18 +123,19 @@ export interface DispatchApprovedDraftArgs {
 
 export interface DispatchApprovedDraftOpts {
   executor?: MissionExecutor;
+  /** Injectable simulated executor for paper/demo — defaults to the recorder. */
+  simulatedExecutor?: MissionSimulatedExecutor;
   /** Injectable Phase 7 pre-check evaluator — defaults to the real one. */
   phase7Evaluator?: Phase7Evaluator;
 }
 
 export type DispatchApprovedDraftResult =
-  | { ok: true; commandId?: string; draft: MissionTradeDraftRow }
+  | { ok: true; commandId?: string; executionMode: string; draft: MissionTradeDraftRow }
   | { ok: false; kind: "mission_not_found" }
   | { ok: false; kind: "draft_not_found" }
   | { ok: false; kind: "not_approved"; status: string }
   | { ok: false; kind: "expired" }
   | { ok: false; kind: "no_direction" }
-  | { ok: false; kind: "non_live"; executionMode: string }
   | { ok: false; kind: "mission_blocked"; gate: MissionGateResult }
   | { ok: false; kind: "phase7_blocked"; phase7: Phase7Verdict }
   | {
@@ -233,24 +286,11 @@ export async function dispatchApprovedDraft(
     return { ok: false, kind: "mission_blocked", gate };
   }
 
-  // ── Demo / paper never touch the live broker (audit + journal only) ──────────
-  const executionMode = mission.executionMode;
-  if (executionMode !== "live") {
-    await auditMission({
-      userId: args.userId,
-      action: "mission_draft_dispatch_non_live",
-      ip: args.ip,
-      ua: args.ua,
-      metadata: { missionId: args.missionId, draftId: draft.draftId, executionMode },
-    });
-    await journalMissionEvent({
-      missionId: args.missionId,
-      type: "draft_dispatch_skipped_non_live",
-      message: `Draft approved for ${draft.symbol} ${draft.direction} — mission is ${executionMode}; the live broker is never contacted.`,
-      metadata: { draftId: draft.draftId, executionMode },
-    });
-    return { ok: false, kind: "non_live", executionMode };
-  }
+  // ── Resolve the executor by mode: paper/demo run the SAME gate chain but ────
+  // dispatch through the simulated recorder, which never contacts the broker.
+  const executionMode: "paper" | "demo" | "live" =
+    mission.executionMode === "live" ? "live" : mission.executionMode === "demo" ? "demo" : "paper";
+  const simulatedExecutor = opts.simulatedExecutor ?? recordSimulatedMissionDispatch;
 
   // ── Phase 7 pre-checks (additive, stricter-only) BEFORE the single-flight ────
   // claim. Layered ON TOP of the mission gate + the real per-user governor +
@@ -302,12 +342,13 @@ export async function dispatchApprovedDraft(
     return { ok: false, kind: "phase7_blocked", phase7 };
   }
 
-  // ── Live: route through the ONE instant-trade entry (source "mission") ───────
-  const intent: InstantTradeIntent = {
+  // ── The ONE intent shape (source "mission"), shared by live + simulated. ─────
+  // Only a LIVE mission ever gains the live accountMode; the simulated leg
+  // receives the identical intent WITHOUT any account-mode claim.
+  const baseIntent: Omit<InstantTradeIntent, "accountMode"> = {
     source: "mission",
     missionId: args.missionId,
     action: draft.direction,
-    accountMode: "live",
     symbol: draft.symbol,
     volume: draft.lot ?? undefined,
     stopLoss: draft.stopLoss,
@@ -319,7 +360,13 @@ export async function dispatchApprovedDraft(
     action: "mission_draft_dispatch_attempt",
     ip: args.ip,
     ua: args.ua,
-    metadata: { missionId: args.missionId, draftId: draft.draftId, symbol: draft.symbol, direction: draft.direction },
+    metadata: {
+      missionId: args.missionId,
+      draftId: draft.draftId,
+      symbol: draft.symbol,
+      direction: draft.direction,
+      executionMode,
+    },
   });
 
   // ── Single-flight claim (atomic CAS approved → executed) BEFORE the broker ───
@@ -345,7 +392,26 @@ export async function dispatchApprovedDraft(
     return { ok: false, kind: "not_approved", status: "executed" };
   }
 
-  const result = await executor({ userId: args.userId, intent, ip: args.ip, ua: args.ua });
+  // LIVE routes through the ONE instant-trade entry; paper/demo record through
+  // the simulated executor — SAME gates, SAME claim, NO broker contact.
+  const result: InstantTradeResult =
+    executionMode === "live"
+      ? await executor({
+          userId: args.userId,
+          intent: { ...baseIntent, accountMode: "live" },
+          ip: args.ip,
+          ua: args.ua,
+        })
+      : await simulatedExecutor({
+          userId: args.userId,
+          missionId: args.missionId,
+          executionMode,
+          draft: claimed,
+          intent: baseIntent,
+          ip: args.ip,
+          ua: args.ua,
+          nowMs,
+        });
 
   if (!result.ok) {
     // A clean rejection means NO order was sent (executeInstant rejects before
@@ -381,12 +447,78 @@ export async function dispatchApprovedDraft(
     };
   }
 
-  // ── Success: the claim already flipped the row to `executed`; journal once. ──
+  // ── Success: the claim already flipped the row to `executed`. Persist the ────
+  // draft→fill linkage (commandId) ON THE ROW — this is what lets the exit
+  // manager find the open position and the close hook record the realised
+  // outcome. The broker ticket is backfilled at fill confirmation.
+  const linkedRows = await db
+    .update(missionTradeDraftsTable)
+    .set({ commandId: result.commandId ?? null, updatedAt: new Date(nowMs) })
+    .where(
+      and(
+        eq(missionTradeDraftsTable.draftId, draft.draftId),
+        eq(missionTradeDraftsTable.userId, args.userId),
+        eq(missionTradeDraftsTable.status, "executed"),
+      ),
+    )
+    .returning();
+  const linked = (linkedRows[0] as MissionTradeDraftRow | undefined) ?? claimed;
+
   await journalMissionEvent({
     missionId: args.missionId,
     type: "draft_executed",
-    message: `Draft dispatched to live execution for ${draft.symbol} ${draft.direction}.`,
-    metadata: { draftId: draft.draftId, commandId: result.commandId ?? null, source: "mission" },
+    message:
+      executionMode === "live"
+        ? `Draft dispatched to live execution for ${draft.symbol} ${draft.direction}.`
+        : `Draft dispatched through the gated path (${executionMode}) for ${draft.symbol} ${draft.direction} — no broker contact.`,
+    metadata: {
+      draftId: draft.draftId,
+      commandId: result.commandId ?? null,
+      executionMode,
+      source: "mission",
+    },
   });
-  return { ok: true, commandId: result.commandId, draft: claimed };
+  return { ok: true, commandId: result.commandId, executionMode, draft: linked };
+}
+
+/**
+ * Best-effort OPEN-fill backfill: stamp the broker ticket onto the executed
+ * mission draft that dispatched `commandId`. Called from the authoritative live
+ * fill-confirmation path (mirroring the close hook) — never an execution path,
+ * a pure additive column write on an already-owned row. Idempotent: only a row
+ * still missing its ticket is written. No-op for non-mission commands.
+ */
+export async function backfillMissionDraftBrokerTicket(args: {
+  userId: number;
+  commandId: string | null | undefined;
+  brokerTicket: string | null | undefined;
+  nowMs?: number;
+}): Promise<{ linked: boolean }> {
+  const commandId = typeof args.commandId === "string" ? args.commandId.trim() : "";
+  const ticket = typeof args.brokerTicket === "string" ? args.brokerTicket.trim() : "";
+  if (!commandId || !ticket) return { linked: false };
+  const nowMs = args.nowMs ?? Date.now();
+
+  const rows = await db
+    .update(missionTradeDraftsTable)
+    .set({ brokerTicket: ticket, updatedAt: new Date(nowMs) })
+    .where(
+      and(
+        eq(missionTradeDraftsTable.userId, args.userId),
+        eq(missionTradeDraftsTable.commandId, commandId),
+        eq(missionTradeDraftsTable.status, "executed"),
+        isNull(missionTradeDraftsTable.brokerTicket),
+      ),
+    )
+    .returning();
+  const row = rows[0] as MissionTradeDraftRow | undefined;
+  if (!row) return { linked: false };
+
+  await journalMissionEvent({
+    missionId: row.missionId,
+    type: "draft_fill_linked",
+    message: `Broker fill linked to mission trade for ${row.symbol} ${row.direction} (ticket ${ticket}).`,
+    metadata: { draftId: row.draftId, commandId, brokerTicket: ticket },
+  });
+  return { linked: true };
 }
