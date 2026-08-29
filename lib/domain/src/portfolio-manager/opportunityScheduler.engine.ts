@@ -209,9 +209,12 @@ export function scheduleOpportunities(input: OpportunityScheduleInput): Opportun
 
     const envelope = strategyRemaining.get(o.strategyId) ?? 0;
     const symUsed = symbolUsed.get(o.symbolId) ?? 0;
-    const symRemaining = input.perSymbolCapR > 0
-      ? clampNonNegative(input.perSymbolCapR - symUsed)
-      : Number.POSITIVE_INFINITY;
+    // perSymbolCapR = 0 is a REAL zero cap (consistent with riskBudget.engine,
+    // which derives 0 when the fraction or total is 0, and with
+    // exposureBalancer, which scales down to a 0 cap). There is no
+    // "0 = disabled" sentinel: disabling the per-symbol cap is not a thing
+    // this scheduler offers, because a stated cap must always bind.
+    const symRemaining = clampNonNegative(input.perSymbolCapR - symUsed);
     const capacity = o.capacityRiskR !== undefined
       ? clampNonNegative(o.capacityRiskR)
       : Number.POSITIVE_INFINITY;
@@ -323,12 +326,13 @@ export function verifyScheduleWithinEnvelope(
     const cap = clampNonNegative(input.strategyEnvelopeR[sid] ?? 0);
     if (sum > cap + EPS) out.push(`INVARIANT: strategy ${sid} allocated ${sum} > envelope ${cap}`);
   }
-  if (input.perSymbolCapR > 0) {
-    for (const [sym, sum] of bySymbol) {
-      const used = clampNonNegative(input.perSymbolUsedR?.[sym] ?? 0);
-      if (sum + used > input.perSymbolCapR + EPS) {
-        out.push(`INVARIANT: symbol ${sym} allocated ${sum} + used ${used} > perSymbolCapR ${input.perSymbolCapR}`);
-      }
+  // perSymbolCapR = 0 is a real zero cap (no "0 = disabled" sentinel) — the
+  // verifier must share the scheduler's semantics or a zero-cap breach would
+  // report as invariant-clean.
+  for (const [sym, sum] of bySymbol) {
+    const used = clampNonNegative(input.perSymbolUsedR?.[sym] ?? 0);
+    if (sum + used > clampNonNegative(input.perSymbolCapR) + EPS) {
+      out.push(`INVARIANT: symbol ${sym} allocated ${sum} + used ${used} > perSymbolCapR ${input.perSymbolCapR}`);
     }
   }
   const deployableRemaining = clampNonNegative(input.deployableR - clampNonNegative(input.deployedR ?? 0));

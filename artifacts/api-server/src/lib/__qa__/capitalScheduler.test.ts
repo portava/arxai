@@ -175,6 +175,32 @@ test("every schedule carries deterministic stress evidence within the budget", (
   assert.ok(s.reasons.some((r) => r.includes("simultaneous full loss")));
 });
 
+test("perSymbolCapR = 0 is a REAL zero cap, not a disabled cap", () => {
+  // A budget of maxPerSymbolRiskFraction01 = 0 legitimately derives
+  // perSymbolCapR = 0 (riskBudget.engine). The scheduler must fund NOTHING,
+  // journal the miss as SYMBOL_CAP_REACHED, and the verifier must agree —
+  // 0 must never be silently reinterpreted as "no per-symbol cap".
+  const input: OpportunityScheduleInput = {
+    opportunities: [opp({ opportunityId: "zerocap", requestedRiskR: 1 })],
+    strategyEnvelopeR: { "strat-a": 5 },
+    perSymbolCapR: 0,
+    deployableR: 10,
+  };
+  const s = scheduleOpportunities(input);
+  assert.equal(s.allocations[0]!.allocatedRiskR, 0);
+  assert.equal(s.totalAllocatedR, 0);
+  assert.equal(s.regretJournal[0]!.cause, "SYMBOL_CAP_REACHED");
+  assert.deepEqual(s.blockers, []);
+  assert.deepEqual(verifyScheduleWithinEnvelope(s, input), []);
+  // The verifier itself must flag a schedule that ignores a zero cap.
+  const breached = { ...s, allocations: s.allocations.map((a) => ({ ...a, allocatedRiskR: 1 })) };
+  const violations = verifyScheduleWithinEnvelope(breached, input);
+  assert.ok(
+    violations.some((v) => v.includes("perSymbolCapR 0")),
+    `expected a per-symbol violation, got: ${JSON.stringify(violations)}`,
+  );
+});
+
 test("capacity clip binds and is journaled as CAPACITY_LIMIT", () => {
   const s = scheduleOpportunities({
     opportunities: [opp({ opportunityId: "cap", requestedRiskR: 2, capacityRiskR: 0.5 })],
