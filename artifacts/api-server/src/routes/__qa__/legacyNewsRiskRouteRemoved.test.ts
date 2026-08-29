@@ -61,7 +61,7 @@ describe("G-CUT — /news/calendar is deliberately kept", () => {
   it("the route handler still exists", () => {
     assert.ok(
       /router\.get\(\s*["']\/news\/calendar["']/.test(route),
-      "two live surfaces depend on this route",
+      "the cockpit critical-events card depends on this route",
     );
   });
 
@@ -70,9 +70,14 @@ describe("G-CUT — /news/calendar is deliberately kept", () => {
     assert.ok(/operationId: getEconomicCalendar\b/.test(spec));
   });
 
-  it("the Economic Calendar page still consumes it", () => {
-    const page = read("artifacts/trading-dashboard/src/pages/calendar.tsx");
-    assert.ok(/useGetEconomicCalendar/.test(page));
+  it("the merged Economic Calendar page consumes the unified endpoint instead", () => {
+    // Surface consolidation folded pages/calendar.tsx into
+    // pages/economic-calendar.tsx, which reads the unified
+    // /api/economic-calendar/events path rather than the legacy hook.
+    // The legacy route survives for the cockpit card below.
+    const page = read("artifacts/trading-dashboard/src/pages/economic-calendar.tsx");
+    assert.ok(/\/api\/economic-calendar\/events/.test(page));
+    assert.ok(!/useGetEconomicCalendar\b/.test(page));
   });
 
   it("the cockpit critical-events card still consumes it", () => {
@@ -80,7 +85,7 @@ describe("G-CUT — /news/calendar is deliberately kept", () => {
     assert.ok(/useGetEconomicCalendar\(/.test(cockpit));
   });
 
-  it("the generated client still exposes the hook both pages import", () => {
+  it("the generated client still exposes the hook the cockpit imports", () => {
     const client = read("lib/api-client-react/src/generated/api.ts");
     assert.ok(/useGetEconomicCalendar/.test(client));
   });
