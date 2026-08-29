@@ -18,10 +18,7 @@ import {
   BarChart3,
   ShieldAlert,
   RotateCcw,
-  Lock,
-  Unlock,
   RefreshCw,
-  GitMerge,
   AlertCircle,
   LineChart,
   Clock,
@@ -76,9 +73,10 @@ import {
 //    chart opens to recent price action, not a compressed full-history view.
 //  - Reset Scale button: always-available control to restore the default range.
 //  - Chart Mirror Layer: compact status bar (Mirrored/Syncing/Stale/Conflict/
-//    Refreshing) with a Mirror Lock toggle. When locked the chart's symbol and
-//    timeframe stay in sync with the rest of the UI; when unlocked an
-//    "Inspection mode" badge shows clearly.
+//    Refreshing) derived from feed quality + fetch state. The old "Mirror Lock"
+//    toggle and "Inspection mode" badge were removed: unlocking changed nothing
+//    (symbol/timeframe come from the parent regardless), so the control claimed
+//    an ability the chart does not have.
 //  - Chart Safe Mode: when the quality is "invalid" (integrity check failed),
 //    an overlay shows a clean user message and pauses AI confidence. Overlays
 //    (open positions) remain visible because execution state is independent.
@@ -227,12 +225,6 @@ export interface ARXNativeChartProps {
    * chart never executes from it.
    */
   onIntelligenceChange?: (state: ChartIntelligenceResponse["state"]) => void;
-  /**
-   * Phase 2 — Mirror lock initial state. When true (default) the chart's
-   * displayed symbol and timeframe are locked to the shared chart-symbol bus.
-   * When false the chart enters inspection mode and can diverge.
-   */
-  mirrorLockDefault?: boolean;
 }
 
 export function ARXNativeChart({
@@ -250,7 +242,6 @@ export function ARXNativeChart({
   overlays = [],
   onChartContextChange,
   onIntelligenceChange,
-  mirrorLockDefault = true,
 }: ARXNativeChartProps) {
   // Normalize the incoming symbol to the bare, upper-cased form the contract
   // expects ("FX:EURUSD" -> "EURUSD"); the endpoint classifies from there.
@@ -262,11 +253,14 @@ export function ARXNativeChart({
   const [internalTf, setInternalTf] = useState<ArxTimeframe>(() => loadTimeframe());
   const timeframe = controlledTf ?? internalTf;
 
-  // Phase 2 — Mirror Lock. When on, the chart advertises its symbol/timeframe
-  // as "mirrored" with the rest of the UI. When off, an inspection-mode
-  // indicator shows. This is visual state only; the symbol/timeframe come from
-  // the parent regardless — this flag only changes how the Mirror Layer reads.
-  const [mirrorLocked, setMirrorLocked] = useState(mirrorLockDefault);
+  // Mirror Lock REMOVED. The toggle, the "Inspection mode" badge and the
+  // `mirrorLockDefault` prop were a control that did nothing: `mirrorLocked`
+  // was read only by the toggle's own styling and that badge, and the comment
+  // here admitted "the symbol/timeframe come from the parent regardless".
+  // Unlocking it did not let the user inspect a different instrument — the
+  // chart still followed the shared bus. A control that looks live and changes
+  // nothing is worse than no control, so it is gone. The Mirror Layer status
+  // bar below stays: Mirrored / Syncing / Stale / Conflict are all real reads.
 
   // Bumped each time the chart/series is (re)built so overlay effects redraw
   // onto the fresh series instead of a stale handle.
@@ -995,12 +989,11 @@ export function ARXNativeChart({
       </CardHeader>
 
       {/* Phase 2 — Chart Mirror Layer.
-          Compact status bar between the header and the canvas. Shows the
-          mirror state (Mirrored / Syncing / Stale / Conflict / Refreshing),
-          the locked symbol and timeframe, and a Mirror Lock toggle.
-          When locked: "Mirrored · SYMBOL · TF" — chart is in sync.
-          When unlocked: "Inspection mode" badge — chart may diverge.
-          This is purely informational; it never gates candles or trades. */}
+          Compact status bar between the header and the canvas: the mirror state
+          (Mirrored / Syncing / Stale / Conflict / Refreshing) plus the symbol
+          and timeframe actually being rendered. Every value here is derived
+          from the feed read. This is informational; it never gates candles or
+          trades. */}
       <div
         className="flex items-center gap-2 border-b border-border bg-background/20 px-3 py-1.5 text-[10px]"
         data-testid="arx-mirror-layer"
@@ -1032,36 +1025,6 @@ export function ARXNativeChart({
             Waiting for data
           </span>
         )}
-        <span className="ml-auto flex items-center gap-1">
-          {!mirrorLocked && (
-            <Badge
-              variant="outline"
-              className="border-warning/25 bg-warning/10 text-[9px] text-warning"
-              data-testid="arx-mirror-inspection"
-            >
-              <GitMerge className="mr-0.5 h-2.5 w-2.5" />
-              Inspection mode
-            </Badge>
-          )}
-          <button
-            type="button"
-            className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9px] transition-colors ${
-              mirrorLocked
-                ? "border-success/25 bg-success/10 text-success hover:bg-success/10"
-                : "border-border bg-muted/40 text-muted-foreground hover:bg-muted/40"
-            }`}
-            onClick={() => setMirrorLocked((l) => !l)}
-            title={mirrorLocked ? "Mirror Lock ON — click to inspect freely" : "Mirror Lock OFF — click to re-lock"}
-            data-testid="arx-mirror-lock"
-          >
-            {mirrorLocked ? (
-              <Lock className="h-2.5 w-2.5" />
-            ) : (
-              <Unlock className="h-2.5 w-2.5" />
-            )}
-            {mirrorLocked ? "Lock ON" : "Lock OFF"}
-          </button>
-        </span>
       </div>
 
       <CardContent className="relative p-0">

@@ -290,9 +290,17 @@ function OverviewTab({ summary, daily, loadingDaily, balance, equity, openPnl, p
           )}
         </Card>
 
+        {/* HONESTY: this card said "{name} needs more closed trades to
+            calculate consistency accurately. Score updates as more trades
+            close." — implying a score exists and is waiting on sample size.
+            Nothing computes a consistency score anywhere in the codebase, so
+            no amount of trading makes it appear. Say what is true. */}
         <Card>
           <CardTitle icon={<Gauge className="h-4 w-4 text-primary" />} title="Consistency Score" />
-          <p className="mt-3 text-sm text-txt-muted">{name} needs more closed trades to calculate consistency accurately. Score updates as more trades close.</p>
+          <p className="mt-3 text-sm text-txt-muted">
+            Not built yet — there is no consistency calculation behind this card, so it will not
+            fill in as you trade. Your closed-trade record is on the P/L Breakdown above.
+          </p>
         </Card>
       </div>
 
@@ -346,17 +354,27 @@ function OverviewTab({ summary, daily, loadingDaily, balance, equity, openPnl, p
         )}
       </Card>
 
-      {/* 9+10: Timeline + Alerts (future-ready) */}
+      {/* 9+10: Timeline + Alerts.
+          These read nothing. The old copy phrased both as a live empty state,
+          as though the system had looked and found none. It never looked: there
+          is no account event source and no alerts read on this page. The links
+          to the real surfaces (/trading-calendar, /alerts) are kept — those
+          DO work. */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
           <CardTitle icon={<Clock className="h-4 w-4 text-primary" />} title="Account Timeline"
             action={<button onClick={() => navigate("/trading-calendar")} className="text-xs text-primary hover:underline">View Full Timeline</button>} />
-          <p className="mt-3 text-sm text-txt-muted">No account events recorded yet.</p>
+          <p className="mt-3 text-sm text-txt-muted">
+            Not shown here — this card reads no event source. Use the Trading Calendar for your
+            real account history.
+          </p>
         </Card>
         <Card>
           <CardTitle icon={<Bell className="h-4 w-4 text-primary" />} title="Account Alerts"
             action={<button onClick={() => navigate("/alerts")} className="text-xs text-primary hover:underline">View All</button>} />
-          <p className="mt-3 text-sm text-txt-muted">No account alerts right now.</p>
+          <p className="mt-3 text-sm text-txt-muted">
+            Not shown here — this card reads no alert source. Your real alerts are in the Alerts inbox.
+          </p>
         </Card>
       </div>
     </div>
@@ -554,21 +572,19 @@ function AllocationTab({ balance, equity, openPnl, positions }: any) {
 }
 
 // ── Timeline tab ────────────────────────────────────────────────────────────
+// The nine filter chips (All / Deposits / Withdrawals / Allocations / Trades /
+// Risk Events / Reviews / … Lessons / Bridge Events) were removed. There is no
+// timeline event source on this page, so `filter` was write-only state: every
+// chip was clickable, highlighted itself, and could never change a single row.
+// Nine live-looking controls over an empty list is a worse lie than an honest
+// empty tab.
 function TimelineTab() {
-  const { name } = useAssistantName();
-  const [filter, setFilter] = useState("all");
-  const filters = ["All", "Deposits", "Withdrawals", "Allocations", "Trades", "Risk Events", "Reviews", `${name} Lessons`, "Bridge Events"];
   return (
     <Card>
-      <div className="flex flex-wrap gap-1.5">
-        {filters.map((f) => (
-          <button key={f} onClick={() => setFilter(f.toLowerCase())}
-            className={cn("rounded-lg border px-2.5 py-1 text-xs", filter === f.toLowerCase() ? "border-primary bg-primary text-white" : "border-border bg-card text-txt-secondary hover:text-foreground")}>
-            {f}
-          </button>
-        ))}
-      </div>
-      <p className="mt-4 text-sm text-txt-muted">No account timeline events yet.</p>
+      <p className="text-sm text-txt-muted">
+        The account timeline is not built on this page — it reads no event source, so filtering it
+        would filter nothing. Your real trade history is in the Trading Calendar and Open Trades.
+      </p>
     </Card>
   );
 }

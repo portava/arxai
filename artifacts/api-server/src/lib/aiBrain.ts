@@ -26,7 +26,22 @@ function round(n: number, d = 2) {
 export type AnalysisDataSource = "SIMULATOR" | "LIVE_FEED";
 export type AnalysisExecutionEnvironment = "SIMULATOR" | "LIVE_FEED";
 
+/**
+ * Machine-readable reason a scored read could not be produced.
+ * `null` means the read WAS produced (dataAvailable === true).
+ */
+export type AnalysisUnavailableReason =
+  | "SYMBOL_NOT_IN_SIMULATOR"
+  | "AWAITING_LIVE_CANDLES";
+
 export interface MarketAnalysis {
+  /**
+   * False when there were no candles/quote to analyse. Every numeric score on
+   * this object is then a placeholder, NOT a measurement — consumers must
+   * refuse rather than render them. See `unavailableReason`.
+   */
+  dataAvailable: boolean;
+  unavailableReason: AnalysisUnavailableReason | null;
   symbol: string;
   timeframe: string;
   marketBias: "bullish" | "bearish" | "neutral" | "choppy";
@@ -67,6 +82,8 @@ export function analyzeMarketFromCandles(
 ): MarketAnalysis {
   if (!candles?.length || !quote) {
     return {
+      dataAvailable: false,
+      unavailableReason: source === "LIVE_FEED" ? "AWAITING_LIVE_CANDLES" : "SYMBOL_NOT_IN_SIMULATOR",
       symbol, timeframe,
       marketBias: "neutral", trendStrength: 0, setupQualityScore: 0,
       entryQualityScore: 0, riskScore: 100, confidenceScore: 0,
@@ -151,6 +168,8 @@ function analyzeCore(
   else if (rulesFailed.length <= 1 && (marketBias === "bullish" || marketBias === "bearish")) recommendedAction = "WAIT";
 
   return {
+    dataAvailable: true,
+    unavailableReason: null,
     symbol, timeframe, marketBias, trendStrength, setupQualityScore,
     entryQualityScore, riskScore, confidenceScore, recommendedAction,
     entryZone: { low: round(entry - avgRange * 0.25, 5), high: round(entry + avgRange * 0.25, 5) },
@@ -184,12 +203,29 @@ export function generateTradeCard(symbol: string, timeframe = "M15", maxRiskUsd 
   };
 }
 
+/**
+ * Human-readable refusal copy for a scored read the simulator cannot produce.
+ * Never presented as a verdict — the surface must show this INSTEAD of a score.
+ */
+export function unavailableCopy(reason: AnalysisUnavailableReason, symbol: string): string {
+  return reason === "AWAITING_LIVE_CANDLES"
+    ? `No candles yet from the live market data feed for ${symbol}. Nothing was scored.`
+    : `${symbol} is not one of the symbols this simulator can price, so no analysis was run. Nothing below was scored.`;
+}
+
 export interface EntrySniperScore {
-  score: number;
+  /** null when `available` is false — never a confident 0. */
+  score: number | null;
   label:
     | "PERFECT_ENTRY_ZONE" | "GOOD_ENTRY" | "ACCEPTABLE_ENTRY"
-    | "LATE_ENTRY" | "CHASED_ENTRY" | "DO_NOT_ENTER";
+    | "LATE_ENTRY" | "CHASED_ENTRY" | "DO_NOT_ENTER"
+    | null;
+  /** Empty when `available` is false. */
   factors: Record<string, number>;
+  /** False = the model refused. Render `unavailableReason`, not the numbers. */
+  available: boolean;
+  unavailableReason: AnalysisUnavailableReason | null;
+  unavailableMessage: string | null;
   dataSource: "SIMULATOR";
 }
 export function entrySniperScore(input: {
@@ -198,6 +234,22 @@ export function entrySniperScore(input: {
 }): EntrySniperScore {
   const { symbol, direction, entryPrice, stopLoss, takeProfit } = input;
   const a = analyzeMarket(symbol);
+
+  // REFUSAL: with no candles behind it, every factor below would be arithmetic
+  // over a zeroed entry zone — a confident-looking number derived from nothing.
+  if (!a.dataAvailable) {
+    const reason = a.unavailableReason ?? "SYMBOL_NOT_IN_SIMULATOR";
+    return {
+      score: null,
+      label: null,
+      factors: {},
+      available: false,
+      unavailableReason: reason,
+      unavailableMessage: unavailableCopy(reason, symbol),
+      dataSource: "SIMULATOR",
+    };
+  }
+
   const idealMid = (a.entryZone.low + a.entryZone.high) / 2;
   const zoneWidth = Math.max(0.0000001, a.entryZone.high - a.entryZone.low);
   const distanceRatio = Math.abs(entryPrice - idealMid) / zoneWidth;
@@ -227,17 +279,27 @@ export function entrySniperScore(input: {
   else if (score >= 30) label = "CHASED_ENTRY";
   else label = "DO_NOT_ENTER";
 
-  return { score, label, factors, dataSource: "SIMULATOR" };
+  return {
+    score, label, factors,
+    available: true, unavailableReason: null, unavailableMessage: null,
+    dataSource: "SIMULATOR",
+  };
 }
 
 export interface TradeGrade {
-  tradeGrade: "A+" | "A" | "B" | "C" | "D" | "F";
-  overallScore: number;
+  /** null when `available` is false — never an F derived from no data. */
+  tradeGrade: "A+" | "A" | "B" | "C" | "D" | "F" | null;
+  overallScore: number | null;
   strengths: string[];
   weaknesses: string[];
   mistakesDetected: string[];
   improvementSuggestion: string;
-  shouldHaveTakenTrade: boolean;
+  /** null when `available` is false — the model has no opinion, not a "no". */
+  shouldHaveTakenTrade: boolean | null;
+  /** False = the model refused. Render `unavailableMessage`, not a grade. */
+  available: boolean;
+  unavailableReason: AnalysisUnavailableReason | null;
+  unavailableMessage: string | null;
   dataSource: "SIMULATOR";
 }
 export function gradeTrade(input: {
@@ -247,7 +309,42 @@ export function gradeTrade(input: {
 }): TradeGrade {
   const { symbol, direction, entryPrice, stopLoss, takeProfit, lotSize, confidenceScore } = input;
   const a = analyzeMarket(symbol);
+
+  // REFUSAL: the old code walked straight into the mistake detector with a
+  // zeroed analysis and produced grade "F" + "traded against trend / entered
+  // too late / ignored spread" for a trade nothing had looked at. Refuse.
+  if (!a.dataAvailable) {
+    const reason = a.unavailableReason ?? "SYMBOL_NOT_IN_SIMULATOR";
+    return {
+      tradeGrade: null,
+      overallScore: null,
+      strengths: [],
+      weaknesses: [],
+      mistakesDetected: [],
+      improvementSuggestion: "",
+      shouldHaveTakenTrade: null,
+      available: false,
+      unavailableReason: reason,
+      unavailableMessage: unavailableCopy(reason, symbol),
+      dataSource: "SIMULATOR",
+    };
+  }
+
   const sniper = entrySniperScore({ symbol, direction, entryPrice, stopLoss, takeProfit });
+  if (!sniper.available || sniper.score == null) {
+    const reason = sniper.unavailableReason ?? "SYMBOL_NOT_IN_SIMULATOR";
+    return {
+      tradeGrade: null, overallScore: null,
+      strengths: [], weaknesses: [], mistakesDetected: [],
+      improvementSuggestion: "",
+      shouldHaveTakenTrade: null,
+      available: false,
+      unavailableReason: reason,
+      unavailableMessage: sniper.unavailableMessage ?? unavailableCopy(reason, symbol),
+      dataSource: "SIMULATOR",
+    };
+  }
+  const sniperScore = sniper.score;
 
   const strengths: string[] = []; const weaknesses: string[] = []; const mistakes: string[] = [];
   if (sniper.factors.trendAlign >= 80) strengths.push("Aligned with prevailing trend");
@@ -263,7 +360,7 @@ export function gradeTrade(input: {
   if (mistakes.length === 0) mistakes.push("no mistake detected");
 
   const overallScore = clamp(Math.round(
-    sniper.score * 0.40 + a.confidenceScore * 0.25 + (100 - a.riskScore) * 0.20 + (sniper.factors.rrOk) * 0.15,
+    sniperScore * 0.40 + a.confidenceScore * 0.25 + (100 - a.riskScore) * 0.20 + (sniper.factors.rrOk) * 0.15,
   ));
   let tradeGrade: TradeGrade["tradeGrade"];
   if (overallScore >= 92) tradeGrade = "A+";
@@ -280,6 +377,9 @@ export function gradeTrade(input: {
       ? `Focus on: ${weaknesses[0].toLowerCase()} — wait for ${a.marketBias} confirmation and tighter spread before next entry.`
       : "Repeat this checklist on next setup; quality is acceptable.",
     shouldHaveTakenTrade: tradeGrade !== "F" && tradeGrade !== "D",
+    available: true,
+    unavailableReason: null,
+    unavailableMessage: null,
     dataSource: "SIMULATOR",
   };
 }

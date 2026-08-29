@@ -12448,44 +12448,83 @@ export const RunBrainAnalysisBody = zod.object({
   enableSessionFilter: zod.boolean().optional(),
 });
 
-export const RunBrainAnalysisResponse = zod.object({
-  symbol: zod.string(),
-  category: zod.string(),
-  direction: zod.enum(["BUY", "SELL", "WAIT"]),
-  confidence: zod.number(),
-  entry: zod.number(),
-  stopLoss: zod.number(),
-  takeProfit: zod.number(),
-  riskReward: zod.number(),
-  strategy: zod.string(),
-  marketCondition: zod.string(),
-  technicalBias: zod.enum(["Bullish", "Bearish", "Neutral"]),
-  macroBias: zod.string(),
-  session: zod.string(),
-  newsRisk: zod.string(),
-  riskApproved: zod.boolean(),
-  blockedReason: zod.string(),
-  reasons: zod.array(zod.string()),
-  timestamp: zod.string(),
-  scoring: zod.object({
-    confidence: zod.number(),
-    breakdown: zod.object({
-      technicalContrib: zod.number(),
-      macroContrib: zod.number(),
-      sessionContrib: zod.number(),
-      strategyContrib: zod.number(),
-      newsDeduction: zod.number(),
-      volatilityDeduction: zod.number(),
-      spreadDeduction: zod.number(),
-      formula: zod.string(),
-    }),
-  }),
-  symbolInfo: zod.record(zod.string(), zod.unknown()).nullish(),
-  technicalDetails: zod.record(zod.string(), zod.unknown()).optional(),
-  macroDetails: zod.record(zod.string(), zod.unknown()).optional(),
-  sessionDetails: zod.record(zod.string(), zod.unknown()).optional(),
-  newsDetails: zod.record(zod.string(), zod.unknown()).optional(),
-});
+export const RunBrainAnalysisResponse = zod.union([
+  zod
+    .object({
+      available: zod
+        .boolean()
+        .describe(
+          "Always true here. Discriminates against MarketBrainRefusal.",
+        ),
+      candleSource: zod
+        .string()
+        .optional()
+        .describe(
+          '\"caller\" when the caller supplied candles, otherwise the router provider id that served the real bars.',
+        ),
+      candleCount: zod.number().optional(),
+      symbol: zod.string(),
+      category: zod.string(),
+      direction: zod.enum(["BUY", "SELL", "WAIT"]),
+      confidence: zod.number(),
+      entry: zod.number(),
+      stopLoss: zod.number(),
+      takeProfit: zod.number(),
+      riskReward: zod.number(),
+      strategy: zod.string(),
+      marketCondition: zod.string(),
+      technicalBias: zod.enum(["Bullish", "Bearish", "Neutral"]),
+      macroBias: zod.string(),
+      session: zod.string(),
+      newsRisk: zod.string(),
+      riskApproved: zod.boolean(),
+      blockedReason: zod.string(),
+      reasons: zod.array(zod.string()),
+      timestamp: zod.string(),
+      scoring: zod.object({
+        confidence: zod.number(),
+        breakdown: zod.object({
+          technicalContrib: zod.number(),
+          macroContrib: zod.number(),
+          sessionContrib: zod.number(),
+          strategyContrib: zod.number(),
+          newsDeduction: zod.number(),
+          volatilityDeduction: zod.number(),
+          spreadDeduction: zod.number(),
+          formula: zod.string(),
+        }),
+      }),
+      symbolInfo: zod.record(zod.string(), zod.unknown()).nullish(),
+      technicalDetails: zod.record(zod.string(), zod.unknown()).optional(),
+      macroDetails: zod.record(zod.string(), zod.unknown()).optional(),
+      sessionDetails: zod.record(zod.string(), zod.unknown()).optional(),
+      newsDetails: zod.record(zod.string(), zod.unknown()).optional(),
+    })
+    .describe("A full analysis. `available` is always true on this shape."),
+  zod
+    .object({
+      available: zod
+        .boolean()
+        .describe(
+          "Always false here. Discriminates against MarketBrainResult.",
+        ),
+      reason: zod.enum(["INSUFFICIENT_REAL_DATA"]),
+      symbol: zod.string(),
+      direction: zod.enum(["WAIT"]),
+      confidence: zod
+        .number()
+        .describe(
+          "Always 0 — a withheld read, not a measured zero. Do not render as a score.",
+        ),
+      riskApproved: zod.boolean(),
+      blockedReason: zod.string(),
+      reasons: zod.array(zod.string()),
+      timestamp: zod.string(),
+    })
+    .describe(
+      "Honest refusal returned INSTEAD of an analysis when the market-data router cannot serve enough real closed candles (60). It deliberately carries NO market numbers — no technicalDetails, macroDetails, scoring, entry, stop or target. A consumer that renders this as an analysis will read undefined; branch on `available === false` first.",
+    ),
+]);
 
 /**
  * @summary List all symbols in the registry

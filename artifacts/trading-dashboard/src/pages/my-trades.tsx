@@ -45,6 +45,21 @@ function openRubyLiveChat() {
 }
 
 // Same shape MyOpenTradesPanel uses (MT5-confirmed open positions only).
+/**
+ * How far price has travelled from entry toward a level, as a 0–1 fraction.
+ * 0 = still at entry, 1 = the level has been reached. Values outside [0,1] are
+ * clamped. Returns 0 when entry and level coincide (nothing to measure).
+ */
+export function proximityToLevel(entry: number, current: number, level: number): number {
+  const span = Math.abs(level - entry);
+  if (!Number.isFinite(span) || span === 0) return 0;
+  const travelled = (current - entry) / (level - entry);
+  return Math.max(0, Math.min(1, travelled));
+}
+
+/** A position counts as "near" a level once price has covered 80% of the way. */
+export const NEAR_LEVEL_THRESHOLD = 0.8;
+
 type OpenCard = {
   id: string;
   source: "user_owned_mt5" | "shared_master_attribution";
@@ -180,8 +195,31 @@ export default function MyTradesPage() {
     const shortLots = cards.filter((c) => c.side === "SELL").reduce((s, c) => s + c.lotSize, 0);
     const noSL = cards.filter((c) => c.stopLoss == null).length;
     const noTP = cards.filter((c) => c.takeProfit == null).length;
-    return { openPnl, totalLots, protectedN, unprotectedN, withWinner, withLoser, longLots, shortLots, noSL, noTP };
+    // "Near Stop Loss" / "Near Take Profit" used to be hardcoded "—" beside
+    // four working tiles, so the user read "no positions near stop loss" from a
+    // field that never computed. Both are derivable from data already on the
+    // card: entry, current price and the level. `null` (rendered "—") is kept
+    // for the honest case where NO card has enough of those to measure.
+    const measurable = cards.filter(
+      (c) => c.currentPrice != null && c.entryPrice != null,
+    );
+    const nearSL = measurable.some((c) => c.stopLoss != null)
+      ? measurable.filter((c) => c.stopLoss != null && proximityToLevel(c.entryPrice!, c.currentPrice!, c.stopLoss) >= NEAR_LEVEL_THRESHOLD).length
+      : null;
+    const nearTP = measurable.some((c) => c.takeProfit != null)
+      ? measurable.filter((c) => c.takeProfit != null && proximityToLevel(c.entryPrice!, c.currentPrice!, c.takeProfit) >= NEAR_LEVEL_THRESHOLD).length
+      : null;
+    return { openPnl, totalLots, protectedN, unprotectedN, withWinner, withLoser, longLots, shortLots, noSL, noTP, nearSL, nearTP };
   }, [cards]);
+
+  /** Open positions that reported an open time, newest first. Real rows only. */
+  const recentlyOpened = useMemo(
+    () => cards
+      .filter((c) => c.openedAt != null && !Number.isNaN(Date.parse(c.openedAt)))
+      .sort((a, b) => Date.parse(b.openedAt!) - Date.parse(a.openedAt!))
+      .slice(0, 5),
+    [cards],
+  );
 
   const visible = useMemo(() => {
     let list = cards;
@@ -365,9 +403,9 @@ export default function MyTradesPage() {
           ) : (
             <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
               <Stat dot="bg-success" label="Protected" value={sum.protectedN} />
-              <Stat dot="bg-danger" label="Near Stop Loss" value="—" />
+              <Stat dot="bg-danger" label="Near Stop Loss" value={sum.nearSL ?? "—"} />
               <Stat dot="bg-danger" label="Unprotected" value={sum.unprotectedN} />
-              <Stat dot="bg-warning" label="Near Take Profit" value="—" />
+              <Stat dot="bg-warning" label="Near Take Profit" value={sum.nearTP ?? "—"} />
               <Stat dot="bg-danger" label="Without SL" value={sum.noSL} />
               <Stat dot="bg-warning" label="Without TP" value={sum.noTP} />
             </div>
@@ -568,12 +606,34 @@ export default function MyTradesPage() {
           </button>
         </div>
 
-        {/* Live Activity */}
+        {/* Recently opened.
+            This card used to render the permanent literal "Live activity will
+            appear as positions update." — a sentence that promised data no code
+            path ever produced. There is no activity feed endpoint, so the card
+            now shows the one real thing this page already holds: when the open
+            positions were opened, newest first. */}
         <div className="rounded-2xl border border-border bg-card p-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2"><Clock className="h-4 w-4 text-primary" /><h3 className="text-sm font-semibold">Live Activity</h3></div>
+            <div className="flex items-center gap-2"><Clock className="h-4 w-4 text-primary" /><h3 className="text-sm font-semibold">Recently opened</h3></div>
           </div>
-          <p className="mt-3 text-sm text-txt-muted">Live activity will appear as positions update.</p>
+          {recentlyOpened.length === 0 ? (
+            <p className="mt-3 text-sm text-txt-muted">
+              {cards.length === 0
+                ? "No open positions."
+                : "Your broker did not report an open time for these positions."}
+            </p>
+          ) : (
+            <ul className="mt-3 space-y-1.5">
+              {recentlyOpened.map((c) => (
+                <li key={c.id} className="flex items-center gap-2 text-xs">
+                  <span className={cn("font-medium", c.side === "BUY" ? "text-success" : "text-danger")}>{c.side}</span>
+                  <span className="flex-1 truncate">{c.symbol}</span>
+                  <span className="text-txt-muted">{c.lotSize} lots</span>
+                  <span className="text-txt-muted">{new Date(c.openedAt!).toLocaleString()}</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
 
         {/* Quick Actions */}

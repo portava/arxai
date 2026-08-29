@@ -249,6 +249,8 @@ export async function run(): Promise<CiTestResultLike> {
 
     function mkAnalysis(over: Partial<MarketAnalysis> = {}): MarketAnalysis {
       return {
+        dataAvailable: true,
+        unavailableReason: null,
         symbol: "EURUSD",
         timeframe: "M5",
         marketBias: "bullish",

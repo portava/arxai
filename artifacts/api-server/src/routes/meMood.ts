@@ -23,6 +23,16 @@ import {
 import { eq, desc, and, gte, sql } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
 import { createNotification } from "../lib/notificationService.js";
+import {
+  correlateMoodOutcomes,
+  MOOD_ATTRIBUTION_WINDOW_MS,
+} from "../lib/mood/moodOutcomeCorrelation.js";
+
+export {
+  correlateMoodOutcomes,
+  MOOD_ATTRIBUTION_WINDOW_MS,
+  type MoodOutcomeRow,
+} from "../lib/mood/moodOutcomeCorrelation.js";
 
 const router = Router();
 
@@ -167,7 +177,11 @@ router.get("/me/mood/recent", requireUser, async (req, res) => {
 });
 
 // ── GET /api/me/mood/patterns ─────────────────────────────────────────────────
-// Correlates mood states with trade outcomes from the last 90 days
+// Returns (a) a frequency breakdown of the user's check-ins and (b) a real
+// mood→outcome correlation over their CLOSED paper trades. (b) was documented
+// here for a long time but never computed — `paperTradesTable` was imported and
+// unused, and the response was a histogram plus a canned sentence. It is now
+// computed, and when it cannot be it says so instead of implying it exists.
 router.get("/me/mood/patterns", requireUser, async (req, res) => {
   const userId   = req.authUser!.id;
   const daysBack = parseInt(String(req.query.daysBack ?? "90"), 10) || 90;
@@ -185,9 +199,56 @@ router.get("/me/mood/patterns", requireUser, async (req, res) => {
     return res.json({
       ok: true,
       hasData: false,
+      outcomeCorrelation: {
+        available: false,
+        reason: "NO_CHECK_INS",
+        note: "No mood check-ins yet — there is nothing to correlate trades against.",
+      },
       message: "No mood check-ins yet. Check in before trades to start building your mood performance profile.",
     });
   }
+
+  // Real mood→outcome correlation over CLOSED paper trades in the same window.
+  const closed = await db.select({
+    openedAt: paperTradesTable.openedAt,
+    pnl:      paperTradesTable.pnl,
+  })
+    .from(paperTradesTable)
+    .where(and(
+      eq(paperTradesTable.userId, userId),
+      eq(paperTradesTable.status, "closed"),
+      gte(paperTradesTable.openedAt, since),
+    ));
+
+  const usableTrades = closed
+    .filter((t): t is { openedAt: Date; pnl: number } => t.openedAt != null && t.pnl != null)
+    .map((t) => ({ openedAt: t.openedAt, pnl: t.pnl }));
+
+  const correlation = correlateMoodOutcomes(
+    checkIns
+      .filter((c): c is typeof c & { checkedInAt: Date } => c.checkedInAt != null)
+      .map((c) => ({ mood: c.mood, checkedInAt: c.checkedInAt })),
+    usableTrades,
+  );
+
+  const outcomeCorrelation = correlation.attributedTrades === 0
+    ? {
+        available: false as const,
+        reason: "NO_ATTRIBUTABLE_TRADES" as const,
+        note: `No closed trade in the last ${daysBack} days opened within ${MOOD_ATTRIBUTION_WINDOW_MS / 3_600_000}h of a check-in, so no mood can be tied to an outcome. Check in shortly before you trade to build this.`,
+        unattributedTrades: correlation.unattributedTrades,
+      }
+    : {
+        available: true as const,
+        windowHours: MOOD_ATTRIBUTION_WINDOW_MS / 3_600_000,
+        attributedTrades: correlation.attributedTrades,
+        unattributedTrades: correlation.unattributedTrades,
+        byMood: correlation.rows.map((r) => ({
+          ...r,
+          label: MOOD_META[r.mood as MoodState]?.label ?? r.mood,
+          emoji: MOOD_META[r.mood as MoodState]?.emoji ?? "",
+        })),
+      };
 
   // Aggregate by mood
   const byMood: Record<string, {
@@ -230,7 +291,10 @@ router.get("/me/mood/patterns", requireUser, async (req, res) => {
     highRiskPct,
     mostCommonMood,
     mostDangerousMood: mostDangerous,
+    /** How mostDangerousMood was picked: how OFTEN you flag it, not what it cost. */
+    mostDangerousMoodBasis: "CHECK_IN_FREQUENCY",
     moodBreakdown,
+    outcomeCorrelation,
     insight: highRiskPct > 30
       ? `${highRiskPct}% of your check-ins are in high-risk emotional states. This is worth reviewing — emotional trading is one of the most common causes of account drawdown.`
       : highRiskPct > 15

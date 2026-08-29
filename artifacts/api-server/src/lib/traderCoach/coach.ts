@@ -25,6 +25,17 @@ import {
 import { desc, gte } from "drizzle-orm";
 import { evaluateGovernor } from "../riskGovernor/governor.js";
 import { generatePlaybook, type PlaybookUpdateSummary } from "./playbook.js";
+import {
+  evaluateAutoChecklist,
+  type PreSessionChecklistItem,
+} from "./autoChecklist.js";
+
+export {
+  evaluateAutoChecklist,
+  type AutoCheckGovernorView,
+  type AutoCheckResult,
+  type PreSessionChecklistItem,
+} from "./autoChecklist.js";
 
 export type CoachReportType = "DAILY" | "WEEKLY" | "SESSION" | "PLAYBOOK";
 
@@ -61,7 +72,7 @@ export interface CoachReport {
   activeRiskFlags: { code: string; message: string; severity?: string }[];
   currentFocusAreas: string[];
   nextBestActions: string[];
-  preSessionChecklist: { id: string; label: string; required: boolean; auto?: boolean }[];
+  preSessionChecklist: PreSessionChecklistItem[];
   postSessionReviewQuestions: string[];
   playbookUpdates: PlaybookUpdateSummary[];
   warnings: string[];
@@ -346,9 +357,15 @@ export async function generateCoachReport(opts: GenerateCoachOptions = {}): Prom
   if (governor && !governor.paperTradingAllowed) warnings.push(`Risk Governor currently blocks new paper trades (${govStatus}).`);
 
   // ── Pre-session checklist (governor-driven extras) ──────────────────────
-  const preSessionChecklist = [...SAFE_DEFAULT_CHECKLIST];
+  const preSessionChecklist = evaluateAutoChecklist(SAFE_DEFAULT_CHECKLIST, governor);
   if (govStatus === "LOCKED") {
-    preSessionChecklist.unshift({ id: "system_locked", label: "STOP — Risk Governor is LOCKED. Do NOT proceed.", required: true, auto: true });
+    preSessionChecklist.unshift({
+      id: "system_locked",
+      label: "STOP — Risk Governor is LOCKED. Do NOT proceed.",
+      required: true, auto: true,
+      autoResult: "FAIL",
+      autoDetail: "Risk Governor overall status is LOCKED.",
+    });
   }
 
   // ── Playbook updates (optional; cheap by default) ───────────────────────

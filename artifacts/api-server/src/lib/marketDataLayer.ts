@@ -92,7 +92,7 @@ export function getCandles(symbol: string, timeframe = "M15", limit = 100): Cand
 
 // ── Market session clock ───────────────────────────────────────────────────
 type SessionId = "Sydney" | "Tokyo" | "London" | "NewYork";
-interface SessionWindow { id: SessionId; openUTC: number; closeUTC: number; }
+export interface SessionWindow { id: SessionId; openUTC: number; closeUTC: number; }
 
 const SESSIONS: SessionWindow[] = [
   { id: "Sydney",  openUTC: 22, closeUTC: 7 },   // 22:00 → 07:00 UTC (wraps)
@@ -101,7 +101,7 @@ const SESSIONS: SessionWindow[] = [
   { id: "NewYork", openUTC: 13, closeUTC: 22 },
 ];
 
-function inSession(s: SessionWindow, hour: number): boolean {
+function inSessionHour(s: SessionWindow, hour: number): boolean {
   if (s.openUTC < s.closeUTC) return hour >= s.openUTC && hour < s.closeUTC;
   return hour >= s.openUTC || hour < s.closeUTC; // wraps midnight
 }
@@ -109,28 +109,79 @@ function nextHourFor(target: number, fromHour: number): number {
   return target > fromHour ? target - fromHour : 24 - fromHour + target;
 }
 
-export type SessionLabel = "QUIET" | "NORMAL" | "ACTIVE" | "HIGH_VOLATILITY" | "AVOID";
+// ── Trading week ───────────────────────────────────────────────────────────
+// The session windows above are hour-of-day only. Without a day-of-week gate
+// the clock reported London and New York OPEN on a Saturday, with an
+// ACTIVE/HIGH_VOLATILITY badge and "Good window for trend strategies" — while
+// FX and equity markets were shut. A trader waiting for the recommended window
+// was pointed at a closed market.
+//
+// FX week (UTC): opens Sunday 21:00, closes Friday 21:00.
+const FX_WEEK_OPEN_DAY = 0;   // Sunday
+const FX_WEEK_OPEN_HOUR = 21;
+const FX_WEEK_CLOSE_DAY = 5;  // Friday
+const FX_WEEK_CLOSE_HOUR = 21;
 
-export function sessionClock() {
-  const now = new Date();
+/** True when the FX trading week is open at `now` (UTC). */
+export function isTradingWeekOpen(now: Date): boolean {
+  const day = now.getUTCDay(); // 0 = Sunday … 6 = Saturday
   const hour = now.getUTCHours();
-  const active = SESSIONS.filter((s) => inSession(s, hour));
+  if (day === 6) return false;                                  // Saturday
+  if (day === FX_WEEK_OPEN_DAY) return hour >= FX_WEEK_OPEN_HOUR; // Sunday
+  if (day === FX_WEEK_CLOSE_DAY) return hour < FX_WEEK_CLOSE_HOUR; // Friday
+  return true;                                                   // Mon–Thu
+}
+
+/** Whole hours until the FX week reopens; 0 when it is already open. */
+export function hoursUntilTradingWeekOpen(now: Date): number {
+  if (isTradingWeekOpen(now)) return 0;
+  const open = new Date(now);
+  open.setUTCHours(FX_WEEK_OPEN_HOUR, 0, 0, 0);
+  // Advance to the next Sunday 21:00 UTC at or after `now`.
+  while (open.getUTCDay() !== FX_WEEK_OPEN_DAY || open.getTime() <= now.getTime()) {
+    open.setUTCDate(open.getUTCDate() + 1);
+    open.setUTCHours(FX_WEEK_OPEN_HOUR, 0, 0, 0);
+  }
+  return Math.ceil((open.getTime() - now.getTime()) / 3_600_000);
+}
+
+/** A session is only active if the trading WEEK is open as well as the hour. */
+export function inSession(s: SessionWindow, now: Date): boolean {
+  return isTradingWeekOpen(now) && inSessionHour(s, now.getUTCHours());
+}
+
+export type SessionLabel =
+  | "QUIET" | "NORMAL" | "ACTIVE" | "HIGH_VOLATILITY" | "AVOID"
+  /** The trading week itself is closed — no session can be active. */
+  | "MARKET_CLOSED";
+
+export function sessionClock(now: Date = new Date()) {
+  const hour = now.getUTCHours();
+  const weekOpen = isTradingWeekOpen(now);
+  const weekOpensInHours = weekOpen ? null : hoursUntilTradingWeekOpen(now);
+
+  const active = weekOpen ? SESSIONS.filter((s) => inSessionHour(s, hour)) : [];
   const overlap = active.length >= 2;
   const londonNY = active.some((s) => s.id === "London") && active.some((s) => s.id === "NewYork");
   let label: SessionLabel = "QUIET";
-  if (londonNY) label = "HIGH_VOLATILITY";
+  if (!weekOpen) label = "MARKET_CLOSED";
+  else if (londonNY) label = "HIGH_VOLATILITY";
   else if (overlap) label = "ACTIVE";
   else if (active.length === 1) label = "NORMAL";
 
   // next open/close for each session
   const upcoming = SESSIONS.map((s) => ({
     id: s.id,
-    isActive: inSession(s, hour),
-    nextOpenInHours: nextHourFor(s.openUTC, hour),
-    nextCloseInHours: nextHourFor(s.closeUTC, hour),
+    isActive: weekOpen && inSessionHour(s, hour),
+    // While the week is closed no session opens at its usual hour-of-day, so
+    // the honest answer is "when the week reopens", not a hour-of-day delta.
+    nextOpenInHours: weekOpen ? nextHourFor(s.openUTC, hour) : weekOpensInHours,
+    nextCloseInHours: weekOpen ? nextHourFor(s.closeUTC, hour) : null,
   }));
 
-  const recommendation = label === "HIGH_VOLATILITY"
+  const recommendation = !weekOpen
+    ? `Markets are closed for the weekend. Spot FX and equities reopen in about ${weekOpensInHours}h (Sunday 21:00 UTC). No session read applies until then.`
+    : label === "HIGH_VOLATILITY"
     ? "Be cautious — heightened volatility around London/NY overlap. Tighten stops."
     : label === "ACTIVE" ? "Good window for trend strategies."
     : label === "NORMAL" ? "Normal liquidity for the active session."
@@ -141,9 +192,13 @@ export function sessionClock() {
     activeSessions: active.map((a) => a.id),
     overlap,
     sessionLabel: label,
+    marketOpen: weekOpen,
+    weekOpensInHours,
     sessions: upcoming,
     recommendation,
-    dataSource: ACTIVE_PROVIDER,
+    // This clock is the real system UTC clock — it is NOT simulator output.
+    // (`ACTIVE_PROVIDER` describes the quote/candle feed, not the calendar.)
+    dataSource: "SYSTEM_CLOCK_UTC" as const,
   };
 }
 

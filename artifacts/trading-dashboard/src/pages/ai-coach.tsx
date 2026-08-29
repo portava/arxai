@@ -10,8 +10,13 @@ type Coach = {
   bestSymbol: string | null; weakestSymbol: string | null;
   mostCommonMistake: string;
   recommendedFocus: string;
-  suggestedRuleChanges: string[];
-  confidenceCalibration: string;
+  /** Derived from THIS user's journal. Empty when their journal supports none. */
+  suggestedRuleChanges: Array<{ rule: string; evidence: string }>;
+  /** Fixed engine rules — the same for every trader. Labelled as such. */
+  generalRules: string[];
+  /** Always false today: journal entries carry no confidence value to calibrate. */
+  confidenceCalibrationAvailable: boolean;
+  confidenceCalibrationNote: string;
   dataSource: string; generatedAt: string;
 };
 
@@ -77,13 +82,37 @@ export default function AiCoach() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2"><Sparkles className="h-5 w-5" /> Recommended focus next session</CardTitle>
-              <CardDescription>{coach.confidenceCalibration}</CardDescription>
+              {/* The old subtitle claimed "Average confidence aligns with win
+                  rate within N pts" — nothing measured the user's confidence. */}
+              {!coach.confidenceCalibrationAvailable && (
+                <CardDescription>{coach.confidenceCalibrationNote}</CardDescription>
+              )}
             </CardHeader>
             <CardContent>
               <p className="text-sm font-medium mb-3">{coach.recommendedFocus}</p>
-              <h4 className="text-xs uppercase text-muted-foreground mb-1">Suggested rule changes</h4>
+
+              <h4 className="text-xs uppercase text-muted-foreground mb-1">From your journal</h4>
+              {coach.suggestedRuleChanges.length === 0 ? (
+                <p className="text-sm text-muted-foreground mb-3">
+                  Nothing in your journal yet supports a rule change specific to you. Tag mistakes
+                  and log outcomes and rules will appear here.
+                </p>
+              ) : (
+                <ul className="text-sm space-y-1.5 mb-3">
+                  {coach.suggestedRuleChanges.map((r) => (
+                    <li key={r.rule}>
+                      · {r.rule}
+                      <span className="block text-xs text-muted-foreground ml-3">{r.evidence}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              <h4 className="text-xs uppercase text-muted-foreground mb-1">
+                General rules (same for every trader)
+              </h4>
               <ul className="text-sm space-y-1">
-                {coach.suggestedRuleChanges.map((r) => <li key={r}>· {r}</li>)}
+                {(coach.generalRules ?? []).map((r) => <li key={r}>· {r}</li>)}
               </ul>
             </CardContent>
           </Card>

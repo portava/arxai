@@ -20,6 +20,18 @@ import {
   replayStart, replayStep, replayStop, replayGet, tradingStyles,
 } from "../lib/aiBrain.js";
 import { requireUser } from "../lib/auth/middleware.js";
+import {
+  deriveRuleChanges,
+  GENERAL_COACH_RULES,
+  CONFIDENCE_NOT_MEASURED_NOTE,
+} from "../lib/coach/coachRules.js";
+
+export {
+  deriveRuleChanges,
+  GENERAL_COACH_RULES,
+  CONFIDENCE_NOT_MEASURED_NOTE,
+  type DerivedRuleChange,
+} from "../lib/coach/coachRules.js";
 import { eq } from "drizzle-orm";
 
 const router = Router();
@@ -252,7 +264,9 @@ router.get("/ai/coach-summary", requireUser, async (req, res) => {
         mostCommonMistake: "none",
         recommendedFocus: "Place a paper trade and add a journal note to begin.",
         suggestedRuleChanges: [],
-        confidenceCalibration: "No trades yet — confidence cannot be calibrated.",
+        generalRules: GENERAL_COACH_RULES,
+        confidenceCalibrationAvailable: false,
+        confidenceCalibrationNote: CONFIDENCE_NOT_MEASURED_NOTE,
         dataSource: "SIMULATOR",
         perUserScoped: true,
         generatedAt: new Date().toISOString(),
@@ -292,14 +306,21 @@ router.get("/ai/coach-summary", requireUser, async (req, res) => {
       recommendedFocus: worstStrat
         ? `Stop trading "${worstStrat}" until you can show 5 paper wins on it in replay.`
         : "Pick one strategy and run 10 replays before taking any live intent.",
-      suggestedRuleChanges: [
-        "Require setupQualityScore >= 70 before generating a card.",
-        "Reject trades when marketBias is 'choppy'.",
-        "Block any entry with riskRewardRatio < 1.5.",
-      ],
-      confidenceCalibration: total < 10
-        ? "Sample size too small — confidence numbers are not yet calibrated."
-        : `Average confidence aligns with win rate within ${Math.abs(winRate - 60)} pts.`,
+      // HONESTY: `suggestedRuleChanges` used to be this same three-element
+      // literal returned to every caller under a heading that reads as
+      // personalised analysis. The fixed list is now labelled `generalRules`
+      // (it IS general — that is fine, said plainly), and
+      // `suggestedRuleChanges` carries only rules derived from THIS caller's
+      // journal, each with the evidence it came from. Empty when the journal
+      // does not support any.
+      suggestedRuleChanges: deriveRuleChanges({ byMistake, byStrategy, bySymbol, total }),
+      generalRules: GENERAL_COACH_RULES,
+      // HONESTY: this used to emit "Average confidence aligns with win rate
+      // within N pts" from |winRate − 60| — a magic constant, not a
+      // measurement. `trade_journal` has no confidence column, so no
+      // confidence value exists to calibrate against. Say so.
+      confidenceCalibrationAvailable: false,
+      confidenceCalibrationNote: CONFIDENCE_NOT_MEASURED_NOTE,
       dataSource: "SIMULATOR",
       generatedAt: new Date().toISOString(),
     });

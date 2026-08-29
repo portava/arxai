@@ -14,7 +14,15 @@ import type { MarketBrainResultSymbolInfo } from "./marketBrainResultSymbolInfo"
 import type { MarketBrainResultTechnicalBias } from "./marketBrainResultTechnicalBias";
 import type { MarketBrainResultTechnicalDetails } from "./marketBrainResultTechnicalDetails";
 
+/**
+ * A full analysis. `available` is always true on this shape.
+ */
 export interface MarketBrainResult {
+  /** Always true here. Discriminates against MarketBrainRefusal. */
+  available: boolean;
+  /** "caller" when the caller supplied candles, otherwise the router provider id that served the real bars. */
+  candleSource?: string;
+  candleCount?: number;
   symbol: string;
   category: string;
   direction: MarketBrainResultDirection;

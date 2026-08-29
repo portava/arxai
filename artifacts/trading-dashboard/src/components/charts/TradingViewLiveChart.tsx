@@ -24,9 +24,32 @@ const SYMBOLS = APPROVED_TRADINGVIEW_SYMBOLS;
 // incoming symbol (e.g. a synthetic like V75) cannot be rendered here.
 const FALLBACK_TV_SYMBOL = SYMBOLS[0]?.tv ?? "FX:EURUSD";
 
-// Resolve any incoming symbol to an approved TradingView value, or the fallback.
-function toApprovedTvSymbol(input: string): string {
-  return approvedTradingViewSymbol(input) ?? FALLBACK_TV_SYMBOL;
+// Resolve any incoming symbol to an approved TradingView value.
+//
+// HONESTY: `approvedTradingViewSymbol` returns null on purpose — its docstring
+// says "so callers can fall back honestly". This used to `?? FALLBACK` with no
+// user-visible notice, so a trader on V75 saw an EURUSD chart while the trade
+// ticket beside it stayed armed on V75. Reading the wrong instrument's price
+// action before confirming an order is a real-money error path. The substitution
+// is now returned as data so the surface can SAY it happened.
+export interface TvSymbolResolution {
+  /** The symbol the TradingView widget will actually render. */
+  tv: string;
+  /** True when `requested` has no TradingView feed and `tv` is a stand-in. */
+  substituted: boolean;
+  /** The symbol the user/page asked for. */
+  requested: string;
+}
+export function resolveTvSymbol(input: string): TvSymbolResolution {
+  const mapped = approvedTradingViewSymbol(input);
+  return mapped != null
+    ? { tv: mapped, substituted: false, requested: input }
+    : { tv: FALLBACK_TV_SYMBOL, substituted: true, requested: input };
+}
+
+/** Label for the fallback market, for use in the substitution notice. */
+function tvLabel(tv: string): string {
+  return SYMBOLS.find((s) => s.tv === tv)?.label ?? tv;
 }
 
 const INTERVALS = [
@@ -62,9 +85,15 @@ export interface TradingViewLiveChartProps {
   compact?: boolean;
   /** When true, hide the symbol+interval controls and just show the chart. */
   hideControls?: boolean;
+  /**
+   * Called when the user accepts the offer to leave TradingView for a chart
+   * that can actually render the requested symbol (ARX Native). When omitted
+   * the substitution notice is still shown — only the button is hidden.
+   */
+  onRequestNativeChart?: () => void;
 }
 
-export function TradingViewLiveChart({ defaultSymbol = "V75", height = 520, compact = false, hideControls = false }: TradingViewLiveChartProps) {
+export function TradingViewLiveChart({ defaultSymbol = "V75", height = 520, compact = false, hideControls = false, onRequestNativeChart }: TradingViewLiveChartProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [symbol, setSymbolRaw] = useState<string>(defaultSymbol);
   const setSymbol = (s: string) => { setSymbolRaw(s); broadcastChartSymbol(s); };
@@ -86,8 +115,11 @@ export function TradingViewLiveChart({ defaultSymbol = "V75", height = 520, comp
   // resolved to an APPROVED TradingView symbol. A synthetic (V75/Boom/…) or any
   // unapproved input falls back to the first approved market — TradingView never
   // fetches an unapproved symbol. The shared bus keeps the user's intended
-  // symbol (above) so sibling panels stay in sync.
-  const tvSymbol = toApprovedTvSymbol(symbol);
+  // symbol (above) so sibling panels stay in sync — which is exactly why the
+  // substitution MUST be shown: the ticket beside this chart stays on `symbol`.
+  const resolution = resolveTvSymbol(symbol);
+  const tvSymbol = resolution.tv;
+  const substituted = resolution.substituted;
 
   useEffect(() => {
     let cancelled = false;
@@ -151,10 +183,16 @@ export function TradingViewLiveChart({ defaultSymbol = "V75", height = 520, comp
             <Badge variant="outline" className="text-xs" data-testid="tv-reference-feed-badge">TRADINGVIEW · REFERENCE FEED</Badge>
             <select
               className="text-xs bg-background border border-border rounded px-2 py-1"
-              value={tvSymbol}
+              value={substituted ? "__substituted__" : tvSymbol}
               onChange={(e) => setSymbol(e.target.value)}
               data-testid="tv-symbol-select"
             >
+              {/* Never show the stand-in market as if the user had picked it. */}
+              {substituted && (
+                <option value="__substituted__" disabled>
+                  {resolution.requested} — no TradingView feed
+                </option>
+              )}
               {SYMBOLS.map(s => <option key={s.tv} value={s.tv}>{s.label}</option>)}
             </select>
             <select
@@ -173,6 +211,35 @@ export function TradingViewLiveChart({ defaultSymbol = "V75", height = 520, comp
         </CardHeader>
       )}
       <CardContent className="p-0 relative">
+        {/* WRONG-INSTRUMENT GUARD. The chart below is NOT the requested symbol.
+            Shown even when hideControls is set — this is a safety notice, not a
+            control. */}
+        {substituted && (
+          <div
+            className="flex flex-col gap-2 border-b border-danger/40 bg-danger/10 px-3 py-2.5 text-xs sm:flex-row sm:items-center"
+            data-testid="tv-symbol-substituted-banner"
+            role="alert"
+          >
+            <AlertTriangle className="h-4 w-4 shrink-0 text-danger" />
+            <span className="flex-1">
+              <strong>{resolution.requested} has no TradingView feed.</strong>{" "}
+              This chart is showing <strong>{tvLabel(tvSymbol)}</strong> instead — a different
+              instrument. Any trade ticket on this page is still armed on {resolution.requested}.
+              Do not read entries or levels for {resolution.requested} off this chart.
+            </span>
+            {onRequestNativeChart && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 shrink-0 text-[11px]"
+                onClick={onRequestNativeChart}
+                data-testid="tv-switch-to-native"
+              >
+                Switch to ARX Native for {resolution.requested}
+              </Button>
+            )}
+          </div>
+        )}
         <div ref={containerRef} style={{ height, width: "100%" }} className="bg-muted/30" />
         {loading && !error && (
           <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">Loading TradingView…</div>
