@@ -1,7 +1,32 @@
+// Trade-management actions on rows of the `trades` table.
+//
+// TRUTH CONTRACT (why this file looks the way it does):
+//
+//  1. These four mutating actions (breakeven / trail / partial-close / close)
+//     are a LOCAL SIMULATION. They write `trades.stopLoss`, `trades.lot`,
+//     `trades.status` and `trades.pnl` and nothing else. There is no broker
+//     adapter here, no queueMt5CommandWithGate, and no call into the Phase B
+//     live command pipeline — so nothing on this path can move a real broker
+//     position. Every success message says so in words.
+//
+//  2. Because of (1) they are REFUSED for rows whose `mode` is LIVE. Silently
+//     marking a LIVE row CLOSED_WIN while the broker position keeps running is
+//     exactly the "falsely certain" failure the governing invariant forbids:
+//     the user would believe they are flat when they are not. The refusal names
+//     the surface that can actually act on a live position.
+//
+//  3. Per-user isolation. `trades.id` is a sequential serial shared across
+//     tenants, so every read and every UPDATE is scoped by
+//     `and(eq(id), eq(userId, req.authUser.id))` and a foreign or legacy
+//     (userId IS NULL) row answers 404, not 403 — ids must not be enumerable.
+//     Without this any signed-in trader could close another trader's position
+//     and falsify their Realized P/L (trades.pnl feeds /performance/summary
+//     and /portfolio/exposure).
 import { Router, type Request, type Response } from "express";
-import { db, tradesTable, mt5StateTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { db, tradesTable } from "@workspace/db";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod/v4";
+import { requireUser } from "../lib/auth/middleware.js";
 import { evaluateTrade } from "../lib/tradeManagement/tradeManager.js";
 import { createAlert } from "../lib/alerts/alertManager.js";
 
@@ -12,6 +37,19 @@ const PartialCloseBodySchema = z.object({
   closePct: z.number().min(1).max(99).optional(),
 });
 
+// The one sentence every simulated result carries. Kept as a constant so the
+// UI, the tests and the server all quote the same wording.
+export const TRADE_MANAGEMENT_SIMULATION_NOTE =
+  "Simulated in ARX only — no broker order was sent.";
+
+export const LIVE_ACTION_REFUSAL_CODE = "LIVE_TRADE_ACTION_NOT_AVAILABLE" as const;
+export const LIVE_ACTION_REFUSAL_MESSAGE =
+  "This trade is marked LIVE. Trade Management is not connected to a broker, " +
+  "so closing, trailing, break-even and partial close here would change ARX's " +
+  "record without changing your real position. Refused. Manage a live position " +
+  "from Live Shared → Open Positions, which routes through the gated live " +
+  "command pipeline.";
+
 function parseId(req: Request, res: Response): number | null {
   const r = TradeIdParam.safeParse(req.params);
   if (!r.success) {
@@ -21,90 +59,155 @@ function parseId(req: Request, res: Response): number | null {
   return r.data.id;
 }
 
-async function getTrade(id: number) {
-  const rows = await db.select().from(tradesTable).where(eq(tradesTable.id, id)).limit(1);
+// Scoped read. A row belonging to another user — or a legacy row with a NULL
+// userId that no one can prove ownership of — is indistinguishable from a
+// missing row to the caller.
+async function getOwnedTrade(id: number, userId: number) {
+  const rows = await db.select().from(tradesTable)
+    .where(and(eq(tradesTable.id, id), eq(tradesTable.userId, userId)))
+    .limit(1);
   return rows[0] ?? null;
 }
 
-router.get("/trade-management/:id/snapshot", async (req, res) => {
-  const id = parseId(req, res); if (id == null) return;
-  const trade = await getTrade(id);
-  if (!trade) { res.status(404).json({ error: "Trade not found" }); return; }
-  res.json(await evaluateTrade(trade));
+// Every UPDATE repeats the ownership predicate so a row that changed hands (or
+// a race) can never be written by the wrong user.
+function ownedRow(id: number, userId: number) {
+  return and(eq(tradesTable.id, id), eq(tradesTable.userId, userId));
+}
+
+function isLiveRow(trade: { mode?: string | null }): boolean {
+  return (trade.mode ?? "").toUpperCase() === "LIVE";
+}
+
+function refuseLive(res: Response): void {
+  res.status(409).json({
+    success: false,
+    error: LIVE_ACTION_REFUSAL_CODE,
+    message: LIVE_ACTION_REFUSAL_MESSAGE,
+  });
+}
+
+// Resolve the caller's trade or answer for it. Returns null when a response
+// has already been sent.
+async function resolveOwned(req: Request, res: Response) {
+  const id = parseId(req, res);
+  if (id == null) return null;
+  const userId = req.authUser!.id;
+  const trade = await getOwnedTrade(id, userId);
+  if (!trade) { res.status(404).json({ error: "Trade not found" }); return null; }
+  return { id, userId, trade };
+}
+
+router.get("/trade-management/:id/snapshot", requireUser, async (req, res) => {
+  const owned = await resolveOwned(req, res);
+  if (!owned) return;
+  res.json(await evaluateTrade(owned.trade));
 });
 
-router.post("/trade-management/:id/breakeven", async (req, res) => {
-  const id = parseId(req, res); if (id == null) return;
-  const trade = await getTrade(id);
-  if (!trade) { res.status(404).json({ error: "Trade not found" }); return; }
-  const updated = await db.update(tradesTable).set({ stopLoss: trade.entryPrice }).where(eq(tradesTable.id, id)).returning();
+router.post("/trade-management/:id/breakeven", requireUser, async (req, res) => {
+  const owned = await resolveOwned(req, res);
+  if (!owned) return;
+  const { id, userId, trade } = owned;
+  if (isLiveRow(trade)) { refuseLive(res); return; }
+  const updated = await db.update(tradesTable)
+    .set({ stopLoss: trade.entryPrice }).where(ownedRow(id, userId)).returning();
+  const row = requireUpdated(updated, res); if (!row) return;
   res.json({
     success: true,
-    message: `Stop loss moved to break-even at ${trade.entryPrice} (mock).`,
-    trade: serialiseTrade(updated[0]),
+    simulated: true,
+    message: `Stop loss moved to break-even at ${trade.entryPrice}. ${TRADE_MANAGEMENT_SIMULATION_NOTE}`,
+    trade: serialiseTrade(row),
   });
 });
 
-router.post("/trade-management/:id/trail", async (req, res) => {
-  const id = parseId(req, res); if (id == null) return;
-  const trade = await getTrade(id);
-  if (!trade) { res.status(404).json({ error: "Trade not found" }); return; }
+router.post("/trade-management/:id/trail", requireUser, async (req, res) => {
+  const owned = await resolveOwned(req, res);
+  if (!owned) return;
+  const { id, userId, trade } = owned;
+  if (isLiveRow(trade)) { refuseLive(res); return; }
   const snap = await evaluateTrade(trade);
   const newStop = snap.suggestions.trail.newStop ?? trade.stopLoss;
-  const updated = await db.update(tradesTable).set({ stopLoss: newStop }).where(eq(tradesTable.id, id)).returning();
+  const updated = await db.update(tradesTable)
+    .set({ stopLoss: newStop }).where(ownedRow(id, userId)).returning();
+  const row = requireUpdated(updated, res); if (!row) return;
   res.json({
     success: true,
-    message: `Trailing stop moved to ${newStop.toFixed(5)} (mock).`,
-    trade: serialiseTrade(updated[0]),
+    simulated: true,
+    message: `Trailing stop moved to ${newStop.toFixed(5)}. ${TRADE_MANAGEMENT_SIMULATION_NOTE}`,
+    trade: serialiseTrade(row),
   });
 });
 
-router.post("/trade-management/:id/partial-close", async (req, res) => {
-  const id = parseId(req, res); if (id == null) return;
-  const trade = await getTrade(id);
-  if (!trade) { res.status(404).json({ error: "Trade not found" }); return; }
+router.post("/trade-management/:id/partial-close", requireUser, async (req, res) => {
+  const owned = await resolveOwned(req, res);
+  if (!owned) return;
+  const { id, userId, trade } = owned;
+  if (isLiveRow(trade)) { refuseLive(res); return; }
   const parsed = PartialCloseBodySchema.safeParse(req.body ?? {});
   if (!parsed.success) { res.status(400).json({ error: "closePct must be between 1 and 99" }); return; }
   const closePct = parsed.data.closePct ?? 50;
   const newLot = Math.max(0.01, Number((trade.lot * (1 - closePct / 100)).toFixed(2)));
-  const updated = await db.update(tradesTable).set({ lot: newLot }).where(eq(tradesTable.id, id)).returning();
+  const updated = await db.update(tradesTable)
+    .set({ lot: newLot }).where(ownedRow(id, userId)).returning();
+  const row = requireUpdated(updated, res); if (!row) return;
   res.json({
     success: true,
-    message: `Closed ${closePct}% — lot reduced from ${trade.lot} to ${newLot} (mock).`,
-    trade: serialiseTrade(updated[0]),
+    simulated: true,
+    message: `Closed ${closePct}% — lot reduced from ${trade.lot} to ${newLot}. ${TRADE_MANAGEMENT_SIMULATION_NOTE}`,
+    trade: serialiseTrade(row),
   });
 });
 
-router.post("/trade-management/:id/close", async (req, res) => {
-  const id = parseId(req, res); if (id == null) return;
-  const trade = await getTrade(id);
-  if (!trade) { res.status(404).json({ error: "Trade not found" }); return; }
-
-  // If MT5 connected, queue a CLOSE_ALL command (in real bridge we'd send ticket)
-  const stateRows = await db.select().from(mt5StateTable).limit(1);
-  const liveAllowed = !!stateRows[0]?.liveAllowed;
-  void liveAllowed;
+router.post("/trade-management/:id/close", requireUser, async (req, res) => {
+  const owned = await resolveOwned(req, res);
+  if (!owned) return;
+  const { id, userId, trade } = owned;
+  // A LIVE row must never be stamped CLOSED here: this handler has no broker
+  // seam, so the row would say "closed" while the position stays open at the
+  // venue, and the fabricated pnl would flow into the realized-P/L aggregates.
+  if (isLiveRow(trade)) { refuseLive(res); return; }
 
   const snap = await evaluateTrade(trade);
   const status: "CLOSED_WIN" | "CLOSED_LOSS" = snap.floatingPnl >= 0 ? "CLOSED_WIN" : "CLOSED_LOSS";
   const updated = await db.update(tradesTable).set({
     status, pnl: Number(snap.floatingPnl.toFixed(2)), closedAt: new Date(),
-  }).where(eq(tradesTable.id, id)).returning();
+  }).where(ownedRow(id, userId)).returning();
+  const row = requireUpdated(updated, res); if (!row) return;
 
   await createAlert({
     type: "TRADE_CLOSED",
     severity: status === "CLOSED_WIN" ? "success" : "warning",
     title: `Trade closed (${status === "CLOSED_WIN" ? "win" : "loss"})`,
-    message: `${trade.symbol} ${trade.direction} closed at ${snap.currentPrice.toFixed(5)} for ${snap.floatingPnl.toFixed(2)} (mock).`,
+    message: `${trade.symbol} ${trade.direction} closed at ${snap.currentPrice.toFixed(5)} for ${snap.floatingPnl.toFixed(2)}. ${TRADE_MANAGEMENT_SIMULATION_NOTE}`,
     symbol: trade.symbol,
   });
 
   res.json({
     success: true,
-    message: `Trade closed at ${snap.currentPrice.toFixed(5)} for ${snap.floatingPnl.toFixed(2)} (mock).`,
-    trade: serialiseTrade(updated[0]),
+    simulated: true,
+    message: `Trade closed at ${snap.currentPrice.toFixed(5)} for ${snap.floatingPnl.toFixed(2)}. ${TRADE_MANAGEMENT_SIMULATION_NOTE}`,
+    trade: serialiseTrade(row),
   });
 });
+
+// A concurrent update could have moved the row out from under the ownership
+// predicate between the read and the write. That is a "we do not know" case,
+// not a success — answer 409 rather than report a change we cannot show.
+function requireUpdated(
+  rows: (typeof tradesTable.$inferSelect)[],
+  res: Response,
+): typeof tradesTable.$inferSelect | null {
+  const row = rows[0];
+  if (!row) {
+    res.status(409).json({
+      success: false,
+      error: "TRADE_CHANGED_CONCURRENTLY",
+      message: "The trade changed while this action was running. Nothing was applied — reload and try again.",
+    });
+    return null;
+  }
+  return row;
+}
 
 function serialiseTrade(t: typeof tradesTable.$inferSelect) {
   return {

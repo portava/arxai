@@ -77,25 +77,38 @@ interface MarketDataExtState {
   commandExecution?: { allowed?: boolean; intentional?: boolean; reason?: string };
 }
 function SafetyBadgeRow({ trade, snap, snapTargetsUnavailable }: { trade: Trade; snap: unknown; snapTargetsUnavailable: boolean }) {
+  // A non-ok read must NOT collapse into `{}`. It used to: a 500 on the
+  // protective-auto-close settings produced `{}`, `enabled === true` came out
+  // false, and the row asserted "Auto-Close OFF" — a confident safety claim
+  // derived from a read that never happened. Throwing leaves `data` undefined,
+  // which the badge logic below renders as an explicit unknown.
+  const okJson = async <T,>(path: string): Promise<T> => {
+    const r = await fetch(`${PAC_BASE}${path}`, { credentials: "include" });
+    if (!r.ok) throw new Error(`${path} → HTTP ${r.status}`);
+    return (await r.json()) as T;
+  };
   const { data: safety } = useQuery<SafetyState>({
     queryKey: ["/me/protective-auto-close/settings"],
-    queryFn: () => fetch(`${PAC_BASE}/api/me/protective-auto-close/settings`, { credentials: "include" }).then((r) => (r.ok ? r.json() : ({} as SafetyState))),
+    queryFn: () => okJson<SafetyState>("/api/me/protective-auto-close/settings"),
     refetchInterval: 30_000,
     staleTime: 15_000,
+    retry: false,
   });
   const { data: market } = useQuery<MarketStatusState>({
     queryKey: ["/me/assistant/market-status"],
-    queryFn: () => fetch(`${PAC_BASE}/api/me/assistant/market-status`, { credentials: "include" }).then((r) => (r.ok ? r.json() : ({} as MarketStatusState))),
+    queryFn: () => okJson<MarketStatusState>("/api/me/assistant/market-status"),
     refetchInterval: 60_000,
     staleTime: 30_000,
+    retry: false,
   });
   // Cleanup phase C + D — extended status payload for current-events +
   // command-execution discrete badges.
   const { data: marketExt } = useQuery<MarketDataExtState>({
     queryKey: ["/me/market-data/status"],
-    queryFn: () => fetch(`${PAC_BASE}/api/me/market-data/status`, { credentials: "include" }).then((r) => (r.ok ? r.json() : ({} as MarketDataExtState))),
+    queryFn: () => okJson<MarketDataExtState>("/api/me/market-data/status"),
     refetchInterval: 60_000,
     staleTime: 30_000,
+    retry: false,
   });
   // Real MT5 bridge / live-permission state — same backend source the
   // Live Trades page header uses. Drives the (previously unconditional)
@@ -109,10 +122,15 @@ function SafetyBadgeRow({ trade, snap, snapTargetsUnavailable }: { trade: Trade;
     },
   });
 
+  // `undefined` here means "we could not read it", not "off". The three
+  // states are kept apart so an unread safety setting is never displayed as a
+  // known one.
+  const safetyRead = safety !== undefined;
   const pacEnabled = safety?.settings?.enabled === true;
   const killEngaged = safety?.settings?.killSwitchEngaged === true;
   const activity = safety?.activity?.status ?? "UNKNOWN";
   const isPaper = (trade.mode ?? "").toUpperCase() !== "LIVE";
+  const marketRead = market !== undefined;
   const newsConnected = market?.features?.news === true;
   const candlesConnected = market?.features?.candles === true;
   const dataInsufficient = !snap || !candlesConnected;
@@ -140,8 +158,12 @@ function SafetyBadgeRow({ trade, snap, snapTargetsUnavailable }: { trade: Trade;
     badges.push({ label: "Bridge Offline", tone: "warn", testId: "badge-bridge-offline" });
   }
 
-  // Auto-close state — one of these is always shown.
-  if (killEngaged) {
+  // Auto-close state — one of these is always shown. An unread settings
+  // response is its own state: claiming "OFF" from a failed read would tell
+  // the user a protective feature is disabled when we simply do not know.
+  if (!safetyRead) {
+    badges.push({ label: "Auto-Close State Unknown", tone: "warn", testId: "badge-auto-close-unknown" });
+  } else if (killEngaged) {
     badges.push({ label: "Auto-Close Killed", tone: "danger", testId: "badge-auto-close-killed" });
   } else if (!pacEnabled) {
     badges.push({ label: "Auto-Close OFF", tone: "muted", testId: "badge-auto-close-off" });
@@ -153,7 +175,11 @@ function SafetyBadgeRow({ trade, snap, snapTargetsUnavailable }: { trade: Trade;
   // Presence / data / news flags.
   if (activity === "UNKNOWN") badges.push({ label: "Activity Unknown", tone: "warn", testId: "badge-activity-unknown" });
   if (dataInsufficient) badges.push({ label: "Data Insufficient", tone: "warn", testId: "badge-data-insufficient" });
-  if (!newsConnected) badges.push({ label: "News Unavailable", tone: "warn", testId: "badge-news-unavailable" });
+  if (!marketRead) {
+    badges.push({ label: "News State Unknown", tone: "warn", testId: "badge-news-unknown" });
+  } else if (!newsConnected) {
+    badges.push({ label: "News Unavailable", tone: "warn", testId: "badge-news-unavailable" });
+  }
   // Cleanup phase C — discrete current-events badge, only when the
   // dedicated current-events channel is connected:false. Does NOT
   // alias to market news; only shown when the new backend field
@@ -179,8 +205,16 @@ function SafetyBadgeRow({ trade, snap, snapTargetsUnavailable }: { trade: Trade;
   } else {
     badges.push({ label: "TP Targets Available", tone: "ok", testId: "badge-tp-available" });
   }
-  badges.push({ label: "SL/TP Editable", tone: "ok", testId: "badge-sltp-editable" });
-  badges.push({ label: "Manual Close Available", tone: "ok", testId: "badge-manual-close" });
+  // The card's four action buttons write ARX's own `trades` row and nothing
+  // else — /api/trade-management/* has no broker seam. For a LIVE row the
+  // server refuses them outright, so claiming "SL/TP Editable" and "Manual
+  // Close Available" here would advertise a capability this card does not have.
+  if (isPaper) {
+    badges.push({ label: "SL/TP Editable (simulated)", tone: "ok", testId: "badge-sltp-editable" });
+    badges.push({ label: "Manual Close (simulated)", tone: "ok", testId: "badge-manual-close" });
+  } else {
+    badges.push({ label: "Managed in Live Shared", tone: "warn", testId: "badge-managed-elsewhere" });
+  }
 
   return (
     <div className="flex flex-wrap gap-1" data-testid={`safety-badges-${trade.id}`}>
@@ -261,9 +295,30 @@ function AskTradeAi({ tradeId }: { tradeId: number }) {
   );
 }
 
+// The four action buttons on this card call /api/trade-management/* which
+// updates ARX's own `trades` row and never reaches a broker. Two consequences
+// the UI must honour:
+//   • the server's reply is quoted verbatim — it is the only place the word
+//     "simulated" appears, and swallowing it is what let a user believe a
+//     press had closed a real position;
+//   • a refusal (409 on a LIVE row, 404 on a foreign id, 401) is rendered as a
+//     refusal. Nothing is reported as done unless the server said it was done.
+type ActionResult = { tone: "ok" | "error"; text: string };
+
+function errorText(e: unknown): string {
+  if (e && typeof e === "object" && "data" in e) {
+    const data = (e as { data?: { message?: unknown; error?: unknown } }).data;
+    if (data && typeof data.message === "string" && data.message.length > 0) return data.message;
+    if (data && typeof data.error === "string" && data.error.length > 0) return data.error;
+  }
+  return e instanceof Error ? e.message : String(e);
+}
+
 export function LiveTradeCard({ trade, onCoach }: { trade: Trade; onCoach?: () => void }) {
   const qc = useQueryClient();
   const [coachOpen, setCoachOpen] = useState(false);
+  const [actionResult, setActionResult] = useState<ActionResult | null>(null);
+  const isLiveRow = (trade.mode ?? "").toUpperCase() === "LIVE";
   const { data: snap } = useGetTradeSnapshot(trade.id, { query: { queryKey: getGetTradeSnapshotQueryKey(trade.id), refetchInterval: 5000 } });
   const { data: coach, isLoading: coachLoading } = useGetCoachExplanation(trade.id, { query: { queryKey: getGetCoachExplanationQueryKey(trade.id), enabled: coachOpen } });
   const be = useMoveTradeToBreakeven();
@@ -275,6 +330,24 @@ export function LiveTradeCard({ trade, onCoach }: { trade: Trade; onCoach?: () =
     qc.invalidateQueries({ queryKey: getGetTradeSnapshotQueryKey(trade.id) });
     qc.invalidateQueries({ queryKey: getGetOpenTradesQueryKey() });
   };
+
+  // Single entry point for all four actions so none of them can regress into
+  // an unhandled promise. `run` returns the server's own TradeActionResult.
+  async function runAction(run: () => Promise<{ success?: boolean; message?: string }>) {
+    setActionResult(null);
+    try {
+      const r = await run();
+      const text = typeof r?.message === "string" && r.message.length > 0
+        ? r.message
+        : "The server accepted the action but returned no message.";
+      setActionResult({ tone: r?.success === false ? "error" : "ok", text });
+      refresh();
+    } catch (e) {
+      setActionResult({ tone: "error", text: errorText(e) });
+      // Still re-read: a refusal means the row may not be what we assumed.
+      refresh();
+    }
+  }
 
   const healthColor = snap ? (snap.health.score >= 70 ? "[&>div]:bg-success" : snap.health.score >= 40 ? "[&>div]:bg-warning" : "[&>div]:bg-destructive") : "";
 
@@ -325,12 +398,39 @@ export function LiveTradeCard({ trade, onCoach }: { trade: Trade; onCoach?: () =
               <Progress value={snap.health.score} className={`h-2 ${healthColor}`} />
             </div>
             <div className="text-xs p-2 rounded bg-muted/30 border border-border/50">{snap.primarySuggestion}</div>
-            <div className="grid grid-cols-2 gap-2">
-              <Button size="sm" variant={snap.suggestions.breakEven.recommended ? "default" : "outline"} disabled={be.isPending} onClick={async () => { await be.mutateAsync({ id: trade.id }); refresh(); }} data-testid={`button-breakeven-${trade.id}`}>Break-Even</Button>
-              <Button size="sm" variant={snap.suggestions.trail.recommended ? "default" : "outline"} disabled={trail.isPending} onClick={async () => { await trail.mutateAsync({ id: trade.id }); refresh(); }} data-testid={`button-trail-${trade.id}`}>Trail Stop</Button>
-              <Button size="sm" variant={snap.suggestions.partial.recommended ? "default" : "outline"} disabled={partial.isPending} onClick={async () => { await partial.mutateAsync({ id: trade.id, data: { closePct: 50 } }); refresh(); }} data-testid={`button-partial-${trade.id}`}>Close 50%</Button>
-              <Button size="sm" variant="destructive" disabled={close.isPending} onClick={async () => { await close.mutateAsync({ id: trade.id }); refresh(); }} data-testid={`button-close-${trade.id}`}><X size={14} className="mr-1" /> Close</Button>
-            </div>
+            {isLiveRow ? (
+              <div
+                className="text-xs p-2 rounded border border-warning/40 bg-warning/10 text-warning"
+                data-testid={`live-actions-unavailable-${trade.id}`}
+              >
+                This position is marked <strong>LIVE</strong>. Break-Even, Trail, Close 50% and Close on
+                this card only update ARX's own record — they are not connected to a broker, so the
+                server refuses them for live rows. Close or re-stop a live position from{" "}
+                <a href={`${PAC_BASE}/live-shared`} className="underline">Live Shared → Open Positions</a>.
+              </div>
+            ) : (
+              <>
+                <p className="text-[11px] text-muted-foreground" data-testid={`sim-actions-note-${trade.id}`}>
+                  These actions update ARX's demo record only — no broker order is sent.
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button size="sm" variant={snap.suggestions.breakEven.recommended ? "default" : "outline"} disabled={be.isPending} onClick={() => void runAction(() => be.mutateAsync({ id: trade.id }))} data-testid={`button-breakeven-${trade.id}`}>Break-Even</Button>
+                  <Button size="sm" variant={snap.suggestions.trail.recommended ? "default" : "outline"} disabled={trail.isPending} onClick={() => void runAction(() => trail.mutateAsync({ id: trade.id }))} data-testid={`button-trail-${trade.id}`}>Trail Stop</Button>
+                  <Button size="sm" variant={snap.suggestions.partial.recommended ? "default" : "outline"} disabled={partial.isPending} onClick={() => void runAction(() => partial.mutateAsync({ id: trade.id, data: { closePct: 50 } }))} data-testid={`button-partial-${trade.id}`}>Close 50%</Button>
+                  <Button size="sm" variant="destructive" disabled={close.isPending} onClick={() => void runAction(() => close.mutateAsync({ id: trade.id }))} data-testid={`button-close-${trade.id}`}><X size={14} className="mr-1" /> Close</Button>
+                </div>
+              </>
+            )}
+            {actionResult && (
+              <div
+                className={`text-xs p-2 rounded border ${actionResult.tone === "ok"
+                  ? "border-border/50 bg-muted/30 text-foreground"
+                  : "border-destructive/40 bg-destructive/10 text-destructive"}`}
+                data-testid={`action-result-${trade.id}`}
+              >
+                {actionResult.text}
+              </div>
+            )}
           </>
         }
       </CardContent>

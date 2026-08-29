@@ -9810,6 +9810,7 @@ export interface PartialCloseInput {
 
 export interface TradeActionResult {
   success: boolean;
+  simulated?: boolean;
   message: string;
   trade?: Trade;
 }

@@ -34,11 +34,13 @@ import {
 } from "@/components/live/MasterLiveAccessGuard";
 import {
   getMyLiveSharedCommands,
+  getMyLiveSharedPositions,
   getMyLiveSharedTrades,
   modifyLiveSharedTrade,
   closeLiveSharedTrade,
   cancelLiveSharedPendingOrder,
   type LiveSharedCommandRow,
+  type LiveSharedPositionRow,
 } from "@/lib/api/liveShared";
 
 type Attribution = {
@@ -50,8 +52,10 @@ type Attribution = {
 
 type TabKey = "place" | "open" | "pending" | "sltp" | "rr" | "history" | "ruby";
 
-// Tabs that need the commands list (open/pending/sltp/rr).
-const COMMAND_TABS = new Set<TabKey>(["open", "pending", "sltp", "rr"]);
+// Tabs that need the commands list (pending drafts + blocked attempts).
+const COMMAND_TABS = new Set<TabKey>(["pending", "rr"]);
+// Tabs that need the OPEN POSITION list (arx_live_positions).
+const POSITION_TABS = new Set<TabKey>(["open", "sltp"]);
 
 export default function LiveSharedPage() {
   const access = useMasterLiveAccess();
@@ -62,8 +66,11 @@ export default function LiveSharedPage() {
 
   // Per-tab lazy state. `null` = not yet fetched for this mount.
   const [commands, setCommands] = useState<LiveSharedCommandRow[] | null>(null);
+  const [positions, setPositions] = useState<LiveSharedPositionRow[] | null>(null);
+  const [positionsError, setPositionsError] = useState<string | null>(null);
   const [trades, setTrades] = useState<Attribution[] | null>(null);
   const [commandsBusy, setCommandsBusy] = useState(false);
+  const [positionsBusy, setPositionsBusy] = useState(false);
   const [tradesBusy, setTradesBusy] = useState(false);
   // Single transient banner — replaces the repeated alert pattern.
   const [actionMsg, setActionMsg] = useState<string | null>(null);
@@ -77,6 +84,27 @@ export default function LiveSharedPage() {
       setCommands(r.commands ?? []);
     } finally { setCommandsBusy(false); }
   }
+  // Open Positions + SL/TP read arx_live_positions, NOT the command log.
+  // A failed read is an honest typed error, never an empty list — showing
+  // "no open positions" when we could not read them would understate live
+  // exposure exactly as the old command-derived list overstated it.
+  async function loadPositions(force = false) {
+    if (positionsBusy || (!force && positions !== null)) return;
+    setPositionsBusy(true);
+    try {
+      const r = await getMyLiveSharedPositions();
+      if (r.ok === false || !Array.isArray(r.positions)) {
+        setPositionsError(
+          r.reason ?? r.error ?? `Could not read your open live positions (HTTP ${r.__httpStatus}).`,
+        );
+        return;
+      }
+      setPositions(r.positions);
+      setPositionsError(null);
+    } catch (e) {
+      setPositionsError(`Could not read your open live positions: ${e instanceof Error ? e.message : String(e)}`);
+    } finally { setPositionsBusy(false); }
+  }
   async function loadTrades(force = false) {
     if (tradesBusy || (!force && trades !== null)) return;
     setTradesBusy(true);
@@ -89,15 +117,13 @@ export default function LiveSharedPage() {
   // Lazy-load on tab change.
   useEffect(() => {
     if (COMMAND_TABS.has(tab)) void loadCommands();
+    if (POSITION_TABS.has(tab)) void loadPositions();
     if (tab === "history") void loadTrades();
     // ruby + place don't need either list (place uses the ticket dialog;
     // ruby uses LiveSharedStatusPanel which has its own internal fetch).
   }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const open = useMemo(
-    () => safeArray(commands).filter((c) => c.status === "SENT_TO_MT5_LIVE" || c.brokerTicket != null),
-    [commands],
-  );
+  const open = useMemo(() => safeArray(positions), [positions]);
   const pending = useMemo(
     () => safeArray(commands).filter((c) => c.status === "LIVE_CONFIRMATION_REQUIRED" || c.status === "LIVE_APPROVED"),
     [commands],
@@ -114,7 +140,8 @@ export default function LiveSharedPage() {
     try {
       const r = await modifyLiveSharedTrade({ ticket, stopLoss: sl, takeProfit: tp });
       setActionMsg(r.ok ? `Modify queued (${r.commandId ?? "?"})`
-        : `Modify blocked: ${r.primaryReason ?? r.reason ?? "unknown"}`);
+        : `Modify blocked: ${r.primaryReason ?? r.reason ?? r.error ?? `the server refused it (HTTP ${r.__httpStatus}) without a reason`}`);
+      await loadPositions(true);
       await loadCommands(true);
     } finally { setActionBusy(null); }
   }
@@ -125,7 +152,8 @@ export default function LiveSharedPage() {
     try {
       const r = await closeLiveSharedTrade(ticket);
       setActionMsg(r.ok ? `Close queued (${r.commandId ?? "?"})`
-        : `Close blocked: ${r.primaryReason ?? r.reason ?? "unknown"}`);
+        : `Close blocked: ${r.primaryReason ?? r.reason ?? r.error ?? `the server refused it (HTTP ${r.__httpStatus}) without a reason`}`);
+      await loadPositions(true);
       await loadCommands(true);
     } finally { setActionBusy(null); }
   }
@@ -135,13 +163,15 @@ export default function LiveSharedPage() {
     setActionBusy(`cancel-${commandId}`); setActionMsg(null);
     try {
       const r = await cancelLiveSharedPendingOrder(commandId);
-      setActionMsg(r.ok ? `Cancelled` : `Cancel failed: ${r.reason ?? "unknown"}`);
+      setActionMsg(r.ok ? `Cancelled`
+        : `Cancel failed: ${r.primaryReason ?? r.reason ?? r.error ?? `the server refused it (HTTP ${r.__httpStatus}) without a reason`}`);
       await loadCommands(true);
     } finally { setActionBusy(null); }
   }
 
   function refreshCurrent() {
     if (COMMAND_TABS.has(tab)) void loadCommands(true);
+    if (POSITION_TABS.has(tab)) void loadPositions(true);
     if (tab === "history") void loadTrades(true);
   }
 
@@ -194,9 +224,21 @@ export default function LiveSharedPage() {
           <Card>
             <CardHeader className="pb-2"><CardTitle className="text-sm">Place a Live Shared trade</CardTitle></CardHeader>
             <CardContent className="space-y-2 text-xs">
+              {/* Single-confirm flow. There is no "Review trade" pre-step in
+                  the ticket: pressing Confirm Buy / Confirm Sell calls
+                  /execute directly. That is the deliberate design (pinned by
+                  scripts/src/liveSingleConfirmTest.ts), so this card must not
+                  promise a dry-run step the user can cancel from. */}
               <p className="text-muted-foreground">
-                Two-step gated flow: <strong>Review trade</strong> dry-runs every server safety check,
-                then <strong>Confirm trade</strong> dispatches to the broker. You can cancel any time before confirming.
+                <strong>One confirmation, no dry-run step.</strong> The ticket opens with the order you are
+                about to place; pressing <strong>Confirm Buy</strong> / <strong>Confirm Sell</strong> sends it
+                to the broker immediately. You can close the ticket without placing anything, but there is no
+                second screen after Confirm.
+              </p>
+              <p className="text-muted-foreground">
+                Every safety check still runs server-side on that press — the Phase&nbsp;B dispatch evaluator,
+                the kill switch, your lot and loss ceilings — and a refusal is shown in the ticket with its
+                reason. Nothing is placed until the evaluator passes.
               </p>
               <Button
                 variant="destructive"
@@ -219,12 +261,17 @@ export default function LiveSharedPage() {
         </TabsContent>
 
         <TabsContent value="open" className="mt-3">
-          <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Open Positions ({open.length})</CardTitle></CardHeader><CardContent>
-            <CommandList rows={open} loading={commandsBusy && commands === null}
-              actions={(c) => access.canTrade && c.brokerTicket && (
-                <Button size="sm" variant="outline" disabled={actionBusy === `close-${c.brokerTicket}`}
-                  onClick={() => onClose(c.brokerTicket!)} data-testid={`ls-close-${c.brokerTicket}`}>Close</Button>
-              )} />
+          <Card><CardHeader className="pb-2"><CardTitle className="text-sm">
+            Open Positions {positionsError ? "(unavailable)" : `(${open.length})`}
+          </CardTitle></CardHeader><CardContent>
+            <PositionList
+              rows={open}
+              loading={positionsBusy && positions === null}
+              error={positionsError}
+              actions={(p) => access.canTrade ? (
+                <Button size="sm" variant="outline" disabled={actionBusy === `close-${p.brokerTicket}`}
+                  onClick={() => onClose(p.brokerTicket)} data-testid={`ls-close-${p.brokerTicket}`}>Close</Button>
+              ) : null} />
           </CardContent></Card>
         </TabsContent>
 
@@ -245,17 +292,20 @@ export default function LiveSharedPage() {
                 <ShieldAlert className="h-3.5 w-3.5" /> SL/TP modification is admin-gated.
               </div>
             )}
-            {access.canTrade && commands === null && commandsBusy && (
+            {access.canTrade && positionsError && (
+              <div className="text-xs text-danger" data-testid="ls-sltp-error">{positionsError}</div>
+            )}
+            {access.canTrade && !positionsError && positions === null && positionsBusy && (
               <div className="text-xs text-muted-foreground italic">loading…</div>
             )}
-            {access.canTrade && commands !== null && open.filter((c) => c.brokerTicket).length === 0 && (
+            {access.canTrade && !positionsError && positions !== null && open.length === 0 && (
               <div className="text-xs text-muted-foreground italic">No open live positions.</div>
             )}
-            {access.canTrade && (
+            {access.canTrade && !positionsError && (
               <ul className="space-y-2">
-                {open.filter((c) => c.brokerTicket).map((c) => (
-                  <SLTPRow key={c.commandId} command={c} busy={actionBusy === `modify-${c.brokerTicket}`}
-                    onSubmit={(sl, tp) => onModify(c.brokerTicket!, sl, tp)} />
+                {open.map((p) => (
+                  <SLTPRow key={p.brokerTicket} position={p} busy={actionBusy === `modify-${p.brokerTicket}`}
+                    onSubmit={(sl, tp) => onModify(p.brokerTicket, sl, tp)} />
                 ))}
               </ul>
             )}
@@ -341,29 +391,60 @@ function CommandList({ rows, loading, actions }: {
   );
 }
 
-function SLTPRow({ command, busy, onSubmit }: {
-  command: LiveSharedCommandRow; busy: boolean;
+// Open live positions, straight from arx_live_positions. A read failure is
+// rendered as a failure — never as "none".
+function PositionList({ rows, loading, error, actions }: {
+  rows: LiveSharedPositionRow[]; loading: boolean; error: string | null;
+  actions?: (p: LiveSharedPositionRow) => React.ReactNode;
+}) {
+  if (error) return <div className="text-xs text-danger" data-testid="ls-positions-error">{error}</div>;
+  if (loading) return <div className="text-xs text-muted-foreground italic">loading…</div>;
+  if (rows.length === 0) return <div className="text-xs text-muted-foreground italic">No open live positions.</div>;
+  return (
+    <ul className="space-y-1 text-xs" data-testid="ls-positions-list">
+      {rows.map((p) => (
+        <li key={p.brokerTicket} className="flex items-center gap-2 border-b border-border/40 py-1">
+          <span className="font-mono text-success">#{p.brokerTicket}</span>
+          <span className="font-mono">{p.symbol} {p.side} {p.volume}</span>
+          <span className="text-muted-foreground hidden sm:inline">
+            entry {p.entryPrice} · SL {p.stopLoss ?? "—"} · TP {p.takeProfit ?? "—"}
+          </span>
+          <span className="text-muted-foreground hidden md:inline">
+            {p.floatingPl == null ? "P/L unavailable" : `P/L ${p.floatingPl}`}
+          </span>
+          {p.managementState === "MANUAL_CONTROL" && (
+            <Badge variant="outline" className="text-[10px]">manual control</Badge>
+          )}
+          <span className="ml-auto flex gap-1">{actions?.(p)}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function SLTPRow({ position, busy, onSubmit }: {
+  position: LiveSharedPositionRow; busy: boolean;
   onSubmit: (sl: number | null, tp: number | null) => void;
 }) {
-  const [sl, setSL] = useState(command.stopLoss != null ? String(command.stopLoss) : "");
-  const [tp, setTP] = useState(command.takeProfit != null ? String(command.takeProfit) : "");
+  const [sl, setSL] = useState(position.stopLoss != null ? String(position.stopLoss) : "");
+  const [tp, setTP] = useState(position.takeProfit != null ? String(position.takeProfit) : "");
   return (
     <li className="grid grid-cols-[1fr_auto_auto_auto] gap-2 items-end border border-border rounded p-2">
       <div className="text-xs">
-        <div className="font-mono">{command.symbol} {command.side} #{command.brokerTicket}</div>
-        <div className="text-muted-foreground">vol {String(command.requestedVolume ?? "")}</div>
+        <div className="font-mono">{position.symbol} {position.side} #{position.brokerTicket}</div>
+        <div className="text-muted-foreground">vol {String(position.volume)}</div>
       </div>
       <div>
         <Label className="text-[10px]">SL</Label>
-        <Input className="h-8 w-24" type="number" step="0.0001" value={sl} onChange={(e) => setSL(e.target.value)} data-testid={`sltp-sl-${command.brokerTicket}`} />
+        <Input className="h-8 w-24" type="number" step="0.0001" value={sl} onChange={(e) => setSL(e.target.value)} data-testid={`sltp-sl-${position.brokerTicket}`} />
       </div>
       <div>
         <Label className="text-[10px]">TP</Label>
-        <Input className="h-8 w-24" type="number" step="0.0001" value={tp} onChange={(e) => setTP(e.target.value)} data-testid={`sltp-tp-${command.brokerTicket}`} />
+        <Input className="h-8 w-24" type="number" step="0.0001" value={tp} onChange={(e) => setTP(e.target.value)} data-testid={`sltp-tp-${position.brokerTicket}`} />
       </div>
       <Button size="sm" disabled={busy}
         onClick={() => onSubmit(sl ? Number(sl) : null, tp ? Number(tp) : null)}
-        data-testid={`sltp-submit-${command.brokerTicket}`}>Apply</Button>
+        data-testid={`sltp-submit-${position.brokerTicket}`}>Apply</Button>
     </li>
   );
 }

@@ -6,8 +6,9 @@ export default function TradePlanBuilderPage() {
       <header>
         <h1 className="text-2xl font-bold text-foreground">AI Trade Plan Builder</h1>
         <p className="text-sm text-txt-secondary">
-          Compose a written plan, run the pre-trade checklist, and convert to a confirmation when ready.
-          Final execution remains gated by the live-execution safety layer.
+          Compose a written plan, run the pre-trade checklist, and convert it into a recorded execution
+          confirmation when ready. This page never places an order — live orders are placed from the Live
+          Trading ticket, where the server-side dispatch gate runs on every press.
         </p>
       </header>
       <TradePlanBuilderPanel />

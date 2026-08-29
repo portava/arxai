@@ -123,8 +123,11 @@ export function RecentScannerTrades() {
      
   }, [showDemoFeed, mode.shouldShowAdminDiagnostics]);
 
+  // The title must name the feed this panel actually reads. For a live-armed,
+  // non-admin trader `showDemoFeed` is false and no fetch runs at all, so
+  // labelling the card "Live Shared" claimed a live feed that does not exist.
   const cardTitle = mode.isLiveShared
-    ? "Recent Scanner Trades — Live Shared"
+    ? (showDemoFeed ? "Recent Scanner Trades — Demo queue" : "Recent Scanner Trades — Demo queue only")
     : mode.isDemo
       ? "Recent Scanner Trades — Demo"
       : mode.isPaper
@@ -166,7 +169,24 @@ export function RecentScannerTrades() {
           <div className="text-xs text-muted-foreground px-3 py-3" data-testid="recent-scanner-trades-empty">
             {showDemoFeed
               ? "No scanner-originated trades yet. Use Buy or Sell on a result card to place one."
-              : "Live Shared scanner trade history will appear here once orders are placed."}
+              : (
+                <>
+                  {/* This panel's only data source is /api/me/demo-commands — the DEMO
+                      queue. A live-armed trader's scanner orders go through the live
+                      command pipeline instead, and the server deliberately redacts the
+                      command's sourcePage from the user projection (tradesLiveShared.ts
+                      USER_COMMAND_KEYS), so there is nothing here to filter scanner
+                      orders by. Saying "history will appear here once orders are placed"
+                      was a promise this panel cannot keep — it would stay empty forever
+                      while the trader wondered whether their orders had been recorded. */}
+                  Scanner trade history is not available in Live Shared mode — this panel only reads the
+                  demo command queue.{" "}
+                  <a href={`${BASE}/live-shared`} className="underline" data-testid="recent-scanner-trades-live-link">
+                    Open Live Shared
+                  </a>{" "}
+                  to see your live orders and open positions.
+                </>
+              )}
           </div>
         )}
         {rows.length > 0 && (

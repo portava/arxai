@@ -1,10 +1,20 @@
 // LiveTradeTicket — TWO modes inside one component (no duplicate pages):
 //
-//   • Standard mode (one-click OFF) — keeps the original modal with the
-//     red "LIVE TRADE — REAL MONEY CAN BE LOST" header, the
-//     "I confirm this live order" checkbox, the required stop-loss
-//     validation, and the explicit Submit button. Unchanged behaviour
-//     for users who have NOT opted in to one-click.
+//   • Standard mode (one-click OFF) — a red-bordered "Trade Ticket" modal with
+//     the account/max-lot strip, the required stop-loss validation (waived only
+//     for owner-unrestricted profiles), a non-blocking no-SL warning, and ONE
+//     final action: "Confirm Buy" / "Confirm Sell". There is NO separate
+//     acknowledgement checkbox and NO second confirmation modal — that press
+//     submits (see :514 below). This is deliberate and is pinned by
+//     scripts/src/liveSingleConfirmTest.ts, which fails the build if a
+//     validate pre-step or an ack checkbox is reintroduced here.
+//
+//     (The header used to describe a red "LIVE TRADE — REAL MONEY CAN BE LOST"
+//     banner and an "I confirm this live order" checkbox as "unchanged
+//     behaviour". Neither exists in this component; the description was stale
+//     and is corrected above. Closing a position still asks for a typed
+//     acknowledgement in ConfirmCloseModal — that is a different surface with
+//     its own contract, not a claim about this one.)
 //
 //   • One-Click mode (one-click ON + master-live access PASS) — renders
 //     a compact terminal-style fast-trade panel: BUY / SELL big buttons,
@@ -511,7 +521,13 @@ export function LiveTradeTicket({
             <AlertTriangle className="h-4 w-4" />
             <AlertTitle>Live trading not armed</AlertTitle>
             <AlertDescription>
-              Open <a href={`${BASE}/live-trading`} className="underline">Live Trading Setup</a> and pass the 15-check gate first.
+              {/* No "15-check gate" exists anywhere in the product: the Live
+                  Trading page shows a readiness card whose checks it reports
+                  itself, and the server-side dispatch evaluator is a different
+                  count again. Naming an invented number sent the user looking
+                  for something that is not there, so the copy points at the
+                  surface that reports the real list instead. */}
+              Open <a href={`${BASE}/live-trading`} className="underline">Live Trading Setup</a> and clear the live-readiness checks listed there first.
             </AlertDescription>
           </Alert>
         )}

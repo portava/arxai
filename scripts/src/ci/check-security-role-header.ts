@@ -16,6 +16,14 @@ const SERVER_ROOTS = [
 const FRONTEND_SCANNED_FILES = [
   "artifacts/trading-dashboard/src/pages/market-scanner.tsx",
   "artifacts/trading-dashboard/src/pages/live-ai-auto-test.tsx",
+  // Both pages hard-coded `x-security-role: ADMIN` in a shared api() helper.
+  // Production ignores the header, so a normal user resolved to VIEWER, every
+  // mutating call took a 403, and the helper returned r.json() without
+  // checking r.ok — Create order / Fill simulator / Cancel / Close position /
+  // ½ close / Break-even / Trail were all silent no-ops with no message.
+  // Scanned so the header cannot come back.
+  "artifacts/trading-dashboard/src/pages/orders.tsx",
+  "artifacts/trading-dashboard/src/pages/positions.tsx",
 ].map((p) => p.split("/").join(sep));
 
 const ALLOWED_FILES = new Set(

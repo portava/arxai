@@ -9,6 +9,7 @@ import type { Trade } from "./trade";
 
 export interface TradeActionResult {
   success: boolean;
+  simulated?: boolean;
   message: string;
   trade?: Trade;
 }

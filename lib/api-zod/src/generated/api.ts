@@ -9317,6 +9317,7 @@ export const MoveTradeToBreakevenParams = zod.object({
 
 export const MoveTradeToBreakevenResponse = zod.object({
   success: zod.boolean(),
+  simulated: zod.boolean().optional(),
   message: zod.string(),
   trade: zod
     .object({
@@ -9357,6 +9358,7 @@ export const TrailTradeStopParams = zod.object({
 
 export const TrailTradeStopResponse = zod.object({
   success: zod.boolean(),
+  simulated: zod.boolean().optional(),
   message: zod.string(),
   trade: zod
     .object({
@@ -9401,6 +9403,7 @@ export const PartialCloseTradeBody = zod.object({
 
 export const PartialCloseTradeResponse = zod.object({
   success: zod.boolean(),
+  simulated: zod.boolean().optional(),
   message: zod.string(),
   trade: zod
     .object({
@@ -9441,6 +9444,7 @@ export const CloseTradeManuallyParams = zod.object({
 
 export const CloseTradeManuallyResponse = zod.object({
   success: zod.boolean(),
+  simulated: zod.boolean().optional(),
   message: zod.string(),
   trade: zod
     .object({
