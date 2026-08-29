@@ -7,7 +7,7 @@ import {
 } from "../lib/safetyCore.js";
 import { logUserOverride } from "../lib/vaultLogger.js";
 import { secretsMatch } from "../lib/secretsMatch.js";
-import { requirePermission, readRoleFromRequest } from "../lib/security/middleware.js";
+import { requirePermission, requireStopAuthority, readRoleFromRequest } from "../lib/security/middleware.js";
 import { checkPermission } from "../lib/security/permissions.js";
 
 import { scanVaultIntegrity } from "../lib/vaultIntegrity.js";
@@ -36,7 +36,11 @@ const router = Router();
 //
 // Authority now follows the direction of the change — the same rule the rest of
 // this codebase uses: a stop may be pulled widely, a release may not.
-//   ENGAGE  → live_trading:kill_switch  (TRADER and up — anyone may stop)
+//   ENGAGE  → requireStopAuthority       (ANY signed-in user may pull a stop —
+//                                        see the note on the route below; the
+//                                        first version of this fix used
+//                                        requirePermission here and 403'd every
+//                                        ordinary user, who maps to VIEWER)
 //   RESET   → live_trading:reset        (ADMIN/OWNER/SYSTEM only)
 //   MODE ↓  → live_trading:kill_switch  (OBSERVE_ONLY / SUGGEST_ONLY do not execute)
 //   MODE ↑  → live_trading:reset        (PAPER_TRADING / LIVE_TRADING do)
@@ -240,9 +244,26 @@ router.post("/system/mode", requirePermission("live_trading:kill_switch"), async
   }
 });
 
-// POST /system/kill-switch/engage — pulling the stop is a REDUCE-only action,
-// so it stays available to every trader (TRADER holds live_trading:kill_switch).
-router.post("/system/kill-switch/engage", requirePermission("live_trading:kill_switch"), async (req, res) => {
+// POST /system/kill-switch/engage — pulling the stop is a REDUCE-only action.
+//
+// REVIEW CORRECTION to the first rank-7 fix. That fix wrapped this route in
+// requirePermission("live_trading:kill_switch"), which reads correctly but was
+// wrong in production: routes/auth.ts:562-567 mirrors every regular DB `USER`
+// onto the AuthRole VIEWER, lib/security/session.ts:94 defaults production to
+// VIEWER, and lib/security/seed.ts does not grant VIEWER that permission. So
+// the ordinary trader on /emergency — "the one safety item in every user's
+// nav" — got a 403, the switch never engaged, and live dispatch was NOT halted.
+// Before that fix the same user could engage it and it genuinely halted the
+// Deriv guided path and the trade gate: the gate was a net loss of a working
+// safety control for the majority of users.
+//
+// It also protected nothing. POST /bot/emergency-stop (routes/bot.ts,
+// requireUser only) calls the SAME engageKillSwitch() for any signed-in user.
+//
+// So this route now requires AUTHENTICATION, not elevation — see
+// requireStopAuthority(). Anonymous is still refused. RESET below keeps its
+// ADMIN/OWNER permission gate, because releasing a stop WIDENS authority.
+router.post("/system/kill-switch/engage", requireStopAuthority("live_trading:kill_switch"), async (req, res) => {
   try {
     const body = EngageKillBody.parse(req.body);
     await engageKillSwitch({ reason: body.reason, triggeredBy: resolveActor(req) });

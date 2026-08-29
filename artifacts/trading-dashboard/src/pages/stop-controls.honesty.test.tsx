@@ -89,6 +89,40 @@ describe("rank 58 — each stop surface names the dispatch path it gates", () =>
     expect(src).not.toContain("blocks all execution");
   });
 
+  it("/emergency does not claim the Paper Trades screen is halted", () => {
+    // REVIEW CORRECTION. The bullet used to read "Paper / simulated execution
+    // through the trade gate" under a heading that reads as a guarantee.
+    // tradeGate() has exactly ONE non-definition caller in api-server:
+    // routes/trades.ts:82 (POST /execute-trade). The per-user paper surface is
+    // routes/mePaperTrades.ts, which never reads the safety core — so a user
+    // could engage the stop and still open a paper trade from /me/paper-trades.
+    const src = read("emergency.tsx");
+    expect(src).not.toContain("Paper / simulated execution through the trade gate");
+    expect(src).toMatch(/Safety Core trade gate/);
+    expect(src).toMatch(/execute-trade<\/code> path only/);
+    expect(src).toMatch(/It does not stop the Paper Trades screen/);
+  });
+
+  it("/emergency tells the user nothing was halted when engage fails", () => {
+    // A bare "Engage failed" left the user unable to tell a transient error
+    // from a control that had silently stopped working for them, on the one
+    // page whose whole promise is that trading is now halted.
+    const src = read("emergency.tsx");
+    expect(src).not.toMatch(/title: "Engage failed", variant: "destructive"/);
+    expect(src).toMatch(/NOT ENGAGED — trading was not halted/);
+    expect(src).toMatch(/live dispatch is still running/);
+    expect(src).toContain("EMERGENCY STOP ALL TRADING on /risk-settings");
+  });
+
+  it("/emergency names the role requirement the MODE buttons really have", () => {
+    // Unlike ENGAGE, POST /system/mode is role-gated, so it 403s for the
+    // VIEWER an ordinary account maps to. Say so instead of "Mode change failed".
+    const src = read("emergency.tsx");
+    expect(src).not.toMatch(/title: "Mode change failed", variant: "destructive"/);
+    expect(src).toMatch(/requires an operator role \(ADMIN or OWNER\)/);
+    expect(src).toMatch(/available to every signed-in user/);
+  });
+
   it("/live-trading-control admits its kill switch gates a stubbed path", () => {
     const src = read("live-trading-control.tsx");
     expect(src).toContain("Which stop is this?");

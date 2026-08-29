@@ -102,6 +102,59 @@ export function requirePermission(permissionKey: string) {
   };
 }
 
+// ── Authority to PULL a stop (REDUCE-only actions) ─────────────────────────
+//
+// requirePermission() is the right instrument for anything that WIDENS what the
+// platform may do. It is the wrong instrument for the emergency stop, and the
+// review that followed the rank-7 fix proved it in production terms:
+//
+//   routes/auth.ts mirrors every regular DB `USER` onto the AuthRole VIEWER,
+//   and lib/security/session.ts defaults production to VIEWER. VIEWER does not
+//   hold live_trading:kill_switch (lib/security/seed.ts). So wrapping
+//   POST /system/kill-switch/engage in requirePermission("live_trading:kill_switch")
+//   403'd the ordinary trader on /emergency — the one safety item in every
+//   user's nav — and the platform stop silently did not engage.
+//
+// That gate also protected nothing: POST /bot/emergency-stop (routes/bot.ts,
+// requireUser only) reaches the SAME engageKillSwitch() for any signed-in user.
+// A gate that every ordinary user can walk around, but that breaks the button
+// they were told to press, is pure user-facing harm.
+//
+// So: pulling a stop needs AUTHENTICATION, not elevation. Releasing it still
+// needs requirePermission("live_trading:reset") — authority follows the
+// direction of the change, and this direction only ever REDUCES.
+//
+// Admitted:
+//   • any caller with a per-user session (req.authUser) — the ordinary trader;
+//   • any caller whose role session holds `permissionKey` (TRADER/ADMIN/OWNER,
+//     and the dev role-cookie console, which has no arx_user_session).
+// Refused:
+//   • anonymous callers — no user session and a role that holds nothing.
+export function requireStopAuthority(permissionKey: string) {
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    // A signed-in human may always pull a stop, whatever their role.
+    if (req.authUser) {
+      req.securityRole = readRoleFromRequest(req);
+      next();
+      return;
+    }
+    // No per-user session: fall back to role authority (operator / dev console).
+    const role = readRoleFromRequest(req);
+    const decision = await checkPermission(role, permissionKey);
+    if (decision.allowed) {
+      req.securityRole = role;
+      next();
+      return;
+    }
+    res.status(401).json({
+      error: "AUTH_REQUIRED",
+      message:
+        "Sign in to engage the platform emergency stop. Any signed-in user may pull it; releasing it requires an ADMIN or OWNER role.",
+      role,
+    });
+  };
+}
+
 export function forbidLiveTradingAction(action: string): { allowed: boolean; reason: string } {
   if (isLiveTradingAction(action)) {
     return { allowed: false, reason: "FORBIDDEN — live trading is permanently disabled by Build NN" };

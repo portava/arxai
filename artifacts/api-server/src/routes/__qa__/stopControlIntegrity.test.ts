@@ -40,6 +40,7 @@ import { fileURLToPath } from "node:url";
 // assignment above. The pg Pool is lazy; checkPermission's DB lookup fails and
 // falls through to its seed map, so no query is ever issued by these tests.
 const { checkPermission } = await import("../../lib/security/permissions.js");
+const { requireStopAuthority } = await import("../../lib/security/middleware.js");
 
 const SYSTEM_SRC = readFileSync(fileURLToPath(new URL("../system.ts", import.meta.url)), "utf8");
 const BOT_SRC = readFileSync(fileURLToPath(new URL("../bot.ts", import.meta.url)), "utf8");
@@ -58,6 +59,8 @@ test("ADMIN and OWNER hold both; VIEWER holds neither", async () => {
     assert.equal((await checkPermission(role, "live_trading:kill_switch")).allowed, true, `${role} engage`);
     assert.equal((await checkPermission(role, "live_trading:reset")).allowed, true, `${role} reset`);
   }
+  // VIEWER holds NEITHER permission — and that is exactly why ENGAGE must not
+  // be permission-gated. See the requireStopAuthority block below.
   assert.equal((await checkPermission("VIEWER", "live_trading:kill_switch")).allowed, false);
   assert.equal((await checkPermission("VIEWER", "live_trading:reset")).allowed, false);
 });
@@ -74,22 +77,88 @@ test("an unknown or absent role normalises to VIEWER, not to trust", async () =>
 
 // ── RANK 7 · the three mutating /system routes are gated ───────────────────
 
-test("all three mutating /system endpoints carry a permission gate", () => {
+test("all three mutating /system endpoints carry an authority gate", () => {
   assert.match(
     SYSTEM_SRC,
     /router\.post\("\/system\/mode",\s*requirePermission\("live_trading:kill_switch"\)/,
     "POST /system/mode must be permission-gated",
   );
+  // ENGAGE is deliberately NOT requirePermission-gated — see the
+  // requireStopAuthority block below for why, and for the behavioural proof.
   assert.match(
     SYSTEM_SRC,
-    /router\.post\("\/system\/kill-switch\/engage",\s*requirePermission\("live_trading:kill_switch"\)/,
-    "POST /system/kill-switch/engage must be permission-gated",
+    /router\.post\("\/system\/kill-switch\/engage",\s*requireStopAuthority\("live_trading:kill_switch"\)/,
+    "POST /system/kill-switch/engage must require authentication (any signed-in user may pull a stop)",
+  );
+  assert.doesNotMatch(
+    SYSTEM_SRC,
+    /router\.post\("\/system\/kill-switch\/engage",\s*requirePermission\(/,
+    "ENGAGE must never be role-gated: every regular user maps to VIEWER, so a permission gate silently revokes the platform emergency stop from the majority of users",
   );
   assert.match(
     SYSTEM_SRC,
     /router\.post\("\/system\/kill-switch\/reset",\s*requirePermission\("live_trading:reset"\)/,
     "POST /system/kill-switch/reset must require the ADMIN-level reset permission",
   );
+});
+
+// ── REVIEW CORRECTION · pulling the stop needs AUTHENTICATION, not elevation ─
+//
+// The first version of the rank-7 fix wrapped ENGAGE in
+// requirePermission("live_trading:kill_switch"). That reads correctly and was
+// wrong in production: routes/auth.ts:562-567 mirrors every regular DB `USER`
+// onto the AuthRole VIEWER, lib/security/session.ts:94 defaults production to
+// VIEWER, and VIEWER does not hold that permission (asserted above). The
+// ordinary trader on /emergency — "the one safety item in every user's nav" —
+// got a 403 and the platform stop silently did not engage, where before the
+// fix the same press genuinely halted the Deriv guided path and the trade gate.
+//
+// These tests run the real middleware, so they fail red if the gate is ever
+// tightened back to a role check.
+
+function fakeReq(opts: { role?: string; signedIn?: boolean }) {
+  return {
+    cookies: {},
+    header: (n: string) => (n === "x-security-role" ? opts.role : undefined),
+    ...(opts.signedIn ? { authUser: { id: 42 } } : {}),
+  } as unknown as Parameters<ReturnType<typeof requireStopAuthority>>[0];
+}
+
+function fakeRes() {
+  const out: { code?: number; body?: unknown } = {};
+  const res = {
+    status(c: number) { out.code = c; return res; },
+    json(b: unknown) { out.body = b; return res; },
+  };
+  return { res: res as unknown as Parameters<ReturnType<typeof requireStopAuthority>>[1], out };
+}
+
+async function runGate(opts: { role?: string; signedIn?: boolean }) {
+  let passed = false;
+  const { res, out } = fakeRes();
+  await requireStopAuthority("live_trading:kill_switch")(fakeReq(opts), res, () => { passed = true; });
+  return { passed, ...out };
+}
+
+test("a signed-in ordinary user (role VIEWER) CAN pull the platform stop", async () => {
+  // This is the exact production case the permission gate broke.
+  const r = await runGate({ role: "VIEWER", signedIn: true });
+  assert.equal(r.passed, true, "an ordinary signed-in trader must be able to engage the emergency stop");
+  assert.equal(r.code, undefined, "no status should be written when the gate passes");
+});
+
+test("an operator with a role session but no user session may still pull it", async () => {
+  for (const role of ["TESTER", "ADMIN", "OWNER"]) {
+    const r = await runGate({ role, signedIn: false });
+    assert.equal(r.passed, true, `${role} (role session only) must be able to engage`);
+  }
+});
+
+test("an anonymous caller — no user session, no role authority — is refused", async () => {
+  const r = await runGate({ role: "VIEWER", signedIn: false });
+  assert.equal(r.passed, false, "anonymous must not reach the safety core");
+  assert.equal(r.code, 401);
+  assert.equal((r.body as { error?: string }).error, "AUTH_REQUIRED");
 });
 
 test("selecting an EXECUTION-CAPABLE mode needs the admin-level permission", () => {

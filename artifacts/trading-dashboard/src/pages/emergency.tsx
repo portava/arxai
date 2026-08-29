@@ -154,7 +154,18 @@ function ModeSwitcher({ status }: { status: SystemStatus }) {
           void queryClient.invalidateQueries({ queryKey: getGetSystemStatusQueryKey() });
           void queryClient.invalidateQueries({ queryKey: getGetSystemVaultQueryKey() });
         },
-        onError: () => toast({ title: "Mode change failed", variant: "destructive" }),
+        // Unlike ENGAGE, changing the platform-wide operational mode IS
+        // role-gated (live_trading:kill_switch as a floor, live_trading:reset
+        // to select an execution-capable mode). An ordinary account maps to
+        // VIEWER, so this will 403 for most users — name that instead of
+        // leaving them to retry a button that can never work for them.
+        onError: () =>
+          toast({
+            title: "Mode unchanged",
+            description:
+              "Changing the platform-wide operational mode requires an operator role (ADMIN or OWNER). The mode is unchanged. To stop trading, use ENGAGE KILL SWITCH below — that is available to every signed-in user.",
+            variant: "destructive",
+          }),
         onSettled: () => {
           setPendingMode(null);
           setConfirmLive(null);
@@ -282,7 +293,19 @@ function KillSwitchPanel({ status }: { status: SystemStatus }) {
           setReason("");
           invalidate();
         },
-        onError: () => toast({ title: "Engage failed", variant: "destructive" }),
+        // NOT ENGAGED — say so, and say what still works. A bare "Engage
+        // failed" left the user unable to tell a transient server error from a
+        // control that would never work for them. Engaging needs only a
+        // signed-in session (see routes/system.ts), so the realistic causes are
+        // a lost session or the server being unreachable — in both of which
+        // cases nothing was halted and the user needs the other route now.
+        onError: () =>
+          toast({
+            title: "NOT ENGAGED — trading was not halted",
+            description:
+              "The platform stop did not engage, so live dispatch is still running. Check you are still signed in and retry. If it keeps failing, use EMERGENCY STOP ALL TRADING on /risk-settings, which reaches the same switch.",
+            variant: "destructive",
+          }),
       },
     );
   };
@@ -339,11 +362,20 @@ function KillSwitchPanel({ status }: { status: SystemStatus }) {
           <ul className="list-disc list-inside space-y-1 text-muted-foreground">
             <li>MT5 live command dispatch — refused at draft and at dispatch</li>
             <li>The Deriv guided dispatch path</li>
-            <li>Paper / simulated execution through the trade gate</li>
+            <li>Simulated execution through the Safety Core trade gate — the <code>/execute-trade</code> path only</li>
           </ul>
           <p className="font-semibold text-foreground pt-1">What it does not do</p>
           <ul className="list-disc list-inside space-y-1 text-muted-foreground">
             <li>It does not close anything. Open positions stay open and no close command reaches your broker.</li>
+            {/* The trade gate has exactly one caller (routes/trades.ts →
+                POST /execute-trade). The per-user paper screen is a different
+                route family (routes/mePaperTrades.ts) that never reads the
+                safety core, so claiming "paper execution is halted" without
+                this line would be a promise this page cannot keep. */}
+            <li>
+              It does not stop the Paper Trades screen. Opening and closing paper trades there does not
+              consult this switch, so those keep working while the stop is engaged.
+            </li>
             <li>It does not clear the Autopilot Control Center&apos;s own lock, or the Risk Command Center pause — those are separate controls.</li>
           </ul>
         </div>
