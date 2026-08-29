@@ -26,6 +26,7 @@ import {
 } from "@workspace/db";
 import {
   evaluateManagementAction,
+  checkAutomatedCommandAllowed,
   type TradeThesis,
   type ManagementAction,
 } from "@workspace/domain/self-trade";
@@ -150,6 +151,34 @@ export async function manageAgentPositions(
       });
       result.alerted++;
       continue;
+    }
+
+    // Capability #44 — manual takeover gate. When the owner has explicitly
+    // taken this position over (arx_live_positions.management_state =
+    // MANUAL_CONTROL), autonomous ACTION refuses here — before any
+    // executeInstant dispatch is composed — exactly as the missionExitManager
+    // seam does. Alert-only paths above are monitoring/advisory and keep
+    // running; only the automated MODIFY_SL_TP / CLOSE commands stop. The
+    // total normalizer treats legacy/absent state as STRATEGY_MANAGED, so
+    // pre-migration rows behave exactly as before.
+    {
+      const controlVerdict = checkAutomatedCommandAllowed(
+        (pos as { managementState?: unknown }).managementState,
+      );
+      if (!controlVerdict.allowed) {
+        logger.info(
+          {
+            agentId: agent.id,
+            executionId: e.id,
+            brokerTicket: e.brokerTicket,
+            suppressed: verdict.action,
+            reason: controlVerdict.reason,
+          },
+          "self-trade: automated management suppressed — position under manual control",
+        );
+        result.held++;
+        continue;
+      }
     }
 
     // L3+: MOVE_TO_BE / TIGHTEN_SL → modify the stop via the existing pipeline.

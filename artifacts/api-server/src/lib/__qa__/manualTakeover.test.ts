@@ -89,3 +89,36 @@ test("concurrent-automation flow: takeover flips the gate; release restores it",
   state = (release as { to: string }).to;
   assert.equal(checkAutomatedCommandAllowed(state).allowed, true);
 });
+
+// ── Seam coverage: EVERY autonomous management dispatcher consults the gate ──
+//
+// A pure gate proves nothing if a dispatch seam skips it. Source-level proof
+// (same idiom as championChallenger/draftCounterfactual seam tests): both
+// automated-management seams — missionExitManager AND the self-trade
+// livePositionManager — must call checkAutomatedCommandAllowed BEFORE their
+// first executeInstant dispatch. Deleting the gate call from either file
+// turns this red.
+
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+
+for (const rel of [
+  "../missionExitManager.ts",
+  "../selfTrade/livePositionManager.ts",
+]) {
+  test(`automated seam ${rel} gates dispatch on checkAutomatedCommandAllowed`, () => {
+    const src = readFileSync(path.resolve(here, rel), "utf8");
+    const gateAt = src.indexOf("checkAutomatedCommandAllowed(");
+    assert.ok(gateAt >= 0, `${rel} must call checkAutomatedCommandAllowed`);
+    const dispatchAt = src.indexOf("executeInstant(");
+    if (dispatchAt >= 0) {
+      assert.ok(
+        gateAt < dispatchAt,
+        `${rel} must consult the manual-takeover gate before its first executeInstant dispatch`,
+      );
+    }
+  });
+}
