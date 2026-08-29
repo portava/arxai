@@ -53,7 +53,7 @@ import {
 import { useTradingMode } from "@/hooks/useTradingMode";
 import { useActiveSymbol } from "@/lib/symbol-context";
 import { useAssistantName } from "@/lib/assistant-name";
-import { resolveRiskLevelRow } from "@/lib/moneyBasis";
+import { resolveRiskLevelRow, resolvePermissionCardState, type ReadTone } from "@/lib/moneyBasis";
 import { formatPnl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { CockpitCard, StatTile, Pill, ActionButton, SectionLink } from "./primitives";
@@ -70,6 +70,11 @@ const STATUS_TEXT: Record<"success" | "warning" | "danger", string> = {
   success: "text-success",
   warning: "text-warning",
   danger: "text-danger",
+};
+// Same three tones plus the one that matters: "unknown" is muted, never green.
+const READ_TONE_CLASS: Record<ReadTone, string> = {
+  ...STATUS_TEXT,
+  unknown: "text-txt-muted",
 };
 const BIAS_TEXT: Record<"success" | "danger" | "info" | "muted", string> = {
   success: "text-success",
@@ -358,26 +363,22 @@ export function TradingPermissionSummaryCard() {
   const mode = useTradingMode();
   const { active } = useActiveSymbol();
 
-  const blocked = Boolean(mode.cleanBlockedReason);
-  const frozen = mode.isFrozen;
-  const waitingApproval = !mode.canManualTrade && !blocked && !frozen;
-
-  const status = frozen
-    ? { label: "Paused", tone: "warning" as const }
-    : blocked
-      // Not a connectivity claim — see the blockRow comment below.
-      ? { label: "Trading blocked", tone: "danger" as const }
-      : waitingApproval
-        ? { label: "Waiting for approval", tone: "warning" as const }
-        : mode.canManualTrade
-          ? { label: "All clear", tone: "success" as const }
-          : { label: "Locked", tone: "danger" as const };
-
-  const headline = blocked
-    ? mode.cleanBlockedReason
-    : mode.cleanUserMessage || "Your account is approved for trading.";
-
-  const sessionActive = !mode.isLoading && !frozen;
+  // The WHOLE card degrades together on an unread /api/me/account-mode.
+  // fetchAccountMode resolves to null on !res.ok, so a failed read is NOT an
+  // isError — it used to fall through to a green "Blocked: No", a green
+  // "Session: Active" and the headline "Your account is approved for
+  // trading.", asserted from no signal at all (and contradicting the status
+  // line, which simultaneously said "Waiting for approval"). See
+  // lib/moneyBasis.ts.
+  const card = resolvePermissionCardState({
+    isLoading: mode.isLoading,
+    isError: mode.isError,
+    hasEnvelope: Boolean(mode.envelope),
+    isFrozen: mode.isFrozen,
+    canManualTrade: mode.canManualTrade,
+    cleanBlockedReason: mode.cleanBlockedReason,
+    cleanUserMessage: mode.cleanUserMessage,
+  });
 
   // Risk level, derived from the actual caps — see lib/moneyBasis.ts for why
   // the previous `userRiskCaps ? "Managed" : "Low"` was a constant that showed
@@ -399,28 +400,25 @@ export function TradingPermissionSummaryCard() {
   // incomplete live confirmation — none of which is a bridge fault. Reporting
   // it as "Bridge: Disconnected" sent users to debug MT5 connectivity that was
   // never broken, and its absence asserted a green "Connected" from no health
-  // signal at all. The row now states the block, not a connectivity verdict.
-  const blockRow = blocked
-    ? { label: "Blocked", value: "Yes", cls: "text-danger" }
-    : { label: "Blocked", value: "No", cls: "text-success" };
-
+  // signal at all. The row states the block, not a connectivity verdict — and
+  // says "Unknown" when the permission read did not land at all.
   return (
     <CockpitCard
       title="Trading Permission"
       icon={<ShieldCheck className="h-[18px] w-[18px]" />}
-      accent={status.tone === "success" ? "success" : status.tone === "danger" ? "danger" : "warning"}
+      accent={card.status.tone === "success" ? "success" : card.status.tone === "danger" ? "danger" : "warning"}
       loading={mode.isLoading}
       data-testid="cockpit-trading-permission"
     >
-      <div className={cn("text-xl font-semibold", STATUS_TEXT[status.tone])} data-testid="permission-status">
-        {status.label}
+      <div className={cn("text-xl font-semibold", READ_TONE_CLASS[card.status.tone])} data-testid="permission-status">
+        {card.status.value}
       </div>
-      <p className="mt-1 text-sm text-txt-secondary">{headline}</p>
+      <p className="mt-1 text-sm text-txt-secondary" data-testid="permission-headline">{card.headline}</p>
 
       <dl className="mt-4 space-y-2.5 text-sm">
         <Row label="Risk level" value={risk.value} valueClass={RISK_TONE_CLASS[risk.tone]} />
-        <Row label={blockRow.label} value={blockRow.value} valueClass={blockRow.cls} />
-        <Row label="Session" value={sessionActive ? "Active" : "Inactive"} valueClass={sessionActive ? "text-success" : "text-txt-muted"} />
+        <Row label="Blocked" value={card.blockedRow.value} valueClass={READ_TONE_CLASS[card.blockedRow.tone]} />
+        <Row label="Session" value={card.sessionRow.value} valueClass={READ_TONE_CLASS[card.sessionRow.tone]} />
         <Row label="Market" value={active} valueClass="text-foreground font-mono" />
       </dl>
 

@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod/v4";
 import { evaluateTrade } from "../lib/tradeManagement/tradeManager.js";
 import { createAlert } from "../lib/alerts/alertManager.js";
+import { PNL_FLAG_SIMULATED_CLOSE } from "@workspace/domain/safety-contracts/eaCloseFill";
 
 const router = Router();
 
@@ -99,7 +100,11 @@ router.post("/trade-management/:id/close", async (req, res) => {
     status,
     pnl: null,
     pnlStatus: "UNKNOWN",
-    dataQualityFlag: "SIMULATED_CLOSE_NO_PRICED_PNL",
+    // Shared constant: the Trade Logs P/L cell reads this exact flag to decide
+    // that the row's missing P/L is NOT an EA-age problem, so it must never
+    // show the "EA too old — upgrade to v1.28" nudge for a close that had no
+    // EA and no broker in it. See @workspace/domain/safety-contracts/eaCloseFill.
+    dataQualityFlag: PNL_FLAG_SIMULATED_CLOSE,
     closedAt: new Date(),
   }).where(eq(tradesTable.id, id)).returning();
 

@@ -11,6 +11,9 @@ import {
   eaTooOldForCloseFill,
   EA_CLOSE_FILL_MIN_MAJOR,
   EA_CLOSE_FILL_MIN_MINOR,
+  explainUnknownPnl,
+  isSimulatedUnpricedClose,
+  PNL_FLAG_SIMULATED_CLOSE,
 } from "@workspace/domain/safety-contracts/eaCloseFill";
 
 type Result = { name: string; pass: boolean; detail: string };
@@ -56,6 +59,82 @@ expect("10.0 is modern", "10.0", false);
 // Extra text around the version is tolerated (matches first x.y).
 expect("EA version=1.27 is too old", "EA version=1.27", true);
 expect("EA version=1.28 is modern", "EA version=1.28", false);
+
+// ── explainUnknownPnl: WHY this row has no P/L ─────────────────────────────
+//
+// REVIEW FINDING (high): pnlStatus="UNKNOWN" is written by two unrelated
+// paths. The simulated close (POST /trade-management/:id/close, flag
+// SIMULATED_CLOSE_NO_PRICED_PNL) involves no EA and no broker and leaves
+// reportedEaVersion null — and `eaTooOldForCloseFill(null)` is true by design,
+// so the Trade Logs cell printed "EA too old to report close fill — upgrade to
+// v1.28" plus a tooltip asserting "the broker did not return a usable close
+// fill price" for a close that had no EA and no broker in it. These pin the
+// split so the nudge cannot leak back onto simulated rows.
+
+const simulated = explainUnknownPnl({
+  dataQualityFlag: PNL_FLAG_SIMULATED_CLOSE,
+  reportedEaVersion: null,
+});
+record(
+  "simulated close never shows the EA upgrade nudge",
+  simulated.showEaUpgradeHint === false && simulated.cause === "SIMULATED_CLOSE",
+  `cause=${simulated.cause} showEaUpgradeHint=${simulated.showEaUpgradeHint}`,
+);
+record(
+  "simulated close tooltip does not claim a broker close-result",
+  !/broker did not return/i.test(simulated.tooltip) && /simulator/i.test(simulated.tooltip),
+  JSON.stringify(simulated.tooltip),
+);
+record(
+  "simulated close is still excluded from totals in its own words",
+  /excluded from your totals/i.test(simulated.tooltip),
+  JSON.stringify(simulated.tooltip),
+);
+
+// An old EA on a simulated row must STILL not be blamed — the flag wins.
+const simulatedOldEa = explainUnknownPnl({
+  dataQualityFlag: PNL_FLAG_SIMULATED_CLOSE,
+  reportedEaVersion: "1.27",
+});
+record(
+  "the simulated flag wins over an old EA version",
+  simulatedOldEa.showEaUpgradeHint === false,
+  `showEaUpgradeHint=${simulatedOldEa.showEaUpgradeHint}`,
+);
+
+// A real broker close with a missing fill keeps the existing behaviour.
+const brokerOldEa = explainUnknownPnl({
+  dataQualityFlag: "MISSING_CLOSE_FILL_PRICE",
+  reportedEaVersion: null,
+});
+record(
+  "broker close-fill gap with a null EA version still nudges",
+  brokerOldEa.showEaUpgradeHint === true &&
+    brokerOldEa.cause === "BROKER_CLOSE_FILL_MISSING",
+  `cause=${brokerOldEa.cause} showEaUpgradeHint=${brokerOldEa.showEaUpgradeHint}`,
+);
+const brokerModernEa = explainUnknownPnl({
+  dataQualityFlag: "MISSING_CLOSE_FILL_PRICE",
+  reportedEaVersion: "1.28",
+});
+record(
+  "broker close-fill gap on a modern EA does not nudge",
+  brokerModernEa.showEaUpgradeHint === false,
+  `showEaUpgradeHint=${brokerModernEa.showEaUpgradeHint}`,
+);
+record(
+  "an unflagged UNKNOWN row keeps the broker explanation (unchanged default)",
+  explainUnknownPnl({ reportedEaVersion: "1.27" }).cause === "BROKER_CLOSE_FILL_MISSING",
+  "no dataQualityFlag",
+);
+record(
+  "isSimulatedUnpricedClose is exact — no substring or null match",
+  isSimulatedUnpricedClose(PNL_FLAG_SIMULATED_CLOSE) &&
+    !isSimulatedUnpricedClose(null) &&
+    !isSimulatedUnpricedClose("MISSING_CLOSE_FILL_PRICE") &&
+    !isSimulatedUnpricedClose("SIMULATED_CLOSE"),
+  `flag=${PNL_FLAG_SIMULATED_CLOSE}`,
+);
 
 const failed = results.filter((r) => !r.pass);
 // eslint-disable-next-line no-console

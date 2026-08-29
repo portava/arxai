@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/tooltip";
 import { PnLValue } from "@/components/trading/PnLValue";
 import { useTradingMode } from "@/hooks/useTradingMode";
+import { explainUnknownPnl } from "@workspace/domain/safety-contracts/eaCloseFill";
 
 interface RealizedPnlTrade {
   id: number;
@@ -21,14 +22,17 @@ interface Props {
   className?: string;
 }
 
-// Shared realized-P/L renderer. pnlStatus="UNKNOWN" means the broker
-// close-result did not include a trustworthy fill price, so the numeric
-// pnl (if any) cannot be trusted — show "P/L unavailable" instead of a
-// fabricated number. Mirrors the renderPnlCell pattern on Trade Logs.
+// Shared realized-P/L renderer. pnlStatus="UNKNOWN" means no trustworthy
+// P/L amount exists for the row, so the numeric pnl (if any) cannot be
+// trusted — show "P/L unavailable" instead of a fabricated number. Mirrors
+// the PnlCell pattern on Trade Logs, including WHY it is unavailable: a real
+// broker close with a missing fill price and an in-app simulated close are
+// different causes and must not be given each other's explanation.
 export function RealizedPnl({ trade, size = "md", className }: Props) {
   const { shouldShowAdminDiagnostics } = useTradingMode();
 
   if (trade.pnlStatus === "UNKNOWN") {
+    const explanation = explainUnknownPnl({ dataQualityFlag: trade.dataQualityFlag });
     return (
       <TooltipProvider delayDuration={150}>
         <Tooltip>
@@ -49,10 +53,11 @@ export function RealizedPnl({ trade, size = "md", className }: Props) {
               ) : null}
             </span>
           </TooltipTrigger>
-          <TooltipContent className="max-w-xs text-xs">
-            The broker did not return a usable close fill price for this
-            trade, so we won't show a profit/loss number we can't trust.
-            This row is excluded from your totals and win-rate.
+          <TooltipContent
+            className="max-w-xs text-xs"
+            data-testid={`trade-pnl-unknown-tooltip-${trade.id}`}
+          >
+            {explanation.tooltip}
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>

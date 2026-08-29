@@ -222,11 +222,20 @@ function OverviewTab({ summary, daily, loadingDaily, balance, equity, openPnl, p
 
   const equitySeries = daily.map((d: DailyRow) => ({ label: format(new Date(d.date), "MMM dd"), equity: d.endBalance }));
   const startEq = equitySeries[0]?.equity ?? null;
-  const curEq = equity ?? equitySeries[equitySeries.length - 1]?.equity ?? null;
+  const seriesEndEq = equitySeries[equitySeries.length - 1]?.equity ?? null;
+  // "Current Equity" prefers the REAL broker equity read and only falls back to
+  // the series tail (which is baseline + cumulative P/L) — the label below says
+  // "(notional)" in exactly that fallback case.
+  const curEq = equity ?? seriesEndEq;
   const highs = equitySeries.map((p: any) => p.equity).filter((v: any) => typeof v === "number");
   const high = highs.length ? Math.max(...highs) : null;
   const low = highs.length ? Math.min(...highs) : null;
-  const netChange = startEq != null && curEq != null ? curEq - startEq : null;
+  // Net Change is the change ACROSS THE PLOTTED SERIES, both ends read off the
+  // same basis. It used to be `curEq - startEq`, which subtracted the series'
+  // first point from the live broker equity whenever that read existed — two
+  // different bases in one subtraction. Under a NOTIONAL anchor that produced
+  // an outright fabricated figure (broker equity minus an invented $10,000).
+  const netChange = startEq != null && seriesEndEq != null ? seriesEndEq - startEq : null;
 
   return (
     <div className="space-y-4">

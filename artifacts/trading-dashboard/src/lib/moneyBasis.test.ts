@@ -23,6 +23,9 @@ import {
   resolveJournalStats,
   countRiskCaps,
   resolveRiskLevelRow,
+  resolvePermissionCardState,
+  PERMISSION_UNREAD_HEADLINE,
+  PERMISSION_LOADING_HEADLINE,
 } from "./moneyBasis";
 
 describe("journal win-rate denominator", () => {
@@ -151,5 +154,107 @@ describe("Trading Permission → Risk level row", () => {
         requireStopLoss: true,
       }),
     ).toBe(5);
+  });
+});
+
+// ── Trading Permission card on an UNREAD account-mode ──────────────────────
+//
+// REVIEW FINDING (high): the risk row was fixed but the rest of the same card
+// was not. `useTradingMode.fetchAccountMode` returns `null` on !res.ok, and a
+// query that RESOLVES to null is not an error — so a failed permission read
+// left `isError:false, isLoading:false, envelope:null` and every other field
+// on the card fell through to its most reassuring default:
+//   headline "Your account is approved for trading."  (from `|| ` fallback)
+//   Blocked  green "No"                               (Boolean(null) === false)
+//   Session  green "Active"                           (!isLoading && !frozen)
+// while the status line simultaneously said "Waiting for approval".
+describe("trading permission card — unread account mode", () => {
+  const unread = {
+    isLoading: false,
+    isError: false,
+    hasEnvelope: false,
+    canManualTrade: false,
+    cleanBlockedReason: null,
+    cleanUserMessage: "",
+  };
+
+  it("never prints the approved-for-trading headline when nothing was read", () => {
+    const s = resolvePermissionCardState(unread);
+    expect(s.unread).toBe(true);
+    expect(s.headline).toBe(PERMISSION_UNREAD_HEADLINE);
+    expect(s.headline).not.toMatch(/approved for trading/i);
+  });
+
+  it("degrades Blocked and Session to Unknown, never a green default", () => {
+    const s = resolvePermissionCardState(unread);
+    expect(s.blockedRow).toEqual({ value: "Unknown", tone: "unknown" });
+    expect(s.sessionRow).toEqual({ value: "Unknown", tone: "unknown" });
+    expect(s.status).toEqual({ value: "Unknown", tone: "unknown" });
+    // The whole card is muted — no row is green on a read that never landed.
+    for (const row of [s.status, s.blockedRow, s.sessionRow]) {
+      expect(row.tone).not.toBe("success");
+    }
+  });
+
+  it("does not contradict itself: no 'waiting for approval' beside 'approved'", () => {
+    const s = resolvePermissionCardState(unread);
+    expect(s.status.value).not.toMatch(/waiting/i);
+  });
+
+  it("treats an explicit query error the same as a null envelope", () => {
+    const s = resolvePermissionCardState({ ...unread, isError: true, hasEnvelope: true });
+    expect(s.unread).toBe(true);
+    expect(s.blockedRow.tone).toBe("unknown");
+  });
+
+  it("says it is still checking while the first read is in flight", () => {
+    const s = resolvePermissionCardState({ ...unread, isLoading: true });
+    expect(s.headline).toBe(PERMISSION_LOADING_HEADLINE);
+    expect(s.status.tone).toBe("unknown");
+  });
+});
+
+describe("trading permission card — read landed", () => {
+  const read = {
+    isLoading: false,
+    isError: false,
+    hasEnvelope: true,
+    isFrozen: false,
+    canManualTrade: true,
+    cleanBlockedReason: null,
+    cleanUserMessage: "",
+  };
+
+  it("reports All clear + Blocked:No only on a real successful read", () => {
+    const s = resolvePermissionCardState(read);
+    expect(s.unread).toBe(false);
+    expect(s.status).toEqual({ value: "All clear", tone: "success" });
+    expect(s.headline).toBe("Your account is approved for trading.");
+    expect(s.blockedRow).toEqual({ value: "No", tone: "success" });
+    expect(s.sessionRow).toEqual({ value: "Active", tone: "success" });
+  });
+
+  it("does not claim approval for a read account that cannot manually trade", () => {
+    const s = resolvePermissionCardState({ ...read, canManualTrade: false });
+    expect(s.status.value).toBe("Waiting for approval");
+    expect(s.headline).not.toMatch(/is approved for trading/);
+  });
+
+  it("surfaces the block reason as the headline, and marks Blocked:Yes", () => {
+    const s = resolvePermissionCardState({
+      ...read,
+      canManualTrade: false,
+      cleanBlockedReason: "Your account is paused by your operator.",
+    });
+    expect(s.headline).toBe("Your account is paused by your operator.");
+    expect(s.blockedRow).toEqual({ value: "Yes", tone: "danger" });
+    expect(s.status.value).toBe("Trading blocked");
+  });
+
+  it("reports a frozen account as Paused with an inactive session", () => {
+    const s = resolvePermissionCardState({ ...read, isFrozen: true });
+    expect(s.status).toEqual({ value: "Paused", tone: "warning" });
+    expect(s.sessionRow.value).toBe("Inactive");
+    expect(s.sessionRow.tone).not.toBe("success");
   });
 });

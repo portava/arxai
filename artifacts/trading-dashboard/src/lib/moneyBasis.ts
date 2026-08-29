@@ -108,3 +108,99 @@ export function resolveRiskLevelRow(input: {
   if (capsSet === 0) return { value: "No caps set", tone: "warning", capsSet: 0 };
   return { value: `Managed (${capsSet} cap${capsSet === 1 ? "" : "s"})`, tone: "success", capsSet };
 }
+
+// ── Trading Permission card: the WHOLE card, not just the Risk row ─────────
+//
+// `resolveRiskLevelRow` above fixed the Risk row, but the rest of the same
+// card still asserted a permission state from no signal at all.
+// `useTradingMode.fetchAccountMode` returns `null` when /api/me/account-mode
+// answers !ok, and a resolved-null query is NOT an error: `isError` stays
+// false, `isLoading` goes false, and `envelope` is null. Every consumer that
+// read a field off the envelope therefore fell through to its default:
+//
+//   headline  -> `cleanUserMessage || "Your account is approved for trading."`
+//                (cleanUserMessage defaults to "") — the single most
+//                reassuring sentence on the card, printed when NOTHING was read
+//   Blocked   -> Boolean(null) === false -> green "No"
+//   Session   -> `!isLoading && !frozen` -> green "Active"
+//   status    -> !canManualTrade && !blocked && !frozen -> "Waiting for
+//                approval", which contradicts the headline on the same card
+//
+// A failed read is UNKNOWN. It is never green and never the reassuring value.
+
+export type ReadTone = "success" | "warning" | "danger" | "unknown";
+
+export interface PermissionRow {
+  value: string;
+  tone: ReadTone;
+}
+
+export interface PermissionCardState {
+  /** True when no account-mode envelope was read (failed read, or loading). */
+  unread: boolean;
+  status: PermissionRow;
+  headline: string;
+  blockedRow: PermissionRow;
+  sessionRow: PermissionRow;
+}
+
+export const PERMISSION_UNREAD_HEADLINE =
+  "Trading permission could not be read, so this card is not a statement about your account. Reload to try again.";
+
+export const PERMISSION_LOADING_HEADLINE = "Checking your trading permission…";
+
+export function resolvePermissionCardState(input: {
+  isLoading?: boolean;
+  isError?: boolean;
+  hasEnvelope: boolean;
+  isFrozen?: boolean;
+  canManualTrade?: boolean;
+  cleanBlockedReason?: string | null;
+  cleanUserMessage?: string | null;
+}): PermissionCardState {
+  const unread = Boolean(input.isError) || !input.hasEnvelope;
+
+  if (unread) {
+    const loading = Boolean(input.isLoading) && !input.isError;
+    return {
+      unread: true,
+      status: { value: loading ? "Checking…" : "Unknown", tone: "unknown" },
+      headline: loading ? PERMISSION_LOADING_HEADLINE : PERMISSION_UNREAD_HEADLINE,
+      blockedRow: { value: "Unknown", tone: "unknown" },
+      sessionRow: { value: "Unknown", tone: "unknown" },
+    };
+  }
+
+  const blockedReason = input.cleanBlockedReason ?? null;
+  const blocked = Boolean(blockedReason);
+  const frozen = Boolean(input.isFrozen);
+  const canManualTrade = Boolean(input.canManualTrade);
+
+  const status: PermissionRow = frozen
+    ? { value: "Paused", tone: "warning" }
+    : blocked
+      ? { value: "Trading blocked", tone: "danger" }
+      : canManualTrade
+        ? { value: "All clear", tone: "success" }
+        : { value: "Waiting for approval", tone: "warning" };
+
+  const headline = blocked
+    ? (blockedReason as string)
+    : input.cleanUserMessage
+      ? input.cleanUserMessage
+      : canManualTrade
+        ? "Your account is approved for trading."
+        : "Your account is not approved for trading yet.";
+
+  return {
+    unread: false,
+    status,
+    headline,
+    blockedRow: blocked
+      ? { value: "Yes", tone: "danger" }
+      : { value: "No", tone: "success" },
+    sessionRow: frozen
+      ? { value: "Inactive", tone: "warning" }
+      : { value: "Active", tone: "success" },
+  };
+}
