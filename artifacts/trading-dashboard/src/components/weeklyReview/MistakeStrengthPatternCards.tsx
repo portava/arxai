@@ -9,10 +9,10 @@ export function MistakeStrengthPatternCards({ r }: { r: WeeklyReview }) {
   );
 }
 function Card({ label, tag, tone }: { label: string; tag: string | null; tone: "good" | "bad" }) {
-  const ring = tone === "good" ? "ring-emerald-500/30 text-emerald-200" : "ring-rose-500/30 text-rose-200";
+  const ring = tone === "good" ? "ring-success/30 text-success" : "ring-danger/30 text-danger";
   return (
-    <div className={`rounded-xl border border-zinc-800 bg-zinc-950/50 p-3 ring-1 ${ring}`}>
-      <div className="text-xs uppercase tracking-wide text-zinc-500">{label}</div>
+    <div className={`rounded-xl border border-border bg-background/50 p-3 ring-1 ${ring}`}>
+      <div className="text-xs uppercase tracking-wide text-txt-muted">{label}</div>
       <div className="mt-1 text-sm">{tag ? humanize(tag) : "None detected"}</div>
     </div>
   );

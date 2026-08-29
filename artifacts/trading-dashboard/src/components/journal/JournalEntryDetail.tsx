@@ -44,13 +44,13 @@ export function JournalEntryDetail({ entryId }: { entryId: number }) {
     },
   } });
 
-  if (!data || !draft) return <div className="text-xs text-zinc-500">Loading entry…</div>;
+  if (!data || !draft) return <div className="text-xs text-txt-muted">Loading entry…</div>;
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-zinc-800 bg-zinc-950/50 p-3">
-        <div className="text-xs uppercase tracking-wide text-zinc-500">{data.symbol}</div>
-        <div className="text-lg font-semibold text-zinc-100">{data.direction} · {data.strategyUsed ?? "—"}</div>
+      <div className="rounded-xl border border-border bg-background/50 p-3">
+        <div className="text-xs uppercase tracking-wide text-txt-muted">{data.symbol}</div>
+        <div className="text-lg font-semibold text-foreground">{data.direction} · {data.strategyUsed ?? "—"}</div>
       </div>
       <AITradeReviewCard entry={data} />
       <EmotionalStateTracker
@@ -73,7 +73,7 @@ export function JournalEntryDetail({ entryId }: { entryId: number }) {
       <div className="flex justify-end">
         <button type="button" disabled={update.isPending}
           onClick={() => update.mutate({ id: entryId, data: { ...draft, symbol: data.symbol, direction: data.direction } })}
-          className="rounded-md bg-emerald-500/80 px-4 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 disabled:opacity-50">
+          className="rounded-md bg-success/80 px-4 py-1.5 text-xs font-medium text-white hover:bg-success disabled:opacity-50">
           {update.isPending ? "Saving…" : "Save entry"}
         </button>
       </div>

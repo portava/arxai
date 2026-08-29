@@ -10,9 +10,9 @@ interface Props {
 }
 
 const TREND_COPY: Record<Trend, { color: string; word: string }> = {
-  UP:       { color: "text-green-400", word: "uptrend" },
-  DOWN:     { color: "text-red-400",   word: "downtrend" },
-  SIDEWAYS: { color: "text-slate-400", word: "ranging" },
+  UP:       { color: "text-success", word: "uptrend" },
+  DOWN:     { color: "text-danger",   word: "downtrend" },
+  SIDEWAYS: { color: "text-txt-secondary", word: "ranging" },
 };
 
 export function HigherTimeframeBiasCard({ higherTimeframe, higherTrend, bestBias }: Props) {
@@ -22,16 +22,16 @@ export function HigherTimeframeBiasCard({ higherTimeframe, higherTrend, bestBias
     (higherTrend.trend === "DOWN" && bestBias === "BUY");
 
   return (
-    <div className="rounded-md border border-slate-700 bg-slate-950/40 p-3 text-xs">
-      <div className="text-[10px] uppercase tracking-wide text-slate-500">Higher timeframe ({higherTimeframe})</div>
+    <div className="rounded-md border border-border bg-background/40 p-3 text-xs">
+      <div className="text-[10px] uppercase tracking-wide text-txt-muted">Higher timeframe ({higherTimeframe})</div>
       <div className="mt-1 flex items-center justify-between">
         <span className={`text-sm font-semibold ${tc.color}`}>
           {higherTimeframe} is in {tc.word} (strength {higherTrend.strength})
         </span>
-        <span className="text-slate-300">Suggested bias: <span className="font-semibold text-slate-100">{bestBias}</span></span>
+        <span className="text-txt-secondary">Suggested bias: <span className="font-semibold text-foreground">{bestBias}</span></span>
       </div>
       {counterHtf && (
-        <p className="mt-2 text-orange-300">
+        <p className="mt-2 text-warning">
           ⚠ Suggested bias is counter to the higher-timeframe trend. Counter-HTF entries carry elevated reversal risk — consider waiting or reducing size.
         </p>
       )}

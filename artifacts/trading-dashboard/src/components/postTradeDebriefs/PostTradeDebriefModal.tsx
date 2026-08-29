@@ -54,14 +54,14 @@ export function PostTradeDebriefModal({ tradeId, onClose, onSaved }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
-      <div className="w-full max-w-xl rounded-lg border border-slate-700 bg-slate-900 p-4 shadow-xl"
+      <div className="w-full max-w-xl rounded-lg border border-border bg-card p-4 shadow-xl"
         onClick={(e) => e.stopPropagation()}>
         <div className="mb-3 flex items-center justify-between">
           <div>
-            <h2 className="text-base font-semibold text-slate-100">Post-trade debrief</h2>
-            <p className="text-[11px] text-slate-400">Trade #{tradeId} — fresh-eyes reflection. Coaching aid; not predictive.</p>
+            <h2 className="text-base font-semibold text-foreground">Post-trade debrief</h2>
+            <p className="text-[11px] text-txt-secondary">Trade #{tradeId} — fresh-eyes reflection. Coaching aid; not predictive.</p>
           </div>
-          <button onClick={onClose} className="rounded px-2 py-0.5 text-xs text-slate-400 hover:bg-slate-800 hover:text-slate-100">✕</button>
+          <button onClick={onClose} className="rounded px-2 py-0.5 text-xs text-txt-secondary hover:bg-secondary hover:text-foreground">✕</button>
         </div>
 
         {!savedDebrief ? (
@@ -70,17 +70,17 @@ export function PostTradeDebriefModal({ tradeId, onClose, onSaved }: Props) {
               {QUESTIONS.map((q) => {
                 const cur = draft.checklist.find((c) => c.id === q.id)?.answer;
                 return (
-                  <li key={q.id} className="flex items-center justify-between gap-2 rounded border border-slate-800 bg-slate-950/40 p-2 text-xs">
-                    <span className="flex-1 text-slate-200">{q.q}</span>
+                  <li key={q.id} className="flex items-center justify-between gap-2 rounded border border-border bg-background/40 p-2 text-xs">
+                    <span className="flex-1 text-foreground">{q.q}</span>
                     <div className="flex gap-1">
                       {(["YES","UNSURE","NO"] as const).map((opt) => (
                         <button key={opt} type="button" onClick={() => setAnswer(q.id, opt)}
                           className={`rounded px-2 py-0.5 text-[10px] font-bold transition ${
                             cur === opt
-                              ? opt === "YES"  ? "bg-emerald-700 text-white"
-                              : opt === "NO"   ? "bg-red-700 text-white"
-                              : "bg-slate-700 text-slate-100"
-                              : "bg-slate-800 text-slate-400 hover:bg-slate-700"}`}>{opt}</button>
+                              ? opt === "YES"  ? "bg-success/15 text-white"
+                              : opt === "NO"   ? "bg-danger/15 text-white"
+                              : "bg-muted text-foreground"
+                              : "bg-secondary text-txt-secondary hover:bg-muted"}`}>{opt}</button>
                       ))}
                     </div>
                   </li>
@@ -93,22 +93,22 @@ export function PostTradeDebriefModal({ tradeId, onClose, onSaved }: Props) {
               lessonLearned={draft.lessonLearned}
               onChange={(patch) => setDraft({ ...draft, ...patch })} />
             <div className="flex items-center justify-between pt-1">
-              <span className="text-[11px] text-slate-500">{allAnswered ? "All questions answered" : `${draft.checklist.length}/${QUESTIONS.length} answered`}</span>
+              <span className="text-[11px] text-txt-muted">{allAnswered ? "All questions answered" : `${draft.checklist.length}/${QUESTIONS.length} answered`}</span>
               <button onClick={() => submit.mutate()} disabled={!allAnswered || submit.isPending}
-                className="rounded bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-40">
+                className="rounded bg-success px-3 py-1.5 text-xs font-semibold text-white hover:bg-success disabled:opacity-40">
                 {submit.isPending ? "Saving…" : "Save debrief"}
               </button>
             </div>
-            {submit.isError && <p className="text-[11px] text-red-400">{(submit.error as Error).message}</p>}
+            {submit.isError && <p className="text-[11px] text-danger">{(submit.error as Error).message}</p>}
           </div>
         ) : (
           <div className="space-y-3">
-            <div className="rounded border border-emerald-700 bg-emerald-950/30 p-2 text-xs text-emerald-100">
+            <div className="rounded border border-success/40 bg-success/30 p-2 text-xs text-success">
               Debrief saved · result <strong>{savedDebrief.result}</strong>
             </div>
             <RecommendedReplayDrillCard drill={savedDebrief.recommendedDrill} feedback={savedDebrief.aiFeedback} />
             <div className="flex justify-end">
-              <button onClick={onClose} className="rounded bg-slate-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-600">Close</button>
+              <button onClick={onClose} className="rounded bg-muted px-3 py-1.5 text-xs font-semibold text-white hover:bg-muted">Close</button>
             </div>
           </div>
         )}

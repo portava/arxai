@@ -46,7 +46,7 @@ function relatedHref(a: AlertLike): string | null {
 function priorityBadge(p?: string | null) {
   switch (p) {
     case "CRITICAL": return <Badge variant="destructive" data-testid="badge-priority-critical">CRITICAL</Badge>;
-    case "HIGH":     return <Badge className="bg-orange-500 text-white" data-testid="badge-priority-high">HIGH</Badge>;
+    case "HIGH":     return <Badge className="bg-warning text-white" data-testid="badge-priority-high">HIGH</Badge>;
     case "MEDIUM":   return <Badge variant="secondary" data-testid="badge-priority-medium">MEDIUM</Badge>;
     case "LOW":      return <Badge variant="outline" data-testid="badge-priority-low">LOW</Badge>;
     default:         return null;
@@ -55,10 +55,10 @@ function priorityBadge(p?: string | null) {
 
 function icon(severity: string) {
   switch (severity) {
-    case "danger":  return <AlertOctagon className="h-4 w-4 text-red-500" />;
-    case "warning": return <AlertTriangle className="h-4 w-4 text-orange-500" />;
-    case "success": return <CheckCircle2 className="h-4 w-4 text-emerald-500" />;
-    case "info":    return <Info className="h-4 w-4 text-blue-500" />;
+    case "danger":  return <AlertOctagon className="h-4 w-4 text-danger" />;
+    case "warning": return <AlertTriangle className="h-4 w-4 text-warning" />;
+    case "success": return <CheckCircle2 className="h-4 w-4 text-success" />;
+    case "info":    return <Info className="h-4 w-4 text-primary" />;
     default:        return <Bell className="h-4 w-4 text-muted-foreground" />;
   }
 }
@@ -74,7 +74,7 @@ export function AlertDetailCard({ alert, onMarkRead }: Props) {
           <div className="flex items-center gap-2 flex-wrap">
             {priorityBadge(alert.priority)}
             <Badge variant="outline" className="text-[10px]">{alert.type}</Badge>
-            {alert.actionRequired ? <Badge className="bg-yellow-600 text-white text-[10px]">ACTION</Badge> : null}
+            {alert.actionRequired ? <Badge className="bg-warning text-white text-[10px]">ACTION</Badge> : null}
             <span className="text-xs text-muted-foreground ml-auto">{ts}</span>
           </div>
           <div className="font-medium text-sm mt-1" data-testid={`text-alert-title-${alert.id}`}>{alert.title}</div>

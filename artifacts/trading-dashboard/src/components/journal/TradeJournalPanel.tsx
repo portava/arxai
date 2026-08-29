@@ -10,21 +10,21 @@ export function TradeJournalPanel() {
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
       <aside className="space-y-1">
-        <div className="text-xs uppercase tracking-wide text-zinc-500">Journal entries</div>
-        {entries.length === 0 && <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-3 text-xs text-zinc-500">No entries yet.</div>}
+        <div className="text-xs uppercase tracking-wide text-txt-muted">Journal entries</div>
+        {entries.length === 0 && <div className="rounded-lg border border-border bg-background/50 p-3 text-xs text-txt-muted">No entries yet.</div>}
         <ul className="space-y-1">
           {entries.map((e) => (
             <li key={e.id}>
               <button type="button" onClick={() => setSel(e.id)}
                 className={`w-full rounded-md border px-3 py-2 text-left text-xs transition ${
-                  sel === e.id ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-100" : "border-zinc-800 bg-zinc-950/50 text-zinc-300 hover:bg-zinc-900"
+                  sel === e.id ? "border-success/40 bg-success/10 text-success" : "border-border bg-background/50 text-txt-secondary hover:bg-card"
                 }`}>
                 <div className="font-medium">{e.symbol} · {e.direction}</div>
-                <div className="text-[10px] text-zinc-500">{new Date(e.createdAtIso).toLocaleString()}</div>
+                <div className="text-[10px] text-txt-muted">{new Date(e.createdAtIso).toLocaleString()}</div>
                 {(e.mistakeTags.length > 0 || e.strengthTags.length > 0) && (
                   <div className="mt-1 flex flex-wrap gap-1 text-[10px]">
-                    {e.mistakeTags.slice(0, 2).map((t) => <span key={t} className="rounded-full bg-rose-500/15 px-1.5 text-rose-300">{t}</span>)}
-                    {e.strengthTags.slice(0, 2).map((t) => <span key={t} className="rounded-full bg-emerald-500/15 px-1.5 text-emerald-300">{t}</span>)}
+                    {e.mistakeTags.slice(0, 2).map((t) => <span key={t} className="rounded-full bg-danger/15 px-1.5 text-danger">{t}</span>)}
+                    {e.strengthTags.slice(0, 2).map((t) => <span key={t} className="rounded-full bg-success/15 px-1.5 text-success">{t}</span>)}
                   </div>
                 )}
               </button>
@@ -34,7 +34,7 @@ export function TradeJournalPanel() {
       </aside>
       <section>
         {sel == null ? (
-          <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-6 text-sm text-zinc-500">Select an entry to review.</div>
+          <div className="rounded-lg border border-border bg-background/50 p-6 text-sm text-txt-muted">Select an entry to review.</div>
         ) : (
           <JournalEntryDetail entryId={sel} />
         )}

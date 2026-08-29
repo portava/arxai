@@ -61,8 +61,8 @@ function Row({ label, value, ok }: { label: string; value: React.ReactNode; ok?:
     <div className="flex items-center justify-between gap-3 py-1 text-sm">
       <span className="text-muted-foreground">{label}</span>
       <span className="flex items-center gap-1 font-mono text-right">
-        {ok === true && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />}
-        {ok === false && <XCircle className="h-3.5 w-3.5 text-red-500" />}
+        {ok === true && <CheckCircle2 className="h-3.5 w-3.5 text-success" />}
+        {ok === false && <XCircle className="h-3.5 w-3.5 text-danger" />}
         {value}
       </span>
     </div>
@@ -135,7 +135,7 @@ export function FeedCompletenessDebugPanel({ defaultSymbol = "EURUSD", defaultTi
           </Button>
         </div>
 
-        {err && <div className="rounded border border-red-500/40 bg-red-500/10 p-2 text-sm text-red-600">{err}</div>}
+        {err && <div className="rounded border border-danger/40 bg-danger/10 p-2 text-sm text-danger">{err}</div>}
 
         {data && (
           <>
@@ -192,14 +192,14 @@ export function FeedCompletenessDebugPanel({ defaultSymbol = "EURUSD", defaultTi
                 Blockers ({data.blockers.length})
               </h4>
               {data.blockers.length === 0 ? (
-                <div className="flex items-center gap-2 text-sm text-emerald-600">
+                <div className="flex items-center gap-2 text-sm text-success">
                   <CheckCircle2 className="h-4 w-4" /> No blockers — account, bridge, and feed proofs all pass.
                 </div>
               ) : (
                 <ul className="space-y-1" data-testid="list-debug-blockers">
                   {data.blockers.map((b) => (
                     <li key={b.code} className="flex items-start gap-2 text-sm">
-                      <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-500" />
+                      <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />
                       <span>
                         <Badge variant="outline" className="mr-1 font-mono text-[10px]">{b.category}</Badge>
                         {b.message} <span className="font-mono text-xs text-muted-foreground">({b.code})</span>

@@ -13,7 +13,7 @@ export function AdminTesterCards() {
     <Card data-testid={`tester-card-${label.toLowerCase().replace(/\s+/g, "-")}`}>
       <CardContent className="py-3">
         <p className="text-[10px] uppercase text-muted-foreground">{label}</p>
-        <Badge className={tone === "ok" ? "bg-emerald-500/20 text-emerald-400" : tone === "warn" ? "bg-amber-500/20 text-amber-400" : "bg-rose-500/20 text-rose-400"}>{value}</Badge>
+        <Badge className={tone === "ok" ? "bg-success/20 text-success" : tone === "warn" ? "bg-warning/20 text-warning" : "bg-danger/20 text-danger"}>{value}</Badge>
       </CardContent>
     </Card>
   );

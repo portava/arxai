@@ -26,11 +26,11 @@ export interface MentorActionItem {
 }
 
 export const SESSION_TONE: Record<SessionType, string> = {
-  DAILY_BRIEFING:      "border-sky-700 bg-sky-950/30 text-sky-100",
-  PRE_MARKET_GUIDANCE: "border-emerald-700 bg-emerald-950/30 text-emerald-100",
-  POST_TRADE_GUIDANCE: "border-violet-700 bg-violet-950/30 text-violet-100",
-  WEEKLY_RESET:        "border-yellow-700 bg-yellow-950/30 text-yellow-100",
-  RISK_WARNING:        "border-red-700 bg-red-950/30 text-red-100",
-  CONFIDENCE_REBUILD:  "border-amber-700 bg-amber-950/30 text-amber-100",
-  DISCIPLINE_CHECK:    "border-orange-700 bg-orange-950/30 text-orange-100",
+  DAILY_BRIEFING:      "border-ruby/40 bg-ruby/30 text-ruby",
+  PRE_MARKET_GUIDANCE: "border-success/40 bg-success/30 text-success",
+  POST_TRADE_GUIDANCE: "border-premium/40 bg-premium/30 text-premium",
+  WEEKLY_RESET:        "border-warning/40 bg-warning/30 text-warning",
+  RISK_WARNING:        "border-danger/40 bg-danger/30 text-danger",
+  CONFIDENCE_REBUILD:  "border-warning/40 bg-warning/30 text-warning",
+  DISCIPLINE_CHECK:    "border-warning/40 bg-warning/30 text-warning",
 };

@@ -279,10 +279,10 @@ export function MissionPerformanceView({ missionId }: { missionId: number }): Re
 
           {showDemotionPanel && (
             <div
-              className="rounded-md border border-rose-500/40 bg-rose-500/10 p-3 text-rose-200"
+              className="rounded-md border border-danger/40 bg-danger/10 p-3 text-danger"
               data-testid="alert-drift-demotion"
             >
-              <div className="flex items-center gap-2 text-sm font-medium text-rose-300">
+              <div className="flex items-center gap-2 text-sm font-medium text-danger">
                 <AlertCircle className="h-4 w-4 shrink-0" />
                 Severe drift — the mission was made safer automatically
               </div>

@@ -27,13 +27,13 @@ function deriveMode(status: PushStatus | null, cap: PushCapability): Mode {
 }
 
 const COPY: Record<Mode, { label: string; desc: string; color: string }> = {
-  loading: { label: "Checking…", desc: "Reading push status from the server.", color: "bg-gray-500" },
-  not_supported: { label: "Not supported", desc: "This browser does not support push notifications.", color: "bg-gray-500" },
-  not_configured: { label: "Not configured", desc: "Push notifications are not configured on this server yet.", color: "bg-gray-500" },
-  permission_denied: { label: "Permission denied", desc: "You blocked notifications for this site. Re-allow in your browser to enable push.", color: "bg-amber-600" },
-  ready_to_enable: { label: "Ready to enable", desc: "Push is configured. Click Enable to allow notifications on this device.", color: "bg-blue-600" },
-  enabled: { label: "Enabled", desc: "Push notifications are enabled for this device.", color: "bg-emerald-600" },
-  disabled_locally: { label: "Disabled in preferences", desc: "This device is subscribed but your push preference is off.", color: "bg-amber-500" },
+  loading: { label: "Checking…", desc: "Reading push status from the server.", color: "bg-muted" },
+  not_supported: { label: "Not supported", desc: "This browser does not support push notifications.", color: "bg-muted" },
+  not_configured: { label: "Not configured", desc: "Push notifications are not configured on this server yet.", color: "bg-muted" },
+  permission_denied: { label: "Permission denied", desc: "You blocked notifications for this site. Re-allow in your browser to enable push.", color: "bg-warning" },
+  ready_to_enable: { label: "Ready to enable", desc: "Push is configured. Click Enable to allow notifications on this device.", color: "bg-primary" },
+  enabled: { label: "Enabled", desc: "Push notifications are enabled for this device.", color: "bg-success" },
+  disabled_locally: { label: "Disabled in preferences", desc: "This device is subscribed but your push preference is off.", color: "bg-warning" },
 };
 
 export default function PushSettingsCard() {
@@ -86,13 +86,13 @@ export default function PushSettingsCard() {
       <div className="flex items-center gap-3 flex-wrap">
         <h2 className="text-base font-semibold">Push notifications</h2>
         <span className={`px-2 py-0.5 rounded text-xs text-white ${copy.color}`} data-testid="push-status-badge">{copy.label}</span>
-        <span className="px-2 py-0.5 rounded text-xs bg-gray-200 dark:bg-gray-700 text-xs">In-app: active</span>
+        <span className="px-2 py-0.5 rounded text-xs bg-muted dark:bg-muted text-xs">In-app: active</span>
       </div>
-      <p className="text-sm text-gray-600 dark:text-gray-400">{copy.desc}</p>
+      <p className="text-sm text-txt-muted dark:text-txt-secondary">{copy.desc}</p>
       {status?.setupHint && (
-        <p className="text-xs text-gray-500" data-testid="push-setup-hint">{status.setupHint}</p>
+        <p className="text-xs text-txt-muted" data-testid="push-setup-hint">{status.setupHint}</p>
       )}
-      <div className="text-xs text-gray-500">
+      <div className="text-xs text-txt-muted">
         Active subscriptions for this account: <strong>{status?.activeSubscriptions ?? 0}</strong>
         {status?.revokedSubscriptions ? <> · Revoked: {status.revokedSubscriptions}</> : null}
         {" · "}Browser permission: <strong>{cap.permission}</strong>
@@ -101,24 +101,24 @@ export default function PushSettingsCard() {
         <button
           disabled={busy || !canEnable}
           onClick={onEnable}
-          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded text-sm"
+          className="px-3 py-1.5 bg-primary hover:bg-primary/15 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded text-sm"
           data-testid="push-enable-btn"
         >Enable push</button>
         <button
           disabled={busy || !canDisable}
           onClick={onDisable}
-          className="px-3 py-1.5 bg-gray-600 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded text-sm"
+          className="px-3 py-1.5 bg-muted hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed text-white rounded text-sm"
           data-testid="push-disable-btn"
         >Disable push</button>
         <button
           disabled={busy || !canTest}
           onClick={onTest}
-          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded text-sm"
+          className="px-3 py-1.5 bg-success hover:bg-success/15 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded text-sm"
           data-testid="push-test-btn"
         >Send test push</button>
       </div>
-      {msg && <div className="text-xs text-gray-700 dark:text-gray-300" data-testid="push-status-msg">{msg}</div>}
-      <div className="text-[10px] text-gray-500">
+      {msg && <div className="text-xs text-txt-muted dark:text-txt-secondary" data-testid="push-status-msg">{msg}</div>}
+      <div className="text-[10px] text-txt-muted">
         Push is delivery only. The Notification Center remains the source of truth.
         Demo-only / live trading disabled.
       </div>

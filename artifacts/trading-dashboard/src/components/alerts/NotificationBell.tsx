@@ -34,7 +34,7 @@ export function NotificationBell() {
         className="relative inline-flex items-center justify-center h-9 w-9 rounded-md hover:bg-sidebar-accent/50 cursor-pointer"
         aria-label={`${unread} unread alert${unread === 1 ? "" : "s"}${critical > 0 ? `, ${critical} critical` : ""}`}
       >
-        <Bell size={18} className={critical > 0 ? "text-red-500 animate-pulse" : "text-sidebar-foreground/70"} />
+        <Bell size={18} className={critical > 0 ? "text-danger animate-pulse" : "text-sidebar-foreground/70"} />
         {unread > 0 ? (
           <Badge
             variant={critical > 0 ? "destructive" : "secondary"}

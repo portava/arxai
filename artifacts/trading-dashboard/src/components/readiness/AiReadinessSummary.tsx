@@ -1,9 +1,9 @@
 type Status = "READY"|"CAUTION"|"NOT_READY"|"LOCKED";
 const tone: Record<Status, string> = {
-  READY:     "border-emerald-700 bg-emerald-950/30 text-emerald-100",
-  CAUTION:   "border-amber-700 bg-amber-950/30 text-amber-100",
-  NOT_READY: "border-orange-700 bg-orange-950/30 text-orange-100",
-  LOCKED:    "border-red-700 bg-red-950/40 text-red-100",
+  READY:     "border-success/40 bg-success/30 text-success",
+  CAUTION:   "border-warning/40 bg-warning/30 text-warning",
+  NOT_READY: "border-warning/40 bg-warning/30 text-warning",
+  LOCKED:    "border-danger/40 bg-danger/40 text-danger",
 };
 export function AiReadinessSummary({ status, summary, blockers, warnings }:
   { status: Status; summary: string; blockers: string[]; warnings: string[] }) {

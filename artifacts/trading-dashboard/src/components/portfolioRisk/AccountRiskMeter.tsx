@@ -17,16 +17,16 @@ export function AccountRiskMeter({ capPct = 2 }: { capPct?: number }) {
   });
   const pct = data?.totalRiskPercent ?? 0;
   const ratio = capPct > 0 ? Math.min(1.5, pct / capPct) : 0;
-  const fillCls = ratio >= 1 ? "bg-red-600" : ratio >= 0.8 ? "bg-orange-500" : ratio >= 0.5 ? "bg-amber-500" : "bg-green-500";
+  const fillCls = ratio >= 1 ? "bg-danger" : ratio >= 0.8 ? "bg-warning" : ratio >= 0.5 ? "bg-warning" : "bg-success";
   return (
-    <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-3">
+    <div className="rounded-lg border border-border bg-muted/40 p-3">
       <div className="mb-2 flex items-center justify-between text-xs">
-        <span className="text-slate-300 font-semibold">Account Risk</span>
-        <span className="font-mono text-slate-400">{pct.toFixed(2)}% / {capPct}% cap</span>
+        <span className="text-txt-secondary font-semibold">Account Risk</span>
+        <span className="font-mono text-txt-secondary">{pct.toFixed(2)}% / {capPct}% cap</span>
       </div>
-      <div className="relative h-2 w-full overflow-hidden rounded bg-slate-800">
+      <div className="relative h-2 w-full overflow-hidden rounded bg-secondary">
         <div className={`h-full ${fillCls} transition-all`} style={{ width: `${Math.min(100, (ratio / 1.5) * 100)}%` }} />
-        <div className="absolute inset-y-0 left-2/3 w-px bg-slate-500" title="Cap" />
+        <div className="absolute inset-y-0 left-2/3 w-px bg-muted" title="Cap" />
       </div>
     </div>
   );

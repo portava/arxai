@@ -8,15 +8,15 @@ export function MistakeTagsSelector({ value, onChange }: { value: string[]; onCh
   const toggle = (tag: string) => onChange(value.includes(tag) ? value.filter((t) => t !== tag) : [...value, tag]);
   return (
     <div className="space-y-1.5">
-      <div className="text-xs uppercase tracking-wide text-zinc-500">Mistake tags</div>
+      <div className="text-xs uppercase tracking-wide text-txt-muted">Mistake tags</div>
       <div className="flex flex-wrap gap-1.5">
         {MISTAKE_TAGS.map((t) => {
           const on = value.includes(t);
           return (
             <button key={t} type="button" onClick={() => toggle(t)}
               className={`rounded-full px-2.5 py-1 text-[11px] ring-1 transition ${
-                on ? "bg-rose-500/20 text-rose-200 ring-rose-500/40"
-                   : "bg-zinc-900 text-zinc-400 ring-zinc-700 hover:text-zinc-200"
+                on ? "bg-danger/20 text-danger ring-danger/40"
+                   : "bg-card text-txt-secondary ring-border hover:text-foreground"
               }`}>
               {humanize(t)}
             </button>

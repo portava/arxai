@@ -49,39 +49,39 @@ export function NotificationCenter() {
       <Button variant="ghost" size="icon" onClick={() => setOpen((v) => !v)} aria-label="Notifications">
         <Bell className="w-5 h-5" />
         {unread > 0 && (
-          <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] rounded-full bg-rose-600 text-white">{unread}</span>
+          <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] rounded-full bg-danger text-white">{unread}</span>
         )}
       </Button>
       {open && (
-        <div className="absolute right-0 mt-2 w-[380px] max-h-[80vh] overflow-y-auto rounded-md border border-zinc-700 bg-zinc-900 shadow-xl z-50">
-          <div className="flex items-center justify-between p-3 border-b border-zinc-800">
+        <div className="absolute right-0 mt-2 w-[380px] max-h-[80vh] overflow-y-auto rounded-md border border-border bg-card shadow-xl z-50">
+          <div className="flex items-center justify-between p-3 border-b border-border">
             <div className="font-semibold">Notifications</div>
             <Button variant="ghost" size="sm" onClick={() => mAll.mutate()} disabled={unread === 0}>Mark all read</Button>
           </div>
-          <div className="flex flex-wrap gap-1 p-2 border-b border-zinc-800">
+          <div className="flex flex-wrap gap-1 p-2 border-b border-border">
             {SOURCES.map((s) => (
-              <button key={s} onClick={() => setFilter(s)} className={`px-2 py-1 text-xs rounded ${filter === s ? "bg-blue-600 text-white" : "bg-zinc-800 text-zinc-300"}`}>{s}</button>
+              <button key={s} onClick={() => setFilter(s)} className={`px-2 py-1 text-xs rounded ${filter === s ? "bg-primary text-white" : "bg-secondary text-txt-secondary"}`}>{s}</button>
             ))}
           </div>
-          {q.isLoading && <div className="p-4 text-sm text-zinc-400">Loading…</div>}
+          {q.isLoading && <div className="p-4 text-sm text-txt-secondary">Loading…</div>}
           {!q.isLoading && list.length === 0 && (
-            <div className="p-6 text-sm text-zinc-400 text-center">
+            <div className="p-6 text-sm text-txt-secondary text-center">
               <div>No notifications yet</div>
               <div className="text-xs mt-1">Important bridge, risk, trade, and AI updates will appear here</div>
             </div>
           )}
           {list.map((n) => (
-            <div key={n.id} className={`p-3 border-b border-zinc-800 ${n.status === "unread" ? "bg-zinc-800/40" : ""}`}>
+            <div key={n.id} className={`p-3 border-b border-border ${n.status === "unread" ? "bg-muted/40" : ""}`}>
               <div className="flex items-start justify-between gap-2">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <Badge variant={n.severity === "critical" ? "destructive" : n.severity === "warning" ? "secondary" : "outline"}>{n.severity}</Badge>
-                    <span className="text-xs text-zinc-500">{n.source}</span>
+                    <span className="text-xs text-txt-muted">{n.source}</span>
                   </div>
                   <div className="font-medium text-sm mt-1 truncate">{n.title}</div>
-                  {n.message && <div className="text-xs text-zinc-400 mt-1">{n.message}</div>}
+                  {n.message && <div className="text-xs text-txt-secondary mt-1">{n.message}</div>}
                   {n.actionLabel && n.actionTarget && (
-                    <Link href={n.actionTarget} className="inline-block mt-1 text-xs text-blue-400 hover:underline">{n.actionLabel} →</Link>
+                    <Link href={n.actionTarget} className="inline-block mt-1 text-xs text-primary hover:underline">{n.actionLabel} →</Link>
                   )}
                 </div>
                 <div className="flex flex-col gap-1">

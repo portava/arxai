@@ -34,12 +34,12 @@ export function FeatureGate({
     <Card className="border-card-border border-dashed" data-testid={testid ?? `gate-${feature}`}>
       <CardHeader className="flex flex-row items-center justify-between pb-3 border-b border-border">
         <CardTitle className="text-sm font-semibold uppercase tracking-wider flex items-center gap-2">
-          <Lock size={14} className="text-zinc-500" />
+          <Lock size={14} className="text-txt-muted" />
           {title}
         </CardTitle>
       </CardHeader>
       <CardContent className="pt-4">
-        <p className="text-sm text-zinc-400 mb-4">{description}</p>
+        <p className="text-sm text-txt-secondary mb-4">{description}</p>
         <Button
           size="sm"
           variant="outline"

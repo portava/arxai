@@ -23,10 +23,10 @@ const PAC_BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/+$/, "");
 // the open position (RECONCILE_SYSTEM), a "Re-sync needed" flag. Read-only: never
 // closes, modifies, or gates the position. Fail-open: renders nothing on error.
 const AACI_SHELL: Record<AaciCohesionTone, string> = {
-  ok: "border-emerald-500/40 text-emerald-300 bg-emerald-500/10",
-  muted: "border-zinc-700 text-zinc-300 bg-zinc-800/40",
-  warn: "border-amber-500/40 text-amber-300 bg-amber-500/10",
-  danger: "border-red-500/40 text-red-300 bg-red-500/10",
+  ok: "border-success/40 text-success bg-success/10",
+  muted: "border-border text-txt-secondary bg-muted/40",
+  warn: "border-warning/40 text-warning bg-warning/10",
+  danger: "border-danger/40 text-danger bg-danger/10",
 };
 function AaciTradeBadges({ symbol }: { symbol: string }) {
   const { data } = useGetAaciDecision(symbol, undefined, {
@@ -119,10 +119,10 @@ function SafetyBadgeRow({ trade, snap, snapTargetsUnavailable }: { trade: Trade;
 
   type Tone = "muted" | "warn" | "danger" | "ok";
   const TONE: Record<Tone, string> = {
-    muted: "border-zinc-700 text-zinc-300 bg-zinc-800/40",
-    warn: "border-amber-500/40 text-amber-300 bg-amber-500/10",
-    danger: "border-red-500/40 text-red-300 bg-red-500/10",
-    ok: "border-emerald-500/40 text-emerald-300 bg-emerald-500/10",
+    muted: "border-border text-txt-secondary bg-muted/40",
+    warn: "border-warning/40 text-warning bg-warning/10",
+    danger: "border-danger/40 text-danger bg-danger/10",
+    ok: "border-success/40 text-success bg-success/10",
   };
   const badges: Array<{ label: string; tone: Tone; testId: string }> = [];
 
@@ -276,14 +276,14 @@ export function LiveTradeCard({ trade, onCoach }: { trade: Trade; onCoach?: () =
     qc.invalidateQueries({ queryKey: getGetOpenTradesQueryKey() });
   };
 
-  const healthColor = snap ? (snap.health.score >= 70 ? "[&>div]:bg-green-500" : snap.health.score >= 40 ? "[&>div]:bg-yellow-500" : "[&>div]:bg-destructive") : "";
+  const healthColor = snap ? (snap.health.score >= 70 ? "[&>div]:bg-success" : snap.health.score >= 40 ? "[&>div]:bg-warning" : "[&>div]:bg-destructive") : "";
 
   return (
     <Card data-testid={`live-trade-card-${trade.id}`}>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <CardTitle className="text-base flex items-center gap-2">
-            <span className={`p-1.5 rounded ${trade.direction === "BUY" ? "bg-green-500/10 text-green-500" : "bg-destructive/10 text-destructive"}`}>
+            <span className={`p-1.5 rounded ${trade.direction === "BUY" ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}>
               {trade.direction === "BUY" ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
             </span>
             <span className="font-mono">{trade.symbol}</span>
@@ -312,10 +312,10 @@ export function LiveTradeCard({ trade, onCoach }: { trade: Trade; onCoach?: () =
             <div className="grid grid-cols-3 gap-2 text-xs font-mono">
               <div><div className="text-muted-foreground">Entry</div><div>{trade.entryPrice.toFixed(5)}</div></div>
               <div><div className="text-muted-foreground">Current</div><div>{snap.currentPrice.toFixed(5)}</div></div>
-              <div><div className="text-muted-foreground">P&L</div><div className={snap.floatingPnl >= 0 ? "text-green-500" : "text-destructive"}>${snap.floatingPnl.toFixed(2)}</div></div>
+              <div><div className="text-muted-foreground">P&L</div><div className={snap.floatingPnl >= 0 ? "text-success" : "text-destructive"}>${snap.floatingPnl.toFixed(2)}</div></div>
               <div><div className="text-muted-foreground">SL</div><div className="text-destructive">{trade.stopLoss.toFixed(5)}</div></div>
-              <div><div className="text-muted-foreground">TP</div><div className="text-green-500">{trade.takeProfit.toFixed(5)}</div></div>
-              <div><div className="text-muted-foreground">R</div><div className={snap.rMultiple >= 0 ? "text-green-500" : "text-destructive"}>{snap.rMultiple.toFixed(2)}R</div></div>
+              <div><div className="text-muted-foreground">TP</div><div className="text-success">{trade.takeProfit.toFixed(5)}</div></div>
+              <div><div className="text-muted-foreground">R</div><div className={snap.rMultiple >= 0 ? "text-success" : "text-destructive"}>{snap.rMultiple.toFixed(2)}R</div></div>
             </div>
             <div>
               <div className="flex items-center justify-between text-xs mb-1">

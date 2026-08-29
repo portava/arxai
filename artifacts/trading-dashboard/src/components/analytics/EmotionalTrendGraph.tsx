@@ -3,10 +3,10 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 interface TrendPoint { idx: number; isCalm: number; followedPlan: number }
 
 export function EmotionalTrendGraph({ trend }: { trend: TrendPoint[] }) {
-  if (trend.length === 0) return <p className="rounded border border-dashed border-slate-700 p-3 text-center text-[11px] text-slate-500">No emotional data yet.</p>;
+  if (trend.length === 0) return <p className="rounded border border-dashed border-border p-3 text-center text-[11px] text-txt-muted">No emotional data yet.</p>;
   return (
-    <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-3">
-      <h3 className="mb-2 text-sm font-semibold text-slate-200">Emotional & Discipline Trend</h3>
+    <div className="rounded-lg border border-border bg-muted/40 p-3">
+      <h3 className="mb-2 text-sm font-semibold text-foreground">Emotional & Discipline Trend</h3>
       <div className="h-44">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={trend} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
@@ -19,8 +19,8 @@ export function EmotionalTrendGraph({ trend }: { trend: TrendPoint[] }) {
           </LineChart>
         </ResponsiveContainer>
       </div>
-      <div className="mt-1 flex gap-3 text-[10px] text-slate-400">
-        <span>● Calm post-trade</span><span className="text-emerald-400">● Followed plan</span>
+      <div className="mt-1 flex gap-3 text-[10px] text-txt-secondary">
+        <span>● Calm post-trade</span><span className="text-success">● Followed plan</span>
       </div>
     </div>
   );

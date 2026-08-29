@@ -3,11 +3,11 @@ import type { EquityPoint } from "./types";
 
 export function EquityCurveChart({ points }: { points: EquityPoint[] }) {
   if (points.length === 0) {
-    return <p className="rounded border border-dashed border-slate-700 p-6 text-center text-xs text-slate-500">No closed trades yet.</p>;
+    return <p className="rounded border border-dashed border-border p-6 text-center text-xs text-txt-muted">No closed trades yet.</p>;
   }
   return (
-    <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-3">
-      <h3 className="mb-2 text-sm font-semibold text-slate-200">Equity Curve</h3>
+    <div className="rounded-lg border border-border bg-muted/40 p-3">
+      <h3 className="mb-2 text-sm font-semibold text-foreground">Equity Curve</h3>
       <div className="h-56">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={points} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>

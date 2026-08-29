@@ -64,12 +64,12 @@ export function AccessDeniedCard({
   return (
     <div className="space-y-4">
       <GateHeader icon={icon} title={title} />
-      <Card className="border-amber-500/40 bg-amber-500/10">
+      <Card className="border-warning/40 bg-warning/10">
         <CardContent className="p-4 flex items-start gap-3">
-          <ShieldAlert className="h-5 w-5 text-amber-400 mt-0.5 shrink-0" />
+          <ShieldAlert className="h-5 w-5 text-warning mt-0.5 shrink-0" />
           <div>
-            <p className="text-sm font-medium text-amber-300">{message}</p>
-            {note && <p className="text-xs text-amber-400/70 mt-1">{note}</p>}
+            <p className="text-sm font-medium text-warning">{message}</p>
+            {note && <p className="text-xs text-warning/70 mt-1">{note}</p>}
             {onRetry && (
               <Button size="sm" variant="outline" className="mt-3" onClick={onRetry}>
                 Retry

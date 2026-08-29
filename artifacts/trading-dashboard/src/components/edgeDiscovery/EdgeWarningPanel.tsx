@@ -1,14 +1,14 @@
 import type { EdgeWarning } from "./types";
 
 const SEV: Record<EdgeWarning["severity"], string> = {
-  INFO:   "border-slate-700 bg-slate-900/40 text-slate-300",
-  WARN:   "border-amber-700 bg-amber-950/30 text-amber-100",
-  DANGER: "border-red-700 bg-red-950/30 text-red-100",
+  INFO:   "border-border bg-muted/40 text-txt-secondary",
+  WARN:   "border-warning/40 bg-warning/30 text-warning",
+  DANGER: "border-danger/40 bg-danger/30 text-danger",
 };
 
 export function EdgeWarningPanel({ warnings }: { warnings: EdgeWarning[] }) {
   if (warnings.length === 0) {
-    return <p className="rounded border border-dashed border-slate-700 p-3 text-center text-[11px] text-slate-500">No warnings.</p>;
+    return <p className="rounded border border-dashed border-border p-3 text-center text-[11px] text-txt-muted">No warnings.</p>;
   }
   return (
     <ul className="space-y-1.5">

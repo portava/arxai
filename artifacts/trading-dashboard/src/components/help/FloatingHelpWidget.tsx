@@ -702,11 +702,11 @@ function WalkthroughView({
         {walkthrough.steps.map((s, i) => {
           const isDone = done.has(i);
           return (
-            <li key={i} className={cn("rounded-md border border-white/10 p-2", isDone && "bg-emerald-500/5 border-emerald-500/30")}>
+            <li key={i} className={cn("rounded-md border border-white/10 p-2", isDone && "bg-success/5 border-success/30")}>
               <div className="flex items-start gap-2">
                 <button
                   onClick={() => setDone((prev) => { const n = new Set(prev); n.has(i) ? n.delete(i) : n.add(i); return n; })}
-                  className={cn("h-4 w-4 mt-0.5 rounded border border-white/20 grid place-items-center text-[9px] shrink-0", isDone && "bg-emerald-500/40 border-emerald-400")}
+                  className={cn("h-4 w-4 mt-0.5 rounded border border-white/20 grid place-items-center text-[9px] shrink-0", isDone && "bg-success/40 border-success")}
                   aria-label={isDone ? "Mark step incomplete" : "Mark step complete"}
                 >
                   {isDone ? <CheckCircle2 size={10} /> : i + 1}
@@ -715,7 +715,7 @@ function WalkthroughView({
                   <div className="text-xs font-medium">{s.title}</div>
                   <div className="text-[11px] text-muted-foreground">{s.body}</div>
                   {s.warning && (
-                    <div className="text-[10px] text-amber-300/90 italic mt-0.5 flex gap-1">
+                    <div className="text-[10px] text-warning/90 italic mt-0.5 flex gap-1">
                       <ShieldAlert size={10} className="shrink-0 mt-0.5" /> {s.warning}
                     </div>
                   )}
@@ -733,7 +733,7 @@ function WalkthroughView({
           );
         })}
       </ol>
-      <div className={cn("text-[11px] p-2 rounded-md", allDone ? "bg-emerald-500/10 text-emerald-300 border border-emerald-500/30" : "bg-white/5 text-muted-foreground")}>
+      <div className={cn("text-[11px] p-2 rounded-md", allDone ? "bg-success/10 text-success border border-success/30" : "bg-white/5 text-muted-foreground")}>
         <strong>Done when:</strong> {walkthrough.completion}
       </div>
     </div>
@@ -767,18 +767,18 @@ function GuideView({
         <div className="text-[11px] text-muted-foreground">{route?.purpose ?? ctx.route}</div>
       </section>
 
-      <section className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-2.5" data-testid="help-guide-safest">
-        <div className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-emerald-300/80">
+      <section className="rounded-md border border-success/30 bg-success/5 p-2.5" data-testid="help-guide-safest">
+        <div className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-success/80">
           <Compass size={10} /> Safest next step
         </div>
         <div className="text-xs font-semibold mt-0.5">{safest.step}</div>
         <div className="text-[11px] text-muted-foreground">{safest.why}</div>
-        <div className="text-[10px] text-amber-300/90 italic mt-1 flex gap-1">
+        <div className="text-[10px] text-warning/90 italic mt-1 flex gap-1">
           <ShieldAlert size={10} className="shrink-0 mt-0.5" /> {safest.doNot}
         </div>
         <button
           onClick={() => onNavigate(safest.openRoute.route)}
-          className="mt-1.5 text-[11px] inline-flex items-center gap-1 px-2 py-1 rounded border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20"
+          className="mt-1.5 text-[11px] inline-flex items-center gap-1 px-2 py-1 rounded border border-success/30 bg-success/10 hover:bg-success/20"
           data-testid="help-guide-safest-open"
         >
           <ArrowRight size={10} /> Open {safest.openRoute.label}
@@ -794,10 +794,10 @@ function GuideView({
               <li key={s.id} className="text-[11px]">
                 <span className={cn(
                   "inline-block px-1.5 py-0.5 rounded text-[9px] font-bold mr-1 align-middle",
-                  s.severity === "good" && "bg-emerald-500/20 text-emerald-300",
-                  s.severity === "warn" && "bg-amber-500/20 text-amber-300",
-                  s.severity === "critical" && "bg-red-500/20 text-red-300",
-                  s.severity === "info" && "bg-cyan-500/20 text-cyan-300",
+                  s.severity === "good" && "bg-success/20 text-success",
+                  s.severity === "warn" && "bg-warning/20 text-warning",
+                  s.severity === "critical" && "bg-danger/20 text-danger",
+                  s.severity === "info" && "bg-ruby/20 text-ruby",
                 )}>{s.label}</span>
                 <span className="text-muted-foreground">{s.meaning}</span>
               </li>
@@ -863,8 +863,8 @@ function ChecklistRow({ item, onNavigate }: { item: ChecklistItem; onNavigate: (
     : item.status === "blocked" ? Ban
     : item.status === "unavailable" ? MinusCircle
     : Circle;
-  const tint = item.status === "complete" ? "text-emerald-400"
-    : item.status === "blocked" ? "text-red-400"
+  const tint = item.status === "complete" ? "text-success"
+    : item.status === "blocked" ? "text-danger"
     : item.status === "unavailable" ? "text-muted-foreground"
     : "text-muted-foreground/70";
   return (
@@ -875,7 +875,7 @@ function ChecklistRow({ item, onNavigate }: { item: ChecklistItem; onNavigate: (
           <div className="font-medium">{item.title}</div>
           <div className="text-muted-foreground text-[10px]">{item.explanation}</div>
           {item.blockerReason && (
-            <div className="text-amber-300/80 text-[10px] italic">Blocker: {item.blockerReason}</div>
+            <div className="text-warning/80 text-[10px] italic">Blocker: {item.blockerReason}</div>
           )}
           <div className="text-[10px] text-muted-foreground/80 mt-0.5">Next: {item.safeNextAction}</div>
           {item.related && (
@@ -921,7 +921,7 @@ function AnswerCard({
       <p className="text-xs text-foreground/90 whitespace-pre-line">{a.answer}</p>
       {a.detail && <p className="text-[11px] text-muted-foreground whitespace-pre-line">{a.detail}</p>}
       {a.safety && (
-        <p className="text-[10px] text-amber-300/90 italic flex gap-1">
+        <p className="text-[10px] text-warning/90 italic flex gap-1">
           <ShieldAlert size={11} className="shrink-0 mt-0.5" />
           <span>{a.safety}</span>
         </p>
@@ -947,7 +947,7 @@ function AnswerCard({
       <div className="pt-1 border-t border-white/5">
         <button
           onClick={() => setShowWhy((v) => !v)}
-          className="text-[10px] text-cyan-400/80 hover:text-cyan-300 inline-flex items-center gap-1"
+          className="text-[10px] text-ruby/80 hover:text-ruby inline-flex items-center gap-1"
           data-testid="help-why-this-answer"
         >
           {showWhy ? <ChevronUp size={9} /> : <ChevronDown size={9} />} Why this answer?
@@ -1034,10 +1034,10 @@ function ReportView({
   return (
     <div className="space-y-2">
       <p className="text-[11px] text-muted-foreground">Route: <code className="rounded bg-white/5 px-1">{route}</code></p>
-      <div className="rounded-md border border-emerald-500/20 bg-emerald-500/5 p-2 text-[11px]" data-testid="report-safe-context">
+      <div className="rounded-md border border-success/20 bg-success/5 p-2 text-[11px]" data-testid="report-safe-context">
         <div className="flex items-center justify-between">
-          <span className="font-semibold text-emerald-300">Safe diagnostic context will be attached</span>
-          <button type="button" onClick={() => setShowCtx((v) => !v)} className="text-[10px] underline text-emerald-300/80">
+          <span className="font-semibold text-success">Safe diagnostic context will be attached</span>
+          <button type="button" onClick={() => setShowCtx((v) => !v)} className="text-[10px] underline text-success/80">
             {showCtx ? "Hide" : "Review"}
           </button>
         </div>
@@ -1046,7 +1046,7 @@ function ReportView({
           Excludes tokens, secrets, broker credentials, account passwords, and raw request bodies.
         </p>
         {showCtx && (
-          <pre className="mt-2 max-h-40 overflow-auto rounded bg-black/40 p-2 text-[10px] text-emerald-100/90" data-testid="report-safe-context-json">
+          <pre className="mt-2 max-h-40 overflow-auto rounded bg-black/40 p-2 text-[10px] text-success/90" data-testid="report-safe-context-json">
             {JSON.stringify(safeCtx, null, 2)}
           </pre>
         )}
@@ -1103,18 +1103,18 @@ function DoctorView({
   return (
     <div className="space-y-3" data-testid="doctor-view">
       <button onClick={onBack} className="text-[11px] text-muted-foreground hover:text-foreground" data-testid="doctor-back">← Back</button>
-      <section className="rounded-md border border-sky-500/30 bg-sky-500/5 p-2.5">
-        <div className="text-[10px] uppercase tracking-wider text-sky-300/80">Current app status</div>
+      <section className="rounded-md border border-ruby/30 bg-ruby/5 p-2.5">
+        <div className="text-[10px] uppercase tracking-wider text-ruby/80">Current app status</div>
         <div className="text-xs mt-1" data-testid="doctor-mode">Mode: <span className="font-semibold">{status.mode}</span></div>
-        <div className="text-[11px] mt-2"><span className="text-emerald-300">Can do:</span> {status.canDo.join(" · ")}</div>
+        <div className="text-[11px] mt-2"><span className="text-success">Can do:</span> {status.canDo.join(" · ")}</div>
         {status.cannotDo.length > 0 && (
-          <div className="text-[11px] mt-1"><span className="text-amber-300">Cannot do:</span> {status.cannotDo.join(" · ")}</div>
+          <div className="text-[11px] mt-1"><span className="text-warning">Cannot do:</span> {status.cannotDo.join(" · ")}</div>
         )}
-        <div className="text-[11px] mt-1"><span className="text-amber-300">Why live trading is unavailable:</span> {status.whyLiveUnavailable}</div>
+        <div className="text-[11px] mt-1"><span className="text-warning">Why live trading is unavailable:</span> {status.whyLiveUnavailable}</div>
       </section>
 
-      <section className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-2.5" data-testid="doctor-fix-first">
-        <div className="text-[10px] uppercase tracking-wider text-emerald-300/80">What to fix first</div>
+      <section className="rounded-md border border-success/30 bg-success/5 p-2.5" data-testid="doctor-fix-first">
+        <div className="text-[10px] uppercase tracking-wider text-success/80">What to fix first</div>
         {primary ? (
           <DiagnosisRow d={primary} onNavigate={onNavigate} testId="doctor-primary" />
         ) : (
@@ -1139,8 +1139,8 @@ function DiagnosisRow({ d, onNavigate, testId }: { d: DoctorDiagnosis; onNavigat
       {d.evidence.length > 0 && (
         <div className="text-[10px] text-muted-foreground mt-1">Evidence: {d.evidence.join(" · ")}</div>
       )}
-      <div className="text-[11px] mt-1"><span className="text-emerald-300">Safest next step:</span> {d.safeNextStep}</div>
-      <div className="text-[10px] text-amber-300/90 mt-0.5">Don't: {d.doNotDo}</div>
+      <div className="text-[11px] mt-1"><span className="text-success">Safest next step:</span> {d.safeNextStep}</div>
+      <div className="text-[10px] text-warning/90 mt-0.5">Don't: {d.doNotDo}</div>
       {d.relatedRoute && (
         <button
           type="button"
@@ -1175,8 +1175,8 @@ function RowButton({
 // ─── Diagnostics panel (?assistant-diag=1) ────────────────────────────────
 function DiagnosticsPanel({ ctx, memory }: { ctx: AssistantLiveContext; memory: { q: string; topic?: string }[] }) {
   return (
-    <div className="mt-3 rounded-md border border-cyan-500/30 bg-cyan-500/5 p-2 text-[10px] space-y-1" data-testid="assistant-diagnostics">
-      <div className="flex items-center gap-1 text-cyan-400 font-semibold">
+    <div className="mt-3 rounded-md border border-ruby/30 bg-ruby/5 p-2 text-[10px] space-y-1" data-testid="assistant-diagnostics">
+      <div className="flex items-center gap-1 text-ruby font-semibold">
         <Activity size={10} /> ASSISTANT DIAGNOSTICS
       </div>
       <div><span className="text-muted-foreground">mode:</span> local-deterministic</div>

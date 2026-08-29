@@ -19,9 +19,9 @@ import { cn } from "@/lib/utils";
 
 // Badge colour by enumeration confidence (broker-confirmed vs pending sync).
 const BADGE_STYLE = {
-  CONFIRMED: "text-emerald-300 border-emerald-700/40 bg-emerald-950/30",
-  STALE: "text-amber-300 border-amber-700/40 bg-amber-950/30",
-  PENDING: "text-zinc-400 border-zinc-700/50 bg-zinc-900/40",
+  CONFIRMED: "text-success border-success/40 bg-success/30",
+  STALE: "text-warning border-warning/40 bg-warning/30",
+  PENDING: "text-txt-secondary border-border/50 bg-muted/40",
 } as const;
 
 function friendlyName(v: ResolvedSymbol): string {
@@ -223,7 +223,7 @@ function SymbolMeta({ v }: { v: ResolvedSymbol }) {
       <span
         className={cn(
           "h-1.5 w-1.5 rounded-full",
-          v.tradeable ? "bg-emerald-400" : "border border-zinc-500/70",
+          v.tradeable ? "bg-success" : "border border-border/70",
         )}
         title={
           v.tradeable
