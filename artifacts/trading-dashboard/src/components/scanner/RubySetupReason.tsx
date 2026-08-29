@@ -11,6 +11,9 @@ export type SignalContext = {
   timeframe?: string;
   recommendedAction: string;
   bias: string;
+  /** Canonical name for the uncalibrated setup heuristic (0..100). */
+  signalStrength?: number;
+  /** @deprecated Alias of `signalStrength` — kept so older callers keep working. */
   confidenceScore?: number;
   riskScore?: number;
   entrySniperScore?: number;
@@ -40,6 +43,9 @@ export type SetupReason = {
   possibleTpArea: string;
   suggestedStopArea: string;
   confidenceLabel: string;
+  /** Canonical name; the server dual-emits both fields with the same value. */
+  signalStrength?: number;
+  /** @deprecated Alias of `signalStrength`. */
   confidenceScore: number;
   cautions: string[];
   disclaimer: string;
@@ -75,7 +81,7 @@ export function RubySetupReason({ signal, dense = false }: { signal: SignalConte
     return () => { cancelled = true; };
   }, [
     signal.symbol, signal.timeframe, signal.recommendedAction, signal.bias,
-    signal.confidenceScore, signal.riskScore, signal.entrySniperScore,
+    signal.signalStrength, signal.confidenceScore, signal.riskScore, signal.entrySniperScore,
     signal.setupType, signal.reasonForTrade, signal.reasonToAvoid,
     signal.entry, signal.stopLoss, signal.takeProfit, signal.statusBadge,
   ]);

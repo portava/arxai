@@ -43,6 +43,9 @@ interface SnapshotOk {
   highlights: {
     bias: Bias;
     confidenceLabel: string;
+    /** Canonical name; the server dual-emits both fields with the same value. */
+    signalStrength?: number;
+    /** @deprecated Alias of `signalStrength`. */
     confidenceScore: number;
     volatilityLabel: string;
     trendState: string;

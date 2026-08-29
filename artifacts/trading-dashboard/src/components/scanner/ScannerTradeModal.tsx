@@ -693,12 +693,12 @@ export function ScannerTradeModal({
                     "82%" reads as "82 out of 100 of these work out", which is a
                     claim nothing here has measured. Shown as a bounded score
                     with its scale stated instead. */}
-                {signal.confidenceScore != null && (
+                {(signal.signalStrength ?? signal.confidenceScore) != null && (
                   <div className="flex justify-between pt-1 border-t border-border">
                     <span className="text-txt-secondary" title="Hand-weighted signal strength, not a calibrated win probability.">
                       Scanner signal strength
                     </span>
-                    <span className="font-mono">{Math.round(signal.confidenceScore)} / 100</span>
+                    <span className="font-mono">{Math.round((signal.signalStrength ?? signal.confidenceScore)!)} / 100</span>
                   </div>
                 )}
               </div>

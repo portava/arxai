@@ -127,8 +127,8 @@ export function RubyDraftReadPanel({
             <div className="flex items-center gap-2">
               <span className="text-[10px] uppercase tracking-wide text-zinc-500">
                 {read.bias} · {read.confidenceLabel}
-                {read.confidenceScore != null
-                  ? ` · ${read.confidenceScore}/100`
+                {(read.signalStrength ?? read.confidenceScore) != null
+                  ? ` · ${read.signalStrength ?? read.confidenceScore}/100`
                   : ""}
               </span>
             </div>

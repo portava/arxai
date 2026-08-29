@@ -28,7 +28,16 @@ export interface RubyDraftRead {
   cautions: string[];
   bestNextAction: string;
   confidenceLabel: string;
-  /** @nullable */
+  /**
+   * Canonical name for the readiness score 0-100 — a hand-weighted signal strength, NOT a calibrated win probability. Always equals confidenceScore while both are emitted.
+   * @nullable
+   */
+  signalStrength?: number | null;
+  /**
+   * Deprecated alias of signalStrength — same value, kept (and still required) so existing clients keep working.
+   * @deprecated
+   * @nullable
+   */
   confidenceScore: number | null;
   agentConsensus: RubyDraftConsensusView;
   disclaimer: string;

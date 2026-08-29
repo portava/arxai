@@ -261,6 +261,13 @@ export interface ScannerOpportunity {
   bias: MarketAnalysis["marketBias"];
   recommendedAction: MarketAnalysis["recommendedAction"];
   setupType: string;
+  /**
+   * Signal strength 0..100 — canonical name for the hand-weighted setup
+   * heuristic. UNCALIBRATED (Theme B): not a win probability, never render
+   * with a "%". Always equals `confidenceScore` while both are emitted.
+   */
+  signalStrength: number;
+  /** @deprecated Renamed to `signalStrength` — same value, kept emitted so no client breaks. */
   confidenceScore: number;
   riskScore: number;
   entrySniperScore: number;
@@ -1539,6 +1546,7 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
       symbol: sym, timeframe: tf, bias: displayBias,
       recommendedAction: displayAction,
       setupType: setupTypeFor(a),
+      signalStrength: displayConfidenceScore, // canonical name; equals confidenceScore
       confidenceScore: displayConfidenceScore, riskScore: a.riskScore,
       entrySniperScore: displayEntrySniperScore,
       riskRewardRatio: a.riskRewardRatio,

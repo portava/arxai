@@ -64,6 +64,7 @@ function fixtureOpp(over: Partial<ScannerOpportunity> = {}): ScannerOpportunity 
   return {
     symbol: "EURUSD", timeframe: "M5",
     bias: "bullish", recommendedAction: "BUY", setupType: "Continuation",
+    signalStrength: 88, // dual-emit alias — always equals confidenceScore
     confidenceScore: 88, riskScore: 20, entrySniperScore: 80, riskRewardRatio: 2,
     reasonForTrade: "Support hold", reasonToAvoid: "",
     rulesPassed: [], rulesFailed: [],
