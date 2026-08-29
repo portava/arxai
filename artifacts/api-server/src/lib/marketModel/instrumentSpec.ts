@@ -27,8 +27,15 @@
 // wrapper over the per-user EA-reported spec row. The DB is imported LAZILY
 // inside the resolver so this module stays importable from pure display
 // adapters (opportunityAdapters) without a DATABASE_URL at init.
+//
+// D3b — this module is now a VIEW over the Instrument Passport
+// (`@workspace/domain/market` instrumentPassport.ts): the FX pip convention is
+// read through `fxConventionPipSizeNumber` (the passport's single definition,
+// the same value every passport declares as `pipSize`) rather than being
+// re-derived here. The API is unchanged; the drift test
+// `test:instrument-passport-drift` asserts view and passport can never differ.
 
-import { splitForexPair } from "../mt5/forexPair.js";
+import { fxConventionPipSizeNumber } from "@workspace/domain/market";
 
 export type PipSizeSource = "FX_PIP_CONVENTION" | "BROKER_POINT";
 
@@ -56,10 +63,10 @@ export function decidePipSize(args: {
   symbol: string;
   brokerPoint: number | null;
 }): ResolvedPipSize {
-  const pair = splitForexPair(args.symbol);
-  if (pair) {
+  const conventionPip = fxConventionPipSizeNumber(args.symbol);
+  if (conventionPip !== null) {
     return {
-      pipSize: pair.quote === "JPY" ? 0.01 : 0.0001,
+      pipSize: conventionPip,
       source: "FX_PIP_CONVENTION",
       reason: null,
     };

@@ -1,3 +1,15 @@
+// D3b — this registry is now a VIEW over the Instrument Passport
+// (`@workspace/domain/market` instrumentPassport.ts) for every symbol that
+// resolves to an approved ARX Focus market: the passport facts (broker/venue
+// symbol, base/quote currency) are read through the passport at module build
+// via `alignWithPassport` below, so this file can no longer carry a divergent
+// copy of them. The advisory metadata (risk level, sessions, timeframes,
+// confidence, notes) remains authored here — the passport does not own it.
+// Symbols with no passport (stocks, NAS100/UK100/JP225 — outside the approved
+// Focus universe) keep their literal values. Drift is locked by
+// `test:instrument-passport-drift`.
+import { resolveInstrumentPassport, venueCodeSymbol } from "@workspace/domain/market";
+
 export interface SymbolInfo {
   displayName: string;
   category: "forex" | "indices" | "stocks" | "synthetic";
@@ -12,7 +24,28 @@ export interface SymbolInfo {
   notes: string;
 }
 
-export const SYMBOL_REGISTRY: Record<string, SymbolInfo> = {
+/**
+ * Read passport facts through the canonical Instrument Passport when the key
+ * resolves to an approved market. The venue symbol prefers the key's own
+ * canonical spelling when the passport lists it as a venue symbol (US30 stays
+ * US30), else the passport's code-like venue id (V75 → R_75).
+ */
+function alignWithPassport(registryKey: string, info: SymbolInfo): SymbolInfo {
+  const pp = resolveInstrumentPassport(registryKey);
+  if (!pp) return info;
+  const canonicalIsVenue = pp.venueSymbols.some(
+    (v) => v.toUpperCase() === pp.canonicalSymbol.toUpperCase(),
+  );
+  const brokerSymbol = canonicalIsVenue ? pp.canonicalSymbol : venueCodeSymbol(pp);
+  return {
+    ...info,
+    brokerSymbol,
+    baseCurrency: pp.baseCurrency.value ?? info.baseCurrency,
+    quoteCurrency: pp.quoteCurrency.value ?? info.quoteCurrency,
+  };
+}
+
+const AUTHORED_SYMBOL_REGISTRY: Record<string, SymbolInfo> = {
   // ─── Forex Majors ─────────────────────────────────────────────────────────
   EURUSD: { displayName: "EUR/USD", category: "forex", brokerSymbol: "EURUSD", baseCurrency: "EUR", quoteCurrency: "USD", riskLevel: "Medium", tradingSessions: ["London", "London/NY Overlap"], recommendedTimeframes: ["M15", "H1", "H4"], minimumConfidence: 65, defaultRiskPerTrade: 1, notes: "World's most traded pair. High liquidity, tight spreads. Moves on ECB/Fed policy. Best during London/NY overlap." },
   GBPUSD: { displayName: "GBP/USD", category: "forex", brokerSymbol: "GBPUSD", baseCurrency: "GBP", quoteCurrency: "USD", riskLevel: "Medium", tradingSessions: ["London", "London/NY Overlap"], recommendedTimeframes: ["M15", "H1", "H4"], minimumConfidence: 65, defaultRiskPerTrade: 1, notes: "Cable. Higher volatility than EUR/USD. Sensitive to UK data and BoE policy. Wide spreads at Asia open." },
@@ -70,6 +103,11 @@ export const SYMBOL_REGISTRY: Record<string, SymbolInfo> = {
   "Volatility 75 1s Index": { displayName: "V75 1s Index", category: "synthetic", brokerSymbol: "1HZ75V", riskLevel: "Very High", tradingSessions: ["24/7"], recommendedTimeframes: ["M1", "M5"], minimumConfidence: 80, defaultRiskPerTrade: 0.5, notes: "Extremely fast 1-second candles. Highest volatility of all synthetics. Requires very tight risk management and high confidence threshold. Experienced traders only." },
   "Volatility 25 1s Index": { displayName: "V25 1s Index", category: "synthetic", brokerSymbol: "1HZ25V", riskLevel: "Medium", tradingSessions: ["24/7"], recommendedTimeframes: ["M1", "M5", "M15"], minimumConfidence: 65, defaultRiskPerTrade: 1.5, notes: "Lower 25% volatility synthetic on 1-second candles. More predictable structure. Good for learning strategies." },
 };
+
+/** The registry consumers see: passport facts read through the passport. */
+export const SYMBOL_REGISTRY: Record<string, SymbolInfo> = Object.fromEntries(
+  Object.entries(AUTHORED_SYMBOL_REGISTRY).map(([key, info]) => [key, alignWithPassport(key, info)]),
+);
 
 export function getSymbolInfo(symbol: string): SymbolInfo | null {
   return SYMBOL_REGISTRY[symbol] ?? null;

@@ -292,6 +292,8 @@
     "test:ruby-draw-setup-route": "tsx ./src/rubyDrawSetupRouteTest.ts",
     "test:arx-top250": "tsx ./src/arxTop250UniverseTest.ts",
     "test:market-picker-drift": "tsx ./src/marketPickerDriftLockTest.ts",
+    "test:instrument-passport": "tsx ./src/instrumentPassportUnitClosureTest.ts",
+    "test:instrument-passport-drift": "tsx ./src/instrumentPassportDriftTest.ts",
     "test:watchlist-universe-gate": "tsx ./src/watchlistUniverseGateRouteTest.ts",
     "test:gated-trustline-honesty": "tsx ./src/gatedChartTrustLineHonestyTest.ts",
     "test:trustline-alignment-honesty": "tsx ./src/rubyTrustLineAlignmentHonestyTest.ts",
