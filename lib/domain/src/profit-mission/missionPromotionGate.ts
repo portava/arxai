@@ -10,7 +10,7 @@
 // CRITICAL SAFETY: passing this checklist NEVER places a trade and NEVER bypasses
 // any live execution gate, kill switch, Trade Health, Scanner Truth, or Risk
 // Governor. It only decides whether a higher automation level is PERMITTED; live
-// dispatch still runs the existing instant-trade → live-pipeline → 18-gate path.
+// dispatch still runs the existing instant-trade → live-pipeline → 23-gate path.
 // Live auto is opt-in, last, and never silent.
 
 import {

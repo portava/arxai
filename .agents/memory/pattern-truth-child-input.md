@@ -13,7 +13,7 @@ sufficiency / trade-health / risk gates, or touch live-execution / broker /
 kill-switch / owner-admin surfaces.
 
 **Why:** a pattern is an *opinion about structure*, not a permission. The
-execution gates (feed confirm, sufficiency, 16/18-gate dispatch) remain the sole
+execution gates (feed confirm, sufficiency, 16/23-gate dispatch) remain the sole
 source of trade permission; letting a detector promote confidence past the
 contract ceiling would create a second, weaker execution path.
 

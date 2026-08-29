@@ -27,5 +27,5 @@ only on broker-ticket presence.
 - Do NOT wire `scannerTruth.ts` (demo/live split + large contract suite) or
   `CockpitCards.tsx` (`waitingApproval`, a different concept) into the resolver.
 - It is display-only: never add a field that *grants* execution; the backend
-  18-gate pipeline stays authoritative. Investor/admin nav containment lives in
+  23-gate pipeline stays authoritative. Investor/admin nav containment lives in
   `routeAccess.ts` + the nav surfaces, not here.

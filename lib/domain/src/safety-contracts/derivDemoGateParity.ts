@@ -1,7 +1,7 @@
 // Phase 6 — the Deriv DEMO venue's disposition for each Phase B gate (18
 // original + foundation gates #19-#23).
 //
-// Read venueGateParity.ts first for why this file exists. In short: the 18-gate
+// Read venueGateParity.ts first for why this file exists. In short: the 23-gate
 // wall is MT5-live-shaped, so a second venue must declare, gate by gate, how it
 // honours each one — and may never silently skip any.
 //

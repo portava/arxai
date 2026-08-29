@@ -2,15 +2,15 @@
 //
 // Proves the gap the production-readiness audit confirmed can never reopen:
 // POST /api/admin/trading/emergency-kill engages
-// global_trading_settings.emergency_kill_switch, but the 18-gate evaluator's
+// global_trading_settings.emergency_kill_switch, but the 23-gate evaluator's
 // `globalLiveEnabled` input does NOT fold the kill switch in (getEnvelope
 // computes it from platformMode + liveEnabled alone) — so before the pre-gate,
-// a USER_OWNED_MT5 dispatch passed all 18 gates during a platform-wide halt.
+// a USER_OWNED_MT5 dispatch passed all 23 gates during a platform-wide halt.
 //
 // These are pure-unit proofs of `emergencyKillSwitchBlocksDispatch` (no DB, no
 // network — the decision helper is extracted exactly so this contract can run
 // offline), plus a source-order proof that dispatchLiveCommand consults the
-// pre-gate BEFORE the 18-gate evaluator.
+// pre-gate BEFORE the 23-gate evaluator.
 //
 // The ONLY exemption the gate grants is the Task #743 Cluster D
 // admin-emergency-close CLOSE marker — the same narrow, integrity-hashed
@@ -139,7 +139,7 @@ test("LOCKSTEP: the exemption is exactly the gate-#5 bypass predicate", () => {
   }
 });
 
-test("dispatchLiveCommand consults the pre-gate BEFORE the 18-gate evaluator", () => {
+test("dispatchLiveCommand consults the pre-gate BEFORE the 23-gate evaluator", () => {
   const source = readFileSync(
     fileURLToPath(new URL("../liveCommandPipeline.ts", import.meta.url)),
     "utf8",
@@ -149,9 +149,9 @@ test("dispatchLiveCommand consults the pre-gate BEFORE the 18-gate evaluator", (
   const preGateAt = source.indexOf("emergencyKillSwitchBlocksDispatch({", dispatchStart);
   const evaluatorAt = source.indexOf("evaluateLivePhaseBDispatchGate({", dispatchStart);
   assert.ok(preGateAt > 0, "dispatchLiveCommand must call emergencyKillSwitchBlocksDispatch");
-  assert.ok(evaluatorAt > 0, "dispatchLiveCommand must still run the 18-gate evaluator");
+  assert.ok(evaluatorAt > 0, "dispatchLiveCommand must still run the 23-gate evaluator");
   assert.ok(
     preGateAt < evaluatorAt,
-    "the emergency-kill-switch pre-gate must run BEFORE the 18-gate evaluator",
+    "the emergency-kill-switch pre-gate must run BEFORE the 23-gate evaluator",
   );
 });

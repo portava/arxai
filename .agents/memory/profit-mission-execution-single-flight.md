@@ -8,7 +8,7 @@ description: How approved mission drafts reach REAL execution exactly once, and 
 Phase 6 is the FIRST phase where an approved mission draft can reach real
 execution. The only entry is the existing instant-trade router `executeInstant`
 (source `"mission"`, added to `INSTANT_TRADE_SOURCES`) → live command pipeline →
-18-gate dispatch. There is NEVER a second/new execution path. Demo/paper drafts
+23-gate dispatch. There is NEVER a second/new execution path. Demo/paper drafts
 return `non_live` BEFORE any claim or executor call (audit + journal only).
 
 ## Single-flight: claim BEFORE executor (the architect-flagged fix)

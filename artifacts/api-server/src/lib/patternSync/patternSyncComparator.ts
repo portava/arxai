@@ -6,7 +6,7 @@
 // risk, and a human-readable cockpit summary.
 //
 // SAFETY: ADVISORY ONLY. Consumed exclusively by the admin Pattern Sync Command
-// Center. Never feeds the 18-gate live pipeline, kill switch, risk limits, or
+// Center. Never feeds the 23-gate live pipeline, kill switch, risk limits, or
 // any execution path. No profit/guaranteed language.
 
 import {

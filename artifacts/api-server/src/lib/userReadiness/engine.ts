@@ -107,7 +107,7 @@ export async function evaluateUserReadiness(userId: number): Promise<ReadinessRe
   // `systemPaperOnlyMode` = the legacy blanket "this build is paper-only" modes.
   // Task #750: these no longer permanently block an approved + armed trader's
   // REPORTED readiness, but remain a hard block for everyone else. They never
-  // grant execution authority — every live order still runs the full 18-gate
+  // grant execution authority — every live order still runs the full 23-gate
   // Phase B dispatch + the per-user activation gate, neither of which this
   // reporting engine can short-circuit.
   const systemPaperOnlyMode =
@@ -364,7 +364,7 @@ export async function evaluateUserReadiness(userId: number): Promise<ReadinessRe
 
   // ready_for_live is REPORTING ONLY — it is NOT an execution authority. No
   // execution path reads this flag; live dispatch is governed independently by
-  // the per-user activation gate + the 18-gate Phase B dispatch. An approved +
+  // the per-user activation gate + the 23-gate Phase B dispatch. An approved +
   // armed eligible trader who has cleared every live gate reports ready, blocked
   // only by a genuine system hard stop (kill / emergency / maintenance lock).
   // Everyone else — non-approved, non-armed, investor, system, or under the

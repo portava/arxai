@@ -1,6 +1,6 @@
 // Single-trade DEMO certification (spec Phase 15).
 //
-// This is the only ARX code outside the 18-gate path that places an order, so
+// This is the only ARX code outside the 23-gate path that places an order, so
 // these tests are almost entirely REFUSALS. A test that proves the happy path
 // works is worth less here than one proving the harness cannot be made to
 // place a second order, trade a real account, or run unattended.

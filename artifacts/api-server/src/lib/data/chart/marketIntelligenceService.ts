@@ -12,7 +12,7 @@
 // INPUT. It can only make a read the SAME or MORE conservative (plus the small,
 // bounded supportive nudges the contracts already cap). It can NEVER produce
 // trade permission, READY_NOW, override feed/sufficiency/risk truth, or touch the
-// 18-gate live pipeline, MT5 bridge, broker dispatch, kill switch, or owner/admin
+// 23-gate live pipeline, MT5 bridge, broker dispatch, kill switch, or owner/admin
 // overrides. There is deliberately NO execution-permission field anywhere in the
 // snapshot or verdict. Fail closed: any error returns `null` (no read impact).
 //

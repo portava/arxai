@@ -240,7 +240,7 @@ function handshakeBadgeStyle(status: string): string {
 //    server-side to the calling user. We never render master-account data.
 //  - EVERY trade action (place / close / break-even / reverse) routes through
 //    the Global Instant Trade Router (`executeInstantTrade`, source:"chart"),
-//    which re-runs the same audited 18-gate evaluator + kill switch server-side
+//    which re-runs the same audited 23-gate evaluator + kill switch server-side
 //    as one-click BUY/SELL. There is NO frontend-only trade path here and the
 //    UI never bypasses a refusal — it surfaces the server's primaryReason.
 //  - PAPER accounts get NO trade buttons (the instant router rejects paper);
@@ -533,7 +533,7 @@ export function ScannerChartPanel() {
 
   // ── Phase 5/6 — chart trade actions. EVERY action below routes through the
   //    Global Instant Trade Router (source:"chart"); the backend re-runs the
-  //    full 18-gate evaluator + kill switch + per-user allocation. We never
+  //    full 23-gate evaluator + kill switch + per-user allocation. We never
   //    place, close, or modify anything client-side and never bypass a refusal.
   const mode = useTradingMode();
   // INVESTOR accounts are view-only and route-contained out of the scanner,
@@ -562,7 +562,7 @@ export function ScannerChartPanel() {
   // Honest, NON-BLOCKING feed-truth note for the chart trade controls. Uses the
   // SAME resolved scanner-truth as the header/result rows, so a chart trade can
   // never be planned while implying the price is live when it is not. This warns
-  // only — it never disables Confirm and never gates the 18-gate server pipeline.
+  // only — it never disables Confirm and never gates the 23-gate server pipeline.
   const chartAffordance = resolveTradeAffordance(
     truth,
     tradeMode === "live" ? "live" : tradeMode === "demo" ? "demo" : "read_only",
@@ -1845,7 +1845,7 @@ export function ScannerChartPanel() {
   // ── Task #764 — drag-to-modify SL/TP for the user's OWN open LIVE positions.
   //    This is NOT a second execution path: a drop routes through the SAME
   //    executeInstantTrade(source:"chart_drag", MODIFY_SL_TP) → /instant/execute
-  //    → executeModify → createLiveOpsDraft → confirm → 18-gate dispatch as the
+  //    → executeModify → createLiveOpsDraft → confirm → 23-gate dispatch as the
   //    existing chart Break-even button. Entry is shown but NEVER draggable. A
   //    submit is allowed only on a confirmed-LIVE feed (isLiveDisplay); one-click
   //    ON submits on drop, OFF shows an old-vs-new confirm step.

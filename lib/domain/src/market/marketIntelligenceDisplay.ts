@@ -11,7 +11,7 @@
 // label is an honest description of what the read SHOWS, never a trade command
 // or a grant. It can only describe/downgrade; it can never raise readiness or
 // authorize a trade. The Auto-Bot and every caller must AND the real, separate
-// 18-gate live-execution pipeline; this projection alone can never dispatch.
+// 23-gate live-execution pipeline; this projection alone can never dispatch.
 
 import type {
   MarketIntelligenceSnapshot,

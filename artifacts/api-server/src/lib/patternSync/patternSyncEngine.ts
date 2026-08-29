@@ -8,7 +8,7 @@
 // SAFETY (inviolable):
 // - This is an ADVISORY ANALYSIS layer ONLY. Nothing here places, sizes, arms,
 //   or gates a trade. It is consumed exclusively by the admin Pattern Sync
-//   Command Center inside the Admin Cockpit. It NEVER feeds the 18-gate live
+//   Command Center inside the Admin Cockpit. It NEVER feeds the 23-gate live
 //   pipeline, the kill switch, risk limits, or any execution path.
 // - Honest-empty: on insufficient candle history it returns `sufficient:false`
 //   with neutral scores and an explicit summary — it never fabricates a read.

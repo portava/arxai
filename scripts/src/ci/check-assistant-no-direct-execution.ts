@@ -4,7 +4,7 @@
 // Eleanor ("Ruby") is a permission-bounded executor, NEVER a second execution
 // path. Every Ruby trade action (OPEN / CLOSE / MODIFY / watch-fire) MUST route
 // through the existing instant-trade router (`executeInstant` via the
-// `recordAndExecuteRuby` ledger boundary) → live command pipeline → 18-gate
+// `recordAndExecuteRuby` ledger boundary) → live command pipeline → 23-gate
 // Phase B dispatch. The assistant route must therefore NEVER:
 //   - insert directly into any broker command table (mt5 demo/live command
 //     queues, arx live commands),
@@ -68,7 +68,7 @@ const ASSISTANT_ROUTE = "artifacts/api-server/src/routes/meAssistant.ts";
 const REEXPORT_SCAN_ROOTS = ["artifacts/api-server/src", "lib/db/src"];
 
 // Forbidden command/order tables — a direct insert into any of these queues
-// bypasses executeInstant + the live pipeline + the 18-gate dispatch.
+// bypasses executeInstant + the live pipeline + the 23-gate dispatch.
 export const FORBIDDEN_TABLE_SYMBOLS = [
   "mt5CommandsTable",
   "mt5DemoCommandsTable",

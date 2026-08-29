@@ -51,7 +51,7 @@ export interface TradeAffordance {
   //
   // SAFETY: these are DISPLAY CEILINGS. They NEVER enable a trade and must NEVER
   // be ANDed into the live Confirm / one-click button — `canTrade` (and the
-  // backend 18-gate pipeline) stay the sole execution authority, so the
+  // backend 23-gate pipeline) stay the sole execution authority, so the
   // owner/admin controlled-live path is untouched. Callers AND these flags only
   // with NON-authoritative affordances (e.g. an AI "Use this setup" offer, a
   // scanner plan button) and use `readinessLabel` / `readinessTrustLine` purely
@@ -120,7 +120,7 @@ export function resolveTradeAffordance(
 
   // The ack checkbox is DEMO-only. Live stays ack-free so owner/admin one-click
   // is never gated by this helper — the warning still renders, and the backend
-  // 18-gate pipeline plus canTrade remain the real authorities.
+  // 23-gate pipeline plus canTrade remain the real authorities.
   return {
     requireAck: tradeMode === "demo",
     warningTitle,

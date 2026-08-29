@@ -425,7 +425,7 @@ router.post("/me/trades/close", async (req, res) => {
   // ── LIVE closes MUST route through the Phase-B live pipeline ──────────────
   // A LIVE close is a real broker command and must run the SAME path every
   // other live command runs: createLiveOpsDraft → confirmLiveCommand →
-  // dispatchLiveCommand (18-gate dispatch + arming / kill-switch /
+  // dispatchLiveCommand (23-gate dispatch + arming / kill-switch /
   // allocation-freeze re-checks + idempotency). It must NEVER be a direct
   // mt5_commands insert. The direct-insert branch further below is the
   // DEMO/SIMULATED transport only. Eleanor and every other caller reach live

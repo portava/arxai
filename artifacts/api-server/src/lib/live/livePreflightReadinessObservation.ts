@@ -8,7 +8,7 @@
 // outcome into a single observational record for diagnostics/logging. It is
 // NOT a gate:
 //   * It NEVER turns a blocked preflight into a pass (no bypass).
-//   * It NEVER turns a passing preflight into a block (the 18-gate dispatch and
+//   * It NEVER turns a passing preflight into a block (the 23-gate dispatch and
 //     the existing preflight gates remain the sole authority).
 //   * It only REPORTS — so an operator can see when the unified resolver and the
 //     canonical preflight disagree (drift), and which extra blockers the unified
@@ -37,7 +37,7 @@ export interface LivePreflightReadinessObservation {
   /**
    * Blockers the unified resolver reports while the preflight PASSED. Pure
    * diagnostics: these are surfaced so drift is visible, but they do NOT block
-   * the draft (the canonical preflight + the 18-gate dispatch decide that).
+   * the draft (the canonical preflight + the 23-gate dispatch decide that).
    */
   readonly additionalBlockersNotInPreflight: LiveReadinessBlocker[];
   /** TRUE when the preflight passed but the unified resolver still sees a block. */

@@ -6,7 +6,7 @@
  * surface (trade-command-room, the scanner chart panel, the live-position
  * overlay hook, …) with subtly different formulas.
  *
- * Capability model (display affordance only — the backend 18-gate pipeline is
+ * Capability model (display affordance only — the backend 23-gate pipeline is
  * always the real authority):
  *
  *   - canOpen   — open a NEW live position or INCREASE risk. Requires the user

@@ -3,7 +3,7 @@
 // SAFETY / SCOPE:
 //   - This is the FIRST time an approved Profit-Mission draft can become a real
 //     order, and it routes EXCLUSIVELY through the existing instant-trade router
-//     (`executeInstant`, source "mission") → live command pipeline → 18-gate
+//     (`executeInstant`, source "mission") → live command pipeline → 23-gate
 //     dispatch. There is NO new execution path; nothing here can place an order
 //     by itself. `executeInstant` is injectable ONLY so tests can substitute a
 //     spy — production always uses the real router.
@@ -12,14 +12,29 @@
 //     This hook never approves; it only dispatches an already-approved draft.
 //   - The additive, STRICTER-ONLY mission gate (`composeMissionGate`) runs FIRST.
 //     If it blocks, no order is attempted and the draft stays `approved`. The
-//     real per-user governor + 18-gate live dispatch still run unconditionally
+//     real per-user governor + 23-gate live dispatch still run unconditionally
 //     inside `executeInstant` — the mission gate can only ADD strictness.
-//   - DEMO/PAPER never touch the live broker: a non-live mission runs the SAME
-//     gate chain (mission gate + Phase 7 + the single-flight claim) and then
-//     records its dispatch through the simulated executor, which journals +
-//     audits the intent and returns WITHOUT ever calling the live pipeline. No
-//     fill, price, or P/L is ever fabricated for a simulated dispatch — the
-//     draft is marked executed with a `sim:` command id and nothing more.
+//   - DEMO/PAPER never touch the live broker, and they are NOT gate-checked to
+//     the same depth as live. Be precise about which chain each mode runs:
+//       * BOTH modes run the MISSION-LAYER chain in this file: the probation
+//         verdict, the additive mission gate (`composeMissionGate`), the Phase 7
+//         pre-checks, and the single-flight CAS claim.
+//       * ONLY `live` then calls `executor` → `executeInstant` → the live
+//         command pipeline → the 23-gate Phase B evaluator + the per-user
+//         governor + the env/db master switch. NONE of those run for
+//         paper/demo.
+//       * `paper`/`demo` instead call `recordSimulatedMissionDispatch`, which
+//         writes an audit row + a journal event and RETURNS. It never reaches
+//         the live pipeline, so no pipeline pre-gate, no governor and no
+//         Phase B gate is ever evaluated for a simulated dispatch.
+//     Nothing is fabricated in exchange: no fill, price, ticket or P/L is
+//     invented. The draft is marked executed with a `sim:` command id and
+//     nothing more — which also means a simulated draft never acquires a
+//     position, never closes, and never produces a realised result (see the
+//     note on `recordSimulatedMissionDispatch`).
+//     INTEGRATOR NOTE: the sibling branch `fix/demo-ladder` may change this
+//     behaviour. This comment describes the code as it stands on
+//     `fix/honest-copy`; re-check it when the two are merged.
 //   - Per-user / per-mission isolation: mission + draft are loaded `FOR UPDATE`
 //     scoped by (id, userId); the executed-flip is a CAS on the still-approved
 //     row inside one transaction (fail-closed).
@@ -67,10 +82,28 @@ export type MissionExecutor = (args: {
 /**
  * The injectable SIMULATED executor seam for non-live (`paper`/`demo`) missions.
  * It receives the SAME intent shape (minus accountMode — a non-live mission has
- * no live account mode to claim) after the full gate chain + single-flight claim
- * have run, and must NEVER contact a broker, insert a broker command, or
- * fabricate a fill/price/P&L. The default implementation journals + audits the
- * accepted intent and returns a `sim:` command id — nothing else.
+ * no live account mode to claim) after the MISSION-LAYER gate chain (probation +
+ * mission gate + Phase 7) and the single-flight claim have run. It must NEVER
+ * contact a broker, insert a broker command, or fabricate a fill/price/P&L.
+ *
+ * What it is NOT: this seam is not a demo broker and does not stand in for one.
+ * It is reached INSTEAD OF `executeInstant`, so the live pipeline's pre-gates,
+ * the per-user governor and the 23-gate Phase B evaluator never run for a
+ * simulated dispatch.
+ *
+ * CONSEQUENCE, stated plainly because the product copy depends on it: the
+ * default implementation journals + audits the accepted intent and returns a
+ * `sim:` command id — nothing else. No row is ever created in
+ * `arx_live_positions` with that command id, so the exit manager can never
+ * match the draft to a position. The ONLY writer of a draft's `pnl`/`closedAt`
+ * is `recordMissionTradeClose` (`missionExitManager.ts`), and its only producer
+ * is `recordMissionTradeCloseByBrokerTicket` (same file), called from the live
+ * fill/close path in `liveCommandPipeline.ts`. A `sim:` draft never acquires a
+ * brokerTicket, so neither function ever fires for it and the draft's `pnl` /
+ * `closedAt` stay NULL forever. A paper/demo mission therefore
+ * produces NO realised result, NO protective-exit management and NO progress
+ * toward its target, and cannot complete. That is the honest degraded state, not
+ * a bug to be papered over by inventing an outcome.
  */
 export type MissionSimulatedExecutor = (args: {
   userId: number;
@@ -295,7 +328,7 @@ export async function dispatchApprovedDraft(
   const state = risk.state;
 
   const gate = composeMissionGate({
-    // The real per-user governor + 18-gate run inside executeInstant; this seam
+    // The real per-user governor + 23-gate run inside executeInstant; this seam
     // starts from "pass" and the mission layer can only escalate strictness.
     governorDecision: "pass",
     mode: state.mode,
@@ -331,15 +364,22 @@ export async function dispatchApprovedDraft(
     return { ok: false, kind: "mission_blocked", gate };
   }
 
-  // ── Resolve the executor by mode: paper/demo run the SAME gate chain but ────
-  // dispatch through the simulated recorder, which never contacts the broker.
+  // ── Resolve the executor by mode. ───────────────────────────────────────────
+  // Every mode has already passed the mission-layer chain above (probation +
+  // mission gate) and still has Phase 7 + the single-flight claim ahead of it.
+  // What differs is what happens AFTER the claim: `live` calls `executor`
+  // (→ executeInstant → live pipeline → the 23-gate Phase B evaluator);
+  // `paper`/`demo` call the simulated recorder, which journals + audits the
+  // intent and returns without reaching the pipeline — so the pipeline
+  // pre-gates, the per-user governor and the 23 gates are NOT evaluated for
+  // them. No broker is contacted and nothing is fabricated either way.
   const executionMode: "paper" | "demo" | "live" =
     mission.executionMode === "live" ? "live" : mission.executionMode === "demo" ? "demo" : "paper";
   const simulatedExecutor = opts.simulatedExecutor ?? recordSimulatedMissionDispatch;
 
   // ── Phase 7 pre-checks (additive, stricter-only) BEFORE the single-flight ────
   // claim. Layered ON TOP of the mission gate + the real per-user governor +
-  // 18-gate live dispatch inside executeInstant. Block/downgrade only: it can
+  // 23-gate live dispatch inside executeInstant. Block/downgrade only: it can
   // refuse, never relax a gate or place an order. Honest unknowns never read
   // "good"; a block leaves the draft `approved` (no claim, no broker contact).
   const phase7Evaluator = opts.phase7Evaluator ?? evaluatePhase7PreChecks;
@@ -437,8 +477,11 @@ export async function dispatchApprovedDraft(
     return { ok: false, kind: "not_approved", status: "executed" };
   }
 
-  // LIVE routes through the ONE instant-trade entry; paper/demo record through
-  // the simulated executor — SAME gates, SAME claim, NO broker contact.
+  // LIVE routes through the ONE instant-trade entry, which is where the live
+  // pipeline's pre-gates, the per-user governor and the 23-gate Phase B
+  // evaluator run. Paper/demo record through the simulated executor instead:
+  // SAME single-flight claim and SAME mission-layer gates as live, but NO live
+  // pipeline, NO governor, NO Phase B gates, and NO broker contact.
   const result: InstantTradeResult =
     executionMode === "live"
       ? await executor({

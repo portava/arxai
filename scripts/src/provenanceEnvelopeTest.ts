@@ -21,7 +21,7 @@
 // Pure unit test — no DB, no network, safe to wire into the offline CI lane.
 //
 // NOTE: this module is a SEED. It is exported and unit-tested here; wiring it
-// into the 18-gate evaluator as gate #19 is a separate, later work order. No
+// into the 23-gate evaluator as gate #19 is a separate, later work order. No
 // dispatch-path file imports it yet, and this test asserts that too.
 
 import { readFileSync } from "node:fs";

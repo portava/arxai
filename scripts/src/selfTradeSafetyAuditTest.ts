@@ -50,7 +50,7 @@ function check(name: string, cond: boolean, detail?: string): void {
 const NOW = Date.parse("2026-06-19T14:00:00Z");
 
 // ── Phase B gate builder ──────────────────────────────────────────────────────
-// A fully-green Phase B input: all 18 gates pass when unmodified.
+// A fully-green Phase B input: all 23 gates pass when unmodified.
 function baseGateInput(over: Partial<LivePhaseBGateInput> = {}): LivePhaseBGateInput {
   return {
     // Server master switches

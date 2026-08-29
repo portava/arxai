@@ -15,7 +15,7 @@
 // execution-permission field anywhere in the snapshot or verdict
 // (`allowExecution`, `canExecute`, `readyNow`, `commandExecutionAllowed`,
 // `brokerDispatch`, `killSwitch`, `tradePermission` — none exist). The Auto-Bot
-// and every caller must AND this with the real, separate 18-gate live-execution
+// and every caller must AND this with the real, separate 23-gate live-execution
 // pipeline; the snapshot alone can never dispatch a broker order. Backtest /
 // forward-test modes can NEVER produce `ready_candidate` (live truths absent).
 

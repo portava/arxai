@@ -3,11 +3,11 @@
 // WHY THIS MODULE EXISTS
 //
 // `dispatchLiveCommand` (liveCommandPipeline.ts) READS the command row,
-// evaluates all 18 Phase B gates, and only THEN writes the row to
+// evaluates all 23 Phase B gates, and only THEN writes the row to
 // SENT_TO_MT5_LIVE. That read-then-write is a TOCTOU window. Two concurrent
 // dispatches of the SAME LIVE_APPROVED command — a double-tap, a retried
 // fetch, two browser tabs, Ruby racing a manual click — both read
-// status=LIVE_APPROVED, both pass all 18 gates (every gate is a property of
+// status=LIVE_APPROVED, both pass all 23 gates (every gate is a property of
 // the user/bridge/symbol, not of "has this command already been sent"), and
 // both reach the write.
 //
@@ -33,7 +33,7 @@
 //
 // SAFETY:
 // - This module NEVER decides whether a dispatch is allowed. It runs strictly
-//   AFTER the 18-gate evaluator has returned PASS. It cannot weaken, reorder,
+//   AFTER the 23-gate evaluator has returned PASS. It cannot weaken, reorder,
 //   or skip a gate — it can only refuse a transition that already raced.
 // - Losing the CAS is fail-CLOSED: no order is mirrored.
 // - Read/writes are keyed by commandId; ownership (userId) is enforced by the

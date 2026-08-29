@@ -9,7 +9,7 @@
 //
 // IMPORTANT: this is block-only. It never returns a PASS that bypasses any other
 // gate. A `{ ok: true }` here just means "allocation is not the blocker"; the
-// full 18-gate dispatch still runs afterward. TRUE-zero / not-assigned ALWAYS
+// full 23-gate dispatch still runs afterward. TRUE-zero / not-assigned ALWAYS
 // blocks — the split below only changes the COPY, never the block decision.
 
 export type AllocationGateView = {

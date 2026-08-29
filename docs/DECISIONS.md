@@ -212,6 +212,11 @@ it never discovers positions on its own, so it cannot become a bulk flattener.
 "no `DerivExecutionAdapter`, no dispatch through the 18-gate path" recorded at
 the end of Ruling 18. Ruling 18's other holds are NOT lifted.*
 
+> *Editorial note (added 2026-08-29, not part of the ruling): "18-gate" is left
+> as written — it was the count when Rulings 16–19 were made. The count is now
+> **23** (same evaluator, foundation gates #19–#23 added since); see "Finding of
+> fact" below. Only the count changed, never the hold.*
+
 Owner's words: *"AUTHORIZE PHASE 6 — SELF-TRADING GUIDED MODE, INCLUDING THE
 DERIV EXECUTION SEAM."*
 
@@ -268,11 +273,18 @@ their intent is carried by Deriv-native equivalents.
 totality contract and by tests, not by a check executed on the dispatch path.
 See `docs/PROJECT_STATE.md` B4.*
 
-**Finding of fact — the gate count is 18.** The repository contradicts itself in
-prose ("15-gate", "16-gate", "18-gate" all appear; repo-wide "16-gate" appears
-416 times against 200 for "18-gate"). Only the code settles it:
-`evaluateLivePhaseBDispatchGate` pushes exactly **18** entries into `gates[]`.
-Every prose mention of 15 or 16 is stale.
+**Finding of fact — the gate count is 23 (was 18 when this ruling was first
+written).** The repository contradicts itself in prose: "15-gate", "16-gate" and
+"18-gate" have all appeared at different times, and stale counts outnumber the
+correct one. Only the code settles it: `evaluateLivePhaseBDispatchGate` pushes
+exactly **23** entries into `gates[]` — the original 16 base gates, #17
+`MISSING_TAKE_PROFIT`, #18 `DISCLOSURE_NOT_ACCEPTED`, and the five FOUNDATION
+gates #19–#23 (`PROVENANCE_UNPROVEN`, `STRATEGY_NOT_LIVE_PROMOTED`,
+`CAPITAL_TIER_EXCEEDED`, `TENANT_CONTEXT_VIOLATION`, `EDGE_CAPACITY_EXCEEDED`).
+Every prose mention of 15, 16 or 18 is stale. Note that a repo-wide "16-gate"
+family of stale comments is still outstanding and NOT corrected by the sweep
+that produced this entry — see the honest-copy note in
+`lib/domain/src/safety-contracts/livePhaseBDispatchGate.ts`.
 `BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED` is a sentinel appended for audit greps,
 not a gate.
 

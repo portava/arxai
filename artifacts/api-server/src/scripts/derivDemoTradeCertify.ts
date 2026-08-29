@@ -10,7 +10,7 @@
  * exits non-zero.
  *
  * NOT in the ci chain, NOT reachable from strategy, dispatch or scheduler
- * code, and NOT connected to the 18-gate live-order path.
+ * code, and NOT connected to the 23-gate live-order path.
  */
 
 import { resolveNewApiConfig } from "../lib/deriv/newApi/restClient.js";

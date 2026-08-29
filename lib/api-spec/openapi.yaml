@@ -519,7 +519,7 @@ paths:
         engine (partial close / break-even / trail / structure-news-target close /
         target adjust); the chosen action is mapped onto the EXISTING instant-trade
         actions and routed through executeInstant (source "mission") → live
-        pipeline → 18-gate dispatch. NONE → nothing is dispatched. User/mission scoped.
+        pipeline → 23-gate dispatch. NONE → nothing is dispatched. User/mission scoped.
       parameters:
         - name: id
           in: path
@@ -681,11 +681,15 @@ paths:
       operationId: executeMissionProposalDraft
       tags: [profit-missions]
       summary: >
-        Execute an APPROVED mission draft (Phase 6). Dispatches into REAL execution
-        EXCLUSIVELY via the instant-trade router (source "mission") → live pipeline
-        → 18-gate dispatch. The additive, stricter-only mission gate runs first;
-        demo/paper missions never contact the live broker. Per-draft Level-2
-        approval remains required.
+        Execute an APPROVED mission draft (Phase 6). A LIVE mission dispatches into
+        REAL execution EXCLUSIVELY via the instant-trade router (source "mission") →
+        live pipeline → 23-gate dispatch. The additive, stricter-only mission gate
+        runs first, for every mode. A DEMO/PAPER mission does NOT reach the router:
+        after the mission gate and pre-trade checks it stops at a simulated recorder
+        that journals the intent and returns a "sim:" command id, so no broker is
+        contacted (there is no demo broker behind it), the 23 gates are not
+        evaluated, and no fill, price or P/L is produced — such a draft never closes
+        and yields no realised result. Per-draft Level-2 approval remains required.
       parameters:
         - name: id
           in: path

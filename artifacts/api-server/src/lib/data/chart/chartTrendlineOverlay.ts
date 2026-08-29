@@ -7,7 +7,7 @@
 //
 // HARD BOUNDARY:
 //  - Display-only. This module produces NO trade affordance, touches NO live
-//    execution gate, the 18-gate dispatch, the MT5 bridge, or any kill switch.
+//    execution gate, the 23-gate dispatch, the MT5 bridge, or any kill switch.
 //  - No new data source: it reads the SAME normalized candle window the chart
 //    intelligence already fetched. It never fabricates a bar, a point, or a line.
 //  - Fail closed on honesty: when the feed is not live-confirmed (contextOnly),

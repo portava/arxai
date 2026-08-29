@@ -18,7 +18,7 @@
 //   - gate the symbol universe (callers run resolveAssistantMarket / the
 //     gateAssistantSymbolOr Top-250 gate first).
 // `readLayer` is a DISPLAY tier (see rubyReadLayers.ts). It is NEVER an execution
-// gate, NEVER weakens the live (16/18-gate) pipeline, and MUST NOT be imported by
+// gate, NEVER weakens the live (16/23-gate) pipeline, and MUST NOT be imported by
 // any execution/safety module (live command pipeline, dispatch gate,
 // synthetic-floor, stop-loss policy, import-boundary guards).
 

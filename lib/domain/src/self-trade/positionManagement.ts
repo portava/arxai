@@ -37,7 +37,17 @@ export interface PositionManagementInput {
   beMoved: boolean;
   partialsTaken: number;
 
-  autonomyLevel: number; // L3 manage; L4 also extend (handled by caller)
+  /**
+   * Reported for the caller's use only — this module NEVER reads it, so no
+   * verdict below depends on it.
+   *
+   * What the callers actually do with it: `livePositionManager` alerts instead
+   * of acting when it is < 3. NOTHING distinguishes L4 from L3 anywhere. This
+   * field previously carried the note "L3 manage; L4 also extend (handled by
+   * caller)" — no caller implements an L4 "extend" behaviour, so that note was
+   * describing an intention as if it were a contract.
+   */
+  autonomyLevel: number;
 }
 
 export interface PositionManagementVerdict {

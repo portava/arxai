@@ -2180,7 +2180,7 @@ export function useListMissionTradeDrafts<
 }
 
 /**
- * @summary Decide + route the next protective exit action for an OPEN (executed) mission trade (Phase 8). The decision comes from the pure Exit Manager Pro engine (partial close / break-even / trail / structure-news-target close / target adjust); the chosen action is mapped onto the EXISTING instant-trade actions and routed through executeInstant (source "mission") → live pipeline → 18-gate dispatch. NONE → nothing is dispatched. User/mission scoped.
+ * @summary Decide + route the next protective exit action for an OPEN (executed) mission trade (Phase 8). The decision comes from the pure Exit Manager Pro engine (partial close / break-even / trail / structure-news-target close / target adjust); the chosen action is mapped onto the EXISTING instant-trade actions and routed through executeInstant (source "mission") → live pipeline → 23-gate dispatch. NONE → nothing is dispatched. User/mission scoped.
 
  */
 export const getManageMissionTradeExitUrl = (id: number, draftId: string) => {
@@ -2258,7 +2258,7 @@ export type ManageMissionTradeExitMutationError = ErrorType<
 >;
 
 /**
- * @summary Decide + route the next protective exit action for an OPEN (executed) mission trade (Phase 8). The decision comes from the pure Exit Manager Pro engine (partial close / break-even / trail / structure-news-target close / target adjust); the chosen action is mapped onto the EXISTING instant-trade actions and routed through executeInstant (source "mission") → live pipeline → 18-gate dispatch. NONE → nothing is dispatched. User/mission scoped.
+ * @summary Decide + route the next protective exit action for an OPEN (executed) mission trade (Phase 8). The decision comes from the pure Exit Manager Pro engine (partial close / break-even / trail / structure-news-target close / target adjust); the chosen action is mapped onto the EXISTING instant-trade actions and routed through executeInstant (source "mission") → live pipeline → 23-gate dispatch. NONE → nothing is dispatched. User/mission scoped.
 
  */
 export const useManageMissionTradeExit = <
@@ -2610,7 +2610,7 @@ export const useEmergencyStopProfitMission = <
 };
 
 /**
- * @summary Execute an APPROVED mission draft (Phase 6). Dispatches into REAL execution EXCLUSIVELY via the instant-trade router (source "mission") → live pipeline → 18-gate dispatch. The additive, stricter-only mission gate runs first; demo/paper missions never contact the live broker. Per-draft Level-2 approval remains required.
+ * @summary Execute an APPROVED mission draft (Phase 6). A LIVE mission dispatches into REAL execution EXCLUSIVELY via the instant-trade router (source "mission") → live pipeline → 23-gate dispatch. The additive, stricter-only mission gate runs first, for every mode. A DEMO/PAPER mission does NOT reach the router: after the mission gate and pre-trade checks it stops at a simulated recorder that journals the intent and returns a "sim:" command id, so no broker is contacted (there is no demo broker behind it), the 23 gates are not evaluated, and no fill, price or P/L is produced — such a draft never closes and yields no realised result. Per-draft Level-2 approval remains required.
 
  */
 export const getExecuteMissionProposalDraftUrl = (
@@ -2683,7 +2683,7 @@ export type ExecuteMissionProposalDraftMutationError = ErrorType<
 >;
 
 /**
- * @summary Execute an APPROVED mission draft (Phase 6). Dispatches into REAL execution EXCLUSIVELY via the instant-trade router (source "mission") → live pipeline → 18-gate dispatch. The additive, stricter-only mission gate runs first; demo/paper missions never contact the live broker. Per-draft Level-2 approval remains required.
+ * @summary Execute an APPROVED mission draft (Phase 6). A LIVE mission dispatches into REAL execution EXCLUSIVELY via the instant-trade router (source "mission") → live pipeline → 23-gate dispatch. The additive, stricter-only mission gate runs first, for every mode. A DEMO/PAPER mission does NOT reach the router: after the mission gate and pre-trade checks it stops at a simulated recorder that journals the intent and returns a "sim:" command id, so no broker is contacted (there is no demo broker behind it), the 23 gates are not evaluated, and no fill, price or P/L is produced — such a draft never closes and yields no realised result. Per-draft Level-2 approval remains required.
 
  */
 export const useExecuteMissionProposalDraft = <

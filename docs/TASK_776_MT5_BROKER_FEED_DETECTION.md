@@ -65,7 +65,7 @@ class — matching the already-correct scanner logic. Liveness now means:
 - A genuinely **Deriv-awaiting** synthetic (Deriv is the winning provider but no
   fresh WS tick) is still demoted to `delayed` / not-usable — `buildFeedStatus`
   behavior is unchanged for that case.
-- No execution gate was touched. The 18-gate Phase B dispatch chokepoint, the
+- No execution gate was touched. The 23-gate Phase B dispatch chokepoint, the
   entry data-sufficiency gate, and the owner synthetic-floor relaxations all
   remain exactly as before — this fix only corrects the *liveness/feed-status
   reporting layer* that those surfaces read.

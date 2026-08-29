@@ -31,7 +31,7 @@ function envelope(payload: Record<string, unknown>) {
     liveTradingStatus: "DISABLED" as const,
     canPlaceLiveTrade: false,
     disclaimer:
-      "Readiness is informational. Live execution authority is governed independently by the per-user activation gate and the 18-gate Phase B dispatch — this report never enables live trading. Live readiness is reported only for an admin-approved, armed, eligible trader; everyone else stays demo/paper.",
+      "Readiness is informational. Live execution authority is governed independently by the per-user activation gate and the 23-gate Phase B dispatch — this report never enables live trading. Live readiness is reported only for an admin-approved, armed, eligible trader; everyone else stays demo/paper.",
     ...payload,
   };
 }

@@ -110,7 +110,7 @@ app connects as a superuser, so `REVOKE` would enforce nothing (Owner Ruling
 ## 3. Safety rules that are never negotiable
 
 - **Do not weaken, bypass, or "temporarily disable" a gate.** The live path is
-  default-deny behind an 18-gate evaluator
+  default-deny behind a 23-gate evaluator
   (`lib/domain/src/safety-contracts/livePhaseBDispatchGate.ts`). Passing
   fabricated facts to satisfy a gate is prohibited — it is a lie recorded in the
   audit log.

@@ -12,7 +12,7 @@ the Scanner chart. Implemented on `ScannerChartPanel.tsx` only (not ARXNativeCha
 
 ## Single execution path (no bypass)
 Every drag submits through `executeInstantTrade({ source: "chart_drag", action:
-"MODIFY_SL_TP" })` → the SAME instant-trade router → live pipeline → 18-gate
+"MODIFY_SL_TP" })` → the SAME instant-trade router → live pipeline → 23-gate
 MODIFY dispatch as a manual trade. NO second path, NO gate/pipeline change. The
 new audit source is `chart_drag` (added to FE `InstantTradeSource` +
 backend `INSTANT_TRADE_SOURCES`). The chart no-bypass CI guard

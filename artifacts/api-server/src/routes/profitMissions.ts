@@ -758,7 +758,7 @@ router.post(
 // (partial close / break-even / trail / structure-news-target close / target
 // adjust) from the pure Exit Manager Pro engine and routes the chosen action
 // through the EXISTING instant-trade path (source "mission") → live pipeline →
-// 18-gate dispatch. NONE → nothing is dispatched. Per-user / per-mission scoped.
+// 23-gate dispatch. NONE → nothing is dispatched. Per-user / per-mission scoped.
 function readExitSignals(body: unknown): MissionExitSignals | undefined {
   if (!body || typeof body !== "object") return undefined;
   const raw = (body as { signals?: unknown }).signals;
@@ -945,7 +945,7 @@ export function sendDispatchFailure(
 // ── Execute an approved draft (FIRST real-execution path; mission-gated) ─────
 //
 // Dispatches an already-approved draft into REAL execution exclusively via the
-// instant-trade router (source "mission") → live pipeline → 18-gate dispatch.
+// instant-trade router (source "mission") → live pipeline → 23-gate dispatch.
 // The additive, stricter-only mission gate runs first; demo/paper never touch the
 // live broker. Per-user scoped; per-draft Level-2 approval still required.
 router.post(

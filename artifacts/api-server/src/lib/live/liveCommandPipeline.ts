@@ -464,7 +464,7 @@ async function recordExecutionEvent(input: {
 
 // Global emergency-kill-switch pre-gate. POST /api/admin/trading/emergency-kill
 // engages global_trading_settings.emergency_kill_switch; dispatch consumes it
-// via this reason literal BEFORE the 18-gate evaluator, in BOTH routing modes.
+// via this reason literal BEFORE the 23-gate evaluator, in BOTH routing modes.
 export const EMERGENCY_KILL_SWITCH_BLOCK_REASON =
   "LIVE_BLOCKED:EMERGENCY_KILL_SWITCH_ENGAGED" as const;
 
@@ -498,7 +498,7 @@ export function emergencyKillSwitchBlocksDispatch(args: {
 // R3 slice 1 — weekly-drawdown-ceiling pre-gate. arx_live_user_settings.
 // weekly_drawdown_ceiling_pct was stored + hard-capped (≤10) at write time
 // but read by no gate; dispatch consumes it via this reason literal BEFORE
-// the 18-gate evaluator, next to the daily-loss input assembly.
+// the 23-gate evaluator, next to the daily-loss input assembly.
 export const WEEKLY_DRAWDOWN_BLOCK_REASON =
   "LIVE_BLOCKED:WEEKLY_DRAWDOWN_CEILING_REACHED" as const;
 
@@ -539,7 +539,7 @@ export function weeklyDrawdownBlocksDispatch(args: {
 // R3 slice 2 — risk-lock pre-gate. risk_locks rows (cooldown /
 // consecutive-loss / revenge / manual …) were enforced only on the paper
 // permission routes; dispatch consumes them via this prefixed reason
-// (LIVE_BLOCKED:RISK_LOCK_<TYPE>) BEFORE the 18-gate evaluator.
+// (LIVE_BLOCKED:RISK_LOCK_<TYPE>) BEFORE the 23-gate evaluator.
 export const RISK_LOCK_BLOCK_REASON_PREFIX = "LIVE_BLOCKED:RISK_LOCK_" as const;
 
 // ── CLOSE-ONLY MODE (spec §3.1 global control / §20 "close-only proven") ────
@@ -624,7 +624,7 @@ const { evaluateClusterExposure } = riskCorrelation;
 // set, dispatch resolves a dispatch-time reference price from the execution
 // broker feed (the same getLiveQuote provider chain the preflight quote legs
 // use) and refuses entries whose draft-vs-now deviation exceeds the cap,
-// BEFORE the 18-gate evaluator.
+// BEFORE the 23-gate evaluator.
 export const PRICE_DEVIATION_BLOCK_REASON =
   "LIVE_BLOCKED:PRICE_DEVIATION_TOO_LARGE" as const;
 
@@ -695,7 +695,7 @@ export function priceCollarBlocksDispatch(args: {
 // of WHEN the signal/decision behind an entry was generated (threaded from
 // createLiveDraft's typed input). arx_live_user_settings.max_signal_age_ms
 // is the user's demanded bound; dispatch consumes both via this reason
-// literal BEFORE the 18-gate evaluator.
+// literal BEFORE the 23-gate evaluator.
 export const SIGNAL_TOO_OLD_BLOCK_REASON = "LIVE_BLOCKED:SIGNAL_TOO_OLD" as const;
 
 /**
@@ -1079,7 +1079,7 @@ export interface LiveDraftRefusal {
     | "LIVE_BLOCKED:ALLOCATION_EXCEEDS_MASTER_AVAILABLE"
     | "LIVE_BLOCKED:ALLOCATION_FROZEN"
     // Task #737 — live-execution activation pre-condition. Additive gate: it
-    // never weakens/skips/ORs the 18-gate dispatch. Fires when the trader has
+    // never weakens/skips/ORs the 23-gate dispatch. Fires when the trader has
     // not completed live confirmation / Full Live Activation, or when the
     // account is not an eligible human trader.
     | "LIVE_BLOCKED:LIVE_EXECUTION_ACTIVATION_GATE"
@@ -1121,7 +1121,7 @@ async function preflight(input: LiveDraftInput): Promise<LiveDraftRefusal | { ok
 
   // ── Task #737 — live-execution activation pre-condition (lockstep with the
   // dispatch-time re-check below). Additive: this never weakens/skips/ORs any
-  // of the 18 Phase B dispatch gates — those still run on top of a PASS here.
+  // of the 23 Phase B dispatch gates — those still run on top of a PASS here.
   // Fail-closed via the shared resolver: a non-activated trader, or a
   // bot/agent/system/investor account, is refused before a draft is created.
   const activation = await evaluateLiveExecutionActivationGate(input.userId);
@@ -1345,7 +1345,7 @@ async function preflight(input: LiveDraftInput): Promise<LiveDraftRefusal | { ok
 
   // ── DATA-SUFFICIENCY TRUTH (Phase 2) — entry data-sufficiency gate ─────────
   // Block-only, NEW-ENTRY only, additive. Runs right after the ARX Focus
-  // backstop and BEFORE the synthetic floor / SL policy / 18-gate evaluator —
+  // backstop and BEFORE the synthetic floor / SL policy / 23-gate evaluator —
   // all of which still run afterwards and keep final say. Uses the shared
   // `evaluateEntryDataSufficiency` helper so preflight + dispatch can never
   // drift (lockstep). Fail-closed: an unverifiable feed refuses the entry. It
@@ -1613,7 +1613,7 @@ async function preflight(input: LiveDraftInput): Promise<LiveDraftRefusal | { ok
   // or allocation blocker the resolver sees that this preflight let pass).
   //
   // This is strictly observational — it NEVER changes the return value. The
-  // canonical preflight gates above and the 18-gate dispatch below remain the
+  // canonical preflight gates above and the 23-gate dispatch below remain the
   // sole authority. It cannot create a bypass (it runs only on the pass path and
   // its result is logged, never branched on) and it cannot create a new block
   // (the function returns `{ ok: true }` unconditionally regardless of what the
@@ -1684,7 +1684,7 @@ export async function createLiveOpsDraft(input: {
   // Task #743 Cluster D — narrow, admin-emergency-close-only kill-switch bypass.
   // When present AND commandType is CLOSE_LIVE_POSITION, the per-user kill switch
   // does NOT block this reduce-risk close. It is funnelled through the SAME
-  // pipeline + 18-gate dispatch; ONLY gate #5 (kill switch) is relaxed and ONLY
+  // pipeline + 23-gate dispatch; ONLY gate #5 (kill switch) is relaxed and ONLY
   // for the CLOSE. The admin emergency-close route is the sole caller that sets
   // this, after verifying OWNER/ADMIN role, the confirmation phrase, and
   // read-only ownership. NEVER honored for OPEN / MODIFY / increase-exposure.
@@ -2273,10 +2273,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
 
   // ── EMERGENCY KILL SWITCH PRE-GATE (global halt) ───────────────────────
   // Refuses dispatch while global_trading_settings.emergency_kill_switch is
-  // engaged. Runs BEFORE the 18-gate evaluator in BOTH routing modes: the
+  // engaged. Runs BEFORE the 23-gate evaluator in BOTH routing modes: the
   // evaluator's `globalLiveEnabled` input does NOT fold the kill switch in
   // (getEnvelope computes it from platformMode + liveEnabled alone), so
-  // without this pre-gate a USER_OWNED_MT5 dispatch passes all 18 gates
+  // without this pre-gate a USER_OWNED_MT5 dispatch passes all 23 gates
   // during a platform-wide halt. Additive only — never replaces or weakens
   // any downstream gate. Fail-closed: on a missing/unreadable settings row
   // the envelope reports emergencyKillSwitch=true (FAIL_CLOSED). The ONLY
@@ -2326,7 +2326,7 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   // ── RISK-LOCK PRE-GATE (R3 slice 2) ────────────────────────────────────
   // Gives risk_locks its first live-path teeth: an ACTIVE, unexpired row
   // refuses ENTRY dispatch with LIVE_BLOCKED:RISK_LOCK_<TYPE>. Runs BEFORE
-  // the 18-gate evaluator in BOTH routing modes; additive only — never
+  // the 23-gate evaluator in BOTH routing modes; additive only — never
   // replaces or weakens any downstream gate. CLOSE_LIVE_POSITION /
   // MODIFY_LIVE_SLTP always pass (entry-vs-ops split mirroring the
   // allocation-freeze `tradingFrozen` rule — a lock must never trap open
@@ -2431,8 +2431,8 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
 
   // ── WAVE-4 PRE-GATES (R3 slices 4/5 + correlation guard + R4 slice 3) ───
   // Four additive, ENTRY-ONLY refusal walls, ordered AFTER the risk-lock
-  // pre-gate above and BEFORE the 18-gate evaluator below (source order is
-  // pinned by preGateWave4.test.ts; the pure 18-gate contract file is
+  // pre-gate above and BEFORE the 23-gate evaluator below (source order is
+  // pinned by preGateWave4.test.ts; the pure 23-gate contract file is
   // untouched). Each follows the established pre-gate shape: pure-helper
   // decision → LIVE_BLOCKED row + dispatchGateSnapshot + audit +
   // kill-switch-style typed return. CLOSE_LIVE_POSITION / MODIFY_LIVE_SLTP
@@ -2723,7 +2723,7 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   // ── RECONCILIATION-FRESHNESS PRE-GATE (R2-S4, flag-staged, default OFF) ──
   // See the module-scope constants above for the full staging rationale.
   // ENTRY-ONLY, additive: runs after the broker-feed pre-gate and BEFORE the
-  // 18-gate evaluator; never replaces or weakens any downstream gate. The
+  // 23-gate evaluator; never replaces or weakens any downstream gate. The
   // run row is read with raw parameterized SQL for the same reason the
   // reconciler writes it that way: the reconciliation_runs registration is
   // coordinator-owned and the table may not exist yet — with the flag ON, an
@@ -2822,7 +2822,7 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   // cap-driven gates (SYMBOL_NOT_ALLOWED, VOLUME_EXCEEDS_MAX_LIVE_LOT,
   // DAILY_LOSS_LIMIT_REACHED, MISSING_STOP_LOSS/MISSING_TAKE_PROFIT)
   // trivially pass. The remaining 12 gates run as-is. The evaluator
-  // itself is unchanged (its 18/18 truth table still holds).
+  // itself is unchanged (its 23/23 truth table still holds).
   const dispatchProfile = await getUserRiskProfile(args.userId);
   const isOwnerUnrestrictedDispatch = dispatchProfile.isOwnerUnrestricted;
 
@@ -2874,7 +2874,7 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   // Mirrors the preflight gate EXACTLY via the SAME shared helper (lockstep,
   // defense-in-depth / TOCTOU re-check at dispatch). NEW-ENTRY only (isEntryRow,
   // so close / modify / cancel are exempt). Additive — runs before the synthetic
-  // floor and the 18-gate evaluator, all of which still run and keep final say.
+  // floor and the 23-gate evaluator, all of which still run and keep final say.
   // Fail-closed. Block construction mirrors the synthetic-floor block shape; the
   // audit metadata carries only status / timeframe / closed-count / freshness /
   // humanReason (no provider or admin detail).
@@ -3369,7 +3369,7 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
 
   // ── Task #737 — live-execution activation gate, RE-checked at dispatch
   // (TOCTOU guard, lockstep with the preflight check above). Additive: this
-  // runs BEFORE — and never in place of — the 18-gate evaluator below. A
+  // runs BEFORE — and never in place of — the 23-gate evaluator below. A
   // trader whose Full Live Activation / personal confirmation was revoked
   // between draft and dispatch, or whose account was reclassified to a
   // bot/agent/system/investor, is blocked here with a true LIVE_BLOCKED row.
@@ -3410,7 +3410,7 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   // Honored ONLY when the draft was stamped with a killSwitchCloseBypass marker
   // (set exclusively by createLiveOpsDraft for an admin emergency close) AND the
   // command is a CLOSE (reduce-risk). It relaxes ONLY gate #5 (kill switch); the
-  // full 18-gate evaluator otherwise runs unchanged, so any other failing gate
+  // full 23-gate evaluator otherwise runs unchanged, so any other failing gate
   // still BLOCKS. The marker is integrity-hashed at draft creation (verified by
   // the command-integrity pre-gate), so it cannot be forged post-hoc.
   const killSwitchBypassMarker =
@@ -3806,7 +3806,7 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   try {
     // ── P0-1 — DOUBLE-SEND CAS (money) ──────────────────────────────────────
     // Everything above is a READ-then-evaluate: `loadOwned` read the row,
-    // saw LIVE_APPROVED, and all 18 gates then passed. Every one of those
+    // saw LIVE_APPROVED, and all 23 gates then passed. Every one of those
     // gates is a property of the user / bridge / symbol — NONE of them asks
     // "has this command already been sent". So two concurrent dispatches of
     // the same approved command both reach this line.

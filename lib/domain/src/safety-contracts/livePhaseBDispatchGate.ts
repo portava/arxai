@@ -1,5 +1,13 @@
 // Phase B — Live Dispatch Gate (23-gate evaluator + disclosure)
 //
+// GATE COUNT — this file is the only authority. `evaluateLivePhaseBDispatchGate`
+// pushes exactly 23 entries into `gates[]`. Prose elsewhere in the repo saying
+// "15-gate", "16-gate" or "18-gate" is stale. The 18→23 family was swept; a
+// LARGE "16-gate" family (~520 occurrences, mostly `lib/db/src/schema/*` and
+// assistant/read-layer comments) is still OUTSTANDING and was deliberately left
+// alone by that sweep rather than silently half-corrected. Treat any count you
+// read outside this file as unverified.
+//
 // CONTRACT: this gate must return `decision: "PASS"` ONLY when ALL 23 gates
 // pass. Any single failing gate returns `decision: "BLOCKED"` with the exact
 // failing reason(s). The 23 gates are the original 16 base gates + #17
@@ -7,8 +15,10 @@
 // adminAllowNoTakeProfit) + #18 DISCLOSURE_NOT_ACCEPTED + the five
 // FOUNDATION gates: #19 PROVENANCE_UNPROVEN (entry decision-data provenance
 // must be present, tradeable-origin, fresh, and integrity-covered), #20
-// STRATEGY_NOT_LIVE_PROMOTED (autonomous entries require an owner-pressed
-// LIVE_CANDIDATE production_edges row), #21 CAPITAL_TIER_EXCEEDED (per-user
+// STRATEGY_NOT_LIVE_PROMOTED (entries whose recorded actorType is
+// SELF_TRADE_AGENT or SYSTEM require an owner-pressed LIVE_CANDIDATE
+// production_edges row — see the ACTOR COVERAGE note below for what that does
+// and does not bind today), #21 CAPITAL_TIER_EXCEEDED (per-user
 // capital-tier caps; tighten-only vs existing caps), #22
 // TENANT_CONTEXT_VIOLATION (every tenant-scoped fact must be stamped as read
 // for the command's OWNER; proven cross-tenant leakage refuses every command
@@ -24,6 +34,36 @@
 // `liveBrokerExecutionEnabled` is FALSE — when false, this gate ALWAYS appends
 // BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED as a trailing sentinel block reason
 // (NOT an evaluated gate), preserving the Phase A safety semantic.
+//
+// ── ACTOR COVERAGE of the FOUNDATION gates — what each one binds TODAY ───────
+// This block exists because the header previously implied #20 binds every
+// autonomous entry. It does not. State the real coverage, not the intent:
+//
+//   #19 PROVENANCE_UNPROVEN    — binds EVERY live entry, whoever originated it.
+//                                Close/modify are exempt.
+//   #20 STRATEGY_NOT_LIVE_PROMOTED — binds only entries whose recorded
+//        `arx_live_commands.actorType` is SELF_TRADE_AGENT or SYSTEM
+//        (`edgePromotionRequiredForActor` in
+//        `artifacts/api-server/src/lib/live/foundationGateInputs.ts`).
+//        actorType is stamped at draft insert as SELF_TRADE_AGENT only when a
+//        `selfTradeAgentId` is present, and USER otherwise.
+//        *** KNOWN GAP: orders originated by the Profit-Mission driver
+//        (`missionDriver` → `dispatchApprovedDraft` → `executeInstant`, source
+//        "mission") carry NO selfTradeAgentId, so they are stamped USER and #20
+//        records "Not required: human-originated command" and PASSES. A
+//        machine-originated mission entry is therefore NOT bound by edge
+//        promotion today. This is a real coverage hole in the gate, not in this
+//        comment; a sibling branch is fixing the binding. Until that lands, do
+//        not cite #20 as covering "all autonomous entries". ***
+//   #21 CAPITAL_TIER_EXCEEDED  — binds EVERY live entry regardless of actor.
+//                                Close/modify are exempt.
+//   #22 TENANT_CONTEXT_VIOLATION — its PROVEN-violation branches bind EVERY
+//        command type including close/modify; its unresolvable/unstamped
+//        branches bind entries only.
+//   #23 EDGE_CAPACITY_EXCEEDED — binds entries that are either autonomously
+//        originated (same actorType test as #20, so it inherits the same
+//        mission-driver gap) OR carry an `edgeId`. A human entry with no edge
+//        reference is exempt.
 //
 // SAFETY (inviolable):
 // - This is a pure function. No DB/network/IO. Caller assembles all inputs.

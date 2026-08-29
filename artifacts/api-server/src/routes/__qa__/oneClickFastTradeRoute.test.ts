@@ -2,7 +2,7 @@
 // required live-trading gates, against a real database.
 //
 // The companion pure suite (src/lib/live/__qa__/oneClickDispatchGate.test.ts)
-// locks the 18-gate dispatch chokepoint per-gate. This file proves the ROUTE
+// locks the 23-gate dispatch chokepoint per-gate. This file proves the ROUTE
 // wiring around it end to end:
 //
 //   (1) anonymous (no cookie) → 401 on submit-live and on PUT /me/one-click.

@@ -12,7 +12,7 @@
 // advice. It NEVER grants trade permission, never places/modifies/closes
 // anything, and is NOT part of the live execution gate chain. `adviceAllowed`
 // governs only whether Ruby may discuss direction / hold / close on the row; it
-// can never unlock or weaken the 18-gate live dispatch.
+// can never unlock or weaken the 23-gate live dispatch.
 
 /** Per-row freshness verdict. Mirrors the server's `positionFreshness.Freshness`
  * (kept as a local literal so the domain package stays I/O- and import-free). */

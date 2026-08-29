@@ -72,7 +72,7 @@ Phase 6 design document proposed.
 
 **Path A — MT5 / Phase B live pipeline.**
 `artifacts/api-server/src/lib/live/liveCommandPipeline.ts` →
-`dispatchLiveCommand` → ~25 sequential blocking checks, of which the 18-gate
+`dispatchLiveCommand` → ~25 sequential blocking checks, of which the 23-gate
 evaluator (`lib/domain/src/safety-contracts/livePhaseBDispatchGate.ts`) is one
 checkpoint, running late (≈line 3345 of 4861) → `selectExecutionAdapter(EXECUTION_ADAPTERS, row.executionVenue)`
 at `liveCommandPipeline.ts:3676` → `mt5ExecutionAdapter`.
@@ -220,7 +220,7 @@ lineage-sweeper 19, **tier0-product 33 (32 pass / 1 fail)**, surfaces 14.
 ### Certified and committed (Phase 6)
 | Component | Location |
 |---|---|
-| Venue gate parity contract + Deriv demo map (18/18 dispositions) | `lib/domain/src/safety-contracts/{venueGateParity,derivDemoGateParity}.ts` |
+| Venue gate parity contract + Deriv demo map (23/23 dispositions) | `lib/domain/src/safety-contracts/{venueGateParity,derivDemoGateParity}.ts` |
 | Personal Trading Constitution | `lib/domain/src/safety-contracts/tradingConstitution.ts` |
 | Approval ticket lifecycle + material-terms binding | `lib/domain/src/safety-contracts/approvalTicket.ts` |
 | Execution tier resolver | `lib/domain/src/safety-contracts/executionTier.ts` |
@@ -241,11 +241,11 @@ lineage-sweeper 19, **tier0-product 33 (32 pass / 1 fail)**, surfaces 14.
 | Phase 6 execution-safety CI guard (R1/R2/R3) | `scripts/src/ci/check-phase6-execution-safety.ts` |
 
 ### Pre-existing platform (unchanged by Phase 6)
-- Phase B live broker execution, default-deny, 18 gates, MT5 EA bridge (per-user
+- Phase B live broker execution, default-deny, 23 gates, MT5 EA bridge (per-user
   tokens only, SHA-256 hashes stored).
 - Ruby AI assistant as a permission-bounded executor with **no second execution
   path** — every authorised action routes through the same instant-trade router
-  → live pipeline → 18-gate dispatch. `AI_AUTO` defined but not enabled.
+  → live pipeline → 23-gate dispatch. `AI_AUTO` defined but not enabled.
 - Scanner, chart intelligence, market/news/economic-calendar providers with
   real-or-empty honesty.
 - Unknown-command reconciler worker (60s cadence).
@@ -334,9 +334,9 @@ inside `lib/domain/src/safety-contracts/` (and the compiled `dist/`). Nothing in
 
 The map is therefore a **compile-time totality contract plus a tested pure
 function** — real, but not a runtime gate. The design document's promise that
-"the venue evaluator refuses to dispatch if any of the 18 keys has no
+"the venue evaluator refuses to dispatch if any of the 23 keys has no
 disposition" is enforced by TypeScript's exhaustive `Record` type and by tests,
-**not by a check executed on the dispatch path.** Adding a nineteenth gate would
+**not by a check executed on the dispatch path.** Adding a twenty-fourth gate would
 fail the build, which is the intended protection; it would not fail a dispatch.
 
 ### B5 — Guided-path equivalence to the MT5 pre-gates is unestablished
@@ -385,7 +385,7 @@ this document.
 | Variable | Value | Effect |
 |---|---|---|
 | `ARX_EXECUTION_TIER` | `TIER_1_DEMO_GUIDED` | **Tier 1 is armed.** Only the exact literal resolves; anything else falls back to `TIER_0_DRY_RUN` |
-| `ARX_LIVE_BROKER_EXECUTION_ENABLED` | `true` | Phase B gate #1 of 18 only; bypasses nothing |
+| `ARX_LIVE_BROKER_EXECUTION_ENABLED` | `true` | Phase B gate #1 of 23 only; bypasses nothing |
 | `ARX_DERIV_OWNER_USER_ID` | `1` | — |
 | `DERIV_ENABLED` | `True` | — |
 | `DERIV_API_MODE` | `new` | New-generation API path (Ruling 15a) |

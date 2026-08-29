@@ -1533,7 +1533,7 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
     // approved market), the raw aiBrain bias stays INTERNAL to `a` — the row is
     // emitted neutral + non-directional, carrying the shared humanReason. This
     // ONLY hides presentation; it is NOT an execution gate and grants nothing
-    // (selectable/tradeable + the live/risk/18-gate path are unchanged).
+    // (selectable/tradeable + the live/risk/23-gate path are unchanged).
     const mayShowBias = sufficiency.mayShowBias;
     const displayBias = mayShowBias ? a.marketBias : "neutral";
     const displayAction = mayShowBias ? a.recommendedAction : "WAIT";

@@ -20,7 +20,7 @@
 // hide or neutralize presentation, but they NEVER grant, bypass, or weaken trade
 // eligibility. Execution eligibility stays exactly what it is — the live / risk /
 // broker / account-governance gates, the synthetic floor, SL policy, and the
-// 18-gate dispatch.
+// 23-gate dispatch.
 //
 // This guard FAILS THE BUILD if any fenced execution/safety module:
 //   1. imports any display contract module (marketDataSufficiency,
@@ -37,7 +37,7 @@
 // execution/safety surfaces must never see them.
 //
 // Fenced roots (execution + safety surfaces):
-//   - lib/domain/src/safety-contracts/          (18-gate, kill-switch lock, synthetic floor, pre-trade guard, reconciliation)
+//   - lib/domain/src/safety-contracts/          (23-gate, kill-switch lock, synthetic floor, pre-trade guard, reconciliation)
 //   - artifacts/api-server/src/lib/live/        (Phase B live dispatch pipeline, arming, instant trade, emergency close)
 //   - artifacts/api-server/src/lib/liveTrading/ (legacy Build TT chokepoint: guard/limits/readiness/state)
 //   - artifacts/api-server/src/lib/mt5/         (MT5 dispatch + demo/live command (order) queue + dispatch gates)

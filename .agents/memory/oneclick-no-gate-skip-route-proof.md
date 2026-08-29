@@ -9,7 +9,7 @@ description: How to prove (in a DB-backed route test) that the one-click toggle 
 (`liveOneClickEnabled` OR `oneClickArmed`) is **consent, never approval**. Two
 companion suites lock it:
 
-- pure 18-gate suite (`oneClickDispatchGate.test.ts`) — per-gate dispatch chokepoint.
+- pure 23-gate suite (`oneClickDispatchGate.test.ts`) — per-gate dispatch chokepoint.
 - DB-backed route suite (`oneClickFastTradeRoute.test.ts`) — route wiring end-to-end.
 
 ## The positive "no gate skipped" proof (the hard one)

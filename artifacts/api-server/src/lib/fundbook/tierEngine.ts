@@ -8,7 +8,7 @@
 //
 // SAFETY / DESIGN:
 // - This engine NEVER touches any execution path, broker dispatch, lot sizing,
-//   or the 18-gate live pipeline. It is accounting / pricing only.
+//   or the 23-gate live pipeline. It is accounting / pricing only.
 // - Tier is determined by FINALIZED total NAV (realized P/L only, no floating).
 // - In default (stair-step) mode the tier can only move UP. With
 //   tierDowngradeModeEnabled = true the tier tracks the finalized NAV exactly.

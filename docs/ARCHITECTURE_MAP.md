@@ -10,17 +10,22 @@ _Originally written 2026-05-11 (Build B — Architecture Consolidation). Headlin
 >
 > - **Branding** is **ARX AI — Analyze. Risk. eXecute.** (not "High Roll Trading AI").
 > - **The product is NOT paper-only.** **Phase B live broker execution exists** and
->   runs **default-deny**: live dispatch is gated by an **18-gate** evaluator
+>   runs **default-deny**: live dispatch is gated by a **23-gate** evaluator
 >   (`lib/domain/src/safety-contracts/livePhaseBDispatchGate.ts`) plus the server
 >   master switch, per-user arming, admin approval, and kill switch. `canPlaceTrades:false`
 >   remains true **only on the advisory / intelligence APIs** (still CI-enforced) — it is
 >   not a whole-system claim. THIS environment sets
 >   `ARX_LIVE_BROKER_EXECUTION_ENABLED="true"` for controlled owner/admin live testing
->   (satisfies only gate #1 of 18).
-> - **Live gate count is 18**, not 16: the original 16 + **#17 `MISSING_TAKE_PROFIT`**
->   (Phase 22V, governance-conditional on per-user `require_take_profit` /
->   `adminAllowNoTakeProfit`) + **#18 `DISCLOSURE_NOT_ACCEPTED`** (risk-disclosure
->   acceptance). See replit.md "Current safety gates".
+>   (satisfies only gate #1 of 23).
+> - **Live gate count is 23**, not 16 or 18: the original 16 + **#17
+>   `MISSING_TAKE_PROFIT`** (Phase 22V, governance-conditional on per-user
+>   `require_take_profit` / `adminAllowNoTakeProfit`) + **#18
+>   `DISCLOSURE_NOT_ACCEPTED`** (risk-disclosure acceptance) + the five
+>   FOUNDATION gates **#19 `PROVENANCE_UNPROVEN`**, **#20
+>   `STRATEGY_NOT_LIVE_PROMOTED`**, **#21 `CAPITAL_TIER_EXCEEDED`**, **#22
+>   `TENANT_CONTEXT_VIOLATION`**, **#23 `EDGE_CAPACITY_EXCEEDED`**. Settled by
+>   code: the evaluator pushes exactly 23 entries into `gates[]`. See replit.md
+>   "Current safety gates".
 > - **MT5 bridge auth is per-user only.** The legacy server-wide `MT5_BRIDGE_TOKEN`
 >   env value is **rejected** everywhere; every EA endpoint requires a per-user
 >   `X-MT5-Bridge-Token`. The "503 when `MT5_BRIDGE_TOKEN` unset" behavior described
@@ -294,7 +299,7 @@ components/
                         └──────────┬───────────┘
                                    │ verdict
                                    ▼
-   PAPER/DEMO mode (default):      LIVE mode (Phase B — default-deny, 18-gate):
+   PAPER/DEMO mode (default):      LIVE mode (Phase B — default-deny, 23-gate):
    ─────────────────────────       ──────────────────────────────
    trades table (mock)             POST /api/execute-trade
    aiDecisionLog (vault event)        → routes/trades.ts

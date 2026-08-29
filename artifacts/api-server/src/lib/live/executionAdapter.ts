@@ -16,7 +16,7 @@
 //     BRIDGE_ENQUEUE_FAILED / BRIDGE_UNMAPPED_COMMAND_TYPE) and releases the
 //     exposure reservation — that handling lives at the pipeline call site,
 //     NOT in the adapter, so every future adapter inherits it.
-//   - No safety gate moves: all pre-gates + the 18-gate evaluator + the
+//   - No safety gate moves: all pre-gates + the 23-gate evaluator + the
 //     double-send CAS run BEFORE deliver() is ever called.
 //
 // A future venue (R5 Deriv) implements ExecutionAdapter with its own venue

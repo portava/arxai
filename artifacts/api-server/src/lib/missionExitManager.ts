@@ -8,7 +8,7 @@
 //     tracker, the mission risk read). It is PROTECTIVE / SIZING / DISPLAY only.
 //   - EVERY exit action routes EXCLUSIVELY through the existing instant-trade
 //     router (`executeInstant`, source "mission") → live command pipeline →
-//     18-gate dispatch — exactly like a manual close/modify. There is NO new
+//     23-gate dispatch — exactly like a manual close/modify. There is NO new
 //     execution path; nothing here can place, add, or relax a gate. The executor
 //     is injectable ONLY so tests can substitute a spy.
 //   - Compounding uses REALISED CLOSED PROFIT ONLY (sum of closed-draft P/L),

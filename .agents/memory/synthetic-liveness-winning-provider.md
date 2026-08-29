@@ -26,7 +26,7 @@ correct via `derivBacked`; the bug was the chart + verdict resolver layers only.
 `isLive` requires `(!derivBacked || hasLiveTick)`. Keep the honesty floors: a
 stale broker feed still reads `stale` + entry-blocked, and a real
 Deriv-awaiting synthetic still demotes to `delayed` (buildFeedStatus unchanged).
-This is a *reporting-layer* fix only — no execution/18-gate involvement.
+This is a *reporting-layer* fix only — no execution/23-gate involvement.
 
 **UI consequence:** broker-served synthetics now have `lastTickTime=null` (no
 separate tick stream). The chart `FeedConfidenceBadge` popover renders

@@ -17,8 +17,8 @@ Precedence is fixed + fail-closed: bot/agent/system → investor → not-activat
 pass.
 
 **Why it's safe:** it is an ADDITIVE precondition checked at preflight AND
-re-checked at dispatch in liveCommandPipeline.ts, BEFORE the 18-gate
-`evaluateLivePhaseBDispatchGate`. It never replaces/skips/ORs any of the 18 gates.
+re-checked at dispatch in liveCommandPipeline.ts, BEFORE the 23-gate
+`evaluateLivePhaseBDispatchGate`. It never replaces/skips/ORs any of the 23 gates.
 Resolver is fail-closed (returns non-approved state on error).
 
 ## Bot/agent/system + investor classification — authoritative sources

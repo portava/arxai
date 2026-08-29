@@ -359,7 +359,7 @@ async function main() {
 
   // ── 19. SHARED LIVE via the legacy adminTrading path is structurally
   // REJECTED at the dispatch lock — live execution routes exclusively through
-  // the Phase B 18-gate pipeline. Routing still resolves shared_master first.
+  // the Phase B 23-gate pipeline. Routing still resolves shared_master first.
   {
     const guard = await runOrderGuards({
       userId: regUser!.id, symbol: "EURUSD", side: "BUY",

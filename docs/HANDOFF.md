@@ -180,7 +180,7 @@ run becomes the next task.
 
 **Never weaken, and never edit to make something pass:**
 - `lib/domain/src/safety-contracts/**`, especially
-  `livePhaseBDispatchGate.ts` (the 18 gates), `executionTier.ts`,
+  `livePhaseBDispatchGate.ts` (the 23 gates), `executionTier.ts`,
   `venueGateParity.ts`, `derivDemoGateParity.ts`.
 - `artifacts/api-server/src/lib/live/liveCommandPipeline.ts` and the MT5 dispatch
   path — the Phase 6 requirement is **byte-equivalent MT5 behaviour**.

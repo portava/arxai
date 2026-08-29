@@ -13,7 +13,7 @@
 // SAFETY (identical posture to the approve-time auto-attach):
 //   - STRICTLY visibility/provisioning. It NEVER arms a user for live
 //     execution, NEVER inserts into arx_live_commands, and NEVER bypasses any
-//     Phase B gate. Manual per-user arming + all 18 gates still independently
+//     Phase B gate. Manual per-user arming + all 23 gates still independently
 //     gate execution. The script asserts the user's arming state is byte-for-
 //     byte unchanged across the attach and aborts that user's write if not.
 //   - Only attaches users whose master-live status is APPROVED (and

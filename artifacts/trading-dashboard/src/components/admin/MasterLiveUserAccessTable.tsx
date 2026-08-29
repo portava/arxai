@@ -498,7 +498,7 @@ export function MasterLiveUserAccessTable() {
 // explicit real-money acknowledgement. Single-user (target.userId set) calls
 // /api/admin/traders/:userId/approve-live; bulk (userId null) calls
 // /api/admin/traders/bulk-activate-approved-live. The backend re-validates the
-// phrase + ack and never weakens any of the 18 Phase B dispatch gates.
+// phrase + ack and never weakens any of the 23 Phase B dispatch gates.
 const FULL_LIVE_PHRASE = "ENABLE LIVE TRADING";
 
 function FullLiveActivationModal({
@@ -558,7 +558,7 @@ function FullLiveActivationModal({
           {isBulk
             ? "Enables real-money live execution for EVERY approved human trader on the shared bridge. This stands in for each trader's personal live-confirmation."
             : `Enables real-money live execution for ${target.email ?? `u${target.userId}`}. This stands in for the trader's personal live-confirmation.`}
-          {" "}All 18 Phase B dispatch gates still apply on every order.
+          {" "}All 23 Phase B dispatch gates still apply on every order.
         </p>
         <label className="block text-xs">
           <span className="text-muted-foreground">Type <code className="font-mono text-success">{FULL_LIVE_PHRASE}</code> to confirm</span>

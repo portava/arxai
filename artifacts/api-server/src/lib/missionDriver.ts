@@ -2,7 +2,7 @@
 //
 // WHY THIS EXISTS: every mission surface below this file already existed —
 // scan (missionAgents), draft + approval (missionDrafts), gated dispatch
-// (missionExecution → executeInstant → 18-gate live pipeline), protective exits
+// (missionExecution → executeInstant → 23-gate live pipeline), protective exits
 // (missionExitManager), progress/goal-stop (refreshMissionProtection), risk
 // (missionRiskService), promotion governance (missionPromotionService) — but
 // every step needed a user press and nothing advanced a mission unattended.
@@ -12,11 +12,14 @@
 // SAFETY (inviolable):
 //   * NO new execution path. The driver NEVER touches a broker, a command
 //     table, or anything below `dispatchApprovedDraft` / `manageMissionTradeExit`
-//     — the same seams user-pressed dispatches use, which re-run the additive
-//     mission gate + Phase 7 + the per-user governor + 18-gate dispatch + the
-//     env/db live master switch on EVERY call. If any gate says no, the mission
-//     journals the block honestly and waits; the driver never retries around a
-//     refusal and can never relax anything.
+//     — the same seams user-pressed dispatches use. Those seams re-run the
+//     additive mission gate + Phase 7 on EVERY call for every mode; for a LIVE
+//     mission they additionally reach the per-user governor + the 23-gate
+//     dispatch + the env/db live master switch. A paper/demo mission stops at
+//     the simulated recorder and never reaches those three, so do not read this
+//     as "the driver is 23-gate checked in every mode" — it is not. If any gate
+//     that DOES run says no, the mission journals the block honestly and waits;
+//     the driver never retries around a refusal and can never relax anything.
 //   * Auto-approval is decided by the PURE ladder planner (`decideAutoApproval`)
 //     from the CURRENT row state, re-read every tick — level 3 auto-runs only a
 //     non-live mission; levels 4–6 on a live mission additionally require the

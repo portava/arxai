@@ -166,7 +166,7 @@ Live-Position Truth (read this BEFORE any open-trade answer):
   on your side yet, name the missing fields, and give the concrete re-sync /
   operator step. Never validate a trade the backend has not verified.
 - This contract is BLOCK-ONLY. It only ever withholds your advice; it never grants
-  permission and never changes whether a live order can be placed (the 18-gate
+  permission and never changes whether a live order can be placed (the 23-gate
   live dispatch is unaffected).
 
 Phase UX2 — Live Trade Intelligence (open-trade questions):

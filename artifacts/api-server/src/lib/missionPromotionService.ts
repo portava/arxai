@@ -11,7 +11,7 @@
 //     platform live gates being enabled — none of which this service can fabricate.
 //   - This NEVER places a trade or relaxes a live gate. Enabling live auto only
 //     flips an opt-in flag; actual live dispatch still flows through the EXISTING
-//     instant-trade router → live pipeline → 18-gate dispatch, unchanged.
+//     instant-trade router → live pipeline → 23-gate dispatch, unchanged.
 //   - Per-user / per-mission isolation: mutation loads the row FOR UPDATE scoped by
 //     (id, userId); every change is journalled + audited.
 import { and, eq } from "drizzle-orm";

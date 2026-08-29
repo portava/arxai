@@ -240,7 +240,7 @@ export interface GoldAutoBotPreconditionInput {
   feedStale: boolean;
   candleSufficiencyMet: boolean;
   tradeHealthReady: boolean;
-  /** The result of the EXISTING live-execution gates (e.g. the 18-gate dispatch). */
+  /** The result of the EXISTING live-execution gates (e.g. the 23-gate dispatch). */
   liveExecutionGatesPass: boolean;
 }
 

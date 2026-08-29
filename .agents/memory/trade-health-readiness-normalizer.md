@@ -25,7 +25,7 @@ Rules:
 **Why:** this contract is display-only and downgrade-only — a bigger floor can
 only demand MORE bars, never grant eligibility. A lenient/lax fallback would let
 a thin-history or bogus-tf read present as more ready than the scanner, breaking
-the "same symbol+tf ⇒ same label" guarantee. The 18-gate dispatch / synthetic
+the "same symbol+tf ⇒ same label" guarantee. The 23-gate dispatch / synthetic
 floor / SL policy remain the sole execution authority regardless.
 
 **How to apply:** when extending the normalizer or floor table, add the exact

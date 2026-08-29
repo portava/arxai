@@ -7,7 +7,7 @@
 //
 // SAFETY:
 //   - BLOCK-ONLY. The verdict can refuse a NEW entry; it can NEVER grant one,
-//     relax the synthetic floor / SL policy / 18-gate dispatch, or authorize a
+//     relax the synthetic floor / SL policy / 23-gate dispatch, or authorize a
 //     trade. It runs ADDITIVELY in front of the existing chain — every existing
 //     gate still runs afterwards and keeps final say.
 //   - NEW-ENTRY ONLY. Callers gate this on the entry command types only, so a

@@ -325,6 +325,12 @@ Standing holds that survive this ruling: no `DerivExecutionAdapter`, no live
 dispatch through the new transport, and the 18-gate Phase B evaluator remains
 the only path to a live order.
 
+> *Editorial note (added 2026-08-29, not part of the ruling): the rulings below
+> say "18-gate" because that was the evaluator's count when they were written.
+> The count is now **23** — the same evaluator, with foundation gates #19–#23
+> added since. The numeral is left as written so the record is not falsified;
+> only the count has changed, never the hold. This note covers Rulings 16–19.*
+
 Evidence: `pnpm --filter @workspace/api-server run certify:deriv-new-api`,
 2026-08-25 17:50 UTC, 17/17. Re-runnable; it places no trade by construction.
 

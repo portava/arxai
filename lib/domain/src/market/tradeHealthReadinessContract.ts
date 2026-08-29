@@ -20,7 +20,7 @@
 // ── SAFETY: READ-SIDE DISPLAY ONLY ──────────────────────────────────────────
 // The verdict can only BLOCK or DOWNGRADE what the user SEES — it never grants,
 // relaxes, or shortcuts trade eligibility. It is NOT an execution gate: it never
-// authorizes a trade, never relaxes the synthetic floor / 18-gate dispatch / SL
+// authorizes a trade, never relaxes the synthetic floor / 23-gate dispatch / SL
 // policy / kill switch / per-user arming + approval, and takes NO owner/admin
 // privilege input that could upgrade a display flag. The affordance flags
 // (`mayShowTradeButton`, `mayShowOneClickButton`, `mayDescribeSetup`,

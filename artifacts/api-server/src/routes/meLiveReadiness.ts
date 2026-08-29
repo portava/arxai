@@ -252,7 +252,7 @@ router.get("/me/live-readiness", requireUser, async (req, res) => {
 // ONE honest readiness verdict consumed by every live-capable surface and the
 // feed-completeness debug panel. Self-scoped, never returns broker credentials,
 // tokens, account numbers, or other-user data. DESCRIBE-only: every live order
-// still re-runs the full instant-trade router → live pipeline → 18-gate dispatch.
+// still re-runs the full instant-trade router → live pipeline → 23-gate dispatch.
 router.get("/me/live-readiness/unified", requireUser, async (req, res) => {
   const userId = req.authUser!.id;
   const symbol =

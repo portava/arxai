@@ -36,7 +36,7 @@
 Repeat for each live-capable entry point you are proving (chart/manual ticket,
 scanner chart action, Eleanor/Ruby AI-assisted, Profit Mission, Final Live Test
 page). Each routes through the same `executeInstant` → `liveCommandPipeline` →
-18-gate dispatch.
+23-gate dispatch.
 
 1. **Confirm readiness** — debug panel shows `liveEntryEligible` for the symbol/tf.
 2. **Set parameters** — symbol, side (BUY/SELL), smallest safe lot, **stop loss

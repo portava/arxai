@@ -3,7 +3,7 @@
 //
 // These engines are BLOCK/DOWNGRADE ONLY: a verdict can refuse or downgrade a
 // setup but can NEVER upgrade a refused setup into a tradeable one, and can
-// never relax the downstream 18-gate dispatch. They are pure and IO-free —
+// never relax the downstream 23-gate dispatch. They are pure and IO-free —
 // identical inputs always produce identical output, so an honest "unknown"
 // never silently reads as "good"/"normal". Tests 27,28,29,30,33,34,35,36,37.
 

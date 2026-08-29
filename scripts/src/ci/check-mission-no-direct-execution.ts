@@ -5,7 +5,7 @@
 // is authorized to trade, its OPEN and its protective-exit management
 // (CLOSE / MODIFY_SL_TP / MOVE_SL_TO_BREAKEVEN / PARTIAL_CLOSE) MUST route
 // through the Global Instant Trade Router (`executeInstant`, tagged
-// `source: "mission"`) → live command pipeline → 18-gate Phase B dispatch,
+// `source: "mission"`) → live command pipeline → 23-gate Phase B dispatch,
 // exactly like a manual trade. There is NO second execution path.
 //
 // This guard locks that invariant across the whole mission surface:
@@ -259,7 +259,7 @@ export function checkMissionNoDirectExecution(): CheckResult {
   }
 
   return {
-    name: "mission-no-direct-execution (Profit Mission trades route ONLY through executeInstant → 18-gate dispatch; planning/backtest never touches execution; no fabricated randomness)",
+    name: "mission-no-direct-execution (Profit Mission trades route ONLY through executeInstant → 23-gate dispatch; planning/backtest never touches execution; no fabricated randomness)",
     ok: violations.length === 0,
     violations,
     notes: [

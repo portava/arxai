@@ -17,7 +17,7 @@
 //   - `X-Accel-Buffering: no` disables proxy buffering so frames are not held.
 //
 // SAFETY: display/telemetry only. No tokens, account numbers, or gate data are
-// ever emitted; no execution path, arx_live_* table, or 18-gate is touched.
+// ever emitted; no execution path, arx_live_* table, or 23-gate is touched.
 
 import type { Request, Response } from "express";
 import {

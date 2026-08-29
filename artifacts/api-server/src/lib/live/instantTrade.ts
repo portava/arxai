@@ -89,7 +89,7 @@ export type InstantTradeIntent = {
   // originating `missionId` here so the router's oneClickAudit metadata (which
   // logs the whole intent) durably attributes the command to its mission. Same
   // additive-tag precedent as `selfTradeAgentId` (#213): zero behavior change for
-  // any non-mission caller (absent), and it NEVER relaxes a gate — the 18-gate
+  // any non-mission caller (absent), and it NEVER relaxes a gate — the 23-gate
   // dispatch is unchanged. The durable DB linkage remains the mission_trade_drafts
   // row (which carries missionId) + the journaled commandId.
   missionId?: number | null;

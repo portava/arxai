@@ -5,7 +5,7 @@
 // symbol. It is DISTINCT from Tasks #550/#551, which cover the *feed-live* floor
 // (`SYNTHETIC_FEED_NOT_LIVE_CONFIRMED`) in `evaluateSyntheticLiveFloor`. We only
 // reuse the #550 hermetic harness/reporting *pattern* here — we do NOT re-test or
-// broaden the feed-live floor. The pure 18-gate evaluator exercised below does
+// broaden the feed-live floor. The pure 23-gate evaluator exercised below does
 // not even contain the synthetic floor, so there is no overlap by construction.
 //
 // ── Why this tripwire exists ────────────────────────────────────────────────
@@ -20,7 +20,7 @@
 //
 // ── Hermetic by construction ────────────────────────────────────────────────
 // It imports ONLY:
-//   1. the REAL pure 18-gate evaluator (`evaluateLivePhaseBDispatchGate`,
+//   1. the REAL pure 23-gate evaluator (`evaluateLivePhaseBDispatchGate`,
 //      no DB / network / IO), exercising the actual stop-loss decision both the
 //      dispatch path and (mirrored) the createLiveDraft preflight enforce, and
 //   2. the REAL static Deriv symbol resolver (`resolveDerivSymbol` /

@@ -8,7 +8,7 @@
 //
 // ⚠️ SAFETY — DISPLAY-ONLY, NEVER AN EXECUTION INPUT.
 // The layer + flags returned here describe what the read PANEL may render. They
-// are NEVER an execution gate, NEVER weaken the live (16/18-gate) pipeline, and
+// are NEVER an execution gate, NEVER weaken the live (16/23-gate) pipeline, and
 // MUST NOT be imported by any execution/safety module (live command pipeline,
 // dispatch gate, synthetic-floor, stop-loss policy, import-boundary guards).
 // They only shape read copy and which fields the UI shows.

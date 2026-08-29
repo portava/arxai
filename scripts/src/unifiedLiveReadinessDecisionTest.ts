@@ -10,7 +10,7 @@
 //   PART F — Derived booleans (liveExecutionActive, riskEligible, killSwitchClear).
 //
 // SAFETY: pure logic test. No DB, no feed, no broker calls, no trades. This is a
-// DESCRIBE-only resolver; dispatch still re-runs the full 18-gate pipeline.
+// DESCRIBE-only resolver; dispatch still re-runs the full 23-gate pipeline.
 
 import {
   decideUnifiedLiveReadiness,

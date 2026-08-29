@@ -140,7 +140,19 @@ export function evaluateExecutionPermission(
     };
   }
 
-  // L0: log-only. L1: prepare a draft (no dispatch). L2+: execute.
+  // AUTONOMY LEVELS, as this function actually implements them:
+  //   L0  — LOG_ONLY: suggestion recorded, never dispatched.
+  //   L1  — PREPARE_ONLY: a draft is staged; a human still confirms.
+  //   L2+ — EXECUTE.
+  // L2, L3 and L4 are NOT distinguished here: all three fall through to the
+  // same EXECUTE verdict with identical inputs. The only place any L3/L4
+  // distinction exists at all is `selfTrade/livePositionManager.ts`, which
+  // gates autonomous position MANAGEMENT on `autonomyLevel >= 3` (below that it
+  // only alerts). L4 has NO behaviour distinct from L3 anywhere: the
+  // "L4 also extend" note on `PositionManagementInput.autonomyLevel` describes
+  // a caller-side behaviour that is not implemented, and `autonomyLevel` is
+  // never read inside `positionManagement.ts`. Do not document or surface L4 as
+  // a stronger authority than L3 until that is built.
   if (input.autonomyLevel <= 0) {
     reasons.push("Autonomy L0 — suggestion only, never dispatched.");
     return {
