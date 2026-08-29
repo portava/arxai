@@ -35,7 +35,35 @@ import { EventEmitter } from "node:events";
 import { CHART_TIMEFRAMES, timeframeMs, type ChartTimeframe } from "./timeframes.js";
 import { normalizeSymbolKey } from "../providers/mt5Provider.js";
 import { resolveDerivSymbol } from "../providers/derivProvider.js";
-import { MARKET_FROZEN_BROKER_STALE_MS, MARKET_FROZEN_WALL_FRESH_MS } from "../freshness.js";
+import {
+  FORMING_TIP_LIVE_MS,
+  MARKET_FROZEN_BROKER_STALE_MS,
+  MARKET_FROZEN_WALL_FRESH_MS,
+} from "../freshness.js";
+
+/**
+ * The quote stream a tick was folded from. Basis coherence (the per-provider
+ * pairing documented above) is enforced with this identity: a bar never mixes
+ * ticks from two providers, and the chart data service refuses to sit a tip
+ * under closed bars served by a DIFFERENT provider family. "unattributed" is
+ * the legacy/test default and is exempt from both rules.
+ */
+export type FormingTickProvider = "mt5_broker" | "deriv" | "assistant_real" | "unattributed";
+
+/**
+ * Cross-provider bar ownership: push streams (EA ~2s, Deriv WS ~1-2s) outrank
+ * the assistant REST poll (~15s), so a low-cadence assistant fold can never
+ * steal a bar a live push stream is actively ticking, while a push stream
+ * takes an assistant-owned bar over immediately. Equal ranks (broker vs Deriv
+ * on a synthetic both stream) never mix either — the bar's current owner keeps
+ * it while its ticks are fresh.
+ */
+const PROVIDER_RANK: Record<FormingTickProvider, number> = {
+  mt5_broker: 2,
+  deriv: 2,
+  unattributed: 2,
+  assistant_real: 1,
+};
 
 /**
  * The store key for a symbol, collapsing provider aliases onto ONE bucket.
@@ -66,6 +94,15 @@ export interface FormingBarState {
   lastTickWallMs: number;
   /** Number of ticks folded into THIS interval's bar (advisory). */
   tickCount: number;
+  /** The quote stream that owns this bar (basis coherence — never mixed). */
+  provider: FormingTickProvider;
+  /**
+   * openMs was bucketed from a provider/broker timestamp (true) or from the
+   * wall receive time (false, no broker time on the tick). The offset-aware
+   * read applies the clock-offset correction ONLY to provider-bucketed bars —
+   * a wall-bucketed bar is already in the read's own clock domain.
+   */
+  bucketedByProviderTime: boolean;
 }
 
 /** Public snapshot of the forming bar for the CURRENT interval, or null. */
@@ -98,6 +135,66 @@ export interface LastTickInfo {
 
 // symbolKey → last tick seen (across all timeframes).
 const lastTickBySymbol = new Map<string, LastTickInfo>();
+
+// ── Provider-clock offset estimator (R3 clock-domain fix) ──────────────────
+// The fold buckets by PROVIDER time (so the tip's openMs aligns with the
+// provider's own closed-bar boundaries), but the read used to compare that
+// bucket against raw server WALL time — a broker clock offset >= one interval
+// made the tip permanently unreadable, and even a small offset blanked it near
+// every boundary. The read is therefore made offset-aware: a per-symbol EWMA
+// of (brokerTimeMs - nowWallMs) across recent folds estimates the provider's
+// clock offset, and getFormingBar maps wall-now into the provider's clock
+// domain before flooring.
+//
+// HONESTY GUARDS (the estimate may never resurrect a dead bar):
+//   - Only ADVANCING broker times contribute samples. A closed market replays
+//     one frozen broker timestamp — those replays contribute nothing, so a
+//     frozen quote can never steer the read clock backwards onto its own dead
+//     interval and read as "current" forever.
+//   - The estimate is unusable until FORMING_CLOCK_OFFSET_MIN_SAMPLES advancing
+//     samples arrived (a single seed sample carries unknown staleness).
+//   - The correction is clamped: an estimate beyond the max is treated as
+//     bogus and the read falls back to raw wall time (legacy behavior).
+//   - Estimates are per-provider: a provider change reseeds (Deriv epoch, EA
+//     broker time and assistant asOf are DIFFERENT clock domains).
+//   - Silence freshness (lastTickWallMs) and the MARKET_FROZEN indicator stay
+//     on PURE wall / raw broker staleness — never offset-corrected.
+interface ClockOffsetEstimate {
+  /** EWMA of (brokerTimeMs - nowWallMs) over advancing-broker-time folds. */
+  offsetMs: number;
+  /** Advancing samples folded in (seed counts as 1). */
+  samples: number;
+  /** Highest broker time observed — only strictly newer times sample. */
+  lastBrokerTimeMs: number;
+  /** Clock domain the estimate belongs to. */
+  provider: FormingTickProvider;
+}
+
+const clockOffsetBySymbol = new Map<string, ClockOffsetEstimate>();
+
+const FORMING_CLOCK_OFFSET_EWMA_ALPHA = 0.2;
+/** Advancing samples required before the offset may correct a read. */
+export const FORMING_CLOCK_OFFSET_MIN_SAMPLES = 3;
+/** Beyond this the estimate is bogus — fall back to raw wall (covers every
+ *  real venue-timezone-shifted epoch; nothing legitimate exceeds it). */
+export const FORMING_CLOCK_OFFSET_MAX_ABS_MS = 12 * 60 * 60_000;
+
+/**
+ * Wall-now mapped into the clock domain the bar was bucketed in, or raw wall
+ * when no trustworthy estimate exists (unarmed, clamped-out, wrong provider,
+ * or a wall-bucketed bar). Used ONLY for interval-currency — never for
+ * silence freshness or broker staleness.
+ */
+function formingReadNowMs(symbolKey: string, state: FormingBarState, nowWallMs: number): number {
+  if (!state.bucketedByProviderTime) return nowWallMs;
+  const est = clockOffsetBySymbol.get(symbolKey);
+  if (!est || est.provider !== state.provider) return nowWallMs;
+  if (est.samples < FORMING_CLOCK_OFFSET_MIN_SAMPLES) return nowWallMs;
+  if (!Number.isFinite(est.offsetMs) || Math.abs(est.offsetMs) > FORMING_CLOCK_OFFSET_MAX_ABS_MS) {
+    return nowWallMs;
+  }
+  return nowWallMs + est.offsetMs;
+}
 
 // ── Tick notification bus ──────────────────────────────────────────────────
 // One in-process emitter keyed by symbolKey. The SSE handler subscribes for the
@@ -141,6 +238,8 @@ export const formingBarBus = new FormingBarBus();
  *                    back to wall clock when absent.
  * @param nowWallMs   Server wall-clock ms — used for silence/freshness, so the
  *                    tip freezes on real receive-time silence (not broker time).
+ * @param provider    The quote stream this tick came from — enforces the
+ *                    per-provider basis pairing (a bar never mixes providers).
  *
  * Best-effort: never throws into the caller (EA ingest path).
  */
@@ -149,28 +248,35 @@ export function foldFormingTick(
   bid: number,
   brokerTimeMs: number | null,
   nowWallMs: number = Date.now(),
+  provider: FormingTickProvider = "unattributed",
 ): void {
   if (!Number.isFinite(bid) || bid <= 0) return;
   const symbolKey = formingKey(symbol);
   if (!symbolKey) return;
-  const bucketTime = brokerTimeMs != null && Number.isFinite(brokerTimeMs) ? brokerTimeMs : nowWallMs;
+  const hasBrokerTime = brokerTimeMs != null && Number.isFinite(brokerTimeMs);
+  const bucketTime = hasBrokerTime ? (brokerTimeMs as number) : nowWallMs;
 
-  // Record the raw last tick (exact broker time, not interval-floored) so the
-  // market-frozen / closed indicator can report the real last-quote time and
-  // measure broker-time staleness. Display/telemetry only.
-  lastTickBySymbol.set(symbolKey, {
-    brokerTimeMs: brokerTimeMs != null && Number.isFinite(brokerTimeMs) ? brokerTimeMs : null,
-    wallMs: nowWallMs,
-    bid,
-  });
-
+  let anyAccepted = false;
   for (const tf of CHART_TIMEFRAMES) {
     const intervalMs = timeframeMs(tf);
     const openMs = Math.floor(bucketTime / intervalMs) * intervalMs;
     const k = stateKey(symbolKey, tf);
     const prev = store.get(k);
-    if (!prev || prev.openMs !== openMs) {
-      // New interval (or first tick) → open a fresh bar at this tick's price.
+    if (prev && prev.provider !== provider) {
+      // Cross-provider fold onto an owned bar: NEVER mix price bases inside
+      // one bar (an assistant last/mid folded over broker BID would smear a
+      // half-spread seam through the OHLC). A higher-ranked stream takes the
+      // bar over with a FRESH bar; otherwise the incoming tick is dropped for
+      // this timeframe while the owning stream's ticks are still live. The
+      // rule applies regardless of interval equality — a differently-bucketed
+      // (skewed-clock) lower-ranked tick must not stomp a live bar either.
+      const ownerLive = nowWallMs - prev.lastTickWallMs <= FORMING_TIP_LIVE_MS;
+      if (ownerLive && PROVIDER_RANK[provider] <= PROVIDER_RANK[prev.provider]) continue;
+      // Takeover: fall through to open a fresh bar on the incoming basis
+      // (never inherit OHLC accumulated on a different basis).
+    }
+    if (!prev || prev.openMs !== openMs || prev.provider !== provider) {
+      // New interval, first tick, or provider takeover → fresh bar at this price.
       store.set(k, {
         openMs,
         open: bid,
@@ -179,6 +285,8 @@ export function foldFormingTick(
         close: bid,
         lastTickWallMs: nowWallMs,
         tickCount: 1,
+        provider,
+        bucketedByProviderTime: hasBrokerTime,
       });
     } else {
       prev.high = Math.max(prev.high, bid);
@@ -187,7 +295,42 @@ export function foldFormingTick(
       prev.lastTickWallMs = nowWallMs;
       prev.tickCount += 1;
     }
+    anyAccepted = true;
   }
+  // A fully dropped fold (a live stream owns every bar) must leave NO trace:
+  // it may not refresh wall freshness, steer the offset estimate, or emit —
+  // otherwise a lower-ranked stream could fabricate liveness it does not have.
+  if (!anyAccepted) return;
+
+  // Record the raw last tick (exact broker time, not interval-floored) so the
+  // market-frozen / closed indicator can report the real last-quote time and
+  // measure broker-time staleness. Display/telemetry only.
+  lastTickBySymbol.set(symbolKey, {
+    brokerTimeMs: hasBrokerTime ? (brokerTimeMs as number) : null,
+    wallMs: nowWallMs,
+    bid,
+  });
+
+  // Clock-offset estimate: only a strictly ADVANCING broker time samples (a
+  // frozen/closed-market replay contributes nothing — see the estimator notes).
+  if (hasBrokerTime) {
+    const bt = brokerTimeMs as number;
+    const sample = bt - nowWallMs;
+    const est = clockOffsetBySymbol.get(symbolKey);
+    if (!est || est.provider !== provider) {
+      clockOffsetBySymbol.set(symbolKey, {
+        offsetMs: sample,
+        samples: 1,
+        lastBrokerTimeMs: bt,
+        provider,
+      });
+    } else if (bt > est.lastBrokerTimeMs) {
+      est.offsetMs += FORMING_CLOCK_OFFSET_EWMA_ALPHA * (sample - est.offsetMs);
+      est.samples += 1;
+      est.lastBrokerTimeMs = bt;
+    }
+  }
+
   formingBarBus.emit(symbolKey);
 }
 
@@ -200,6 +343,14 @@ export function foldFormingTick(
  * frozen-but-current bar (ticks went silent within the same interval) IS
  * returned; the caller uses the tick age to mark it stale rather than dropping
  * it, so the last-known tip stays visible with an honest staleness badge.
+ *
+ * Interval-currency is judged in the bar's OWN clock domain: the fold buckets
+ * by provider time, so wall-now is mapped through the per-symbol clock-offset
+ * estimate (see formingReadNowMs) before flooring. Without this a provider
+ * clock offset >= one interval made the tip permanently null, and any offset
+ * blanked it for offset/intervalMs of every interval near boundaries. The
+ * null-on-real-rollover contract is unchanged — once provider-now passes the
+ * bar's interval with no new tick, the bar is dead and never resurrects.
  */
 export function getFormingBar(
   symbol: string,
@@ -211,7 +362,8 @@ export function getFormingBar(
   const state = store.get(stateKey(symbolKey, timeframe));
   if (!state) return null;
   const intervalMs = timeframeMs(timeframe);
-  const currentOpenMs = Math.floor(nowWallMs / intervalMs) * intervalMs;
+  const readNowMs = formingReadNowMs(symbolKey, state, nowWallMs);
+  const currentOpenMs = Math.floor(readNowMs / intervalMs) * intervalMs;
   if (state.openMs !== currentOpenMs) return null;
   return { ...state, symbolKey, timeframe };
 }
@@ -291,4 +443,5 @@ export function getFeedFreshness(
 export function __resetFormingBarStore(): void {
   store.clear();
   lastTickBySymbol.clear();
+  clockOffsetBySymbol.clear();
 }

@@ -42,6 +42,7 @@ import {
   getFormingBar,
   getFormingTickAgeMs,
   type FormingBarSnapshot,
+  type FormingTickProvider,
 } from "./formingBarComposer.js";
 
 // Quality precedence + trailing-interval thresholds now live in the shared
@@ -152,6 +153,35 @@ function buildFormingTipCandle(
     receivedAt: new Date(nowMs).toISOString(),
     qualityFlags: ["FORMING_BAR"],
   };
+}
+
+/**
+ * Provider family a winning candle-source label belongs to, for forming-tip
+ * basis coherence. Returns null when the family is unrecognized — an unknown
+ * source asserts nothing (never guessed).
+ */
+function formingSourceFamily(source: string | null): FormingTickProvider | null {
+  if (!source) return null;
+  if (source === "mt5_broker") return "mt5_broker";
+  if (source === "deriv" || source.startsWith("deriv")) return "deriv";
+  if (source.startsWith("assistant_real")) return "assistant_real";
+  return null;
+}
+
+/**
+ * A tip may sit under closed bars ONLY when it was folded from the SAME
+ * provider family that serves those bars — an assistant last/mid tick under
+ * broker BID candles would draw a half-spread seam (the per-provider pairing
+ * the composer header documents). "unattributed" folds (legacy/tests) and an
+ * unknown source family keep the C3.2 behavior: the real-tick question alone
+ * decides.
+ */
+function formingTipBasisCoherent(
+  tipProvider: FormingTickProvider,
+  family: FormingTickProvider | null,
+): boolean {
+  if (tipProvider === "unattributed" || family == null) return true;
+  return tipProvider === family;
 }
 
 /**
@@ -279,7 +309,11 @@ async function buildChartFeed(
   let formingTickAgeMs: number | null = null;
   if (includeFormingTip && lastCandle) {
     const forming = getFormingBar(symbol, timeframe, now);
-    if (forming) {
+    // Basis coherence (R1 residual): a tip folded from one provider's quote
+    // stream never sits under closed bars served by a DIFFERENT provider
+    // family. A mismatch yields an honest absent tip — never a substituted
+    // price on a foreign basis.
+    if (forming && formingTipBasisCoherent(forming.provider, formingSourceFamily(source))) {
       const tipOpenMs = forming.openMs;
       const lastClosedOpenMs = Date.parse(lastCandle.openTime);
       if (tipOpenMs > lastClosedOpenMs) {

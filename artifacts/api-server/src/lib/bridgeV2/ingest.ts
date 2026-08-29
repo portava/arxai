@@ -31,6 +31,7 @@ import {
   updateQuoteFromMT5,
 } from "../data/providers/mt5Provider.js";
 import { foldFormingTick } from "../data/chart/formingBarComposer.js";
+import { gradeCorrectedTransportFreshness } from "./transportClockBaseline.js";
 import type { Candle, MarketQuote } from "../data/types.js";
 import { isUniqueViolation } from "../pgError.js";
 
@@ -88,7 +89,12 @@ export async function ingestBridgeV2Message(
   }
 
   const { envelope, payload } = validation;
-  const transportLatencyMs = Math.max(0, serverReceivedAtEpochMs - envelope.eaCreatedAtEpochMs);
+  // SIGNED EA→server clock difference. The trace-row facts (transportLatencyMs
+  // + freshnessVerdict) stay the raw measurement exactly as observed; the
+  // signed diff additionally feeds the per-connection clock-offset baseline
+  // that grades the market-data FEED decision (never the recorded telemetry).
+  const rawTransportDiffMs = serverReceivedAtEpochMs - envelope.eaCreatedAtEpochMs;
+  const transportLatencyMs = Math.max(0, rawTransportDiffMs);
   const freshnessVerdict = classifyFreshness(transportLatencyMs);
   const lifecycleState = mapLifecycleForMessage(envelope.messageType, payload);
 
@@ -220,13 +226,21 @@ export async function ingestBridgeV2Message(
     // ── Post-commit: feed accepted, fresh market data into the live store ────
     // ONLY after the trace row + per-stream state committed, and ONLY for an
     // accepted (in-sequence/gap/reset — never a duplicate) TICK/CANDLE that is
-    // not transport-STALE, push it into mt5Provider so the marketDataRouter's
-    // top "mt5_broker" slot serves broker-native data. This is TELEMETRY → an
-    // in-memory market-data cache; it NEVER executes a broker action, never
-    // touches arx_live_* / positions / balances / the 16-gate pipeline. A feed
-    // failure is swallowed so it can never corrupt the honest ingest response.
+    // not transport-STALE on the SKEW-CORRECTED grade, push it into
+    // mt5Provider so the marketDataRouter's top "mt5_broker" slot serves
+    // broker-native data. This is TELEMETRY → an in-memory market-data cache;
+    // it NEVER executes a broker action, never touches arx_live_* / positions /
+    // balances / the 16-gate pipeline. A feed failure is swallowed so it can
+    // never corrupt the honest ingest response.
     if (result.accepted) {
-      feedMarketDataStore(envelope.messageType, payload, freshnessVerdict);
+      feedAcceptedBridgeMarketData({
+        userId,
+        bridgeConnectionId,
+        messageType: envelope.messageType,
+        payload,
+        rawTransportDiffMs,
+        sequenceVerdict: result.sequenceVerdict ?? null,
+      });
     }
 
     return result;
@@ -235,12 +249,41 @@ export async function ingestBridgeV2Message(
   }
 }
 
+export interface AcceptedBridgeMarketData {
+  userId: number;
+  bridgeConnectionId: number | null;
+  messageType: string;
+  payload: unknown;
+  /** SIGNED serverReceivedAtEpochMs - eaCreatedAtEpochMs (NOT clamped). */
+  rawTransportDiffMs: number;
+  sequenceVerdict: string | null;
+}
+
+// The post-commit market-data feed decision for ONE accepted message: grade
+// freshness on the per-connection SKEW-CORRECTED transport latency (see
+// transportClockBaseline.ts — an EA host clock >30s behind the server used to
+// grade every message STALE forever, starving the store + forming-bar
+// composer off a healthy feed), then feed the in-memory store on that
+// corrected verdict. The RAW latency/verdict already landed in the
+// bridge_v2_events trace row unchanged — telemetry is never rewritten.
+// Exported so the DB-free ingest-feed test can drive everything below the
+// transaction exactly as ingestBridgeV2Message does.
+export function feedAcceptedBridgeMarketData(input: AcceptedBridgeMarketData): void {
+  const correctedVerdict = gradeCorrectedTransportFreshness({
+    userId: input.userId,
+    bridgeConnectionId: input.bridgeConnectionId,
+    rawTransportDiffMs: input.rawTransportDiffMs,
+    sequenceVerdict: input.sequenceVerdict,
+  });
+  feedMarketDataStore(input.messageType, input.payload, correctedVerdict);
+}
+
 // Push an accepted TICK/CANDLE into the in-memory broker market-data store.
 // Read-only over execution: this only updates the analysis cache the router
-// reads. A transport-STALE push is dropped so an old/replayed bar can never
-// masquerade as a fresh broker feed (stamping updatedAt=now would do exactly
-// that). Best-effort: any error is contained — market-data caching must never
-// throw into the EA ingest path.
+// reads. A transport-STALE push (on the skew-corrected verdict) is dropped so
+// an old/replayed bar can never masquerade as a fresh broker feed (stamping
+// updatedAt=now would do exactly that). Best-effort: any error is contained —
+// market-data caching must never throw into the EA ingest path.
 function feedMarketDataStore(
   messageType: string,
   payload: unknown,
@@ -285,7 +328,7 @@ function feedMarketDataStore(
     // composer (BID basis, matching the mt5_broker candle basis) so the chart
     // tip ticks in real time. Display/telemetry only; never persisted, never an
     // analysis/execution input.
-    foldFormingTick(symbol, bid, brokerTimeEpochMs, Date.now());
+    foldFormingTick(symbol, bid, brokerTimeEpochMs, Date.now(), "mt5_broker");
   } catch {
     // Market-data caching is best-effort; never propagate into the EA response.
   }

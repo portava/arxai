@@ -52,7 +52,7 @@ export function startDerivFormingBridge(): void {
     // Deriv `epoch` is unix SECONDS; the composer buckets in ms.
     const providerTimeMs =
       Number.isFinite(tick.epoch) && tick.epoch > 0 ? tick.epoch * 1000 : null;
-    foldFormingTick(mapped.symbol, tick.quote, providerTimeMs, Date.now());
+    foldFormingTick(mapped.symbol, tick.quote, providerTimeMs, Date.now(), "deriv");
   });
 }
 
