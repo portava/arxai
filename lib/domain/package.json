@@ -120,6 +120,7 @@
     "./safety-contracts/syntheticLiveFloor": "./src/safety-contracts/syntheticLiveFloor.ts",
     "./safety-contracts/clockDrift": "./src/safety-contracts/clockDrift.ts",
     "./safety-contracts/eaCloseFill": "./src/safety-contracts/eaCloseFill.ts",
+    "./safety-contracts/truthHierarchy": "./src/safety-contracts/truthHierarchy.ts",
     "./timing-brain": "./src/timing-brain/index.ts",
     "./truth": "./src/truth/index.ts",
     "./aaci": "./src/aaci/index.ts",

@@ -4854,6 +4854,31 @@ export async function recordLiveCommandResult(args: {
         error: e instanceof Error ? e.message : String(e),
       }, "failed to link broker fill to mission draft (advisory) — non-fatal");
     }
+
+    // Economic truth spine (#30) — fill-confirmation posting. Best-effort,
+    // append-only, and NEVER a settlement dependency: the fee at open is
+    // honestly UNKNOWN (the EA result carries no commission figure), so this
+    // posts an explicit UNKNOWN-flagged fee journal rather than a silent
+    // zero. Idempotent via unique(journal_id, leg_index) — a duplicate EA
+    // callback cannot double-post.
+    try {
+      const { postLiveOpenFill } = await import("../accounting/economicSeams.js");
+      await postLiveOpenFill({
+        userId: args.userId,
+        commandId: args.commandId,
+        brokerTicket: args.brokerTicket ?? null,
+        bridgeConnectionId: args.reportingBridgeConnectionId,
+        strategyId: row.edgeId != null ? `edge:${row.edgeId}` : null,
+        filledAt: now,
+      });
+    } catch (e) {
+      logger.warn({
+        [PHASE_B_LIVE_LOG_PREFIX]: true,
+        event: "ECONOMIC_OPEN_POSTING_FAILED",
+        commandId: args.commandId,
+        error: e instanceof Error ? e.message : String(e),
+      }, "open-fill economic posting failed (advisory) — fill settlement unaffected");
+    }
   }
 
   // Task #28 (T003) — forced reconciliation of position close. When a
@@ -4908,6 +4933,35 @@ export async function recordLiveCommandResult(args: {
               commandId: args.commandId, brokerTicket: closeTicket,
               error: e instanceof Error ? e.message : String(e),
             }, "failed to record mission-trade close (advisory) — non-fatal");
+          }
+          // Economic truth spine (#29/#30) — close-reconciliation posting.
+          // Realized P&L comes from the row's last-synced floatingPl, which
+          // is a LOCAL_EXECUTION record and is labelled as such; when it is
+          // null the P&L journal posts UNKNOWN-flagged, never a claimed
+          // zero. Best-effort: cannot disturb the close settlement.
+          try {
+            const closedPos = closedRows[0] as { floatingPl?: number | null } | undefined;
+            const realisedPnlForLedger =
+              typeof closedPos?.floatingPl === "number" && Number.isFinite(closedPos.floatingPl)
+                ? closedPos.floatingPl
+                : null;
+            const { postLiveClose } = await import("../accounting/economicSeams.js");
+            await postLiveClose({
+              userId: args.userId,
+              commandId: args.commandId,
+              brokerTicket: closeTicket,
+              bridgeConnectionId: args.reportingBridgeConnectionId,
+              strategyId: row.edgeId != null ? `edge:${row.edgeId}` : null,
+              realizedPnl: realisedPnlForLedger,
+              closedAt: now,
+            });
+          } catch (e) {
+            logger.warn({
+              [PHASE_B_LIVE_LOG_PREFIX]: true,
+              event: "ECONOMIC_CLOSE_POSTING_FAILED",
+              commandId: args.commandId, brokerTicket: closeTicket,
+              error: e instanceof Error ? e.message : String(e),
+            }, "close economic posting failed (advisory) — close settlement unaffected");
           }
         }
       } catch (e) {

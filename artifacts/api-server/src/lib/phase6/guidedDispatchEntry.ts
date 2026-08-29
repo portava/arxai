@@ -801,5 +801,33 @@ async function dispatchGuidedTicketInner(
     );
   }
 
+  // Economic truth spine (#30) — DEMO-ledger stake posting. The venue
+  // confirmed a demo contract, so the stake genuinely moved from demo cash
+  // into the open contract; that movement posts to the DEMO partition (never
+  // LIVE). Best-effort and AFTER settlement: a posting failure can neither
+  // rewrite the outcome nor disturb ticket/intent state. The stake is read
+  // from the PERSISTED ticket row, never echoed from a caller object.
+  if (outcome.claimed && outcome.ok && outcome.venueContractRef) {
+    try {
+      const ticketRow = await approvalTicketsRepo.findOwnedTicket(args.ticketId, args.userId);
+      if (ticketRow) {
+        const { postDemoStakeFill } = await import("../accounting/economicSeams.js");
+        await postDemoStakeFill({
+          userId: args.userId,
+          ticketId: args.ticketId,
+          venueContractRef: outcome.venueContractRef,
+          stakeUsd: ticketRow.stakeUsd,
+          filledAt: new Date(),
+        });
+      }
+    } catch (postErr) {
+      const { logger } = await import("../logger.js");
+      logger.warn(
+        { event: "ECONOMIC_DEMO_POSTING_FAILED", ticketId: args.ticketId, err: postErr },
+        "demo stake economic posting failed (advisory) — dispatch outcome unaffected",
+      );
+    }
+  }
+
   return outcome;
 }

@@ -56,6 +56,13 @@ const VAULT_TABLES = [
   // Phase 6 — the guided forensic ledger. Mutating a row would rewrite what a
   // trade attempt actually did, which is the only thing this table is for.
   "guidedAttemptEventsTable",
+  // Economic truth spine (#29/#30) — the bitemporal double-entry postings
+  // ledger and its reconciliation observations. A wrong posting is corrected
+  // by APPENDING a reverse-and-repost journal pair; mutating a posting would
+  // silently rewrite money history, and mutating a discrepancy row would
+  // erase the very disagreement the reconciliation pass exists to surface.
+  "economicPostingsTable",
+  "economicDiscrepanciesTable",
 ];
 
 // Raw-SQL append-only surfaces, keyed by physical table name.
@@ -78,6 +85,9 @@ const APPEND_ONLY_SQL_TABLES = [
   "trading_constitutions",
   "event_log",
   "security_events",
+  // Economic truth spine — same append-only contract in raw-SQL form.
+  "economic_postings",
+  "economic_discrepancies",
 ];
 
 const FORBIDDEN_OPS = [

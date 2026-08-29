@@ -25,6 +25,9 @@
       "path": "./lib/money"
     },
     {
+      "path": "./lib/accounting"
+    },
+    {
       "path": "./lib/features"
     },
     {

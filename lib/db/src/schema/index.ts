@@ -468,6 +468,10 @@ export * from "./ownerDecisions";
 
 // R2-S2 — append-only execution evidence log (unique(command_id, sequence_no)).
 export * from "./executionEvents";
+// Economic truth spine (#29/#30/#31) — APPEND-ONLY bitemporal double-entry
+// postings + reconciliation discrepancy records. Corrections are reverse-and-
+// repost journals, never UPDATE (check-vault-mutations guards both symbols).
+export * from "./economicPostings";
 // R2-S4 — persisted reconciliation runs (freshness gate input).
 export * from "./reconciliationRuns";
 // R4 slice 7 — per-connection market-data entitlement records.
