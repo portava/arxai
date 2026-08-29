@@ -11,7 +11,7 @@ import {
   traderCoachLogsTable,
   tradingPlaybookEntriesTable,
 } from "@workspace/db";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { generateCoachReport } from "../lib/traderCoach/coach.js";
 import { generatePlaybook, listPlaybookEntries, getPlaybookEntry } from "../lib/traderCoach/playbook.js";
 import { generateWeeklyPlan } from "../lib/traderCoach/weekly.js";
