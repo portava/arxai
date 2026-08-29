@@ -1,34 +1,31 @@
-// THEME F (F-honest) — Profit Missions must present as planning/advisory.
+// THEME F (F-build) — Profit Missions are now GATED autonomy; the label must
+// say exactly that, no more and no less.
 //
-// THE AUDIT'S CONCERN
-//   The pursuit loop is inert end-to-end: missions are hardcoded
-//   `executionMode: "paper"`, draft→fill linkage is never written, no scheduler
-//   advances a mission, and mission risk reads global paper history. So the
-//   product must NOT present itself as autonomously pursuing and achieving a
-//   goal. F-build (making it real) is explicitly out of scope; F-honest — the
-//   labelling — is therefore the ONLY thing standing between the user and a
-//   false "give it a goal and it achieves it" impression.
+// HISTORY
+//   The original F-honest suite pinned the "planning and display only — no
+//   trades are placed here" copy and DELIBERATELY pinned the ABSENCE of a
+//   mission scheduler, so that the first F-build commit would fail it and force
+//   this copy to be revisited BEFORE the driver landed. That is exactly what
+//   happened: F-build was un-deferred and the driver now exists. This suite is
+//   its successor.
 //
-// WHAT THE AUDIT FOUND WHEN CHECKED
-//   The relabel is already in place, on both sides:
-//     - Page subtitle: "Describe a goal and get an honest feasibility and
-//       probability read. Planning and display only — no trades are placed
-//       here."
-//     - Risk certificate: "Read carefully. This is a goal, not a promise."
-//     - Page header comment: PLANNING + DISPLAY ONLY / ADVISORY ONLY.
-//     - Server: executionMode is hardcoded "paper", and the execute path
-//       answers "the live broker is never contacted".
-//     - CI: the mission-no-direct-execution guard already blocks a direct
-//       dispatch path.
-//   A sweep of every mission surface for autonomy claims ("will trade",
-//   "automatically executes", "works toward", "on its own", "hands-free",
-//   "pursues", "autonomous") found NOTHING.
-//
-// WHAT THIS SUITE ADDS
-//   That honest copy was pinned by no test at all, so nothing stopped it being
-//   softened back into a promise. This locks it. It asserts the DISCLAIMERS
-//   are present and that no autonomy claim reappears — the cheapest possible
-//   protection for the one thing keeping the feature honest while it is inert.
+// WHAT IS TRUE NOW (and what this suite pins)
+//   - Missions CAN place trades, but ONLY through the gated path: draft →
+//     approval → dispatchApprovedDraft → executeInstant (source "mission") →
+//     18-gate live dispatch. Paper/demo run the SAME gate chain against a
+//     simulated recorder that never contacts a broker and never fabricates a
+//     fill.
+//   - The default automation level (2) waits for the USER's approval on every
+//     trade. Auto levels (3–6) must be earned via the promotion gates,
+//     explicitly enabled for live, and are re-checked at every dispatch.
+//   - The copy must state that per-level truth, keep the "goal, not a promise"
+//     certificate line, and must never drift back into an unconditional
+//     promise ("hands-free", "guaranteed", "achieves it for you").
+//   - The backend matches the label: missions are still CREATED in paper mode;
+//     the routes file never assigns executionMode "live" directly (the gated
+//     lifecycle service owns that); the driver dispatches only via the
+//     sanctioned execution hook; the simulated (non-live) leg states plainly
+//     that the live broker is never contacted.
 
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
@@ -53,17 +50,25 @@ const rendered = page
   })
   .join("\n");
 
-describe("F-honest — the planning-only disclaimer is present", () => {
-  it("the page subtitle says planning and display only", () => {
-    expect(rendered).toMatch(/Planning and display only/);
-  });
-
-  it("it states plainly that no trades are placed", () => {
-    expect(rendered).toMatch(/no trades are placed here/i);
-  });
-
+describe("F-build honest — the gated-autonomy truth is stated in rendered copy", () => {
   it("it frames the output as a feasibility/probability read", () => {
     expect(rendered).toMatch(/honest feasibility and probability read/i);
+  });
+
+  it("it states that trades go only through the gated approval path", () => {
+    expect(rendered).toMatch(/gated approval path/i);
+  });
+
+  it("it states the default-level truth: every trade waits for the user's approval", () => {
+    expect(rendered).toMatch(/waits for your approval on every trade/i);
+  });
+
+  it("it states the auto-level truth: earned, explicitly enabled, re-checked per dispatch", () => {
+    expect(rendered).toMatch(/earned, explicitly enabled, and re-checked/i);
+  });
+
+  it("it states that a blocked gate holds the mission", () => {
+    expect(rendered).toMatch(/blocked gate holds the mission/i);
   });
 
   it("the risk certificate calls the target a goal, not a promise", () => {
@@ -71,16 +76,16 @@ describe("F-honest — the planning-only disclaimer is present", () => {
   });
 });
 
-describe("F-honest — no autonomy claim reappears", () => {
+describe("F-build honest — no unconditional promise reappears", () => {
+  // Gated-autonomy claims are allowed ONLY alongside the gating truth pinned
+  // above. These phrasings are unconditional promises and stay banned outright.
   const CLAIMS: Array<[string, RegExp]> = [
-    ["will trade / will execute / will place", /will\s+(trade|execute|place|open)\b/i],
-    ["automatically trades", /automatically\s+(trade|execute|place)/i],
-    ["works toward / works for you", /works?\s+(toward|for you)\b/i],
-    ["on its own", /on its own\b/i],
     ["hands-free", /hands[-\s]?free/i],
-    ["pursues", /\bpursu(e|es|ing)\b/i],
-    ["autonomous", /\bautonomous(ly)?\b/i],
-    ["achieves it for you", /achiev\w*\s+(it|your goal)\b/i],
+    ["guaranteed profit / profits", /guaranteed\s+profits?\b/i],
+    ["achieves it for you", /achiev\w*\s+(it|your goal)\s+for you\b/i],
+    ["profit is assured / certain", /\b(assured|certain)\s+profits?\b/i],
+    ["can't lose / risk-free", /\b(can't|cannot)\s+lose\b|\brisk[-\s]?free\b/i],
+    ["set and forget", /set[-\s]and[-\s]forget/i],
   ];
 
   for (const [label, rx] of CLAIMS) {
@@ -88,30 +93,78 @@ describe("F-honest — no autonomy claim reappears", () => {
       expect(rendered).not.toMatch(rx);
     });
   }
+
+  it("keeps the not-guaranteed disclaimer", () => {
+    expect(rendered).toMatch(/not guaranteed/i);
+  });
 });
 
-describe("F-honest — the backend matches the label", () => {
+describe("F-build honest — the backend matches the label", () => {
   const route = read(resolve(ROOT, "artifacts/api-server/src/routes/profitMissions.ts"));
+  const execution = read(resolve(ROOT, "artifacts/api-server/src/lib/missionExecution.ts"));
+  const modeService = read(
+    resolve(ROOT, "artifacts/api-server/src/lib/missionExecutionModeService.ts"),
+  );
 
-  it("missions are created in paper execution mode", () => {
+  it("missions are still created in paper execution mode", () => {
     expect(route).toMatch(/executionMode:\s*"paper"/);
   });
 
-  it("the execute path says the live broker is never contacted", () => {
-    expect(route).toMatch(/the live broker is never contacted/);
+  it("no live execution mode is assignable from the mission routes directly", () => {
+    expect(route).not.toMatch(/executionMode:\s*"live"/);
   });
 
-  it("no live execution mode is assignable from the mission routes", () => {
-    expect(route).not.toMatch(/executionMode:\s*"live"/);
+  it("the gated lifecycle service owns the live step and requires the certificate + live gates + explicit confirm", () => {
+    expect(modeService).toMatch(/CERTIFICATE_NOT_ACCEPTED/);
+    expect(modeService).toMatch(/LIVE_GATES_DISABLED/);
+    expect(modeService).toMatch(/EXPLICIT_CONFIRM_REQUIRED/);
+    expect(modeService).toMatch(/resolveLiveBrokerExecutionEnabledAsync/);
+  });
+
+  it("the simulated (non-live) leg states the live broker is never contacted and fabricates nothing", () => {
+    expect(execution).toMatch(/the live broker is never contacted/);
+    expect(execution).toMatch(/no fill or profit is simulated/);
   });
 });
 
-describe("F-honest — F-build was NOT attempted", () => {
-  // Explicitly out of scope. Pinning its absence keeps the labelling honest:
-  // if a driver ever appears, this fails and the copy must be revisited FIRST.
-  it("no mission scheduler/worker was added", () => {
-    const route = read(resolve(ROOT, "artifacts/api-server/src/routes/profitMissions.ts"));
+/** Strip comment lines so prose that NAMES a banned seam never trips a scan. */
+function stripComments(src: string): string {
+  return src
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .split("\n")
+    .filter((l) => !l.trimStart().startsWith("//") && !l.trimStart().startsWith("*"))
+    .join("\n");
+}
+
+describe("F-build honest — the driver exists and uses ONLY the sanctioned seams", () => {
+  const driver = stripComments(
+    read(resolve(ROOT, "artifacts/api-server/src/lib/missionDriver.ts")),
+  );
+  const index = read(resolve(ROOT, "artifacts/api-server/src/index.ts"));
+  const route = read(resolve(ROOT, "artifacts/api-server/src/routes/profitMissions.ts"));
+
+  it("the driver worker exists and is registered at startup", () => {
+    expect(driver).toMatch(/export function startMissionDriverWorker/);
+    expect(index).toMatch(/startMissionDriverWorker\(\)/);
+  });
+
+  it("the driver dispatches ONLY via the gated execution hook — never below it", () => {
+    expect(driver).toMatch(/dispatchApprovedDraft/);
+    expect(driver).toMatch(/manageMissionTradeExit/);
+    // Nothing below the sanctioned hooks: no direct router, pipeline, broker
+    // command table, or order-send primitive.
+    expect(driver).not.toMatch(/\bexecuteInstant\b/);
+    expect(driver).not.toMatch(/liveCommandPipeline/);
+    expect(driver).not.toMatch(/\b(?:mt5CommandsTable|mt5DemoCommandsTable|arxLiveCommandsTable)\b/);
+    expect(driver).not.toMatch(/\b(?:placeLiveOrderGuarded|orderSend|placeOrder)\s*\(/);
+  });
+
+  it("auto-approval re-checks the ladder + promotion gates at act time", () => {
+    expect(driver).toMatch(/planMissionTick/);
+    expect(driver).toMatch(/resolveMissionPromotionStatus/);
+  });
+
+  it("the routes file still hosts no scheduler of its own", () => {
     expect(route).not.toMatch(/setInterval\(/);
-    expect(route).not.toMatch(/missionWorker|startMissionLoop/i);
   });
 });

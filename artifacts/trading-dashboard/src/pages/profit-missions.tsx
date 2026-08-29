@@ -1,12 +1,14 @@
-// ── Profit Mission page — Phase 1 planner + Phase 3 Multi-Agent Proposals ─────
+// ── Profit Mission page — planner + Multi-Agent Proposals + gated execution ───
 //
-// PLANNING + DISPLAY ONLY. This page lets a user describe a goal and shows the
-// SERVER-COMPUTED feasibility / probability / pace read in the Battle Room,
-// plus (Phase 3 fallback reconstruction from Task #662 spec) the mission's
-// specialist Agent Desk and the read-only proposals they scout. ADVISORY ONLY —
-// proposals are analysis artifacts; there is NO draft, approval-to-execute, or
-// order placement anywhere on this page. Every figure is a labelled estimate or
-// an honest empty state.
+// HONEST LABELLING (F-build). This page shows the SERVER-COMPUTED feasibility /
+// probability / pace read in the Battle Room plus the mission's specialist
+// Agent Desk and proposals. Missions CAN now place trades — but ONLY through
+// the gated path: dispatch routes through the instant-trade router (source
+// "mission") → live pipeline → 18-gate dispatch, the default automation level
+// (2) waits for the user's explicit approval on every trade, and auto levels
+// must be earned through the promotion gates, explicitly enabled, and are
+// re-checked against every gate at each dispatch. Every figure is a labelled
+// estimate or an honest empty state; nothing here is a promise of profit.
 import { useMemo, useState, type ReactElement, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -2599,7 +2601,11 @@ export default function ProfitMissionsPage() {
         <h1 className="text-2xl font-bold">Profit Mission</h1>
         <p className="text-sm text-muted-foreground">
           Describe a goal and get an honest feasibility and probability read.
-          Planning and display only — no trades are placed here.
+          Trades dispatch only through the gated approval path: the default
+          level waits for your approval on every trade, and auto levels must be
+          earned, explicitly enabled, and re-checked against every live gate at
+          each dispatch. A blocked gate holds the mission — it never trades
+          around a refusal.
         </p>
       </div>
 
