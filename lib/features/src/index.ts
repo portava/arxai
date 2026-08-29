@@ -82,8 +82,15 @@ export interface PointInTimeReader {
  * trained under `fset_v1` can be told apart from one trained under `fset_v2`
  * even if both ran over the same data. Without it, a silent formula change makes
  * every historical decision uninterpretable.
+ *
+ * v1 → v2: the measured-σ estimator behind `sigma1min:<sym>` changed from a
+ * flat 60-bar sample stdev to a RiskMetrics EWMA (λ = 0.94) over the same
+ * window — see candlePointInTimeReader in the api-server adapter. The closed
+ * form for synthetics is untouched (it is a definition, not an estimate), but
+ * a measured vector computed after the change is a different function of the
+ * same bars, so rows must be distinguishable.
  */
-export const FEATURE_SET_ID = "fset_v1";
+export const FEATURE_SET_ID = "fset_v2";
 
 export interface FeatureVector {
   featureSetId: string;

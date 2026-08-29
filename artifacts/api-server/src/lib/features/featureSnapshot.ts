@@ -77,6 +77,33 @@ export const MIN_SIGMA_CANDLES = 20;
 /** Cap on the estimation window: at most this many newest eligible bars. */
 export const SIGMA_WINDOW = 60;
 
+/**
+ * RiskMetrics decay for the EWMA variance recursion (λ ≈ 0.94 on short-horizon
+ * bars). Chosen over a flat sample stdev because volatility CLUSTERS: after a
+ * regime shift the flat estimator keeps averaging the old regime in for the
+ * whole window, while the EWMA's half-life of ~11 bars tracks "now". For
+ * constant-vol series the two agree (the recursion's fixed point is the mean
+ * squared return), so nothing is lost on the quiet case.
+ */
+export const EWMA_LAMBDA = 0.94;
+
+/**
+ * EWMA σ of a log-return series (RiskMetrics: zero-mean squared returns,
+ * σ²_t = λ·σ²_{t-1} + (1−λ)·r²_t), iterated oldest→newest.
+ *
+ * Seeded with the mean squared return of the whole series — a deterministic,
+ * data-only seed with two useful properties: a constant-|r| series yields
+ * exactly |r| (pinned in tests), and no bar outside the supplied window can
+ * influence the estimate. Returns 0 for an all-zero series (the caller maps a
+ * non-positive σ to an honest refusal, never to "riskless").
+ */
+export function ewmaSigma(returns: readonly number[], lambda = EWMA_LAMBDA): number {
+  if (returns.length === 0) return 0;
+  let variance = returns.reduce((a, r) => a + r * r, 0) / returns.length;
+  for (const r of returns) variance = lambda * variance + (1 - lambda) * r * r;
+  return Math.sqrt(variance);
+}
+
 const MS_PER_MINUTE = 60_000;
 
 /**
@@ -175,14 +202,16 @@ export function candlePointInTimeReader(candles: readonly FeatureCandle[]): Poin
       const closes = window.map((x) => x.c.close);
       if (closes.some((p) => !Number.isFinite(p) || p <= 0)) return null;
 
-      // Sample stddev of close-to-close log returns, scaled from per-bar to
-      // per-minute in VARIANCE terms (σ_1min = σ_bar / √Δ_minutes) — the same
-      // diffusion scaling lib/markets' expectedMove model assumes.
+      // EWMA σ of close-to-close log returns (fset_v2 — was a flat sample
+      // stdev in fset_v1), scaled from per-bar to per-minute in VARIANCE
+      // terms (σ_1min = σ_bar / √Δ_minutes) — the same diffusion scaling
+      // lib/markets' expectedMove model assumes. The EWMA weights recent bars
+      // so the estimate reflects the CURRENT regime; the honesty floor
+      // (MIN_SIGMA_CANDLES) and the refusal paths are unchanged — a series
+      // this window cannot honestly price still yields null, never a guess.
       const returns: number[] = [];
       for (let i = 1; i < closes.length; i++) returns.push(Math.log(closes[i] / closes[i - 1]));
-      const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
-      const varSum = returns.reduce((a, b) => a + (b - mean) * (b - mean), 0);
-      const sigmaBar = Math.sqrt(varSum / (returns.length - 1));
+      const sigmaBar = ewmaSigma(returns);
       const sigma1min = sigmaBar / Math.sqrt(barMinutes);
 
       const lastClose = new Date(window[window.length - 1].openMs + barMs).toISOString();
