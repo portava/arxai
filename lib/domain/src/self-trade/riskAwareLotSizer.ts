@@ -36,7 +36,16 @@ export interface RiskAwareLotInput {
   /** Agent per-trade lot cap (self_trade_agent_settings.maxLotPerTrade). */
   agentMaxLot: number;
 
-  /** Multiplier from quota pressure / APPROVED_REDUCED (default 1). */
+  /**
+   * Multiplier from quota pressure / APPROVED_REDUCED (default 1).
+   *
+   * TIGHTEN-ONLY (foundation gate #21 companion): a learned/adaptive
+   * multiplier may only REDUCE exposure vs the deterministic risk-budget
+   * size, never raise it. Values > 1 are mechanically clamped to 1 (and
+   * reported via `multiplierClamped`), mirroring lib/risk
+   * enforceTightenOnly's monotonicity invariant — a corrupted quota-pressure
+   * value can shrink an agent trade but can never oversize one.
+   */
   sizeMultiplier: number;
 }
 
@@ -63,6 +72,8 @@ export interface RiskAwareLotResult {
   actualRiskUsd: number;  // risk at the final lot
   withinRiskBudget: boolean;
   clampedBy: LotClampReason;
+  /** True when sizeMultiplier > 1 was clamped to 1 (tighten-only). */
+  multiplierClamped: boolean;
 }
 
 const EPS = 1e-9;
@@ -81,6 +92,7 @@ export function computeRiskAwareLot(input: RiskAwareLotInput): RiskAwareLotResul
     actualRiskUsd: 0,
     withinRiskBudget: false,
     clampedBy: null,
+    multiplierClamped: input.sizeMultiplier > 1,
   });
 
   if (input.stopLossPrice == null) return fail("NO_PROTECTIVE_STOP");
@@ -89,7 +101,13 @@ export function computeRiskAwareLot(input: RiskAwareLotInput): RiskAwareLotResul
   if (!(input.valuePerUnitPerLot > EPS)) return fail("NO_CONTRACT_SPEC", stopDistance);
   if (!(input.riskBudgetUsd > EPS)) return fail("NO_RISK_BUDGET", stopDistance);
 
-  const mult = input.sizeMultiplier > 0 ? input.sizeMultiplier : 1;
+  // Tighten-only enforcement: the multiplier may only reduce size. > 1 is
+  // clamped to 1 (never oversizes); <= 0 stays the defensive default of 1
+  // (a corrupt "off" value must not silently zero the risk-budget math —
+  // the budget itself still bounds the lot).
+  const requestedMult = input.sizeMultiplier;
+  const mult = requestedMult > 0 ? Math.min(requestedMult, 1) : 1;
+  const multiplierClamped = requestedMult > 1;
   const riskPerLot = stopDistance * input.valuePerUnitPerLot;
   const rawLot = (input.riskBudgetUsd / riskPerLot) * mult;
   if (!(rawLot > EPS)) {
@@ -141,6 +159,7 @@ export function computeRiskAwareLot(input: RiskAwareLotInput): RiskAwareLotResul
     actualRiskUsd,
     withinRiskBudget,
     clampedBy,
+    multiplierClamped,
   };
 }
 

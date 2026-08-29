@@ -7,6 +7,7 @@ export * from "./reconciliation.js";
 export * from "./executionMode.js";
 export * from "./liveDispatchGate.js";
 export * from "./livePhaseBDispatchGate.js";
+export * from "./foundationGates.js";
 export * from "./isLiveBrokerExecutionEnabled.js";
 export * from "./preTradeBrokerGuard.js";
 export * from "./syntheticLiveFloor.js";
