@@ -20,8 +20,13 @@
 // Run: pnpm --filter @workspace/scripts run test:aaci
 
 import {
+  AACI_UNCERTAINTY_FULL_SAMPLE_COUNT,
   buildAaciHardGateFactors,
   buildScoreBreakdown,
+  computeUncertaintyConfidence,
+  lowSampleHistoryPenalty,
+  spreadInstabilityPenalty,
+  staleLearningPenalty,
   classifySpeedState,
   computeEdgeDecay,
   computeFreshness,
@@ -424,6 +429,32 @@ function makeSnapshot(
     assertNoTokens(`label[${action}]`, label);
     check(`label: ${action} differs from raw enum`, label !== action);
   }
+}
+
+// ── Uncertainty channels — per-channel cases (fail-CLOSED, only-reduces) ────
+// The three measured channels (lowSampleHistory, spreadInstability,
+// staleLearning) are real functions of evidence; a missing input yields the
+// FULL channel penalty, never a fabricated 0.
+{
+  const snapshot = makeSnapshot();
+  const cohesion = detectConflictsAndCohesion(snapshot);
+  const fullEvidence = {
+    outcomeSampleCount: AACI_UNCERTAINTY_FULL_SAMPLE_COUNT,
+    spreadRelHistory: [0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001],
+    learningAgeMs: 0,
+  };
+  check("uncertainty: lowSampleHistory fail-closed (null → full penalty)", lowSampleHistoryPenalty(null) === 1);
+  check("uncertainty: lowSampleHistory full evidence → 0", lowSampleHistoryPenalty(AACI_UNCERTAINTY_FULL_SAMPLE_COUNT) === 0);
+  check("uncertainty: spreadInstability fail-closed (null → full penalty)", spreadInstabilityPenalty(null) === 1);
+  check("uncertainty: spreadInstability stable history → 0", spreadInstabilityPenalty(fullEvidence.spreadRelHistory) === 0);
+  check("uncertainty: staleLearning fail-closed (null → full penalty)", staleLearningPenalty(null) === 1);
+  check("uncertainty: staleLearning fresh record → 0", staleLearningPenalty(0) === 0);
+
+  const withFull = computeUncertaintyConfidence(snapshot, cohesion, fullEvidence);
+  const withNone = computeUncertaintyConfidence(snapshot, cohesion);
+  check("uncertainty: clean snapshot + full evidence → confidence 1", withFull === 1);
+  check("uncertainty: missing evidence strictly reduces confidence (fail-closed)", withNone < withFull);
+  check("uncertainty: confidence stays a 0–1 multiplier", withNone >= 0 && withNone <= 1);
 }
 
 if (failures > 0) {

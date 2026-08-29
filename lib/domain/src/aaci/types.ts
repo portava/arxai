@@ -436,4 +436,10 @@ export interface AaciDecision {
 
   createdAuditEvent: boolean;
   alertCreated?: boolean;
+
+  /** JOURNAL-ONLY value-of-information advisory for WAIT-capable decisions
+   *  (see valueOfInformation.ts). Never changes recommendedAction or any gate;
+   *  absent when the decision is not WAIT-capable. Uses the unknown-shaped
+   *  record here to keep the decision payload schema additive. */
+  voiAdvisory?: Record<string, unknown>;
 }

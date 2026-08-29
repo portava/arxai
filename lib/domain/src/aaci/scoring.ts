@@ -22,6 +22,11 @@ import type {
   AaciCohesionReport,
 } from "./conflicts";
 import type { AaciFreshnessReport } from "./freshness";
+import {
+  computeUncertaintyChannels,
+  uncertaintyConfidenceFromChannels,
+  type AaciUncertaintyEvidence,
+} from "./uncertainty";
 import type {
   AaciLatencyRecord,
   AaciRecommendedAction,
@@ -257,26 +262,19 @@ export function computeAuditAlertReadiness(snapshot: AaciSharedTruthSnapshot): n
 }
 
 // ── UNCERTAINTY_CONFIDENCE ──────────────────────────────────────────────────
+// All seven channels now carry real values. The three measured channels
+// (lowSampleHistory, spreadInstability, staleLearning) read from the evidence
+// object and are FAIL-CLOSED: an unreadable input yields that channel's full
+// penalty, never a fabricated 0. The result stays a 0–1 multiplier that only
+// ever REDUCES the master score.
 export function computeUncertaintyConfidence(
   snapshot: AaciSharedTruthSnapshot,
   cohesion: AaciCohesionReport,
+  evidence?: AaciUncertaintyEvidence,
 ): number {
-  const totalSystems = 12;
-  const missingData = clamp01((snapshot.unavailableSystems?.length ?? 0) / totalSystems);
-  const conflictingSignals = clamp01(cohesion.conflicts.length / 3);
-  const highNewsChaos =
-    snapshot.news?.riskLevel === "critical" ? 1 : snapshot.news?.riskLevel === "high" ? 0.6 : 0;
-  const modelDisagreement = conflictingSignals;
-  // lowSampleHistory, spreadInstability, staleLearning unknown → 0 (fail-open).
-  const penalty =
-    0.25 * missingData +
-    0.2 * conflictingSignals +
-    0.15 * 0 +
-    0.15 * highNewsChaos +
-    0.1 * 0 +
-    0.1 * modelDisagreement +
-    0.05 * 0;
-  return clamp01(1 - penalty);
+  return uncertaintyConfidenceFromChannels(
+    computeUncertaintyChannels(snapshot, cohesion, evidence),
+  );
 }
 
 // ── DATA_LINEAGE_TRUST ──────────────────────────────────────────────────────
@@ -318,6 +316,9 @@ export interface BuildScoreBreakdownInput {
   driftScore?: number;
   learnedTrustScore?: number;
   selfLearningIntegrity?: number;
+  // Real evidence for the measured uncertainty channels. Omitted → those
+  // channels fail CLOSED to their full penalty (adds caution, never removes).
+  uncertaintyEvidence?: AaciUncertaintyEvidence;
 }
 
 export function buildScoreBreakdown(input: BuildScoreBreakdownInput): AaciScoreBreakdown {
@@ -337,7 +338,7 @@ export function buildScoreBreakdown(input: BuildScoreBreakdownInput): AaciScoreB
     explainabilityScore: computeExplainability(snapshot),
     penalty: computePenalty(freshness, cohesion),
     speedValidity: clamp01(input.speedValidity),
-    uncertaintyConfidence: computeUncertaintyConfidence(snapshot, cohesion),
+    uncertaintyConfidence: computeUncertaintyConfidence(snapshot, cohesion, input.uncertaintyEvidence),
     dataLineageTrust: computeDataLineageTrust(snapshot, freshness),
     selfLearningIntegrity: clamp01(input.selfLearningIntegrity ?? 1),
   };

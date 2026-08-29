@@ -5,3 +5,5 @@ export * from "./edgeDecay";
 export * from "./conflicts";
 export * from "./scoring";
 export * from "./learning";
+export * from "./uncertainty";
+export * from "./valueOfInformation";
