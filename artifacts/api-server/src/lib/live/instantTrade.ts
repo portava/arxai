@@ -37,6 +37,7 @@ import {
 import { liveBrokerExecutionEnabled } from "./phaseBConfig.js";
 import { resolveBrokerSymbol } from "../mt5/symbolDirectory.js";
 import { recordManualAaciAdvisory } from "../aaci/manualAdvisory.js";
+import type { CommandProvenanceEnvelope } from "../provenance/commandProvenance.js";
 import { enforceSensitiveAction } from "../security/handshake.js";
 
 export const INSTANT_TRADE_SOURCES = [
@@ -92,6 +93,16 @@ export type InstantTradeIntent = {
   // dispatch is unchanged. The durable DB linkage remains the mission_trade_drafts
   // row (which carries missionId) + the journaled commandId.
   missionId?: number | null;
+  // Foundation gates #19/#20 producer seams (additive, optional). `provenance`
+  // is a pre-built command provenance envelope (see
+  // lib/provenance/commandProvenance.ts — the exposed helper any producer can
+  // adopt); absent, createLiveDraft derives one honestly from the routed quote
+  // at draft time. `edgeId` links the command to its production_edges row so
+  // gate #20 can read promotion state at dispatch; absent for human clicks
+  // (not required) and REFUSED at dispatch for autonomous entries (default-
+  // deny). Neither field can ever relax a gate.
+  provenance?: CommandProvenanceEnvelope | null;
+  edgeId?: number | null;
 };
 
 // Reasons surfaced by the Ruby authorization layer. Each is AND-gated on TOP of
@@ -460,6 +471,11 @@ async function executeOpen(args: {
       selfTradeAgentId: intent.selfTradeAgentId ?? null,
       selfTradeDecisionId: intent.selfTradeDecisionId ?? null,
       selfTradeAgentKey: intent.selfTradeAgentKey ?? null,
+      // Foundation gates #19/#20 — producer-supplied provenance envelope +
+      // promotion-ledger reference (both optional; see InstantTradeIntent).
+      provenance: intent.provenance ?? null,
+      edgeId: intent.edgeId ?? null,
+      missionId: intent.missionId ?? null,
     });
     if (!("ok" in draft) || draft.ok !== true) return { stage: "draft" as const, result: draft };
     // Task #213 — autonomy L1 (prepareOnly): the supervisor-approved draft is

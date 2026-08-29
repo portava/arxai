@@ -103,6 +103,15 @@ import {
   type CommandIntegrityFields,
 } from "../security/commandIntegrity.js";
 import { mirrorCriticalEvent } from "../security/events.js";
+// Foundation gates #19–#21 — envelope construction (draft) + input assembly
+// (dispatch). The verdict logic itself is pure in @workspace/domain
+// safety-contracts/foundationGates.ts and runs inside the Phase B evaluator.
+import {
+  buildCommandProvenanceEnvelope,
+  parseCommandProvenanceEnvelope,
+  type CommandProvenanceEnvelope,
+} from "../provenance/commandProvenance.js";
+import { buildFoundationGateInputs } from "./foundationGateInputs.js";
 import { upsertAlertOnce } from "../../routes/meAlerts.js";
 import { type CommandActorType } from "@workspace/domain/security";
 
@@ -1013,6 +1022,28 @@ export interface LiveDraftInput {
   selfTradeAgentId?: number | null;
   selfTradeDecisionId?: number | null;
   selfTradeAgentKey?: string | null;
+  /**
+   * Foundation gate #19 — producer-supplied command provenance envelope (see
+   * lib/provenance/commandProvenance.ts, the exposed helper ANY producer —
+   * instant trade, agents, missions, future strategy drivers — can adopt).
+   * Optional: when absent, an ENTRY draft derives its envelope honestly from
+   * the routed quote at draft time (source = the router's real provenance,
+   * UNKNOWN when no quote could be served — gate #19 then refuses at
+   * dispatch). A malformed value is discarded, never repaired. The stored
+   * envelope also rides `payload.commandProvenance`, covered by payloadHash,
+   * so it cannot be forged between confirm and dispatch.
+   */
+  provenance?: CommandProvenanceEnvelope | null;
+  /**
+   * Foundation gate #20 — production_edges reference for the strategy/edge
+   * that produced this command. Optional + nullable: human manual commands
+   * leave it NULL (promotion not required for USER/ADMIN/OWNER actors); an
+   * autonomous (SELF_TRADE_AGENT/SYSTEM) entry with NULL — or with a row not
+   * promoted to owner-pressed LIVE_CANDIDATE — is REFUSED at dispatch.
+   */
+  edgeId?: number | null;
+  /** Mission attribution for the provenance envelope (additive, optional). */
+  missionId?: number | null;
 }
 
 export interface LiveDraftRefusal {
@@ -1839,15 +1870,61 @@ export async function createLiveDraft(
   });
 
   const commandId = `lvcmd_${randomUUID()}`;
+
+  // ── Foundation gate #19 — stamp the command provenance envelope ─────────
+  // ENTRY drafts only (close/modify are exempt at the gate). Producer-supplied
+  // envelope wins (validated strictly — a malformed one is DISCARDED, never
+  // repaired); otherwise derive honestly from the routed quote at draft time:
+  // the router's real SeriesProvenance origin, or UNKNOWN when no quote could
+  // be served (gate #19 then refuses at dispatch — default-deny, and honesty:
+  // provenance is never fabricated).
+  const isEntryDraft = input.commandType === "PLACE_LIVE_MARKET_ORDER"
+    || input.commandType === "PLACE_LIVE_PENDING_ORDER";
+  const draftOriginActorType = input.selfTradeAgentId != null ? "SELF_TRADE_AGENT" as const : "USER" as const;
+  let provenanceEnvelope: CommandProvenanceEnvelope | null =
+    input.provenance != null ? parseCommandProvenanceEnvelope(input.provenance) : null;
+  if (provenanceEnvelope == null && isEntryDraft) {
+    let quoteSource: CommandProvenanceEnvelope["dataSource"] = "UNKNOWN";
+    let quoteSourceId = `router:${input.symbol}`;
+    let quoteAsOf: string | null = null;
+    try {
+      const { routeQuote } = await import("../data/marketDataRouter.js");
+      const q = await routeQuote(input.symbol);
+      if (q.ok && q.provenance) {
+        quoteSource = q.provenance.source;
+        quoteSourceId = q.provenance.sourceId;
+        quoteAsOf = q.quote?.timestamp ?? q.provenance.receivedAt;
+      }
+    } catch {
+      // Honest degrade: envelope stays UNKNOWN/no-asOf and gate #19 refuses.
+    }
+    provenanceEnvelope = buildCommandProvenanceEnvelope({
+      originActorType: draftOriginActorType,
+      dataSource: quoteSource,
+      sourceId: quoteSourceId,
+      asOf: quoteAsOf,
+      selfTradeAgentId: input.selfTradeAgentId ?? null,
+      selfTradeDecisionId: input.selfTradeDecisionId ?? null,
+      missionId: input.missionId ?? null,
+    });
+  }
+
   // SAFETY: scrub the override key from any client-supplied payload —
   // only this server-side path may set it, and only from the dedicated
   // `input.allowNoStopLossThisDraft` argument (which itself is gated
   // by `/me/one-click/submit-live` verifying liveOneClickEnabled +
   // allowOrdersWithoutStopLoss + master-live access). A client cannot
-  // smuggle the bit through `payload`.
+  // smuggle the bit through `payload`. `commandProvenance` is scrubbed for
+  // the same reason: only the server-built envelope above may occupy the
+  // payload-hash-covered slot gate #19 trusts.
   const draftPayload: Record<string, unknown> = (() => {
     const raw = (input.payload ?? {}) as Record<string, unknown>;
-    const { allowNoStopLossThisDraft: _stripped, referencePrice: _rpStripped, ...safe } = raw;
+    const {
+      allowNoStopLossThisDraft: _stripped,
+      referencePrice: _rpStripped,
+      commandProvenance: _provStripped,
+      ...safe
+    } = raw;
     // referencePrice is set ONLY from the typed server-side argument, never
     // smuggled through client payload (stripped above).
     const withRef = typeof input.referencePrice === "number" && input.referencePrice > 0
@@ -1868,9 +1945,15 @@ export async function createLiveDraft(
           },
         }
       : withPhase;
-    return input.allowNoStopLossThisDraft === true
-      ? { ...withAgent, allowNoStopLossThisDraft: true as const }
+    // Foundation gate #19 — the envelope's payload-hash-covered copy. The
+    // typed provenance_envelope column mirrors it; the dispatch gate compares
+    // the two so the envelope cannot be forged between confirm and dispatch.
+    const withProvenance = provenanceEnvelope != null
+      ? { ...withAgent, commandProvenance: provenanceEnvelope }
       : withAgent;
+    return input.allowNoStopLossThisDraft === true
+      ? { ...withProvenance, allowNoStopLossThisDraft: true as const }
+      : withProvenance;
   })();
 
   // AACI Security Phase 3 — stamp the command-integrity envelope (payload hash +
@@ -1915,6 +1998,11 @@ export async function createLiveDraft(
     // Task #213 — self-trade agent/decision attribution (additive, nullable).
     selfTradeAgentId: input.selfTradeAgentId ?? null,
     selfTradeDecisionId: input.selfTradeDecisionId ?? null,
+    // Foundation gates #19/#20 — typed provenance envelope (mirrors the
+    // payload-hash-covered payload.commandProvenance copy) + promotion-ledger
+    // reference. Both nullable + additive.
+    provenanceEnvelope: provenanceEnvelope as unknown as Record<string, unknown> | null,
+    edgeId: input.edgeId ?? null,
     // R3 slice 5 — signal-provenance stamp (typed column; nullable). An
     // unparseable caller value is stored as NULL — provenance is never
     // fabricated; with a max_signal_age_ms bound configured the dispatch
@@ -3342,6 +3430,26 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
     });
   }
 
+  // ── Foundation gates #19–#21 — assemble dispatch-time inputs ───────────
+  // Provenance (typed column vs payload-hash-covered copy), promotion-ledger
+  // state (production_edges, read-only), and capital-tier exposure facts.
+  // Assembled HERE (dispatch time, not draft time) so revocations/retirements
+  // between draft and dispatch are honoured, exactly like every other
+  // evaluator input. Every unresolvable fact arrives as the honest "unknown"
+  // and the pure gates fail CLOSED for entries.
+  const foundationInputs = await buildFoundationGateInputs({
+    userId: args.userId,
+    row: {
+      commandType: row.commandType,
+      symbol: row.symbol,
+      requestedVolume: Number(row.requestedVolume),
+      actorType: row.actorType ?? null,
+      provenanceEnvelope: row.provenanceEnvelope ?? null,
+      edgeId: row.edgeId ?? null,
+      payload: row.payload ?? null,
+    },
+  });
+
   const phaseBGate: LivePhaseBGateResult = evaluateLivePhaseBDispatchGate({
     liveBrokerExecutionEnabled: await resolveLiveBrokerExecutionEnabledAsync(),
     globalLiveEnabled: !!env.globalLiveEnabled,
@@ -3392,7 +3500,24 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
     // Honest owner/admin waiver of the disclosure requirement (distinct from
     // acceptance — recorded on user_master_live_access as an operator override).
     disclosureWaivedByOperator,
+    // Foundation gates #19–#21 — ALWAYS supplied on the dispatch path (the
+    // evaluator's null branch exists only for readiness previews with no
+    // command context). Pinned by test:foundation-gates.
+    foundation: foundationInputs,
   });
+
+  // Foundation gate verdicts are logged on EVERY dispatch — PASS included —
+  // so enforcement can never go silent (they also persist in the
+  // dispatchGateSnapshot on both the BLOCKED and SENT paths).
+  logger.info({
+    [PHASE_B_LIVE_LOG_PREFIX]: true,
+    event: "FOUNDATION_GATES_EVALUATED",
+    commandId: args.commandId, userId: args.userId, symbol: row.symbol,
+    verdicts: phaseBGate.gates.filter((g) =>
+      g.key === "PROVENANCE_UNPROVEN"
+      || g.key === "STRATEGY_NOT_LIVE_PROMOTED"
+      || g.key === "CAPITAL_TIER_EXCEEDED"),
+  }, "Foundation gates #19-#21 evaluated");
 
   const snapshot = {
     phaseA: phaseAGate,

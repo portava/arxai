@@ -332,6 +332,26 @@ export async function executeAgentDecision(
     const blockReason = lotResult.reasonCode ?? "NON_POSITIVE_LOT";
     return { status: "BLOCKED", blockReason, action: "BLOCK" };
   }
+  // Tighten-only (foundation gate #21 companion): a >1 multiplier was clamped
+  // inside the sizer — never silent, always named in the log.
+  if (lotResult.multiplierClamped) {
+    logger.warn({
+      agentId: agent.id, decisionId: decision.id, symbol: decision.symbol,
+      requestedMultiplier: gate.sizeMultiplier * advisory.sizeMultiplier,
+    }, "self-trade: sizeMultiplier > 1 clamped to 1 (tighten-only — a learned multiplier may only reduce exposure)");
+  }
+  // withinRiskBudget=false means honouring the broker minimum lot would
+  // exceed the configured risk budget. Previously advisory; now a REFUSAL:
+  // an autonomous trade may never knowingly over-risk its budget (the caller
+  // that "decides whether to proceed" decides NO, mechanically).
+  if (!lotResult.withinRiskBudget) {
+    logger.warn({
+      agentId: agent.id, decisionId: decision.id, symbol: decision.symbol,
+      lot: lotResult.lot, actualRiskUsd: lotResult.actualRiskUsd,
+      riskBudgetUsd: lotResult.riskBudgetUsd,
+    }, "self-trade: refusing dispatch — broker-minimum lot exceeds the risk budget (tighten-only refusal, never over-risk)");
+    return { status: "BLOCKED", blockReason: "RISK_BUDGET_EXCEEDED", action: "BLOCK" };
+  }
 
   // Insert the PENDING_TICKET row FIRST (agent-layer exactly-once). A duplicate
   // active row for the same (agentId, idempotencyKey) is rejected by the partial
@@ -407,6 +427,8 @@ export async function executeAgentDecision(
       stopLoss: thesis.stopLoss,
       sizeMultiplier: gate.sizeMultiplier,
       aaciSizeMultiplier: advisory.sizeMultiplier,
+      multiplierClamped: lotResult.multiplierClamped,
+      withinRiskBudget: lotResult.withinRiskBudget,
       aaciAction: advisory.recommendedAction,
       aaciScore: advisory.finalAaciScore,
     },
