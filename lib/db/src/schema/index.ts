@@ -490,3 +490,6 @@ export * from "./engineDrivers";
 // ── Opportunity Spine (#17/#18/#19) — owning per-setup lifecycle objects ─────
 // Additive-only; applied via docs/migrations-pending/build-opportunity-spine.sql.
 export * from "./opportunitySpine";
+// ── #27 execution-policy promotion gate state ────────────────────────────────
+// Additive-only; applied via docs/migrations-pending/build-resilience.sql.
+export * from "./executionPolicyPromotion";
