@@ -303,7 +303,10 @@
     "test:broker-hub-metadata-db": "tsx ./src/brokerHubMetadataIntegrationTest.ts",
     "verify:secret-provisioning": "tsx ./src/verifySecretProvisioning.ts",
     "test:approval-ticket-race-db": "tsx ./src/ci/run-approval-ticket-race-db.ts",
-    "test:conformal-bounds": "node --import tsx --test --test-force-exit src/__qa__/conformalBounds.test.ts"
+    "test:conformal-bounds": "node --import tsx --test --test-force-exit src/__qa__/conformalBounds.test.ts",
+    "test:strategy-contract-compiler": "node --import tsx --test --test-force-exit src/__qa__/strategyContractCompiler.test.ts",
+    "test:strategy-behavioral-diff": "node --import tsx --test --test-force-exit src/__qa__/strategyBehavioralDiff.test.ts",
+    "lab:strategy-diff": "node --import tsx ./src/strategyBehavioralDiffCli.ts"
   },
   "devDependencies": {
     "@types/node": "catalog:",
