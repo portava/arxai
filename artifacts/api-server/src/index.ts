@@ -16,6 +16,9 @@ import { startExpiredKeySweepWorker } from "./lib/registrationKeys/expiredKeySwe
 import { startExpiringKeysDigestWorker } from "./lib/registrationKeys/expiringKeysDigestWorker";
 import { startMissionDriverWorker } from "./lib/missionDriver.js";
 import { startEconomicReconciliationWorker } from "./lib/accounting/economicReconciliationWorker.js";
+import { startIntelligenceRoiWorker } from "./lib/intelligence/intelligenceRoiWorker.js";
+import { startChampionChallengerWorker } from "./lib/championChallengerWorker.js";
+import { startMetaStrategyControllerWorker } from "./lib/metaStrategyController.js";
 import { computeEnvChecklist, summarizeEnvChecklist } from "./lib/startup/envChecklist";
 import { runStartupReadinessCheck } from "./lib/startup/readinessCheck";
 import { seedCoreAgents } from "./lib/agentEcosystem/seedCoreAgents";
@@ -205,6 +208,17 @@ ensureSafetyCoreInitialized()
       // and nothing else. Opt-out via ARX_ECONOMIC_RECONCILIATION_ENABLED
       // (logged loudly).
       startEconomicReconciliationWorker();
+      // Engine-drivers build — three evidence/posture workers. None can place
+      // an order: #58 records the per-component intelligence-ROI ledger and
+      // the complexity governor's ADVISORY verdict; #15 pairs the live
+      // champion's closed decisions against challenger strategies in shadow
+      // (paired outcomes only); #16 continuously re-evaluates strategy
+      // postures and may AUTOMATICALLY only REDUCE authority (promotion is
+      // recorded + refused — owner press via the existing machinery). Each
+      // has its own loud env opt-out and fails safe per item.
+      startIntelligenceRoiWorker();
+      startChampionChallengerWorker();
+      startMetaStrategyControllerWorker();
       // Eagerly bootstrap the Deriv WebSocket so synthetic-index candles
       // (V10/V25/V50/V75/V100, 1Hz variants, Boom/Crash, Step) are ready
       // before the first scanner pass. Non-blocking; lazy ensureConnection

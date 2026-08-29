@@ -473,6 +473,8 @@ import adminHandshakeMonitorRouter from "./adminHandshakeMonitor.js";
 router.use(adminHandshakeMonitorRouter);
 import adminLiveSharedReadinessRouter from "./adminLiveSharedReadiness.js";
 router.use(adminLiveSharedReadinessRouter);
+import adminEngineDriversRouter from "./adminEngineDrivers.js";
+router.use(adminEngineDriversRouter);
 import adminLiveSharedActivationRouter from "./adminLiveSharedActivation.js";
 router.use(adminLiveSharedActivationRouter);
 import adminLiveFirstTestModeRouter from "./adminLiveFirstTestMode.js";

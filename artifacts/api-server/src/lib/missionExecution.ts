@@ -37,6 +37,11 @@ import {
   type MissionGateResult,
 } from "@workspace/domain/profit-mission";
 import {
+  resolveEffectiveProbation,
+  probationDispatchVerdict,
+  type EffectiveProbation,
+} from "./recoveryProbation.js";
+import {
   executeInstant,
   type InstantTradeIntent,
   type InstantTradeResult,
@@ -127,6 +132,9 @@ export interface DispatchApprovedDraftOpts {
   simulatedExecutor?: MissionSimulatedExecutor;
   /** Injectable Phase 7 pre-check evaluator — defaults to the real one. */
   phase7Evaluator?: Phase7Evaluator;
+  /** #34 — injectable probation read (tests only). STRICTER-ONLY: it can add
+   *  a refusal in front of the mission gate, never relax anything. */
+  probationResolver?: () => Promise<EffectiveProbation>;
 }
 
 export type DispatchApprovedDraftResult =
@@ -237,6 +245,43 @@ export async function dispatchApprovedDraft(
   }
   if (draft.direction !== "BUY" && draft.direction !== "SELL") {
     return { ok: false, kind: "no_direction" };
+  }
+
+  // ── #34 Recovery probation wall (additive, stricter-only, runs FIRST) ────────
+  // After a kill-switch release the platform re-opens through graduated
+  // probation stages instead of full authority: BLOCK_ALL refuses everything,
+  // PAPER_ONLY refuses live (paper/demo simulate as before), A_PLUS_ONLY
+  // requires an A-tier edge for live, REDUCED_SIZE was already applied at
+  // draft creation. Deployed-but-unreadable probation fails CLOSED; a
+  // not-yet-deployed layer reads as "none" and every existing gate below
+  // still runs unchanged.
+  const probation = await (opts.probationResolver ?? resolveEffectiveProbation)();
+  if (probation.kind === "unreadable") {
+    return {
+      ok: false, kind: "execution_rejected",
+      error: `RECOVERY_PROBATION_UNREADABLE: ${probation.reason} — failing closed; no order was attempted`,
+      httpStatus: 503,
+    };
+  }
+  if (probation.kind === "active") {
+    const verdict = probationDispatchVerdict({
+      stage: probation.stage,
+      executionMode: mission.executionMode,
+      edgeTier: draft.edgeTier,
+    });
+    if (!verdict.allowed) {
+      await journalMissionEvent({
+        missionId: args.missionId,
+        type: "draft_execution_blocked_probation",
+        message: `Draft execution refused by recovery probation (${probation.stage}). ${verdict.reasons[0] ?? ""} Draft remains approved; an owner press on the probation ladder is required to widen authority.`,
+        metadata: { draftId: draft.draftId, stage: probation.stage, reasons: verdict.reasons },
+      });
+      return {
+        ok: false, kind: "execution_rejected",
+        error: `RECOVERY_PROBATION_BLOCK: ${verdict.reasons[0] ?? "probation refused the dispatch"}`,
+        httpStatus: 409,
+      };
+    }
   }
 
   // ── Additive, stricter-only mission gate (runs BEFORE any execution) ─────────

@@ -22,6 +22,7 @@ import {
   missionProposalsTable,
   missionTradeDraftsTable,
   missionEventsTable,
+  missionDraftCounterfactualsTable,
   type MissionProposalRow,
   type MissionTradeDraftRow,
 } from "@workspace/db";
@@ -35,6 +36,15 @@ import {
   type MissionImpact,
 } from "@workspace/domain/profit-mission";
 import { calculatePositionSize } from "./positionSizing.js";
+import {
+  resolveEffectiveProbation,
+  probationSizingMultiplier,
+} from "./recoveryProbation.js";
+import {
+  buildDraftCounterfactual,
+  draftCounterfactualEnabled,
+} from "./draftCounterfactual.js";
+import { logger } from "./logger.js";
 import {
   resolveMissionRealisedStats,
   resolveMissionCompounding,
@@ -399,7 +409,7 @@ async function decide(
 ): Promise<DraftServiceResult> {
   const { userId, missionId, proposalId } = args;
   const reason = args.reason && args.reason.trim().length > 0 ? args.reason.trim().slice(0, 500) : null;
-  return db.transaction(async (tx): Promise<DraftServiceResult> => {
+  const result = await db.transaction(async (tx): Promise<DraftServiceResult> => {
     const missionRows = await tx
       .select()
       .from(profitMissionsTable)
@@ -434,6 +444,20 @@ async function decide(
       sizingMultiplier = Number.isFinite(combined) && combined > 0 ? combined : 1;
     } catch {
       sizingMultiplier = 1;
+    }
+
+    // ── #34 Recovery probation sizing (stricter-only, ≤ 1) ────────────────────
+    // While a post-outage probation is active, drafts are BORN reduced so the
+    // human approves the reduced size — the multiplier can only shrink the
+    // plan, never boost it. Unreadable probation contributes nothing here
+    // (the dispatch-side wall fails closed); a missing layer means factor 1.
+    try {
+      const probation = await resolveEffectiveProbation();
+      if (probation.kind === "active") {
+        sizingMultiplier *= probationSizingMultiplier(probation.stage);
+      }
+    } catch {
+      // Sizing stays as computed; the dispatch wall remains the enforcer.
     }
 
     const draft = await ensureDraft(tx, userId, mission, proposal, nowMs, sizingMultiplier);
@@ -492,6 +516,62 @@ async function decide(
 
     return { ok: true, draft: updated[0]! };
   });
+
+  // ── #5 Pre-trade counterfactual (ADVISORY, zero authority) ────────────────
+  // Attached AFTER the decision transaction commits, best-effort and
+  // idempotent (unique on draftId + conflict-do-nothing = once per draft, so
+  // the journal stays change-only). A failure here can never affect the
+  // decision, the draft, or any dispatch — it only costs the evidence row.
+  if (result.ok) {
+    await attachDraftCounterfactual(result.draft);
+  }
+  return result;
+}
+
+/** Best-effort advisory counterfactual attach — never throws. */
+async function attachDraftCounterfactual(draft: MissionTradeDraftRow): Promise<void> {
+  if (!draftCounterfactualEnabled(process.env["ARX_DRAFT_COUNTERFACTUAL_ENABLED"])) {
+    logger.warn(
+      { flag: "ARX_DRAFT_COUNTERFACTUAL_ENABLED" },
+      "draft_counterfactual_DISABLED_by_env — drafts carry no pre-trade wait/half-size/no-trade evidence",
+    );
+    return;
+  }
+  try {
+    const cf = buildDraftCounterfactual({
+      direction: draft.direction,
+      entryPrice: draft.entryPrice,
+      stopLoss: draft.stopLoss,
+      takeProfit: draft.takeProfit,
+      riskAmount: draft.riskAmount,
+      expectedR: draft.expectedR,
+    });
+    const inserted = await db
+      .insert(missionDraftCounterfactualsTable)
+      .values({
+        draftId: draft.draftId,
+        missionId: draft.missionId,
+        userId: draft.userId,
+        scenariosJson: cf,
+      })
+      .onConflictDoNothing({ target: missionDraftCounterfactualsTable.draftId })
+      .returning({ id: missionDraftCounterfactualsTable.id });
+    if (inserted[0]) {
+      await db.insert(missionEventsTable).values({
+        missionId: draft.missionId,
+        type: "draft_counterfactual_attached",
+        message: cf.computable
+          ? `Advisory pre-trade counterfactual attached for ${draft.symbol} ${draft.direction}: as-is / half-size / no-trade bounds recorded (wait = honest UNKNOWN). Display evidence only — zero authority.`
+          : `Advisory pre-trade counterfactual for ${draft.symbol}: not computable (${cf.reasons[0] ?? "missing plan inputs"}). Recorded honestly as null bounds.`,
+        metadataJson: { draftId: draft.draftId, counterfactual: cf },
+      });
+    }
+  } catch (err) {
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err), draftId: draft.draftId },
+      "draft_counterfactual_attach_failed (non-fatal; draft unaffected — apply docs/migrations-pending/build-engine-drivers.sql if the table is missing)",
+    );
+  }
 }
 
 export function approveProposalDraft(args: DecisionArgs): Promise<DraftServiceResult> {

@@ -102,6 +102,8 @@ async function drive(over: {
   breakPersistence?: boolean;
   disclosure?: "accepted" | "waived" | "none";
   loseClaim?: boolean;
+  /** #34 probation read (persistence substitute). Default: no active probation. */
+  probation?: import("../../recoveryProbation.js").EffectiveProbation;
 } = {}): Promise<{ outcome: Awaited<ReturnType<typeof dispatchGuidedTicketForRequest>>; spy: Spy }> {
   const spy: Spy = { wireWrites: 0, audits: [], claims: 0, intents: 0, settlements: [] };
   const prev = process.env["ARX_EXECUTION_TIER"];
@@ -132,6 +134,7 @@ async function drive(over: {
           waivedByOperator: over.disclosure === "waived",
         }),
         serializeDispatch: async <T,>(_uid: number, fn: () => Promise<T>) => ({ acquired: true, value: await fn() }),
+        resolveProbation: async () => over.probation ?? { kind: "none" as const },
         recordAudit: async (e) => { spy.audits.push(e.kind); },
         applySettlement: async (o) => {
           spy.settlements.push({
@@ -335,6 +338,7 @@ test("with NO transport override, the LIVE path runs and still fabricates nothin
         loadObservedState: async () => OBSERVED(),
         disclosureStatus: async () => ({ accepted: true, waivedByOperator: false }),
         serializeDispatch: async <T,>(_uid: number, fn: () => Promise<T>) => ({ acquired: true, value: await fn() }),
+        resolveProbation: async () => ({ kind: "none" as const }),
         recordAudit: async () => {},
         depSources: {
           loadConnection: async () => ({ id: 11, ownerUserId: USER, venue: "DERIV_DEMO", credentialHandle: "h" }),
@@ -378,6 +382,7 @@ test("with NO observed state wired, the product still refuses — never trades b
         claimForDispatch: async () => ({ claimed: true }),
         disclosureStatus: async () => ({ accepted: true, waivedByOperator: false }),
         serializeDispatch: async <T,>(_uid: number, fn: () => Promise<T>) => ({ acquired: true, value: await fn() }),
+        resolveProbation: async () => ({ kind: "none" as const }),
         recordAudit: async () => {},
         buyViaCertifiedTransport: async () => {
           throw new Error("THE TRANSPORT MUST NOT BE REACHED ON UNREADABLE STATE");
@@ -426,6 +431,7 @@ test("a SUCCESSFUL dispatch settles EXECUTED with the venue's reference", async 
         loadObservedState: async () => OBSERVED(),
         disclosureStatus: async () => ({ accepted: true, waivedByOperator: false }),
         serializeDispatch: async <T,>(_uid: number, fn: () => Promise<T>) => ({ acquired: true, value: await fn() }),
+        resolveProbation: async () => ({ kind: "none" as const }),
         recordAudit: async (e) => {
           spy.audits.push(e.kind);
           if (e.kind === "GUIDED_DISPATCH_EXECUTED") executedEvent = e;
@@ -642,4 +648,41 @@ test("a lost lock without running the work refuses", async () => {
   const r = await serializeGuidedDispatch(1, async () => "NEVER-RUNS",
     async () => ({ acquired: false }));
   assert.deepEqual(r, { acquired: false });
+});
+
+// ── #34 recovery probation pre-claim wall ─────────────────────────────────
+test("PROBATION BLOCK_ALL refuses PRE-CLAIM: no claim, no intent, no wire write", async () => {
+  const { outcome, spy } = await drive({ probation: { kind: "active", stage: "BLOCK_ALL" } });
+  assert.equal(outcome.ok, false);
+  if (outcome.ok) return;
+  assert.equal(outcome.refusal, "TICKET_AUTHORIZATION_REFUSED");
+  assert.match(outcome.detail, /RECOVERY_PROBATION_BLOCK/);
+  assert.equal(outcome.claimed, false, "a probation refusal must never claim the ticket");
+  assert.equal(spy.claims, 0);
+  assert.equal(spy.intents, 0);
+  assert.equal(spy.wireWrites, 0);
+});
+
+test("PROBATION UNREADABLE fails CLOSED pre-claim (a deployed layer that errors never silently passes)", async () => {
+  const { outcome, spy } = await drive({ probation: { kind: "unreadable", reason: "probe failed" } });
+  assert.equal(outcome.ok, false);
+  if (outcome.ok) return;
+  assert.match(outcome.detail, /RECOVERY_PROBATION_UNREADABLE/);
+  assert.equal(spy.claims, 0);
+  assert.equal(spy.wireWrites, 0);
+});
+
+test("PROBATION at any non-BLOCK stage never adds a refusal to the guided path", async () => {
+  // The dispatch proceeds past the probation wall into the ordinary chain —
+  // whatever that chain decides, the probation layer contributed nothing.
+  // (Full-success plumbing is certified by the existing tier cases.)
+  for (const stage of ["PAPER_ONLY", "A_PLUS_ONLY", "REDUCED_SIZE"] as const) {
+    const noProbation = await drive();
+    const withProbation = await drive({ probation: { kind: "active", stage } });
+    assert.equal(withProbation.outcome.ok, noProbation.outcome.ok, stage);
+    if (!withProbation.outcome.ok) {
+      assert.ok(!/RECOVERY_PROBATION/.test(withProbation.outcome.detail),
+        `${stage} must not be the refusal reason on the proven-demo guided path`);
+    }
+  }
 });

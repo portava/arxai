@@ -484,3 +484,6 @@ export * from "./edgeLibrary";
 // Does not replace MT5 bridge state or permit connection/execution behavior.
 export * from "./brokerHubMetadata";
 export * from "./phase6GuidedExecution";
+// ── Engine drivers (capabilities #58/#34/#15/#16/#5) — evidence + probation ──
+// Additive-only; applied via docs/migrations-pending/build-engine-drivers.sql.
+export * from "./engineDrivers";
