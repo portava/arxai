@@ -17,6 +17,11 @@ import { db, arxLiveCommandsTable, arxLivePositionsTable, mt5ConnectionTable } f
 import { bridgeAuthPerUserOnly } from "./mt5.js";
 import { brokerAbsenceAutoReconcilePolicy } from "../lib/live/brokerAbsencePolicy.js";
 import { runBrokerAbsenceReconcile } from "../lib/live/brokerAbsenceReconcileRunner.js";
+import { observeBrokerSideCloses } from "../lib/live/brokerCloseObserver.js";
+import {
+  attributeBrokerCloseReports,
+  type BrokerCloseReport,
+} from "../lib/live/brokerCloseOutcome.js";
 import {
   pickupNextLiveCommand,
   recordLiveCommandResult,
@@ -222,6 +227,48 @@ function parseMt5Time(v: unknown): Date | null {
   return Number.isNaN(dt.getTime()) ? null : dt;
 }
 
+// ── Broker-REPORTED closes (outcome truth) ─────────────────────────────────
+//
+// A position closed by its own STOP-LOSS at the broker never produces an ARX
+// close command, so it used to leave no trace in the mission record at all —
+// only ARX-issued closes (take-profit, trailing, protective) were recorded, and
+// the realised figure drifted upward. An EA that can report its closed deals
+// sends them alongside the open-position sweep as `closed: [...]`; every field
+// except the ticket is optional, because a broker may report a close without
+// giving us numbers.
+//
+// HONESTY: whatever arrives is stored VERBATIM. A missing profit is stored as
+// NULL and the mission outcome is recorded UNRECONCILED — never inferred from
+// the stop-loss level, the take-profit level, or the last floating P/L.
+interface ParsedBrokerCloseReport extends BrokerCloseReport {
+  closedAt: Date | null;
+}
+
+function parseBrokerCloseReports(body: Record<string, unknown>): ParsedBrokerCloseReport[] {
+  const raw = body["closed"] ?? body["closedPositions"];
+  if (!Array.isArray(raw)) return [];
+  const out: ParsedBrokerCloseReport[] = [];
+  const seen = new Set<string>();
+  for (const item of raw as Array<Record<string, unknown>>) {
+    if (item == null || typeof item !== "object") continue;
+    const ticketRaw = item["brokerTicket"] ?? item["ticket"];
+    const ticket =
+      typeof ticketRaw === "string" || typeof ticketRaw === "number" ? String(ticketRaw).trim() : "";
+    if (ticket.length === 0 || seen.has(ticket)) continue;
+    seen.add(ticket);
+    out.push({
+      brokerTicket: ticket,
+      // A realised P/L may legitimately be negative or zero — only a non-number
+      // is refused. A close FILL price of 0 is MT5's "no value", so it is
+      // rejected by snapNonZeroOrNull rather than stored as a real price.
+      brokerRealisedPnl: snapNumOrNull(item["profit"] ?? item["realisedPnl"] ?? item["realizedPnl"]),
+      brokerClosePrice: snapNonZeroOrNull(item["closePrice"] ?? item["price"]),
+      closedAt: parseMt5Time(item["closedAt"] ?? item["closeTime"]),
+    });
+  }
+  return out;
+}
+
 // ── Live open-positions snapshot ingest (shared) ───────────────────────────
 // Both EA generations POST the broker's COMPLETE list of currently-open live
 // positions for this bridge:
@@ -414,6 +461,78 @@ async function handleLivePositionsSnapshot(req: AugReq, res: Response): Promise<
     req.log.warn({ err }, "sync-live-positions broker-absence evidence tracking failed");
   }
 
+  // ── Broker-REPORTED closes (outcome truth). ───────────────────────────────
+  // When the EA reports a closed deal for one of our tickets, the broker has
+  // told us plainly that the position is gone AND handed us its own numbers.
+  // Stamp closed_at from that report (recording a close the broker already
+  // executed — never initiating one) and store the broker figures verbatim.
+  // reconcileState is deliberately left NULL, exactly like the ARX close-fill
+  // path: this is a confirmed close, not an operator reconciliation.
+  const closeReports = parseBrokerCloseReports(b);
+  let brokerReportedClosed = 0;
+  // BRIDGE ISOLATION (forward-fix). Broker ticket numbers are broker-local, so
+  // one user's two bridges can legitimately carry the SAME ticket string. The
+  // userId-only match here let bridge A's EA stamp a close — and write a
+  // broker-realised P/L that flows into the mission's realised money figure —
+  // onto bridge B's position. Every other write in this handler (the absence
+  // evidence sweep above, runBrokerAbsenceReconcile) is bridge-scoped, and this
+  // one must be too. `attributeBrokerCloseReports` holds the rule and the reason
+  // it is not simply "must be on this bridge"; a read failure refuses every
+  // report rather than falling back to the userId-only behaviour.
+  const reportTickets = closeReports.map((r) => r.brokerTicket);
+  const acceptedReportTickets = new Set<string>();
+  if (reportTickets.length > 0) {
+    try {
+      const rowsForTickets = await db.select({
+        brokerTicket: arxLivePositionsTable.brokerTicket,
+        bridgeConnectionId: arxLivePositionsTable.bridgeConnectionId,
+      }).from(arxLivePositionsTable).where(and(
+        eq(arxLivePositionsTable.userId, conn.userId!),
+        inArray(arxLivePositionsTable.brokerTicket, reportTickets),
+      ));
+      const attribution = attributeBrokerCloseReports({
+        bridgeConnectionId: conn.id,
+        reportTickets,
+        positionRows: rowsForTickets,
+      });
+      for (const t of attribution.accepted) acceptedReportTickets.add(t);
+      for (const r of attribution.refused) {
+        req.log.warn(
+          { brokerTicket: r.brokerTicket, bridgeConnectionId: conn.id, attribution: r.attribution },
+          "broker close report belongs to another bridge — refused",
+        );
+      }
+    } catch (err) {
+      req.log.warn({ err }, "broker close report attribution failed — every report refused");
+    }
+  }
+  for (const rep of closeReports) {
+    if (!acceptedReportTickets.has(rep.brokerTicket)) continue;
+    try {
+      const stamped = await db.update(arxLivePositionsTable).set({
+        closedAt: rep.closedAt ?? snapshotNow,
+        brokerCloseReportedAt: snapshotNow,
+        brokerClosePrice: rep.brokerClosePrice ?? null,
+        brokerRealisedPnl: rep.brokerRealisedPnl ?? null,
+        lastSyncedAt: snapshotNow,
+      }).where(and(
+        eq(arxLivePositionsTable.userId, conn.userId!),
+        eq(arxLivePositionsTable.bridgeConnectionId, conn.id),
+        eq(arxLivePositionsTable.brokerTicket, rep.brokerTicket),
+        isNull(arxLivePositionsTable.closedAt),
+      )).returning({ id: arxLivePositionsTable.id });
+      if (stamped.length > 0) brokerReportedClosed += 1;
+    } catch (err) {
+      req.log.warn({ err, brokerTicket: rep.brokerTicket }, "broker close report stamp failed");
+    }
+  }
+  // Only bridge-attributable reports are forwarded to the observer, which hands
+  // them to a per-USER recorder. Filtering here is what keeps a foreign bridge's
+  // number out of the mission's realised P/L.
+  const attributableCloseReports = closeReports.filter((r) =>
+    acceptedReportTickets.has(r.brokerTicket),
+  );
+
   // Stamp the bridge's "complete sweep landed" marker on EVERY snapshot,
   // including an EMPTY positions list (broker flat). The live position READ
   // layers use this — NOT row timestamps — as the reliability signal: a
@@ -447,6 +566,33 @@ async function handleLivePositionsSnapshot(req: AugReq, res: Response): Promise<
     })();
   }
 
+  // ── Broker-side close OBSERVATION (outcome truth). NOT flag-gated. ─────────
+  // Recording the outcome of a position the broker ALREADY closed is an
+  // observation, not an action: it sends no broker command, writes no position
+  // state on the absence path, and cannot place or relax anything. Gating it
+  // behind the auto-reconcile ACTION flag is exactly what let ARX-issued closes
+  // (wins, take-profits, trails) be recorded while broker-side stop-losses were
+  // not — biasing every realised figure upward. It uses the same evidence bar as
+  // the action path, and when the broker gave no numbers it records an honest
+  // UNRECONCILED outcome (pnl NULL + typed reason) rather than guessing.
+  // Best-effort + fire-and-forget so it can never slow or fail the EA ACK.
+  void (async () => {
+    try {
+      await observeBrokerSideCloses({
+        userId: conn.userId!,
+        bridgeConnectionId: conn.id,
+        reports: attributableCloseReports.map((r) => ({
+          brokerTicket: r.brokerTicket,
+          brokerRealisedPnl: r.brokerRealisedPnl,
+          brokerClosePrice: r.brokerClosePrice,
+        })),
+        now: snapshotNow,
+      });
+    } catch (err) {
+      req.log.warn({ err }, "broker-side close observation after sync-live-positions failed");
+    }
+  })();
+
   // Task #1 — live position snapshot drives totalUserUnrealizedPnl; refresh pool.
   void (async () => {
     try {
@@ -461,7 +607,14 @@ async function handleLivePositionsSnapshot(req: AugReq, res: Response): Promise<
   // floating P/L), so signal this user's stream to rebuild now instead of
   // waiting on its 3s fallback tick. Best-effort; never blocks the EA ACK.
   emitLiveAccountChanged(conn.userId ?? null);
-  res.json({ ok: true, upserts, received: positions.length, reconciledClosed, ...LIVE_SAFETY_ENVELOPE });
+  res.json({
+    ok: true,
+    upserts,
+    received: positions.length,
+    reconciledClosed,
+    brokerReportedClosed,
+    ...LIVE_SAFETY_ENVELOPE,
+  });
 }
 
 router.post("/mt5/sync-live-positions", bridgeAuthPerUserOnly, (req: AugReq, res) =>

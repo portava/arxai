@@ -58,6 +58,18 @@ import {
 } from "./missionRiskService.js";
 import { getRunning } from "./intelligence/mfeTracker.js";
 import type { MissionExitSignalUnavailability } from "./missionExitSignals.js";
+import type {
+  MissionOutcomeSource,
+  MissionOutcomeStatus,
+  MissionOutcomeUnreconciledReason,
+} from "./live/brokerCloseOutcome.js";
+import { brokerCloseObservationPolicy } from "./live/brokerAbsencePolicy.js";
+import {
+  computeMissionOutcomeCompleteness,
+  applyCompletenessToMilestone,
+  COMPLETE_OUTCOME_SET,
+  type MissionOutcomeCompleteness,
+} from "./missionOutcomeCompleteness.js";
 
 type MissionRow = typeof profitMissionsTable.$inferSelect;
 
@@ -194,6 +206,74 @@ export async function resolveMissionRealisedStats(args: {
   };
 }
 
+// ── Realised-outcome COMPLETENESS (outcome-truth) ────────────────────────────
+//
+// The realised figure above is a sum over drafts that carry BOTH a `closedAt`
+// and a finite `pnl`. Any executed trade missing either one silently vanishes
+// from it. Because the closes ARX does not perform skew toward stop-loss
+// LOSSES, that silence biased the figure UPWARD. This read counts exactly what
+// is missing so the figure can be labelled honestly and the target lock held.
+
+/**
+ * Resolve how complete a mission's realised set is, by matching every executed
+ * draft against this user's own live-position rows (per-user isolation: both
+ * sides are scoped by userId). Never fabricates a result for a missing outcome —
+ * it reports the gap. A read failure degrades to the honest "nothing known to be
+ * missing" set rather than blocking the mission surface.
+ */
+export async function resolveMissionOutcomeCompleteness(args: {
+  userId: number;
+  missionId: number;
+}): Promise<MissionOutcomeCompleteness> {
+  const drafts = await db
+    .select({
+      draftId: missionTradeDraftsTable.draftId,
+      brokerTicket: missionTradeDraftsTable.brokerTicket,
+      closedAt: missionTradeDraftsTable.closedAt,
+      pnl: missionTradeDraftsTable.pnl,
+      resultJson: missionTradeDraftsTable.resultJson,
+    })
+    .from(missionTradeDraftsTable)
+    .where(
+      and(
+        eq(missionTradeDraftsTable.missionId, args.missionId),
+        eq(missionTradeDraftsTable.userId, args.userId),
+        eq(missionTradeDraftsTable.status, "executed"),
+      ),
+    );
+  if (drafts.length === 0) return COMPLETE_OUTCOME_SET;
+
+  const positions = await db
+    .select({
+      brokerTicket: arxLivePositionsTable.brokerTicket,
+      closedAt: arxLivePositionsTable.closedAt,
+      reconcileState: arxLivePositionsTable.reconcileState,
+      brokerAbsentSnapshotCount: arxLivePositionsTable.brokerAbsentSnapshotCount,
+    })
+    .from(arxLivePositionsTable)
+    .where(eq(arxLivePositionsTable.userId, args.userId));
+
+  return computeMissionOutcomeCompleteness({
+    drafts: drafts.map((d) => {
+      const outcome = asRecord(asRecord(d.resultJson).outcome);
+      return {
+        draftId: d.draftId,
+        brokerTicket: d.brokerTicket,
+        closedAt: d.closedAt,
+        pnl: d.pnl,
+        outcomeStatus: typeof outcome.status === "string" ? outcome.status : null,
+      };
+    }),
+    positions: positions.map((p) => ({
+      brokerTicket: p.brokerTicket,
+      closedAt: p.closedAt,
+      reconcileState: p.reconcileState,
+      brokerAbsentSnapshotCount: p.brokerAbsentSnapshotCount ?? 0,
+    })),
+    absenceEvidenceThreshold: brokerCloseObservationPolicy.requiredReliableAbsences,
+  });
+}
+
 // ── Controlled compounding (REALISED-only, never during drawdown) ─────────────
 
 export interface MissionCompoundingState extends CompoundingVerdict {
@@ -271,6 +351,16 @@ export interface MissionMilestoneState extends MilestoneVerdict {
   /** Peak realised profit carried forward + updated this evaluation. */
   peakRealisedProfit: number;
   realisedProfit: number;
+  /**
+   * How complete the realised set behind `realisedProfit` / `peakRealisedProfit`
+   * actually is. When `complete` is false those figures are UNFINISHED and are a
+   * bound in NEITHER direction: unconfirmed closes are excluded outright, and
+   * because the closes ARX does not perform skew toward stop-losses the figure
+   * usually reads HIGH. The mission still STOPS at its target (the stop is never
+   * removed), but the completion flip and the "target reached" journal entry are
+   * held until every outcome is broker-confirmed.
+   */
+  outcomeCompleteness: MissionOutcomeCompleteness;
 }
 
 /**
@@ -278,11 +368,18 @@ export interface MissionMilestoneState extends MilestoneVerdict {
  * by composing the pure engine with honest realised stats + the persisted peak.
  * Pure w.r.t. its inputs (no write) — persistence happens in
  * {@link refreshMissionProtection}.
+ *
+ * OUTCOME TRUTH: the realised set is checked for completeness and the verdict is
+ * passed through the stricter-only completeness gate. The gate never removes the
+ * stop (that would resume trading on an unverified set); it attaches the honest
+ * reasons, and {@link refreshMissionProtection} holds the completion CLAIM.
  */
 export async function resolveMissionMilestones(args: {
   userId: number;
   mission: MissionRow;
   realised?: MissionRealisedStats;
+  /** Pre-resolved completeness (avoids a duplicate query); resolved when absent. */
+  completeness?: MissionOutcomeCompleteness;
   nowMs?: number;
 }): Promise<MissionMilestoneState> {
   const nowMs = args.nowMs ?? Date.now();
@@ -292,6 +389,12 @@ export async function resolveMissionMilestones(args: {
       userId: args.userId,
       missionId: args.mission.id,
       nowMs,
+    }));
+  const completeness =
+    args.completeness ??
+    (await resolveMissionOutcomeCompleteness({
+      userId: args.userId,
+      missionId: args.mission.id,
     }));
   const protection = readProtectionSettings(args.mission);
   const priorPeak = readPriorPeakRealised(args.mission);
@@ -307,10 +410,16 @@ export async function resolveMissionMilestones(args: {
     continueAfterTarget: protection.continueAfterTarget,
   });
 
+  // Stricter-only: an incomplete outcome set attaches honest reasons. It never
+  // grants a lock and — deliberately — never removes one, because removing the
+  // stop is what would let an unverified mission keep trading.
+  const gated = applyCompletenessToMilestone(verdict, completeness);
+
   return {
-    ...verdict,
+    ...gated,
     peakRealisedProfit: round2(peakRealisedProfit),
     realisedProfit: realised.realisedProfit,
+    outcomeCompleteness: completeness,
   };
 }
 
@@ -379,10 +488,15 @@ export async function refreshMissionProtection(args: {
     if (!mission) return { ok: false as const, kind: "mission_not_found" as const };
 
     // Realised stats are read once and shared by both engines (per-user/mission).
+    // The SAME read also feeds the outcome-completeness check, so the figure and
+    // the statement about how complete it is can never disagree.
     const closedRows = await tx
       .select({
+        draftId: missionTradeDraftsTable.draftId,
+        brokerTicket: missionTradeDraftsTable.brokerTicket,
         pnl: missionTradeDraftsTable.pnl,
         closedAt: missionTradeDraftsTable.closedAt,
+        resultJson: missionTradeDraftsTable.resultJson,
       })
       .from(missionTradeDraftsTable)
       .where(
@@ -392,6 +506,37 @@ export async function refreshMissionProtection(args: {
           eq(missionTradeDraftsTable.status, "executed"),
         ),
       );
+    const positionRows =
+      closedRows.length === 0
+        ? []
+        : await tx
+            .select({
+              brokerTicket: arxLivePositionsTable.brokerTicket,
+              closedAt: arxLivePositionsTable.closedAt,
+              reconcileState: arxLivePositionsTable.reconcileState,
+              brokerAbsentSnapshotCount: arxLivePositionsTable.brokerAbsentSnapshotCount,
+            })
+            .from(arxLivePositionsTable)
+            .where(eq(arxLivePositionsTable.userId, args.userId));
+    const completeness = computeMissionOutcomeCompleteness({
+      drafts: closedRows.map((d) => {
+        const outcome = asRecord(asRecord(d.resultJson).outcome);
+        return {
+          draftId: d.draftId,
+          brokerTicket: d.brokerTicket,
+          closedAt: d.closedAt,
+          pnl: d.pnl,
+          outcomeStatus: typeof outcome.status === "string" ? outcome.status : null,
+        };
+      }),
+      positions: positionRows.map((p) => ({
+        brokerTicket: p.brokerTicket,
+        closedAt: p.closedAt,
+        reconcileState: p.reconcileState,
+        brokerAbsentSnapshotCount: p.brokerAbsentSnapshotCount ?? 0,
+      })),
+      absenceEvidenceThreshold: brokerCloseObservationPolicy.requiredReliableAbsences,
+    });
     const dayStart = startOfUtcDayMs(nowMs);
     let realisedProfit = 0;
     let realisedProfitToday = 0;
@@ -412,6 +557,7 @@ export async function refreshMissionProtection(args: {
       userId: args.userId,
       mission,
       realised,
+      completeness,
       nowMs,
     });
     const compounding = await resolveMissionCompounding({
@@ -444,6 +590,10 @@ export async function refreshMissionProtection(args: {
         peakRealisedProfit: milestone.peakRealisedProfit,
         realisedProfit: milestone.realisedProfit,
         reasons: milestone.reasons,
+        // Outcome truth: how complete the realised set behind those figures is.
+        // Persisted so the UI can state it plainly instead of showing a bare
+        // (and, while outcomes are missing, flattering) number.
+        outcomeCompleteness: milestone.outcomeCompleteness,
         asOf: nowIso,
       },
       compounding: {
@@ -462,8 +612,18 @@ export async function refreshMissionProtection(args: {
     };
 
     // ── Target stop+lock → flip the mission to `completed` (default at 100%). ──
+    // OUTCOME TRUTH: the stop is honoured immediately (`stopAndLock` already
+    // makes `missionDriver` stop planning new risk), but the COMPLETION CLAIM is
+    // held while any closed outcome is still unconfirmed. Declaring a mission
+    // complete on a realised figure that excludes unconfirmed — usually losing —
+    // closes is a claim ARX cannot stand behind. The flip happens on a later
+    // refresh, once the set is complete.
+    const outcomesConfirmed = milestone.outcomeCompleteness.complete;
     const missionCompleted =
-      milestone.stopAndLock && mission.status !== "completed" && mission.status !== "cancelled";
+      milestone.stopAndLock &&
+      outcomesConfirmed &&
+      mission.status !== "completed" &&
+      mission.status !== "cancelled";
     await tx
       .update(profitMissionsTable)
       .set({
@@ -508,8 +668,16 @@ export async function refreshMissionProtection(args: {
       await tx.insert(missionEventsTable).values({
         missionId: args.missionId,
         type: "mission_target_locked",
-        message: `Target reached — ${missionCompleted ? "mission completed and profit locked" : "profit locked"} (${milestone.lockedProfit}).`,
-        metadataJson: { lockedProfit: milestone.lockedProfit, missionCompleted },
+        message: outcomesConfirmed
+          ? `Target reached — ${missionCompleted ? "mission completed and profit locked" : "profit locked"} (${milestone.lockedProfit}).`
+          : `Target reached on the confirmed results only (${milestone.lockedProfit}) — the mission is stopped, and completion is held until every closed trade has a broker-confirmed result.`,
+        metadataJson: {
+          lockedProfit: milestone.lockedProfit,
+          missionCompleted,
+          outcomesConfirmed,
+          pendingOutcomeCount: milestone.outcomeCompleteness.pendingOutcomeCount,
+          unreconciledCloseCount: milestone.outcomeCompleteness.unreconciledCloseCount,
+        },
       });
     }
 
@@ -936,6 +1104,25 @@ export interface RecordMissionTradeCloseArgs {
   protectiveExit?: boolean;
   /** Realised reward-to-risk, when known. */
   rMultiple?: number | null;
+  /**
+   * OUTCOME TRUTH — where the knowledge of this close came from. Defaults to
+   * ARX_CLOSE_FILL because that was historically the only entrance. Broker-side
+   * closes (stop-loss, stop-out, manual close at the terminal) arrive as
+   * BROKER_CLOSE_REPORT or BROKER_ABSENCE.
+   */
+  outcomeSource?: MissionOutcomeSource;
+  /**
+   * RECONCILED when `realisedPnl` is a broker-confirmed figure; UNRECONCILED
+   * when the broker told us the trade is closed but gave us no P/L. An
+   * UNRECONCILED close stores pnl = null and is EXCLUDED from realised profit —
+   * it is never guessed, and never quietly dropped either: the completeness read
+   * counts it and the UI says the figure is incomplete.
+   */
+  outcomeStatus?: MissionOutcomeStatus;
+  /** Typed reason a close carries no P/L. Null for a reconciled outcome. */
+  unreconciledReason?: MissionOutcomeUnreconciledReason | null;
+  /** Broker-reported close FILL price, when the broker reported one. */
+  brokerClosePrice?: number | null;
   nowMs?: number;
 }
 
@@ -987,6 +1174,16 @@ export async function recordMissionTradeClose(
         quality: verdict.quality,
         justified: verdict.justified,
         reasons: verdict.reasons,
+      },
+      // OUTCOME TRUTH provenance — how this close became known and whether its
+      // P/L is broker-confirmed. Read back by the completeness engine.
+      outcome: {
+        source: args.outcomeSource ?? "ARX_CLOSE_FILL",
+        status: args.outcomeStatus ?? (isNum(args.realisedPnl) ? "RECONCILED" : "UNRECONCILED"),
+        unreconciledReason: args.unreconciledReason ?? null,
+        realisedPnl: isNum(args.realisedPnl) ? args.realisedPnl : null,
+        brokerClosePrice: isNum(args.brokerClosePrice) ? args.brokerClosePrice : null,
+        recordedAt: new Date(nowMs).toISOString(),
       },
       closedAt: new Date(nowMs).toISOString(),
     };
@@ -1074,6 +1271,11 @@ export async function recordMissionTradeCloseByBrokerTicket(args: {
   brokerTicket: string | null | undefined;
   realisedPnl: number | null;
   exitReason?: string | null;
+  /** See {@link RecordMissionTradeCloseArgs.outcomeSource}. */
+  outcomeSource?: MissionOutcomeSource;
+  outcomeStatus?: MissionOutcomeStatus;
+  unreconciledReason?: MissionOutcomeUnreconciledReason | null;
+  brokerClosePrice?: number | null;
   nowMs?: number;
 }): Promise<RecordMissionCloseByTicketResult> {
   const ticket = typeof args.brokerTicket === "string" ? args.brokerTicket.trim() : "";
@@ -1121,6 +1323,10 @@ export async function recordMissionTradeCloseByBrokerTicket(args: {
     brokerTicket: ticket,
     exitReason,
     protectiveExit,
+    outcomeSource: args.outcomeSource,
+    outcomeStatus: args.outcomeStatus,
+    unreconciledReason: args.unreconciledReason,
+    brokerClosePrice: args.brokerClosePrice,
     nowMs: args.nowMs,
   });
 }

@@ -875,6 +875,27 @@ export interface MissionExposureAggregates {
 }
 
 /**
+ * Outcome-truth read. Realised profit sums only closed trades that carry a broker-confirmed P/L, so a trade whose outcome is missing or unreconciled drops out of the figure. Because broker-side closes skew toward stop-loss LOSSES, that silence biased the figure upward. This read counts exactly what is missing so the number can be labelled honestly and the mission's completion CLAIM held. Nothing here is ever estimated to fill a gap, and an incomplete figure is never presented as a floor or a minimum.
+
+ */
+export interface MissionOutcomeCompleteness {
+  /** True ONLY when every executed trade's closed outcome is broker-confirmed. */
+  complete: boolean;
+  /** Executed trades carrying a recorded close. */
+  closedTradeCount: number;
+  /** Closed trades with a broker-confirmed P/L — the ones in the figure. */
+  reconciledCloseCount: number;
+  /** Closed trades the broker gave no P/L for. Recorded honestly as unknown; excluded from the figure. */
+  unreconciledCloseCount: number;
+  /** Trades the broker shows as closed with no result recorded yet. */
+  pendingOutcomeCount: number;
+  /** Trades the broker still confirms OPEN. Not incompleteness — a floating trade has no realised result yet. */
+  openTradeCount: number;
+  /** Plain-language statements of what is missing. Never spun. */
+  reasons: string[];
+}
+
+/**
  * Phase 8 milestone / protection-ladder / giveback / daily-goal read. Derived from realised CLOSED profit vs the mission's required profit. STRICTER-ONLY: every field can only tighten risk; nothing here places a trade.
 
  */
@@ -901,6 +922,9 @@ export interface MissionMilestoneState {
   peakRealisedProfit: number;
   /** Sum of realised P/L across CLOSED mission trades (account currency). */
   realisedProfit: number;
+  /** How complete the realised set behind realisedProfit / peakRealisedProfit is. When complete is false those figures are UNFINISHED and are a bound in NEITHER direction — unconfirmed closes are excluded outright, and because the closes ARX does not perform skew toward stop-losses the figure usually reads better than the result. stopAndLock is NOT altered (removing the stop would resume trading on an unverified set); what is held is the CLAIM: the mission is not marked completed until every closed outcome is broker-confirmed.
+   */
+  outcomeCompleteness?: MissionOutcomeCompleteness | null;
 }
 
 /**

@@ -703,13 +703,31 @@ function ProbabilityPanel({ p }: { p: MissionProbabilityScore }) {
   );
 }
 
-function Metric({ label, value, testId }: { label: string; value: string; testId?: string }) {
+function Metric({
+  label,
+  value,
+  testId,
+  note,
+  noteTestId,
+}: {
+  label: string;
+  value: string;
+  testId?: string;
+  /** Honest qualifier rendered directly under the number (never hidden away). */
+  note?: string;
+  noteTestId?: string;
+}) {
   return (
     <div className="rounded-md border border-border/50 p-2">
       <div className="text-xs text-muted-foreground">{label}</div>
       <div className="text-lg font-semibold capitalize" data-testid={testId}>
         {value}
       </div>
+      {note && (
+        <div className="mt-0.5 text-[11px] font-normal normal-case text-warning" data-testid={noteTestId}>
+          {note}
+        </div>
+      )}
     </div>
   );
 }
@@ -1335,6 +1353,24 @@ function ExposureSummary({ exposure }: { exposure: MissionExposureAggregates }) 
 function ProtectionPanel({ protection }: { protection: MissionProtectionSnapshot }) {
   const m = protection.milestone;
   const c = protection.compounding;
+  // OUTCOME TRUTH — realised profit only sums closed trades that carry a
+  // broker-confirmed P/L. A trade closed by its stop-loss AT THE BROKER, or
+  // closed with no numbers from the broker, is not in that sum. Because those
+  // missing outcomes skew toward LOSSES, an unlabelled figure reads better than
+  // the truth. So when anything is missing we say so, in plain words, right next
+  // to the number — never a bare, flattering figure.
+  //
+  // NOT A FLOOR (forward-fix, supersedes this panel's first copy). An earlier
+  // version of this alert told the user to read the incomplete figure "as a
+  // floor, not the final result". That was a false directional claim: a floor
+  // asserts truth >= shown, and the excluded closes are usually stop-loss
+  // LOSSES, so the shown number is if anything upward-biased. An incomplete
+  // realised figure is a bound in NEITHER direction and the copy must say so.
+  const completeness = m.outcomeCompleteness ?? null;
+  const outcomesIncomplete = completeness != null && completeness.complete === false;
+  const incompleteNote = outcomesIncomplete
+    ? `Incomplete — ${completeness.pendingOutcomeCount + completeness.unreconciledCloseCount} closed ${completeness.pendingOutcomeCount + completeness.unreconciledCloseCount === 1 ? "trade is" : "trades are"} missing a broker-confirmed result.`
+    : undefined;
   return (
     <div className="rounded-md border border-border p-3" data-testid="protection-panel">
       <div className="mb-2 flex items-center gap-2 text-sm font-medium">
@@ -1349,25 +1385,75 @@ function ProtectionPanel({ protection }: { protection: MissionProtectionSnapshot
             Target locked
           </Badge>
         )}
+        {outcomesIncomplete && (
+          <Badge className="bg-warning/20 text-warning" data-testid="badge-outcomes-incomplete">
+            Results incomplete
+          </Badge>
+        )}
       </div>
       <div className="grid grid-cols-2 gap-3">
         <Metric label="Locked profit" value={money(m.lockedProfit)} testId="metric-locked-profit" />
-        <Metric label="Realised profit" value={money(m.realisedProfit)} testId="metric-realised-profit" />
-        <Metric label="Peak realised" value={money(m.peakRealisedProfit)} testId="metric-peak-realised" />
+        <Metric
+          label="Realised profit"
+          value={money(m.realisedProfit)}
+          testId="metric-realised-profit"
+          note={incompleteNote}
+          noteTestId="note-realised-incomplete"
+        />
+        <Metric
+          label="Peak realised"
+          value={money(m.peakRealisedProfit)}
+          testId="metric-peak-realised"
+          note={incompleteNote}
+          noteTestId="note-peak-incomplete"
+        />
         <Metric label="Min setup tier" value={m.minSetupTier} testId="metric-min-tier" />
       </div>
       <p className="text-[11px] text-muted-foreground" data-testid="text-realised-completeness">
-        These figures count realised closed live trades only. Demo and paper
-        dispatches are never filled and never close, so they contribute nothing
-        here and are not missing data — a mission running in demo or paper will
-        show zero indefinitely. Read these as a live-only total, not as the
-        mission's full activity.
+        On a live mission these count broker-confirmed closed trades only. On
+        a paper or demo mission they count simulated fills, priced from real
+        quotes and labelled simulated — money that was never at risk. The two
+        are never added together, and a simulated result never satisfies
+        anything that requires broker truth.
       </p>
-      {m.stopAndLock && (
+      {outcomesIncomplete && completeness && (
+        <CompactAlert
+          tone="warning"
+          title="Realised profit is incomplete — it is not a minimum, and the true figure may be higher or lower."
+          description="A trade closed at the broker (a stop-loss, a stop-out, a close at the terminal) is only counted once the broker confirms its profit or loss. Closes ARX did not perform are most often stop-losses, so an incomplete figure usually reads better than the result. We never estimate the missing figure. The mission still stops at its target, but it is not marked complete until every closed trade has a confirmed result."
+          testId="alert-outcomes-incomplete"
+        />
+      )}
+      {outcomesIncomplete && completeness && (
+        <ul
+          className="mt-2 space-y-1 text-xs text-muted-foreground"
+          data-testid="list-outcome-completeness"
+        >
+          <li data-testid="outcome-count-pending">
+            Closed at the broker, result not recorded yet: {completeness.pendingOutcomeCount}
+          </li>
+          <li data-testid="outcome-count-unreconciled">
+            Closed with no broker-confirmed profit or loss: {completeness.unreconciledCloseCount}
+          </li>
+          <li data-testid="outcome-count-reconciled">
+            Counted in the figure above: {completeness.reconciledCloseCount}
+          </li>
+        </ul>
+      )}
+      {m.stopAndLock && !outcomesIncomplete && (
         <CompactAlert
           tone="success"
           title="Target reached — default is to stop and lock the profit. Continuing trades at reduced risk."
           testId="alert-stop-lock"
+        />
+      )}
+      {m.stopAndLock && outcomesIncomplete && (
+        // The stop is real and already in force; the CLAIM is not. Never show a
+        // success "target reached" on a set that is still missing outcomes.
+        <CompactAlert
+          tone="warning"
+          title="Target reached on the confirmed results only — the mission is stopped, and completion is held until every closed trade has a broker-confirmed result."
+          testId="alert-stop-lock-unconfirmed"
         />
       )}
       {m.givebackTriggered && (

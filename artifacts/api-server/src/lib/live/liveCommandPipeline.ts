@@ -5093,6 +5093,11 @@ export async function recordLiveCommandResult(args: {
               userId: args.userId,
               brokerTicket: closeTicket,
               realisedPnl,
+              // OUTCOME TRUTH: stamp the provenance of this close. When the row
+              // carried no P/L we record the close with pnl null and the
+              // recorder marks it UNRECONCILED, so the mission's realised figure
+              // is labelled incomplete instead of quietly omitting the trade.
+              outcomeSource: "ARX_CLOSE_FILL",
               nowMs: now.getTime(),
             });
           } catch (e) {

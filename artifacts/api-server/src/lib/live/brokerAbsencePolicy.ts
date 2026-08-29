@@ -41,3 +41,41 @@ export const brokerAbsenceAutoReconcilePolicy: BrokerAbsenceReconcilePolicy = {
   requireCompleteSnapshot: true,
   snapshotReliabilityWindowMs: 60_000,
 };
+
+// ── OBSERVATION vs ACTION (outcome-truth defect) ─────────────────────────────
+//
+// The flag above gates an ACTION: mutating `arx_live_positions` (stamping
+// closed_at + reconcileState) on rows ARX did not close. That is state ARX
+// writes about the broker, so it stays behind an explicit switch.
+//
+// RECORDING THE OUTCOME OF AN ALREADY-CLOSED POSITION IS NOT AN ACTION. The
+// broker closed the trade — by its stop-loss, by a stop-out, by hand — before we
+// looked. Writing down what already happened changes nothing at the broker and
+// cannot place, modify, or relax anything. Leaving it behind the action flag is
+// what produced the upward bias: ARX-issued closes (wins, take-profits, trails)
+// were recorded and broker-side stop-losses were not.
+//
+// So observation runs ALWAYS, on the SAME evidence bar as the action (N
+// consecutive reliable COMPLETE sweeps + a minimum first-absence age, so a
+// flapping snapshot can never manufacture a close). `enabled: true` here means
+// only "keep observing"; the observer writes no position state and issues no
+// broker command. When the broker gives us no numbers, the recorded outcome is
+// an honest UNRECONCILED with pnl null — never an inferred price or P/L.
+// RECOVERY WINDOW (forward-fix). With BROKER_ABSENCE_AUTO_RECONCILE_ENABLED=true
+// the ACTION path and the observer run as two concurrent fire-and-forget tasks
+// on the same ingest. When the action path wins it stamps closed_at +
+// reconcileState=RECONCILED_BROKER_ABSENT, and the row stops matching the
+// observer's "still open, not reconciled" candidate query FOREVER — so the
+// mission outcome for that trade would never be recorded at all. The observer
+// therefore ALSO re-offers rows the action path already reconciled, bounded to
+// this lookback so the scan stays small. The recorder is idempotent, so a
+// ticket whose outcome is already recorded costs one no-op lookup.
+export const BROKER_CLOSE_RECOVERY_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
+
+export const brokerCloseObservationPolicy: BrokerAbsenceReconcilePolicy = {
+  enabled: true,
+  requiredReliableAbsences: brokerAbsenceAutoReconcilePolicy.requiredReliableAbsences,
+  minimumAbsentAgeMs: brokerAbsenceAutoReconcilePolicy.minimumAbsentAgeMs,
+  requireCompleteSnapshot: brokerAbsenceAutoReconcilePolicy.requireCompleteSnapshot,
+  snapshotReliabilityWindowMs: brokerAbsenceAutoReconcilePolicy.snapshotReliabilityWindowMs,
+};
