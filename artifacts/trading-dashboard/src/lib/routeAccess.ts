@@ -83,6 +83,11 @@ const NORMAL_USER_EXACT: ReadonlySet<string> = new Set<string>([
   "/trading-calendar",
   // ── Performance & History (visible nav group) ──
   "/performance-scorecard",
+  // Self-Trading product surfaces (blueprint #43 Approval Inbox, per-user
+  // journal at /journal) — both server-scoped to req.authUser.id; the nav
+  // entries existed before the allowlist caught up (NavSurfaces.normalUser).
+  "/approval-inbox",
+  "/journal",
   "/analytics",
   "/trade-logs",
   "/shadow-journal",
