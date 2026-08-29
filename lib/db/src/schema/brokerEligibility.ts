@@ -45,6 +45,7 @@ import { usersTable } from "./users";
 export const BROKER_ELIGIBILITY_STATUSES = [
   "ELIGIBLE",
   "RESTRICTED",
+  "READ_ONLY",
   "COMPLIANCE_HOLD",
   "INELIGIBLE",
 ] as const;
@@ -67,7 +68,7 @@ export const brokerEligibilityTable = pgTable(
     // the row at COMPLIANCE_HOLD under honest review practice.
     legalResidency: text("legal_residency"),
 
-    // ELIGIBLE | RESTRICTED | COMPLIANCE_HOLD | INELIGIBLE.
+    // ELIGIBLE | RESTRICTED | READ_ONLY | COMPLIANCE_HOLD | INELIGIBLE.
     // DEFAULT COMPLIANCE_HOLD — the fail-closed posture spec §1.3 demands:
     // nothing becomes tradable by row creation alone.
     eligibilityStatus: text("eligibility_status")

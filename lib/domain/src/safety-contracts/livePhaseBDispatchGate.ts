@@ -117,6 +117,27 @@ export interface LivePhaseBGateInput {
   // the waiver. Default-deny: omitted/undefined is treated as NOT waived.
   disclosureWaivedByOperator?: boolean;
 
+  // Capability #52 — compliance-eligibility consult (blueprint §70), evaluated
+  // INSIDE gate #3 (USER_NOT_LIVE_APPROVED): an admin live-approval is not a
+  // complete approval when the compliance gate refuses this user × venue
+  // (COMPLIANCE_HOLD default, READ_ONLY posture, outside-client funds, …).
+  // This is deliberately NOT a new gate key — venue parity dispositions cover
+  // the existing 21 keys, and gate #3 is exactly "is this user approved to
+  // trade live here", which compliance is a component of.
+  //
+  // Omitted/null = NOT evaluated (readiness previews / legacy callers with no
+  // compliance context): gate #3 then behaves exactly as before this field
+  // existed, so no existing caller weakens or changes. The live dispatch
+  // pipeline ALWAYS supplies it (pinned by test:compliance-dispatch-consult);
+  // within a supplied block, `allowed:false` fails gate #3 even when
+  // `userLiveApproved` is true.
+  complianceEligibility?: {
+    /** The compliance gate's verdict for this user × venue. */
+    allowed: boolean;
+    /** Refusal reason codes (ELIGIBILITY_READ_ONLY, ELIGIBILITY_COMPLIANCE_HOLD, …). */
+    reasons: string[];
+  } | null;
+
   // Foundation gates #19–#21 (provenance / edge-promotion / capital tier).
   // The dispatch pipeline ALWAYS assembles and supplies this block (pinned by
   // test:foundation-gates); within it every unresolvable fact fails CLOSED
@@ -165,9 +186,23 @@ export function evaluateLivePhaseBDispatchGate(
     "User has not passed the 15-check arming gate.");
   else pass("USER_NOT_ARMED_FOR_LIVE");
 
-  // 3. Per-user admin approval
+  // 3. Per-user admin approval + compliance-eligibility consult (capability
+  //    #52). Admin approval alone is not sufficient when a supplied compliance
+  //    verdict refuses; compliance can only ADD a failure here, never turn a
+  //    missing admin approval into a pass.
+  const compliance = input.complianceEligibility ?? null;
   if (!input.userLiveApproved) fail("USER_NOT_LIVE_APPROVED",
     "Admin has not approved this user for live trading.");
+  else if (compliance != null && !compliance.allowed) fail("USER_NOT_LIVE_APPROVED",
+    `Compliance eligibility gate refused this user × venue: [${compliance.reasons.join(", ")}]. `
+    + "Admin live-approval does not override a compliance refusal.");
+  else if (compliance == null) gates.push({
+    key: "USER_NOT_LIVE_APPROVED",
+    passed: true,
+    detail: "Admin approval present. Compliance eligibility NOT evaluated "
+      + "(no compliance context supplied — readiness preview / legacy caller). "
+      + "Live dispatch always supplies the compliance verdict.",
+  });
   else pass("USER_NOT_LIVE_APPROVED");
 
   // 4. Global live enabled (singleton)

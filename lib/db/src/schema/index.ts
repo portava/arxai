@@ -487,3 +487,6 @@ export * from "./phase6GuidedExecution";
 // ── Engine drivers (capabilities #58/#34/#15/#16/#5) — evidence + probation ──
 // Additive-only; applied via docs/migrations-pending/build-engine-drivers.sql.
 export * from "./engineDrivers";
+// ── Institutional hierarchy (capability #50) — org/legal-entity model ──
+// Additive-only; applied via docs/migrations-pending/build-institutional.sql.
+export * from "./institutional";

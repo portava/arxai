@@ -22,9 +22,15 @@ import {
   adminActionAuditLogTable,
   type RiskTemplatePayload,
 } from "@workspace/db";
+import { requireLifecycleRole } from "../lib/security/lifecycleRoleGate.js";
 
 const router: IRouter = Router();
 router.use(express.json());
+
+// Capability #51 — risk-template mutations are the RISK_APPROVER's act. Once
+// separation-of-duties is configured (any lifecycle grant exists), only a
+// RISK_APPROVER grant-holder may create/update/archive templates; until then
+// the gate logs a loud pass-through and requireAdmin below still applies.
 
 function requireAdmin(req: Request, res: Response): { id: number; role: "ADMIN" | "OWNER" } | null {
   const sess = (req as Request & { authUser?: { id: number; role?: string } }).authUser;
@@ -107,7 +113,7 @@ router.get("/admin/risk-templates", async (req, res) => {
   });
 });
 
-router.post("/admin/risk-templates", async (req, res) => {
+router.post("/admin/risk-templates", requireLifecycleRole("RISK_APPROVER"), async (req, res) => {
   const admin = requireAdmin(req, res); if (!admin) return;
   const parsed = createBody.safeParse(req.body ?? {});
   if (!parsed.success) {
@@ -135,7 +141,7 @@ router.post("/admin/risk-templates", async (req, res) => {
   }
 });
 
-router.put("/admin/risk-templates/:id", async (req, res) => {
+router.put("/admin/risk-templates/:id", requireLifecycleRole("RISK_APPROVER"), async (req, res) => {
   const admin = requireAdmin(req, res); if (!admin) return;
   const id = parseInt(String(req.params.id ?? ""), 10);
   if (!Number.isFinite(id) || id <= 0) {
@@ -164,7 +170,7 @@ router.put("/admin/risk-templates/:id", async (req, res) => {
   return res.json({ ok: true, template: after });
 });
 
-router.post("/admin/risk-templates/:id/archive", async (req, res) => {
+router.post("/admin/risk-templates/:id/archive", requireLifecycleRole("RISK_APPROVER"), async (req, res) => {
   const admin = requireAdmin(req, res); if (!admin) return;
   const id = parseInt(String(req.params.id ?? ""), 10);
   if (!Number.isFinite(id) || id <= 0) {

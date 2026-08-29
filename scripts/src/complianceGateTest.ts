@@ -45,6 +45,7 @@ const {
   OUTSIDE_CLIENT_FUNDS_UNKNOWN,
   ELIGIBILITY_COMPLIANCE_HOLD,
   ELIGIBILITY_INELIGIBLE,
+  ELIGIBILITY_READ_ONLY,
   ELIGIBILITY_STATUS_UNKNOWN,
   RESTRICTED_VENUE_REQUIRES_APPROVAL,
   VENUE_APPROVAL_REQUIREMENT_UNKNOWN,
@@ -142,6 +143,25 @@ export async function run(): Promise<CiTestResultLike> {
       );
     }
 
+    // Capability #52 — READ_ONLY: reviewed "view but never trade". Trading
+    // interactions refuse with exactly ELIGIBILITY_READ_ONLY as the reason
+    // (so a read surface can distinguish it from a hard refusal).
+    for (const posture of [true, false, null]) {
+      const ro = gate("READ_ONLY", posture);
+      assert(
+        !ro.allowed && ro.reasons.includes(ELIGIBILITY_READ_ONLY) && ro.reasons.length === 1,
+        `READ_ONLY refuses trading with exactly [ELIGIBILITY_READ_ONLY] (venueRequiresApproval=${String(posture)})`,
+      );
+    }
+    // Wrong-case / padded READ_ONLY never matches — exact vocabulary only.
+    for (const stranger of ["read_only", "Read_Only", " READ_ONLY "]) {
+      const d = gate(stranger, false);
+      assert(
+        !d.allowed && d.reasons.includes(ELIGIBILITY_STATUS_UNKNOWN),
+        `status ${JSON.stringify(stranger)} refuses as unknown (READ_ONLY is case-exact)`,
+      );
+    }
+
     const restrictedOpen = gate("RESTRICTED", false);
     assert(restrictedOpen.allowed, "RESTRICTED allows on a venue verifiably NOT requiring approval");
     const restrictedGated = gate("RESTRICTED", true);
@@ -199,11 +219,11 @@ export async function run(): Promise<CiTestResultLike> {
       "DEFAULT_ELIGIBILITY_STATUS is COMPLIANCE_HOLD (spec §1.3 fail-closed posture)",
     );
     assert(
-      ELIGIBILITY_STATUSES.length === 4 &&
-        (["ELIGIBLE", "RESTRICTED", "COMPLIANCE_HOLD", "INELIGIBLE"] as const).every((s) =>
+      ELIGIBILITY_STATUSES.length === 5 &&
+        (["ELIGIBLE", "RESTRICTED", "READ_ONLY", "COMPLIANCE_HOLD", "INELIGIBLE"] as const).every((s) =>
           (ELIGIBILITY_STATUSES as readonly string[]).includes(s),
         ),
-      "domain vocabulary is exactly the blueprint §70 four statuses",
+      "domain vocabulary is the blueprint §70 statuses + READ_ONLY (capability #52 five-outcome spec)",
     );
 
     // lib/db must not import @workspace/domain, so the schema repeats the
@@ -218,7 +238,7 @@ export async function run(): Promise<CiTestResultLike> {
     );
     assert(
       (ELIGIBILITY_STATUSES as readonly string[]).every((s) => schemaSource.includes(`"${s}"`)),
-      "schema source lists the exact same four status literals",
+      "schema source lists the exact same five status literals",
     );
     assert(
       !schemaSource.includes('.default("ELIGIBLE")'),

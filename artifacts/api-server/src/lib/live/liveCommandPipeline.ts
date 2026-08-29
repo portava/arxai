@@ -3443,6 +3443,77 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
     });
   }
 
+  // ── Capability #49 — management-authority arbitration (deterministic,
+  // journaled). When THIS command manages an open position (CLOSE/MODIFY by
+  // brokerTicket) while another in-flight command already claims the same
+  // position, the pure arbiter (@workspace/domain live-position) adjudicates:
+  // risk-reduction dominates, the human user dominates automation, ties go to
+  // the earlier claim. REFUSE-ONLY: the loser here is only ever the INCOMING
+  // command, and an incoming risk-reducing CLOSE is never trapped (it
+  // proceeds with the adjudication journaled as an advisory). Every
+  // arbitration is journaled to the live audit ledger.
+  {
+    const { evaluateManagementAuthority, MANAGEMENT_AUTHORITY_CONTENTION } =
+      await import("./managementAuthorityService.js");
+    const authority = await evaluateManagementAuthority({
+      commandId: args.commandId,
+      userId: args.userId,
+      commandType: row.commandType,
+      actorType: row.actorType ?? null,
+      createdAt: row.createdAt ?? null,
+      payload: row.payload ?? null,
+    });
+    if (authority.outcome === "PROCEED" || authority.outcome === "PROCEED_ADVISORY"
+      || authority.outcome === "REFUSE") {
+      await audit({
+        eventType: "MANAGEMENT_AUTHORITY_ARBITRATED",
+        severity: authority.outcome === "REFUSE" ? "HIGH" : "INFO",
+        userId: args.userId, symbol: row.symbol,
+        message: `Management-authority arbitration (${authority.outcome}) for ${args.commandId}: `
+          + `rule=${authority.decision.rule} winner=${authority.decision.journal.winnerCommandId ?? "none"}`,
+        metadata: { commandId: args.commandId, ...authority.decision.journal },
+      });
+    }
+    if (authority.outcome === "REFUSE") {
+      const [blocked] = await db.update(arxLiveCommandsTable).set({
+        status: "LIVE_BLOCKED",
+        rejectionReason: MANAGEMENT_AUTHORITY_CONTENTION,
+        rejectedAt: new Date(),
+        dispatchGateSnapshot: {
+          managementAuthority: authority.decision.journal,
+          evaluatedAt: new Date().toISOString(),
+        } as unknown as Record<string, unknown>,
+      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      logger.warn({
+        [PHASE_B_LIVE_LOG_PREFIX]: true,
+        event: "LIVE_DISPATCH_BLOCKED",
+        commandId: args.commandId, userId: args.userId,
+        primaryReason: MANAGEMENT_AUTHORITY_CONTENTION,
+        rule: authority.decision.rule,
+      }, "Phase B dispatch blocked: management-authority contention lost");
+      return { ok: false as const, reason: MANAGEMENT_AUTHORITY_CONTENTION, command: blocked };
+    }
+    if (authority.outcome === "LOOKUP_FAILED" && !authority.riskReducing) {
+      // Contention state UNKNOWN for a non-risk-reducing management command:
+      // default-deny toward action. (A risk-reducing CLOSE proceeds — a read
+      // failure must never trap a close.)
+      const { MANAGEMENT_AUTHORITY_LOOKUP_FAILED } =
+        await import("./managementAuthorityService.js");
+      const [blocked] = await db.update(arxLiveCommandsTable).set({
+        status: "LIVE_BLOCKED",
+        rejectionReason: MANAGEMENT_AUTHORITY_LOOKUP_FAILED,
+        rejectedAt: new Date(),
+      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      await audit({
+        eventType: "LIVE_DISPATCH_BLOCKED", severity: "HIGH",
+        userId: args.userId, symbol: row.symbol,
+        message: `Live dispatch BLOCKED: ${MANAGEMENT_AUTHORITY_LOOKUP_FAILED} (contention state unknown)`,
+        metadata: { commandId: args.commandId, blockReasons: [MANAGEMENT_AUTHORITY_LOOKUP_FAILED] },
+      });
+      return { ok: false as const, reason: MANAGEMENT_AUTHORITY_LOOKUP_FAILED, command: blocked };
+    }
+  }
+
   // ── Foundation gates #19–#21 — assemble dispatch-time inputs ───────────
   // Provenance (typed column vs payload-hash-covered copy), promotion-ledger
   // state (production_edges, read-only), and capital-tier exposure facts.
@@ -3463,10 +3534,24 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
     },
   });
 
+  // Capability #52 — compliance-eligibility consult, assembled at DISPATCH
+  // time (like every other evaluator input) so a review revoked between draft
+  // and dispatch is honoured. Fail-closed: no broker_eligibility review, a
+  // READ_ONLY posture, unknown funds provenance, or a failed read all refuse
+  // INSIDE gate #3 (USER_NOT_LIVE_APPROVED) — deliberately not a new gate key.
+  const complianceEligibility = await (async () => {
+    const { buildComplianceEligibilityVerdict } =
+      await import("./complianceDispatchInput.js");
+    return buildComplianceEligibilityVerdict(args.userId);
+  })();
+
   const phaseBGate: LivePhaseBGateResult = evaluateLivePhaseBDispatchGate({
     liveBrokerExecutionEnabled: await resolveLiveBrokerExecutionEnabledAsync(),
     globalLiveEnabled: !!env.globalLiveEnabled,
     userLiveApproved: !!env.userLiveApproved,
+    // #52 — ALWAYS supplied on the dispatch path (the evaluator's null branch
+    // exists only for preview callers). Pinned by test:compliance-dispatch-consult.
+    complianceEligibility,
     userArmed: !!arming?.isArmed,
     // Effective kill-switch value: the real engaged state is suppressed ONLY
     // when the narrow CLOSE bypass is active; every other gate input is unchanged.

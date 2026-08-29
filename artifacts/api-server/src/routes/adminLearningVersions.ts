@@ -41,6 +41,10 @@ import {
 } from "@workspace/db/schema";
 import { eq, desc, and, sql } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
+// Capability #51 — DEPLOYER lifecycle-role gate on live approval. Rollback is
+// deliberately NOT lifecycle-gated: it is risk-reducing (deactivates bad
+// learning immediately) and must never be trapped behind a missing grant.
+import { requireLifecycleRole } from "../lib/security/lifecycleRoleGate.js";
 // The wave-2 provenance label — imported, not re-typed, so the exclusion below
 // can never drift from the literal shadowPersistence actually writes.
 import { SYNTHETIC_SIMULATOR_SOURCE } from "../lib/shadowPersistence.js";
@@ -263,7 +267,11 @@ router.post("/admin/learning/versions", requireUser, async (req, res) => {
 // ── POST /api/admin/learning/versions/:id/approve ────────────────────────────
 const ApproveBody = z.object({ adminNotes: z.string().max(1000).optional() });
 
-router.post("/admin/learning/versions/:id/approve", requireUser, async (req, res) => {
+// Capability #51 — approving a version for LIVE is the DEPLOYER's act. Once
+// separation-of-duties is configured (any lifecycle grant exists), only a
+// DEPLOYER grant-holder may approve; until then the gate logs a loud
+// pass-through and the ADMIN/OWNER check below still applies.
+router.post("/admin/learning/versions/:id/approve", requireUser, requireLifecycleRole("DEPLOYER"), async (req, res) => {
   const admin = requireAdmin(req, res); if (!admin) return;
 
   const versionId = String(req.params.id ?? "");

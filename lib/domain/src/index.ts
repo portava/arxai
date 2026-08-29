@@ -87,3 +87,4 @@ export * as timingBrain from "./timing-brain";
 export * as security from "./security";
 export * as derivContracts from "./deriv-contracts";
 export * as complianceGate from "./compliance-gate";
+export * as institutional from "./institutional";

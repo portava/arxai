@@ -30,6 +30,7 @@
 export const ELIGIBILITY_STATUSES = [
   "ELIGIBLE",
   "RESTRICTED",
+  "READ_ONLY",
   "COMPLIANCE_HOLD",
   "INELIGIBLE",
 ] as const;
@@ -51,6 +52,14 @@ export const ELIGIBILITY_COMPLIANCE_HOLD =
   "ELIGIBILITY_COMPLIANCE_HOLD" as const;
 /** Status is INELIGIBLE (reviewed and refused). */
 export const ELIGIBILITY_INELIGIBLE = "ELIGIBILITY_INELIGIBLE" as const;
+/**
+ * Status is READ_ONLY (capability #52): the user may OBSERVE this venue
+ * (catalog, read-only snapshots) but every trading interaction refuses.
+ * This evaluator gates trading interactions, so READ_ONLY refuses here;
+ * read surfaces that only need "may this user see the venue" should treat
+ * a READ_ONLY refusal carrying exactly this reason as view-permitted.
+ */
+export const ELIGIBILITY_READ_ONLY = "ELIGIBILITY_READ_ONLY" as const;
 /** Status missing or not in the exact vocabulary (case-sensitive) — refuses. */
 export const ELIGIBILITY_STATUS_UNKNOWN =
   "ELIGIBILITY_STATUS_UNKNOWN" as const;
@@ -66,6 +75,7 @@ export type ComplianceRefusalReason =
   | typeof OUTSIDE_CLIENT_FUNDS_UNKNOWN
   | typeof ELIGIBILITY_COMPLIANCE_HOLD
   | typeof ELIGIBILITY_INELIGIBLE
+  | typeof ELIGIBILITY_READ_ONLY
   | typeof ELIGIBILITY_STATUS_UNKNOWN
   | typeof RESTRICTED_VENUE_REQUIRES_APPROVAL
   | typeof VENUE_APPROVAL_REQUIREMENT_UNKNOWN;
@@ -132,6 +142,11 @@ export function evaluateComplianceGate(
     reasons.push(ELIGIBILITY_COMPLIANCE_HOLD);
   } else if (status === "INELIGIBLE") {
     reasons.push(ELIGIBILITY_INELIGIBLE);
+  } else if (status === "READ_ONLY") {
+    // Capability #52 — a reviewed, explicit "view but never trade" posture.
+    // Trading interactions refuse; a read-only surface may interpret a
+    // refusal whose ONLY reason is ELIGIBILITY_READ_ONLY as view-permitted.
+    reasons.push(ELIGIBILITY_READ_ONLY);
   } else if (status === "RESTRICTED") {
     if (input.venueRequiresApproval === true) {
       reasons.push(RESTRICTED_VENUE_REQUIRES_APPROVAL);

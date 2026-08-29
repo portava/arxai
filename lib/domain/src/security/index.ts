@@ -21,3 +21,4 @@ export * from "./anomaly.js";
 export * from "./operationalMode.js";
 export * from "./prodDevSeparation.js";
 export * from "./exportProtection.js";
+export * from "./lifecycleRoles.js";

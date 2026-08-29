@@ -625,4 +625,20 @@ router.use(brokerCatalogRouter);
 import adminOwnerDecisionsRouter from "./adminOwnerDecisions.js";
 router.use(adminOwnerDecisionsRouter);
 
+// ── INSTITUTIONAL front (capabilities #48–#52) ───────────────────────────────
+// Capability #52 — compliance-eligibility review surface (ADMIN/OWNER). The
+// owner-press machinery behind the fail-closed eligibility consult inside
+// Phase B gate #3; grants no live authority by itself.
+import adminComplianceRouter from "./adminCompliance.js";
+router.use(adminComplianceRouter);
+// Capability #50 — org/legal-entity hierarchy + beneficial-ownership graph +
+// consolidated-exposure READ (ADMIN/OWNER). Structure only; no execution.
+import adminOrgStructureRouter from "./adminOrgStructure.js";
+router.use(adminOrgStructureRouter);
+// Capability #51 — lifecycle-role grants (separation of duties). Conflicting
+// combinations refused by the pure evaluator; enforcement middleware wired on
+// the lifecycle-relevant routes (learning-version approve, risk templates).
+import adminLifecycleRolesRouter from "./adminLifecycleRoles.js";
+router.use(adminLifecycleRolesRouter);
+
 export default router;

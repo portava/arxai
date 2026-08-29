@@ -141,7 +141,8 @@
     "./safety-contracts/approvalTicket": "./src/safety-contracts/approvalTicket.ts",
     "./safety-contracts/executionTier": "./src/safety-contracts/executionTier.ts",
     "./safety-contracts/guidedTtlPolicy": "./src/safety-contracts/guidedTtlPolicy.ts",
-    "./safety-contracts/executionVenue": "./src/safety-contracts/executionVenue.ts"
+    "./safety-contracts/executionVenue": "./src/safety-contracts/executionVenue.ts",
+    "./institutional": "./src/institutional/index.ts"
   },
   "scripts": {},
   "dependencies": {
