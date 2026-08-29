@@ -61,7 +61,17 @@ import {
   rotateCapital,
   convictionWeightedAllocation,
   survivalWeightedAllocation,
+  scheduleOpportunities,
+  evaluateAdmission,
+  summarizeExposureForAdmission,
 } from "@workspace/domain/portfolio-manager";
+import {
+  simulateRuinWithFrictions,
+  estimateStrategyCapacity,
+  compareSimulatedVsRealized,
+} from "@workspace/domain/decision-intelligence";
+import { runMarketSelectionEngine } from "@workspace/domain/market";
+import { readBeneficialOwnerExposure } from "../lib/portfolio/beneficialOwnerExposure.js";
 
 const router: IRouter = Router();
 
@@ -503,6 +513,276 @@ router.post("/portfolio/ecosystem", async (req, res) => {
     expandedReserveFraction01: out.expandedReserveFraction01,
   });
   res.json({ ...ADVISORY, ecosystem: out.report });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// CAPITAL BRAIN (capabilities #20–#24) — all ADVISORY, all tighten-only.
+// ─────────────────────────────────────────────────────────────────────────
+
+const QualifiedOpportunitySchema = z.object({
+  opportunityId: z.string().min(1),
+  strategyId: z.string().min(1),
+  symbolId: z.string().min(1),
+  requestedRiskR: z.number().nonnegative(),
+  conservativeUtilityR: z.number(),
+  reliability01: z.number().min(0).max(1),
+  expectedDurationMin: z.number().positive(),
+  optionality01: z.number().min(0).max(1),
+  capacityRiskR: z.number().nonnegative().optional(),
+}).strict();
+
+const OpportunityScheduleBodySchema = z.object({
+  opportunities: z.array(QualifiedOpportunitySchema).min(1),
+  strategyEnvelopeR: z.record(z.string(), z.number().nonnegative()),
+  perSymbolCapR: z.number().nonnegative(),
+  deployableR: z.number().nonnegative(),
+  perSymbolUsedR: z.record(z.string(), z.number().nonnegative()).optional(),
+  deployedR: z.number().nonnegative().optional(),
+  regretFeedback: z.array(z.object({
+    strategyId: z.string().min(1),
+    missedCount: z.number().int().nonnegative(),
+    forgoneUtilityR: z.number().nonnegative(),
+  }).strict()).optional(),
+}).strict();
+
+// #20 — divide the EXISTING envelope among simultaneous qualified
+// opportunities; regret journal is vault-logged (missed-opportunity
+// accounting). The scheduler can only ever spend the envelope down.
+router.post("/portfolio/opportunity-schedule", requireUser, async (req, res) => {
+  const body = parseOr400(OpportunityScheduleBodySchema, req.body, res);
+  if (!body) return;
+  const schedule = scheduleOpportunities(body);
+  await logEvent("PM_OPPORTUNITY_SCHEDULED",
+    schedule.blockers.length > 0 ? "DANGER" : "INFO", {
+      opportunities: schedule.allocations.length,
+      totalAllocatedR: schedule.totalAllocatedR,
+      totalRequestedR: schedule.totalRequestedR,
+      regretEntries: schedule.regretJournal.length,
+      totalForgoneConservativeUtilityR: schedule.totalForgoneConservativeUtilityR,
+      stressEvidence: schedule.stressEvidence,
+      invariantViolations: schedule.blockers,
+    });
+  // Missed-opportunity accounting: each regret entry is journaled to the vault.
+  for (const j of schedule.regretJournal) {
+    await logEvent("PM_REGRET_JOURNALED", "INFO", { ...j });
+  }
+  res.json({ ...ADVISORY, schedule });
+});
+
+const AdmissionBodySchema = z.object({
+  candidate: z.object({
+    symbol: z.string().min(1),
+    direction: z.enum(["BUY", "SELL"]),
+    riskAmount: z.number().positive(),
+    lotSize: z.number().positive(),
+    strategyId: z.string().optional(),
+    venue: z.string().min(1),
+    expectedHoldMin: z.number().positive().optional(),
+    conservativeUtilityR: z.number().nullable().optional(),
+  }).strict(),
+  accountBalance: z.number().positive(),
+  accountEquity: z.number().positive(),
+  positions: z.array(z.object({
+    symbol: z.string().min(1),
+    direction: z.enum(["BUY", "SELL"]),
+    lotSize: z.number().nonnegative(),
+    unrealizedPnl: z.number(),
+    riskAmount: z.number().nonnegative(),
+    venue: z.string().optional(),
+  }).strict()),
+  maxOpenTrades: z.number().int().positive(),
+  maxDailyLossPct: z.number().positive(),
+  riskPerTradePct: z.number().positive(),
+  dailyRealizedLoss: z.number().nonnegative().optional(),
+  venueHealth: z.array(z.object({
+    venue: z.string().min(1),
+    trust01: z.number().min(0).max(1).nullable(),
+    statusReason: z.string().optional(),
+  }).strict()).optional(),
+  bestAlternativeUtilityR: z.number().nullable().optional(),
+  operationalLoad: z.object({
+    openPositions: z.number().int().nonnegative(),
+    maxOpenTrades: z.number().int().positive(),
+    pendingOrders: z.number().int().nonnegative(),
+    degradedComponents: z.number().int().nonnegative().optional(),
+  }).strict().optional(),
+}).strict();
+
+// #21 — admission with portfolio-role / broker-dependency / opportunity-cost /
+// operational-load dimensions + a stress evidence record on EVERY decision.
+// The consolidated single-owner exposure (#22) is read server-side and fed in;
+// if that read fails the engine degrades conservatively (never permissively).
+router.post("/portfolio/admission", requireUser, async (req, res) => {
+  const body = parseOr400(AdmissionBodySchema, req.body, res);
+  if (!body) return;
+  let consolidated = null;
+  let consolidationError: string | null = null;
+  try {
+    const graph = await readBeneficialOwnerExposure(req.authUser!.id);
+    consolidated = summarizeExposureForAdmission(graph);
+  } catch (err) {
+    consolidationError = (err as Error).message;
+  }
+  const decision = evaluateAdmission({ ...body, consolidated });
+  if (consolidationError) {
+    decision.reasons.push(`beneficial-owner exposure read failed (${consolidationError}) — admission evaluated on single-account view, conservatively`);
+  }
+  await logEvent("PM_ADMISSION_EVALUATED",
+    decision.decision === "REJECT" ? "WARN" : "INFO", {
+      decision: decision.decision,
+      portfolioRole: decision.portfolioRole,
+      symbol: body.candidate.symbol,
+      venue: body.candidate.venue,
+      maxAdmittedRiskAmount: decision.maxAdmittedRiskAmount,
+      stressEvidence: decision.stressEvidence,
+      dimensions: decision.dimensions.map((d) => ({
+        dimension: d.dimension, verdict: d.verdict, score01: d.score01, degraded: d.degraded,
+      })),
+    });
+  res.json({ ...ADVISORY, decision });
+});
+
+// #22 — the consolidated multi-account single-beneficial-owner exposure graph.
+router.get("/portfolio/beneficial-owner-exposure", requireUser, async (req, res) => {
+  try {
+    const graph = await readBeneficialOwnerExposure(req.authUser!.id);
+    res.json({ ...ADVISORY, graph });
+  } catch (err) {
+    // Honest failure: a typed error, never a fabricated empty-but-OK graph.
+    res.status(503).json({
+      error: "EXPOSURE_GRAPH_UNAVAILABLE",
+      detail: (err as Error).message,
+    });
+  }
+});
+
+const RuinCapacityBodySchema = z.object({
+  candidateRiskR: z.number().positive(),
+  winRate01: z.number().min(0).max(1),
+  avgWinR: z.number(),
+  avgLossR: z.number().negative(),
+  pathsToSimulate: z.number().int().positive().max(20000).default(2000),
+  horizonTrades: z.number().int().positive().max(5000).default(200),
+  ruinThresholdR: z.number().negative().default(-30),
+  seed: z.number().int().nonnegative().default(1),
+  concurrentPositions: z.number().int().positive().max(50).optional(),
+  correlation01: z.number().min(0).max(1).optional(),
+  liquidity: z.object({
+    fillProbability01: z.number().min(0).max(1),
+    partialFillMean01: z.number().min(0).max(1),
+    slippageR: z.number().nonnegative(),
+  }).strict().optional(),
+  brokerFailure: z.object({
+    perTradeFailureProb01: z.number().min(0).max(1),
+    failureSlipMultiplier: z.number().min(1).max(10),
+  }).strict().optional(),
+  estimateCapacity: z.boolean().default(false),
+  compareRealizedDemo: z.boolean().default(false),
+}).strict();
+
+// #23 — ruin simulation with correlation / liquidity / broker-failure inputs,
+// optional per-strategy capacity estimate, and an honest comparison against
+// the caller's realized CLOSED demo trades (typed INSUFFICIENT_DATA when the
+// demo sample cannot support one).
+router.post("/portfolio/ruin-capacity", requireUser, async (req, res) => {
+  const body = parseOr400(RuinCapacityBodySchema, req.body, res);
+  if (!body) return;
+  const { estimateCapacity, compareRealizedDemo, ...simInput } = body;
+  const simulation = simulateRuinWithFrictions(simInput);
+
+  let capacity = null;
+  if (estimateCapacity) {
+    const { candidateRiskR: _unused, ...base } = simInput;
+    capacity = estimateStrategyCapacity(base);
+  }
+
+  let realizedComparison = null;
+  if (compareRealizedDemo) {
+    try {
+      const rows = await db.select().from(tradesTable)
+        .where(eq(tradesTable.userId, req.authUser!.id));
+      const closedDemoPnls = rows
+        .filter((t) => t.mode === "DEMO"
+          && (t.status === "CLOSED_WIN" || t.status === "CLOSED_LOSS")
+          && t.pnlStatus !== "UNKNOWN" && t.pnlStatus !== "PENDING"
+          && t.pnl !== null && t.pnl !== undefined)
+        .map((t) => t.pnl as number);
+      realizedComparison = compareSimulatedVsRealized({
+        simulated: {
+          winRate01: simInput.winRate01,
+          avgWinR: simInput.avgWinR,
+          avgLossR: simInput.avgLossR,
+        },
+        realizedPnls: closedDemoPnls,
+      });
+    } catch (err) {
+      realizedComparison = {
+        status: "INSUFFICIENT_DATA" as const,
+        insufficientReason: "NO_REALIZED_DATA" as const,
+        realizedSampleSize: 0,
+        reasons: [`realized demo trades unreadable: ${(err as Error).message} — comparison honestly unavailable`],
+      };
+    }
+  }
+
+  await logEvent("PM_RUIN_CAPACITY_SIMULATED",
+    simulation.withinGuardrail ? "INFO" : "WARN", {
+      ruinProbability01: simulation.ruinProbability01,
+      p05FinalR: simulation.p05FinalR,
+      withinGuardrail: simulation.withinGuardrail,
+      capacityStatus: capacity?.status ?? null,
+      capacityRiskR: capacity?.capacityRiskR ?? null,
+      realizedComparisonStatus: realizedComparison?.status ?? null,
+    });
+  res.json({ ...ADVISORY, simulation, capacity, realizedComparison });
+});
+
+const MarketSelectionEvidenceSchema = z.object({
+  canonicalSymbol: z.string().min(1),
+  dataQuality01: z.number().min(0).max(1).nullable().optional(),
+  dataQualityEvidence: z.string().optional(),
+  executionQuality01: z.number().min(0).max(1).nullable().optional(),
+  executionQualityEvidence: z.string().optional(),
+  edgeCoverage01: z.number().min(0).max(1).nullable().optional(),
+  edgeCoverageEvidence: z.string().optional(),
+  closedTrades: z.number().int().nonnegative().nullable().optional(),
+  backtestRuns: z.number().int().nonnegative().nullable().optional(),
+  capacity01: z.number().min(0).max(1).nullable().optional(),
+  capacityEvidence: z.string().optional(),
+  correlationWithActiveSet01: z.number().min(0).max(1).nullable().optional(),
+  correlationEvidence: z.string().optional(),
+  brokerTrust01: z.number().min(0).max(1).nullable().optional(),
+  brokerTrustEvidence: z.string().optional(),
+  currentPostureOverride: z.enum(["ACTIVE", "SHADOW", "EXCLUDED"]).optional(),
+}).strict();
+
+const MarketSelectionBodySchema = z.object({
+  evidence: z.array(MarketSelectionEvidenceSchema).min(1),
+}).strict();
+
+// #24 — the market selection ENGINE. Scores each market's evidence and emits
+// ADVISORY posture records (active/shadow/excluded proposals). The registry is
+// never mutated here — every proposed change is an owner press.
+router.post("/portfolio/market-selection/advisory", requireUser, async (req, res) => {
+  const body = parseOr400(MarketSelectionBodySchema, req.body, res);
+  if (!body) return;
+  const records = runMarketSelectionEngine(body.evidence);
+  const changes = records.filter((r) => r.changed);
+  await logEvent("MS_ADVISORY_POSTURE", changes.length > 0 ? "WARN" : "INFO", {
+    marketsScored: records.length,
+    proposedChanges: changes.map((r) => ({
+      market: r.canonicalSymbol,
+      from: r.currentPosture, to: r.proposedPosture, direction: r.direction,
+      composite01: r.composite01, status: r.status,
+    })),
+    insufficientEvidence: records.filter((r) => r.status === "INSUFFICIENT_EVIDENCE").length,
+  });
+  res.json({
+    ...ADVISORY,
+    advisoryOnly: true,
+    ownerPressRequiredForAnyChange: true,
+    records,
+  });
 });
 
 export default router;
