@@ -122,7 +122,14 @@ export function computeReadinessScore(
       score, max: 10, level,
       summary:
         mode === "deferred" ? "Bridge intentionally deferred — ARX runs in simulator mode."
-        : mode === "connected" ? "Bridge connected — broker remains read-only by default."
+        // RANK 4 (review pass) — this asserted "broker remains read-only by
+        // default" for every connected bridge, regardless of ctx.brokerReadOnly.
+        // On a connected, execution-enabled account the readiness card told the
+        // trader the broker was read-only while orders could dispatch.
+        : mode === "connected"
+          ? ctx.brokerReadOnly
+            ? "Bridge connected — this broker connection is read-only right now."
+            : "Bridge connected — this broker connection is NOT read-only. Orders can reach the broker once the server-side gates pass."
         : mode === "disconnected" ? "Bridge token configured, but no connection."
         : "Bridge state unknown.",
       evidence: [`bridgeMode=${mode}`],

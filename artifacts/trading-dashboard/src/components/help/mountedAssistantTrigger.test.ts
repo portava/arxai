@@ -15,11 +15,18 @@
 //   without deciding which is canonical).
 //
 //   FloatingHelpWidget.tsx is deliberately NOT deleted here: _qa-test.ts reads
-//   its source for several other invariants, that lane cannot be run in this
-//   sandbox (tsx needs listen(2)), and deleting a 1,200-line file whose guard I
-//   cannot execute would be a change I could not verify. It is pinned as
-//   unmounted instead, which is the fact that matters, and the deletion is
-//   recorded as follow-up work.
+//   its source for ~10 other invariants (widget wiring, aria, reduced-motion,
+//   safe-area, CSS tokens), so deleting the file would take those assertions
+//   down with it. It is pinned as unmounted instead, which is the fact that
+//   matters, and the deletion is recorded as follow-up work.
+//
+//   CORRECTION (review pass): an earlier version of this comment claimed the
+//   _qa-test.ts lane "cannot be run in this sandbox (tsx needs listen(2))".
+//   That was wrong — `pnpm exec tsx src/knowledge/_qa-test.ts` runs fine. It
+//   was run, and it showed that adding THIS file flipped that lane's
+//   "Single floating trigger (no duplicates)" invariant to FAIL, because its
+//   walk() counted any file quoting the testid, test files included. The walk
+//   now excludes non-rendering sources; see _qa-test.ts:isNonRenderingSource.
 
 import { describe, it, expect } from "vitest";
 import { readdirSync, readFileSync, statSync } from "node:fs";

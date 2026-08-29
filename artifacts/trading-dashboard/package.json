@@ -66,7 +66,8 @@
     "test:app-g-risk-save": "vitest run src/components/risk/riskLimitSave.test.ts",
     "test:app-g-route-knowledge": "vitest run src/knowledge/declaredRoutes.test.ts",
     "test:app-g-assistant-trigger": "vitest run src/components/help/mountedAssistantTrigger.test.ts",
-    "test:app-g-watchlist-markets": "vitest run src/pages/watchlistMarkets.test.ts"
+    "test:app-g-watchlist-markets": "vitest run src/pages/watchlistMarkets.test.ts",
+    "test:app-g-status-honesty": "vitest run src/statusCommand/statusSurfaceHonesty.test.ts"
   },
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",
