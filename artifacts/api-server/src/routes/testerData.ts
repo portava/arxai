@@ -6,7 +6,7 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { readRoleFromRequest } from "../lib/security/middleware.js";
 import { db, liveIntentsTable, vaultEventsTable, tradeJournalTable } from "@workspace/db";
-import { and, eq, like } from "drizzle-orm";
+import { and, eq, isNull, like, or } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import {
   TESTER_TAG, TESTER_SEED_STRATEGY, TESTER_SEED_STRATEGY_PREFIX, TESTER_SEED_INTENT_PREFIX,
@@ -29,6 +29,23 @@ router.use("/tester-data", requireAdmin);
 
 router.post("/tester-data/seed", async (req, res) => {
   try {
+    // Checked BEFORE the first write, so a refusal leaves nothing behind.
+    //
+    // The router gate is `requireAdmin`, which reads the hr_session ROLE — it
+    // does not prove an arx_user_session exists. Without one there is no owner
+    // to stamp, and an unowned fabricated row is one no /clear can ever match
+    // and no per-user read can ever attribute. Refuse rather than write it.
+    const seederUserId = req.authUser?.id ?? null;
+    if (seederUserId == null) {
+      return res.status(409).json({
+        error: "No signed-in trader account on this request",
+        detail:
+          "Seeding writes 6 trade-journal rows with fabricated P&L. Those rows must be OWNED so that "
+          + "'Clear Demo Test Data' can remove exactly them. Your admin role was accepted but no trader "
+          + "session was present, so NOTHING was written.",
+        seeded: false, intents: 0, vaultEvents: 0, journalEntries: 0,
+      });
+    }
     const now = Date.now();
     const intents: any[] = [];
     const sources = ["MANUAL", "AI_ASSIST", "AI_AUTO"] as const;
@@ -81,7 +98,6 @@ router.post("/tester-data/seed", async (req, res) => {
     // analytics would read them as their own history — and (b) tagged with
     // TESTER_SEED_STRATEGY_PREFIX so /tester-data/clear can delete exactly
     // these rows and the analytics surfaces can exclude them.
-    const seederUserId = req.authUser?.id ?? null;
     const journalRows = Array.from({ length: 6 }).map((_, i) => ({
       userId: seederUserId,
       symbol: ["EURUSD", "GBPUSD", "XAUUSD"][i % 3]!,
@@ -130,13 +146,31 @@ router.post("/tester-data/clear", async (req, res) => {
     // themselves can match it. trade_journal is NOT an append-only ledger
     // (that list is audit_events / vault_events / state_transitions /
     // execution_events / owner_decisions), so deleting here is permitted.
+    // SCOPE, stated exactly. This deletes the seeded rows this caller owns,
+    // plus the legacy UNOWNED seeded rows (written before seeding required an
+    // owner — no per-user read can attribute them, so nobody loses history).
+    // It does NOT touch seeded rows owned by a DIFFERENT admin, and the
+    // response reports how many of those remain rather than implying the
+    // seed was fully undone.
     const callerUserId = req.authUser?.id ?? null;
+    const seedTag = like(tradeJournalTable.strategy, `${TESTER_SEED_STRATEGY_PREFIX}%`);
+    const removable = callerUserId == null
+      ? isNull(tradeJournalTable.userId)
+      : or(isNull(tradeJournalTable.userId), eq(tradeJournalTable.userId, callerUserId));
+    // `removable` above IS the userId predicate (caller-owned OR
+    // legacy-unowned); it is bound to a variable for readability.
+    // isolation-ok: see the note directly above.
     const journalRemoved = await db.delete(tradeJournalTable)
-      .where(and(
-        like(tradeJournalTable.strategy, `${TESTER_SEED_STRATEGY_PREFIX}%`),
-        callerUserId == null ? undefined : eq(tradeJournalTable.userId, callerUserId),
-      ))
+      .where(and(seedTag, removable))
       .returning({ id: tradeJournalTable.id });
+    // Anything still tagged is owned by another admin.
+    // DELIBERATELY cross-user — it counts the seeded rows this caller may NOT
+    // delete so the response can say so instead of implying the seed was
+    // fully undone. Ids only; no row content is returned.
+    // isolation-ok: see the note directly above.
+    const stillSeeded = await db.select({ id: tradeJournalTable.id }).from(tradeJournalTable)
+      .where(seedTag).limit(500);
+    const ownedByOthers = stillSeeded.length;
 
     await db.insert(vaultEventsTable).values({
       kind: "TESTER_SEED_CLEARED",
@@ -148,6 +182,8 @@ router.post("/tester-data/clear", async (req, res) => {
       payload: {
         intentsRemoved: intents.length,
         journalEntriesRemoved: journalRemoved.length,
+        seededJournalRowsOwnedByOthersRemaining: ownedByOthers,
+        clearedByUserId: callerUserId,
         vaultRowsRetained: true,
       },
       reasons: ["clear"],
@@ -158,10 +194,18 @@ router.post("/tester-data/clear", async (req, res) => {
       cleared: true,
       intents: intents.length,
       journalEntries: journalRemoved.length,
+      seededJournalRowsOwnedByOthersRemaining: ownedByOthers,
+      clearedByUserId: callerUserId,
       vaultEventsRetained: true,
       correctiveEventAppended: true,
-      note: "Seeded intents and seeded journal rows were deleted. Seeded vault_events are append-only "
-        + "and are retained by design — a corrective TESTER_SEED_CLEARED event records this clear.",
+      note: `Deleted ${intents.length} seeded intent(s) and ${journalRemoved.length} seeded journal row(s) `
+        + (callerUserId == null
+            ? "— no trader session on this request, so only legacy UNOWNED seeded rows could be matched. "
+            : "owned by your account (plus any legacy unowned seeded rows). ")
+        + (ownedByOthers > 0
+            ? `${ownedByOthers} seeded journal row(s) seeded by a DIFFERENT admin account remain and were NOT deleted — only that admin's own clear can remove them. `
+            : "No seeded journal rows remain. ")
+        + "Seeded vault_events are append-only and are retained by design — a corrective TESTER_SEED_CLEARED event records this clear.",
     });
   } catch (err) {
     req.log.error({ err: String(err) }, "tester-data/clear failed");

@@ -9,10 +9,16 @@ import { Router } from "express";
 import {
   db, postTradeDebriefsTable, paperOrdersTable, vaultEventsTable,
 } from "@workspace/db";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod/v4";
+import { requireUser } from "../lib/auth/middleware.js";
 
 const router = Router();
+
+/** Authenticated caller id — `requireUser` gates every route in this file. */
+function uid(req: import("express").Request): number {
+  return req.authUser!.id;
+}
 const DEBRIEF_DISCLAIMER =
   "Post-trade debriefs are reflective coaching aids. They do not predict future results or guarantee profitability.";
 
@@ -129,15 +135,20 @@ function generateAiFeedback(
 }
 
 // ── POST /post-trade-debriefs ──────────────────────────────────────────────
-router.post("/post-trade-debriefs", async (req, res): Promise<void> => {
+router.post("/post-trade-debriefs", requireUser, async (req, res): Promise<void> => {
   try {
+    const userId = uid(req);
     const b = CreateBody.parse(req.body ?? {});
+    // You may only debrief your own trade. 404 (not 403) so the response does
+    // not confirm that another trader's paper-order id exists.
     const trade = (await db.select().from(paperOrdersTable)
-      .where(eq(paperOrdersTable.id, b.tradeId)).limit(1))[0];
+      .where(and(eq(paperOrdersTable.id, b.tradeId),
+                 eq(paperOrdersTable.userId, userId))).limit(1))[0];
     if (!trade) { fail(res, 404, "Trade not found"); return; }
     if (trade.status === "OPEN") { fail(res, 409, "Trade is still open — debrief after close"); return; }
     const existing = (await db.select().from(postTradeDebriefsTable)
-      .where(eq(postTradeDebriefsTable.tradeId, b.tradeId)).limit(1))[0];
+      .where(and(eq(postTradeDebriefsTable.userId, userId),
+                 eq(postTradeDebriefsTable.tradeId, b.tradeId))).limit(1))[0];
     if (existing) { fail(res, 409, "Debrief already exists for this trade", { debriefId: existing.id }); return; }
 
     const result = classifyResult(trade.profitLoss);
@@ -148,7 +159,14 @@ router.post("/post-trade-debriefs", async (req, res): Promise<void> => {
       result, b.checklist, b.traderEmotionAfter ?? null,
     );
 
+    // OWNERSHIP: post_trade_debriefs.user_id is read back with an
+    // `eq(..., userId)` predicate by Trader Skill (discipline, execution and
+    // emotional-control pillars), Edge Discovery, the AI Mentor, the coach and
+    // the Risk Governor. lib/autoDebriefService.ts already stamps it; this
+    // manual route did not, so a trader who wrote their debriefs by hand had
+    // FOUR skill pillars computed from an empty set and scored a confident 0.
     const ins = await db.insert(postTradeDebriefsTable).values({
+      userId,
       tradeId: b.tradeId,
       result,
       checklist: b.checklist,
@@ -174,32 +192,36 @@ router.post("/post-trade-debriefs", async (req, res): Promise<void> => {
 });
 
 // ── GET /post-trade-debriefs ───────────────────────────────────────────────
-router.get("/post-trade-debriefs", async (req, res): Promise<void> => {
+router.get("/post-trade-debriefs", requireUser, async (req, res): Promise<void> => {
   const raw = Number(req.query["limit"]);
   const limit = Number.isFinite(raw) ? Math.max(1, Math.min(raw, 200)) : 50;
   const rows = await db.select().from(postTradeDebriefsTable)
+    .where(eq(postTradeDebriefsTable.userId, uid(req)))
     .orderBy(desc(postTradeDebriefsTable.createdAt)).limit(limit);
   ok(res, { debriefs: rows, questions: DEBRIEF_QUESTIONS });
 });
 
 // ── GET /post-trade-debriefs/by-trade/:tradeId ─────────────────────────────
-router.get("/post-trade-debriefs/by-trade/:tradeId", async (req, res): Promise<void> => {
+router.get("/post-trade-debriefs/by-trade/:tradeId", requireUser, async (req, res): Promise<void> => {
   const tid = Number(req.params["tradeId"]);
   if (!Number.isFinite(tid)) { fail(res, 400, "Invalid tradeId"); return; }
   const r = (await db.select().from(postTradeDebriefsTable)
-    .where(eq(postTradeDebriefsTable.tradeId, tid)).limit(1))[0];
+    .where(and(eq(postTradeDebriefsTable.userId, uid(req)),
+               eq(postTradeDebriefsTable.tradeId, tid))).limit(1))[0];
   if (!r) { fail(res, 404, "No debrief for this trade"); return; }
   ok(res, { debrief: r });
 });
 
 // ── PATCH /post-trade-debriefs/:id ─────────────────────────────────────────
-router.patch("/post-trade-debriefs/:id", async (req, res): Promise<void> => {
+router.patch("/post-trade-debriefs/:id", requireUser, async (req, res): Promise<void> => {
   try {
+    const userId = uid(req);
     const id = Number(req.params["id"]);
     if (!Number.isFinite(id)) { fail(res, 400, "Invalid id"); return; }
     const b = UpdateBody.parse(req.body ?? {});
     const cur = (await db.select().from(postTradeDebriefsTable)
-      .where(eq(postTradeDebriefsTable.id, id)).limit(1))[0];
+      .where(and(eq(postTradeDebriefsTable.id, id),
+                 eq(postTradeDebriefsTable.userId, userId))).limit(1))[0];
     if (!cur) { fail(res, 404, "Not found"); return; }
     const patch: Record<string, unknown> = { updatedAt: new Date() };
     if (b.checklist !== undefined) {
@@ -210,9 +232,12 @@ router.patch("/post-trade-debriefs/:id", async (req, res): Promise<void> => {
     if (b.biggestMistake !== undefined)     patch["biggestMistake"]     = b.biggestMistake;
     if (b.biggestStrength !== undefined)    patch["biggestStrength"]    = b.biggestStrength;
     if (b.lessonLearned !== undefined)      patch["lessonLearned"]      = b.lessonLearned;
-    await db.update(postTradeDebriefsTable).set(patch).where(eq(postTradeDebriefsTable.id, id));
+    await db.update(postTradeDebriefsTable).set(patch)
+      .where(and(eq(postTradeDebriefsTable.id, id),
+                 eq(postTradeDebriefsTable.userId, userId)));
     const r = (await db.select().from(postTradeDebriefsTable)
-      .where(eq(postTradeDebriefsTable.id, id)).limit(1))[0];
+      .where(and(eq(postTradeDebriefsTable.id, id),
+                 eq(postTradeDebriefsTable.userId, userId))).limit(1))[0];
     ok(res, { debrief: r });
   } catch (err) {
     if (err instanceof z.ZodError) { fail(res, 400, "Invalid", { issues: err.issues }); return; }
@@ -223,15 +248,18 @@ router.patch("/post-trade-debriefs/:id", async (req, res): Promise<void> => {
 
 // ── POST /post-trade-debriefs/:id/regenerate ───────────────────────────────
 // Regenerate AI feedback + drill from current debrief state (after a PATCH).
-router.post("/post-trade-debriefs/:id/regenerate", async (req, res): Promise<void> => {
+router.post("/post-trade-debriefs/:id/regenerate", requireUser, async (req, res): Promise<void> => {
   try {
+    const userId = uid(req);
     const id = Number(req.params["id"]);
     if (!Number.isFinite(id)) { fail(res, 400, "Invalid id"); return; }
     const cur = (await db.select().from(postTradeDebriefsTable)
-      .where(eq(postTradeDebriefsTable.id, id)).limit(1))[0];
+      .where(and(eq(postTradeDebriefsTable.id, id),
+                 eq(postTradeDebriefsTable.userId, userId))).limit(1))[0];
     if (!cur) { fail(res, 404, "Not found"); return; }
     const trade = (await db.select().from(paperOrdersTable)
-      .where(eq(paperOrdersTable.id, cur.tradeId)).limit(1))[0];
+      .where(and(eq(paperOrdersTable.id, cur.tradeId),
+                 eq(paperOrdersTable.userId, userId))).limit(1))[0];
     if (!trade) { fail(res, 404, "Underlying trade not found"); return; }
     const ai = generateAiFeedback(
       { symbol: trade.symbol, direction: trade.direction, profitLoss: trade.profitLoss,
@@ -243,9 +271,11 @@ router.post("/post-trade-debriefs/:id/regenerate", async (req, res): Promise<voi
     );
     await db.update(postTradeDebriefsTable)
       .set({ aiFeedback: ai.feedback, recommendedDrill: ai.drill, updatedAt: new Date() })
-      .where(eq(postTradeDebriefsTable.id, id));
+      .where(and(eq(postTradeDebriefsTable.id, id),
+                 eq(postTradeDebriefsTable.userId, userId)));
     const r = (await db.select().from(postTradeDebriefsTable)
-      .where(eq(postTradeDebriefsTable.id, id)).limit(1))[0];
+      .where(and(eq(postTradeDebriefsTable.id, id),
+                 eq(postTradeDebriefsTable.userId, userId))).limit(1))[0];
     ok(res, { debrief: r });
   } catch (err) {
     req.log.error({ err: String(err) }, "POST /post-trade-debriefs/:id/regenerate failed");

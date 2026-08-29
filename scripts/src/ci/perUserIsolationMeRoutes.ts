@@ -196,6 +196,19 @@ const COVERED_ROUTE_FILES: Record<string, readonly string[]> = {
   "routes/paperSessions.ts": ["requireUser"],
   "routes/traderCoach.ts": ["requireUser"],
   "routes/onboarding.ts": ["requireUser"],
+  // ── Sibling routers that read the SAME per-trader tables ────────────────
+  // These were not in the original list, and the guard therefore reported
+  // PASS over a live hole: routes/tradeDecision.ts read analytics_snapshots,
+  // trader_skill_profiles, ai_mentor_sessions and trading_readiness_checks
+  // with `.orderBy(desc(...)).limit(1)` and no predicate, then told the
+  // caller "<symbol> is your WEAKEST symbol"; routes/tradingReadiness.ts took
+  // the newest weekly_performance_reviews row platform-wide. Coverage is by
+  // TABLE, not by page: any router touching a user-owned table belongs here.
+  "routes/tradeDecision.ts": ["requireUser"],
+  "routes/tradingReadiness.ts": ["requireUser"],
+  "routes/ruleContracts.ts": ["requireUser"],
+  "routes/postTradeDebriefs.ts": ["requireUser"],
+  "routes/paperExecution.ts": ["requireUser"],
   // Security posture is role-gated, not user-scoped: the reads expose the
   // admin role×permission matrix, event log and access logs, so the gate is
   // `security:read` (OWNER/ADMIN only) rather than "any signed-in user".
@@ -214,6 +227,8 @@ const COVERED_LIB_FILES: readonly string[] = [
   "lib/paperSession/manager.ts",
   "lib/riskGovernor/governor.ts",
   "lib/alerts/ruleEngine.ts",
+  "lib/paperExecution/paperExecutionService.ts",
+  "lib/paperAutopilot/autopilotService.ts",
 ];
 
 /**
@@ -255,6 +270,9 @@ const USER_OWNED_TABLES: readonly string[] = [
   "tradeDecisionLogsTable",
   "autopilotCyclesTable",
   "traderCoachReportsTable",
+  // Added with the sibling-router coverage above.
+  "paperExecutionsTable",
+  "sessionCommitmentsTable",
 ];
 
 const WAIVER = /\/\/\s*isolation-ok:\s*\S+/;
@@ -263,9 +281,22 @@ const WAIVER = /\/\/\s*isolation-ok:\s*\S+/;
  * Return the source span of the Drizzle statement containing `idx`.
  *
  * Walks back to the nearest `db.` / `tx.` chain start and forward to the first
- * `;` that sits outside any bracket opened since. Deliberately conservative:
- * if it cannot find a terminator it returns the rest of the file, which errs
- * toward PASSING rather than inventing a violation.
+ * `;` OR `,` that sits outside any bracket opened since. Deliberately
+ * conservative: if it cannot find a terminator it returns the rest of the
+ * file, which errs toward PASSING rather than inventing a violation.
+ *
+ * The depth-0 COMMA terminator is load-bearing, not cosmetic. Without it a
+ * statement inside a `Promise.all([...])` array ran to the array's closing
+ * `;`, so ONE element naming `userId` waived every sibling element in the same
+ * block — which is exactly the shape of the defect this guard exists to catch:
+ *
+ *   const [snapRows, skillRows, …] = await Promise.all([
+ *     db.select().from(analyticsSnapshotsTable).orderBy(…).limit(1),   // unscoped
+ *     db.select().from(edgeDiscoveryReportsTable).where(eq(…, userId)),
+ *   ]);
+ *
+ * Commas nested inside any bracket (argument lists, object literals,
+ * `and(…, …)` predicates) are at depth > 0 and do not terminate a span.
  */
 function statementSpan(raw: string, idx: number): string {
   let start = idx;
@@ -282,7 +313,7 @@ function statementSpan(raw: string, idx: number): string {
     const ch = raw[i]!;
     if (ch === "(" || ch === "[" || ch === "{") depth++;
     else if (ch === ")" || ch === "]" || ch === "}") depth--;
-    else if (ch === ";" && depth <= 0) return raw.slice(start, i + 1);
+    else if ((ch === ";" || ch === ",") && depth <= 0) return raw.slice(start, i + 1);
   }
   return raw.slice(start);
 }

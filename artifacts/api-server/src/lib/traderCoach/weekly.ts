@@ -12,6 +12,7 @@ import {
 } from "@workspace/db";
 import { and, eq, gte } from "drizzle-orm";
 import { evaluateGovernor } from "../riskGovernor/governor.js";
+import { getOrCreateUserRiskSettings } from "../risk/userRiskSettings.js";
 
 export interface WeeklyPlan {
   week_start: string;
@@ -22,12 +23,24 @@ export interface WeeklyPlan {
   mistakesToReduce: string[];
   setupsToStudy: string[];
   setupsToAvoid: string[];
+  /**
+   * `maxTradesPerDay` / `maxLossPerDayUsd` are the trader's OWN limits, not
+   * targets this planner invents. They were hardcoded `5` and `100`. When the
+   * governor cannot derive the dollar limit the value is `null` and `basis` is
+   * "UNKNOWN" — the plan says so instead of printing a number.
+   *
+   * `requiredDebriefs` / `minQualityScore` / `reviewDays` ARE deliberate
+   * coaching targets set by this planner; `targetsNote` says which is which.
+   */
   paperTradingTargets: {
-    maxTradesPerDay: number;
-    maxLossPerDay: number;
+    maxTradesPerDay: number | null;
+    maxDailyLossPct: number | null;
+    maxLossPerDayUsd: number | null;
+    limitBasis: string;
     requiredDebriefs: number;
     minQualityScore: number;
     reviewDays: string[];
+    targetsNote: string;
   };
   progressMetrics: string[];
   reviewQuestions: string[];
@@ -140,12 +153,25 @@ export async function generateWeeklyPlan(userId: number, opts: { persist?: boole
     ? losing.map(e => `${e.symbol} ${e.signalName} (${e.action}) — edge ${e.edgeScore.toFixed(1)} on ${e.sampleCount} trades.`)
     : ["No clearly losing setups identified yet — keep tracking edge scores."];
 
-  const paperTradingTargets = {
-    maxTradesPerDay: 5,
-    maxLossPerDay: 100,
+  let maxTradesPerDay: number | null = null;
+  try {
+    const rs = await getOrCreateUserRiskSettings(userId);
+    maxTradesPerDay = rs.maxTradesPerDay ?? null;
+  } catch { /* leave UNKNOWN rather than substituting a default */ }
+  const gm = governor?.metrics ?? null;
+  const limitDerived = gm != null && gm.dailyLossLimitBasis !== "UNKNOWN" && gm.dailyLossLimit > 0;
+  const paperTradingTargets: WeeklyPlan["paperTradingTargets"] = {
+    maxTradesPerDay,
+    maxDailyLossPct: gm?.maxDailyLossPct ?? null,
+    maxLossPerDayUsd: limitDerived ? gm!.dailyLossLimit : null,
+    limitBasis: gm?.dailyLossLimitBasis ?? "UNKNOWN",
     requiredDebriefs: 20,
     minQualityScore: 60,
     reviewDays: ["Wednesday", "Sunday"],
+    targetsNote:
+      "maxTradesPerDay and maxLossPerDayUsd are YOUR configured limits read from your risk settings and paper-account equity"
+      + (limitDerived ? "" : " (the dollar limit could not be derived, so it is reported as unknown rather than filled in)")
+      + ". requiredDebriefs, minQualityScore and reviewDays are coaching targets set by this plan, not limits you configured.",
   };
 
   const progressMetrics = [

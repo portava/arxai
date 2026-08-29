@@ -52,6 +52,52 @@ test("R4 goes GREEN once the userId predicate is present", () => {
   assert.equal(scan.statementsChecked, 1);
 });
 
+test("R4 sees EACH element of a Promise.all block separately", () => {
+  // The exact shape of the defect the first guard could not see. Before the
+  // span terminated on a depth-0 comma, ONE scoped element waived every
+  // unscoped sibling in the same array, and the guard reported PASS over
+  // routes/tradeDecision.ts while it served a stranger's analytics snapshot,
+  // skill profile, mentor session and readiness check.
+  const broken = `
+    router.post("/trade-decision/evaluate", requireUser, async (req, res) => {
+      const [snapRows, skillRows, edgeRows] = await Promise.all([
+        db.select().from(analyticsSnapshotsTable).orderBy(desc(analyticsSnapshotsTable.createdAt)).limit(1),
+        db.select().from(traderSkillProfilesTable).orderBy(desc(traderSkillProfilesTable.updatedAt)).limit(1),
+        db.select().from(edgeDiscoveryReportsTable).where(eq(edgeDiscoveryReportsTable.userId, userId)).limit(5),
+      ]);
+    });
+  `;
+  const scan = scanScopedSurfaceSource("routes/tradeDecision.ts", broken, GATES);
+  assert.equal(scan.statementsChecked, 3);
+  assert.equal(
+    scan.violations.length, 2,
+    `expected the two unscoped elements to be flagged, got: ${scan.violations.join(" | ")}`,
+  );
+  assert.match(scan.violations.join(" "), /analyticsSnapshotsTable/);
+  assert.match(scan.violations.join(" "), /traderSkillProfilesTable/);
+  assert.doesNotMatch(scan.violations.join(" "), /edgeDiscoveryReportsTable/);
+});
+
+test("R4 does not split a statement on a comma nested inside a predicate", () => {
+  // The depth-0 comma terminator must not truncate `and(a, b)` / object
+  // literals — otherwise the fix above would manufacture false violations.
+  const fixed = `
+    const rows = await db.select().from(paperOrdersTable)
+      .where(and(
+        eq(paperOrdersTable.userId, userId),
+        eq(paperOrdersTable.status, "OPEN"),
+      ));
+    await db.insert(paperOrdersTable).values({
+      userId,
+      symbol: "EURUSD",
+      direction: "BUY",
+    });
+  `;
+  const scan = scanScopedSurfaceSource("lib/paperExecution/paperExecutionService.ts", fixed);
+  assert.deepEqual(scan.violations, [], "a nested comma must not truncate the statement span");
+  assert.equal(scan.statementsChecked, 2);
+});
+
 test("R4 goes RED on the original defect: an insert that leaves user_id NULL", () => {
   const broken = `
     const ins = await db.insert(edgeDiscoveryReportsTable).values({
@@ -143,12 +189,22 @@ test("the real tree passes and coverage has not been narrowed", () => {
     "routes/weeklyReviews.ts", "routes/analytics.ts", "routes/paperSessions.ts",
     "routes/traderCoach.ts", "routes/security.ts", "routes/onboarding.ts",
     "routes/testerData.ts",
+    // Sibling routers that read the same per-trader tables. The first two
+    // were the live hole the original coverage list could not see:
+    // tradeDecision.ts served a stranger's analytics snapshot / skill profile
+    // / mentor session / readiness check through POST
+    // /trade-decision/evaluate, and tradingReadiness.ts served a stranger's
+    // weekly performance review — while this guard reported PASS.
+    "routes/tradeDecision.ts", "routes/tradingReadiness.ts",
+    "routes/ruleContracts.ts", "routes/postTradeDebriefs.ts",
+    "routes/paperExecution.ts",
   ]) {
     assert.ok(SCOPED_SURFACE_COVERAGE.routeFiles.includes(f), `route file dropped from coverage: ${f}`);
   }
   for (const f of [
     "lib/onboarding/state.ts", "lib/traderCoach/coach.ts", "lib/traderCoach/weekly.ts",
     "lib/paperSession/manager.ts", "lib/riskGovernor/governor.ts", "lib/alerts/ruleEngine.ts",
+    "lib/paperExecution/paperExecutionService.ts", "lib/paperAutopilot/autopilotService.ts",
   ]) {
     assert.ok(SCOPED_SURFACE_COVERAGE.libFiles.includes(f), `service file dropped from coverage: ${f}`);
   }

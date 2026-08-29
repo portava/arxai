@@ -42,7 +42,7 @@ import {
   edgeDiscoveryReportsTable,
   vaultEventsTable,
 } from "@workspace/db";
-import { desc, eq, and } from "drizzle-orm";
+import { desc, eq, and, isNull, or } from "drizzle-orm";
 import {
   runStrategyScan,
   detectSession,
@@ -271,9 +271,16 @@ export async function orchestrate(input: z.infer<typeof EvaluateBody>, userId: n
   }
 
   // 4) Risk settings (per-user) + active risk locks.
+  // Locks: this trader's own PLUS the operator-created platform locks, which
+  // routes/permission.ts deliberately writes with a NULL owner. Narrowing to
+  // `eq(userId)` alone would silently drop a platform-wide hold — this repo
+  // never removes a stop.
   const [risk, locks] = await Promise.all([
     getOrCreateUserRiskSettings(userId),
-    db.select().from(riskLocksTable).where(eq(riskLocksTable.isActive, true)),
+    db.select().from(riskLocksTable).where(and(
+      or(isNull(riskLocksTable.userId), eq(riskLocksTable.userId, userId)),
+      eq(riskLocksTable.isActive, true),
+    )),
   ]);
   const minConfidence = risk?.minConfidenceScore ?? 75;
   if (locks.length > 0) {
@@ -285,9 +292,17 @@ export async function orchestrate(input: z.infer<typeof EvaluateBody>, userId: n
   if (risk?.liveLocked) warnings.push("Live trading is locked in risk settings");
 
   // 5) Account + open-position context (paper account is always available).
+  // ISOLATION: `openCount` is compared against THIS trader's maxOpenTrades a
+  // few lines below. Unscoped, every other user's open paper orders counted
+  // against this trader's cap, so a busy instance blocked everyone.
   const [paperAccts, openTrades] = await Promise.all([
-    db.select().from(paperAccountsTable).where(eq(paperAccountsTable.isActive, 1)).limit(1),
-    db.select().from(paperOrdersTable).where(eq(paperOrdersTable.status, "OPEN")),
+    db.select().from(paperAccountsTable)
+      .where(and(eq(paperAccountsTable.userId, userId),
+                 eq(paperAccountsTable.isActive, 1)))
+      .orderBy(desc(paperAccountsTable.id)).limit(1),
+    db.select().from(paperOrdersTable)
+      .where(and(eq(paperOrdersTable.userId, userId),
+                 eq(paperOrdersTable.status, "OPEN"))),
   ]);
   const paperAcct = paperAccts[0] ?? null;
   const openCount = openTrades.length;
@@ -299,7 +314,13 @@ export async function orchestrate(input: z.infer<typeof EvaluateBody>, userId: n
   }
 
   // 6) Recent trade history — overtrading + revenge guard.
-  const recent = await db.select().from(paperOrdersTable).orderBy(desc(paperOrdersTable.id)).limit(20);
+  // ISOLATION: the revenge guard trips on `losingStreak` and the overtrading
+  // check counts `todays`. Read unscoped, both were computed from strangers'
+  // trades — a trader could be told "Losing streak guard tripped (3 losses in
+  // a row)" having placed no trades at all.
+  const recent = await db.select().from(paperOrdersTable)
+    .where(eq(paperOrdersTable.userId, userId))
+    .orderBy(desc(paperOrdersTable.id)).limit(20);
   const today = new Date(); today.setUTCHours(0, 0, 0, 0);
   const todays = recent.filter((o) => o.openedAt && o.openedAt >= today);
   const losingStreak = (() => {
@@ -329,12 +350,29 @@ export async function orchestrate(input: z.infer<typeof EvaluateBody>, userId: n
   }
 
   // 7) AI confidence score from latest analytics snapshot + skill profile.
+  //
+  // ISOLATION: every one of these five tables is per-trader. Read unscoped
+  // (`.orderBy(desc(...)).limit(1)` with no predicate) they returned whichever
+  // row ANY user wrote most recently, and the copy below then told this trader
+  // `${symbol} is your WEAKEST symbol` and scored their decision against a
+  // stranger's discipline score, mentor flag and readiness status. `userId` is
+  // already a parameter of orchestrate() — it is now actually used.
   const [snapRows, skillRows, mentorRows, readinessRows, edgeRows] = await Promise.all([
-    db.select().from(analyticsSnapshotsTable).orderBy(desc(analyticsSnapshotsTable.createdAt)).limit(1),
-    db.select().from(traderSkillProfilesTable).orderBy(desc(traderSkillProfilesTable.updatedAt)).limit(1),
-    db.select().from(aiMentorSessionsTable).orderBy(desc(aiMentorSessionsTable.createdAt)).limit(1),
-    db.select().from(tradingReadinessChecksTable).orderBy(desc(tradingReadinessChecksTable.id)).limit(1),
-    db.select().from(edgeDiscoveryReportsTable).where(eq(edgeDiscoveryReportsTable.symbol, symbol)).limit(5),
+    db.select().from(analyticsSnapshotsTable)
+      .where(eq(analyticsSnapshotsTable.userId, userId))
+      .orderBy(desc(analyticsSnapshotsTable.createdAt)).limit(1),
+    db.select().from(traderSkillProfilesTable)
+      .where(eq(traderSkillProfilesTable.userId, userId))
+      .orderBy(desc(traderSkillProfilesTable.updatedAt)).limit(1),
+    db.select().from(aiMentorSessionsTable)
+      .where(eq(aiMentorSessionsTable.userId, userId))
+      .orderBy(desc(aiMentorSessionsTable.createdAt)).limit(1),
+    db.select().from(tradingReadinessChecksTable)
+      .where(eq(tradingReadinessChecksTable.userId, userId))
+      .orderBy(desc(tradingReadinessChecksTable.id)).limit(1),
+    db.select().from(edgeDiscoveryReportsTable)
+      .where(and(eq(edgeDiscoveryReportsTable.userId, userId),
+                 eq(edgeDiscoveryReportsTable.symbol, symbol))).limit(5),
   ]);
   const snap = snapRows[0] ?? null;
   const skill = skillRows[0] ?? null;
@@ -543,8 +581,17 @@ export async function orchestrate(input: z.infer<typeof EvaluateBody>, userId: n
   return decision;
 }
 
-export async function persistDecision(d: TradeDecision): Promise<number> {
+/**
+ * OWNERSHIP: `userId` is required. `trade_decision_logs.user_id` is read back
+ * per-user by the Risk Governor (collectMetrics reads decisions with
+ * `eq(tradeDecisionLogsTable.userId, userId)`), so a decision written without
+ * an owner is a decision no governor can ever see again — avgConfidence,
+ * avgRiskScore and decisionToWinRate would sit at a confident 0 for every
+ * trader. The orchestrator already resolves the caller; it passes it here.
+ */
+export async function persistDecision(d: TradeDecision, userId: number): Promise<number> {
   const ins = await db.insert(tradeDecisionLogsTable).values({
+    userId,
     symbol: d.symbol, action: d.action, shouldTrade: d.shouldTrade,
     confidence: d.confidence, riskScore: d.riskScore,
     entryReason: d.entryReason, invalidationReason: d.invalidationReason,
@@ -568,7 +615,7 @@ router.post("/trade-decision/evaluate", requireUser, async (req, res): Promise<v
     const parsed = EvaluateBody.safeParse(req.body ?? {});
     if (!parsed.success) { fail(res, 400, "Invalid input: " + parsed.error.message); return; }
     const decision = await orchestrate(parsed.data, req.authUser!.id);
-    const id = await persistDecision(decision);
+    const id = await persistDecision(decision, req.authUser!.id);
     ok(res, { decisionId: id, decision });
   } catch (err) {
     req.log?.error?.({ err: String(err) }, "POST /trade-decision/evaluate failed");
@@ -582,7 +629,7 @@ router.post("/trade-decision/demo", requireUser, async (req, res): Promise<void>
   try {
     const symbol = typeof req.body?.symbol === "string" ? req.body.symbol : "Volatility 75 Index";
     const decision = await orchestrate({ symbol, proposedAction: "AUTO", injectMarketIssue: "NONE" }, req.authUser!.id);
-    const id = await persistDecision(decision);
+    const id = await persistDecision(decision, req.authUser!.id);
     ok(res, { decisionId: id, decision, demo: true });
   } catch (err) {
     req.log?.error?.({ err: String(err) }, "POST /trade-decision/demo failed");
@@ -591,10 +638,14 @@ router.post("/trade-decision/demo", requireUser, async (req, res): Promise<void>
 });
 
 // ── GET /trade-decision/logs ───────────────────────────────────────────────
-router.get("/trade-decision/logs", async (req, res): Promise<void> => {
+// ISOLATION: a decision log carries the symbol, direction, confidence, stop
+// and size the orchestrator produced for ONE trader. Unscoped, this listed
+// every trader's decisions to every signed-in caller.
+router.get("/trade-decision/logs", requireUser, async (req, res): Promise<void> => {
   try {
     const limit = Math.min(200, Math.max(1, Number(req.query["limit"] ?? 50)));
     const rows = await db.select().from(tradeDecisionLogsTable)
+      .where(eq(tradeDecisionLogsTable.userId, req.authUser!.id))
       .orderBy(desc(tradeDecisionLogsTable.id)).limit(limit);
     ok(res, { logs: rows, count: rows.length });
   } catch (err) {
@@ -604,14 +655,17 @@ router.get("/trade-decision/logs", async (req, res): Promise<void> => {
 });
 
 // ── GET /trade-decision/latest?symbol= ─────────────────────────────────────
-router.get("/trade-decision/latest", async (req, res): Promise<void> => {
+router.get("/trade-decision/latest", requireUser, async (req, res): Promise<void> => {
   try {
+    const userId = req.authUser!.id;
     const symbol = typeof req.query["symbol"] === "string" ? req.query["symbol"] : null;
     const q = symbol
       ? db.select().from(tradeDecisionLogsTable)
-          .where(and(eq(tradeDecisionLogsTable.symbol, symbol)))
+          .where(and(eq(tradeDecisionLogsTable.userId, userId),
+                     eq(tradeDecisionLogsTable.symbol, symbol)))
           .orderBy(desc(tradeDecisionLogsTable.id)).limit(1)
       : db.select().from(tradeDecisionLogsTable)
+          .where(eq(tradeDecisionLogsTable.userId, userId))
           .orderBy(desc(tradeDecisionLogsTable.id)).limit(1);
     const row = (await q)[0] ?? null;
     ok(res, { latest: row });

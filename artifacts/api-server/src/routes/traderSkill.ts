@@ -10,11 +10,13 @@ import {
   db, traderSkillProfilesTable, skillLevelHistoryTable,
   tradeJournalTable, postTradeDebriefsTable,
   weeklyPerformanceReviewsTable, paperOrdersTable,
-  tradingRuleViolationsTable, edgeDiscoveryReportsTable,
+  tradingRuleViolationsTable, tradingRuleContractsTable,
+  edgeDiscoveryReportsTable,
   tradePlansTable, vaultEventsTable,
 } from "@workspace/db";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull, like, not, or } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
+import { TESTER_SEED_STRATEGY_PREFIX } from "../lib/testerData/tags.js";
 
 const router = Router();
 
@@ -89,9 +91,18 @@ interface Subs {
 // quality; pooling every user's journal, debriefs and violations produces a
 // number that is true of nobody.
 async function computeSubScores(userId: number): Promise<Subs> {
-  const [journals, debriefs, reviews, papers, violations, edges, plans] = await Promise.all([
+  // The journal rows the diagnostics seeder writes carry FABRICATED P&L
+  // (+12.50 / -7.00). Edge Discovery and Trading Playbooks already exclude
+  // them; Trader Skill did not, so the admin who pressed "Seed Demo Test
+  // Data" had six invented trades inflating journalCount → totalActivity,
+  // which silently lowered their own violation and revenge rates.
+  const notSeeded = or(
+    isNull(tradeJournalTable.strategy),
+    not(like(tradeJournalTable.strategy, `${TESTER_SEED_STRATEGY_PREFIX}%`)),
+  );
+  const [journals, debriefs, reviews, papers, violations, contracts, edges, plans] = await Promise.all([
     db.select().from(tradeJournalTable)
-      .where(eq(tradeJournalTable.userId, userId)).limit(2000),
+      .where(and(eq(tradeJournalTable.userId, userId), notSeeded)).limit(2000),
     db.select().from(postTradeDebriefsTable)
       .where(eq(postTradeDebriefsTable.userId, userId)).limit(2000),
     db.select().from(weeklyPerformanceReviewsTable)
@@ -100,6 +111,8 @@ async function computeSubScores(userId: number): Promise<Subs> {
       .where(eq(paperOrdersTable.userId, userId)).limit(2000),
     db.select().from(tradingRuleViolationsTable)
       .where(eq(tradingRuleViolationsTable.userId, userId)).limit(500),
+    db.select().from(tradingRuleContractsTable)
+      .where(eq(tradingRuleContractsTable.userId, userId)).limit(50),
     db.select().from(edgeDiscoveryReportsTable)
       .where(eq(edgeDiscoveryReportsTable.userId, userId)).limit(200),
     db.select().from(tradePlansTable)
@@ -130,8 +143,20 @@ async function computeSubScores(userId: number): Promise<Subs> {
   const executionRaw = exN ? exSum / exN : 0;
 
   // ── Risk: 100 minus a violation-rate penalty (capped) ───────────────────
+  //
+  // HONESTY: violations only ever exist for a trader who HAS a rule contract
+  // and has run an evaluation against it. With no contract, zero violations is
+  // not evidence of risk discipline — it is the absence of any rule to break,
+  // and awarding a confident 100 for it is a reassuring default, not a
+  // measurement. Every other pillar in this function already scores 0 when its
+  // evidence set is empty (`debriefCount ? … : 0`, `edges.length > 0 ? … : 0`);
+  // Risk was the sole exception. It now follows the same convention, and
+  // `signals.ruleContracts` tells the suggestions surface why.
+  const hasRuleEvidence = contracts.length > 0;
   const violationRate = totalActivity > 0 ? violations.length / totalActivity : 0;
-  const riskRaw = Math.max(0, 100 - violationRate * 200);   // 50% violation rate → 0
+  const riskRaw = hasRuleEvidence
+    ? Math.max(0, 100 - violationRate * 200)   // 50% violation rate → 0
+    : 0;
 
   // ── Emotional control: % of debriefs with calm/neutral/relieved emotion
   // minus penalty for journal entries tagged with revenge / overtrading.
@@ -179,6 +204,7 @@ async function computeSubScores(userId: number): Promise<Subs> {
     signals: {
       journalCount, debriefCount, reviewCount: reviews.length, recentReviews,
       closedPapers, violations: violations.length, plans: plans.length,
+      ruleContracts: contracts.length,
       goodEdges, totalEdges: edges.length, sampleCap: cap,
     },
   };
@@ -253,8 +279,9 @@ router.get("/skill/history", requireUser, async (req, res): Promise<void> => {
 
 // ── GET /skill/suggestions — what to improve to reach next level ───────────
 router.get("/skill/suggestions", requireUser, async (req, res): Promise<void> => {
+  const userId = uid(req);
   const profile = (await db.select().from(traderSkillProfilesTable)
-    .where(eq(traderSkillProfilesTable.userId, uid(req)))
+    .where(eq(traderSkillProfilesTable.userId, userId))
     .orderBy(desc(traderSkillProfilesTable.updatedAt)).limit(1))[0];
   if (!profile) {
     ok(res, { suggestions: [{ area: "GETTING_STARTED",
@@ -262,13 +289,21 @@ router.get("/skill/suggestions", requireUser, async (req, res): Promise<void> =>
     return;
   }
 
+  // The Risk pillar can only be measured against a rule contract. Say so
+  // rather than implying the score reflects observed discipline.
+  const contractCount = (await db.select({ id: tradingRuleContractsTable.id })
+    .from(tradingRuleContractsTable)
+    .where(eq(tradingRuleContractsTable.userId, userId)).limit(1)).length;
+  const riskTip = contractCount > 0
+    ? "Each rule violation lowers this. Re-read your active rule contracts before trading."
+    : "Not measured yet: you have no rule contract, so there is no rule a violation could be recorded against. Create one on Rule Contracts and run an evaluation — this pillar scores 0 until then, which means 'unmeasured', not 'undisciplined'.";
+
   const subs: Array<{ area: string; score: number; tip: string }> = [
     { area: "Discipline",        score: profile.disciplineScore,
       tip: "After every trade, write a debrief and mark whether you actually followed your written plan." },
     { area: "Execution",         score: profile.executionScore,
       tip: "Use the debrief checklist (entry rules, stop placement, position size) — every box you tick raises this score." },
-    { area: "Risk control",      score: profile.riskScore,
-      tip: "Each rule violation lowers this. Re-read your active rule contracts before trading." },
+    { area: "Risk control",      score: profile.riskScore, tip: riskTip },
     { area: "Emotional control", score: profile.emotionalControlScore,
       tip: "Tag emotional state honestly. Revenge / overtrading / FOMO tags are the biggest detractors." },
     { area: "Consistency",       score: profile.consistencyScore,

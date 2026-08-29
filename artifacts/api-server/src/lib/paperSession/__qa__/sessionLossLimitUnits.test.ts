@@ -17,11 +17,22 @@
 //
 // Run: node --import tsx --test src/lib/paperSession/__qa__/sessionLossLimitUnits.test.ts
 
+// These units are pure arithmetic, but they import through a module that pulls
+// in @workspace/db, whose index throws at import time when DATABASE_URL is
+// unset. Set a deliberately unreachable placeholder so the lane is
+// self-contained in CI: nothing here opens a connection, and anything that
+// tried would fail loudly rather than silently pass.
+process.env["DATABASE_URL"] ??= "postgres://user:pass@127.0.0.1:1/nonexistent";
+
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import {
+
+// Dynamic import so the DATABASE_URL placeholder above is set BEFORE the
+// module graph (which reaches @workspace/db) is evaluated — a static import
+// is hoisted above the assignment and the lane dies at import time.
+const {
   sessionLossLimitBreached, usdToCents, centsToUsd, DEFAULT_RULES,
-} from "../manager.js";
+} = await import("../manager.js");
 
 test("the default session limit is 150 DOLLARS, not 150 cents", () => {
   assert.equal(DEFAULT_RULES.maxSessionLoss, 150);

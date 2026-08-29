@@ -82,8 +82,14 @@ router.get("/trader-coach/daily", requireUser, async (req, res) => {
       setupsToAvoid: r.topWeaknesses,
       mistakeToAvoidToday: r.repeatedMistakes[0]?.tag ?? "No high-frequency mistake yet — keep capturing debriefs.",
       preSessionChecklist: r.preSessionChecklist,
-      sessionLimits: { maxTradesPerDay: 5, maxLossPerDay: 100 },
-      dailyPaperLossReminder: "Stop paper trading immediately if today's net P&L breaches the daily loss limit.",
+      // The trader's OWN limits (risk_settings + the governor-derived dollar
+      // figure). These were `{ maxTradesPerDay: 5, maxLossPerDay: 100 }` —
+      // invented constants sitting directly above a reminder telling the
+      // reader to stop when they breach "the daily loss limit".
+      sessionLimits: r.sessionLimits,
+      dailyPaperLossReminder: r.sessionLimits.maxLossPerDayUsd != null
+        ? `Stop paper trading immediately if today's net P&L breaches -$${r.sessionLimits.maxLossPerDayUsd.toFixed(2)} (${r.sessionLimits.note})`
+        : `Stop paper trading immediately if today's net P&L breaches your daily loss limit. ${r.sessionLimits.note}`,
       // HONEST: describes this guidance's scope, not the reader's account.
       paperOnlyReminder: "This guidance is paper-only. The coach never authorizes live execution and does not report your account's live-trading state.",
       warnings: r.warnings,

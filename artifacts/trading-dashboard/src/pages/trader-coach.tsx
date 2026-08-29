@@ -52,7 +52,17 @@ interface WeeklyPlan {
   mistakesToReduce: string[];
   setupsToStudy: string[];
   setupsToAvoid: string[];
-  paperTradingTargets: { maxTradesPerDay: number; maxLossPerDay: number; requiredDebriefs: number };
+  // maxTradesPerDay / maxLossPerDayUsd are the trader's own configured limits
+  // and are null when the server could not derive them — never a filled-in
+  // default. (They were hardcoded 5 / 100 server-side.)
+  paperTradingTargets: {
+    maxTradesPerDay: number | null;
+    maxDailyLossPct: number | null;
+    maxLossPerDayUsd: number | null;
+    limitBasis: string;
+    requiredDebriefs: number;
+    targetsNote: string;
+  };
   successCriteria: string[];
   warnings: string[];
 }

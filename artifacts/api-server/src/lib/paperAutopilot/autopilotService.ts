@@ -74,24 +74,31 @@ async function applyCooldown(symbol: string, action: string, reason: string, min
   });
 }
 
-async function dailyPaperPnl(): Promise<number> {
+// ISOLATION: this figure is compared against THIS cycle owner's daily paper
+// loss cap. Summed across every user's closed EE orders it was not that
+// trader's day at all — one busy account could halt another's autopilot.
+async function dailyPaperPnl(userId: number): Promise<number> {
   // Sum of profit_loss on EE-owned closed paper_orders since UTC midnight.
   const since = new Date(); since.setUTCHours(0, 0, 0, 0);
   const rows = await db.select({
     pnl: sql<number>`COALESCE(SUM(${paperOrdersTable.profitLoss}), 0)`,
   }).from(paperOrdersTable)
     .where(and(
+      eq(paperOrdersTable.userId, userId),
       eq(paperOrdersTable.strategyId, "build_ee_paper_execution"),
       gte(paperOrdersTable.closedAt, since),
     ));
   return Number(rows[0]?.pnl ?? 0);
 }
 
-async function countOpen(): Promise<{ total: number; bySymbolDir: Map<string, number> }> {
+// ISOLATION: feeds maxOpenPaperTrades / maxSameSymbolTrades for THIS owner.
+async function countOpen(userId: number): Promise<{ total: number; bySymbolDir: Map<string, number> }> {
   const rows = await db.select({
     symbol: paperOrdersTable.symbol, direction: paperOrdersTable.direction,
   }).from(paperOrdersTable)
-    .where(and(eq(paperOrdersTable.strategyId, "build_ee_paper_execution"), eq(paperOrdersTable.status, "OPEN")));
+    .where(and(eq(paperOrdersTable.userId, userId),
+               eq(paperOrdersTable.strategyId, "build_ee_paper_execution"),
+               eq(paperOrdersTable.status, "OPEN")));
   const map = new Map<string, number>();
   for (const r of rows) {
     const k = `${r.symbol}|${r.direction}`;
@@ -137,8 +144,12 @@ export async function runOneCycle(opts?: { settingsOverride?: Partial<AutopilotS
   }
 
   // 2. Insert cycle row.
+  // OWNERSHIP: the Risk Governor reads autopilot_cycles back with
+  // `eq(autopilotCyclesTable.userId, userId)` to compute autopilotErrorRate.
+  // A cycle written without an owner is invisible to every governor, so a run
+  // of failing cycles would still report a confident 0% error rate.
   const cyc = await db.insert(autopilotCyclesTable).values({
-    autopilotCycleId: cycleId, mode: "PAPER_ONLY", status: "RUNNING",
+    autopilotCycleId: cycleId, userId: ownerUserId, mode: "PAPER_ONLY", status: "RUNNING",
     startedAt,
   }).returning({ id: autopilotCyclesTable.id });
   const cycRowId = cyc[0]?.id ?? 0;
@@ -156,6 +167,9 @@ export async function runOneCycle(opts?: { settingsOverride?: Partial<AutopilotS
         message: `FF cycle paused by Risk Governor: ${gate.status}`,
         details: { governorId: gate.governorId, reasons: gate.reasons } });
       try {
+        // keyed by cycRowId, the primary key of the row THIS cycle inserted a
+        // few lines above with userId: ownerUserId.
+        // isolation-ok: see the note directly above.
         await db.update(autopilotCyclesTable)
           .set({ status: "STOPPED", finishedAt: new Date() })
           .where(eq(autopilotCyclesTable.id, cycRowId));
@@ -171,6 +185,7 @@ export async function runOneCycle(opts?: { settingsOverride?: Partial<AutopilotS
       message: `FF cycle stopped: governor gate threw (fail-closed)`,
       details: { error: String(e).slice(0, 200) } });
     try {
+      // isolation-ok: keyed by cycRowId, the primary key of this cycle's own row.
       await db.update(autopilotCyclesTable)
         .set({ status: "STOPPED", finishedAt: new Date() })
         .where(eq(autopilotCyclesTable.id, cycRowId));
@@ -186,7 +201,7 @@ export async function runOneCycle(opts?: { settingsOverride?: Partial<AutopilotS
 
   try {
     // 3. Daily-loss safety check.
-    const dpnl = await dailyPaperPnl();
+    const dpnl = await dailyPaperPnl(ownerUserId);
     if (dpnl <= -Math.abs(settings.maxDailyPaperLoss)) {
       summary.warnings.push(`Daily paper loss limit hit (${dpnl.toFixed(2)} ≤ -${settings.maxDailyPaperLoss}) — no new trades`);
       await logCycle({ cycleId, step: "SAFETY_SHUTDOWN", status: "WARN",
@@ -210,7 +225,7 @@ export async function runOneCycle(opts?: { settingsOverride?: Partial<AutopilotS
           await logCycle({ cycleId, symbol, timeframe, step: "AA_DECISION", status: "INFO",
             message: `Calling Build AA orchestrator for ${symbol} ${timeframe}` });
           const decision: TradeDecision = await orchestrate({ symbol, proposedAction: "AUTO", injectMarketIssue: "NONE" }, ownerUserId);
-          const decisionId = await persistDecision(decision);
+          const decisionId = await persistDecision(decision, ownerUserId);
           summary.decisions_created += 1;
           perSym.decisionId = decisionId;
           perSym.aaAction = decision.action;
@@ -244,7 +259,7 @@ export async function runOneCycle(opts?: { settingsOverride?: Partial<AutopilotS
 
           // 4c. Cooldown + open caps.
           const cooldown = await getActiveCooldown(symbol);
-          const openInfo = await countOpen();
+          const openInfo = await countOpen(ownerUserId);
           const sameSymDirOpen = openInfo.bySymbolDir.get(`${symbol}|${decision.action}`) ?? 0;
 
           // 4d. Sniper filter.
@@ -270,7 +285,7 @@ export async function runOneCycle(opts?: { settingsOverride?: Partial<AutopilotS
           // 4e. EE paper execute.
           await logCycle({ cycleId, symbol, timeframe, step: "EE_EXEC", status: "INFO",
             message: `Calling Build EE paper execution for decisionId=${decisionId}` });
-          const eeResult = await executePaperFromDecision(decision, decisionId, { allowConflicts: false });
+          const eeResult = await executePaperFromDecision(decision, decisionId, { userId: ownerUserId, allowConflicts: false });
           perSym.eePaperResult = eeResult.status;
           perSym.paperTradeId = eeResult.trade_id;
 
@@ -326,6 +341,9 @@ export async function runOneCycle(opts?: { settingsOverride?: Partial<AutopilotS
             details: { debriefId: cl.bbDebriefId } });
           // CC learning event written by BB→CC handoff inside autoDebriefService.
           if (cl.bbDebriefId) {
+            // keyed by cl.bbDebriefId, the debrief this cycle just created
+            // for its own closed order; not a cross-user listing.
+            // isolation-ok: see the note directly above.
             const lev = await db.select().from(learningEventsTable)
               .where(eq(learningEventsTable.debriefId, cl.bbDebriefId)).limit(1);
             if (lev[0]) {
@@ -361,6 +379,7 @@ export async function runOneCycle(opts?: { settingsOverride?: Partial<AutopilotS
   }
 
   summary.finished_at = new Date().toISOString();
+  // isolation-ok: keyed by cycRowId, the primary key of this cycle's own row.
   await db.update(autopilotCyclesTable).set({
     status: summary.status,
     finishedAt: new Date(summary.finished_at),

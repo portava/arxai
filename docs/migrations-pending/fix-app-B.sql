@@ -42,6 +42,15 @@ CREATE INDEX IF NOT EXISTS paper_accounts_user_idx            ON paper_accounts 
 -- Tag lookup for the tester demo-seed rows that /tester-data/clear now deletes.
 CREATE INDEX IF NOT EXISTS trade_journal_strategy_idx         ON trade_journal (strategy);
 
+-- ── Review round: sibling routers the first pass did not cover ─────────────
+-- Same story — the columns already exist and were simply never written or
+-- filtered on. paper_executions and session_commitments are now written with
+-- their owner and read with an owner predicate; trade_journal is filtered by
+-- user_id in Trader Skill.
+CREATE INDEX IF NOT EXISTS paper_executions_user_idx          ON paper_executions (user_id);
+CREATE INDEX IF NOT EXISTS session_commitments_user_idx       ON session_commitments (user_id);
+CREATE INDEX IF NOT EXISTS trade_journal_user_idx             ON trade_journal (user_id);
+
 
 -- ── KNOWN LIMITS THIS FILE DOES NOT PAPER OVER ──────────────────────────────
 --

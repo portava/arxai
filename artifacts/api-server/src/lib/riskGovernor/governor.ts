@@ -19,13 +19,13 @@ import {
   autopilotCyclesTable,
   autopilotCycleLogsTable,
   autopilotSymbolCooldownsTable,
-  riskSettingsTable,
   riskGovernorEvaluationsTable,
   riskGovernorEventsTable,
 } from "@workspace/db";
 import { and, desc, eq, gte, sql } from "drizzle-orm";
 import { logger } from "../logger.js";
 import { checkBrokerSafety } from "../brokerReadOnly/service.js";
+import { getOrCreateUserRiskSettings } from "../risk/userRiskSettings.js";
 
 export type OverallStatus = "PAPER_ALLOWED" | "PAPER_CAUTION" | "PAPER_PAUSED" | "WATCH_ONLY" | "LOCKED";
 export type ReadinessLevel = "NOT_READY" | "EARLY_TESTING" | "DEVELOPING_EDGE" | "PAPER_STABLE" | "ADVANCED_PAPER_READY";
@@ -338,20 +338,27 @@ async function collectMetrics(overrides: SimulateOverrides | undefined, userId: 
     if (userId == null) {
       missingDataSources.push("risk_settings:user_scope");
     } else {
-      const rs = await db.select().from(riskSettingsTable)
-        .where(eq(riskSettingsTable.userId, userId)).limit(1);
-      if (rs[0]) {
-        limitsScope = "USER";
-        maxOpenPaperTrades = rs[0].maxOpenTrades ?? 2;
-        maxDailyLossPct = rs[0].maxDailyLossPct ?? 2;
-        const acct = await db.select().from(paperAccountsTable)
-          .where(and(eq(paperAccountsTable.userId, userId), eq(paperAccountsTable.isActive, 1)))
-          .orderBy(desc(paperAccountsTable.id)).limit(1);
-        const equity = acct[0] ? (acct[0].equity ?? acct[0].currentBalance) : null;
-        const derived = deriveDailyLossLimit(maxDailyLossPct, equity);
-        dailyLossLimit = derived.limit;
-        dailyLossLimitBasis = derived.basis;
-      }
+      // getOrCreateUserRiskSettings — NOT a bare select. A trader who has
+      // never opened the Risk Settings page has no row, and a bare select
+      // left maxDailyLossPct null → dailyLossLimitBasis "UNKNOWN" → the
+      // DAILY_LOSS_LIMIT_UNKNOWN hard block fired the moment their day went
+      // negative, locking them out of their own paper account permanently.
+      // This is the canonical accessor already used by the AA orchestrator
+      // (lib/risk/userRiskSettings.ts); the row it creates carries the
+      // product's schema defaults, which is what the surface has always
+      // displayed to that user. It invents no limit — it materialises the
+      // one they were already being shown.
+      const rs0 = await getOrCreateUserRiskSettings(userId);
+      limitsScope = "USER";
+      maxOpenPaperTrades = rs0.maxOpenTrades ?? 2;
+      maxDailyLossPct = rs0.maxDailyLossPct ?? 2;
+      const acct = await db.select().from(paperAccountsTable)
+        .where(and(eq(paperAccountsTable.userId, userId), eq(paperAccountsTable.isActive, 1)))
+        .orderBy(desc(paperAccountsTable.id)).limit(1);
+      const equity = acct[0] ? (acct[0].equity ?? acct[0].currentBalance) : null;
+      const derived = deriveDailyLossLimit(maxDailyLossPct, equity);
+      dailyLossLimit = derived.limit;
+      dailyLossLimitBasis = derived.basis;
       dataSourcesRead.push("risk_settings");
     }
   } catch { missingDataSources.push("risk_settings"); }

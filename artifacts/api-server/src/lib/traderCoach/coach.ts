@@ -22,6 +22,7 @@ import {
 } from "@workspace/db";
 import { and, desc, eq, gte } from "drizzle-orm";
 import { evaluateGovernor } from "../riskGovernor/governor.js";
+import { getOrCreateUserRiskSettings } from "../risk/userRiskSettings.js";
 import { generatePlaybook, type PlaybookUpdateSummary } from "./playbook.js";
 
 export type CoachReportType = "DAILY" | "WEEKLY" | "SESSION" | "PLAYBOOK";
@@ -61,6 +62,25 @@ export interface CoachReport {
   nextBestActions: string[];
   preSessionChecklist: { id: string; label: string; required: boolean; auto?: boolean }[];
   postSessionReviewQuestions: string[];
+  /**
+   * The trader's OWN session limits. Previously the coach's daily view shipped
+   * a hardcoded `{ maxTradesPerDay: 5, maxLossPerDay: 100 }` next to the line
+   * "Stop paper trading immediately if today's net P&L breaches the daily loss
+   * limit" — two invented numbers presented as the reader's limits.
+   *
+   * `maxTradesPerDay` comes from the trader's risk_settings row.
+   * `maxLossPerDayUsd` is the dollar figure the Risk Governor actually
+   * enforces (their configured % applied to their own paper-account equity).
+   * When the governor could not derive it, the value is `null` and `basis` is
+   * "UNKNOWN" — never a filled-in default.
+   */
+  sessionLimits: {
+    maxTradesPerDay: number | null;
+    maxDailyLossPct: number | null;
+    maxLossPerDayUsd: number | null;
+    basis: string;
+    note: string;
+  };
   playbookUpdates: PlaybookUpdateSummary[];
   warnings: string[];
   coachingSummary: string;
@@ -407,6 +427,33 @@ export async function generateCoachReport(userId: number, opts: GenerateCoachOpt
     LIVE_DISABLED_REMINDER,
   ].join(" ");
 
+  // ── Session limits — the trader's real numbers, or an honest UNKNOWN ─────
+  const gm = governor?.metrics ?? null;
+  const limitDerived = gm != null && gm.dailyLossLimitBasis !== "UNKNOWN" && gm.dailyLossLimit > 0;
+  let maxTradesPerDay: number | null = null;
+  try {
+    const rs = await getOrCreateUserRiskSettings(userId);
+    maxTradesPerDay = rs.maxTradesPerDay ?? null;
+    dataSourcesRead.push("risk_settings");
+  } catch {
+    missingDataSources.push("risk_settings");
+  }
+  const sessionLimits: CoachReport["sessionLimits"] = {
+    maxTradesPerDay,
+    maxDailyLossPct: gm?.maxDailyLossPct ?? null,
+    maxLossPerDayUsd: limitDerived ? gm!.dailyLossLimit : null,
+    basis: gm?.dailyLossLimitBasis ?? "UNKNOWN",
+    note: limitDerived
+      ? `Your configured ${gm!.maxDailyLossPct ?? "?"}% daily loss limit applied to your own paper-account equity.`
+      : "Your daily loss limit could not be derived — there is no paper-account equity to apply your configured percentage to. No dollar figure is shown because none is known.",
+  };
+  if (!limitDerived) {
+    warnings.push("Daily loss limit is UNKNOWN — the coach cannot tell you the dollar figure to stop at.");
+  }
+  if (maxTradesPerDay == null) {
+    warnings.push("Max trades per day is UNKNOWN — your risk settings could not be read.");
+  }
+
   log.info("Build II: warnings generated", { count: warnings.length });
 
   const report: CoachReport = {
@@ -444,6 +491,7 @@ export async function generateCoachReport(userId: number, opts: GenerateCoachOpt
     nextBestActions,
     preSessionChecklist,
     postSessionReviewQuestions: SAFE_DEFAULT_REVIEW_QUESTIONS,
+    sessionLimits,
     playbookUpdates,
     warnings,
     coachingSummary,

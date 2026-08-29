@@ -310,7 +310,9 @@ function TestingControlCenterPageInner() {
               + "  • 8 demo live-intents (no broker order is placed)\n"
               + "  • 5 demo audit rows in the append-only vault (these can never be deleted)\n"
               + "  • 6 trade-journal entries with INVENTED profit/loss (+12.50 / -7.00)\n\n"
-              + "The journal rows are tagged and owned by your account, and 'Clear Demo Test Data' removes them.\n"
+              + "The journal rows are tagged and stamped with your account id; 'Clear Demo Test Data' removes the ones\n"
+              + "your account owns. Rows seeded by a DIFFERENT admin are not yours to clear and will be reported, not deleted.\n"
+              + "If your session has no trader account, nothing at all is written.\n"
               + "The 5 vault rows are append-only and will remain forever.",
             );
             if (!proceed) return;
@@ -322,7 +324,8 @@ function TestingControlCenterPageInner() {
           <Button size="sm" variant="outline" data-testid="clear-demo" onClick={async () => {
             const proceed = window.confirm(
               "Clear demo test data?\n\n"
-              + "This DELETES the seeded live-intents and the seeded trade-journal entries.\n"
+              + "This DELETES the seeded live-intents and the seeded trade-journal entries YOUR account seeded\n"
+              + "(plus any legacy unowned seeded rows). Rows seeded by a different admin are left in place and counted.\n"
               + "It CANNOT delete the 5 seeded vault audit rows — the vault is append-only.\n"
               + "A corrective TESTER_SEED_CLEARED event is appended instead.",
             );
@@ -330,7 +333,10 @@ function TestingControlCenterPageInner() {
             const r = await fetch("/api/tester-data/clear", { method: "POST", headers: { "x-security-role": "ADMIN" } });
             const d = await r.json();
             if (!r.ok) { alert(`Clear FAILED · ${d.error ?? r.status}. Seeded rows may still be present.`); return; }
-            alert(`Cleared · intents=${d.intents} · journal=${d.journalEntries ?? 0} · vault rows retained (append-only). Corrective event appended.`);
+            const others = d.seededJournalRowsOwnedByOthersRemaining ?? 0;
+            alert(`Cleared · intents=${d.intents} · journal=${d.journalEntries ?? 0}`
+              + (others > 0 ? ` · ${others} seeded row(s) belong to another admin and were NOT deleted` : "")
+              + ` · vault rows retained (append-only). Corrective event appended.`);
           }}>Clear Demo Test Data</Button>
         </div>
       </div>
