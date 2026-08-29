@@ -37,8 +37,14 @@ import {
   type PromotionDecision,
   type GuardrailCeiling,
   type DriftSeverity,
+  evidenceBasisFor,
+  describeEvidenceBasis,
+  evaluateLadderEvidenceBar,
   type ClosedTradeRecord,
+  type PromotionEvidenceBasis,
+  type EvidenceBarVerdict,
 } from "@workspace/domain/profit-mission";
+import { readSimulatedClosedDrafts } from "./missionSimulatedFills.js";
 import { latestMissionTestResults } from "./missionTestingLabService.js";
 import { resolveLiveBrokerExecutionEnabledAsync } from "./live/phaseBConfig.js";
 import { checkLevelChange } from "@workspace/domain/safety-contracts/authorityGrants";
@@ -93,8 +99,25 @@ interface ClosedDraft {
   rMultiple: number | null;
   symbol: string | null;
   agentKey: string | null;
+  /**
+   * TRUE when this outcome is a MODELLED paper/demo fill (priced from a real
+   * quote) rather than broker-reconciled money. The flag rides every record so
+   * the evidence basis can be labelled all the way to the promotion decision.
+   */
+  simulated: boolean;
 }
 
+/**
+ * The mission's closed-trade evidence. Two kinds, read from two structurally
+ * separate column families and NEVER summed into one money figure:
+ *   - broker-reconciled money (`pnl` + `closedAt`, `simulated = false`), and
+ *   - SIMULATED paper/demo outcomes (`sim_pnl` + `sim_closed_at`).
+ *
+ * Both are legitimate PERFORMANCE evidence for the promotion checklist — the
+ * `demo_performance` gate is literally about demo trading — but the basis is
+ * carried through and stated wherever the decision is displayed or journalled,
+ * so a simulated record can never be read as broker truth.
+ */
 async function readClosedDrafts(userId: number, missionId: number): Promise<ClosedDraft[]> {
   const rows = await db
     .select({
@@ -110,16 +133,28 @@ async function readClosedDrafts(userId: number, missionId: number): Promise<Clos
         eq(missionTradeDraftsTable.missionId, missionId),
         eq(missionTradeDraftsTable.userId, userId),
         eq(missionTradeDraftsTable.status, "executed"),
+        eq(missionTradeDraftsTable.simulated, false),
       ),
     );
-  return rows
+  const brokerReconciled: ClosedDraft[] = rows
     .filter((r) => r.closedAt != null && r.pnl != null && Number.isFinite(r.pnl))
     .map((r) => ({
       pnl: r.pnl as number,
       rMultiple: r.rMultiple != null && Number.isFinite(r.rMultiple) ? r.rMultiple : null,
       symbol: r.symbol,
       agentKey: r.agentKey,
+      simulated: false,
     }));
+
+  const simulated = (await readSimulatedClosedDrafts(userId, missionId)).map((s) => ({
+    pnl: s.pnl,
+    rMultiple: s.rMultiple,
+    symbol: s.symbol,
+    agentKey: s.agentKey,
+    simulated: true,
+  }));
+
+  return [...brokerReconciled, ...simulated];
 }
 
 /**
@@ -150,6 +185,11 @@ async function buildEvidence(
   const demoSampleSize = closed.length;
   const demoWins = closed.filter((c) => c.pnl > 0).length;
   const demoWinRate = demoSampleSize > 0 ? demoWins / demoSampleSize : 0;
+  // What that sample actually IS. This label rides the decision to every surface.
+  const demoEvidenceBasis: PromotionEvidenceBasis = evidenceBasisFor({
+    simulatedCount: closed.filter((c) => c.simulated).length,
+    brokerReconciledCount: closed.filter((c) => !c.simulated).length,
+  });
 
   const maxDrawdownPct = Math.max(
     backtest?.metrics.maxDrawdownPct ?? 0,
@@ -179,6 +219,7 @@ async function buildEvidence(
     forwardPromotionEligible: forward?.promotionEligible ?? false,
     demoWinRate,
     demoSampleSize,
+    demoEvidenceBasis,
     maxDrawdownPct,
     agentReliability: learning.aggregateAgentReliability,
     riskRuleCompliant,
@@ -219,6 +260,50 @@ export async function resolveMissionPromotionStatus(args: {
       driftSeverity,
     },
   };
+}
+
+/**
+ * Resolve the ladder's EVIDENCE bar for a mission (the gates that first become
+ * mandatory at demo-auto: backtest / forward / demo performance / drawdown /
+ * agent reliability / risk rules / drift).
+ *
+ * This exists to close the demo→live INVERSION. `applyMissionExecutionMode` used
+ * to let a mission step onto real money with a certificate and the platform live
+ * switch but NO performance evidence at all, while earning any auto level
+ * required the full checklist — so the easiest road to real money skipped the
+ * ladder entirely. Pointing a mission at real money now clears the same evidence
+ * bar the ladder demands.
+ *
+ * FAIL-CLOSED: an unreadable mission or an evidence read that throws returns
+ * `passed: false` with a typed blocker. An unreadable proof is not a proof.
+ */
+export async function resolveMissionLadderEvidenceBar(args: {
+  userId: number;
+  missionId: number;
+  ctx: PromotionContext;
+}): Promise<EvidenceBarVerdict> {
+  try {
+    const mission = await loadOwnedMission(db, args.userId, args.missionId);
+    if (!mission) {
+      return {
+        passed: false,
+        failedGates: ["mission_not_readable"],
+        blockers: ["the mission could not be read — evidence fails closed"],
+        demoEvidenceBasis: "UNSTATED",
+      };
+    }
+    const { evidence } = await buildEvidence(args.userId, mission, args.ctx);
+    return evaluateLadderEvidenceBar(evidence);
+  } catch (err) {
+    return {
+      passed: false,
+      failedGates: ["evidence_unreadable"],
+      blockers: [
+        `the promotion evidence could not be read (${err instanceof Error ? err.message : String(err)}) — the step fails closed`,
+      ],
+      demoEvidenceBasis: "UNSTATED",
+    };
+  }
 }
 
 export type ApplyAutomationResult =
@@ -324,6 +409,10 @@ export async function applyMissionAutomationLevel(args: {
         targetLevel,
         approved: true,
         allowedMaxLevel: decision.allowedMaxLevel,
+        // The promotion record states what its evidence was. A level earned on
+        // modelled paper/demo fills is never recorded as broker-proven.
+        demoEvidenceBasis: decision.demoEvidenceBasis,
+        evidenceNotes: decision.evidenceNotes,
         evaluatedAt: new Date().toISOString(),
       },
     };
@@ -336,10 +425,19 @@ export async function applyMissionAutomationLevel(args: {
     await tx.insert(missionEventsTable).values({
       missionId: args.missionId,
       type: "mission_automation_level_change",
-      message: `Automation level set to ${targetLevel}${meta.requiresExplicitLiveEnable ? " (live auto opt-in)" : ""}.`,
-      metadataJson: { targetLevel, liveAutoEnabled },
+      message: `Automation level set to ${targetLevel}${meta.requiresExplicitLiveEnable ? " (live auto opt-in)" : ""}. Evidence: ${describeEvidenceBasis(decision.demoEvidenceBasis)}.`,
+      metadataJson: {
+        targetLevel,
+        liveAutoEnabled,
+        demoEvidenceBasis: decision.demoEvidenceBasis,
+        evidenceNotes: decision.evidenceNotes,
+      },
     });
-    await auditTx(tx, args, "MISSION_AUTOMATION_LEVEL_CHANGE", { targetLevel, liveAutoEnabled });
+    await auditTx(tx, args, "MISSION_AUTOMATION_LEVEL_CHANGE", {
+      targetLevel,
+      liveAutoEnabled,
+      demoEvidenceBasis: decision.demoEvidenceBasis,
+    });
 
     return { ok: true, applied: true, level: targetLevel, liveAutoEnabled, decision };
   });

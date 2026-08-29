@@ -912,7 +912,18 @@ export function BattleRoomShell({ mission }: { mission: ProfitMission | null }) 
             />
           )}
           <Metric label="Progress" value={m ? pct(m.progressPctClamped, 0) : "—"} />
-          <Metric label="Current value" value={mission ? money(mission.currentValue) : "—"} />
+          {/* HONEST LABELLING: a paper/demo mission's value is a SIMULATED
+              total — fills modelled from real quotes, never broker-reconciled
+              money. Only a `live` mission shows money. */}
+          <Metric
+            label={
+              mission && mission.executionMode !== "live"
+                ? "Current value (SIMULATED)"
+                : "Current value"
+            }
+            value={mission ? money(mission.currentValue) : "—"}
+            testId="metric-current-value"
+          />
           <Metric label="Mission class" value={mission?.feasibility?.unitAwareMissionClass ?? (m ? "—" : "—")} />
           <Metric label="Risk profile" value={mission ? mission.riskProfile : "—"} />
           <Metric label="Pace status" value={m ? (m.onTrack ? "On pace" : "Behind pace") : "—"} />

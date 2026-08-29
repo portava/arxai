@@ -56,6 +56,11 @@ import {
   type MissionRiskState,
 } from "./missionRiskService.js";
 import { getRunning } from "./intelligence/mfeTracker.js";
+import {
+  resolveMissionSimulatedStats,
+  accountingBasisForMode,
+  type MissionAccountingBasis,
+} from "./missionSimulatedFills.js";
 
 type MissionRow = typeof profitMissionsTable.$inferSelect;
 
@@ -154,6 +159,11 @@ function startOfUtcDayMs(nowMs: number): number {
  * Resolve a mission's REALISED closed-profit statistics from its executed,
  * closed drafts (per-user / per-mission). Floating P/L is never read here — only
  * a draft that has a `closedAt` and a finite `pnl` contributes.
+ *
+ * BROKER-RECONCILED MONEY ONLY. A paper/demo mission's SIMULATED outcomes live
+ * in the row's `sim_*` family and never populate `pnl`/`closedAt`, so they are
+ * already structurally excluded; the explicit `simulated = false` predicate is
+ * the second lock, and it is what the test asserts on.
  */
 export async function resolveMissionRealisedStats(args: {
   userId: number;
@@ -172,6 +182,7 @@ export async function resolveMissionRealisedStats(args: {
         eq(missionTradeDraftsTable.missionId, args.missionId),
         eq(missionTradeDraftsTable.userId, args.userId),
         eq(missionTradeDraftsTable.status, "executed"),
+        eq(missionTradeDraftsTable.simulated, false),
       ),
     );
 
@@ -319,6 +330,14 @@ export interface MissionProtectionSnapshot {
   compounding: MissionCompoundingState;
   /** True when the mission was flipped to `completed` (target stop+lock). */
   missionCompleted: boolean;
+  /**
+   * Which set of books drove this snapshot. A live mission progresses on
+   * BROKER_RECONCILED money; a paper/demo mission progresses on SIMULATED
+   * outcomes modelled from real quotes. The two are never summed — the basis
+   * selects one series, and every surface that shows the resulting figure says
+   * which one it is.
+   */
+  accountingBasis: MissionAccountingBasis;
 }
 
 async function journalMissionEvent(args: {
@@ -376,7 +395,14 @@ export async function refreshMissionProtection(args: {
     const mission = rows[0] as MissionRow | undefined;
     if (!mission) return { ok: false as const, kind: "mission_not_found" as const };
 
-    // Realised stats are read once and shared by both engines (per-user/mission).
+    // ── Pick ONE set of books, never a blend. ─────────────────────────────────
+    // A live mission progresses on broker-reconciled money; a paper/demo mission
+    // progresses on SIMULATED outcomes (modelled from real quotes, written only
+    // into the row's `sim_*` family). The `simulated = false` predicate below and
+    // the separate simulated reader keep the two series structurally apart, so a
+    // simulated figure can never be summed into a live realised total.
+    const accountingBasis = accountingBasisForMode(mission.executionMode);
+
     const closedRows = await tx
       .select({
         pnl: missionTradeDraftsTable.pnl,
@@ -388,6 +414,7 @@ export async function refreshMissionProtection(args: {
           eq(missionTradeDraftsTable.missionId, args.missionId),
           eq(missionTradeDraftsTable.userId, args.userId),
           eq(missionTradeDraftsTable.status, "executed"),
+          eq(missionTradeDraftsTable.simulated, false),
         ),
       );
     const dayStart = startOfUtcDayMs(nowMs);
@@ -400,11 +427,29 @@ export async function refreshMissionProtection(args: {
       realisedProfit += r.pnl;
       if (r.closedAt.getTime() >= dayStart) realisedProfitToday += r.pnl;
     }
-    const realised: MissionRealisedStats = {
+    const brokerReconciled: MissionRealisedStats = {
       realisedProfit: round2(realisedProfit),
       realisedProfitToday: round2(realisedProfitToday),
       realisedTradeCount,
     };
+
+    // The simulated series, read separately and NEVER added to the one above.
+    const simulated =
+      accountingBasis === "SIMULATED"
+        ? await resolveMissionSimulatedStats({
+            userId: args.userId,
+            missionId: args.missionId,
+            nowMs,
+          })
+        : null;
+    const realised: MissionRealisedStats =
+      simulated != null
+        ? {
+            realisedProfit: simulated.simulatedProfit,
+            realisedProfitToday: simulated.simulatedProfitToday,
+            realisedTradeCount: simulated.simulatedTradeCount,
+          }
+        : brokerReconciled;
 
     const milestone = await resolveMissionMilestones({
       userId: args.userId,
@@ -430,7 +475,25 @@ export async function refreshMissionProtection(args: {
     const nowIso = new Date(nowMs).toISOString();
     const nextProgress: Record<string, unknown> = {
       ...priorProgress,
+      // The honesty label for every money figure below and for currentValue.
+      accounting: {
+        basis: accountingBasis,
+        simulated: accountingBasis === "SIMULATED",
+        label:
+          accountingBasis === "SIMULATED"
+            ? "SIMULATED — outcomes modelled from real quotes on a paper/demo mission. Not broker-reconciled money."
+            : "Broker-reconciled realised money.",
+        // Both series are published side by side so nobody has to guess which
+        // figure a surface is showing — but only `basis` drives currentValue.
+        brokerReconciledProfit: brokerReconciled.realisedProfit,
+        brokerReconciledTradeCount: brokerReconciled.realisedTradeCount,
+        simulatedProfit: simulated?.simulatedProfit ?? null,
+        simulatedTradeCount: simulated?.simulatedTradeCount ?? null,
+        simulatedUnpricedCount: simulated?.simulatedUnpricedCount ?? null,
+        asOf: new Date(nowMs).toISOString(),
+      },
       protection: {
+        accountingBasis,
         milestone: milestone.milestone,
         lockedProfit: milestone.lockedProfit,
         minSetupTier: milestone.minSetupTier,
@@ -445,6 +508,7 @@ export async function refreshMissionProtection(args: {
         asOf: nowIso,
       },
       compounding: {
+        accountingBasis,
         active: compounding.active,
         multiplier: compounding.multiplier,
         mode: compounding.mode,
@@ -481,8 +545,9 @@ export async function refreshMissionProtection(args: {
       await tx.insert(missionEventsTable).values({
         missionId: args.missionId,
         type: "mission_milestone_reached",
-        message: `Reached the ${milestone.milestone}% profit milestone — locked ${milestone.lockedProfit}.`,
+        message: `Reached the ${milestone.milestone}% profit milestone — locked ${milestone.lockedProfit}${accountingBasis === "SIMULATED" ? " (SIMULATED paper/demo outcomes, not money)" : ""}.`,
         metadataJson: {
+          accountingBasis,
           milestone: milestone.milestone,
           lockedProfit: milestone.lockedProfit,
           minSetupTier: milestone.minSetupTier,
@@ -506,12 +571,15 @@ export async function refreshMissionProtection(args: {
       await tx.insert(missionEventsTable).values({
         missionId: args.missionId,
         type: "mission_target_locked",
-        message: `Target reached — ${missionCompleted ? "mission completed and profit locked" : "profit locked"} (${milestone.lockedProfit}).`,
-        metadataJson: { lockedProfit: milestone.lockedProfit, missionCompleted },
+        message: `Target reached — ${missionCompleted ? "mission completed and profit locked" : "profit locked"} (${milestone.lockedProfit})${accountingBasis === "SIMULATED" ? " on SIMULATED outcomes (paper/demo — not money)" : ""}.`,
+        metadataJson: { lockedProfit: milestone.lockedProfit, missionCompleted, accountingBasis },
       });
     }
 
-    return { ok: true as const, snapshot: { milestone, compounding, missionCompleted } };
+    return {
+      ok: true as const,
+      snapshot: { milestone, compounding, missionCompleted, accountingBasis },
+    };
   });
 }
 
@@ -1102,6 +1170,8 @@ export interface MissionProtectionPulse {
   milestone: MissionMilestoneState;
   compounding: MissionCompoundingState;
   capture: MissionCaptureStats;
+  /** Which books these figures are on — SIMULATED for a paper/demo mission. */
+  accountingBasis: MissionAccountingBasis;
 }
 
 /**
@@ -1125,11 +1195,25 @@ export async function resolveMissionProtectionPulse(args: {
   const mission = missionRows[0] as MissionRow | undefined;
   if (!mission) return { ok: false, kind: "mission_not_found" };
 
-  const realised = await resolveMissionRealisedStats({
-    userId: args.userId,
-    missionId: args.missionId,
-    nowMs,
-  });
+  // Same one-set-of-books rule as refreshMissionProtection: a paper/demo mission
+  // reads its SIMULATED series, a live mission reads broker-reconciled money.
+  const accountingBasis = accountingBasisForMode(mission.executionMode);
+  const realised: MissionRealisedStats =
+    accountingBasis === "SIMULATED"
+      ? await resolveMissionSimulatedStats({
+          userId: args.userId,
+          missionId: args.missionId,
+          nowMs,
+        }).then((s) => ({
+          realisedProfit: s.simulatedProfit,
+          realisedProfitToday: s.simulatedProfitToday,
+          realisedTradeCount: s.simulatedTradeCount,
+        }))
+      : await resolveMissionRealisedStats({
+          userId: args.userId,
+          missionId: args.missionId,
+          nowMs,
+        });
   const milestone = await resolveMissionMilestones({ userId: args.userId, mission, realised, nowMs });
   const compounding = await resolveMissionCompounding({
     userId: args.userId,
@@ -1175,5 +1259,5 @@ export async function resolveMissionProtectionPulse(args: {
     totalMissedProfit: round2(totalMissedProfit),
   };
 
-  return { ok: true, pulse: { milestone, compounding, capture } };
+  return { ok: true, pulse: { milestone, compounding, capture, accountingBasis } };
 }

@@ -13,9 +13,16 @@
 //     additionally requires the accepted Mission Risk Certificate, the platform
 //     live gates (env AND db master switch) being enabled, an automation level
 //     that is allowed to reach live (level 3 demo-auto is refused), and — for
-//     live-auto levels — a passing promotion decision re-evaluated against the
-//     prospective live account type. Downgrades (risk reduction) are always
-//     allowed and disable the live-auto opt-in when leaving live.
+//     live-auto levels — the explicit live-auto opt-in. Downgrades (risk
+//     reduction) are always allowed and disable the live-auto opt-in when
+//     leaving live.
+//   - THE EVIDENCE BAR (inversion fix). Stepping demo → LIVE additionally
+//     requires the SAME evidence gates the promotion ladder makes mandatory at
+//     demo-auto. Before this, demo→live required no performance evidence at all
+//     while any auto level required the full checklist — so the easy road to
+//     real money skipped the ladder, and the only road to autonomy was trading
+//     real money at level 2. Both roads now require evidence, and unreadable
+//     evidence fails CLOSED.
 //   - Per-user / per-mission isolation: the row is loaded FOR UPDATE scoped by
 //     (id, userId); every change is journalled + audited in one transaction.
 import { and, eq } from "drizzle-orm";
@@ -38,7 +45,11 @@ import {
   type MissionAutomationLevel,
 } from "@workspace/domain/profit-mission";
 import { resolveLiveBrokerExecutionEnabledAsync } from "./live/phaseBConfig.js";
-import type { PromotionContext } from "./missionPromotionService.js";
+import {
+  resolveMissionLadderEvidenceBar,
+  type PromotionContext,
+} from "./missionPromotionService.js";
+import { describeEvidenceBasis, PROMOTION_EVIDENCE_LEVEL } from "@workspace/domain/profit-mission";
 
 type MissionRow = typeof profitMissionsTable.$inferSelect;
 
@@ -76,6 +87,24 @@ export async function applyMissionExecutionMode(args: {
     targetMode === "live"
       ? await resolveLiveBrokerExecutionEnabledAsync().catch(() => false)
       : false;
+
+  // ── INVERSION FIX: real money requires the ladder's EVIDENCE bar ──────────
+  // This step used to require a certificate + the live master switch but NO
+  // performance evidence, while earning ANY auto level required the full
+  // promotion checklist. That made demo→live the easy road: skip the ladder,
+  // reach real money, then be forced to trade real money at level 2 to earn any
+  // autonomy at all. Stepping onto real money now clears exactly the evidence
+  // gates the ladder demands at level 3 (backtest / forward / demo performance /
+  // drawdown / agent reliability / risk rules / drift), read from the SAME
+  // evidence — which a paper/demo mission can now actually produce, honestly
+  // labelled as simulated. Read outside the transaction (it is a multi-table
+  // read) and used ONLY to refuse. Unreadable evidence fails CLOSED.
+  const evidenceBar =
+    targetMode === "live" ? await resolveMissionLadderEvidenceBar({
+      userId: args.userId,
+      missionId: args.missionId,
+      ctx: args.ctx,
+    }) : null;
 
   return db.transaction(async (tx): Promise<ApplyExecutionModeResult> => {
     const rows = await tx
@@ -136,6 +165,14 @@ export async function applyMissionExecutionMode(args: {
         if (level >= FIRST_LIVE_AUTO_LEVEL && !mission.liveAutoEnabled) {
           blockReasons.push("LIVE_AUTO_NOT_ENABLED_FOR_LIVE_AUTO_LEVEL");
         }
+        // The ladder's evidence bar (see the note above `evidenceBar`). Real
+        // money is never an easier road than autonomy.
+        if (evidenceBar == null || !evidenceBar.passed) {
+          const failed = evidenceBar?.failedGates ?? ["evidence_unreadable"];
+          blockReasons.push(
+            `PROMOTION_EVIDENCE_REQUIRED_FOR_LIVE (level ${PROMOTION_EVIDENCE_LEVEL} bar; failed: ${failed.join(", ")}; ${describeEvidenceBasis(evidenceBar?.demoEvidenceBasis ?? "UNSTATED")})`,
+          );
+        }
       }
     }
 
@@ -144,7 +181,14 @@ export async function applyMissionExecutionMode(args: {
         missionId: args.missionId,
         type: "execution_mode_blocked",
         message: `Execution-mode change ${currentMode} → ${targetMode} refused.${blockReasons[0] ? ` ${blockReasons[0]}` : ""}`,
-        metadataJson: { from: currentMode, to: targetMode, blockReasons },
+        metadataJson: {
+          from: currentMode,
+          to: targetMode,
+          blockReasons,
+          ...(evidenceBar
+            ? { evidenceBar: { passed: evidenceBar.passed, failedGates: evidenceBar.failedGates, demoEvidenceBasis: evidenceBar.demoEvidenceBasis } }
+            : {}),
+        },
       });
       await tx.insert(oneClickAuditTable).values({
         userId: args.userId,
@@ -168,7 +212,12 @@ export async function applyMissionExecutionMode(args: {
       .where(and(eq(profitMissionsTable.id, args.missionId), eq(profitMissionsTable.userId, args.userId)));
 
     const reasons = upgrade
-      ? [`gated upgrade ${currentMode} → ${targetMode} (explicitly confirmed)`]
+      ? [
+          `gated upgrade ${currentMode} → ${targetMode} (explicitly confirmed)`,
+          ...(evidenceBar
+            ? [`ladder evidence bar cleared — ${describeEvidenceBasis(evidenceBar.demoEvidenceBasis)}`]
+            : []),
+        ]
       : [`risk-reduction downgrade ${currentMode} → ${targetMode}${leavingLive ? " (live auto disabled)" : ""}`];
 
     await tx.insert(missionEventsTable).values({

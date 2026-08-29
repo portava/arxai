@@ -19,6 +19,10 @@ import {
   metaForLevel,
 } from "./missionAutomation.js";
 import { driftBlocksPromotion, type DriftSeverity } from "./missionDriftDetector.js";
+import {
+  describeEvidenceBasis,
+  type PromotionEvidenceBasis,
+} from "./missionFillSimulation.js";
 
 export interface PromotionEvidence {
   /** Best historical (backtest) result. */
@@ -30,6 +34,15 @@ export interface PromotionEvidence {
   /** Demo win rate as a fraction 0..1 over the demo sample. */
   demoWinRate: number;
   demoSampleSize: number;
+  /**
+   * What the demo/forward closed-trade evidence actually IS. A paper/demo
+   * mission's closed trades are SIMULATED fills modelled from real quotes, not
+   * broker-reconciled money — so the `demo_performance` gate says so in its own
+   * detail line and the decision carries the label. Optional so older callers
+   * keep compiling; absent reads as "UNSTATED", which is never treated as
+   * proven broker truth.
+   */
+  demoEvidenceBasis?: PromotionEvidenceBasis;
   /** Worst observed max drawdown across results, as a percentage 0..100. */
   maxDrawdownPct: number;
   /** Aggregate agent reliability 0..1 (from the learning loop). */
@@ -74,6 +87,14 @@ export interface PromotionDecision {
   failedGates: string[];
   reasons: string[];
   blockers: string[];
+  /**
+   * What the demo/forward evidence behind this decision is. Carried on EVERY
+   * decision (approved or not) so every surface that displays or journals a
+   * promotion can state whether the evidence was simulated.
+   */
+  demoEvidenceBasis: PromotionEvidenceBasis;
+  /** Plain-language notes about the evidence, safe for any surface. */
+  evidenceNotes: string[];
 }
 
 /**
@@ -91,6 +112,14 @@ export function evaluateMissionPromotion(
   const blockers: string[] = [];
 
   const meta = metaForLevel(targetLevel);
+  // The demo evidence is labelled at its source. A paper/demo mission earns this
+  // gate with SIMULATED fills priced from real quotes — legitimate evidence for
+  // the ladder, but never broker truth, so the label is stated in the gate's own
+  // detail line, echoed on the decision, and journalled wherever it is applied.
+  const demoEvidenceBasis: PromotionEvidenceBasis = e.demoEvidenceBasis ?? "UNSTATED";
+  const evidenceNotes: string[] = [
+    `demo performance evidence: ${describeEvidenceBasis(demoEvidenceBasis)}`,
+  ];
 
   // Gate definitions. requiredFromLevel says at which target level the gate becomes
   // mandatory. Levels at/below APPROVAL (2) never require these — approval mode is
@@ -100,7 +129,7 @@ export function evaluateMissionPromotion(
   gate("forward_sample", e.forwardSampleSize >= MIN_FORWARD_SAMPLE && e.forwardPromotionEligible,
     `forward sample ${e.forwardSampleSize} ≥ ${MIN_FORWARD_SAMPLE} with positive edge`, 3);
   gate("demo_performance", e.demoSampleSize >= MIN_DEMO_SAMPLE && e.demoWinRate >= MIN_DEMO_WIN_RATE,
-    `demo win rate ${(e.demoWinRate * 100).toFixed(1)}% over ${e.demoSampleSize} trades (≥ ${(MIN_DEMO_WIN_RATE * 100).toFixed(0)}% / ${MIN_DEMO_SAMPLE})`, 3);
+    `demo win rate ${(e.demoWinRate * 100).toFixed(1)}% over ${e.demoSampleSize} trades (≥ ${(MIN_DEMO_WIN_RATE * 100).toFixed(0)}% / ${MIN_DEMO_SAMPLE}) — ${describeEvidenceBasis(demoEvidenceBasis)}`, 3);
   gate("max_drawdown", e.maxDrawdownPct <= MAX_ALLOWED_DRAWDOWN_PCT,
     `max drawdown ${e.maxDrawdownPct.toFixed(1)}% ≤ ${MAX_ALLOWED_DRAWDOWN_PCT}%`, 3);
   gate("agent_reliability", e.agentReliability >= MIN_AGENT_RELIABILITY,
@@ -157,9 +186,54 @@ export function evaluateMissionPromotion(
     failedGates: failed.map((g) => g.name),
     reasons,
     blockers,
+    demoEvidenceBasis,
+    evidenceNotes,
   };
 
   function gate(name: string, passed: boolean, detail: string, requiredFromLevel: MissionAutomationLevel): void {
     gates.push({ name, passed, detail, requiredFromLevel });
   }
+}
+
+/**
+ * The level at which the EVIDENCE gates (backtest / forward / demo performance /
+ * drawdown / agent reliability / risk rules / drift) first become mandatory.
+ * Pointing a mission at real money must clear at least this bar.
+ */
+export const PROMOTION_EVIDENCE_LEVEL: MissionAutomationLevel = 3;
+
+export interface EvidenceBarVerdict {
+  /** True only when every evidence gate required at PROMOTION_EVIDENCE_LEVEL passes. */
+  passed: boolean;
+  failedGates: string[];
+  blockers: string[];
+  demoEvidenceBasis: PromotionEvidenceBasis;
+}
+
+/**
+ * PURE — does this mission clear the ladder's EVIDENCE bar?
+ *
+ * This closes the demo→live inversion. Before it, stepping a mission from demo
+ * to LIVE required a certificate and the platform live switch but NO evidence at
+ * all, while earning any auto level required the full promotion checklist — so
+ * the easiest road to real money skipped the ladder entirely, and the only road
+ * to autonomy was trading real money at level 2. Pointing a mission at real
+ * money now requires exactly the evidence gates the ladder requires, evaluated
+ * from the SAME evidence (which a paper/demo mission can now actually produce,
+ * honestly labelled as simulated).
+ *
+ * Deliberately EXCLUDES the live-only gates (explicit enablement, certificate,
+ * live master switch) and the guardrail ceiling: those are separate, still
+ * enforced where they belong, and this must not silently duplicate or relax them.
+ */
+export function evaluateLadderEvidenceBar(e: PromotionEvidence): EvidenceBarVerdict {
+  const decision = evaluateMissionPromotion(PROMOTION_EVIDENCE_LEVEL, e);
+  const required = decision.gates.filter((g) => g.requiredFromLevel <= PROMOTION_EVIDENCE_LEVEL);
+  const failed = required.filter((g) => !g.passed);
+  return {
+    passed: failed.length === 0,
+    failedGates: failed.map((g) => g.name),
+    blockers: failed.map((g) => `gate failed: ${g.name} — ${g.detail}`),
+    demoEvidenceBasis: decision.demoEvidenceBasis,
+  };
 }

@@ -66,6 +66,11 @@ const MISSION_BACKEND_FILES = [
   "artifacts/api-server/src/lib/missionExitManager.ts",
   "artifacts/api-server/src/lib/missionPromotionService.ts",
   "artifacts/api-server/src/lib/missionRiskService.ts",
+  // The paper/demo fill simulator. It models outcomes and must therefore be held
+  // to the SAME no-direct-execution + no-fabricated-randomness bar as every
+  // other mission surface: it may never reach a command table or an order send,
+  // and every price it produces comes from a real routed quote.
+  "artifacts/api-server/src/lib/missionSimulatedFills.ts",
   "artifacts/api-server/src/lib/missionTestingLabService.ts",
   "artifacts/api-server/src/lib/profitMissionJournal.ts",
   "artifacts/api-server/src/lib/profitMissionSerialize.ts",

@@ -11,9 +11,12 @@
 //
 // Proven here:
 //   (59) DEMO/PAPER never touches the live broker — a non-live mission runs the
-//        SAME gate chain and dispatches onto the SIMULATED recorder seam
+//        SAME gate chain and dispatches onto the SIMULATED executor seam
 //        (`sim:` command id, journaled + audited); the LIVE executor seam is
-//        never called and no fill/price/P&L is fabricated. Demo stays demo.
+//        never called. The simulated fill is modelled from a REAL quote and
+//        lands ONLY in the row's `sim_*` family — no broker-reconciled P/L,
+//        close, or ticket is ever fabricated. Demo stays demo. (The paper/demo
+//        outcome lifecycle itself is proven in missionDemoLadder.test.ts.)
 //   (61) Mission cannot bypass the live execution gates — a live dispatch routes
 //        through the SAME instant-trade seam with source "mission"; when that
 //        seam rejects (a downstream gate block), the draft stays `approved` and
@@ -48,6 +51,10 @@ import {
   dispatchApprovedDraft,
   type MissionExecutor,
 } from "../../lib/missionExecution.js";
+import {
+  makeMissionFillSimulator,
+  type MissionQuoteReader,
+} from "../../lib/missionSimulatedFills.js";
 import { sendDispatchFailure } from "../profitMissions.js";
 import type {
   Phase7Evaluator,
@@ -263,9 +270,23 @@ test("59: demo/paper dispatch runs the same gates but never touches the live bro
     await seedApprovedDraft({ userId: userAId, missionId, draftId, proposalId });
 
     const spy = makeSpy({ ok: true, commandId: "should-never-be-used", action: "BUY" });
+    // fix/demo-ladder: the default simulated executor now models a fill from the
+    // market-data ROUTER's real quote — and refuses (NO_FILL_NO_QUOTE) when
+    // there is no feed, which is correct but not deterministic in CI. The
+    // simulator under test is the REAL one; only its quote source is stubbed.
+    const stubQuote: MissionQuoteReader = async () => ({
+      quote: { bid: 1.0898, ask: 1.0901, last: 1.08995 },
+      provider: "qa_stub_feed",
+      quotedAt: new Date().toISOString(),
+      reason: null,
+    });
     const result = await dispatchApprovedDraft(
       { userId: userAId, missionId, proposalId },
-      { executor: spy.fn, phase7Evaluator: passingPhase7Evaluator },
+      {
+        executor: spy.fn,
+        simulatedExecutor: makeMissionFillSimulator({ quoteReader: stubQuote }),
+        phase7Evaluator: passingPhase7Evaluator,
+      },
     );
 
     // The dispatch SUCCEEDS through the gated path in its own mode…

@@ -62,6 +62,10 @@ import {
   manageMissionTradeExit,
   refreshMissionProtection,
 } from "./missionExitManager.js";
+import {
+  runMissionSimulatedExitPass,
+  type MissionQuoteReader,
+} from "./missionSimulatedFills.js";
 import { refreshMissionRisk, type MissionLiveSignals } from "./missionRiskService.js";
 import { resolveMissionPromotionStatus } from "./missionPromotionService.js";
 import { applyMissionTransition } from "./profitMissionJournal.js";
@@ -102,6 +106,8 @@ export interface MissionDriverPassOpts {
   /** Injectable seams — tests only; production always uses the real services. */
   executor?: MissionExecutor;
   simulatedExecutor?: MissionSimulatedExecutor;
+  /** Deterministic quote source for the simulated exit sweep (tests only). */
+  quoteReader?: MissionQuoteReader;
   phase7Evaluator?: Phase7Evaluator;
   scan?: (args: {
     userId: number;
@@ -220,7 +226,8 @@ async function manageOpenExits(
   mission: MissionRow,
   opts: MissionDriverPassOpts,
 ): Promise<number> {
-  // Positions only exist for a live-mode mission; paper/demo record no fills.
+  // Broker positions only exist for a live-mode mission. A paper/demo mission's
+  // SIMULATED positions are swept earlier in the tick by sweepSimulatedExits.
   if (mission.executionMode !== "live") return 0;
   const openDrafts = await db
     .select({ draftId: missionTradeDraftsTable.draftId })
@@ -258,6 +265,37 @@ async function manageOpenExits(
   return managed;
 }
 
+/**
+ * Close a paper/demo mission's OPEN SIMULATED positions against REAL current
+ * quotes. This is what makes a non-live mission progress at all: before it,
+ * nothing ever wrote an outcome for a simulated draft, so a paper/demo mission's
+ * value was frozen forever, it could never complete, and the promotion gate's
+ * demo evidence had no producible source. Nothing here contacts a broker, and
+ * no broker-reconciled column is ever written.
+ *
+ * Runs BEFORE the protection read so a close lands in the SAME tick's progress
+ * (and can complete the mission) instead of a tick later.
+ */
+async function sweepSimulatedExits(
+  mission: MissionRow,
+  opts: MissionDriverPassOpts,
+): Promise<number> {
+  if (mission.executionMode === "live") return 0;
+  const nowMs = opts.nowMs ?? Date.now();
+  const pass = await runMissionSimulatedExitPass(
+    {
+      userId: mission.userId,
+      missionId: mission.id,
+      // A finished mission window marks open simulated positions out at the real
+      // current quote rather than stranding them open forever.
+      missionEnded: nowMs >= mission.timeframeEnd.getTime(),
+      nowMs,
+    },
+    { quoteReader: opts.quoteReader },
+  );
+  return pass.closed;
+}
+
 /** One mission's tick. Composes the plan over the existing gated services. */
 async function tickMission(
   mission: MissionRow,
@@ -275,6 +313,9 @@ async function tickMission(
     blockReasons: [],
     error: null,
   };
+
+  // ── Simulated positions close FIRST so this tick's protection read sees them.
+  outcome.exitsManaged = await sweepSimulatedExits(mission, opts);
 
   // ── Honest risk + protection reads (change-only journaling inside). ────────
   const risk = await refreshMissionRisk({
@@ -310,7 +351,7 @@ async function tickMission(
 
   // ── Protective steps always run first. ─────────────────────────────────────
   if (plan.steps.includes("manage_exits")) {
-    outcome.exitsManaged = await manageOpenExits(mission, opts);
+    outcome.exitsManaged += await manageOpenExits(mission, opts);
   }
   // refresh_protection already ran above (it is the honest read the plan used);
   // a target stop+lock flipped the mission to `completed` inside that call.
