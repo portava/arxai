@@ -7,7 +7,14 @@ import { Swords } from "lucide-react";
 import { AccessCheckingShell, AccessDeniedCard, SHADOW_ADMIN_DENIED_NOTE, shadowAdminDeniedMessage } from "@/components/access/AdminOnlyGate";
 
 type Row = { strategy: string; sample: number; winRate: number; avgR: number; profitFactor: number; expectancy: number; riskAdjustedReturn: number; qualitySetups: number; confidenceAccuracy: number; riskDiscipline: number; tradeGradeAvg: number };
-type Result = { running: boolean; startedAt: string | null; ranked: Row[]; leaderboard: Record<string, string | null> };
+type Result = {
+  running: boolean; startedAt: string | null; ranked: Row[];
+  leaderboard: Record<string, string | null>;
+  // Slots the engine refuses to compute, with the reason. A category that cannot
+  // be derived from what a shadow decision carries is named and explained here
+  // rather than silently omitted or rendered as a permanent "—".
+  notComputed?: Record<string, string>;
+};
 
 async function api(path: string, init?: RequestInit) {
   return fetch(path, { headers: { "content-type": "application/json", ...(init?.headers ?? {}) }, ...init }).then((r) => r.json());
@@ -74,6 +81,15 @@ export default function StrategyTournament() {
           <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
             {Object.entries(r.leaderboard).map(([k, v]) => (
               <Card key={k}><CardContent className="p-2"><p className="text-[10px] text-muted-foreground uppercase">{k}</p><p className="text-sm font-semibold">{v ?? "—"}</p></CardContent></Card>
+            ))}
+            {Object.entries(r.notComputed ?? {}).map(([k, why]) => (
+              <Card key={k} className="border-dashed">
+                <CardContent className="p-2">
+                  <p className="text-[10px] text-muted-foreground uppercase">{k}</p>
+                  <p className="text-sm font-semibold text-muted-foreground">Not computed</p>
+                  <p className="text-[10px] text-muted-foreground">{why}</p>
+                </CardContent>
+              </Card>
             ))}
           </CardContent>
         </Card>

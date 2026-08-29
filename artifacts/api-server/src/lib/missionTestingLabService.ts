@@ -143,13 +143,36 @@ function projectResult(row: typeof missionTestResultsTable.$inferSelect): Missio
     label: row.label,
     sampleSize: row.sampleSize,
     sampleWarning: row.sampleWarning ?? null,
-    isVerified: row.isVerified,
+    // Read path, same rule. Every mission_test_results row written BEFORE the
+    // fix below carries kind:"BACKTEST" with isVerified:true, and this repo has
+    // no migration system to correct them — so the projection re-applies the
+    // gate on the way out instead of trusting the stored flag.
+    isVerified: missionTestIsVerifiable(row.kind as MissionTestKind) && row.isVerified,
     metrics,
     headline: typeof blob.headline === "string" ? blob.headline : "",
     notes: Array.isArray(blob.notes) ? (blob.notes as string[]) : [],
     promotionEligible: blob.promotionEligible === true,
     createdAt: row.createdAt.toISOString(),
   };
+}
+
+/**
+ * Audit rank 41, applied to the sibling Mission Performance surface.
+ *
+ * A BACKTEST result here is ALWAYS computed over `generateDeterministicCandles`
+ * — this service has no broker-history path at all — while `isVerified` was
+ * persisted as `summary.promotionEligible`, which is `sufficient &&
+ * expectancyR > 0 && profitFactor > 1` with no reference to where the candles
+ * came from. So a run over candles ARX invented earned a stored "verified"
+ * flag, and MissionPerformanceView rendered " · verified" from it.
+ *
+ * A verification verdict requires observations the platform did not make up.
+ * Only FORWARD qualifies: it aggregates the mission's own EXECUTED trade
+ * drafts. BACKTEST stays promotionEligible (an advisory signal, honestly
+ * named) but is never "verified".
+ */
+export function missionTestIsVerifiable(kind: MissionTestKind): boolean {
+  return kind === "FORWARD";
 }
 
 async function persistTestResult(args: {
@@ -180,7 +203,7 @@ async function persistTestResult(args: {
         notes: args.summary.notes,
         promotionEligible: args.summary.promotionEligible,
       },
-      isVerified: args.summary.promotionEligible,
+      isVerified: missionTestIsVerifiable(args.kind) && args.summary.promotionEligible,
     })
     .returning();
   return projectResult(inserted[0]!);

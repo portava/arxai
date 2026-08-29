@@ -16,6 +16,7 @@ import { marketSimulator } from "./marketSimulator.js";
 import { preTradeCheck } from "./riskGovernor2.js";
 import { runStrategyScan, type Candle as EngineCandle } from "./strategyEngine.js";
 import { ENGINE_STRATEGY_NAMES } from "./backtestStrategyRegistry.js";
+import { resolveArxMarket } from "@workspace/domain/market";
 import { DEFAULT_SYMBOLS } from "./marketScanner.js";
 import { buildForwardChartSeries, type ForwardChartSeries } from "./shadow/forwardChartSeries.js";
 // shadowPersistence imports this module type-only, so no runtime cycle.
@@ -408,6 +409,22 @@ export function forwardChartSeries(): ForwardChartSeries {
   })));
 }
 
+// Category slots are derived from the decision's SYMBOL — a fact the decision
+// carries — through the ARX market registry, never from the strategy's NAME.
+// A symbol the registry does not know is excluded rather than guessed into a
+// category. `bestOnGold` means gold: XAG (silver) is a metal but not gold, so
+// it is no longer folded into the slot the card names.
+export function isGoldSymbol(symbol: string): boolean {
+  const m = resolveArxMarket(symbol);
+  if (m) return m.category === "metal" && /^XAU/i.test(m.canonicalSymbol);
+  return /^XAU/i.test(symbol);
+}
+export function isForexSymbol(symbol: string): boolean {
+  const m = resolveArxMarket(symbol);
+  if (!m) return false;
+  return m.category === "forex_major" || m.category === "forex_minor";
+}
+
 /** Strategies present in `arr`, ordered by win rate over resolved decisions. */
 function rankByStrategyOverDecisions(arr: ShadowDecision[]): string[] {
   const by: Record<string, { n: number; wins: number }> = {};
@@ -483,12 +500,23 @@ export function tournamentResults() {
   // which is a fact the decisions actually carry. There is no timeframe/holding
   // -period field on a shadow decision, so a "scalping" slot cannot be computed
   // at all and is not rendered rather than shown as a permanent dash.
-  const goldRows = rankByStrategyOverDecisions(arr.filter((d) => /^XAU|^XAG/i.test(d.symbol)));
+  //
+  // `bestForex` carried the SAME name-regex defect and was missed: it matched
+  // /pullback|trend|break/i against the strategy name, and four of the seven
+  // engine strategies ("Trend Continuation", "Break of Structure", "Pullback
+  // Continuation", "Session Breakout") match it — so a sample containing only
+  // XAUUSD or BTCUSD decisions still filled a card labelled BEST FOREX with a
+  // strategy that had never traded a currency pair. Worse than the two slots it
+  // sat beside, because those at least rendered an honest "—". It is now
+  // derived from the decision's symbol through the ARX market registry, the
+  // same way gold is.
+  const goldRows = rankByStrategyOverDecisions(arr.filter((d) => isGoldSymbol(d.symbol)));
+  const forexRows = rankByStrategyOverDecisions(arr.filter((d) => isForexSymbol(d.symbol)));
   const leaderboard = {
     bestOverall: rows[0]?.strategy ?? null,
     bestLowRisk: [...rows].sort((a, b) => b.riskDiscipline - a.riskDiscipline)[0]?.strategy ?? null,
     bestOnGold: goldRows[0] ?? null,
-    bestForex: rows.find((r) => /pullback|trend|break/i.test(r.strategy))?.strategy ?? null,
+    bestOnForex: forexRows[0] ?? null,
     worst: rows.at(-1)?.strategy ?? null,
     toRetire: rows.find((r) => r.expectancy < 0 && r.sample >= 10)?.strategy ?? null,
   };

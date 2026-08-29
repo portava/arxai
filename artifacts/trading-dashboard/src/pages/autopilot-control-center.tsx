@@ -145,7 +145,9 @@ export default function AutopilotControlCenter() {
         setResetMsg(`Reset failed: ${body?.error ?? `HTTP ${r.status}`}`);
         return;
       }
-      setResetMsg(null);
+      // Report exactly what the reset did — including "nothing to reset" and the
+      // fact that it does NOT clear the loss locks. Never a silent success.
+      setResetMsg(typeof body?.note === "string" ? body.note : null);
       await load();
     } catch (e) {
       setResetMsg(`Reset failed: ${(e as Error).message}`);
@@ -225,8 +227,9 @@ export default function AutopilotControlCenter() {
             </div>
             <p className="text-xs text-danger/80">
               Emergency Stop latches. Nothing clears it automatically: start, resume and every
-              scan stay refused until it is reset. The same applies to a tripped
-              DAILY_LOSS / WEEKLY_LOSS / CONSECUTIVE_LOSSES lock below.
+              scan stay refused until an Admin resets it here. Reset clears the KILL_SWITCH lock
+              only — a tripped DAILY_LOSS / WEEKLY_LOSS / CONSECUTIVE_LOSSES lock below is not
+              cleared by this button and stays tripped for the life of the API process.
             </p>
             <div className="flex items-center gap-2 flex-wrap">
               <Button size="sm" variant="outline" disabled={resetting} onClick={resetKillSwitch}>

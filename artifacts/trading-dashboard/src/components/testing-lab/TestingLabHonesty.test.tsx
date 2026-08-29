@@ -19,7 +19,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { ResultsHistoryTab } from "./ResultsHistoryTab";
 import { ComparisonTab } from "./ComparisonTab";
+import { BacktestingTab } from "./BacktestingTab";
 import { AIBacktestReviewCard } from "@/components/backtesting/AIBacktestReviewCard";
+import { BacktestResultsDashboard } from "@/components/backtesting/BacktestResultsDashboard";
+import { backtestVerdict } from "@/components/backtesting/verificationVerdict";
 import type { BacktestRunRow } from "./types";
 
 function wrap(ui: React.ReactElement) {
@@ -53,6 +56,21 @@ function stubFetch(opts: { runs: BacktestRunRow[]; forwardStatus: number; forwar
     }
     return { ok: true, status: 200, json: async () => ({}) } as Response;
   });
+  vi.stubGlobal("fetch", f);
+  return f;
+}
+
+/**
+ * Stub for the single-run detail read (`/api/backtest-runs/:id`), whose payload
+ * carries the extra KPI fields the list rows do not.
+ */
+function stubRun(r: BacktestRunRow) {
+  const detail = {
+    initialBalance: 10_000, winningTrades: 25, losingTrades: 17,
+    maxDrawdown: 42.5, averageRr: 1.4, expectancy: 0.3, aiSummary: null,
+    ...r,
+  };
+  const f = vi.fn(async () => ({ ok: true, status: 200, json: async () => detail } as Response));
   vi.stubGlobal("fetch", f);
   return f;
 }
@@ -119,5 +137,69 @@ describe("Attribution and refreshability (rank 68)", () => {
     expect(screen.queryByText(/AI review/i)).toBeNull();
     expect(screen.queryByRole("button", { name: /refresh review/i })).toBeNull();
     expect(container.textContent).toMatch(/fixed template/i);
+  });
+});
+
+// ── Rank 41, READ PATH ──────────────────────────────────────────────────────
+//
+// The write path stopped stamping VERIFIED on a synthetic run, but that only
+// governs rows created after it. Every backtest_runs row written BEFORE the fix
+// still carries dataSource:"synthetic" WITH isVerified:"VERIFIED", and this repo
+// has no migration system to correct them — so those rows keep that pair
+// indefinitely and the read surfaces have to be the gate too.
+//
+// The gate had been applied to ResultsHistoryTab only. BacktestingTab keyed both
+// the word and the green colour off r.isVerified alone, and
+// BacktestResultsDashboard's detail pill did the same. These are the two
+// surfaces that still rendered the audit's exact symptom.
+
+describe("Rank 41 read path — a stored VERIFIED on synthetic data is not displayed", () => {
+  /** A row exactly as it would have been persisted before the write-path fix. */
+  const legacy = () => run({ dataSource: "synthetic", isVerified: "VERIFIED" });
+
+  it("BacktestingTab's recent-runs list refuses the legacy VERIFIED", async () => {
+    stubFetch({ runs: [legacy()], forwardStatus: 200 });
+    const { container } = wrap(<BacktestingTab />);
+    expect(await screen.findByText(/NOT VERIFIABLE/i)).toBeTruthy();
+    expect(container.textContent).not.toMatch(/\bVERIFIED\b(?!.*NOT)/);
+    expect(container.querySelector(".text-success")).toBeNull();
+  });
+
+  it("BacktestingTab still shows VERIFIED for a run over real broker bars", async () => {
+    stubFetch({ runs: [run({ dataSource: "broker", isVerified: "VERIFIED" })], forwardStatus: 200 });
+    const { container } = wrap(<BacktestingTab />);
+    expect(await screen.findByText(/^VERIFIED$/)).toBeTruthy();
+    expect(container.querySelector(".text-success")).not.toBeNull();
+  });
+
+  it("BacktestResultsDashboard's detail pill refuses the legacy VERIFIED", async () => {
+    stubRun(legacy());
+    const { container } = wrap(<BacktestResultsDashboard runId={1} />);
+    expect(await screen.findByText(/NOT VERIFIABLE/i)).toBeTruthy();
+    expect(container.textContent).toMatch(/SYNTHETIC DATA/);
+    expect(container.textContent).not.toMatch(/\bVERIFIED\b(?!.*NOT)/);
+  });
+
+  it("BacktestResultsDashboard shows VERIFIED only over real broker bars", async () => {
+    stubRun(run({ dataSource: "broker", isVerified: "VERIFIED" }));
+    wrap(<BacktestResultsDashboard runId={1} />);
+    expect(await screen.findByText(/^VERIFIED$/)).toBeTruthy();
+  });
+
+  it("a run whose provenance is unrecorded is not verified either", () => {
+    const r = { isVerified: "VERIFIED", status: "COMPLETED" };
+    const v = backtestVerdict(r);
+    expect(v.isVerified).toBe(false);
+    expect(v.label).toBe("NOT VERIFIABLE");
+    expect(v.title).toMatch(/does not record where its candles came from/i);
+  });
+
+  it("the shared rule never returns a verified verdict for a non-broker source", () => {
+    for (const src of ["synthetic", "SYNTHETIC", "simulator", "", null, undefined]) {
+      const v = backtestVerdict({ dataSource: src as string | null | undefined, isVerified: "VERIFIED" });
+      expect(v.isVerified).toBe(false);
+      expect(v.label).not.toBe("VERIFIED");
+      expect(v.tone).not.toBe("verified");
+    }
   });
 });

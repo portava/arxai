@@ -285,7 +285,9 @@
     "test:flywheel-ope-ledger": "node --import tsx --test --test-force-exit src/lib/flywheel/__qa__/flywheelOpeLedger.test.ts",
     "test:backtest-synthetic-honesty": "node --import tsx --test-isolation=none --test --test-force-exit src/lib/__qa__/backtestSyntheticHonesty.test.ts",
     "test:shadow-mode-honesty": "node --import tsx --test-isolation=none --test --test-force-exit src/lib/__qa__/shadowModeHonesty.test.ts",
-    "test:market-replay-candles": "node --import tsx --test-isolation=none --test --test-force-exit src/lib/__qa__/marketReplayStepsCandles.test.ts"
+    "test:market-replay-candles": "node --import tsx --test-isolation=none --test --test-force-exit src/lib/__qa__/marketReplayStepsCandles.test.ts",
+    "test:autopilot-kill-switch-reset": "node --import tsx --test --test-force-exit src/routes/__qa__/autopilotKillSwitchReset.test.ts",
+    "test:mission-test-verified-gate": "node --import tsx --test-isolation=none --test --test-force-exit src/lib/__qa__/missionTestVerifiedGate.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

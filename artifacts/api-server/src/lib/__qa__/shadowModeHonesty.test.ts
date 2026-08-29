@@ -33,6 +33,7 @@ const {
   TOURNAMENT_STRATEGIES, tournamentResults,
   shadowCoveredSymbols, startShadowMode, stopShadowMode, shadowStatus,
   startForwardTest, stopForwardTest, forwardStatus,
+  isGoldSymbol, isForexSymbol,
 } = await import("../shadowMode.js");
 
 // ── Rank 46 — no typed constants inside the composite ───────────────────────
@@ -195,4 +196,39 @@ test("leaderboard slots that cannot be computed are declared, not shown as dashe
   assert.ok(!("bestGold" in t.leaderboard), "the name-matched gold slot is replaced by a symbol-derived one");
   assert.ok("bestOnGold" in t.leaderboard, "gold is now derived from the decision's symbol");
   assert.match(t.notComputed.bestScalping, /holding-period|timeframe/i);
+});
+
+// `bestForex` carried the same name-regex defect as `bestGold` and survived the
+// first pass. Unlike the two slots that were replaced, it actually RENDERED a
+// value: /pullback|trend|break/i matches four of the seven engine strategy
+// names, so a sample containing only XAUUSD or BTCUSD decisions still filled a
+// card labelled BEST FOREX with a strategy that had never traded a currency
+// pair. The category must come from the decision's SYMBOL, never its strategy
+// name.
+test("the forex slot is derived from the symbol, not from the strategy's name", () => {
+  const t = tournamentResults();
+  assert.ok(!("bestForex" in t.leaderboard), "the name-matched forex slot is gone");
+  assert.ok("bestOnForex" in t.leaderboard, "forex is derived from the decision's symbol");
+});
+
+test("category predicates classify by symbol through the ARX registry", () => {
+  // Four of the seven engine strategy names matched the old /pullback|trend|break/i
+  // regex — none of them is evidence a currency pair was traded.
+  const namesThatFooledTheOldRegex = ENGINE_STRATEGY_NAMES
+    .filter((n) => /pullback|trend|break/i.test(n));
+  assert.ok(namesThatFooledTheOldRegex.length >= 3,
+    "the old regex really did match most of the engine's strategies");
+  for (const name of namesThatFooledTheOldRegex) {
+    assert.equal(isForexSymbol(name), false, `${name} is a strategy name, not a forex symbol`);
+  }
+
+  assert.equal(isForexSymbol("EURUSD"), true);
+  assert.equal(isForexSymbol("GBPJPY"), true);
+  assert.equal(isForexSymbol("XAUUSD"), false, "gold is a metal, not forex");
+  assert.equal(isForexSymbol("V75"), false, "a synthetic index is not forex");
+  assert.equal(isForexSymbol("NOT_A_SYMBOL"), false, "an unknown symbol is excluded, never guessed");
+
+  assert.equal(isGoldSymbol("XAUUSD"), true);
+  assert.equal(isGoldSymbol("EURUSD"), false);
+  assert.equal(isGoldSymbol("Gold Scalping Test"), false, "a strategy name is not a symbol");
 });

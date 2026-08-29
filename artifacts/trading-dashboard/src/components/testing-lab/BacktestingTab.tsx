@@ -6,7 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import {
   StrategyBacktestForm, BacktestResultsDashboard,
-  BacktestTradeList, AIBacktestReviewCard,
+  BacktestTradeList, AIBacktestReviewCard, backtestVerdict,
 } from "@/components/backtesting";
 import { BacktestChartPanel } from "./BacktestChartPanel";
 import type { BacktestRunRow } from "./types";
@@ -43,7 +43,14 @@ export function BacktestingTab({
           <div className="rounded-lg border border-border bg-muted/40 p-3">
             <h3 className="mb-2 text-sm font-semibold text-foreground">Recent runs</h3>
             <div className="max-h-72 space-y-1 overflow-auto">
-              {(data?.runs ?? []).map((r) => (
+              {(data?.runs ?? []).map((r) => {
+                // Audit rank 41 (read path). The colour and the word were keyed
+                // off r.isVerified ALONE, so a row stored before the write-path
+                // fix — dataSource:"synthetic" + isVerified:"VERIFIED" — still
+                // rendered a green VERIFIED here. The verdict is derived from
+                // the shared provenance-first rule instead.
+                const v = backtestVerdict(r);
+                return (
                 <button key={r.id} onClick={() => setRunId(r.id)}
                   className={`block w-full rounded border border-border bg-background/40 p-2 text-left text-xs hover:bg-card ${runId === r.id ? "ring-1 ring-primary" : ""}`}>
                   <div className="flex items-center justify-between gap-2">
@@ -53,18 +60,17 @@ export function BacktestingTab({
                         ? <span className="rounded bg-success/60 px-1 py-0.5 text-[9px] font-semibold text-success" title="Simulated over real closed broker bars.">REAL BROKER DATA</span>
                         : <span className="rounded bg-secondary px-1 py-0.5 text-[9px] font-semibold text-txt-secondary" title="Simulated over deterministic synthetic candles — no broker history was used.">SYNTHETIC</span>}
                       <span
-                        title={r.isVerified === "SYNTHETIC_NOT_VERIFIABLE"
-                          ? "Fabricated candles — a verification verdict is not possible from this run."
-                          : undefined}
-                        className={`text-[10px] ${r.isVerified === "VERIFIED" ? "text-success" : r.status === "INSUFFICIENT_DATA" ? "text-warning" : "text-txt-muted"}`}
-                      >{r.isVerified === "SYNTHETIC_NOT_VERIFIABLE" ? "NOT VERIFIABLE" : r.isVerified}</span>
+                        title={v.title}
+                        className={`text-[10px] ${v.tone === "verified" ? "text-success" : v.tone === "warn" ? "text-warning" : "text-txt-muted"}`}
+                      >{v.label}</span>
                     </span>
                   </div>
                   <div className="mt-1 text-[10px] text-txt-muted">
                     {r.totalTrades} trades · WR {(r.winRate * 100).toFixed(0)}% · PF {r.profitFactor >= 999 ? "∞" : r.profitFactor.toFixed(2)} · net {r.netProfitLoss.toFixed(2)}
                   </div>
                 </button>
-              ))}
+                );
+              })}
               {(data?.runs ?? []).length === 0 && <p className="text-xs text-txt-muted">No runs yet.</p>}
             </div>
           </div>
