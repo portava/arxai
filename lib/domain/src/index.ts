@@ -20,6 +20,7 @@ export * as executionGate from "./execution-gate";
 export * as executionState from "./execution-state";
 export * as confidenceGate from "./confidence-gate";
 export * as executionPyramid from "./execution-pyramid";
+export * as executionPolicy from "./execution-policy";
 export * as aiAgents from "./ai-agents";
 export * as liveInputs from "./live-inputs";
 export * as agents from "./agents";
