@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
 import { z } from "zod/v4";
 import {
   getStatus, setOperationalMode,
@@ -7,6 +7,8 @@ import {
 } from "../lib/safetyCore.js";
 import { logUserOverride } from "../lib/vaultLogger.js";
 import { secretsMatch } from "../lib/secretsMatch.js";
+import { requirePermission, readRoleFromRequest } from "../lib/security/middleware.js";
+import { checkPermission } from "../lib/security/permissions.js";
 
 import { scanVaultIntegrity } from "../lib/vaultIntegrity.js";
 import { selectBrokerKind, describeRequiredSecrets, missingRequiredSecrets } from "../lib/broker/secrets.js";
@@ -18,18 +20,65 @@ import { getBrokerProvider } from "../lib/broker/registry.js";
 
 const router = Router();
 
+// ── Authority + actor identity for the three platform-wide mutating endpoints ─
+//
+// The audit found these three endpoints — POST /system/mode,
+// /system/kill-switch/engage, /system/kill-switch/reset — mounted BARE:
+// routes/index.ts:274 `router.use(systemRouter)` with no requireUser, no
+// requireAdmin, no router.use, no checkPermission anywhere in this file. The
+// only check on reset was the literal acknowledgement phrase, which the
+// /emergency dialog prints on screen. The global gate denies anonymous /api/*,
+// so any signed-in trader could release the platform emergency stop for every
+// user or flip the global mode to LIVE_TRADING. Worse, the vault actor came
+// from caller-supplied body fields (`changedBy` / `triggeredBy` / `resetBy`,
+// hardcoded to "operator" by the UI), so the audit trail answering "who
+// stopped trading and who restarted it" was caller-controlled fiction.
+//
+// Authority now follows the direction of the change — the same rule the rest of
+// this codebase uses: a stop may be pulled widely, a release may not.
+//   ENGAGE  → live_trading:kill_switch  (TRADER and up — anyone may stop)
+//   RESET   → live_trading:reset        (ADMIN/OWNER/SYSTEM only)
+//   MODE ↓  → live_trading:kill_switch  (OBSERVE_ONLY / SUGGEST_ONLY do not execute)
+//   MODE ↑  → live_trading:reset        (PAPER_TRADING / LIVE_TRADING do)
+// These are the existing seeded permission keys (lib/security/seed.ts) used by
+// routes/liveTrading.ts; no new key is introduced, so nothing depends on a
+// re-seed to be enforced.
+
+// Modes that can EXECUTE. Selecting one widens platform authority and needs
+// the admin-level permission; the two observation modes only ever narrow it.
+const EXECUTION_CAPABLE_MODES = new Set(["PAPER_TRADING", "LIVE_TRADING"]);
+
+/**
+ * The actor recorded in the vault — resolved from the session, NEVER from the
+ * request body. Returns a stable, non-forgeable descriptor. When no per-user
+ * session is attached (service/dev caller) it says so rather than inventing a
+ * person: an unknown actor is recorded as unknown.
+ */
+function resolveActor(req: Request): string {
+  const role = readRoleFromRequest(req);
+  const user = req.authUser;
+  return user
+    ? `user:${user.id}(${role})`
+    : `role:${role}(no user session)`;
+}
+
 const SetModeBody = z.object({
   mode: z.enum(["OBSERVE_ONLY", "SUGGEST_ONLY", "PAPER_TRADING", "LIVE_TRADING"]),
-  changedBy: z.string().min(1).default("user"),
+  // `changedBy` is accepted for wire compatibility and DELIBERATELY IGNORED —
+  // the recorded actor comes from resolveActor(req). A caller cannot name
+  // itself in the audit trail.
+  changedBy: z.string().min(1).optional(),
 });
 
 const EngageKillBody = z.object({
   reason: z.string().min(1),
-  triggeredBy: z.string().min(1).default("user"),
+  // Ignored — see SetModeBody.changedBy.
+  triggeredBy: z.string().min(1).optional(),
 });
 
 const ResetKillBody = z.object({
-  resetBy: z.string().min(1).default("user"),
+  // Ignored — see SetModeBody.changedBy.
+  resetBy: z.string().min(1).optional(),
   acknowledgement: z.string().min(1),
 });
 
@@ -163,10 +212,27 @@ router.get("/system/status", async (_req, res) => {
   }
 });
 
-router.post("/system/mode", async (req, res) => {
+// POST /system/mode — platform-wide operational mode.
+// Floor permission (live_trading:kill_switch) is enforced by the middleware;
+// selecting an EXECUTION-CAPABLE mode additionally requires the admin-level
+// live_trading:reset, because that direction WIDENS what the platform may do.
+router.post("/system/mode", requirePermission("live_trading:kill_switch"), async (req, res) => {
   try {
     const body = SetModeBody.parse(req.body);
-    const result = await setOperationalMode(body);
+    if (EXECUTION_CAPABLE_MODES.has(body.mode)) {
+      const role = readRoleFromRequest(req);
+      const decision = await checkPermission(role, "live_trading:reset");
+      if (!decision.allowed) {
+        res.status(403).json({
+          error: "FORBIDDEN",
+          message: `Switching the platform to ${body.mode} requires the live_trading:reset permission (ADMIN/OWNER). Your role is ${role}.`,
+          requiredPermission: "live_trading:reset",
+          role,
+        });
+        return;
+      }
+    }
+    const result = await setOperationalMode({ mode: body.mode, changedBy: resolveActor(req) });
     res.status(result.ok ? 200 : 409).json(result);
   } catch (err) {
     req.log.error(err);
@@ -174,10 +240,12 @@ router.post("/system/mode", async (req, res) => {
   }
 });
 
-router.post("/system/kill-switch/engage", async (req, res) => {
+// POST /system/kill-switch/engage — pulling the stop is a REDUCE-only action,
+// so it stays available to every trader (TRADER holds live_trading:kill_switch).
+router.post("/system/kill-switch/engage", requirePermission("live_trading:kill_switch"), async (req, res) => {
   try {
     const body = EngageKillBody.parse(req.body);
-    await engageKillSwitch(body);
+    await engageKillSwitch({ reason: body.reason, triggeredBy: resolveActor(req) });
     const status = await getStatus();
     res.json({ ok: true, status });
   } catch (err) {
@@ -186,10 +254,17 @@ router.post("/system/kill-switch/engage", async (req, res) => {
   }
 });
 
-router.post("/system/kill-switch/reset", async (req, res) => {
+// POST /system/kill-switch/reset — RELEASING the platform emergency stop for
+// every user. Admin/owner only (live_trading:reset). The acknowledgement phrase
+// stays, but it was never authority: it is printed on screen in the /emergency
+// dialog, so it proves intent, not permission.
+router.post("/system/kill-switch/reset", requirePermission("live_trading:reset"), async (req, res) => {
   try {
     const body = ResetKillBody.parse(req.body);
-    const result = await resetKillSwitch(body);
+    const result = await resetKillSwitch({
+      resetBy: resolveActor(req),
+      acknowledgement: body.acknowledgement,
+    });
     const status = await getStatus();
     res.status(result.ok ? 200 : 409).json({ ...result, status });
   } catch (err) {

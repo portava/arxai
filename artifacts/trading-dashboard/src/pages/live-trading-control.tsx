@@ -50,7 +50,14 @@ interface Approval {
   createdAt: string;
 }
 
-const ROLE = "ADMIN";
+// NO CLIENT-DECLARED ROLE.
+//
+// This console used to hold a module constant naming itself ADMIN and send it
+// as an x-security-role header on every request. That header is a DEV-ONLY
+// back-compat fallback (lib/security/session.ts) — where it is honoured, any
+// visitor of this page was silently promoted to ADMIN by the page itself. A
+// surface may not grant itself authority. The role now comes from the signed
+// session cookie alone; a non-admin gets the server's 403, which is the truth.
 
 export default function LiveTradingControl() {
   const [readiness, setReadiness] = useState<ReadinessReport | null>(null);
@@ -62,18 +69,27 @@ export default function LiveTradingControl() {
   const [busy, setBusy] = useState(false);
   const [lastResult, setLastResult] = useState<string>("");
 
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   async function load() {
-    const headers = { "x-security-role": ROLE };
-    const [r1, r2, r3, r4] = await Promise.all([
-      fetch("/api/live-trading/readiness", { headers }).then(r => r.json()),
-      fetch("/api/live-trading/state", { headers }).then(r => r.json()),
-      fetch("/api/live-trading/audit?limit=20", { headers }).then(r => r.json()),
-      fetch("/api/live-trading/approvals?limit=20", { headers }).then(r => r.json()),
-    ]);
-    setReadiness(r1.readiness ?? null);
-    setState(r2.state ?? null);
-    setAudit(r3.events ?? []);
-    setApprovals(r4.approvals ?? []);
+    try {
+      const [r1, r2, r3, r4] = await Promise.all([
+        fetch("/api/live-trading/readiness").then(r => r.json()),
+        fetch("/api/live-trading/state").then(r => r.json()),
+        fetch("/api/live-trading/audit?limit=20").then(r => r.json()),
+        fetch("/api/live-trading/approvals?limit=20").then(r => r.json()),
+      ]);
+      // A denied read must degrade to an honest null with a reason — never to
+      // an empty list that reads as "nothing is happening".
+      const denied = [r1, r2, r3, r4].some((r) => r && typeof r === "object" && "error" in r);
+      setLoadError(denied ? "This console is ADMIN/OWNER only. Some panels could not be read with your role." : null);
+      setReadiness(r1.readiness ?? null);
+      setState(r2.state ?? null);
+      setAudit(Array.isArray(r3.events) ? r3.events : []);
+      setApprovals(Array.isArray(r4.approvals) ? r4.approvals : []);
+    } catch {
+      setLoadError("Could not reach the live-trading control API. Values below are not current.");
+    }
   }
 
   useEffect(() => {
@@ -88,11 +104,19 @@ export default function LiveTradingControl() {
     try {
       const res = await fetch(`/api/live-trading/${path}`, {
         method: "POST",
-        headers: { "content-type": "application/json", "x-security-role": ROLE },
+        headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
       });
-      const j = await res.json();
-      setLastResult(`${path}: ${JSON.stringify(j.result ?? j)}`.slice(0, 300));
+      const j = await res.json() as { result?: { ok?: boolean; reason?: string }; error?: string; message?: string };
+      // Plain sentence, not a raw JSON dump. A control surface that prints its
+      // transport payload leaves the operator to interpret it.
+      setLastResult(
+        res.status === 403
+          ? `${path}: refused — this action requires an ADMIN or OWNER role.`
+          : j.result
+            ? `${path}: ${j.result.ok ? "accepted" : "refused"}${j.result.reason ? ` — ${j.result.reason}` : ""}`
+            : `${path}: ${j.error ?? j.message ?? `HTTP ${res.status}`}`,
+      );
     } finally { setBusy(false); await load(); }
   }
 
@@ -117,10 +141,37 @@ export default function LiveTradingControl() {
         {banner === "loading" && "Loading..."}
       </div>
 
+      {loadError && (
+        <div className="bg-danger/10 border-l-4 border-danger p-3 text-sm text-danger" data-testid="ltc-load-error">
+          {loadError}
+        </div>
+      )}
+
       <div className="bg-warning/10 border-l-4 border-warning p-3 text-sm text-warning">
         <strong>Live trading is paused.</strong> The live broker placement layer is intentionally locked
         in this build, so even an armed, approved trade card cannot reach a real broker from here.
         <div className="mt-1 text-[10px] font-mono opacity-60">Technical: BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED</div>
+      </div>
+
+      {/* WHICH STOP IS THIS? — the platform has four kill-switch surfaces and
+          none of them used to say which dispatch path it gated. An operator
+          looking for the stop button found four, picked one, and got a green
+          KILL_ENGAGED from a subsystem that cannot place orders in the first
+          place. Every stop control now names its own reach. */}
+      <div className="bg-muted/40 border rounded-lg p-3 text-sm space-y-2" data-testid="ltc-stop-scope">
+        <p className="font-semibold">Which stop is this?</p>
+        <p className="text-muted-foreground">
+          This console arms and stops the <strong>micro-live approval subsystem</strong>
+          {" "}(<code className="font-mono text-xs">liveTrading</code> state). Its terminal action,
+          <code className="font-mono text-xs"> placeLiveOrderGuarded</code>, always returns REJECTED with
+          BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED — so this kill switch stops a path that cannot reach a
+          broker today, and it does <strong>not</strong> gate the paths that can.
+        </p>
+        <p className="text-muted-foreground">
+          To halt real order dispatch use the <a href="/emergency" className="underline">Emergency kill switch</a>
+          {" "}(platform-wide: MT5 live, Deriv guided, paper) or your own
+          {" "}<a href="/live-trading" className="underline">live arming kill switch</a> (your account only).
+        </p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -135,7 +186,7 @@ export default function LiveTradingControl() {
           <p className="text-xs mt-1">Safety score: {readiness?.safetyScore ?? "—"}/100</p>
         </div>
         <div className="bg-card border rounded-lg p-4">
-          <h3 className="font-semibold text-sm text-muted-foreground">KILL SWITCH</h3>
+          <h3 className="font-semibold text-sm text-muted-foreground">MICRO-LIVE KILL SWITCH</h3>
           <p className={`text-2xl font-bold mt-1 ${state?.killSwitchActive ? "text-danger" : "text-success"}`}>
             {state?.killSwitchActive ? "ACTIVE" : "OFF"}
           </p>
@@ -182,7 +233,11 @@ export default function LiveTradingControl() {
       </div>
 
       <div className="bg-card border-2 border-danger rounded-lg p-4 space-y-3">
-        <h3 className="font-semibold text-danger">Emergency Kill Switch</h3>
+        <h3 className="font-semibold text-danger">Micro-live approval kill switch</h3>
+        <p className="text-xs text-muted-foreground">
+          Stops arming and approvals in this subsystem only. It does not halt MT5 live dispatch, the Deriv
+          guided path, or paper execution — the <a href="/emergency" className="underline">Emergency kill switch</a> does that.
+        </p>
         <input
           type="text" value={killReason} onChange={(e) => setKillReason(e.target.value)}
           placeholder="Reason for kill switch (min 4 chars)"

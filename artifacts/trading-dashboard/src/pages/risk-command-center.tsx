@@ -161,14 +161,22 @@ export default function RiskCommandCenter() {
         storageKey="risk.propFirm"
         testId="risk-propfirm-section"
       >
+        {/* The figures behind cards.propFirm come from riskGovernor2's single
+            process-global propFirm object over the shared in-memory positions
+            map — they are not this user's challenge. /prop-firm-mode has been
+            retired for exactly that reason; the per-account challenge lives at
+            /prop-challenge. The shared numbers are labelled, not shown as the
+            reader's own. */}
         {cards?.propFirm ? (
           <div className="text-xs space-y-1">
-            <div className="flex justify-between"><span className="text-muted-foreground">Status</span><span className="font-mono">{cards.propFirm.status}</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Profit target progress</span><span className="font-mono">{cards.propFirm.profitTargetProgress}%</span></div>
-            <a className="text-xs underline text-primary block mt-2" href="/prop-firm-mode">Open prop-firm mode →</a>
+            <div className="flex justify-between"><span className="text-muted-foreground">Shared simulator status</span><span className="font-mono">{cards.propFirm.status}</span></div>
+            <p className="text-muted-foreground">
+              This is the server-wide simulator challenge, not your account. Your own challenge is at{" "}
+              <a className="underline text-primary" href="/prop-challenge">Prop Firm Challenge</a>.
+            </p>
           </div>
         ) : (
-          <p className="text-xs text-muted-foreground">No active prop-firm challenge. Open <a href="/prop-firm-mode" className="underline">prop-firm mode</a> to enroll.</p>
+          <p className="text-xs text-muted-foreground">No active prop-firm challenge. Open <a href="/prop-challenge" className="underline">Prop Firm Challenge</a> to enroll.</p>
         )}
       </CollapsibleSection>
     </div>
@@ -177,10 +185,23 @@ export default function RiskCommandCenter() {
   const auditTab = (
     <div className="space-y-3" data-testid="risk-audit-tab">
       <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-base">Controls</CardTitle>
-          <CardDescription className="text-xs">Pause/resume halts every dispatch surface. Reset is simulator-only.</CardDescription>
+        <CardHeader className="pb-2"><CardTitle className="text-base">Simulator controls</CardTitle>
+          <CardDescription className="text-xs">
+            Pause/resume and Reset act on the simulator order flow only. They are not the platform stop.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">
+          {/* WHAT THIS STOPS — the card used to read "Pause/resume halts every
+              dispatch surface", which was false. POST /api/risk/pause sets one
+              module-level boolean in lib/riskGovernor2.ts; its only readers are
+              lib/acceptance.ts and riskGovernor2's own preTradeCheck — the
+              in-memory simulator OMS and shadow mode. Nothing in lib/live/ or
+              lib/phase6/ imports riskGovernor2, so live dispatch is untouched. */}
+          <div className="p-2 rounded-md border bg-muted/40 text-xs space-y-1" data-testid="risk-pause-scope">
+            <p><span className="font-semibold">Pause stops:</span> the simulator pre-trade check and the simulator OMS order flow.</p>
+            <p><span className="font-semibold">Pause does not stop:</span> MT5 live dispatch or the Deriv guided path. To halt live orders use the <a href="/emergency" className="underline text-primary">Emergency kill switch</a>.</p>
+            <p className="text-muted-foreground">This pause is process-wide (not per user) and is lost when the server restarts.</p>
+          </div>
           <Input
             value={pauseReason}
             onChange={(e) => setPauseReason(e.target.value)}
@@ -188,7 +209,7 @@ export default function RiskCommandCenter() {
             data-testid="risk-pause-reason"
           />
           <div className="flex flex-wrap gap-2">
-            <Button onClick={pause} variant="destructive" size="sm" data-testid="risk-btn-pause"><Pause className="h-4 w-4 mr-1" />Pause all trading</Button>
+            <Button onClick={pause} variant="destructive" size="sm" data-testid="risk-btn-pause"><Pause className="h-4 w-4 mr-1" />Pause simulator trading</Button>
             <Button onClick={resume} variant="outline" size="sm" data-testid="risk-btn-resume"><Play className="h-4 w-4 mr-1" />Resume</Button>
             <Button onClick={resetDay} variant="outline" size="sm" data-testid="risk-btn-reset"><RotateCcw className="h-4 w-4 mr-1" />Reset simulator day</Button>
           </div>

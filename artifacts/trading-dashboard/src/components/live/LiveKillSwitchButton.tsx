@@ -61,6 +61,15 @@ export function LiveKillSwitchButton() {
           Immediately disables all NEW live trade commands for your account.
           Demo trading is not affected. Re-arm required after release.
         </CardDescription>
+        {/* WHICH STOP IS THIS? — the platform carries several stop surfaces and
+            each one now names its own reach, so an operator cannot pull the
+            wrong lever in a hurry. This is the per-user arming switch that the
+            live dispatch pipeline reads (arx_live_arming.kill_switch_engaged). */}
+        <p className="text-xs text-muted-foreground" data-testid="live-kill-scope">
+          Scope: <strong>your account only</strong> — it halts your live order dispatch, not other
+          users&apos;. To halt live dispatch for everyone, use the{" "}
+          <a href="/emergency" className="underline">platform Emergency kill switch</a>.
+        </p>
       </CardHeader>
       <CardContent className="space-y-3">
         {killed && (

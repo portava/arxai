@@ -11,7 +11,7 @@
 // live and vice versa.
 
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   db,
   arxLiveCommandsTable,
@@ -96,7 +96,7 @@ import {
 import { liveBrokerExecutionEnabled, resolveLiveBrokerExecutionEnabledAsync, buildLiveIdempotencyKey, PHASE_B_LIVE_LOG_PREFIX } from "./phaseBConfig.js";
 import { getEnvelope } from "../adminTrading/safetyEnvelope.js";
 import { logger } from "../logger.js";
-import { globalTradingSettingsTable, liveRiskDisclosureAcceptancesTable } from "@workspace/db";
+import { globalTradingSettingsTable, liveRiskDisclosureAcceptancesTable, safetyCoreTable } from "@workspace/db";
 import {
   buildCommandIntegrityFields,
   verifyCommandIntegrityForDispatch,
@@ -493,6 +493,83 @@ export function emergencyKillSwitchBlocksDispatch(args: {
     commandType: args.commandType,
     hasBypassMarker: args.hasKillSwitchCloseBypassMarker,
   });
+}
+
+// ── SAFETY-CORE KILL SWITCH (the /emergency page's ENGAGE KILL SWITCH) ────
+//
+// The audit found the highest-severity dishonesty in the repo here: the
+// /emergency page — the one safety item in every user's nav — writes
+// safety_core.kill_switch_engaged and tells the trader "Forces SAFE_SHUTDOWN,
+// blocks all execution" / "All trading will halt immediately", while THIS
+// pipeline (every real-money MT5 path) never read that column. Its gates read
+// arx_live_arming.kill_switch_engaged and
+// global_trading_settings.emergency_kill_switch only.
+// guidedDispatchEntry.ts:186-189 said it out loud: "the MT5 pipeline's own
+// gates do not read it". A trader in a panic pressed the advertised emergency
+// stop, saw KILL SWITCH ENGAGED, and a one-click-armed dispatch could still
+// reach the broker seconds later.
+//
+// This is NOT a new (5th) kill switch — Owner Ruling 4 forbids that. It is the
+// EXISTING Phase 1 safety-core switch finally being consulted by the pipeline
+// the page claims it halts, with the same semantics guidedDispatchEntry
+// already uses for the Deriv path (liveKillSwitchEngaged, guidedDispatchEntry.ts:190).
+export const SAFETY_CORE_KILL_SWITCH_BLOCK_REASON =
+  "LIVE_BLOCKED:SAFETY_CORE_KILL_SWITCH_ENGAGED" as const;
+
+/**
+ * PURE decision for the safety-core kill-switch pre-gate (no I/O — extracted
+ * so the contract is unit-testable offline, like the emergency helper above).
+ * TRUE = refuse the dispatch.
+ *
+ * - Fail-closed: an unknown state (`null`/`undefined` — an unreadable
+ *   safety_core row) counts as ENGAGED. Not being able to read the stop button
+ *   is not permission to trade (CLAUDE.md §1).
+ *   NOTE the polarity difference from `emergencyKillSwitchBlocksDispatch`:
+ *   there the column is `NOT NULL DEFAULT true` (engaged means `!== false`);
+ *   here it is `NOT NULL DEFAULT false`, so an explicit `false` is a REAL
+ *   read of a disengaged switch and only a failed/absent read is unknown.
+ * - The ONLY exemption is the Task #743 Cluster D admin-emergency-close CLOSE
+ *   marker, pinned to the same `killSwitchCloseBypassApplies` predicate gate #5
+ *   and the emergency pre-gate use (Owner Ruling 6: there is exactly one
+ *   kill-switch bypass). An operator must still be able to flatten exposure
+ *   during a halt; OPEN / MODIFY / un-stamped CLOSE never qualify.
+ */
+export function safetyCoreKillSwitchBlocksDispatch(args: {
+  safetyCoreKillSwitchEngaged: boolean | null | undefined;
+  commandType: string;
+  hasKillSwitchCloseBypassMarker: boolean;
+}): boolean {
+  const engaged = args.safetyCoreKillSwitchEngaged !== false;
+  if (!engaged) return false;
+  return !killSwitchCloseBypassApplies({
+    commandType: args.commandType,
+    hasBypassMarker: args.hasKillSwitchCloseBypassMarker,
+  });
+}
+
+/**
+ * Read safety_core.kill_switch_engaged, fail-closed.
+ *
+ * Returns `null` when the row cannot be read at all (table absent, query
+ * failed) — `null` feeds `safetyCoreKillSwitchBlocksDispatch` as UNKNOWN, which
+ * blocks. The canonical (lowest-id) row is used, matching
+ * safetyCore.ts's `loadOrCreate`, so the two never read different rows.
+ */
+async function readSafetyCoreKillSwitchEngaged(): Promise<boolean | null> {
+  try {
+    const [row] = await db.select({ k: safetyCoreTable.killSwitchEngaged })
+      .from(safetyCoreTable).orderBy(asc(safetyCoreTable.id)).limit(1);
+    // No row at all = the safety core has never been initialised. That is an
+    // unknown stop-button state, not a disengaged one.
+    return row === undefined ? null : row.k;
+  } catch (e) {
+    logger.error({
+      [PHASE_B_LIVE_LOG_PREFIX]: true,
+      event: "SAFETY_CORE_KILL_SWITCH_READ_FAILED",
+      error: e instanceof Error ? e.message : String(e),
+    }, "safety_core kill switch unreadable — treating as ENGAGED (fail-closed)");
+    return null;
+  }
 }
 
 // R3 slice 1 — weekly-drawdown-ceiling pre-gate. arx_live_user_settings.
@@ -1118,6 +1195,32 @@ async function preflight(input: LiveDraftInput): Promise<LiveDraftRefusal | { ok
   const arming = await getMyArming(input.userId);
   if (!arming || !arming.isArmed) return { ok: false, reason: "USER_NOT_ARMED_FOR_LIVE" };
   if (arming.killSwitchEngaged) return { ok: false, reason: "KILL_SWITCH_ENGAGED" };
+
+  // ── SAFETY-CORE KILL SWITCH (draft-time) ────────────────────────────────
+  // The /emergency page's ENGAGE KILL SWITCH writes safety_core; before this,
+  // nothing on the MT5 path read it. Refuse at DRAFT time too, so a halted
+  // platform does not accumulate live drafts a user can confirm later. The
+  // canonical `reason` literal stays KILL_SWITCH_ENGAGED (CI-pinned, and the UI
+  // already renders it); `detail` names WHICH switch so the refusal is honest
+  // about the control the user must clear. Fail-closed: unreadable = engaged.
+  // No CLOSE exemption is needed here — createLiveOpsDraft (not this preflight)
+  // is the admin emergency-close entry point.
+  {
+    const coreEngaged = await readSafetyCoreKillSwitchEngaged();
+    if (safetyCoreKillSwitchBlocksDispatch({
+      safetyCoreKillSwitchEngaged: coreEngaged,
+      commandType: input.commandType,
+      hasKillSwitchCloseBypassMarker: false,
+    })) {
+      return {
+        ok: false,
+        reason: "KILL_SWITCH_ENGAGED",
+        detail: coreEngaged === null
+          ? "Platform safety-core kill-switch state could not be read — refusing (fail-closed)."
+          : "Platform safety-core kill switch is engaged (Emergency Controls).",
+      };
+    }
+  }
 
   // ── Task #737 — live-execution activation pre-condition (lockstep with the
   // dispatch-time re-check below). Additive: this never weakens/skips/ORs any
@@ -2318,6 +2421,63 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
         event: "EMERGENCY_KILL_SWITCH_BLOCKED",
         commandId: args.commandId, userId: args.userId, primaryReason: reason,
       }, "Emergency kill switch blocked live dispatch");
+      return { ok: false as const, reason: "LIVE_BLOCKED" as const,
+        primaryReason: reason, blockReasons: [reason], command: blocked };
+    }
+  }
+
+  // ── SAFETY-CORE KILL SWITCH PRE-GATE (the /emergency page's switch) ─────
+  // Rank-1 audit finding: /emergency writes safety_core.kill_switch_engaged and
+  // promises "All trading will halt immediately", but no gate on THIS pipeline
+  // read that column — every real-money MT5 dispatch ignored it. Runs BEFORE
+  // the 18-gate evaluator in BOTH routing modes, additive only: it never
+  // replaces or weakens any downstream gate, it only adds a refusal.
+  // Fail-closed on an unreadable/absent safety_core row. The only exemption is
+  // the same Cluster D admin-emergency-close CLOSE marker gate #5 and the
+  // emergency pre-gate honour, so an operator can still flatten exposure.
+  {
+    const hasKillSwitchCloseBypassMarker =
+      row.payload != null
+      && typeof row.payload === "object"
+      && (row.payload as { killSwitchCloseBypass?: unknown }).killSwitchCloseBypass != null;
+    const coreEngaged = await readSafetyCoreKillSwitchEngaged();
+    if (safetyCoreKillSwitchBlocksDispatch({
+      safetyCoreKillSwitchEngaged: coreEngaged,
+      commandType: row.commandType,
+      hasKillSwitchCloseBypassMarker,
+    })) {
+      const reason = SAFETY_CORE_KILL_SWITCH_BLOCK_REASON;
+      const [blocked] = await db.update(arxLiveCommandsTable).set({
+        status: "LIVE_BLOCKED",
+        rejectionReason: reason,
+        rejectedAt: new Date(),
+        dispatchGateSnapshot: {
+          decision: "BLOCKED",
+          primaryReason: reason,
+          blockReasons: [reason, "BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED"],
+          safetyCoreKillSwitchGate: true,
+          // Distinguishes "the operator engaged it" from "we could not read it"
+          // — both refuse, and the audit record says which.
+          safetyCoreKillSwitchReadable: coreEngaged !== null,
+          at: new Date().toISOString(),
+        } as unknown as Record<string, unknown>,
+      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      await audit({
+        eventType: "SAFETY_CORE_KILL_SWITCH_BLOCKED", severity: "HIGH",
+        userId: args.userId, symbol: row.symbol,
+        message: `Live dispatch BLOCKED by the safety-core kill switch: ${reason}`,
+        metadata: {
+          commandId: args.commandId,
+          commandType: row.commandType,
+          safetyCoreKillSwitchReadable: coreEngaged !== null,
+        },
+      });
+      logger.warn({
+        [PHASE_B_LIVE_LOG_PREFIX]: true,
+        event: "SAFETY_CORE_KILL_SWITCH_BLOCKED",
+        commandId: args.commandId, userId: args.userId, primaryReason: reason,
+        safetyCoreKillSwitchReadable: coreEngaged !== null,
+      }, "Safety-core kill switch blocked live dispatch");
       return { ok: false as const, reason: "LIVE_BLOCKED" as const,
         primaryReason: reason, blockReasons: [reason], command: blocked };
     }

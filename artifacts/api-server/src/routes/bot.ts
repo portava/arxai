@@ -104,9 +104,32 @@ router.patch("/bot/settings", requireUser, async (req, res) => {
   }
 });
 
-// POST /bot/emergency-stop — Phase-2: stops THIS user's bot and cancels THIS
-// user's open trades. The kill switch is a system-wide safety lever and stays
-// global by design (one user pulling it must protect every other user).
+// POST /bot/emergency-stop — halts NEW order flow. It does not, and cannot,
+// reach the broker.
+//
+// WHAT IT DOES:
+//   1. Engages the platform safety-core kill switch (global by design — one
+//      user pulling it must protect every other user). Since the rank-1 fix,
+//      liveCommandPipeline and guidedDispatchEntry BOTH read that switch
+//      fail-closed, so this genuinely blocks live dispatch on every venue.
+//   2. Sets THIS user's bot to OFF / not running / not paused.
+//
+// WHAT IT DOES NOT DO — and why the previous version was a falsification:
+//   It used to loop this user's OPEN rows in `trades` and write
+//   {status:'CANCELLED', closedAt:now, pnl:0}. No broker command was issued
+//   anywhere in the handler. `trades` is the authoritative trade lifecycle
+//   record and its rows carry mode 'LIVE' as well as 'DEMO' (routes/trades.ts
+//   stamps it at insert). So the biggest red button in Risk Settings rewrote
+//   executed trade history as cancelled-with-zero-P&L while the real broker
+//   positions stayed open — irreversibly destroying every P&L figure derived
+//   from those rows, and telling the user their trades were closed when
+//   nothing had been closed.
+//
+//   A stop that cannot reach the broker must SAY SO, not rewrite history.
+//   Open positions are counted and reported; not one row is mutated.
+//   Closing a live position is a real broker command and belongs to the live
+//   close path (arx_live_commands / CLOSE_LIVE_POSITION), never to a status
+//   overwrite here.
 router.post("/bot/emergency-stop", requireUser, async (req, res) => {
   try {
     const userId = req.authUser!.id;
@@ -116,20 +139,22 @@ router.post("/bot/emergency-stop", requireUser, async (req, res) => {
       .update(botSettingsTable)
       .set({ mode: "OFF", isRunning: false, isPaused: false, updatedAt: new Date() })
       .where(and(eq(botSettingsTable.id, settings.id), eq(botSettingsTable.userId, userId)));
+    // READ ONLY — reported so the user learns what is still open, never mutated.
     const openTrades = await db
-      .select()
+      .select({ id: tradesTable.id, mode: tradesTable.mode })
       .from(tradesTable)
       .where(and(eq(tradesTable.status, "OPEN"), eq(tradesTable.userId, userId)));
-    for (const trade of openTrades) {
-      await db
-        .update(tradesTable)
-        .set({ status: "CANCELLED", closedAt: new Date(), pnl: 0 })
-        .where(and(eq(tradesTable.id, trade.id), eq(tradesTable.userId, userId)));
-    }
+    const openLive = openTrades.filter((t) => t.mode === "LIVE").length;
+    const stillOpen = openTrades.length;
+    const message = stillOpen === 0
+      ? "Emergency stop executed. Kill switch ENGAGED (blocks new live dispatch) and your bot is OFF. You have no open trade records."
+      : `Emergency stop executed. Kill switch ENGAGED (blocks new live dispatch) and your bot is OFF. ${stillOpen} open trade record${stillOpen === 1 ? "" : "s"}${openLive > 0 ? ` (${openLive} LIVE)` : ""} were NOT closed — this stop halts new orders only and does not send a close command to your broker. Close open positions from your broker or the live close screen.`;
     const data = EmergencyStopResponse.parse({
       success: true,
-      message: "Emergency stop executed. Your trades cancelled. Bot is OFF.",
-      closedTrades: openTrades.length,
+      message,
+      // Honest zero: this endpoint closes nothing. It used to report the number
+      // of rows it had overwritten as "closed", which was never a close.
+      closedTrades: 0,
     });
     res.json(data);
   } catch (err) {

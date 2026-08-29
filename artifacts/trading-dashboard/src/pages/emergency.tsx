@@ -301,7 +301,11 @@ function KillSwitchPanel({ status }: { status: SystemStatus }) {
             toast({ title: "Reset rejected", description: (res.blockers ?? []).join("; "), variant: "destructive" });
           }
         },
-        onError: () => toast({ title: "Reset failed", variant: "destructive" }),
+        onError: () => toast({
+          title: "Reset failed",
+          description: "Releasing the platform kill switch requires an ADMIN or OWNER role.",
+          variant: "destructive",
+        }),
       },
     );
   };
@@ -316,8 +320,8 @@ function KillSwitchPanel({ status }: { status: SystemStatus }) {
         </CardTitle>
         <CardDescription>
           {ks
-            ? `Engaged ${status.killSwitchEngagedAt ? new Date(status.killSwitchEngagedAt).toLocaleString() : ""}. Reset requires explicit acknowledgement.`
-            : "Forces SAFE_SHUTDOWN, blocks all execution, drops mode to OBSERVE_ONLY."}
+            ? `Engaged ${status.killSwitchEngagedAt ? new Date(status.killSwitchEngagedAt).toLocaleString() : ""}. Reset requires an ADMIN/OWNER role and an explicit acknowledgement.`
+            : "Drops the platform to OBSERVE_ONLY and blocks new order dispatch on every venue."}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -326,6 +330,23 @@ function KillSwitchPanel({ status }: { status: SystemStatus }) {
             <span className="font-semibold">Reason:</span> {status.killSwitchReason}
           </div>
         )}
+        {/* WHAT THIS STOPS — named precisely, because this platform has four
+            kill-switch surfaces and an operator in a hurry must not have to
+            guess which one they are looking at. Every claim below corresponds
+            to a gate that reads safety_core.kill_switch_engaged. */}
+        <div className="p-3 rounded-md border bg-muted/40 text-xs space-y-2" data-testid="kill-switch-scope">
+          <p className="font-semibold text-foreground">What this switch stops</p>
+          <ul className="list-disc list-inside space-y-1 text-muted-foreground">
+            <li>MT5 live command dispatch — refused at draft and at dispatch</li>
+            <li>The Deriv guided dispatch path</li>
+            <li>Paper / simulated execution through the trade gate</li>
+          </ul>
+          <p className="font-semibold text-foreground pt-1">What it does not do</p>
+          <ul className="list-disc list-inside space-y-1 text-muted-foreground">
+            <li>It does not close anything. Open positions stay open and no close command reaches your broker.</li>
+            <li>It does not clear the Autopilot Control Center&apos;s own lock, or the Risk Command Center pause — those are separate controls.</li>
+          </ul>
+        </div>
       </CardContent>
       <CardFooter className="gap-3 flex-wrap">
         <Button
@@ -358,7 +379,9 @@ function KillSwitchPanel({ status }: { status: SystemStatus }) {
               <ShieldAlert /> Confirm Kill Switch
             </AlertDialogTitle>
             <AlertDialogDescription>
-              All trading will halt immediately. Provide a reason for the audit log.
+              New order dispatch halts immediately on every venue (MT5 live, Deriv guided, paper).
+              Open positions are NOT closed — no close command is sent to your broker.
+              Provide a reason for the audit log; the acting account is recorded from your session.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="py-3">
@@ -388,6 +411,8 @@ function KillSwitchPanel({ status }: { status: SystemStatus }) {
             </AlertDialogTitle>
             <AlertDialogDescription>
               System will enter RECOVERY_MODE. Type <span className="font-mono font-bold">I_UNDERSTAND_RISK</span> to confirm.
+              Releasing the platform stop for every user requires an ADMIN or OWNER role — the phrase alone is not
+              authority, and the account that resets it is recorded from your session.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="py-3">
