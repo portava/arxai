@@ -15,6 +15,7 @@ import { startHeatSnapshotRetentionWorker } from "./lib/timing/heatSnapshotReten
 import { startExpiredKeySweepWorker } from "./lib/registrationKeys/expiredKeySweepWorker";
 import { startExpiringKeysDigestWorker } from "./lib/registrationKeys/expiringKeysDigestWorker";
 import { startMissionDriverWorker } from "./lib/missionDriver.js";
+import { startChangePointDriverWorker } from "./lib/changePointDriver.js";
 import { computeEnvChecklist, summarizeEnvChecklist } from "./lib/startup/envChecklist";
 import { runStartupReadinessCheck } from "./lib/startup/readinessCheck";
 import { seedCoreAgents } from "./lib/agentEcosystem/seedCoreAgents";
@@ -196,6 +197,11 @@ ensureSafetyCoreInitialized()
       // act time; a driver crash fails safe (mission skipped, positions
       // untouched). Opt-out via ARX_MISSION_DRIVER_ENABLED (logged loudly).
       startMissionDriverWorker();
+      // Change-point watchdog: CUSUM + Page–Hinkley over outcome/spread series
+      // the system already produces. Read-only + journal + quarantine feed
+      // (authority reduction only — recovery stays owner-gated). Opt-out via
+      // ARX_CHANGEPOINT_DRIVER_ENABLED (logged loudly).
+      startChangePointDriverWorker();
       // Eagerly bootstrap the Deriv WebSocket so synthetic-index candles
       // (V10/V25/V50/V75/V100, 1Hz variants, Boom/Crash, Step) are ready
       // before the first scanner pass. Non-blocking; lazy ensureConnection

@@ -78,6 +78,7 @@
     "./validation-command-center": "./src/validation-command-center/index.ts",
     "./adversarial-validation": "./src/adversarial-validation/index.ts",
     "./continuous-validation": "./src/continuous-validation/index.ts",
+    "./change-point": "./src/change-point/index.ts",
     "./validation-efficiency": "./src/validation-efficiency/index.ts",
     "./portfolio-manager": "./src/portfolio-manager/index.ts",
     "./decision-intelligence": "./src/decision-intelligence/index.ts",
