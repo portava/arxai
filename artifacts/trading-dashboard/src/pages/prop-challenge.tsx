@@ -84,7 +84,7 @@ export default function PropChallengePage() {
   });
 
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-4">
       <header className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-foreground">Prop Firm Challenge Mode</h1>

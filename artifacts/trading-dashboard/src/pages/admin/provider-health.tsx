@@ -612,7 +612,7 @@ export default function ProviderHealthPage() {
   useEffect(() => { void load(); }, []);
 
   return (
-    <div className="space-y-4 p-1" data-testid="page-admin-provider-health">
+    <div className="space-y-4" data-testid="page-admin-provider-health">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">

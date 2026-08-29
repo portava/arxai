@@ -44,7 +44,7 @@ export default function AdminPermissions() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-[1280px] space-y-4 p-4 md:p-6 pb-32 md:pb-6" data-testid="page-admin-permissions">
+    <div className="mx-auto w-full max-w-[1280px] space-y-4 pb-32 md:pb-6" data-testid="page-admin-permissions">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Permission Matrix</h1>

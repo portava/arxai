@@ -8,7 +8,7 @@ interface Notes { brand?: Brand; version: string; stage: string; worksNow: strin
 export default function ReleaseNotes() {
   const [n, setN] = useState<Notes | null>(null);
   useEffect(() => { void fetch("/api/release/notes").then((r) => r.json()).then(setN); }, []);
-  if (!n) return <div className="p-4 text-sm text-muted-foreground">Loading…</div>;
+  if (!n) return <div className="text-sm text-muted-foreground">Loading…</div>;
 
   const Section = ({ title, items, tone }: { title: string; items: string[]; tone: "ok" | "warn" | "info" }) => (
     <Card>
@@ -29,7 +29,7 @@ export default function ReleaseNotes() {
   );
 
   return (
-    <div className="space-y-4 p-1" data-testid="page-release-notes">
+    <div className="space-y-4" data-testid="page-release-notes">
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-bold">Release Notes</h1>
         <Badge className="bg-ruby/20 text-ruby font-mono">{n.version}</Badge>

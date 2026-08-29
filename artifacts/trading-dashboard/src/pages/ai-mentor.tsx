@@ -57,7 +57,7 @@ export default function AiMentorPage() {
   const items   = latest.data?.actionItems ?? [];
 
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-4">
       <header className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <h1 className="text-xl font-semibold text-foreground">AI Mentor</h1>

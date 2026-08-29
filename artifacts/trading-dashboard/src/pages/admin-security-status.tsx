@@ -18,7 +18,7 @@ export default function AdminSecurityStatus() {
   );
 
   return (
-    <div className="space-y-4 p-4" data-testid="page-admin-security-status">
+    <div className="space-y-4" data-testid="page-admin-security-status">
       <div>
         <h1 className="text-2xl font-bold">Security Status</h1>
         <p className="text-sm text-muted-foreground">Live view of auth, permissions, audit, and broker-execution lock.</p>

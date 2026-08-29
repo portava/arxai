@@ -186,7 +186,7 @@ export default function LiveAiAutoTestPage() {
   const cooldownRemaining = cooldownUntil ? Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 60000)) : 0;
 
   return (
-    <div className="container mx-auto py-4 px-3 md:px-6 space-y-4 max-w-[1600px]">
+    <div className="container mx-auto py-4 space-y-4 max-w-[1600px]">
       <div>
         <h1 className="text-2xl font-bold flex items-center gap-2"><Bot className="w-6 h-6" /> Live-Intent Test Harness</h1>
         <p className="text-sm text-muted-foreground">

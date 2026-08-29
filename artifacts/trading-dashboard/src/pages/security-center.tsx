@@ -24,13 +24,13 @@ export default function SecurityCenter() {
     fetch("/api/security/status").then((r) => r.json()).then(setData).catch((e) => setErr(String(e)));
   }, []);
 
-  if (err) return <div className="p-6 text-danger">Error: {err}</div>;
-  if (!data) return <div className="p-6">Loading…</div>;
+  if (err) return <div className="text-danger">Error: {err}</div>;
+  if (!data) return <div>Loading…</div>;
   const s = data.status;
   const isHealthy = s.criticalFindings.length === 0;
 
   return (
-    <div className="p-6 space-y-6" data-testid="security-center">
+    <div className="space-y-6" data-testid="security-center">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Security Center</h1>
         <div className={`px-3 py-1 rounded text-sm font-mono ${isHealthy ? "bg-success text-white" : "bg-danger text-white"}`}>

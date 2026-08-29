@@ -38,7 +38,7 @@ export default function AdminControlPage() {
   ];
 
   return (
-    <div className="space-y-4 p-4" data-testid="page-admin-control">
+    <div className="space-y-4" data-testid="page-admin-control">
       <div>
         <h1 className="text-2xl font-bold">Admin Control Center</h1>
         <p className="text-sm text-muted-foreground">Build MM — Safe controls only. Live trading is permanently DISABLED.</p>

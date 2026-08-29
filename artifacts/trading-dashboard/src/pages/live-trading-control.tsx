@@ -109,7 +109,7 @@ export default function LiveTradingControl() {
   } as const;
 
   return (
-    <div className="p-6 space-y-4 max-w-7xl mx-auto">
+    <div className="space-y-4 max-w-7xl mx-auto">
       <div className={`p-4 rounded-lg font-bold text-lg ${bannerStyles[banner]}`}>
         {banner === "locked" && "🔒 LIVE TRADING LOCKED — kill switch active or readiness blockers present"}
         {banner === "ready" && "⚠️ MICRO-LIVE READY — not armed. No real money at risk yet."}

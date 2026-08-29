@@ -77,7 +77,7 @@ export default function TradingReadinessPage() {
   });
 
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-4">
       <header>
         <h1 className="text-xl font-semibold text-foreground">Trading readiness</h1>
         <p className="text-xs text-txt-secondary">

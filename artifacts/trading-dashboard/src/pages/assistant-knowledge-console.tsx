@@ -96,7 +96,7 @@ export default function AssistantKnowledgeConsole() {
   }, [audit]);
 
   return (
-    <div className="container mx-auto p-4 md:p-6 space-y-4 max-w-4xl" data-testid="assistant-knowledge-console">
+    <div className="container mx-auto space-y-4 max-w-4xl" data-testid="assistant-knowledge-console">
       <header className="flex items-center justify-between">
         <div>
           <h1 className="text-xl md:text-2xl font-semibold flex items-center gap-2">

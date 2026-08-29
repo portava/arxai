@@ -165,7 +165,7 @@ export default function LiveAiAssistPage() {
   }
 
   return (
-    <div className="container mx-auto py-4 px-3 md:px-6 space-y-4 max-w-[1600px]">
+    <div className="container mx-auto py-4 space-y-4 max-w-[1600px]">
       <div>
         <h1 className="text-2xl font-bold flex items-center gap-2"><Brain className="w-6 h-6" /> Live AI Assist</h1>
         <p className="text-sm text-muted-foreground">{name} analyzes the selected market on the live feed. Review the setup, then approve to submit a live-intent. Your risk caps apply.</p>

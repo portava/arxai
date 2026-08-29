@@ -93,7 +93,7 @@ export default function LiveManualPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-[1600px] space-y-4 p-4 md:p-6 pb-32 md:pb-6">
+    <div className="mx-auto w-full max-w-[1600px] space-y-4 pb-32 md:pb-6">
       <div>
         <h1 className="text-2xl font-bold leading-tight">Manual Trade Ticket</h1>
         <p className="text-sm text-txt-secondary">Manual order ticket. Captures your intent for review. Orders only dispatch after you review and confirm.</p>

@@ -47,7 +47,7 @@ export default function AnalyticsCommandCenter() {
   const s = snap.data?.snapshot ?? null;
 
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-4">
       <header className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <h1 className="text-xl font-semibold text-foreground">Analytics Command Center</h1>

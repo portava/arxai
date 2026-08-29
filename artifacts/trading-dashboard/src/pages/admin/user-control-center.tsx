@@ -250,7 +250,7 @@ const TABS: Array<{ value: string; label: string; icon: typeof Users }> = [
 export default function UserControlCenterPage() {
   const [tab, setTab] = useState("users");
   return (
-    <div className="mx-auto w-full max-w-7xl space-y-5 p-4 md:p-6 pb-32 md:pb-6">
+    <div className="mx-auto w-full max-w-7xl space-y-5 pb-32 md:pb-6">
       <header className="space-y-2">
         <div className="flex items-center gap-3">
           <ShieldCheck className="h-7 w-7 text-primary" />

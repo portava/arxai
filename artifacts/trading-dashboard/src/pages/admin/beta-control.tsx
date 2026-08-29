@@ -739,12 +739,12 @@ export default function AdminBetaControlPage() {
     declineReq.mutate({ id, reason });
   }
 
-  if (isLoading) return <div className="p-4 text-sm">Loading…</div>;
-  if (error) return <div className="p-4 text-sm text-danger">Error: {(error as Error).message}</div>;
+  if (isLoading) return <div className="text-sm">Loading…</div>;
+  if (error) return <div className="text-sm text-danger">Error: {(error as Error).message}</div>;
   if (!data) return null;
 
   return (
-    <div className="space-y-6 p-1 max-w-6xl" data-testid="page-admin-beta-control">
+    <div className="space-y-6 max-w-6xl" data-testid="page-admin-beta-control">
       <div>
         <h1 className="text-2xl font-bold">Beta Control Center</h1>
         <p className="text-sm text-muted-foreground">

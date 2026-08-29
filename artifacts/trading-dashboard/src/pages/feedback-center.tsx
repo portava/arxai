@@ -39,7 +39,7 @@ export default function FeedbackCenter() {
   }
 
   return (
-    <div className="space-y-4 p-1 max-w-2xl" data-testid="page-feedback-center">
+    <div className="space-y-4 max-w-2xl" data-testid="page-feedback-center">
       <div>
         <h1 className="text-2xl font-bold">Feedback Center</h1>
         <p className="text-sm text-muted-foreground">File a bug, feature idea, or workflow issue. We never collect secrets, MT5 tokens, or API keys.</p>

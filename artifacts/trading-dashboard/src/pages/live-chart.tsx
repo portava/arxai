@@ -129,7 +129,7 @@ export default function LiveChartPage() {
     [],
   );
   return (
-    <div className="mx-auto w-full max-w-[1600px] space-y-4 p-4 md:p-6 pb-32 md:pb-6">
+    <div className="mx-auto w-full max-w-[1600px] space-y-4 pb-32 md:pb-6">
       <div>
         <h1 className="flex items-center gap-2 text-2xl font-bold leading-tight">
           Live Market Chart

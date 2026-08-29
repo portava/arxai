@@ -13,7 +13,7 @@ import { ShieldAlert } from "lucide-react";
 
 export default function LiveTradingPage() {
   return (
-    <div className="p-3 sm:p-4 md:p-6 max-w-7xl mx-auto w-full space-y-4">
+    <div className="max-w-7xl mx-auto w-full space-y-4">
       <header>
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <ShieldAlert className="h-6 w-6 text-danger" /> Live Trading

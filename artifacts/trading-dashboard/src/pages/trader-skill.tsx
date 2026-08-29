@@ -44,7 +44,7 @@ export default function TraderSkillPage() {
   const p = profile.data?.profile ?? null;
 
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-foreground">Trader skill profile</h1>

@@ -121,7 +121,7 @@ export default function AssistantKnowledgeGaps() {
   }
 
   return (
-    <div className="mx-auto max-w-[1100px] p-4 md:p-6 space-y-4" data-testid="assistant-knowledge-gaps">
+    <div className="mx-auto max-w-[1100px] space-y-4" data-testid="assistant-knowledge-gaps">
       <header className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-xl md:text-2xl font-bold">Assistant Knowledge Gaps</h1>

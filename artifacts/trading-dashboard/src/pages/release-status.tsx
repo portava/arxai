@@ -20,7 +20,7 @@ export default function ReleaseStatus() {
   );
 
   return (
-    <div className="space-y-4 p-1" data-testid="page-release-status">
+    <div className="space-y-4" data-testid="page-release-status">
       <div>
         <h1 className="text-2xl font-bold">Release Status</h1>
         <p className="text-sm text-muted-foreground">Beta Tester Mode Active — all tester workflows are open. Real broker execution requires MT5 bridge connection.</p>

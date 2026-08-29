@@ -46,7 +46,7 @@ export default function OnboardingPage() {
   }
   useEffect(() => { refresh(); document.title = "Onboarding — ARX AI"; }, []);
 
-  if (!status) return <div className="p-4 text-sm text-muted-foreground">Loading onboarding…</div>;
+  if (!status) return <div className="text-sm text-muted-foreground">Loading onboarding…</div>;
 
   const completed = new Set(status.completedSteps);
   const skipped = new Set(status.skippedSteps);
@@ -60,7 +60,7 @@ export default function OnboardingPage() {
   async function ack(key: string) { setBusy(key); await api("/api/onboarding/acknowledge", { method: "POST", body: JSON.stringify({ key }) }); await refresh(); setBusy(null); }
 
   return (
-    <div className="space-y-4 px-1 sm:px-0 pb-8">
+    <div className="space-y-4 pb-8">
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant="outline" className="bg-primary/15 text-primary border-primary/30"><Lock className="h-3 w-3 mr-1" />ADMIN-CONTROLLED MODE</Badge>
       </div>

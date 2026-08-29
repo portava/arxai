@@ -34,7 +34,7 @@ export default function AdminDataManagement() {
   }
 
   return (
-    <div className="space-y-4 p-4" data-testid="page-admin-data-management">
+    <div className="space-y-4" data-testid="page-admin-data-management">
       <div>
         <h1 className="text-2xl font-bold">Data Management</h1>
         <p className="text-sm text-muted-foreground">Backup, export, and (carefully) reset test data. MT5 and future-broker records are never cleared from this page.</p>

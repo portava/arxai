@@ -22,7 +22,7 @@ export default function DataProtection() {
   };
 
   return (
-    <div className="p-6 space-y-6" data-testid="data-protection">
+    <div className="space-y-6" data-testid="data-protection">
       <h1 className="text-2xl font-bold">Data Protection</h1>
 
       <div className="border rounded p-4">

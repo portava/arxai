@@ -20,7 +20,7 @@ export default function Activity() {
   }, refetchInterval: 30_000 });
 
   return (
-    <div className="p-6 max-w-3xl">
+    <div className="max-w-3xl">
       <Card className="bg-card border-border">
         <CardHeader>
           <CardTitle>Activity timeline</CardTitle>

@@ -7,7 +7,7 @@ import {
 export default function PaperTradingPage() {
   const [accountId, setAccountId] = useState<number | null>(null);
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-4">
       <header className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-foreground">Demo Trading Sandbox</h1>

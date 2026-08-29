@@ -18,7 +18,7 @@ export default function RolesPermissions() {
   }, []);
 
   return (
-    <div className="p-6 space-y-6" data-testid="roles-permissions">
+    <div className="space-y-6" data-testid="roles-permissions">
       <h1 className="text-2xl font-bold">Roles & Permissions</h1>
       <div className="border rounded p-4 overflow-auto">
         <h2 className="font-semibold mb-3">Role × Permission Matrix</h2>

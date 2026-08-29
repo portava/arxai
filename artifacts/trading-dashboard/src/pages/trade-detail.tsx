@@ -312,7 +312,7 @@ export default function TradeDetailPage() {
 
   if (err || !intel?.ok || !intel.trade) {
     return (
-      <div className="p-6 space-y-2">
+      <div className="space-y-2">
         <Link href="/my-trades"><Button variant="ghost" size="sm"><ArrowLeft className="mr-1 h-3 w-3" /> Back</Button></Link>
         <Card>
           <CardContent className="flex items-center gap-2 p-6 text-danger">
@@ -344,7 +344,7 @@ export default function TradeDetailPage() {
   const age = ageStr(openedAt);
 
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
         <Link href="/my-trades">
           <Button variant="ghost" size="sm"><ArrowLeft className="mr-1 h-3 w-3" /> Back to trades</Button>

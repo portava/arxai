@@ -47,7 +47,7 @@ export default function EdgeDiscoveryPage() {
   });
 
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-4">
       <header>
         <h1 className="text-xl font-semibold text-foreground">Edge discovery</h1>
         <p className="text-xs text-txt-secondary">

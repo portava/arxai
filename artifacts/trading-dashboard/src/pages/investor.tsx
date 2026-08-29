@@ -2235,7 +2235,7 @@ function WeeklyStoryTab() {
 
 export default function InvestorPortal() {
   return (
-    <div className="mx-auto mt-6 max-w-5xl space-y-6 px-2" data-testid="investor-portal">
+    <div className="mx-auto mt-6 max-w-5xl space-y-6" data-testid="investor-portal">
       <div className="flex items-center gap-3">
         <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/15 text-primary">
           <ShieldCheck className="h-6 w-6" />

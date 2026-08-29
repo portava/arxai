@@ -39,7 +39,7 @@ export default function ActivePaperSession() {
   }
 
   if (!s) return (
-    <div className="p-6 space-y-2">
+    <div className="space-y-2">
       <h1 className="text-2xl font-bold">Active Demo Session</h1>
       <p className="text-sm text-muted-foreground">No active session. Start one from <a className="underline" href="/demo-testing-launch">Demo Testing Launch</a>.</p>
     </div>
@@ -48,7 +48,7 @@ export default function ActivePaperSession() {
   const elapsedMin = s.started_at ? Math.round((Date.now() - Date.parse(s.started_at))/60_000) : 0;
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Active Demo Session</h1>

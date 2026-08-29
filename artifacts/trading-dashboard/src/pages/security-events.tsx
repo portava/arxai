@@ -21,7 +21,7 @@ export default function SecurityEvents() {
   const filtered = filter ? events.filter((e) => e.eventType === filter) : events;
 
   return (
-    <div className="p-6 space-y-6" data-testid="security-events">
+    <div className="space-y-6" data-testid="security-events">
       <h1 className="text-2xl font-bold">Security Events</h1>
       <div>
         <select value={filter} onChange={(e) => setFilter(e.target.value)} className="border rounded p-1 text-sm">

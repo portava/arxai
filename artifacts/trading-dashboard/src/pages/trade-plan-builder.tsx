@@ -2,7 +2,7 @@ import { TradePlanBuilderPanel } from "@/components/tradePlan";
 
 export default function TradePlanBuilderPage() {
   return (
-    <div className="mx-auto max-w-7xl space-y-6 p-6">
+    <div className="mx-auto max-w-7xl space-y-6">
       <header>
         <h1 className="text-2xl font-bold text-foreground">AI Trade Plan Builder</h1>
         <p className="text-sm text-txt-secondary">

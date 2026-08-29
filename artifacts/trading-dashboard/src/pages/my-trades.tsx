@@ -238,7 +238,7 @@ export default function MyTradesPage() {
   }, [cards, sum.totalLots]);
 
   return (
-    <div className="mx-auto w-full max-w-[1280px] space-y-4 p-4 md:p-6 pb-32 md:pb-6">
+    <div className="mx-auto w-full max-w-[1280px] space-y-4 pb-32 md:pb-6">
       {/* Hero */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex items-start gap-3">

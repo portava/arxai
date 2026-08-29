@@ -484,7 +484,7 @@ export default function Emergency() {
 
   if (statusQ.isLoading || !statusQ.data) {
     return (
-      <div className="space-y-4 p-2">
+      <div className="space-y-4">
         <Skeleton className="h-32 w-full" />
         <Skeleton className="h-48 w-full" />
         <Skeleton className="h-72 w-full" />
@@ -495,7 +495,7 @@ export default function Emergency() {
   const status = statusQ.data;
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-300 p-2">
+    <div className="space-y-6 animate-in fade-in duration-300">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">

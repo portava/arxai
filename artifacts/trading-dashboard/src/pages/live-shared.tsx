@@ -157,7 +157,7 @@ export default function LiveSharedPage() {
     : <Badge variant="outline">loading…</Badge>;
 
   return (
-    <div className="container mx-auto py-4 px-3 md:px-6 space-y-3 max-w-[1400px]">
+    <div className="container mx-auto py-4 space-y-3 max-w-[1400px]">
       <div className="flex items-center gap-2 flex-wrap">
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <Zap className="h-6 w-6 text-danger" /> Live Shared Account

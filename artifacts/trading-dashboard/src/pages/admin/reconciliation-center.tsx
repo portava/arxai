@@ -66,14 +66,14 @@ export default function AdminReconciliationCenter() {
     } finally { setBusy(null); }
   }
 
-  if (err) return <div className="p-6"><Card><CardHeader><CardTitle>{err}</CardTitle></CardHeader></Card></div>;
-  if (!data) return <div className="p-6 text-sm text-muted-foreground">Loading…</div>;
+  if (err) return <div><Card><CardHeader><CardTitle>{err}</CardTitle></CardHeader></Card></div>;
+  if (!data) return <div className="text-sm text-muted-foreground">Loading…</div>;
 
   const sev = data.countsBySeverity ?? { critical: 0, high: 0, medium: 0, low: 0 };
   const byType = data.countsByType ?? {};
 
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-4">
       <div className="flex items-center gap-3">
         <ShieldAlert className="h-6 w-6 text-primary" />
         <div className="flex-1">

@@ -107,14 +107,14 @@ export default function TraderCoachPage() {
 
   useEffect(() => { void loadAll(); }, []);
 
-  if (loading) return <div className="p-6 text-txt-secondary">Loading Trader Coach…</div>;
-  if (err) return <div className="p-6 text-danger">Failed to load: {err}</div>;
-  if (!coach) return <div className="p-6">No coach data.</div>;
+  if (loading) return <div className="text-txt-secondary">Loading Trader Coach…</div>;
+  if (err) return <div className="text-danger">Failed to load: {err}</div>;
+  if (!coach) return <div>No coach data.</div>;
 
   const govBadge = GOV_BADGE[coach.traderStatus.governorStatus] ?? GOV_BADGE.UNKNOWN;
 
   return (
-    <div className="p-6 space-y-6 text-foreground">
+    <div className="space-y-6 text-foreground">
       <header className="flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-bold">Trader Coach</h1>
         <span className="px-2 py-1 rounded text-xs bg-primary/15">DEMO ONLY</span>

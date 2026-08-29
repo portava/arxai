@@ -34,11 +34,11 @@ export default function AssistantManualPage() {
   }, []);
 
   if (gate === "loading") {
-    return <div className="p-6 text-sm text-txt-secondary" data-testid="assistant-manual-loading">Loading…</div>;
+    return <div className="text-sm text-txt-secondary" data-testid="assistant-manual-loading">Loading…</div>;
   }
   if (gate === "denied" || gate === "error") {
     return (
-      <div className="p-6 max-w-2xl" data-testid="assistant-manual-denied">
+      <div className="max-w-2xl" data-testid="assistant-manual-denied">
         <h1 className="text-xl font-semibold mb-2">Assistant App Manual</h1>
         <p className="text-sm text-txt-secondary">
           The full diagnostic manual is restricted to TESTER, ADMIN, and OWNER roles. Sign in with a higher-permission account to view it.
@@ -48,7 +48,7 @@ export default function AssistantManualPage() {
   }
 
   return (
-    <div className="p-6 space-y-6" data-testid="assistant-manual">
+    <div className="space-y-6" data-testid="assistant-manual">
       <header>
         <h1 className="text-2xl font-semibold">ARX Assistant Manual</h1>
         <p className="text-sm text-txt-secondary">

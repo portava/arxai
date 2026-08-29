@@ -42,7 +42,7 @@ export default function SystemHealthPage() {
   const banner = report && (report.overallStatus !== "HEALTHY" || report.safetyStatus.hardBlocks.length > 0);
 
   return (
-    <div className="mx-auto w-full max-w-[1280px] space-y-4 p-4 md:p-6 pb-32 md:pb-6" data-testid="page-system-health">
+    <div className="mx-auto w-full max-w-[1280px] space-y-4 pb-32 md:pb-6" data-testid="page-system-health">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">System Health</h1>

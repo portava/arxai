@@ -97,7 +97,7 @@ export default function NotificationsPage() {
   // pages, not here. We show only the alerts-only marker and let the
   // global SafetyHeader own the trading-mode badge.
   return (
-    <div className="p-4 space-y-4">
+    <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap">
         <h1 className="text-xl font-bold">Notification Center</h1>
         <span className="px-2 py-1 rounded text-xs bg-ruby text-foreground">ALERTS ONLY</span>

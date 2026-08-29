@@ -40,7 +40,7 @@ export default function AdminIssues() {
     : s === "medium" ? "bg-primary/20 text-primary" : "bg-secondary/20 text-txt-secondary";
 
   return (
-    <div className="space-y-4 p-1" data-testid="page-admin-issues">
+    <div className="space-y-4" data-testid="page-admin-issues">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h1 className="text-2xl font-bold">Issue Tracker</h1>

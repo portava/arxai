@@ -425,15 +425,15 @@ export default function TradingCockpit() {
   useEffect(() => { document.title = "Trading Cockpit — DEMO ONLY"; }, []);
 
   if (isLoading) {
-    return <div className="p-4 space-y-3"><Skeleton className="h-12 w-full" /><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{[0,1,2,3,4,5].map(i => <Skeleton key={i} className="h-44 w-full" />)}</div></div>;
+    return <div className="space-y-3"><Skeleton className="h-12 w-full" /><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{[0,1,2,3,4,5].map(i => <Skeleton key={i} className="h-44 w-full" />)}</div></div>;
   }
   if (error || !data) {
-    return <div className="p-4"><Alert variant="destructive"><AlertTitle>Cockpit unavailable</AlertTitle><AlertDescription className="text-xs">Unable to read cockpit summary. Existing safety rules remain in force; live trading remains DISABLED.</AlertDescription></Alert></div>;
+    return <div><Alert variant="destructive"><AlertTitle>Cockpit unavailable</AlertTitle><AlertDescription className="text-xs">Unable to read cockpit summary. Existing safety rules remain in force; live trading remains DISABLED.</AlertDescription></Alert></div>;
   }
   const s = data.summary;
 
   return (
-    <div className="space-y-4 px-1 sm:px-0 pb-8">
+    <div className="space-y-4 pb-8">
       <SafetyHeader s={s} />
       <div className="px-1 sm:px-0">
         <h1 className="text-xl font-bold flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-success" />Trading Cockpit</h1>
