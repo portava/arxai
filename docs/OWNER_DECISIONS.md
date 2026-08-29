@@ -460,3 +460,27 @@ mutation-prove, and document why Phase 5 had to be reopened.
 > opposite. The authorization was genuine and given in session; the registry
 > simply had not been updated. Recording it here closes that gap — a design
 > document may not be the only place a lifted hold is written down.
+
+---
+
+## Review dates and the linkage guard (registry mechanics, not a ruling)
+
+As of the governance-closure build (#54), every ruling carries a coded
+**review date** and a coded **implementation linkage**:
+
+- `owner_decisions.review_by_date` (nullable, additive; see
+  `docs/migrations-pending/build-governance-closure.sql`) stores the review
+  date for rulings appended through `POST /api/admin/owner-decisions`
+  (optional `reviewByDate` field). Pre-existing rows are honestly null.
+- `scripts/src/ci/check-owner-decision-linkage.ts` (`RULING_LINKAGE`) is the
+  coded index for the rulings in THIS file: for each ruling it pins the exact
+  heading, a review date, and the code anchors implementing it (or an explicit
+  `noAnchorReason` for a process/absence ruling). The CI guard
+  `owner-decision-linkage` fails the build when a ruling is appended without a
+  linkage entry, an anchor file or pinned string disappears (the
+  ruling-to-code linkage broke), a heading drifts, or a review date passes.
+
+A review NEVER edits a ruling. Re-affirmation is an append (a new entry citing
+the ruling) or a superseding ruling, plus moving the date in `RULING_LINKAGE`
+in the same reviewed change. The guard turning red on an overdue date is the
+intended forcing function, not an accident to be suppressed.

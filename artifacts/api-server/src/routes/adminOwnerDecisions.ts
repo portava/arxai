@@ -48,6 +48,7 @@ router.post("/admin/owner-decisions", async (req: Request, res: Response): Promi
     decision?: unknown;
     context?: unknown;
     supersedesId?: unknown;
+    reviewByDate?: unknown;
   };
 
   const title = typeof body.title === "string" ? body.title.trim() : "";
@@ -79,11 +80,25 @@ router.post("/admin/owner-decisions", async (req: Request, res: Response): Promi
     supersedesId = n;
   }
 
+  // #54 review-date field. OPTIONAL: an omitted review date is stored as null
+  // (an honest "no review scheduled"), never defaulted. A malformed date is
+  // refused rather than coerced — a wrong review date silently stored is worse
+  // than none.
+  let reviewByDate: Date | null = null;
+  if (body.reviewByDate != null) {
+    const parsed = typeof body.reviewByDate === "string" ? Date.parse(body.reviewByDate) : NaN;
+    if (!Number.isFinite(parsed)) {
+      res.status(400).json({ ok: false, error: "REVIEW_BY_DATE_INVALID" });
+      return;
+    }
+    reviewByDate = new Date(parsed);
+  }
+
   const decidedBy = u?.username ?? u?.email ?? (u?.id != null ? `user:${u.id}` : "UNKNOWN_SESSION");
 
   const [row] = await db
     .insert(ownerDecisionsTable)
-    .values({ decidedBy, title, decision, context, supersedesId })
+    .values({ decidedBy, title, decision, context, supersedesId, reviewByDate })
     .returning();
 
   res.status(201).json({ ok: true, decision: row });

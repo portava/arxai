@@ -18,6 +18,13 @@ export const ownerDecisionsTable = pgTable("owner_decisions", {
   context: text("context"),
   // Forward-fix pointer: the earlier ruling this one replaces, if any.
   supersedesId: integer("supersedes_id"),
+  // #54 review-date field: when this ruling should next be re-examined.
+  // NULLABLE + additive: pre-existing rows read as null (their review dates
+  // were never recorded — honest UNKNOWN, never backfilled with a guess).
+  // A review NEVER edits the row: it either re-affirms (a new ruling append
+  // citing this one, or an updated date in the CI linkage registry —
+  // scripts/src/ci/check-owner-decision-linkage.ts) or supersedes it.
+  reviewByDate: timestamp("review_by_date", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
   byDecidedAt: index("owner_decisions_decided_at_idx").on(t.decidedAt),
