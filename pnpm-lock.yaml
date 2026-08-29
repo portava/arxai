@@ -175,6 +175,9 @@ importers:
       '@replit/connectors-sdk':
         specifier: ^0.4.1
         version: 0.4.1
+      '@workspace/accounting':
+        specifier: workspace:*
+        version: link:../../lib/accounting
       '@workspace/api-zod':
         specifier: workspace:*
         version: link:../../lib/api-zod
@@ -196,6 +199,9 @@ importers:
       '@workspace/markets':
         specifier: workspace:*
         version: link:../../lib/markets
+      '@workspace/money':
+        specifier: workspace:*
+        version: link:../../lib/money
       cookie-parser:
         specifier: ^1.4.7
         version: 1.4.7
@@ -669,6 +675,19 @@ importers:
       zod:
         specifier: 'catalog:'
         version: 3.25.76
+
+  lib/accounting:
+    dependencies:
+      '@workspace/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@workspace/money':
+        specifier: workspace:*
+        version: link:../money
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.3.5
 
   lib/api-client-react:
     dependencies:
