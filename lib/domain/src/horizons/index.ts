@@ -6,6 +6,14 @@
 // reading, so downstream consumers (council, confidence gate) see the whole
 // stack in one frame instead of scattering per-subsystem reads.
 //
+// INTEGRATION STATUS: CONSUMABLE, NOT YET CONSUMED. The confidence gate can
+// carry the frame (`attachHorizonAdvisory` on confidenceGate.engine — pure
+// copy, test-pinned), but no live assembler builds a HorizonFrame from the
+// real subsystems yet: nothing in the api-server feeds per-horizon readings
+// into buildHorizonFrame outside the test lane. Until that assembler exists,
+// the frame is exercised machinery, not live evidence — do not describe it
+// as "consumed by the confidence gate".
+//
 // HONESTY CONTRACT (fail-closed):
 //   * A horizon nobody reported → state null + typed NOT_PROVIDED, stale=true.
 //   * An unknown observation time → stale=true (unknown age is stale age).

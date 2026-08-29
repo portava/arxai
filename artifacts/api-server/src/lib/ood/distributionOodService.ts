@@ -4,6 +4,11 @@
 // history and compares the live tail window against them with the pure domain
 // engine (continuous-validation/distributionOod.engine).
 //
+// CONSUMER: GET /admin/market-data/distribution-ood/:symbol
+// (routes/adminMarketDataDiagnostics.ts, ADMIN/OWNER). Both the assembly and
+// the UNREADABLE degrade path are proven in the test:epistemic-live-assemblers
+// lane (real-shaped injected history + a throwing reader).
+//
 // HONESTY:
 //   * The reference is built from the older part of the same real history —
 //     never synthesized. Too little history → the domain engine's typed
@@ -32,6 +37,19 @@ export type LiveOodReport =
   | { status: "OK"; symbol: string; timeframe: string; verdict: DistributionOodVerdict }
   | { status: "UNREADABLE"; symbol: string; timeframe: string; reason: string };
 
+/** History readers, injectable ONLY so tests can prove both the assembly and
+ *  the UNREADABLE degrade path deterministically. Production callers use the
+ *  defaults (the real candle layer + spread recorder). */
+export interface DistributionOodDeps {
+  candles: (symbol: string, timeframe: string, limit: number) => { candles: { close: number }[] };
+  spreadRelHistory: (symbol: string) => number[] | null | undefined;
+}
+
+const DEFAULT_DEPS: DistributionOodDeps = {
+  candles: (symbol, timeframe, limit) => getCandles(symbol, timeframe, limit),
+  spreadRelHistory: (symbol) => getSpreadRelHistory(symbol),
+};
+
 /**
  * Evaluate the live environment for one symbol against references certified
  * from its own history. Features measurable today: volatility (candle
@@ -42,9 +60,10 @@ export type LiveOodReport =
 export function evaluateLiveDistributionOod(
   symbol: string,
   timeframe = "M15",
+  deps: DistributionOodDeps = DEFAULT_DEPS,
 ): LiveOodReport {
   try {
-    const env = getCandles(symbol, timeframe, OOD_HISTORY_BARS);
+    const env = deps.candles(symbol, timeframe, OOD_HISTORY_BARS);
     const closes = env.candles.map((c) => ({ close: c.close }));
     const vol = volatilityFeature(closes);
     const volRef = vol.slice(0, Math.max(0, vol.length - OOD_LIVE_WINDOW_BARS));
@@ -61,7 +80,7 @@ export function evaluateLiveDistributionOod(
     // Cost: recorded relative spreads. The recorder keeps a bounded recent
     // window; older half is the reference, newest half the live window. Thin
     // history yields the engine's typed insufficiency — never a guess.
-    const spreads = getSpreadRelHistory(symbol) ?? [];
+    const spreads = deps.spreadRelHistory(symbol) ?? [];
     const cut = Math.floor(spreads.length / 2);
     inputs.push({
       feature: "cost",

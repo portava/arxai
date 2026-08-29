@@ -3,6 +3,7 @@
 // GET /me/aaci/decision/:symbol      → AaciUserDecision (per-user, auth required)
 // GET /admin/aaci/decision/:symbol   → AaciDecision (full diagnostic, ADMIN/OWNER)
 // GET /admin/aaci/snapshot/:symbol   → AaciSharedTruthSnapshot (ADMIN/OWNER)
+// GET /admin/aaci/calibration-curve  → AaciCalibrationCurveReport (ADMIN/OWNER)
 //
 // ADVISORY / READ-ONLY ONLY. AACI never gates live or demo execution, never
 // places/modifies/closes a trade, and can only ADD caution. Every read is
@@ -27,6 +28,7 @@ import {
 } from "../lib/auth/productRole.js";
 import { buildAaciSnapshot } from "../lib/aaci/snapshotService.js";
 import { buildAaciDecision } from "../lib/aaci/decisionService.js";
+import { getAaciCalibrationCurve } from "../lib/aaci/calibrationCurveService.js";
 import { emitAaciUserAlerts } from "../lib/aaci/userAlerts.js";
 import { logger } from "../lib/logger.js";
 import {
@@ -302,6 +304,34 @@ router.get("/admin/aaci/snapshot/:symbol", async (req, res, next) => {
     res.json(snapshot);
   } catch (err) {
     logger.error({ err }, "aaci: admin snapshot failed");
+    next(err);
+  }
+});
+
+// ── GET /admin/aaci/calibration-curve ────────────────────────────────────────
+// Reliability curve over REAL resolution records (CLOSED self-trade executions
+// joined to their decisions' stated confidence). ADVISORY / journal-display
+// only — nothing consumes it as authority. Below the domain minimums, or on a
+// failed read, the response is an honest INSUFFICIENT_HISTORY with a typed
+// reason (readError), never a synthesized curve. ADMIN/OWNER only.
+
+router.get("/admin/aaci/calibration-curve", async (req, res, next) => {
+  try {
+    const userId = req.authUser?.id ?? 0;
+    if (!userId) {
+      res.status(401).json({ error: "Authentication required" });
+      return;
+    }
+
+    const role = normalizeProductRole(req.authUser?.role);
+    if (!isAdminProductRole(role)) {
+      res.status(403).json({ error: "Admin or owner access required" });
+      return;
+    }
+
+    res.json(await getAaciCalibrationCurve());
+  } catch (err) {
+    logger.error({ err }, "aaci: calibration curve failed");
     next(err);
   }
 });

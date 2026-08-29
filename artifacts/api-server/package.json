@@ -162,6 +162,7 @@
     "test:disagreement-classes": "node --import tsx --test --test-force-exit src/lib/__qa__/disagreementClasses.test.ts",
     "test:horizon-frame": "node --import tsx --test --test-force-exit src/lib/__qa__/horizonFrame.test.ts",
     "test:market-ecology": "node --import tsx --test --test-force-exit src/lib/__qa__/marketEcology.test.ts",
+    "test:epistemic-live-assemblers": "node --import tsx --test --test-force-exit src/lib/__qa__/epistemicLiveAssemblers.test.ts",
     "test:mission-driver-worker": "node --import tsx --test --test-force-exit src/lib/__qa__/missionDriverWorker.test.ts",
     "test:mission-execution-mode": "node --import tsx --test --test-force-exit src/routes/__qa__/missionExecutionModeRoute.test.ts",
     "test:intelligence-roi": "node --import tsx --test --test-force-exit src/lib/__qa__/intelligenceRoi.test.ts",

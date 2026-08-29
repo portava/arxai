@@ -16,6 +16,9 @@
 //     never a synthesized curve.
 //
 // ADVISORY / journal-display only. Nothing consumes this as authority.
+// CONSUMER: GET /admin/aaci/calibration-curve (routes/aaci.ts, ADMIN/OWNER).
+// The degrade-to-INSUFFICIENT_HISTORY read-failure path is proven in the
+// test:epistemic-live-assemblers lane against an unreachable database.
 
 import { and, eq, isNotNull } from "drizzle-orm";
 import {
