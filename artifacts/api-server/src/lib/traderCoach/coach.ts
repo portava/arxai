@@ -17,12 +17,10 @@ import {
   mistakePatternsTable,
   autopilotCyclesTable,
   performanceDailySnapshotsTable,
-  performanceSymbolSnapshotsTable,
-  aiPerformanceSnapshotsTable,
   traderCoachReportsTable,
   traderCoachLogsTable,
 } from "@workspace/db";
-import { desc, gte } from "drizzle-orm";
+import { and, desc, eq, gte } from "drizzle-orm";
 import { evaluateGovernor } from "../riskGovernor/governor.js";
 import { generatePlaybook, type PlaybookUpdateSummary } from "./playbook.js";
 
@@ -78,7 +76,13 @@ interface Logger {
 }
 const NOOP_LOG: Logger = { info: () => {}, warn: () => {}, error: () => {} };
 
-const LIVE_DISABLED_REMINDER = "Live trading remains DISABLED. Build II is paper-only coaching and never recommends live execution.";
+// HONESTY: this sentence is about what the COACH does, not about whether live
+// trading is enabled on the reader's account — Build II has no authority over
+// that and does not read it. The previous wording ("Live trading remains
+// DISABLED") asserted the reader's account state, which this surface cannot
+// know. `CoachReport.liveTradingStatus: "DISABLED"` is likewise the coach's own
+// authority (it can never authorize a live trade), not an account reading.
+const LIVE_DISABLED_REMINDER = "This coaching is PAPER-ONLY: it never authorizes, enables or recommends live execution. It does not report whether live trading is enabled on your account.";
 const PAPER_MODE_REMINDER = "All guidance applies to PAPER mode only.";
 
 const SAFE_DEFAULT_CHECKLIST: CoachReport["preSessionChecklist"] = [
@@ -116,13 +120,18 @@ export interface GenerateCoachOptions {
   generatePlaybookEntries?: boolean;
 }
 
-export async function generateCoachReport(opts: GenerateCoachOptions = {}): Promise<CoachReport> {
+// ISOLATION: `userId` is required. Every "your win rate / your best symbol /
+// your repeated mistake" sentence below is a claim about ONE trader, so every
+// source that carries an owner is filtered by it. Sources that have NO owner
+// column are deliberately NOT consumed — see the block marked
+// INSTANCE_WIDE_SOURCES_WITHHELD.
+export async function generateCoachReport(userId: number, opts: GenerateCoachOptions = {}): Promise<CoachReport> {
   const reportType: CoachReportType = opts.reportType ?? "DAILY";
   const persist = opts.persist ?? false;
   const log = opts.log ?? NOOP_LOG;
   const coachReportId = `coach_${randomUUID()}`;
 
-  log.info("Build II: coach generation started", { coachReportId, reportType });
+  log.info("Build II: coach generation started", { coachReportId, reportType, userId });
 
   const dataSourcesRead: string[] = [];
   const missingDataSources: string[] = [];
@@ -131,7 +140,7 @@ export async function generateCoachReport(opts: GenerateCoachOptions = {}): Prom
   // ── Build HH governor (read-only) ───────────────────────────────────────
   let governor: Awaited<ReturnType<typeof evaluateGovernor>> | null = null;
   try {
-    governor = await evaluateGovernor({ persist: false });
+    governor = await evaluateGovernor({ persist: false, userId });
     dataSourcesRead.push("risk_governor_evaluations");
     log.info("Build II: governor status read", {
       governor_id: governor.governor_id,
@@ -156,42 +165,50 @@ export async function generateCoachReport(opts: GenerateCoachOptions = {}): Prom
   let cyclesRecent: { id: number; status: string; createdAt: Date }[] = [];
 
   try {
-    const rows = await db.select().from(paperOrdersTable);
+    const rows = await db.select().from(paperOrdersTable)
+      .where(eq(paperOrdersTable.userId, userId));
     trades = rows.map(r => ({ id: r.id, symbol: r.symbol, status: r.status, pnl: r.profitLoss ?? null, decisionId: r.decisionId ?? null, createdAt: r.createdAt }));
     closed = trades.filter(t => t.status !== "OPEN");
     dataSourcesRead.push("paper_orders");
   } catch { missingDataSources.push("paper_orders"); }
 
   try {
-    const rows = await db.select().from(tradeDecisionLogsTable).where(gte(tradeDecisionLogsTable.createdAt, thirtyAgo));
+    const rows = await db.select().from(tradeDecisionLogsTable)
+      .where(and(eq(tradeDecisionLogsTable.userId, userId), gte(tradeDecisionLogsTable.createdAt, thirtyAgo)));
     decisions = rows.map(r => ({ id: r.id, symbol: r.symbol, action: r.action, confidence: r.confidence, riskScore: r.riskScore }));
     dataSourcesRead.push("trade_decision_logs");
   } catch { missingDataSources.push("trade_decision_logs"); }
 
   try {
-    const rows = await db.select().from(postTradeDebriefsTable).where(gte(postTradeDebriefsTable.createdAt, thirtyAgo));
+    const rows = await db.select().from(postTradeDebriefsTable)
+      .where(and(eq(postTradeDebriefsTable.userId, userId), gte(postTradeDebriefsTable.createdAt, thirtyAgo)));
     debriefs = rows.map(r => ({ id: r.id, tradeId: r.tradeId, result: r.result, biggestMistake: r.biggestMistake ?? null }));
     dataSourcesRead.push("post_trade_debriefs");
   } catch { missingDataSources.push("post_trade_debriefs"); }
 
   try {
-    const rows = await db.select().from(learningEventsTable).where(gte(learningEventsTable.createdAt, thirtyAgo));
+    const rows = await db.select().from(learningEventsTable)
+      .where(and(eq(learningEventsTable.userId, userId), gte(learningEventsTable.createdAt, thirtyAgo)));
     learnings = rows.map(r => ({ id: r.id, symbol: r.symbol, result: r.result }));
     dataSourcesRead.push("learning_events");
   } catch { missingDataSources.push("learning_events"); }
 
   try {
-    edges = await db.select().from(strategyEdgesTable);
+    edges = await db.select().from(strategyEdgesTable)
+      .where(eq(strategyEdgesTable.userId, userId));
     dataSourcesRead.push("strategy_edges");
   } catch { missingDataSources.push("strategy_edges"); }
 
   try {
-    mistakes = await db.select().from(mistakePatternsTable);
+    mistakes = await db.select().from(mistakePatternsTable)
+      .where(eq(mistakePatternsTable.userId, userId));
     dataSourcesRead.push("mistake_patterns");
   } catch { missingDataSources.push("mistake_patterns"); }
 
   try {
-    const rows = await db.select().from(autopilotCyclesTable).orderBy(desc(autopilotCyclesTable.createdAt)).limit(50);
+    const rows = await db.select().from(autopilotCyclesTable)
+      .where(eq(autopilotCyclesTable.userId, userId))
+      .orderBy(desc(autopilotCyclesTable.createdAt)).limit(50);
     cyclesRecent = rows.map(r => ({ id: r.id, status: r.status, createdAt: r.createdAt }));
     dataSourcesRead.push("autopilot_cycles");
   } catch { missingDataSources.push("autopilot_cycles"); }
@@ -201,20 +218,28 @@ export async function generateCoachReport(opts: GenerateCoachOptions = {}): Prom
   let symbolSnaps: { symbol: string; rangeKey: string; netPnl: number; winRate: number; edgeScore: number; learningConfidence: number }[] = [];
   let aiSnaps: { rangeKey: string; avgConfidence: number; avgRiskScore: number; avgEdgeScore: number }[] = [];
   try {
-    const rows = await db.select().from(performanceDailySnapshotsTable).orderBy(desc(performanceDailySnapshotsTable.date)).limit(14);
+    const rows = await db.select().from(performanceDailySnapshotsTable)
+      .where(eq(performanceDailySnapshotsTable.userId, userId))
+      .orderBy(desc(performanceDailySnapshotsTable.date)).limit(14);
     dailySnaps = rows.map(r => ({ date: r.date, netPnl: r.netPnl, winRate: r.winRate, dayRating: r.dayRating, dayStatus: r.dayStatus }));
     dataSourcesRead.push("performance_daily_snapshots");
   } catch { missingDataSources.push("performance_daily_snapshots"); }
-  try {
-    const rows = await db.select().from(performanceSymbolSnapshotsTable);
-    symbolSnaps = rows.map(r => ({ symbol: r.symbol, rangeKey: r.rangeKey, netPnl: r.netPnl, winRate: r.winRate, edgeScore: r.edgeScore, learningConfidence: r.learningConfidence }));
-    dataSourcesRead.push("performance_symbol_snapshots");
-  } catch { missingDataSources.push("performance_symbol_snapshots"); }
-  try {
-    const rows = await db.select().from(aiPerformanceSnapshotsTable);
-    aiSnaps = rows.map(r => ({ rangeKey: r.rangeKey, avgConfidence: r.avgConfidence, avgRiskScore: r.avgRiskScore, avgEdgeScore: r.avgEdgeScore }));
-    dataSourcesRead.push("ai_performance_snapshots");
-  } catch { missingDataSources.push("ai_performance_snapshots"); }
+
+  // ── INSTANCE_WIDE_SOURCES_WITHHELD ──────────────────────────────────────
+  // `performance_symbol_snapshots` and `ai_performance_snapshots` have NO
+  // user_id column: every row is an instance-wide aggregate. They used to
+  // feed sentences like "<SYMBOL> (30d snapshot): net X" straight into this
+  // trader's strengths/weaknesses, which is a claim about them built from
+  // everyone's trades. There is no per-user row to read, so the honest answer
+  // is to withhold the claim and say why — not to keep printing a number
+  // that is true of nobody. `symbolSnaps`/`aiSnaps` stay empty.
+  missingDataSources.push("performance_symbol_snapshots (no per-user rows exist — withheld)");
+  missingDataSources.push("ai_performance_snapshots (no per-user rows exist — withheld)");
+  warnings.push(
+    "Symbol-level and AI-quality snapshot sources are instance-wide (they carry no owner) and are therefore "
+    + "NOT used in this report. Strengths and weaknesses below are computed only from your own paper orders, "
+    + "debriefs, edges and mistake patterns.",
+  );
 
   log.info("Build II: data sources read", { dataSourcesRead, missingDataSources });
   log.info("Build II: performance data read", { dailySnaps: dailySnaps.length, symbolSnaps: symbolSnaps.length, aiSnaps: aiSnaps.length });
@@ -355,8 +380,18 @@ export async function generateCoachReport(opts: GenerateCoachOptions = {}): Prom
   let playbookUpdates: PlaybookUpdateSummary[] = [];
   if (opts.generatePlaybookEntries) {
     try {
-      playbookUpdates = await generatePlaybook({ edges, mistakes, log });
+      // `trading_playbook_entries` is keyed UNIQUE on (symbol, setupName,
+      // actionBias) with no owner column — it is one shared library, not a
+      // per-trader one. We therefore let generatePlaybook read its own
+      // instance-wide sources instead of pushing THIS user's scoped edges and
+      // mistakes into the shared rows (which would make the last trader to
+      // press the button overwrite everyone else's entries).
+      playbookUpdates = await generatePlaybook({ log });
       log.info("Build II: playbook updates created/updated", { count: playbookUpdates.length });
+      warnings.push(
+        "Playbook entries are a shared, platform-wide setup library (the table has no per-trader rows) — "
+        + "they are not derived from your data alone.",
+      );
     } catch (e) {
       warnings.push("Playbook generation failed; existing entries are unchanged.");
       log.warn("Build II: playbook generation failed", { err: String(e).slice(0, 200) });
@@ -421,6 +456,7 @@ export async function generateCoachReport(opts: GenerateCoachOptions = {}): Prom
   if (persist) {
     try {
       await db.insert(traderCoachReportsTable).values({
+        userId,
         coachReportId,
         reportType,
         readinessScore: report.traderStatus.readinessScore,

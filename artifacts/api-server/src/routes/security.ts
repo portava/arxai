@@ -1,6 +1,6 @@
 // Build NN — Security routes.
 
-import { Router, type IRouter, type Request, type Response } from "express";
+import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { db, securityRolesTable, securityPermissionsTable, securityRolePermissionsTable, securityUserRolesTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { buildSecurityStatus, createDataProtectionExport, listDataProtectionExports } from "../lib/security/service.js";
@@ -46,20 +46,53 @@ async function denyResponse(req: Request, res: Response, role: string, permissio
   res.status(403).json(envelope({ result: { status: "REJECTED", severity: sev, role, permissionKey, reason, securityEventId: evt.securityEventId, forbidden } }));
 }
 
-router.get("/security/status", async (_req, res) => {
+// ── Read gate ────────────────────────────────────────────────────────────────
+// Every GET below returns admin security posture: the full role×permission
+// matrix, user-role assignments, the security event log, access logs, settings
+// and the data-protection export list. Before this gate the POSTs were guarded
+// but the GETs were not, so any signed-in trader could read all of it by
+// hitting the URL — confidentiality rested entirely on the client-side
+// routeAccess hiding of the pages. `security:read` is held by OWNER and ADMIN
+// only (lib/security/seed.ts ROLE_PERMISSIONS), so TRADER/ANALYST/VIEWER now
+// get the same audited 403 the POSTs already produced.
+function requireSecurityRead(req: Request, res: Response, next: NextFunction): void {
+  const role = readRoleFromRequest(req);
+  const refuse = async (r: string, key: string, reason: string, forbidden = false) => {
+    try {
+      await denyResponse(req, res, r, key, reason, forbidden);
+    } catch {
+      // The audit write itself failed. A failure to RECORD the refusal must
+      // never become permission — answer 403 anyway, plainly.
+      if (!res.headersSent) {
+        res.status(403).json(envelope({ result: { status: "REJECTED", severity: "WARNING", role: r, permissionKey: key, reason, auditRecorded: false } }));
+      }
+    }
+  };
+  void checkPermission(role, "security:read")
+    .then(async (decision) => {
+      if (decision.allowed) { next(); return; }
+      await refuse(decision.role, decision.permissionKey, decision.reason, decision.forbidden);
+    })
+    .catch(async () => {
+      // Fail CLOSED: an unreadable permission table is not permission.
+      await refuse(role, "security:read", "security permission check unavailable — failing closed");
+    });
+}
+
+router.get("/security/status", requireSecurityRead, async (_req, res) => {
   await seedSecurity();
   const status = await buildSecurityStatus();
   const settings = await getSettings();
   res.json(envelope({ status, settings }));
 });
 
-router.post("/security/check", async (_req, res) => {
+router.post("/security/check", requireSecurityRead, async (_req, res) => {
   await seedSecurity();
   const status = await buildSecurityStatus();
   res.json(envelope({ status }));
 });
 
-router.get("/security/roles", async (_req, res) => {
+router.get("/security/roles", requireSecurityRead, async (_req, res) => {
   await seedSecurity();
   const roles = await db.select().from(securityRolesTable);
   res.json(envelope({ count: roles.length, roles }));
@@ -74,13 +107,13 @@ router.post("/security/roles", async (req, res) => {
   res.json(envelope({ seeded: out, note: "Built-in roles are immutable; only seeding is performed." }));
 });
 
-router.get("/security/permissions", async (_req, res) => {
+router.get("/security/permissions", requireSecurityRead, async (_req, res) => {
   await seedSecurity();
   const perms = await db.select().from(securityPermissionsTable);
   res.json(envelope({ count: perms.length, permissions: perms }));
 });
 
-router.get("/security/role-permissions", async (req, res) => {
+router.get("/security/role-permissions", requireSecurityRead, async (req, res) => {
   await seedSecurity();
   const roles = await db.select().from(securityRolesTable);
   const perms = await db.select().from(securityPermissionsTable);
@@ -108,7 +141,7 @@ router.post("/security/role-permissions", async (req, res) => {
   res.json(envelope({ note: "Built-in role-permission mappings are immutable; use seed.ts to evolve.", matrixPreview: PERMISSIONS.length }));
 });
 
-router.get("/security/user-roles", async (_req, res) => {
+router.get("/security/user-roles", requireSecurityRead, async (_req, res) => {
   const rows = await db.select().from(securityUserRolesTable);
   res.json(envelope({ count: rows.length, userRoles: rows }));
 });
@@ -132,7 +165,7 @@ router.post("/security/user-roles", async (req, res) => {
   res.json(envelope({ assigned: created }));
 });
 
-router.post("/security/test-permission", async (req, res) => {
+router.post("/security/test-permission", requireSecurityRead, async (req, res) => {
   // Phase 28-SEC: body-provided role for explicit test; otherwise trusted server-derived role. Header is no longer trusted.
   const role = String(req.body?.role ?? readRoleFromRequest(req));
   const permissionKey = String(req.body?.permissionKey ?? "");
@@ -147,7 +180,7 @@ router.post("/security/test-permission", async (req, res) => {
   res.json(envelope({ decision }));
 });
 
-router.post("/security/forbidden-action-test", async (req, res) => {
+router.post("/security/forbidden-action-test", requireSecurityRead, async (req, res) => {
   // Phase 28-SEC: body-provided role for explicit forbidden-action test; otherwise trusted server-derived role. Header is no longer trusted.
   const role = String(req.body?.role ?? readRoleFromRequest(req));
   const action = String(req.body?.action ?? "ENABLE_LIVE_TRADING");
@@ -163,20 +196,20 @@ router.post("/security/forbidden-action-test", async (req, res) => {
   } }));
 });
 
-router.get("/security/events", async (req, res) => {
+router.get("/security/events", requireSecurityRead, async (req, res) => {
   const limit = Number(req.query.limit ?? 50);
   const eventType = req.query.eventType ? String(req.query.eventType) : undefined;
   const events = await listEvents(limit, eventType);
   res.json(envelope({ count: events.length, events }));
 });
 
-router.get("/security/access-logs", async (req, res) => {
+router.get("/security/access-logs", requireSecurityRead, async (req, res) => {
   const limit = Number(req.query.limit ?? 50);
   const logs = await listAccessLogs(limit);
   res.json(envelope({ count: logs.length, accessLogs: logs }));
 });
 
-router.get("/security/settings", async (_req, res) => {
+router.get("/security/settings", requireSecurityRead, async (_req, res) => {
   const settings = await getSettings();
   res.json(envelope({ settings }));
 });
@@ -209,7 +242,7 @@ router.post("/security/settings", async (req, res) => {
   res.json(envelope({ settings: result.settings, rejectedKeys: result.rejected }));
 });
 
-router.post("/security/demo", async (_req, res) => {
+router.post("/security/demo", requireSecurityRead, async (_req, res) => {
   await seedSecurity();
   const status = await buildSecurityStatus();
   const allowed = await checkPermission("TRADER", "paper_trade:create");
@@ -238,13 +271,13 @@ router.post("/security/export-data", async (req, res) => {
   res.json(envelope({ export: exp, note: "All exports are scrub()-ed before persistence" }));
 });
 
-router.get("/security/data-protection/exports", async (req, res) => {
+router.get("/security/data-protection/exports", requireSecurityRead, async (req, res) => {
   const limit = Number(req.query.limit ?? 20);
   const items = await listDataProtectionExports(limit);
   res.json(envelope({ count: items.length, exports: items }));
 });
 
-router.post("/security/redaction-test", async (req, res) => {
+router.post("/security/redaction-test", requireSecurityRead, async (req, res) => {
   const sample = (req.body && Object.keys(req.body).length > 0) ? req.body : {
     api_key: "abc123", broker_api_secret: "topsecret",
     note: "token sk_live_ABCDEFGHIJKLMNO and AKIAABCDEFGHIJKLMNOP",
@@ -257,7 +290,7 @@ router.post("/security/redaction-test", async (req, res) => {
 });
 
 // Convenience for HH integration.
-router.get("/security/integration/hh", async (_req, res) => {
+router.get("/security/integration/hh", requireSecurityRead, async (_req, res) => {
   const status = await buildSecurityStatus();
   const recommend: "PAPER_ALLOWED" | "PAPER_CAUTION" | "WATCH_ONLY" | "LOCKED" =
     status.criticalFindings.length > 0 ? "LOCKED"

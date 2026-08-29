@@ -298,13 +298,39 @@ function TestingControlCenterPageInner() {
           <Button size="sm" variant="outline" asChild>
             <a href="/mt5-setup">Open MT5 Setup Wizard</a>
           </Button>
+          {/* Both buttons WRITE to the database. The confirm dialogs state
+              exactly what will be written or removed — the previous copy
+              announced the seed without mentioning it injects six invented
+              trades, and announced the clear without mentioning those trades
+              stayed behind. */}
           <Button size="sm" variant="outline" data-testid="seed-demo" onClick={async () => {
+            const proceed = window.confirm(
+              "Seed demo test data?\n\n"
+              + "This WRITES to the database:\n"
+              + "  • 8 demo live-intents (no broker order is placed)\n"
+              + "  • 5 demo audit rows in the append-only vault (these can never be deleted)\n"
+              + "  • 6 trade-journal entries with INVENTED profit/loss (+12.50 / -7.00)\n\n"
+              + "The journal rows are tagged and owned by your account, and 'Clear Demo Test Data' removes them.\n"
+              + "The 5 vault rows are append-only and will remain forever.",
+            );
+            if (!proceed) return;
             const r = await fetch("/api/tester-data/seed", { method: "POST", headers: { "x-security-role": "ADMIN" } });
-            const d = await r.json(); alert(`Seeded · intents=${d.intents} vault=${d.vaultEvents} journal=${d.journalEntries ?? 0}`);
+            const d = await r.json();
+            if (!r.ok) { alert(`Seed FAILED · ${d.error ?? r.status}. Nothing is guaranteed to have been written.`); return; }
+            alert(`Seeded · intents=${d.intents} · vault=${d.vaultEvents} (append-only, permanent) · journal=${d.journalEntries ?? 0} (tagged, removable)`);
           }}>Seed Demo Test Data</Button>
           <Button size="sm" variant="outline" data-testid="clear-demo" onClick={async () => {
+            const proceed = window.confirm(
+              "Clear demo test data?\n\n"
+              + "This DELETES the seeded live-intents and the seeded trade-journal entries.\n"
+              + "It CANNOT delete the 5 seeded vault audit rows — the vault is append-only.\n"
+              + "A corrective TESTER_SEED_CLEARED event is appended instead.",
+            );
+            if (!proceed) return;
             const r = await fetch("/api/tester-data/clear", { method: "POST", headers: { "x-security-role": "ADMIN" } });
-            const d = await r.json(); alert(`Cleared · intents=${d.intents} · vault rows retained (append-only). Corrective event appended.`);
+            const d = await r.json();
+            if (!r.ok) { alert(`Clear FAILED · ${d.error ?? r.status}. Seeded rows may still be present.`); return; }
+            alert(`Cleared · intents=${d.intents} · journal=${d.journalEntries ?? 0} · vault rows retained (append-only). Corrective event appended.`);
           }}>Clear Demo Test Data</Button>
         </div>
       </div>

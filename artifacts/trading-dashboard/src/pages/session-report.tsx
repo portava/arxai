@@ -11,7 +11,10 @@ interface Report {
   break_even: number;
   net_pnl: number;
   win_rate: number;
-  rule_violations: Array<{ code: string; limit?: number; actual?: number }>;
+  // `unit` names the scale of `limit`/`actual` so the pair can never be read
+  // against each other in different units (this is where the old
+  // "limit 150 actual 15000" came from — dollars against cents).
+  rule_violations: Array<{ code: string; limit?: number; actual?: number; unit?: string }>;
   mistakes_detected: Array<Record<string, unknown>>;
   lessons_generated: Array<Record<string, unknown>>;
   coach_summary: string;
@@ -74,7 +77,7 @@ export default function SessionReport() {
           <div className="rounded border p-4">
             <div className="text-sm text-muted-foreground">Report ID: {report.session_report_id} · Status: {report.status}</div>
             <div>Duration: {report.duration_minutes}m · Trades: {report.total_trades} ({report.wins}W/{report.losses}L/{report.break_even}BE)</div>
-            <div>Net P&L (¢): {report.net_pnl} · Win rate: {report.win_rate}%</div>
+            <div>Net P&L: {(report.net_pnl / 100).toFixed(2)} USD · Win rate: {report.win_rate}%</div>
           </div>
           <div className="rounded border p-4">
             <div className="font-semibold">Coach summary</div>
@@ -83,7 +86,7 @@ export default function SessionReport() {
           <div className="rounded border p-4">
             <div className="font-semibold">Rule violations ({report.rule_violations.length})</div>
             {report.rule_violations.length === 0 ? <div className="text-success text-sm">None.</div>
-              : <ul className="list-disc pl-5 text-sm">{report.rule_violations.map((v,i)=><li key={i}>{v.code}: limit {v.limit} actual {v.actual}</li>)}</ul>}
+              : <ul className="list-disc pl-5 text-sm">{report.rule_violations.map((v,i)=><li key={i}>{v.code}: limit {v.limit}{v.unit ? ` ${v.unit}` : ""} · actual {v.actual}{v.unit ? ` ${v.unit}` : ""}</li>)}</ul>}
           </div>
           <div className="rounded border p-4">
             <div className="font-semibold">Next best actions</div>

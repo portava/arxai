@@ -32,7 +32,7 @@ router.get("/risk-governor/status", async (req, res) => {
       error: (m: string, x?: Record<string, unknown>) => req.log?.error?.(x ?? {}, `HH governor: ${m}`),
     };
     const sym = typeof req.query.symbol === "string" && req.query.symbol.trim() ? req.query.symbol.trim() : undefined;
-    const e = await evaluateGovernor({ persist: false, log, symbol: sym });
+    const e = await evaluateGovernor({ persist: false, log, symbol: sym, userId: req.authUser?.id ?? null });
     res.json(envelope({ governor: e }));
   } catch (err) {
     res.status(500).json(envelope({ error: "Failed to evaluate governor", detail: String(err).slice(0, 200) }));
@@ -47,7 +47,7 @@ router.post("/risk-governor/evaluate", async (req, res) => {
       warn: (m: string, x?: Record<string, unknown>) => req.log?.warn?.(x ?? {}, `HH governor: ${m}`),
       error: (m: string, x?: Record<string, unknown>) => req.log?.error?.(x ?? {}, `HH governor: ${m}`),
     };
-    const e = await evaluateGovernor({ persist: true, log });
+    const e = await evaluateGovernor({ persist: true, log, userId: req.authUser?.id ?? null });
     res.json(envelope({ governor: e, persisted: true }));
   } catch (err) {
     res.status(500).json(envelope({ error: "Failed to evaluate governor", detail: String(err).slice(0, 200) }));
@@ -86,7 +86,7 @@ router.post("/risk-governor/demo", async (req, res) => {
       warn: (m: string, x?: Record<string, unknown>) => req.log?.warn?.(x ?? {}, `HH governor: ${m}`),
       error: (m: string, x?: Record<string, unknown>) => req.log?.error?.(x ?? {}, `HH governor: ${m}`),
     };
-    const e = await evaluateGovernor({ persist: true, log });
+    const e = await evaluateGovernor({ persist: true, log, userId: req.authUser?.id ?? null });
     const recent = await db.select().from(riskGovernorEvaluationsTable)
       .orderBy(desc(riskGovernorEvaluationsTable.createdAt)).limit(5);
     const recentEvents = await db.select().from(riskGovernorEventsTable)
@@ -123,7 +123,7 @@ router.post("/risk-governor/simulate", async (req, res) => {
       warn: (m: string, x?: Record<string, unknown>) => req.log?.warn?.(x ?? {}, `HH governor[sim]: ${m}`),
       error: (m: string, x?: Record<string, unknown>) => req.log?.error?.(x ?? {}, `HH governor[sim]: ${m}`),
     };
-    const e = await evaluateGovernor({ persist, log, simulate: simulate as SimulateOverrides });
+    const e = await evaluateGovernor({ persist, log, simulate: simulate as SimulateOverrides, userId: req.authUser?.id ?? null });
     res.json(envelope({ simulate: simulate as Record<string, unknown>, governor: e, persisted: !!persist }));
   } catch (err) {
     res.status(500).json(envelope({ error: "Simulate failed", detail: String(err).slice(0, 200) }));

@@ -9,6 +9,7 @@ import { randomUUID } from "node:crypto";
 import { computeTimingRead } from "../../brain/timing/marketTimingBrainService.js";
 import {
   db,
+  paperAccountsTable,
   paperOrdersTable,
   tradeDecisionLogsTable,
   postTradeDebriefsTable,
@@ -31,6 +32,24 @@ export type ReadinessLevel = "NOT_READY" | "EARLY_TESTING" | "DEVELOPING_EDGE" |
 export type ReadinessGrade = "A" | "B" | "C" | "D" | "F";
 export type Severity = "INFO" | "WARN" | "BLOCK" | "CRITICAL";
 
+/** Whose limits governed this evaluation. */
+export type LimitsScope =
+  /** Read from this user's own risk_settings row. */
+  | "USER"
+  /** The user has no risk_settings row yet — documented defaults were used. */
+  | "USER_DEFAULTS"
+  /** No user was supplied (instance-level readiness surface) — documented
+   *  defaults were used. NEVER another user's row. */
+  | "DEFAULTS_UNSCOPED";
+
+/** What the dollar daily-loss limit was derived from. */
+export type DailyLossLimitBasis =
+  /** maxDailyLossPct applied to the trader's active paper-account equity. */
+  | "PAPER_ACCOUNT_EQUITY"
+  /** No balance to apply the percentage to — the dollar limit is UNKNOWN and
+   *  `dailyLossLimit` is 0 (meaning "not derived", not "no limit"). */
+  | "UNKNOWN";
+
 export interface HardBlock { code: string; severity: Severity; message: string; details?: Record<string, unknown>; }
 export interface SoftWarning { code: string; message: string; details?: Record<string, unknown>; }
 export interface RiskFlag { code: string; message: string; }
@@ -38,7 +57,13 @@ export interface Cooldown { symbol: string; reason: string | null; until: string
 
 export interface GovernorMetrics {
   dailyPnl: number;
+  /** Dollar daily-loss limit. 0 means NOT DERIVED (see dailyLossLimitBasis) —
+   *  it never means "unlimited". */
   dailyLossLimit: number;
+  dailyLossLimitBasis: DailyLossLimitBasis;
+  /** Percentage limit as configured by the trader, independent of any balance. */
+  maxDailyLossPct: number | null;
+  limitsScope: LimitsScope;
   weeklyPnl: number;
   maxDrawdown: number;
   openPaperTrades: number;
@@ -121,12 +146,42 @@ function defaultLog(): EvalLog {
   };
 }
 
+/**
+ * Derive the DOLLAR daily-loss limit from the trader's configured percentage
+ * and the account balance it protects.
+ *
+ * Replaces `Math.max(10, Math.round(pct * 50))` — a hardcoded "$50 per 1%"
+ * proxy that bore no relation to the account. When there is no balance to
+ * apply the percentage to we return UNKNOWN and a limit of 0, which callers
+ * MUST read as "not derived" (never as "no limit"): the evaluator refuses to
+ * certify the limit intact rather than assuming it is.
+ */
+export function deriveDailyLossLimit(
+  maxDailyLossPct: number | null,
+  accountEquity: number | null,
+): { limit: number; basis: DailyLossLimitBasis } {
+  if (maxDailyLossPct == null || accountEquity == null || accountEquity <= 0) {
+    return { limit: 0, basis: "UNKNOWN" };
+  }
+  return {
+    limit: Math.round((maxDailyLossPct / 100) * accountEquity * 100) / 100,
+    basis: "PAPER_ACCOUNT_EQUITY",
+  };
+}
+
 // ── Metric collection (READ-ONLY against AA/BB/CC/DD/EE/FF/GG) ────────────
-async function collectMetrics(overrides: SimulateOverrides | undefined): Promise<{
+//
+// `userId` identifies WHOSE limits and WHOSE trades this evaluation is about.
+// It may be null only for instance-level readiness surfaces that genuinely
+// have no single owner; in that case the governor uses its documented
+// conservative defaults and reports `limitsScope: "DEFAULTS_UNSCOPED"` — it
+// never adopts another user's row.
+async function collectMetrics(overrides: SimulateOverrides | undefined, userId: number | null): Promise<{
   metrics: GovernorMetrics;
   cooldowns: Cooldown[];
   dataSourcesRead: string[];
   missingDataSources: string[];
+  limitsScope: LimitsScope;
 }> {
   const dataSourcesRead: string[] = [];
   const missingDataSources: string[] = [];
@@ -139,22 +194,26 @@ async function collectMetrics(overrides: SimulateOverrides | undefined): Promise
   let dailyPnl = 0, weeklyPnl = 0, openCount = 0, winRate30d = 0, sampleSize = 0, maxDrawdown = 0;
   const sameSymbolExposure: Record<string, number> = {};
   try {
+    // Per-user isolation: when the evaluation belongs to a user, only that
+    // user's paper orders may move their governor.
+    const userIdScope = userId == null ? [] : [eq(paperOrdersTable.userId, userId)];
     const dRows = await db.select({ pnl: sql<number>`COALESCE(SUM(${paperOrdersTable.profitLoss}),0)` })
       .from(paperOrdersTable)
-      .where(and(eq(paperOrdersTable.status, "CLOSED"), gte(paperOrdersTable.closedAt, utcMidnight)));
+      .where(and(...userIdScope, eq(paperOrdersTable.status, "CLOSED"), gte(paperOrdersTable.closedAt, utcMidnight)));
     dailyPnl = Number(dRows[0]?.pnl ?? 0);
 
     const wRows = await db.select({ pnl: sql<number>`COALESCE(SUM(${paperOrdersTable.profitLoss}),0)` })
       .from(paperOrdersTable)
-      .where(and(eq(paperOrdersTable.status, "CLOSED"), gte(paperOrdersTable.closedAt, weekAgo)));
+      .where(and(...userIdScope, eq(paperOrdersTable.status, "CLOSED"), gte(paperOrdersTable.closedAt, weekAgo)));
     weeklyPnl = Number(wRows[0]?.pnl ?? 0);
 
-    const open = await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.status, "OPEN"));
+    const open = await db.select().from(paperOrdersTable)
+      .where(and(...userIdScope, eq(paperOrdersTable.status, "OPEN")));
     openCount = open.length;
     for (const o of open) sameSymbolExposure[o.symbol] = (sameSymbolExposure[o.symbol] ?? 0) + 1;
 
     const closed30 = await db.select().from(paperOrdersTable)
-      .where(and(eq(paperOrdersTable.status, "CLOSED"), gte(paperOrdersTable.closedAt, thirtyAgo)));
+      .where(and(...userIdScope, eq(paperOrdersTable.status, "CLOSED"), gte(paperOrdersTable.closedAt, thirtyAgo)));
     sampleSize = closed30.length;
     if (sampleSize > 0) {
       const wins = closed30.filter(t => Number(t.profitLoss ?? 0) > 0).length;
@@ -170,8 +229,9 @@ async function collectMetrics(overrides: SimulateOverrides | undefined): Promise
   // --- AA: trade_decision_logs ---
   let avgConfidence = 0, avgRiskScore = 0, decisionToWinRate = 0, decisionsTotal = 0;
   try {
+    const decisionUserIdScope = userId == null ? [] : [eq(tradeDecisionLogsTable.userId, userId)];
     const decisions = await db.select().from(tradeDecisionLogsTable)
-      .where(gte(tradeDecisionLogsTable.createdAt, thirtyAgo));
+      .where(and(...decisionUserIdScope, gte(tradeDecisionLogsTable.createdAt, thirtyAgo)));
     decisionsTotal = decisions.length;
     if (decisionsTotal > 0) {
       avgConfidence = Math.round((decisions.reduce((a, d) => a + (d.confidence ?? 0), 0) / decisionsTotal) * 100) / 100;
@@ -179,7 +239,9 @@ async function collectMetrics(overrides: SimulateOverrides | undefined): Promise
     }
     const shouldTradeIds = decisions.filter(d => d.shouldTrade).map(d => d.id);
     if (shouldTradeIds.length > 0) {
-      const placed = await db.select().from(paperOrdersTable);
+      const placed = userId == null
+        ? await db.select().from(paperOrdersTable)
+        : await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.userId, userId));
       const winFromDecision = placed.filter(p => p.decisionId && shouldTradeIds.includes(p.decisionId) && Number(p.profitLoss ?? 0) > 0).length;
       const closedFromDecision = placed.filter(p => p.decisionId && shouldTradeIds.includes(p.decisionId) && p.status === "CLOSED").length;
       decisionToWinRate = closedFromDecision > 0 ? Math.round((winFromDecision / closedFromDecision) * 10000) / 100 : 0;
@@ -190,7 +252,9 @@ async function collectMetrics(overrides: SimulateOverrides | undefined): Promise
   // --- BB: post_trade_debriefs (presence check + count) ---
   let debriefsCreated = 0;
   try {
-    const debriefs = await db.select().from(postTradeDebriefsTable).where(gte(postTradeDebriefsTable.createdAt, thirtyAgo));
+    const debriefUserIdScope = userId == null ? [] : [eq(postTradeDebriefsTable.userId, userId)];
+    const debriefs = await db.select().from(postTradeDebriefsTable)
+      .where(and(...debriefUserIdScope, gte(postTradeDebriefsTable.createdAt, thirtyAgo)));
     debriefsCreated = debriefs.length;
     dataSourcesRead.push("post_trade_debriefs");
   } catch { missingDataSources.push("post_trade_debriefs"); }
@@ -198,12 +262,16 @@ async function collectMetrics(overrides: SimulateOverrides | undefined): Promise
   // --- CC: learning_events / strategy_edges / mistake_patterns ---
   let learningConfidence = 0, repeatedMistakeCount = 0, learningEventsCount = 0;
   try {
-    const events = await db.select().from(learningEventsTable).where(gte(learningEventsTable.createdAt, thirtyAgo));
+    const learningUserIdScope = userId == null ? [] : [eq(learningEventsTable.userId, userId)];
+    const events = await db.select().from(learningEventsTable)
+      .where(and(...learningUserIdScope, gte(learningEventsTable.createdAt, thirtyAgo)));
     learningEventsCount = events.length;
     dataSourcesRead.push("learning_events");
   } catch { missingDataSources.push("learning_events"); }
   try {
-    const edges = await db.select().from(strategyEdgesTable);
+    const edges = userId == null
+      ? await db.select().from(strategyEdgesTable)
+      : await db.select().from(strategyEdgesTable).where(eq(strategyEdgesTable.userId, userId));
     if (edges.length > 0) {
       const confidences = edges.map(e => Number((e as { confidence?: number | null }).confidence ?? 0));
       learningConfidence = Math.round((confidences.reduce((a, b) => a + b, 0) / edges.length) * 100) / 100;
@@ -211,7 +279,9 @@ async function collectMetrics(overrides: SimulateOverrides | undefined): Promise
     dataSourcesRead.push("strategy_edges");
   } catch { missingDataSources.push("strategy_edges"); }
   try {
-    const patterns = await db.select().from(mistakePatternsTable);
+    const patterns = userId == null
+      ? await db.select().from(mistakePatternsTable)
+      : await db.select().from(mistakePatternsTable).where(eq(mistakePatternsTable.userId, userId));
     repeatedMistakeCount = patterns.filter(p => Number((p as { occurrences?: number | null }).occurrences ?? 0) >= 3).length;
     dataSourcesRead.push("mistake_patterns");
   } catch { missingDataSources.push("mistake_patterns"); }
@@ -230,8 +300,9 @@ async function collectMetrics(overrides: SimulateOverrides | undefined): Promise
   let autopilotErrorRate = 0;
   const cooldowns: Cooldown[] = [];
   try {
+    const cycleUserIdScope = userId == null ? [] : [eq(autopilotCyclesTable.userId, userId)];
     const cycles = await db.select().from(autopilotCyclesTable)
-      .where(gte(autopilotCyclesTable.startedAt, weekAgo))
+      .where(and(...cycleUserIdScope, gte(autopilotCyclesTable.startedAt, weekAgo)))
       .orderBy(desc(autopilotCyclesTable.startedAt)).limit(50);
     if (cycles.length > 0) {
       const errored = cycles.filter(c => (c.status ?? "").toUpperCase() === "ERROR" || (c.status ?? "").toUpperCase() === "FAILED").length;
@@ -247,16 +318,42 @@ async function collectMetrics(overrides: SimulateOverrides | undefined): Promise
   } catch { missingDataSources.push("autopilot_cycles"); }
 
   // --- Risk settings (limits) ---
-  let dailyLossLimit = 100;
+  //
+  // WAS: `.orderBy(desc(id)).limit(1)` with no user predicate — the most
+  // recently CREATED user's row governed everyone, so a new signup silently
+  // relaxed (or tightened) the governor for every existing trader while their
+  // own edits, written per-user by routes/risk.ts, were ignored.
+  //
+  // WAS ALSO: `dailyLossLimit = max(10, round(pct * 50))` — a hardcoded
+  // "$50 per 1%" proxy with no relation to the account it protects. The dollar
+  // limit is now the configured percentage applied to the trader's own active
+  // paper-account equity (the governor is a PAPER_ONLY surface). If there is
+  // no equity to apply it to we report UNKNOWN rather than inventing a figure.
+  let dailyLossLimit = 0;
+  let dailyLossLimitBasis: DailyLossLimitBasis = "UNKNOWN";
+  let maxDailyLossPct: number | null = null;
   let maxOpenPaperTrades = 2;
+  let limitsScope: LimitsScope = userId == null ? "DEFAULTS_UNSCOPED" : "USER_DEFAULTS";
   try {
-    const rs = await db.select().from(riskSettingsTable).orderBy(desc(riskSettingsTable.id)).limit(1);
-    if (rs[0]) {
-      maxOpenPaperTrades = rs[0].maxOpenTrades ?? 2;
-      const pct = rs[0].maxDailyLossPct ?? 2;
-      dailyLossLimit = Math.max(10, Math.round(pct * 50)); // simple proxy: $50 per 1%
+    if (userId == null) {
+      missingDataSources.push("risk_settings:user_scope");
+    } else {
+      const rs = await db.select().from(riskSettingsTable)
+        .where(eq(riskSettingsTable.userId, userId)).limit(1);
+      if (rs[0]) {
+        limitsScope = "USER";
+        maxOpenPaperTrades = rs[0].maxOpenTrades ?? 2;
+        maxDailyLossPct = rs[0].maxDailyLossPct ?? 2;
+        const acct = await db.select().from(paperAccountsTable)
+          .where(and(eq(paperAccountsTable.userId, userId), eq(paperAccountsTable.isActive, 1)))
+          .orderBy(desc(paperAccountsTable.id)).limit(1);
+        const equity = acct[0] ? (acct[0].equity ?? acct[0].currentBalance) : null;
+        const derived = deriveDailyLossLimit(maxDailyLossPct, equity);
+        dailyLossLimit = derived.limit;
+        dailyLossLimitBasis = derived.basis;
+      }
+      dataSourcesRead.push("risk_settings");
     }
-    dataSourcesRead.push("risk_settings");
   } catch { missingDataSources.push("risk_settings"); }
 
   // --- Apply simulate overrides ---
@@ -273,6 +370,9 @@ async function collectMetrics(overrides: SimulateOverrides | undefined): Promise
     metrics: {
       dailyPnl: Number(dailyPnl.toFixed(2)),
       dailyLossLimit,
+      dailyLossLimitBasis,
+      maxDailyLossPct,
+      limitsScope,
       weeklyPnl: Number(weeklyPnl.toFixed(2)),
       maxDrawdown,
       openPaperTrades: openCount,
@@ -291,6 +391,7 @@ async function collectMetrics(overrides: SimulateOverrides | undefined): Promise
     cooldowns,
     dataSourcesRead,
     missingDataSources,
+    limitsScope,
   };
 }
 
@@ -323,8 +424,19 @@ function evaluateStatus(
   if (m.openPaperTrades > m.maxOpenPaperTrades && m.maxOpenPaperTrades > 0) {
     hardBlocks.push({ code: "MAX_OPEN_PAPER_TRADES_EXCEEDED", severity: "BLOCK", message: `Open paper trades ${m.openPaperTrades} exceed configured max ${m.maxOpenPaperTrades}.`, details: { open: m.openPaperTrades, max: m.maxOpenPaperTrades } });
   }
-  if (m.dailyPnl <= -Math.abs(m.dailyLossLimit)) {
-    hardBlocks.push({ code: "DAILY_LOSS_LIMIT_EXCEEDED", severity: "BLOCK", message: `Daily P&L ${m.dailyPnl} exceeds loss limit -${m.dailyLossLimit}.`, details: { dailyPnl: m.dailyPnl, limit: m.dailyLossLimit } });
+  const limitKnown = m.dailyLossLimitBasis !== "UNKNOWN" && m.dailyLossLimit > 0;
+  if (limitKnown && m.dailyPnl <= -Math.abs(m.dailyLossLimit)) {
+    hardBlocks.push({ code: "DAILY_LOSS_LIMIT_EXCEEDED", severity: "BLOCK", message: `Daily P&L ${m.dailyPnl} exceeds loss limit -${m.dailyLossLimit}.`, details: { dailyPnl: m.dailyPnl, limit: m.dailyLossLimit, basis: m.dailyLossLimitBasis } });
+  }
+  // FAIL CLOSED on an unreadable stop: if the day is already negative and we
+  // could not derive the dollar loss limit, we cannot say the trader is inside
+  // it — so we refuse rather than assume they are.
+  if (!limitKnown && m.dailyPnl < 0) {
+    hardBlocks.push({
+      code: "DAILY_LOSS_LIMIT_UNKNOWN", severity: "BLOCK",
+      message: "Daily loss limit could not be derived (no account equity to apply the configured % to) and today's P&L is negative — refusing to certify the limit is intact.",
+      details: { dailyPnl: m.dailyPnl, maxDailyLossPct: m.maxDailyLossPct, limitsScope: m.limitsScope },
+    });
   }
   for (const [sym, n] of Object.entries(m.sameSymbolExposure)) {
     if (n >= 3) hardBlocks.push({ code: "SAME_SYMBOL_CONFLICT", severity: "BLOCK", message: `Symbol ${sym} has ${n} concurrent open paper positions.`, details: { symbol: sym, count: n } });
@@ -348,7 +460,7 @@ function evaluateStatus(
 
   // ── PAUSE conditions ─────────────────────────────────────────────────────
   let pauseReasons = 0;
-  if (m.dailyPnl < 0 && m.dailyPnl > -Math.abs(m.dailyLossLimit) && Math.abs(m.dailyPnl) >= 0.7 * Math.abs(m.dailyLossLimit)) {
+  if (limitKnown && m.dailyPnl < 0 && m.dailyPnl > -Math.abs(m.dailyLossLimit) && Math.abs(m.dailyPnl) >= 0.7 * Math.abs(m.dailyLossLimit)) {
     softWarnings.push({ code: "DAILY_LOSS_NEAR_LIMIT", message: `Daily P&L ${m.dailyPnl} is within 30% of loss limit -${m.dailyLossLimit}.` }); pauseReasons += 1;
   }
   if (cooldowns.some(c => (c.reason ?? "").toUpperCase().includes("REVENGE"))) {
@@ -369,6 +481,8 @@ function evaluateStatus(
 
   // ── CAUTION conditions (informational, do not pause) ────────────────────
   let cautionReasons = 0;
+  if (!limitKnown) { riskFlags.push({ code: "DAILY_LOSS_LIMIT_UNKNOWN", message: `Dollar daily-loss limit is UNKNOWN (${m.maxDailyLossPct != null ? `${m.maxDailyLossPct}% configured, ` : ""}no account equity to apply it to).` }); cautionReasons += 1; }
+  if (m.limitsScope !== "USER") { riskFlags.push({ code: "RISK_LIMITS_UNSCOPED", message: `Risk limits were not read from a specific trader's settings (${m.limitsScope}) — documented defaults were used, never another user's row.` }); cautionReasons += 1; }
   if (m.sampleSize < 30) { riskFlags.push({ code: "SMALL_SAMPLE_SIZE", message: `Only ${m.sampleSize} closed paper trades in last 30d.` }); cautionReasons += 1; }
   if (m.winRate30d > 0 && m.winRate30d < 50) { riskFlags.push({ code: "WIN_RATE_UNSTABLE", message: `30d win rate ${m.winRate30d}% < 50%.` }); cautionReasons += 1; }
   if (m.learningConfidence < 30) { riskFlags.push({ code: "LEARNING_CONFIDENCE_LOW", message: `Learning confidence ${m.learningConfidence} is low.` }); cautionReasons += 1; }
@@ -391,8 +505,11 @@ function evaluateStatus(
 function scoreReadiness(m: GovernorMetrics): { score: number; grade: ReadinessGrade; level: ReadinessLevel; breakdown: Record<string, number> } {
   // A. Risk discipline (25)
   let a = 25;
-  if (m.dailyPnl <= -Math.abs(m.dailyLossLimit)) a -= 15;
-  else if (m.dailyPnl < 0 && Math.abs(m.dailyPnl) >= 0.7 * Math.abs(m.dailyLossLimit)) a -= 8;
+  const limitKnown = m.dailyLossLimitBasis !== "UNKNOWN" && m.dailyLossLimit > 0;
+  if (limitKnown && m.dailyPnl <= -Math.abs(m.dailyLossLimit)) a -= 15;
+  else if (limitKnown && m.dailyPnl < 0 && Math.abs(m.dailyPnl) >= 0.7 * Math.abs(m.dailyLossLimit)) a -= 8;
+  // An underivable loss limit is a risk-discipline gap, not a free pass.
+  else if (!limitKnown) a -= 8;
   if (m.openPaperTrades > m.maxOpenPaperTrades) a -= 10;
   if (Object.values(m.sameSymbolExposure).some(n => n >= 3)) a -= 5;
   if (m.avgRiskScore >= 80) a -= 5;
@@ -523,6 +640,12 @@ export interface EvaluateOpts {
   log?: EvalLog;
   simulate?: SimulateOverrides;
   symbol?: string;
+  /** WHOSE governor this is. Callers that represent a signed-in trader MUST
+   *  pass it; the limits and paper-trade metrics are then read from that
+   *  trader's own rows. Instance-level readiness surfaces may omit it, in
+   *  which case documented defaults are used and the evaluation says so via
+   *  metrics.limitsScope — it never adopts another user's limits. */
+  userId?: number | null;
 }
 
 export async function evaluateGovernor(opts: EvaluateOpts = {}): Promise<GovernorEvaluation> {
@@ -531,7 +654,8 @@ export async function evaluateGovernor(opts: EvaluateOpts = {}): Promise<Governo
   const startedAt = new Date();
   log.info("evaluation started", { governorId });
 
-  const { metrics, cooldowns, dataSourcesRead, missingDataSources } = await collectMetrics(opts.simulate);
+  const userId = opts.userId ?? null;
+  const { metrics, cooldowns, dataSourcesRead, missingDataSources } = await collectMetrics(opts.simulate, userId);
   log.info("data sources read", { count: dataSourcesRead.length, sources: dataSourcesRead });
   if (missingDataSources.length > 0) log.warn("missing data sources", { missing: missingDataSources });
   log.info("metrics calculated", { metrics });
@@ -648,8 +772,8 @@ export interface GovernorGateResult {
   governorId: string;
 }
 
-export async function gateForPaperTrade(): Promise<GovernorGateResult> {
-  const e = await evaluateGovernor({ persist: false });
+export async function gateForPaperTrade(userId?: number | null): Promise<GovernorGateResult> {
+  const e = await evaluateGovernor({ persist: false, userId: userId ?? null });
   return {
     allowed: e.allowedActions.canOpenPaperTrade,
     status: e.overallStatus,
@@ -657,8 +781,8 @@ export async function gateForPaperTrade(): Promise<GovernorGateResult> {
     governorId: e.governor_id,
   };
 }
-export async function gateForAutopilot(): Promise<GovernorGateResult> {
-  const e = await evaluateGovernor({ persist: false });
+export async function gateForAutopilot(userId?: number | null): Promise<GovernorGateResult> {
+  const e = await evaluateGovernor({ persist: false, userId: userId ?? null });
   return {
     allowed: e.allowedActions.canRunPaperAutopilot,
     status: e.overallStatus,

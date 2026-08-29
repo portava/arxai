@@ -10,7 +10,7 @@ import {
   mistakePatternsTable,
   strategyEdgesTable,
 } from "@workspace/db";
-import { eq, gte } from "drizzle-orm";
+import { and, eq, gte } from "drizzle-orm";
 import { evaluateGovernor } from "../riskGovernor/governor.js";
 
 export interface WeeklyPlan {
@@ -33,6 +33,11 @@ export interface WeeklyPlan {
   reviewQuestions: string[];
   successCriteria: string[];
   warnings: string[];
+  /** Whether this plan was written to weekly_improvement_plans. See the
+   *  persistence block below — the table is keyed one-row-per-week with no
+   *  owner column, so a per-user plan currently cannot be stored. */
+  persisted: boolean;
+  persistenceNote: string | null;
 }
 
 function isoDateOnly(d: Date): string {
@@ -48,7 +53,9 @@ function startOfWeek(d: Date): Date {
   return x;
 }
 
-export async function generateWeeklyPlan(opts: { persist?: boolean } = {}): Promise<WeeklyPlan> {
+// ISOLATION: `userId` is required — the plan is built from this trader's own
+// paper orders, mistake patterns and strategy edges.
+export async function generateWeeklyPlan(userId: number, opts: { persist?: boolean } = {}): Promise<WeeklyPlan> {
   const persist = opts.persist ?? false;
   const today = new Date();
   const weekStartDate = startOfWeek(today);
@@ -61,18 +68,21 @@ export async function generateWeeklyPlan(opts: { persist?: boolean } = {}): Prom
   const sevenAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   let lastWeekTrades: { id: number; status: string; pnl: number | null }[] = [];
   try {
-    const rows = await db.select().from(paperOrdersTable).where(gte(paperOrdersTable.createdAt, sevenAgo));
+    const rows = await db.select().from(paperOrdersTable)
+      .where(and(eq(paperOrdersTable.userId, userId), gte(paperOrdersTable.createdAt, sevenAgo)));
     lastWeekTrades = rows.map(r => ({ id: r.id, status: r.status, pnl: r.profitLoss ?? null }));
   } catch { /* empty */ }
 
   let mistakes: { tag: string; symbol: string; action: string; count: number; severityScore: number }[] = [];
-  try { mistakes = await db.select().from(mistakePatternsTable); } catch { /* empty */ }
+  try { mistakes = await db.select().from(mistakePatternsTable)
+    .where(eq(mistakePatternsTable.userId, userId)); } catch { /* empty */ }
 
   let edges: { symbol: string; signalName: string; action: string; sampleCount: number; edgeScore: number; winCount: number }[] = [];
-  try { edges = await db.select().from(strategyEdgesTable); } catch { /* empty */ }
+  try { edges = await db.select().from(strategyEdgesTable)
+    .where(eq(strategyEdgesTable.userId, userId)); } catch { /* empty */ }
 
   let governor: Awaited<ReturnType<typeof evaluateGovernor>> | null = null;
-  try { governor = await evaluateGovernor({ persist: false }); } catch { /* empty */ }
+  try { governor = await evaluateGovernor({ persist: false, userId }); } catch { /* empty */ }
 
   const closedLastWeek = lastWeekTrades.filter(t => t.status !== "OPEN");
   const wins = closedLastWeek.filter(t => (t.pnl ?? 0) > 0).length;
@@ -184,30 +194,27 @@ export async function generateWeeklyPlan(opts: { persist?: boolean } = {}): Prom
     reviewQuestions,
     successCriteria,
     warnings,
+    persisted: false,
+    persistenceNote: null,
   };
 
+  // PERSISTENCE WITHHELD — deliberately, and reported rather than hidden.
+  //
+  // `weekly_improvement_plans` is UNIQUE on week_start alone and has no
+  // user_id column: it can hold exactly ONE plan per calendar week for the
+  // whole instance. Writing this trader's plan there would overwrite whichever
+  // trader saved last, and the next reader would be shown a stranger's goals
+  // as their own. Since the plan is now correctly per-user, storing it is not
+  // possible without a schema change (add user_id + move the unique key to
+  // (user_id, week_start)); until then the plan is computed and returned
+  // live, and the caller is told plainly that it was not saved.
   if (persist) {
-    try {
-      const existing = await db.select().from(weeklyImprovementPlansTable)
-        .where(eq(weeklyImprovementPlansTable.weekStart, weekStart)).limit(1);
-      if (existing[0]) {
-        await db.update(weeklyImprovementPlansTable).set({
-          weekEnd, mainGoal, focusAreas, rulesToPractice,
-          mistakesToReduce, setupsToStudy, setupsToAvoid,
-          paperTradingTargets: paperTradingTargets as unknown as Record<string, unknown>,
-          progressMetrics, reviewQuestions, successCriteria, warnings,
-          updatedAt: new Date(),
-        }).where(eq(weeklyImprovementPlansTable.id, existing[0].id));
-      } else {
-        await db.insert(weeklyImprovementPlansTable).values({
-          weekStart, weekEnd, mainGoal, focusAreas, rulesToPractice,
-          mistakesToReduce, setupsToStudy, setupsToAvoid,
-          paperTradingTargets: paperTradingTargets as unknown as Record<string, unknown>,
-          progressMetrics, reviewQuestions, successCriteria, warnings,
-        });
-      }
-    } catch { /* non-fatal */ }
+    plan.persistenceNote =
+      "Not saved. The weekly-plan table stores one plan per week for the whole platform (no per-trader column), "
+      + "so saving your plan would overwrite another trader's. This plan is generated fresh each time you open it.";
+    plan.warnings = [...warnings, plan.persistenceNote];
   }
+  void weeklyImprovementPlansTable;
 
   return plan;
 }

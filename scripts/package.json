@@ -20,6 +20,7 @@
     "test:provenance-no-collapse": "tsx ./src/ci/check-provenance-no-collapse.test.ts",
     "test:stable-stringify-parity": "tsx ./src/stableStringifyParityTest.ts",
     "test:risk-correlation": "tsx ./src/riskCorrelationTest.ts",
+    "test:per-user-isolation-surfaces": "node --import tsx --test --test-force-exit ./src/__qa__/perUserIsolationScopedSurfaces.test.ts",
     "test:vault-mutations": "tsx ./src/ci/check-vault-mutations.test.ts",
     "test:worktree-integrity": "tsx ./src/ci/check-worktree-integrity.test.ts",
     "test:capital-constitution": "tsx ./src/ci/check-capital-constitution.test.ts",

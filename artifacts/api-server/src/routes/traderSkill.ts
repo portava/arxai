@@ -13,9 +13,15 @@ import {
   tradingRuleViolationsTable, edgeDiscoveryReportsTable,
   tradePlansTable, vaultEventsTable,
 } from "@workspace/db";
-import { desc } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
+import { requireUser } from "../lib/auth/middleware.js";
 
 const router = Router();
+
+/** Authenticated caller id — `requireUser` gates every /skill/* route. */
+function uid(req: import("express").Request): number {
+  return req.authUser!.id;
+}
 const SKILL_DISCLAIMER =
   "Skill level measures PROCESS quality (discipline, journaling, review cadence) — not short-term profit. A higher level does NOT predict future trades will be profitable.";
 
@@ -79,15 +85,25 @@ interface Subs {
   signals: Record<string, number>;
 }
 
-async function computeSubScores(): Promise<Subs> {
+// ISOLATION: `userId` is required. Skill is a claim about ONE trader's process
+// quality; pooling every user's journal, debriefs and violations produces a
+// number that is true of nobody.
+async function computeSubScores(userId: number): Promise<Subs> {
   const [journals, debriefs, reviews, papers, violations, edges, plans] = await Promise.all([
-    db.select().from(tradeJournalTable).limit(2000),
-    db.select().from(postTradeDebriefsTable).limit(2000),
-    db.select().from(weeklyPerformanceReviewsTable).limit(200),
-    db.select().from(paperOrdersTable).limit(2000),
-    db.select().from(tradingRuleViolationsTable).limit(500),
-    db.select().from(edgeDiscoveryReportsTable).limit(200),
-    db.select().from(tradePlansTable).limit(500),
+    db.select().from(tradeJournalTable)
+      .where(eq(tradeJournalTable.userId, userId)).limit(2000),
+    db.select().from(postTradeDebriefsTable)
+      .where(eq(postTradeDebriefsTable.userId, userId)).limit(2000),
+    db.select().from(weeklyPerformanceReviewsTable)
+      .where(eq(weeklyPerformanceReviewsTable.userId, userId)).limit(200),
+    db.select().from(paperOrdersTable)
+      .where(eq(paperOrdersTable.userId, userId)).limit(2000),
+    db.select().from(tradingRuleViolationsTable)
+      .where(eq(tradingRuleViolationsTable.userId, userId)).limit(500),
+    db.select().from(edgeDiscoveryReportsTable)
+      .where(eq(edgeDiscoveryReportsTable.userId, userId)).limit(200),
+    db.select().from(tradePlansTable)
+      .where(eq(tradePlansTable.userId, userId)).limit(500),
   ]);
 
   const journalCount = journals.length;
@@ -176,18 +192,21 @@ function totalFromSubs(s: Subs): number {
 }
 
 // ── POST /skill/calculate — recompute and persist a new profile snapshot ───
-router.post("/skill/calculate", async (req, res): Promise<void> => {
+router.post("/skill/calculate", requireUser, async (req, res): Promise<void> => {
   try {
-    const subs = await computeSubScores();
+    const userId = uid(req);
+    const subs = await computeSubScores(userId);
     const total = totalFromSubs(subs);
     const newLevel = levelFromTotal(total);
 
-    // Most recent profile (if any) for level-change detection.
+    // Most recent profile for THIS user (if any) for level-change detection.
     const prev = (await db.select().from(traderSkillProfilesTable)
+      .where(eq(traderSkillProfilesTable.userId, userId))
       .orderBy(desc(traderSkillProfilesTable.updatedAt)).limit(1))[0];
     const prevLevel = prev?.skillLevel ?? "Beginner";
 
     const ins = await db.insert(traderSkillProfilesTable).values({
+      userId,
       skillLevel: newLevel, totalScore: total,
       disciplineScore: subs.discipline, executionScore: subs.execution,
       riskScore: subs.risk, emotionalControlScore: subs.emotional,
@@ -199,6 +218,7 @@ router.post("/skill/calculate", async (req, res): Promise<void> => {
     if (prev && prevLevel !== newLevel) {
       const direction = LEVELS.indexOf(newLevel) > LEVELS.indexOf(prevLevel as Level) ? "promotion" : "demotion";
       await db.insert(skillLevelHistoryTable).values({
+        userId,
         previousLevel: prevLevel, newLevel,
         reason: `${direction}: total score ${prev.totalScore.toFixed(0)} → ${total} (process-quality recompute)`,
       });
@@ -216,22 +236,25 @@ router.post("/skill/calculate", async (req, res): Promise<void> => {
 });
 
 // ── GET /skill/profile — most recent profile ───────────────────────────────
-router.get("/skill/profile", async (_req, res): Promise<void> => {
+router.get("/skill/profile", requireUser, async (req, res): Promise<void> => {
   const profile = (await db.select().from(traderSkillProfilesTable)
+    .where(eq(traderSkillProfilesTable.userId, uid(req)))
     .orderBy(desc(traderSkillProfilesTable.updatedAt)).limit(1))[0] ?? null;
   ok(res, { profile });
 });
 
 // ── GET /skill/history ─────────────────────────────────────────────────────
-router.get("/skill/history", async (_req, res): Promise<void> => {
+router.get("/skill/history", requireUser, async (req, res): Promise<void> => {
   const rows = await db.select().from(skillLevelHistoryTable)
+    .where(eq(skillLevelHistoryTable.userId, uid(req)))
     .orderBy(desc(skillLevelHistoryTable.createdAt)).limit(50);
   ok(res, { history: rows });
 });
 
 // ── GET /skill/suggestions — what to improve to reach next level ───────────
-router.get("/skill/suggestions", async (_req, res): Promise<void> => {
+router.get("/skill/suggestions", requireUser, async (req, res): Promise<void> => {
   const profile = (await db.select().from(traderSkillProfilesTable)
+    .where(eq(traderSkillProfilesTable.userId, uid(req)))
     .orderBy(desc(traderSkillProfilesTable.updatedAt)).limit(1))[0];
   if (!profile) {
     ok(res, { suggestions: [{ area: "GETTING_STARTED",

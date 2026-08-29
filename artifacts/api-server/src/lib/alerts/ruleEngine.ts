@@ -8,6 +8,18 @@
 //
 // Inviolable: no rule may claim guaranteed profit. Messages describe the
 // observed condition only.
+//
+// PER-USER ISOLATION: the two rules that read per-trader state
+// (WEEKLY_REVIEW_READY, NEAR_DAILY_LOSS_LIMIT) now take the owning `userId`
+// and scope their queries by it. The daily-loss rule previously read
+// `risk_settings` with a bare `.limit(1)`, so whichever row the planner
+// happened to return decided every trader's loss budget.
+//
+// NOTE (accuracy, not a claim of coverage): nothing in this repository
+// currently imports `evaluateAndGenerate` — this engine has no scheduler and
+// no route behind it. It is fixed rather than left latent so that whoever
+// wires it cannot inherit the cross-user read; `userId` is a REQUIRED
+// parameter precisely so it cannot be wired unscoped.
 
 import {
   db,
@@ -29,7 +41,7 @@ export interface RuleResult {
   details: Array<{ rule: string; fired: boolean; reason?: string }>;
 }
 
-export async function evaluateAndGenerate(): Promise<RuleResult> {
+export async function evaluateAndGenerate(userId: number): Promise<RuleResult> {
   const details: RuleResult["details"] = [];
   let fired = 0;
   const fire = async (rule: string, fn: () => Promise<{ fired: boolean; reason?: string }>) => {
@@ -44,12 +56,12 @@ export async function evaluateAndGenerate(): Promise<RuleResult> {
 
   await fire("BROKER_DISCONNECTED", brokerDisconnectedRule);
   await fire("PRICE_FEED_DELAYED", priceFeedDelayedRule);
-  await fire("MARKET_NO_TRADE", marketNoTradeRule);
-  await fire("POSITION_NEAR_STOP_LOSS", positionNearStopLossRule);
-  await fire("TRADE_PLAN_INVALID", tradePlanInvalidRule);
-  await fire("RISK_LOCK_ACTIVE", riskLockActiveRule);
-  await fire("WEEKLY_REVIEW_READY", weeklyReviewReadyRule);
-  await fire("NEAR_DAILY_LOSS_LIMIT", nearDailyLossLimitRule);
+  await fire("MARKET_NO_TRADE", () => marketNoTradeRule(userId));
+  await fire("POSITION_NEAR_STOP_LOSS", () => positionNearStopLossRule(userId));
+  await fire("TRADE_PLAN_INVALID", () => tradePlanInvalidRule(userId));
+  await fire("RISK_LOCK_ACTIVE", () => riskLockActiveRule(userId));
+  await fire("WEEKLY_REVIEW_READY", () => weeklyReviewReadyRule(userId));
+  await fire("NEAR_DAILY_LOSS_LIMIT", () => nearDailyLossLimitRule(userId));
 
   return { evaluated: details.length, fired, details };
 }
@@ -97,11 +109,14 @@ async function priceFeedDelayedRule() {
   return { fired: false };
 }
 
-async function marketNoTradeRule() {
-  // Any active trade plan currently in NO_TRADE market condition → coach the
-  // trader. We only emit one per symbol per dedupe window.
+async function marketNoTradeRule(userId: number) {
+  // Any of THIS TRADER'S active plans currently in NO_TRADE market condition.
   const plans = await db.select().from(tradePlansTable)
-    .where(and(eq(tradePlansTable.marketCondition, "NO_TRADE"), eq(tradePlansTable.status, "DRAFT")))
+    .where(and(
+      eq(tradePlansTable.userId, userId),
+      eq(tradePlansTable.marketCondition, "NO_TRADE"),
+      eq(tradePlansTable.status, "DRAFT"),
+    ))
     .limit(20);
   if (plans.length === 0) return { fired: false };
   let any = false;
@@ -114,7 +129,7 @@ async function marketNoTradeRule() {
       message: `Active plan #${p.id} is operating in a NO_TRADE market. Consider postponing entry until conditions improve.`,
       symbol: p.symbol ?? undefined,
       relatedTradePlanId: p.id,
-      dedupeKey: `market-no-trade:${p.id}`,
+      dedupeKey: `market-no-trade:${userId}:${p.id}`,
     });
     if (r.id !== 0) any = true;
   }
@@ -123,10 +138,16 @@ async function marketNoTradeRule() {
 
 // ── Position rules ───────────────────────────────────────────────────────
 
-async function positionNearStopLossRule() {
-  // Open positions whose current price is within 25% of the SL distance.
+async function positionNearStopLossRule(userId: number) {
+  // THIS TRADER'S open positions whose current price is within 25% of the SL
+  // distance. Alerting on someone else's position would be both a leak and a
+  // false alarm.
   const open = await db.select().from(livePositionsTable)
-    .where(and(eq(livePositionsTable.status, "OPEN"), isNull(livePositionsTable.closedAt)))
+    .where(and(
+      eq(livePositionsTable.userId, userId),
+      eq(livePositionsTable.status, "OPEN"),
+      isNull(livePositionsTable.closedAt),
+    ))
     .limit(50);
   let any = false;
   for (const p of open) {
@@ -149,7 +170,7 @@ async function positionNearStopLossRule() {
         relatedTradeId: p.tradeId ?? undefined,
         actionRequired: pctOfSlRemaining <= 0.05,
         // Bucket dedupe by 5-percent band so we don't realert continuously.
-        dedupeKey: `pos-near-sl:${p.id}:${Math.floor(pctOfSlRemaining * 20)}`,
+        dedupeKey: `pos-near-sl:${userId}:${p.id}:${Math.floor(pctOfSlRemaining * 20)}`,
       });
       if (r.id !== 0) any = true;
     }
@@ -159,11 +180,15 @@ async function positionNearStopLossRule() {
 
 // ── Trade plan / risk lock / coach ───────────────────────────────────────
 
-async function tradePlanInvalidRule() {
-  // Plans newly INVALIDATED in the last 5 min.
+async function tradePlanInvalidRule(userId: number) {
+  // THIS TRADER'S plans newly INVALIDATED in the last 5 min.
   const since = new Date(Date.now() - 5 * 60 * 1000);
   const plans = await db.select().from(tradePlansTable)
-    .where(and(eq(tradePlansTable.status, "INVALIDATED"), gte(tradePlansTable.updatedAt, since)))
+    .where(and(
+      eq(tradePlansTable.userId, userId),
+      eq(tradePlansTable.status, "INVALIDATED"),
+      gte(tradePlansTable.updatedAt, since),
+    ))
     .limit(10);
   if (plans.length === 0) return { fired: false };
   let any = false;
@@ -177,16 +202,16 @@ async function tradePlanInvalidRule() {
       symbol: p.symbol ?? undefined,
       relatedTradePlanId: p.id,
       // Same plan won't realert until updatedAt changes (different dedupeKey).
-      dedupeKey: `plan-invalid:${p.id}:${p.updatedAt.getTime()}`,
+      dedupeKey: `plan-invalid:${userId}:${p.id}:${p.updatedAt.getTime()}`,
     });
     if (r.id !== 0) any = true;
   }
   return { fired: any };
 }
 
-async function riskLockActiveRule() {
+async function riskLockActiveRule(userId: number) {
   const locks = await db.select().from(riskLocksTable)
-    .where(eq(riskLocksTable.isActive, true))
+    .where(and(eq(riskLocksTable.userId, userId), eq(riskLocksTable.isActive, true)))
     .orderBy(desc(riskLocksTable.startTime))
     .limit(10);
   if (locks.length === 0) return { fired: false };
@@ -199,18 +224,21 @@ async function riskLockActiveRule() {
       title: `Risk lock active: ${l.lockType}`,
       message: `Trading is paused — ${l.reason}`,
       actionRequired: false,
-      dedupeKey: `risk-lock:${l.id}`,
+      dedupeKey: `risk-lock:${userId}:${l.id}`,
     });
     if (r.id !== 0) any = true;
   }
   return { fired: any };
 }
 
-async function weeklyReviewReadyRule() {
-  // Most-recent review created in the last 24h.
+async function weeklyReviewReadyRule(userId: number) {
+  // Most-recent review created in the last 24h — for THIS user.
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const rows = await db.select().from(weeklyPerformanceReviewsTable)
-    .where(gte(weeklyPerformanceReviewsTable.weekEnd, since))
+    .where(and(
+      eq(weeklyPerformanceReviewsTable.userId, userId),
+      gte(weeklyPerformanceReviewsTable.weekEnd, since),
+    ))
     .orderBy(desc(weeklyPerformanceReviewsTable.weekEnd))
     .limit(1);
   const r = rows[0];
@@ -221,22 +249,26 @@ async function weeklyReviewReadyRule() {
     severity: "info",
     title: "Weekly performance review ready",
     message: `Your review for week ending ${new Date(r.weekEnd).toISOString().slice(0, 10)} is available — ${r.totalTrades} trades, win rate ${(r.winRate * 100).toFixed(0)}%.`,
-    dedupeKey: `weekly-review:${r.id}`,
+    dedupeKey: `weekly-review:${userId}:${r.id}`,
   });
   return { fired: out.id !== 0 };
 }
 
-async function nearDailyLossLimitRule() {
-  // Compose: read riskSettings.maxDailyLossPct + most recent
+async function nearDailyLossLimitRule(userId: number) {
+  // Compose: read THIS USER'S riskSettings.maxDailyLossPct + THEIR most recent
   // performance_daily row, alert when realized loss is ≥ 80% of limit.
-  const rs = await db.select().from(riskSettingsTable).limit(1);
+  const rs = await db.select().from(riskSettingsTable)
+    .where(eq(riskSettingsTable.userId, userId)).limit(1);
   const settings = rs[0];
-  if (!settings) return { fired: false, reason: "no risk_settings" };
+  if (!settings) return { fired: false, reason: "no risk_settings for user" };
 
   const today = new Date();
   const dayKey = today.toISOString().slice(0, 10);
   const rows = await db.select().from(performanceDailyTable)
-    .where(eq(performanceDailyTable.date, dayKey))
+    .where(and(
+      eq(performanceDailyTable.userId, userId),
+      eq(performanceDailyTable.date, dayKey),
+    ))
     .limit(1);
   const day = rows[0];
   if (!day || !day.pnl || day.pnl >= 0) return { fired: false };
@@ -257,7 +289,7 @@ async function nearDailyLossLimitRule() {
       title: lossSoFar >= lossLimit ? "Daily loss limit reached" : "Approaching daily loss limit",
       message: `Today's realized loss is ${lossSoFar.toFixed(2)} of the ${lossLimit.toFixed(2)} max-loss budget. Trading caution advised.`,
       actionRequired: lossSoFar >= lossLimit,
-      dedupeKey: `daily-loss:${dayKey}:${Math.floor((lossSoFar / lossLimit) * 10)}`,
+      dedupeKey: `daily-loss:${userId}:${dayKey}:${Math.floor((lossSoFar / lossLimit) * 10)}`,
     });
     return { fired: out.id !== 0 };
   }

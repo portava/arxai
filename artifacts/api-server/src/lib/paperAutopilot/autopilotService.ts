@@ -145,7 +145,9 @@ export async function runOneCycle(opts?: { settingsOverride?: Partial<AutopilotS
 
   // 2b. Build HH gate: Risk Governor must allow autopilot to run this cycle.
   try {
-    const gate = await gateForAutopilot();
+    // Scope the governor to the owner of this autopilot cycle (ownerUserId is
+    // proven non-null a few lines above — an unowned settings row aborts).
+    const gate = await gateForAutopilot(ownerUserId);
     if (!gate.allowed) {
       summary.warnings.push(`RISK_GOVERNOR_PAUSE[${gate.status}]: ${gate.reasons[0] ?? "blocked"}`);
       summary.status = "STOPPED";
