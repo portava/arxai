@@ -106,6 +106,7 @@
     "./historical-comparison": "./src/historical-comparison/index.ts",
     "./signal-intelligence": "./src/signal-intelligence/index.ts",
     "./self-trade": "./src/self-trade/index.ts",
+    "./opportunity-spine": "./src/opportunity-spine/index.ts",
     "./smart-chart": "./src/smart-chart/index.ts",
     "./news-risk": "./src/news-risk/index.ts",
     "./portfolio-risk": "./src/portfolio-risk/index.ts",

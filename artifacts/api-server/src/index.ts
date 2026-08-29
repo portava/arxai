@@ -20,6 +20,7 @@ import { startIntelligenceRoiWorker } from "./lib/intelligence/intelligenceRoiWo
 import { startChampionChallengerWorker } from "./lib/championChallengerWorker.js";
 import { startMetaStrategyControllerWorker } from "./lib/metaStrategyController.js";
 import { startChangePointDriverWorker } from "./lib/changePointDriver.js";
+import { startOpportunitySpineWorker } from "./lib/opportunitySpine/opportunitySpineWorker.js";
 import { computeEnvChecklist, summarizeEnvChecklist } from "./lib/startup/envChecklist";
 import { runStartupReadinessCheck } from "./lib/startup/readinessCheck";
 import { seedCoreAgents } from "./lib/agentEcosystem/seedCoreAgents";
@@ -225,6 +226,10 @@ ensureSafetyCoreInitialized()
       // (authority reduction only — recovery stays owner-gated). Opt-out via
       // ARX_CHANGEPOINT_DRIVER_ENABLED (logged loudly).
       startChangePointDriverWorker();
+      // Opportunity Spine (#17): observer-only sweep that expires/reconciles
+      // owning per-setup opportunity objects (missed-state accounting). No
+      // execution path. Opt-out via ARX_OPPORTUNITY_SPINE_ENABLED (logged loudly).
+      startOpportunitySpineWorker();
       // Eagerly bootstrap the Deriv WebSocket so synthetic-index candles
       // (V10/V25/V50/V75/V100, 1Hz variants, Boom/Crash, Step) are ready
       // before the first scanner pass. Non-blocking; lazy ensureConnection

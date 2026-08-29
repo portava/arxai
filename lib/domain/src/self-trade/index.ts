@@ -29,7 +29,11 @@ export {
 export type { CorrelationLookup, CorrelationConflict } from "./correlation.js";
 export { runDecisionPipeline, isSimulatedDataSource } from "./decisionPipeline.js";
 export { resolveSupervisor } from "./selfTradeSupervisor.js";
-export type { SupervisorResult } from "./selfTradeSupervisor.js";
+export type {
+  SupervisorResult,
+  SupervisorOpts,
+  OppositeConflictJournalEntry,
+} from "./selfTradeSupervisor.js";
 export { buildVolatilityMatrix } from "./volatilityMatrix.js";
 export type {
   VolatilityMatrix,
