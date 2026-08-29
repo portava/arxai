@@ -459,3 +459,121 @@ test("[E6] __resetFormingBarStore clears the last-tick map", () => {
   __resetFormingBarStore();
   assert.equal(getFeedFreshness(FROZEN_SYM, now), null, "reset clears the last-tick map");
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// [F] Clock-domain skew (R3) — fold buckets in PROVIDER time, the read maps
+// wall-now through a per-symbol clock-offset estimate before flooring.
+//
+// Honesty contract:
+//   - A provider clock offset (even >= one interval) must not blank the tip —
+//     the bar is real; only the read's clock domain was wrong.
+//   - The estimate arms only off ADVANCING broker times (>= 3 samples), so a
+//     frozen/closed-market replay can never steer the read clock onto its own
+//     dead interval; and once provider-now passes the bar's interval with no
+//     new tick, the bar stays dead (null-on-real-rollover unchanged).
+//   - Silence freshness (getFormingTickAgeMs) stays PURE wall receive time.
+//   - The MARKET_FROZEN indicator keeps reading raw broker staleness.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const SKEW_2H = 2 * 60 * 60_000;
+
+test("[F1] +2h broker-clock skew: the armed offset makes the tip readable at wall-now", () => {
+  __resetFormingBarStore();
+  const wall0 = 9_000 * M5_MS + 10_000;
+  // Three advancing skewed ticks arm the estimator.
+  foldFormingTick(SYM, 100, wall0 + SKEW_2H, wall0);
+  foldFormingTick(SYM, 101, wall0 + 2_000 + SKEW_2H, wall0 + 2_000);
+  foldFormingTick(SYM, 102, wall0 + 4_000 + SKEW_2H, wall0 + 4_000);
+  const bar = getFormingBar(SYM, TF, wall0 + 6_000);
+  assert.ok(bar, "a +2h-skewed provider clock must not blank the current tip");
+  assert.equal(bar!.openMs, Math.floor((wall0 + 4_000 + SKEW_2H) / M5_MS) * M5_MS,
+    "the bar stays bucketed in PROVIDER time (aligned with provider closed bars)");
+  assert.equal(bar!.close, 102);
+});
+
+test("[F2] -2h broker-clock skew: same contract in the other direction", () => {
+  __resetFormingBarStore();
+  const wall0 = 9_500 * M5_MS + 10_000;
+  foldFormingTick(SYM, 200, wall0 - SKEW_2H, wall0);
+  foldFormingTick(SYM, 201, wall0 + 2_000 - SKEW_2H, wall0 + 2_000);
+  foldFormingTick(SYM, 202, wall0 + 4_000 - SKEW_2H, wall0 + 4_000);
+  const bar = getFormingBar(SYM, TF, wall0 + 6_000);
+  assert.ok(bar, "a -2h-skewed provider clock must not blank the current tip");
+  assert.equal(bar!.close, 202);
+});
+
+test("[F3] intervalMs/3 skew near a boundary: the tip is still found", () => {
+  __resetFormingBarStore();
+  const skew = M5_MS / 3; // 100s — wall trails the provider clock
+  const boundary = 10_000 * M5_MS; // provider-domain interval open
+  const bt0 = boundary + 2_000; // ticks just after the provider interval opened
+  foldFormingTick(SYM, 50, bt0, bt0 - skew);
+  foldFormingTick(SYM, 51, bt0 + 2_000, bt0 + 2_000 - skew);
+  foldFormingTick(SYM, 52, bt0 + 4_000, bt0 + 4_000 - skew);
+  const readWall = bt0 + 5_000 - skew;
+  assert.ok(readWall < boundary, "wall clock has NOT yet reached the provider interval open");
+  const bar = getFormingBar(SYM, TF, readWall);
+  assert.ok(bar, "a small skew must not blank the tip for skew/interval of every interval");
+  assert.equal(bar!.openMs, boundary);
+  assert.equal(bar!.close, 52);
+});
+
+test("[F4] no resurrection: a real rollover with no new tick is still null under skew", () => {
+  __resetFormingBarStore();
+  const wall0 = 11_000 * M5_MS + 10_000;
+  foldFormingTick(SYM, 100, wall0 + SKEW_2H, wall0);
+  foldFormingTick(SYM, 101, wall0 + 2_000 + SKEW_2H, wall0 + 2_000);
+  foldFormingTick(SYM, 102, wall0 + 4_000 + SKEW_2H, wall0 + 4_000);
+  assert.ok(getFormingBar(SYM, TF, wall0 + 6_000), "current while its interval lives");
+  // One full interval later (provider-now passed the bar's interval): dead.
+  const rolled = getFormingBar(SYM, TF, wall0 + M5_MS + 10_000);
+  assert.equal(rolled, null, "a dead interval bar never resurrects as forming");
+  assert.equal(getFormingTickAgeMs(SYM, TF, wall0 + M5_MS + 10_000), null);
+});
+
+test("[F5] a frozen (closed-market) replay never steers the read clock", () => {
+  __resetFormingBarStore();
+  const t0 = 12_000 * M5_MS + 5_000; // provider == wall at first
+  foldFormingTick(SYM, 70, t0, t0); // seeds the estimator (1 sample — unarmed)
+  // Closed market: the EA replays the SAME broker timestamp while wall advances.
+  for (let i = 1; i <= 10; i++) foldFormingTick(SYM, 70, t0, t0 + i * 2_000);
+  assert.ok(getFormingBar(SYM, TF, t0 + 20_000), "still current inside its own interval");
+  // Wall rolls the interval; the frozen replay must NOT keep the bar current.
+  const wallLater = t0 + M5_MS + 1_000;
+  foldFormingTick(SYM, 70, t0, wallLater);
+  assert.equal(
+    getFormingBar(SYM, TF, wallLater),
+    null,
+    "a non-advancing broker time contributes no offset sample — the dead bar stays dead",
+  );
+  // The closed-market indicator keeps reading RAW broker staleness.
+  const fresh = getFeedFreshness(SYM, wallLater);
+  assert.ok(fresh);
+  assert.equal(fresh!.marketFrozen, true, "frozen quote + arriving ticks still reads closed-market");
+});
+
+test("[F6] an armed offset plus a frozen replay still cannot resurrect the bar", () => {
+  __resetFormingBarStore();
+  const w0 = 13_000 * M5_MS + 5_000;
+  // Live period arms the estimator (offset ≈ 0, advancing broker times).
+  foldFormingTick(SYM, 80, w0, w0);
+  foldFormingTick(SYM, 80.5, w0 + 2_000, w0 + 2_000);
+  foldFormingTick(SYM, 81, w0 + 4_000, w0 + 4_000);
+  // Market closes: the frozen broker time replays across the interval boundary.
+  const wLater = w0 + M5_MS + 10_000;
+  foldFormingTick(SYM, 81, w0 + 4_000, wLater);
+  assert.equal(getFormingBar(SYM, TF, wLater), null, "armed offset never revives a dead interval");
+});
+
+test("[F7] tick age stays PURE wall time under skew", () => {
+  __resetFormingBarStore();
+  const wall0 = 14_000 * M5_MS + 10_000;
+  foldFormingTick(SYM, 100, wall0 + SKEW_2H, wall0);
+  foldFormingTick(SYM, 101, wall0 + 2_000 + SKEW_2H, wall0 + 2_000);
+  foldFormingTick(SYM, 102, wall0 + 4_000 + SKEW_2H, wall0 + 4_000);
+  assert.equal(
+    getFormingTickAgeMs(SYM, TF, wall0 + 9_000),
+    5_000,
+    "silence freshness measures wall receive time, never the skewed provider clock",
+  );
+});

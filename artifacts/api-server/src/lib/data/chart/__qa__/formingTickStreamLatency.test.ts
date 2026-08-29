@@ -157,3 +157,38 @@ test("[D2] N back-to-back ticks produce N distinct frames (no coalescing)", asyn
   req.destroy();
   await close();
 });
+
+test("[D4] a broker-clock-skewed tick stream still pushes forming frames (R3)", async () => {
+  __resetFormingBarStore();
+  const { port, close } = await startServer();
+
+  const received: SseEvent[] = [];
+  let resolveFrame: (() => void) | null = null;
+  const gotFrame = new Promise<void>((r) => (resolveFrame = r));
+  const { req } = await connectSse(port, (e) => {
+    if (e.type !== "forming_bar") return;
+    received.push(e);
+    resolveFrame?.();
+  });
+
+  await new Promise((r) => setTimeout(r, 25));
+
+  // Provider clock 2h ahead of the server wall clock. Three advancing ticks
+  // arm the composer's clock-offset estimate; the handler's own Date.now()
+  // read then finds the provider-bucketed bar and pushes the frame. Before the
+  // R3 fix EVERY read missed the bucket and no frame ever left the server.
+  const skew = 2 * 60 * 60_000;
+  const w = Date.now();
+  foldFormingTick(SYM, 2.0, w + skew, w);
+  foldFormingTick(SYM, 2.1, w + 1 + skew, w + 1);
+  foldFormingTick(SYM, 2.2, w + 2 + skew, w + 2);
+  await gotFrame;
+
+  const last = received[received.length - 1]!;
+  assert.equal(last.bar?.isForming, true);
+  assert.equal(last.bar?.close, 2.2, "the skewed tip's live close reaches the SSE client");
+  assert.equal(last.frozen, false, "wall-fresh ticks read live regardless of provider skew");
+
+  req.destroy();
+  await close();
+});
