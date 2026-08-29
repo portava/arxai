@@ -88,7 +88,7 @@ test("wide-idempotency suppresses the duplicate through the REAL key builder →
   assert.equal(out.incidentOccurred, false);
 });
 
-test("tight-daily-loss-cap blocks the third entry through the REAL 21-gate evaluator → PREVENTED", async () => {
+test("tight-daily-loss-cap blocks the third entry through the REAL 23-gate evaluator → PREVENTED", async () => {
   const out = await replayIncident(FIXTURE, alt("tight-daily-loss-cap"));
   assert.deepEqual(out.blocked.map((b) => [b.attemptId, b.stage]), [["A3", "DISPATCH_GATE"]]);
   assert.ok(out.blocked[0]!.reasons.includes("DAILY_LOSS_LIMIT_REACHED"));
@@ -98,7 +98,7 @@ test("tight-daily-loss-cap blocks the third entry through the REAL 21-gate evalu
   assert.equal(out.unknown.length, 0);
 });
 
-test("tight-volume-cap blocks the oversized entry through the REAL 21-gate evaluator → PREVENTED", async () => {
+test("tight-volume-cap blocks the oversized entry through the REAL 23-gate evaluator → PREVENTED", async () => {
   const out = await replayIncident(FIXTURE, alt("tight-volume-cap"));
   assert.deepEqual(out.blocked.map((b) => [b.attemptId, b.stage]), [["A3", "DISPATCH_GATE"]]);
   assert.ok(out.blocked[0]!.reasons.includes("VOLUME_EXCEEDS_MAX_LIVE_LOT"));
