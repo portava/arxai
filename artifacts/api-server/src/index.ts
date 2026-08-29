@@ -20,6 +20,7 @@ import { startIntelligenceRoiWorker } from "./lib/intelligence/intelligenceRoiWo
 import { startChampionChallengerWorker } from "./lib/championChallengerWorker.js";
 import { startMetaStrategyControllerWorker } from "./lib/metaStrategyController.js";
 import { startChangePointDriverWorker } from "./lib/changePointDriver.js";
+import { startUncertaintyCoverageWorker } from "./lib/aaci/uncertaintyCoverageWorker.js";
 import { computeEnvChecklist, summarizeEnvChecklist } from "./lib/startup/envChecklist";
 import { runStartupReadinessCheck } from "./lib/startup/readinessCheck";
 import { seedCoreAgents } from "./lib/agentEcosystem/seedCoreAgents";
@@ -225,6 +226,14 @@ ensureSafetyCoreInitialized()
       // (authority reduction only — recovery stays owner-gated). Opt-out via
       // ARX_CHANGEPOINT_DRIVER_ENABLED (logged loudly).
       startChangePointDriverWorker();
+      // VoI coverage pump (capability #6): samples the genuinely measurable
+      // uncertainty channels (spreadInstability from real quote history) on a
+      // steady clock so WAIT_FOR_EVIDENCE resolution-rate history accumulates
+      // at machine pace instead of user-press pace. Observational only —
+      // records evidence pairs, never touches any decision output. Channels
+      // the worker cannot measure are NEVER written with placeholder values.
+      // Opt-out via ARX_VOI_COVERAGE_ENABLED (logged loudly).
+      startUncertaintyCoverageWorker();
       // Eagerly bootstrap the Deriv WebSocket so synthetic-index candles
       // (V10/V25/V50/V75/V100, 1Hz variants, Boom/Crash, Step) are ready
       // before the first scanner pass. Non-blocking; lazy ensureConnection

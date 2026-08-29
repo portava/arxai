@@ -54,6 +54,8 @@
     "./regret-engine": "./src/regret-engine/index.ts",
     "./orchestrator": "./src/orchestrator/index.ts",
     "./market-state": "./src/market-state/index.ts",
+    "./horizons": "./src/horizons/index.ts",
+    "./market-ecology": "./src/market-ecology/index.ts",
     "./attention": "./src/attention/index.ts",
     "./meta-learning": "./src/meta-learning/index.ts",
     "./execution-realism": "./src/execution-realism/index.ts",

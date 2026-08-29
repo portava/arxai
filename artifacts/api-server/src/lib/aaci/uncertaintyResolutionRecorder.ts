@@ -18,8 +18,8 @@ import type {
   AaciUncertaintyChannels,
 } from "@workspace/domain/aaci";
 
-interface ContextSnapshot {
-  channels: AaciUncertaintyChannels;
+interface ChannelSnapshot {
+  penalty: number;
   atMs: number;
 }
 
@@ -31,17 +31,74 @@ export const RESOLUTION_PAIR_MIN_GAP_MS = 1_000;
 const MAX_CONTEXTS = 500;
 const MAX_PAIRS = 5_000;
 
-const lastByContext = new Map<string, ContextSnapshot>();
+// Per (userId:symbol) context → per-channel last observation. Storing per
+// CHANNEL (not per full decomposition) lets the coverage worker record ONLY
+// the channels it genuinely measures — an unmeasured channel simply has no
+// snapshot and can never produce a fabricated pair.
+const lastByContext = new Map<string, Map<AaciUncertaintyChannelName, ChannelSnapshot>>();
 const pairs: AaciChannelResolutionPair[] = [];
 
 function contextKey(userId: number, symbol: string): string {
   return `${userId}:${symbol}`;
 }
 
+function contextChannels(key: string): Map<AaciUncertaintyChannelName, ChannelSnapshot> {
+  let m = lastByContext.get(key);
+  if (m) return m;
+  if (lastByContext.size >= MAX_CONTEXTS) {
+    // Bounded memory: drop the stalest context (by its newest channel sample).
+    let oldestKey: string | null = null;
+    let oldestAt = Infinity;
+    for (const [k, chans] of lastByContext) {
+      let newest = 0;
+      for (const s of chans.values()) newest = Math.max(newest, s.atMs);
+      if (newest < oldestAt) {
+        oldestAt = newest;
+        oldestKey = k;
+      }
+    }
+    if (oldestKey) lastByContext.delete(oldestKey);
+  }
+  m = new Map();
+  lastByContext.set(key, m);
+  return m;
+}
+
 /**
- * Record one per-channel observation for a context; emits resolution pairs
- * against the previous observation when the gap qualifies. Returns how many
- * pairs were recorded (0 when this is the first/too-close/too-old sample).
+ * Record ONE channel's observation for a context; emits a resolution pair
+ * against that channel's previous observation when the gap qualifies.
+ * Returns 1 when a pair was recorded, else 0. This is the seam the coverage
+ * worker uses: only genuinely MEASURED channels are ever recorded here.
+ */
+export function recordChannelObservation(
+  userId: number,
+  symbol: string,
+  channel: AaciUncertaintyChannelName,
+  penalty: number,
+  nowMs: number = Date.now(),
+): number {
+  if (!symbol || !Number.isFinite(penalty)) return 0;
+  const chans = contextChannels(contextKey(userId, symbol));
+  const prev = chans.get(channel);
+
+  let recorded = 0;
+  if (prev) {
+    const gap = nowMs - prev.atMs;
+    if (gap >= RESOLUTION_PAIR_MIN_GAP_MS && gap <= RESOLUTION_PAIR_MAX_GAP_MS) {
+      pairs.push({ channel, penaltyBefore: prev.penalty, penaltyAfter: penalty });
+      if (pairs.length > MAX_PAIRS) pairs.splice(0, pairs.length - MAX_PAIRS);
+      recorded = 1;
+    }
+  }
+  chans.set(channel, { penalty, atMs: nowMs });
+  return recorded;
+}
+
+/**
+ * Record one full per-channel observation for a context; emits resolution
+ * pairs against each channel's previous observation when the gap qualifies.
+ * Returns how many pairs were recorded (0 when this is the first/too-close/
+ * too-old sample).
  */
 export function recordUncertaintyObservation(
   userId: number,
@@ -50,37 +107,10 @@ export function recordUncertaintyObservation(
   nowMs: number = Date.now(),
 ): number {
   if (!symbol) return 0;
-  const key = contextKey(userId, symbol);
-  const prev = lastByContext.get(key);
-
   let recorded = 0;
-  if (prev) {
-    const gap = nowMs - prev.atMs;
-    if (gap >= RESOLUTION_PAIR_MIN_GAP_MS && gap <= RESOLUTION_PAIR_MAX_GAP_MS) {
-      for (const name of Object.keys(channels) as AaciUncertaintyChannelName[]) {
-        const before = prev.channels[name];
-        const after = channels[name];
-        if (!Number.isFinite(before) || !Number.isFinite(after)) continue;
-        pairs.push({ channel: name, penaltyBefore: before, penaltyAfter: after });
-        recorded += 1;
-      }
-      if (pairs.length > MAX_PAIRS) pairs.splice(0, pairs.length - MAX_PAIRS);
-    }
+  for (const name of Object.keys(channels) as AaciUncertaintyChannelName[]) {
+    recorded += recordChannelObservation(userId, symbol, name, channels[name], nowMs);
   }
-
-  if (!lastByContext.has(key) && lastByContext.size >= MAX_CONTEXTS) {
-    // Bounded memory: drop the stalest context.
-    let oldestKey: string | null = null;
-    let oldestAt = Infinity;
-    for (const [k, v] of lastByContext) {
-      if (v.atMs < oldestAt) {
-        oldestAt = v.atMs;
-        oldestKey = k;
-      }
-    }
-    if (oldestKey) lastByContext.delete(oldestKey);
-  }
-  lastByContext.set(key, { channels: { ...channels }, atMs: nowMs });
   return recorded;
 }
 

@@ -7,6 +7,7 @@ import type { TraderProfile } from "../trader-dna/traderProfile.types";
 import type { BehaviorPatternReport } from "../trader-dna/behaviorPattern.engine";
 import type { OvertradeReport } from "../trader-dna/overtradeGuard.engine";
 import type { RevengeTradeReport } from "../trader-dna/revengeTradingDetector.engine";
+import type { HorizonFrameEvidence } from "../horizons";
 
 // ── Required score ─────────────────────────────────────────────────────────
 export const REQUIRED_SCORE = 95 as const;
@@ -81,6 +82,13 @@ export interface ConformalAdvisoryEvidence {
 
 export interface ConfidenceGateAdvisory {
   conformal?: ConformalAdvisoryEvidence;
+  /**
+   * Unified horizon-frame evidence (capability #10): per-horizon state, state
+   * age, and reliability across microstructure/entry/position/session/regime/
+   * strategy/capital. Journal/display evidence only — `attachHorizonAdvisory`
+   * is the only writer and it copies every verdict field through unchanged.
+   */
+  horizons?: HorizonFrameEvidence;
 }
 
 // ── Recommendation ─────────────────────────────────────────────────────────

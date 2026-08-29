@@ -10,6 +10,7 @@ export * from "./agentVote.types";
 export * from "./debate/redTeam.agent";
 export * from "./debate/blueTeam.agent";
 export * from "./debate/disagreementScore.engine";
+export * from "./debate/disagreementClasses.engine";
 export * from "./debate/evidenceDiversity.engine";
 export * from "./judge/councilVerdict.engine";
 export * from "./runCouncil";

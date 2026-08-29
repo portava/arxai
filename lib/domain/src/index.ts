@@ -47,6 +47,8 @@ export * as trustLadder from "./trust-ladder";
 export * as regretEngine from "./regret-engine";
 export * as orchestrator from "./orchestrator";
 export * as marketState from "./market-state";
+export * as horizons from "./horizons";
+export * as marketEcology from "./market-ecology";
 export * as metaLearning from "./meta-learning";
 export * as executionRealism from "./execution-realism";
 export * as survival from "./survival";
