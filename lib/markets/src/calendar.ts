@@ -21,10 +21,11 @@
 // elapsed for them and gaps is always 0. That is not an approximation — those
 // instruments are generated 24/7 and have no session boundary to gap across.
 //
-// SCOPE: pure arithmetic over UTC instants. No I/O, no clock reads of its own
-// (every entry point takes the instant as an argument), and — deliberately —
-// nothing from the dispatch/gate path. This module cannot place, size, or
-// authorise a trade; it answers a question about the clock.
+// SCOPE: pure arithmetic over UTC instants plus a static lookup into the
+// approved-universe data (which venue an instrument belongs to). No I/O, no
+// clock reads of its own (every entry point takes the instant as an argument),
+// and — deliberately — nothing from the dispatch/gate path. This module cannot
+// place, size, or authorise a trade; it answers a question about the clock.
 //
 // NOT MODELLED (stated rather than silently assumed): market holidays, early
 // closes, and broker-specific maintenance windows. `mu` therefore OVERSTATES
@@ -32,9 +33,22 @@
 // estimate but the wrong direction for a gap count. Wiring a holiday source in
 // is a later work order; until then callers must not treat μ as exact across a
 // known holiday.
+//
+// EQUITY_RTH is a venue WITHOUT a calendar here: exchange-traded stocks and
+// indices follow per-exchange regular-trading-hours schedules (NYSE ≠ Xetra ≠
+// TSE) that this module does not yet hold. Handing them the FX 24×5 window —
+// the previous behaviour — silently overstated μ by ~3× and understated gaps
+// (every overnight close is a gap for an RTH instrument). `getTradingCalendar`
+// therefore returns `null` for EQUITY_RTH: an honest "no calendar", never a
+// wrong one. Callers must degrade (refuse the μ-dependent computation), not
+// substitute a guess.
 
-/** Venues differ only in their weekly schedule. */
-export type Venue = "DERIV_SYNTHETIC" | "FX";
+import { ARX_TOP_250 } from "./universe.js";
+import type { ArxAssetClass } from "./types.js";
+
+/** Venues differ only in their weekly schedule (or, for EQUITY_RTH, in not
+ *  having an honest schedule here yet — see the header note). */
+export type Venue = "DERIV_SYNTHETIC" | "FX" | "CRYPTO_24_7" | "EQUITY_RTH";
 
 /**
  * The session a UTC instant falls in. Bands are deliberately NON-OVERLAPPING so
@@ -101,10 +115,14 @@ interface WeeklyWindow {
   endMs: number;
 }
 
-const WINDOWS: Record<Venue, WeeklyWindow> = {
+const WINDOWS: Partial<Record<Venue, WeeklyWindow>> = {
   // Continuous: the whole week is one open interval.
   DERIV_SYNTHETIC: { startMs: 0, endMs: WEEK_MS },
   FX: { startMs: FX_WEEK_OPEN_MS, endMs: FX_WEEK_CLOSE_MS },
+  // Crypto trades continuously too — same window, its own venue tag so the
+  // classification is explicit rather than an accident of the synthetic check.
+  CRYPTO_24_7: { startMs: 0, endMs: WEEK_MS },
+  // EQUITY_RTH deliberately absent — see the header note.
 };
 
 /** Zero-based week index since the Sunday origin, and the offset within it. */
@@ -150,9 +168,47 @@ export function isSyntheticInstrument(instrument: string): boolean {
   );
 }
 
-/** Which venue's schedule an instrument follows. */
+/**
+ * Uppercased lookup of every name the approved universe knows an instrument
+ * by → its asset class. Built lazily once; pure static data, no I/O.
+ */
+let assetClassIndex: Map<string, ArxAssetClass> | null = null;
+function assetClassOf(instrument: string): ArxAssetClass | null {
+  if (assetClassIndex === null) {
+    assetClassIndex = new Map();
+    for (const m of ARX_TOP_250) {
+      const names = [m.standardSymbol, ...m.providerSymbols, ...m.brokerAliases, ...m.aliases];
+      for (const name of names) {
+        const key = name.trim().toUpperCase();
+        if (key && !assetClassIndex.has(key)) assetClassIndex.set(key, m.assetClass);
+      }
+    }
+  }
+  return assetClassIndex.get(instrument.trim().toUpperCase()) ?? null;
+}
+
+/**
+ * Which venue's schedule an instrument follows. Synthetics by name (that is
+ * what every ARX surface carries); everything else by the approved universe's
+ * asset class:
+ *
+ *   crypto              → CRYPTO_24_7  (continuous — a weekend BTC position IS
+ *                                       diffusing; the old FX default said μ=0)
+ *   stock / etf / index → EQUITY_RTH   (no honest calendar yet — see header)
+ *   forex / metal / energy / commodity → FX 24×5
+ *
+ * An instrument the universe does not know keeps the FX default — the
+ * long-standing behaviour, and the conservative one for the majors-and-metals
+ * traffic that actually reaches this module unresolved.
+ */
 export function venueOf(instrument: string): Venue {
-  return isSyntheticInstrument(instrument) ? "DERIV_SYNTHETIC" : "FX";
+  if (isSyntheticInstrument(instrument)) return "DERIV_SYNTHETIC";
+  const assetClass = assetClassOf(instrument);
+  if (assetClass === "crypto") return "CRYPTO_24_7";
+  if (assetClass === "stock" || assetClass === "etf" || assetClass === "index") {
+    return "EQUITY_RTH";
+  }
+  return "FX";
 }
 
 function sessionForOffset(offsetInDayMs: number): SessionName {
@@ -225,14 +281,20 @@ class WeeklyWindowCalendar implements TradingCalendar {
   }
 }
 
-const CALENDARS: Record<Venue, TradingCalendar> = {
-  DERIV_SYNTHETIC: new WeeklyWindowCalendar("DERIV_SYNTHETIC", WINDOWS.DERIV_SYNTHETIC),
-  FX: new WeeklyWindowCalendar("FX", WINDOWS.FX),
+const CALENDARS: Partial<Record<Venue, TradingCalendar>> = {
+  DERIV_SYNTHETIC: new WeeklyWindowCalendar("DERIV_SYNTHETIC", WINDOWS.DERIV_SYNTHETIC!),
+  FX: new WeeklyWindowCalendar("FX", WINDOWS.FX!),
+  CRYPTO_24_7: new WeeklyWindowCalendar("CRYPTO_24_7", WINDOWS.CRYPTO_24_7!),
 };
 
-/** The calendar an instrument trades on. Venue may be forced by the caller. */
-export function getTradingCalendar(instrument: string, venue?: Venue): TradingCalendar {
-  return CALENDARS[venue ?? venueOf(instrument)];
+/**
+ * The calendar an instrument trades on, or `null` when no honest calendar
+ * exists for its venue (EQUITY_RTH today). A caller handed `null` must refuse
+ * its μ-dependent computation — substituting another venue's window is exactly
+ * the silent-wrong-answer this fix removed. Venue may be forced by the caller.
+ */
+export function getTradingCalendar(instrument: string, venue?: Venue): TradingCalendar | null {
+  return CALENDARS[venue ?? venueOf(instrument)] ?? null;
 }
 
 /** Wall-clock minutes in [t0, t1) — the quantity μ must never be confused with. */
