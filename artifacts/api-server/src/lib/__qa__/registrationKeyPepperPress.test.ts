@@ -235,7 +235,68 @@ describe("the pepper value never leaves the process", () => {
     assert.ok(!/console\.\w+\([^)]*pepperValue(?!\.length)/.test(src),
       "the verification prints pepperValue");
     assert.ok(src.includes("pepperValue.length"),
-      "length-only shape reporting is the intended use");
+      "the >= 32 shape check is the intended use of the length");
+  });
+
+  it("the post-set verification refuses to print the LENGTH either", () => {
+    // The lookahead above deliberately exempts `.length`, which is right for
+    // the `>= 32` comparison and WRONG for output: the script used to
+    // interpolate the real length into its PASS label, and on Replit that line
+    // persists in workflow and deploy logs. A length narrows an offline search,
+    // so the comparison may use it and no emitted string may carry it.
+    const src = codeOnly("scripts/src/verifyRegistrationKeyPepperProvisioned.ts");
+    assert.ok(!/\$\{[^}]*pepperValue\.length/.test(src),
+      "the verification interpolates the pepper's real length into an emitted string");
+    assert.ok(!/console\.\w+\([^)]*pepperValue\.length/.test(src),
+      "the verification passes the pepper's real length to console");
+    // The check itself must survive — this test must not be satisfiable by
+    // deleting the length assertion.
+    assert.ok(/pepperValue\.length\s*>=\s*32/.test(src),
+      "the >= 32 length check is gone");
+  });
+
+  it("no doc routes the pepper through setEnvVars", () => {
+    // The operational memory doc opened with "NEVER set the pepper via
+    // setEnvVars — shared env vars are written INTO the git-tracked .replit"
+    // and then, two paragraphs down under "Activation in dev", told the reader
+    // to do exactly that. A future agent reading only the nearest heading
+    // re-runs the 2026-08-16 leak. Every surviving mention must be a
+    // prohibition.
+    for (const rel of [
+      ".agents/memory/registration-key-pepper-operational.md",
+      "docs/REGISTRATION_KEY_PEPPER_RUNBOOK.md",
+    ]) {
+      const doc = readFileSync(resolve(ROOT, rel), "utf8");
+      doc.split("\n").forEach((line, i) => {
+        if (!/setEnvVars|userenv\.shared/.test(line)) return;
+        assert.ok(/\bnever\b|\bnot\b|\bdo not\b/i.test(line),
+          `${rel}:${i + 1} mentions setEnvVars without forbidding it: ${line.trim()}`);
+      });
+    }
+  });
+
+  it("the post-set verification cannot leave a residual account behind", () => {
+    // Its header promises every row it writes is deleted in a finally. Each
+    // cleanup DELETE used to carry its own `.catch(() => {})`, so a blocked
+    // `DELETE FROM users` was invisible and the verdict — which keys solely on
+    // `failures === 0` — still printed PROVISIONED AND WORKING. The runbook
+    // directs a second run with ARX_QA_BASE_URL, where the pool points at the
+    // live database, so that residue would be a real account in production.
+    const src = codeOnly("scripts/src/verifyRegistrationKeyPepperProvisioned.ts");
+    // Nothing between the users DELETE and the end of its statement may be a
+    // `.catch(...)` — that is exactly the shape that hid the failure.
+    assert.ok(!/"DELETE FROM users[^"]*"[^;]*\.catch\(/.test(src),
+      "the users cleanup delete still swallows its own failure");
+    assert.ok(/async function cleanupDelete\(/.test(src),
+      "the reporting cleanup-delete helper is gone");
+    assert.ok(/cleanupDelete\(\s*"DELETE FROM users/.test(src),
+      "the users delete does not go through the reporting helper");
+    // Reporting the delete is not enough on its own — absence has to be
+    // re-read, and an unreadable re-read has to fail rather than pass.
+    assert.ok(/residual account remains/.test(src),
+      "there is no post-delete residual-account assertion");
+    assert.ok(/could not confirm .*is gone/.test(src),
+      "an unreadable residual check does not fail the run");
   });
 });
 

@@ -46,13 +46,17 @@ absent it reports `missingRequired` + `registrationShieldBlocked`, logs a
 `REGISTRATION SHIELD BLOCKED` **error**, and raises a CRITICAL launch blocker. Before
 that it was listed as an unconditional OPTIONAL and the state was completely silent.
 
-**Activation in dev:** set it as a shared env var (`setEnvVars`), then RESTART the
-api-server workflow — the running process won't see a newly-set var until restart.
-Verify without consuming a real key: POST `/api/auth/register` with a bogus
+**Activation in dev:** set it in **Replit Secrets** (`requestSecrets`, or the padlock
+pane in the UI) — the same store as production, never anywhere else. **Not
+`setEnvVars`, not `[env]`/`[userenv.shared]` in `.replit`**: this file said the
+opposite until 2026-08-29, and following it is what re-committed the secret and
+forced the 2026-08-16 rotation. See the rule at the top of this file. Then RESTART
+the api-server workflow — the running process won't see a newly-set secret until
+restart. Verify without consuming a real key: POST `/api/auth/register` with a bogus
 `registrationKey` — `INVITE_NOT_FOUND` = pepper active; `PEPPER_MISSING` = not loaded.
 
-**Production caveat:** an already-published build does NOT pick up a newly-set shared
-env var until the app is re-published. Setting the pepper in dev makes dev work
+**Production caveat:** an already-published build does NOT pick up a newly-set
+secret until the app is re-published. Setting the pepper in dev makes dev work
 immediately, but the live/published site stays fail-closed until the next deploy.
 
 **Generating keys:** USER-role, email NULL (anyone can use), status PENDING, no

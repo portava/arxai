@@ -33,7 +33,11 @@
  *
  * WRITES: one beta_invites row, one users row, one session, one audit row —
  * all tagged with a unique cohort and all deleted in a finally, on success and
- * on failure alike.
+ * on failure alike. Every one of those deletes is CHECKED: a delete that errors
+ * is a FAIL, and after the deletes the rows are re-queried and their absence
+ * asserted. A residual account therefore cannot hide under a green verdict —
+ * which matters because the runbook directs a second run with ARX_QA_BASE_URL,
+ * where the pool points at the live database.
  */
 
 import type { AddressInfo } from "node:net";
@@ -108,6 +112,20 @@ async function getInviteState(id: number): Promise<{ status: string; accepted_us
   return r.rows[0] ?? null;
 }
 
+/** A cleanup DELETE whose failure is REPORTED rather than swallowed. Swallowing
+ *  it leaves a real row in whatever database this ran against — production, on
+ *  the runbook's second pass — under a "PROVISIONED AND WORKING" verdict. There
+ *  are 29 FK references to users.id in lib/db/src/schema and several are not
+ *  ON DELETE CASCADE, so a row written against the fresh user by any hook or
+ *  worker blocks the delete. That has to be loud. */
+async function cleanupDelete(sql: string, params: unknown[], label: string): Promise<void> {
+  try {
+    await pool.query(sql, params);
+  } catch (e) {
+    assert(false, `cleanup: ${label} (${(e as Error).message})`);
+  }
+}
+
 async function liveCommandsCount(): Promise<number> {
   const r = await pool.query("SELECT COUNT(*)::int AS n FROM arx_live_commands");
   return (r.rows[0] as { n: number }).n;
@@ -135,11 +153,12 @@ async function main(): Promise<void> {
   }
   // Held in memory to prove it never leaks into a response body. Never printed.
   const pepperValue = pc.ok ? pc.pepper : "";
-  // Shape only — a length is not an oracle for a high-entropy secret, and the
-  // runbook asks for >= 32 chars. Reported so a too-short value is caught here
-  // rather than by a brute-force later.
+  // Shape only, and PASS/FAIL only. The runbook asks for >= 32 chars, so a
+  // too-short value is caught here rather than by a brute-force later — but the
+  // actual length is never interpolated into the label. This output persists in
+  // Replit workflow and deploy logs, and a length narrows an offline search.
   assert(pepperValue.length >= 32,
-    `pepper length is at least 32 characters (actual length ${pepperValue.length})`);
+    "pepper length is at least 32 characters (the length itself is never printed)");
 
   if (betaInvitesRepo.getRegistrationKeyPepperPrevious() !== null) {
     note("REGISTRATION_KEY_PEPPER_PREVIOUS is SET — a rotation window is OPEN. "
@@ -251,18 +270,51 @@ async function main(): Promise<void> {
       for (const em of createdEmails) {
         const u = await getUserByEmail(em);
         if (u) {
-          await pool.query("DELETE FROM auth_user_sessions WHERE user_id = $1", [u.id]).catch(() => {});
-          await pool.query("DELETE FROM user_activity_events WHERE user_id = $1", [u.id]).catch(() => {});
-          await pool.query("DELETE FROM users WHERE id = $1", [u.id]).catch(() => {});
+          await cleanupDelete("DELETE FROM auth_user_sessions WHERE user_id = $1", [u.id],
+            `could not delete the sessions of ${em}`);
+          await cleanupDelete("DELETE FROM user_activity_events WHERE user_id = $1", [u.id],
+            `could not delete the activity events of ${em}`);
+          await cleanupDelete("DELETE FROM users WHERE id = $1", [u.id],
+            `could not delete the account ${em} (users.id ${u.id}) — DELETE IT BY HAND`);
         }
       }
       if (inviteIds.length > 0) {
-        await pool.query(
+        await cleanupDelete(
           "DELETE FROM audit_events WHERE source = 'beta-invite-gate' AND payload->>'inviteId' = ANY($1::text[])",
           [inviteIds.map(String)],
-        ).catch(() => {});
+          "could not delete this run's beta-invite-gate audit rows",
+        );
       }
-      await pool.query("DELETE FROM beta_invites WHERE cohort = $1", [TAG]).catch(() => {});
+      await cleanupDelete("DELETE FROM beta_invites WHERE cohort = $1", [TAG],
+        `could not delete this run's beta_invites rows (cohort ${TAG})`);
+
+      // Prove the deletes landed rather than assuming they did. An unreadable
+      // check is a FAILURE, not a pass — absence of evidence is not evidence of
+      // absence, and the whole point here is that a residual real account must
+      // never sit behind a green verdict.
+      for (const em of createdEmails) {
+        let residualId: number | null;
+        try {
+          residualId = (await getUserByEmail(em))?.id ?? null;
+        } catch (e) {
+          assert(false, `cleanup: could not confirm ${em} is gone (${(e as Error).message}) — CHECK BY HAND`);
+          continue;
+        }
+        assert(residualId === null, residualId === null
+          ? `no residual account remains for ${em}`
+          : `no residual account remains for ${em} (users.id ${residualId} IS STILL PRESENT — DELETE IT BY HAND)`);
+      }
+      try {
+        const left = await pool.query<{ n: number }>(
+          "SELECT COUNT(*)::int AS n FROM beta_invites WHERE cohort = $1", [TAG],
+        );
+        const n = left.rows[0]?.n ?? -1;
+        assert(n === 0, n === 0
+          ? "no residual beta_invites rows remain for this run's cohort"
+          : `no residual beta_invites rows remain for this run's cohort (${n} left under ${TAG})`);
+      } catch (e) {
+        assert(false, `cleanup: could not confirm the beta_invites rows are gone (${(e as Error).message})`);
+      }
       // Per-IP attempt counter, not safety evidence. Clear only the loopback
       // scopes this run could have created.
       try {
