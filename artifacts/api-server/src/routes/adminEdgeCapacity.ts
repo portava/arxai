@@ -88,9 +88,22 @@ router.post("/admin/learning/edges/:id/capacity", requireUser, async (req, res) 
     .from(productionEdgesTable).where(eq(productionEdgesTable.id, edgeId)).limit(1);
   if (!edge) return res.status(404).json({ ok: false, error: "EDGE_NOT_FOUND" });
 
-  const { estimateStrategyCapacity, buildEdgeCapacityProposal } =
+  // ── WHY THE YIELDING DRIVERS ───────────────────────────────────────────
+  // Both simulations below are Monte-Carlo and CPU-bound. The pressed one is
+  // admin-parameterised up to 20000 paths × 5000 trades, and the proposal
+  // context adds a second full search on the disclosed framing. Run straight
+  // through, that is seconds of uninterruptible JavaScript on the process that
+  // also runs the kill switch, the heartbeats and broker command dispatch.
+  // `breathe` hands the loop back between probes, so the longest single stall
+  // is one probe rather than the whole search. The RESULT is identical to the
+  // synchronous driver by construction — one generator, one probe sequence,
+  // same seed — pinned by the sync/async equivalence test. This bounds the
+  // stall; it does not make the work cheaper.
+  const { estimateStrategyCapacityYielding, buildEdgeCapacityProposalYielding } =
     await import("@workspace/domain/decision-intelligence");
-  const estimate = estimateStrategyCapacity(parsed.data.simulator);
+  const breathe = (): Promise<void> =>
+    new Promise<void>((resolve) => { setImmediate(resolve); });
+  const estimate = await estimateStrategyCapacityYielding(parsed.data.simulator, breathe);
   const now = new Date();
 
   // CONTEXT AT THE MOMENT OF THE PRESS — never authority.
@@ -105,8 +118,9 @@ router.post("/admin/learning/edges/:id/capacity", requireUser, async (req, res) 
   let proposalUnavailableReason: string | null = null;
   try {
     const { gatherEdgeCapacityEvidence } = await import("../lib/learning/edgeCapacityEvidence.js");
-    proposalAtPress = buildEdgeCapacityProposal(
+    proposalAtPress = await buildEdgeCapacityProposalYielding(
       await gatherEdgeCapacityEvidence(edgeId, now),
+      breathe,
     );
   } catch (e) {
     proposalUnavailableReason = e instanceof Error ? e.message : String(e);

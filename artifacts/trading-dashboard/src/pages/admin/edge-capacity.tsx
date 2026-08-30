@@ -126,6 +126,11 @@ export default function AdminEdgeCapacityPage() {
   const [summary, setSummary] = useState<FleetSummary | null>(null);
   const [propErr, setPropErr] = useState("");
   const [propLoading, setPropLoading] = useState(false);
+  /** When the shown proposals were GATHERED, and whether the server re-served a
+   *  recent sweep instead of recomputing. A capacity number the operator is
+   *  about to press on must never look fresher than it is. */
+  const [propFreshness, setPropFreshness] = useState<
+    { gatheredAt: string | null; cached: boolean; ageMs: number } | null>(null);
 
   const [edgeId, setEdgeId] = useState("");
   const [winRate, setWinRate] = useState("");
@@ -155,11 +160,17 @@ export default function AdminEdgeCapacityPage() {
     if (!r.ok) {
       setItems(null);
       setSummary(null);
+      setPropFreshness(null);
       setPropErr(`Proposals unavailable (${r.status}): ${String(r.body.message ?? r.body.error ?? "")} — this is an UNREADABLE state, not an empty one.`);
       return;
     }
     setItems((r.body.items as ProposalItem[] | undefined) ?? []);
     setSummary((r.body.summary as FleetSummary | undefined) ?? null);
+    setPropFreshness({
+      gatheredAt: (r.body.gatheredAt as string | undefined) ?? null,
+      cached: r.body.cached === true,
+      ageMs: typeof r.body.ageMs === "number" ? r.body.ageMs : 0,
+    });
   }, []);
 
   useEffect(() => { void load(); void loadProposals(); }, [load, loadProposals]);
@@ -281,6 +292,17 @@ export default function AdminEdgeCapacityPage() {
                 </p>
               </div>
             ))}
+            {/* The simulator sweep is expensive, so the server may re-serve a
+                recent one. Say so, and say WHEN it was gathered: a re-served
+                answer that looked live would be a fabricated freshness claim. */}
+            {propFreshness && (
+              <p className="text-xs text-muted-foreground" data-testid="text-proposal-freshness">
+                Evidence gathered {propFreshness.gatheredAt ?? "at an unrecorded time"}
+                {propFreshness.cached
+                  ? ` · re-served from a sweep ${Math.round(propFreshness.ageMs / 1000)}s ago, NOT recomputed just now`
+                  : " · computed for this request"}
+              </p>
+            )}
             <Button size="sm" variant="outline" onClick={() => void loadProposals()} data-testid="button-readout-reload">
               Recheck gate #23
             </Button>

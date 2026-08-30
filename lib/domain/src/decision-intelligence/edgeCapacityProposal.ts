@@ -32,6 +32,7 @@
 
 import {
   estimateStrategyCapacity,
+  estimateStrategyCapacityYielding,
   type FrictionRuinInput,
   type CapacityEstimateResult,
 } from "./ruinCapacitySimulation.engine.js";
@@ -225,6 +226,26 @@ function mean(xs: readonly number[]): number {
 }
 
 /**
+ * What the evidence review concluded, BEFORE the (expensive) simulator runs.
+ *
+ * Either the evidence is insufficient — in which case the finished proposal is
+ * already complete and no simulation will ever happen — or it is sufficient,
+ * and what remains is one call to the estimator plus assembly.
+ *
+ * This split exists so the simulator can be driven two ways (straight through,
+ * or yielding the event loop between probes) over ONE evidence-review
+ * implementation. Splitting the review from the run is what keeps the two
+ * drivers from drifting.
+ */
+type PreparedCapacityProposal =
+  | { ready: false; proposal: EdgeCapacityProposal }
+  | {
+      ready: true;
+      simulatorInput: Omit<FrictionRuinInput, "candidateRiskR">;
+      finish: (estimate: CapacityEstimateResult) => EdgeCapacityProposal;
+    };
+
+/**
  * Derive a capacity proposal from recorded evidence.
  *
  * PURE. No clock, no RNG of its own (the simulator is seeded from the
@@ -232,6 +253,40 @@ function mean(xs: readonly number[]): number {
  * protect — NO WRITE. Calling this a thousand times changes nothing anywhere.
  */
 export function buildEdgeCapacityProposal(ev: EdgeCapacityEvidence): EdgeCapacityProposal {
+  const prepared = prepareEdgeCapacityProposal(ev);
+  if (!prepared.ready) return prepared.proposal;
+  return prepared.finish(estimateStrategyCapacity(prepared.simulatorInput));
+}
+
+/**
+ * The same proposal, without stalling the event loop for the whole simulator
+ * search.
+ *
+ * WHY THIS EXISTS: on the disclosed framing (4000 paths × 250 trades) the
+ * estimator is ~14 Monte-Carlo runs and roughly half a second of
+ * uninterruptible JavaScript PER EDGE. A surface that proposes over a fleet of
+ * edges in one request would hold the process — the same process that runs the
+ * kill switch, the heartbeats and broker command dispatch — for that half
+ * second times the number of edges. `breathe` is awaited between probes, so the
+ * longest single stall is one probe, not the whole search.
+ *
+ * Identical in output to `buildEdgeCapacityProposal` by construction: same
+ * evidence review, same seeded generator, same probe sequence. Pinned by test.
+ * Still pure in the sense that matters here — it writes nothing, and the only
+ * thing it awaits is the caller's own breath.
+ */
+export async function buildEdgeCapacityProposalYielding(
+  ev: EdgeCapacityEvidence,
+  breathe: () => Promise<void>,
+): Promise<EdgeCapacityProposal> {
+  const prepared = prepareEdgeCapacityProposal(ev);
+  if (!prepared.ready) return prepared.proposal;
+  return prepared.finish(
+    await estimateStrategyCapacityYielding(prepared.simulatorInput, breathe),
+  );
+}
+
+function prepareEdgeCapacityProposal(ev: EdgeCapacityEvidence): PreparedCapacityProposal {
   const gaps: CapacityEvidenceGap[] = [];
   const optimisticAssumptions: string[] = [];
   const reasons: string[] = [];
@@ -365,20 +420,23 @@ export function buildEdgeCapacityProposal(ev: EdgeCapacityEvidence): EdgeCapacit
     );
     for (const g of gaps) reasons.push(`GAP ${g.code}: ${g.missing}`);
     return {
-      edgeId: ev.edgeId,
-      gatheredAt: ev.gatheredAt,
-      verdict: "INSUFFICIENT_EVIDENCE",
-      confidence: "NONE",
-      proposedCapacityStatus: null,
-      proposedCapacityRiskR: null,
-      proposedMaxDeployedUsd: null,
-      maxDeployedUsdReason: MAX_DEPLOYED_USD_REASON,
-      simulatorInput: null,
-      estimate: null,
-      gaps,
-      optimisticAssumptions,
-      sampleSizes,
-      reasons,
+      ready: false,
+      proposal: {
+        edgeId: ev.edgeId,
+        gatheredAt: ev.gatheredAt,
+        verdict: "INSUFFICIENT_EVIDENCE",
+        confidence: "NONE",
+        proposedCapacityStatus: null,
+        proposedCapacityRiskR: null,
+        proposedMaxDeployedUsd: null,
+        maxDeployedUsdReason: MAX_DEPLOYED_USD_REASON,
+        simulatorInput: null,
+        estimate: null,
+        gaps,
+        optimisticAssumptions,
+        sampleSizes,
+        reasons,
+      },
     };
   }
 
@@ -412,37 +470,43 @@ export function buildEdgeCapacityProposal(ev: EdgeCapacityEvidence): EdgeCapacit
     `concurrency and correlation are simulated at ${CAPACITY_PROPOSAL_FRAMING.concurrentPositions} position / ρ=${CAPACITY_PROPOSAL_FRAMING.correlation01}: this edge's real concurrent-position behaviour has not been measured, and correlated concurrency can only make ruin WORSE`,
   );
 
-  const estimate = estimateStrategyCapacity(simulatorInput);
-
   reasons.push(
     `Edge ${ev.edgeId}: distribution from ${measured.length} closed trades (win rate ${(simulatorInput.winRate01 * 100).toFixed(1)}%, avg win ${simulatorInput.avgWinR.toFixed(2)}R, avg loss ${simulatorInput.avgLossR.toFixed(2)}R), fill probability ${(simulatorInput.liquidity!.fillProbability01 * 100).toFixed(1)}% from ${resolvedDispatches} resolved dispatches, slippage ${simulatorInput.liquidity!.slippageR.toFixed(3)}R from ${slipCount} samples.`,
   );
-  reasons.push(...estimate.reasons);
-  reasons.push(
-    "PROPOSAL ONLY: this has not been recorded on the edge and cannot be. Gate #23 still refuses until an admin presses the estimate AND a USD ceiling.",
-  );
-
-  // Confidence never reaches HIGH: this evidence base cannot support it.
-  const bigSample = measured.length >= CAPACITY_MIN_CLOSED_TRADES * 3
-    && resolvedDispatches >= CAPACITY_MIN_RESOLVED_DISPATCHES * 3;
-  const confidence: CapacityProposalConfidence =
-    optimisticAssumptions.length > 1 || !bigSample ? "LOW" : "MODERATE";
 
   return {
-    edgeId: ev.edgeId,
-    gatheredAt: ev.gatheredAt,
-    verdict: "PROPOSED",
-    confidence,
-    proposedCapacityStatus: estimate.status,
-    proposedCapacityRiskR: estimate.status === "ESTIMATED" ? estimate.capacityRiskR : null,
-    proposedMaxDeployedUsd: null,
-    maxDeployedUsdReason: MAX_DEPLOYED_USD_REASON,
+    ready: true,
     simulatorInput,
-    estimate,
-    gaps,
-    optimisticAssumptions,
-    sampleSizes,
-    reasons,
+    finish: (estimate: CapacityEstimateResult): EdgeCapacityProposal => {
+      const finalReasons = [
+        ...reasons,
+        ...estimate.reasons,
+        "PROPOSAL ONLY: this has not been recorded on the edge and cannot be. Gate #23 still refuses until an admin presses the estimate AND a USD ceiling.",
+      ];
+
+      // Confidence never reaches HIGH: this evidence base cannot support it.
+      const bigSample = measured.length >= CAPACITY_MIN_CLOSED_TRADES * 3
+        && resolvedDispatches >= CAPACITY_MIN_RESOLVED_DISPATCHES * 3;
+      const confidence: CapacityProposalConfidence =
+        optimisticAssumptions.length > 1 || !bigSample ? "LOW" : "MODERATE";
+
+      return {
+        edgeId: ev.edgeId,
+        gatheredAt: ev.gatheredAt,
+        verdict: "PROPOSED",
+        confidence,
+        proposedCapacityStatus: estimate.status,
+        proposedCapacityRiskR: estimate.status === "ESTIMATED" ? estimate.capacityRiskR : null,
+        proposedMaxDeployedUsd: null,
+        maxDeployedUsdReason: MAX_DEPLOYED_USD_REASON,
+        simulatorInput,
+        estimate,
+        gaps,
+        optimisticAssumptions,
+        sampleSizes,
+        reasons: finalReasons,
+      };
+    },
   };
 }
 

@@ -28,6 +28,23 @@
 //
 // Every leg that cannot be read degrades to a typed null WITH a reason. There
 // is no path in this file that turns an unreadable leg into a zero.
+//
+// ── WHERE THE ARITHMETIC LIVES ─────────────────────────────────────────────
+// This file owns the READS. Every derivation the reads feed — the R-multiple
+// math, the drop classification, the slippage formula, the venue-failure
+// heuristic — lives in `edgeCapacityDerivation.ts`, which imports no `db` and
+// is covered by behavioural tests. It used to be inline here, inside these try
+// blocks, where nothing but a source grep could reach it; valid SQL is not
+// correct arithmetic, and a mis-derived R does not throw — it produces a
+// plausible WRONG number on the surface the owner is told to read.
+//
+// That was not hypothetical. The extraction immediately exposed a live
+// coercion defect: the old local `finite()` did `Number(x)`, and `Number(null)`
+// is 0, so a closed position with NO broker-reported realised P&L was scored as
+// a break-even 0R TRADE instead of being dropped, and was never counted as a
+// venue failure. Every other leg was accidentally shielded by a `> 0` guard;
+// P&L legitimately can be 0, so it was not. See `finite()` in the derivation
+// module and the drop tests that now pin it.
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { and, eq, inArray, isNotNull } from "drizzle-orm";
@@ -39,27 +56,18 @@ import {
 } from "@workspace/db/schema";
 import type { EdgeCapacityEvidence } from "@workspace/domain/decision-intelligence";
 import { logger } from "../logger.js";
+import {
+  deriveLiquidityEvidence,
+  deriveRealizedEvidence,
+  specKey,
+  type SymbolSpec,
+} from "./edgeCapacityDerivation.js";
 
 const log = logger.child({ component: "edgeCapacityEvidence" });
 
 /** The two command types that OPEN exposure. Mirrors the dispatch pipeline's
  *  own `isEntryCommand`; capacity governs entries, never closes. */
 const ENTRY_COMMAND_TYPES = ["PLACE_LIVE_MARKET_ORDER", "PLACE_LIVE_PENDING_ORDER"] as const;
-
-function finite(x: unknown): number | null {
-  const n = typeof x === "number" ? x : Number(x);
-  return Number.isFinite(n) ? n : null;
-}
-
-/** Reads payload.referencePrice — the draft-time price the user approved —
- *  without trusting the payload's shape. Anything that is not a positive
- *  finite number is absent, not zero. */
-function referencePriceOf(payload: unknown): number | null {
-  if (payload == null || typeof payload !== "object") return null;
-  const v = (payload as Record<string, unknown>)["referencePrice"];
-  const n = finite(v);
-  return n != null && n > 0 ? n : null;
-}
 
 /**
  * Gather the evidence snapshot for one edge.
@@ -111,7 +119,7 @@ export async function gatherEdgeCapacityEvidence(
     ev.closedPositionsAttributed = closed.length;
 
     // Contract specs are per (owning user, symbol) — real broker specs only.
-    const specByKey = new Map<string, { contractSize: number | null; profitCurrency: string | null }>();
+    const specByKey = new Map<string, SymbolSpec>();
     if (closed.length > 0) {
       const userIds = Array.from(new Set(closed.map((p) => p.userId)));
       const symbols = Array.from(new Set(closed.map((p) => p.symbol)));
@@ -125,55 +133,19 @@ export async function gatherEdgeCapacityEvidence(
         inArray(arxSymbolSpecsTable.symbol, symbols),
       ));
       for (const s of specs) {
-        specByKey.set(`${s.userId}:${s.symbol}`, {
+        specByKey.set(specKey(s.userId, s.symbol), {
           contractSize: s.contractSize,
           profitCurrency: s.profitCurrency,
         });
       }
     }
 
-    const rMultiples: number[] = [];
-    const drops = new Map<string, number>();
-    const drop = (reason: string) => drops.set(reason, (drops.get(reason) ?? 0) + 1);
-    let venueFailures = 0;
-
-    for (const p of closed) {
-      // Venue-failure observable: the broker closed it but reported no usable
-      // numbers, or it was reconciled as absent from the broker entirely.
-      if (p.reconcileState === "RECONCILED_BROKER_ABSENT"
-        || (p.closeReportedAt != null && finite(p.realisedPnl) == null)) {
-        venueFailures += 1;
-      }
-
-      const pnl = finite(p.realisedPnl);
-      if (pnl == null) { drop("no broker-reported realised P&L (outcome UNRECONCILED)"); continue; }
-      const stop = finite(p.stopLoss);
-      if (stop == null || stop <= 0) { drop("no stop-loss recorded, so the position has no planned risk"); continue; }
-      const entry = finite(p.entryPrice);
-      if (entry == null || entry <= 0) { drop("no entry price recorded"); continue; }
-      const vol = finite(p.volume);
-      if (vol == null || vol <= 0) { drop("no volume recorded"); continue; }
-      const spec = specByKey.get(`${p.userId}:${p.symbol}`);
-      if (spec == null) { drop("no broker contract spec for this user+symbol"); continue; }
-      const contractSize = finite(spec.contractSize);
-      if (contractSize == null || contractSize <= 0) { drop("contract size missing from the broker spec"); continue; }
-      if (spec.profitCurrency !== "USD") {
-        // A non-USD profit currency needs an FX rate at close time that this
-        // system does not store. Converting with today's rate would be a
-        // fabricated number wearing a historical label.
-        drop(`profit currency ${spec.profitCurrency ?? "UNKNOWN"} — no close-time FX rate is recorded, so P&L cannot be normalised`);
-        continue;
-      }
-      const plannedRiskUsd = Math.abs(entry - stop) * contractSize * vol;
-      if (!(plannedRiskUsd > 0)) { drop("entry equals stop-loss, so planned risk is zero"); continue; }
-      rMultiples.push(pnl / plannedRiskUsd);
-    }
-
-    ev.realizedRMultiples = rMultiples;
-    ev.closedPositionsDropped = Array.from(drops.entries())
-      .map(([reason, count]) => ({ reason, count }))
-      .sort((a, b) => b.count - a.count);
-    ev.venueFailureObservations = { failures: venueFailures, ofClosed: closed.length };
+    // The arithmetic lives in edgeCapacityDerivation.ts, which imports no db
+    // and is pinned by behavioural tests. This function owns the READS only.
+    const derived = deriveRealizedEvidence(closed, specByKey);
+    ev.realizedRMultiples = derived.rMultiples;
+    ev.closedPositionsDropped = derived.dropped;
+    ev.venueFailureObservations = { failures: derived.venueFailures, ofClosed: closed.length };
   } catch (err) {
     log.warn({ err, edgeId }, "edge_capacity_evidence_realized_read_failed");
     ev.realizedRMultiples = null;
@@ -199,42 +171,12 @@ export async function gatherEdgeCapacityEvidence(
       isNotNull(arxLiveCommandsTable.confirmedAt),
     ));
 
-    let filled = 0, rejected = 0, expired = 0, stillInFlight = 0;
-    const partialRatios: number[] = [];
-    const slippage: number[] = [];
-
-    for (const c of cmds) {
-      if (c.filledAt != null) filled += 1;
-      else if (c.rejectedAt != null) rejected += 1;
-      else if (c.expiredAt != null) expired += 1;
-      else { stillInFlight += 1; continue; }
-
-      if (c.filledAt == null) continue;
-
-      const req = finite(c.requestedVolume);
-      const exec = finite(c.executedVolume);
-      if (req != null && req > 0 && exec != null && exec > 0) {
-        partialRatios.push(Math.min(1, exec / req));
-      }
-
-      const fill = finite(c.fillPrice);
-      const ref = referencePriceOf(c.payload);
-      const stop = finite(c.stopLoss);
-      if (fill != null && fill > 0 && ref != null && stop != null && stop > 0) {
-        const riskDistance = Math.abs(fill - stop);
-        // Slippage in planned-risk R. Contract size and volume appear in both
-        // numerator and denominator and cancel exactly, so no spec lookup is
-        // needed and no spec gap can silently zero this out.
-        if (riskDistance > 0) slippage.push(Math.abs(fill - ref) / riskDistance);
-      }
-    }
-
-    ev.dispatch = { filled, rejected, expired, stillInFlight };
-    ev.slippageRSamples = slippage;
-    ev.partialFillSamples = partialRatios.length;
-    ev.partialFillMean01 = partialRatios.length > 0
-      ? partialRatios.reduce((s, x) => s + x, 0) / partialRatios.length
-      : null;
+    // Again: reads here, arithmetic in the behaviourally-tested derivation.
+    const derived = deriveLiquidityEvidence(cmds);
+    ev.dispatch = derived.dispatch;
+    ev.slippageRSamples = derived.slippageRSamples;
+    ev.partialFillSamples = derived.partialFillSamples;
+    ev.partialFillMean01 = derived.partialFillMean01;
   } catch (err) {
     log.warn({ err, edgeId }, "edge_capacity_evidence_dispatch_read_failed");
     ev.dispatch = null;

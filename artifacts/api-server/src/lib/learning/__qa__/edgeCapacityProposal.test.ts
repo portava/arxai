@@ -31,9 +31,14 @@ const proposalRouteSrc = readFileSync(
   path.join(here, "../../../routes/adminEdgeCapacityProposals.ts"), "utf8");
 const recordRouteSrc = readFileSync(
   path.join(here, "../../../routes/adminEdgeCapacity.ts"), "utf8");
+const derivationSrc = readFileSync(
+  path.join(here, "../edgeCapacityDerivation.ts"), "utf8");
 
 const {
   buildEdgeCapacityProposal,
+  buildEdgeCapacityProposalYielding,
+  estimateStrategyCapacity,
+  estimateStrategyCapacityYielding,
   CAPACITY_MIN_CLOSED_TRADES,
   CAPACITY_MIN_RESOLVED_DISPATCHES,
   CAPACITY_MIN_SLIPPAGE_SAMPLES,
@@ -115,15 +120,39 @@ test("a proposal never writes: a deeply frozen evidence snapshot is accepted", (
   assert.equal(p.verdict, "PROPOSED");
 });
 
+/** ONE list, used by every read-only pin in this file. It is a list and not
+ *  five literals because the two pins below it drifted apart once already:
+ *  the proposals-route pin was missing `execute(`, so the route was pinned
+ *  against Drizzle's write builders but not against raw SQL. A pin that is
+ *  weaker than the sentence it is cited to prove is worse than no pin. */
+const WRITE_VERBS = ["db.update(", "db.insert(", "db.delete(", ".returning(", "execute("] as const;
+
 test("SOURCE PIN: the evidence collector contains no write verb, in any form", () => {
-  for (const verb of ["db.update(", "db.insert(", "db.delete(", ".returning(", "execute("]) {
+  for (const verb of WRITE_VERBS) {
     assert.ok(!collectorSrc.includes(verb),
       `the capacity evidence collector must never contain ${verb} — a proposal that can write is not a proposal`);
   }
 });
 
+test("SOURCE PIN: the derivation module contains no write verb and cannot reach a database", () => {
+  for (const verb of WRITE_VERBS) {
+    assert.ok(!derivationSrc.includes(verb),
+      `the capacity derivation module must never contain ${verb}`);
+  }
+  assert.ok(!/from\s+"@workspace\/db/.test(derivationSrc),
+    "the derivation module must not import @workspace/db at all — its whole point is that the arithmetic is reachable by a test without a database");
+  assert.ok(!derivationSrc.includes("db.select("),
+    "the derivation module reads nothing; the collector owns every read");
+});
+
 test("SOURCE PIN: the proposals route contains no write verb and never reads the promotion ladder", () => {
-  for (const verb of ["db.update(", "db.insert(", "db.delete(", ".returning("]) {
+  // `execute(` belongs in this list and was missing from it. The collector pin
+  // above has always carried it; this one did not, so a raw
+  // `db.execute(sql`UPDATE ...`)` dropped into the proposals route would have
+  // passed the very pin the route header and the runbook cite as the reason a
+  // write path there is impossible. The route is clean today — the GUARANTEE
+  // was weaker than what was written down, which is the part that matters.
+  for (const verb of WRITE_VERBS) {
     assert.ok(!proposalRouteSrc.includes(verb),
       `the proposals route must never contain ${verb}`);
   }
@@ -400,6 +429,117 @@ test("the fleet summary makes an all-refuse state legible instead of silent", ()
 });
 
 // ═══ The seam between the two halves ═══════════════════════════════════════
+
+// ═══ 5. THE YIELDING DRIVER SAYS THE SAME THING ════════════════════════════
+//
+// The proposals route drives the simulator through the yielding driver so a
+// fleet sweep cannot hold the event loop — the process that also runs the kill
+// switch, the heartbeats and broker command dispatch — for ~527 ms per edge,
+// ~26 s over MAX_EDGES = 50. That is only safe if the two drivers agree
+// EXACTLY. If they can disagree, an operator reading the dashboard and an
+// operator reading the press response are looking at two different capacity
+// numbers for the same edge, and neither knows it.
+
+/** Counts how many times the driver actually handed the loop back. */
+function countingBreathe() {
+  let breaths = 0;
+  return {
+    get breaths() { return breaths; },
+    fn: (): Promise<void> => {
+      breaths += 1;
+      return new Promise<void>((resolve) => { setImmediate(resolve); });
+    },
+  };
+}
+
+test("the yielding estimator returns EXACTLY what the synchronous one returns", async () => {
+  const base = {
+    winRate01: 0.56, avgWinR: 1.4, avgLossR: -1,
+    pathsToSimulate: 800, horizonTrades: 120, ruinThresholdR: -25, seed: 23,
+  };
+  const b = countingBreathe();
+  const sync = estimateStrategyCapacity(base);
+  const async_ = await estimateStrategyCapacityYielding(base, b.fn);
+  assert.deepEqual(async_, sync,
+    "one generator, one probe sequence, one seed — the drivers must be indistinguishable in their output");
+  assert.ok(b.breaths >= 3,
+    `the yielding driver must actually yield between probes (breathed ${b.breaths}×)`);
+});
+
+test("the yielding estimator agrees on the refusal verdicts too, not just on numbers", async () => {
+  const b = countingBreathe();
+  const ruinous = {
+    winRate01: 0.2, avgWinR: 0.5, avgLossR: -1,
+    pathsToSimulate: 400, horizonTrades: 200, ruinThresholdR: -5, seed: 7,
+  };
+  assert.deepEqual(await estimateStrategyCapacityYielding(ruinous, b.fn),
+    estimateStrategyCapacity(ruinous));
+  // A degenerate distribution returns before the bisection ever starts.
+  const degenerate = { ...ruinous, avgLossR: 1 };
+  const b2 = countingBreathe();
+  const degenAsync = await estimateStrategyCapacityYielding(degenerate, b2.fn);
+  assert.equal(degenAsync.status, "DEGENERATE_INPUT");
+  assert.deepEqual(degenAsync, estimateStrategyCapacity(degenerate));
+});
+
+test("the yielding PROPOSAL builder returns EXACTLY what the synchronous one returns", async () => {
+  const b = countingBreathe();
+  const ev = sufficientEvidence(31);
+  const sync = buildEdgeCapacityProposal(ev);
+  const async_ = await buildEdgeCapacityProposalYielding(ev, b.fn);
+  assert.deepEqual(async_, sync,
+    "the dashboard's number and the press response's number must be the same number");
+  assert.equal(async_.verdict, "PROPOSED");
+  assert.ok(b.breaths >= 3, "a PROPOSED sweep must breathe between probes");
+});
+
+test("the yielding builder still refuses to guess, and does not even breathe when it refuses", async () => {
+  const b = countingBreathe();
+  const async_ = await buildEdgeCapacityProposalYielding(emptyEvidence(32), b.fn);
+  assert.deepEqual(async_, buildEdgeCapacityProposal(emptyEvidence(32)));
+  assert.equal(async_.verdict, "INSUFFICIENT_EVIDENCE");
+  assert.equal(async_.proposedCapacityRiskR, null);
+  assert.equal(async_.simulatorInput, null);
+  assert.equal(b.breaths, 0,
+    "an insufficient proposal never reaches the simulator, so it has nothing to yield between");
+});
+
+test("the yielding builder writes nothing and mutates nothing, exactly like the pure one", async () => {
+  const ev = Object.freeze({
+    ...sufficientEvidence(33),
+    realizedRMultiples: Object.freeze(sufficientEvidence().realizedRMultiples!.slice()),
+    dispatch: Object.freeze(sufficientEvidence().dispatch!),
+    slippageRSamples: Object.freeze(sufficientEvidence().slippageRSamples!.slice()),
+  }) as Evidence;
+  const before = JSON.stringify(ev);
+  const b = countingBreathe();
+  await buildEdgeCapacityProposalYielding(ev, b.fn);
+  assert.equal(JSON.stringify(ev), before, "the evidence snapshot must come back untouched");
+});
+
+test("SOURCE PIN: the proposals route drives the simulator through the YIELDING builder", () => {
+  const codeOnly = proposalRouteSrc.split("\n")
+    .filter((l) => !l.trimStart().startsWith("//"))
+    .join("\n");
+  assert.ok(codeOnly.includes("buildEdgeCapacityProposalYielding"),
+    "a fleet-wide sweep must not run the simulator synchronously — that stalls the kill switch");
+  assert.ok(!/[^g]\bbuildEdgeCapacityProposal\(/.test(codeOnly),
+    "the synchronous builder must not be called from the fleet sweep");
+  assert.ok(codeOnly.includes("setImmediate"),
+    "the route must supply a real event-loop yield, not a resolved promise that yields only the microtask queue");
+});
+
+test("SOURCE PIN: the press route drives BOTH of its simulations through the yielding drivers", () => {
+  const codeOnly = recordRouteSrc.split("\n")
+    .filter((l) => !l.trimStart().startsWith("//"))
+    .join("\n");
+  assert.ok(codeOnly.includes("estimateStrategyCapacityYielding("),
+    "the pressed estimate (up to 20000 paths × 5000 trades) must not block the loop for its whole search");
+  assert.ok(codeOnly.includes("buildEdgeCapacityProposalYielding("),
+    "the proposal recorded as press-time context must not block the loop either");
+  assert.ok(!/[^g]\bestimateStrategyCapacity\(/.test(codeOnly));
+  assert.ok(!/[^g]\bbuildEdgeCapacityProposal\(/.test(codeOnly));
+});
 
 test("a PROPOSED number does not, by itself, move the gate one inch", () => {
   const p = buildEdgeCapacityProposal(sufficientEvidence(11));

@@ -24,9 +24,13 @@ them:
 Everything up to the press is built. The press itself is not automated and
 cannot be:
 
-- A proposal has **no write path**. The evidence collector and the proposals
-  route contain no `db.insert` / `db.update` / `db.delete`, pinned by
-  `test:edge-capacity-proposal`.
+- A proposal has **no write path**. The evidence collector, the derivation
+  module and the proposals route contain no `db.insert` / `db.update` /
+  `db.delete` / `.returning(` / `execute(`, pinned by
+  `test:edge-capacity-proposal`. (`execute(` was missing from the
+  proposals-route half of that pin until the review pass; the route was clean,
+  but raw `db.execute(sql\`UPDATE ...\`)` would have slipped past the pin this
+  sentence cites. The three pins now share one verb list.)
 - The **USD deployable ceiling is never proposed**, on any evidence. The
   simulator answers in planned-risk R; converting R into a cumulative USD
   ceiling needs a capital basis attached to the edge, which this system does not
@@ -49,6 +53,21 @@ returns `503 EDGE_LIBRARY_UNAVAILABLE` with a message saying so — an unreadabl
 state, deliberately not an empty one.
 
 ## The owner's presses, in order
+
+### 0. Know what you are reading
+
+The proposal sweep runs the Monte-Carlo estimator **per edge** — measured at
+~527 ms of CPU each, so a fleet of 50 would be ~26 s. Run synchronously that is
+26 s during which the API process answers nothing at all; measured over 10
+edges against a 5 ms heartbeat, the synchronous builder let it fire 6 times in
+5.3 s, the yielding one 143 times with a worst stall of 72 ms. It is driven through the
+yielding driver and the server may re-serve a sweep up to 30 s old rather than
+recompute it. The card states which: *"computed for this request"* or
+*"re-served from a sweep Ns ago"*, next to the real `gatheredAt`. If you have
+just recorded something and want a genuinely fresh sweep, wait out the 30 s
+before re-reading. **Nothing about this changes a number** — the yielding and
+synchronous drivers share one generator and one seed, pinned by the sync/async
+equivalence test.
 
 ### 1. Look at the readout
 
