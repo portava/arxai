@@ -2230,7 +2230,44 @@ function MissionTestResultRow({ r }: { r: MissionTestResult }): ReactElement {
   );
 }
 
-function MissionTestingLab({ mission }: { mission: ProfitMission }): ReactElement {
+/**
+ * What the server actually said when it refused to apply an automation level.
+ *
+ * PATCH /profit-missions/:id/automation-level answers a refusal with HTTP 200 +
+ * `applied: false` + the decision, NOT an error — so react-query's onSuccess
+ * runs and, before this existed, the page cleared the error and re-read the
+ * advisory GET. The user pressed a button, nothing changed, and nothing said
+ * why. The refusal reasons live in `decision.failedGates` / `decision.blockers`,
+ * which the advisory GET never contains: the authority read-through only runs on
+ * the apply path (missionPromotionService.applyMissionAutomationLevel), so the
+ * ten fixed gates from evaluateMissionPromotion can never name `authority_grant`.
+ */
+type PromotionRefusal = { failedGates: string[]; blockers: string[] };
+
+function readRefusal(result: unknown): PromotionRefusal | null {
+  const r = (result && typeof result === "object" ? result : {}) as Record<string, unknown>;
+  if (r.applied === true) return null;
+  const d = (r.decision && typeof r.decision === "object" ? r.decision : {}) as Record<string, unknown>;
+  const failedGates = vArr(d, "failedGates");
+  const blockers = vArr(d, "blockers");
+  if (failedGates.length === 0 && blockers.length === 0) {
+    // Refused with no stated reason: say that, never imply it worked.
+    return { failedGates: [], blockers: ["The level was not applied and the server gave no reason."] };
+  }
+  return { failedGates, blockers };
+}
+
+function refusalNamesAuthority(r: PromotionRefusal | null): boolean {
+  if (!r) return false;
+  return (
+    r.failedGates.some((g) => g.includes("authority_grant")) ||
+    r.blockers.some((b) => b.includes("authority_grant"))
+  );
+}
+
+// Exported for the render proof in profit-missions.promotion-refusal.test.tsx —
+// a source-text assertion cannot tell a rendered block from unreachable code.
+export function MissionTestingLab({ mission }: { mission: ProfitMission }): ReactElement {
   const missionId = mission.id;
   const qc = useQueryClient();
   const [strategyId, setStrategyId] = useState("flame_scalp");
@@ -2242,6 +2279,7 @@ function MissionTestingLab({ mission }: { mission: ProfitMission }): ReactElemen
   const [certConfirmed, setCertConfirmed] = useState(false);
   const [certPhrase, setCertPhrase] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [refusal, setRefusal] = useState<PromotionRefusal | null>(null);
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: getListMissionTestResultsQueryKey(missionId) });
@@ -2280,8 +2318,11 @@ function MissionTestingLab({ mission }: { mission: ProfitMission }): ReactElemen
   });
   const applyLevel = useApplyMissionAutomationLevel({
     mutation: {
-      onSuccess: () => { setError(null); invalidate(); },
-      onError: (e) => setError(errMessage(e, "Could not apply automation level")),
+      // A refusal arrives as 200 + applied:false, so it lands HERE, not in
+      // onError. Surfacing decision.blockers is the only place the user ever
+      // learns why the press did nothing.
+      onSuccess: (result) => { setError(null); setRefusal(readRefusal(result)); invalidate(); },
+      onError: (e) => { setRefusal(null); setError(errMessage(e, "Could not apply automation level")); },
     },
   });
   const acceptCert = useAcceptMissionCertificate({
@@ -2500,6 +2541,53 @@ function MissionTestingLab({ mission }: { mission: ProfitMission }): ReactElemen
                 </li>
               ))}
             </ul>
+          )}
+
+          {/* The refusal the server actually returned for the last press.
+              Before this, a refusal (200 + applied:false) cleared the error and
+              re-read the advisory GET, so the button did nothing and said
+              nothing. Every blocker string is rendered verbatim — the ONLY
+              place `authority_grant` can appear, because the authority
+              read-through runs on the apply path and never on the GET. */}
+          {refusal && (
+            <div
+              className="space-y-2 rounded-md border border-danger/30 bg-danger/5 p-3 text-sm"
+              data-testid="promotion-apply-refusal"
+            >
+              <p className="font-medium">The level was not applied.</p>
+              <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
+                {refusal.blockers.length > 0
+                  ? refusal.blockers.map((b, i) => <li key={i}>{b}</li>)
+                  : refusal.failedGates.map((g, i) => <li key={i}>{g}</li>)}
+              </ul>
+            </div>
+          )}
+
+          {/* Closes a dead end: missionPromotionService refuses an automation
+              INCREASE with "requires an active owner-pressed authority grant",
+              and the grant is created by POST /api/me/authority/grants — a
+              call no screen made until /authority shipped. Without this link
+              the documented blocker told the user to do something with no
+              destination. */}
+          {(
+            refusalNamesAuthority(refusal) ||
+            gates.some((g) =>
+              `${readStr(g, "name") ?? ""} ${readStr(g, "detail") ?? ""}`.includes("authority_grant"),
+            ) ||
+            (error ?? "").includes("authority")
+          ) && (
+            <div
+              className="rounded-md border border-warning/30 bg-warning/5 p-3 text-sm"
+              data-testid="authority-grant-blocker-link"
+            >
+              Raising automation above the baseline needs an active owner-pressed authority grant on your
+              account.{" "}
+              <a href="/authority" className="font-medium underline">
+                Open Automation Authority
+              </a>{" "}
+              to press one, then apply the level again. A grant only permits the raise — every safety gate
+              still runs.
+            </div>
           )}
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

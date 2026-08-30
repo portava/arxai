@@ -104,6 +104,8 @@ export default function AdminReconciliationCenter() {
         </CardContent>
       </Card>
 
+      <BrokerAbsenceSection />
+
       <Card>
         <CardHeader><CardTitle className="text-base">Open issues</CardTitle></CardHeader>
         <CardContent className="space-y-3">
@@ -135,6 +137,147 @@ export default function AdminReconciliationCenter() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+// ── Broker absence ──────────────────────────────────────────────────────────
+//
+// GET /admin/reconciliation-center/broker-absence-candidates (audited dry-run
+// report + policy snapshot) and POST .../broker-absence-reconcile shipped
+// fully implemented with no UI at all: an operator could not see which
+// positions the broker had stopped reporting, nor run the dry run, from the
+// product.
+//
+// HONESTY (inviolable):
+//   * The dry run is the default and is labelled as a dry run. The apply
+//     press is separate, requires a reason and a bridge id, and the server
+//     still refuses it while the feature flag is off (FEATURE_DISABLED) — that
+//     refusal is shown verbatim rather than retried or softened.
+//   * A read failure renders the failure. It never renders "no candidates".
+
+function BrokerAbsenceSection() {
+  const [report, setReport] = useState<Record<string, unknown> | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [userId, setUserId] = useState("");
+  const [bridgeId, setBridgeId] = useState("");
+  const [reason, setReason] = useState("");
+  const [applyResult, setApplyResult] = useState<Record<string, unknown> | null>(null);
+
+  async function loadCandidates() {
+    setBusy(true);
+    setErr(null);
+    try {
+      const qs = userId.trim() ? `?userId=${encodeURIComponent(userId.trim())}` : "";
+      const r = await fetch(`/api/admin/reconciliation-center/broker-absence-candidates${qs}`, { credentials: "include" });
+      const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!r.ok) {
+        setReport(null);
+        setErr(`Candidate read failed (${r.status}): ${String(j.error ?? "")}`);
+        return;
+      }
+      setReport(j);
+    } catch (e) {
+      setReport(null);
+      setErr(`Candidate read failed: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function run(dryRun: boolean) {
+    setBusy(true);
+    setApplyResult(null);
+    try {
+      const r = await fetch("/api/admin/reconciliation-center/broker-absence-reconcile", {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          reason: reason.trim(),
+          targetUserId: Number(userId),
+          dryRun,
+          ...(bridgeId.trim() ? { bridgeConnectionId: Number(bridgeId) } : {}),
+        }),
+      });
+      const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
+      setApplyResult({ httpStatus: r.status, ...j });
+    } catch (e) {
+      setApplyResult({ error: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card data-testid="broker-absence-section">
+      <CardHeader><CardTitle className="text-base">Broker absence</CardTitle></CardHeader>
+      <CardContent className="space-y-3 text-sm">
+        <p className="text-muted-foreground">
+          Positions the broker has stopped reporting. The report below is a dry run — it stamps nothing. Applying is a
+          separate, audited press that requires a reason and a bridge connection, and the server refuses it entirely
+          while the broker-absence write flag is off.
+        </p>
+        <div className="grid gap-2 sm:grid-cols-3">
+          <label className="space-y-1">
+            <span className="text-muted-foreground">User id (blank = all users with open live positions)</span>
+            <input
+              className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+              value={userId} onChange={(e) => setUserId(e.target.value)} inputMode="numeric"
+              data-testid="input-absence-user"
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="text-muted-foreground">Bridge connection id (required to apply)</span>
+            <input
+              className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+              value={bridgeId} onChange={(e) => setBridgeId(e.target.value)} inputMode="numeric"
+              data-testid="input-absence-bridge"
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="text-muted-foreground">Reason (min 3 chars, audited)</span>
+            <input
+              className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+              value={reason} onChange={(e) => setReason(e.target.value)}
+              data-testid="input-absence-reason"
+            />
+          </label>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="outline" disabled={busy} onClick={() => void loadCandidates()} data-testid="button-absence-candidates">
+            Load candidates (dry run)
+          </Button>
+          <Button
+            size="sm" variant="outline"
+            disabled={busy || reason.trim().length < 3 || !userId.trim()}
+            onClick={() => void run(true)}
+            data-testid="button-absence-dryrun"
+          >
+            Run dry run for this user
+          </Button>
+          <Button
+            size="sm"
+            disabled={busy || reason.trim().length < 3 || !userId.trim() || !bridgeId.trim()}
+            onClick={() => void run(false)}
+            data-testid="button-absence-apply"
+          >
+            Apply (audited)
+          </Button>
+        </div>
+        {err && <p className="text-danger" data-testid="absence-error">{err}</p>}
+        {report && (
+          <pre className="max-h-72 overflow-auto rounded-md border border-border bg-muted/40 p-2 text-[11px]" data-testid="absence-report">
+            {JSON.stringify(report, null, 2)}
+          </pre>
+        )}
+        {applyResult && (
+          <pre className="max-h-72 overflow-auto rounded-md border border-border bg-muted/40 p-2 text-[11px]" data-testid="absence-run-result">
+            {JSON.stringify(applyResult, null, 2)}
+          </pre>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

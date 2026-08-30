@@ -12,6 +12,10 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAssistantName } from "@/lib/assistant-name";
+// Basis of the money on this page. Net P/L is stated here in dollars, and the
+// assistant's read draws a conclusion from it ("You're net profitable"); a
+// DISPUTED ledger-vs-broker verdict has to be visible alongside that.
+import { LedgerBasisStrip } from "@/components/money/LedgerBasisStrip";
 
 type Scorecard = {
   environments: Record<string, { trades?: number; wins?: number; losses?: number; winRate?: number; pnl?: number; note?: string; status?: string; source?: string; excludedUnknown?: number }>;
@@ -116,6 +120,9 @@ export default function PerformanceScorecard() {
           </button>
         </div>
       </div>
+
+      {/* Basis of every dollar figure below: reconciled against the broker, or not. */}
+      <LedgerBasisStrip />
 
       {err && <p className="rounded-xl border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">{err}</p>}
       {!s && !err && <p className="text-sm text-txt-muted">Loading report…</p>}

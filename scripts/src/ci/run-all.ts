@@ -68,6 +68,7 @@ import { checkOwnerDecisionLinkage } from "./check-owner-decision-linkage.js";
 import { checkReleaseSafetyCase } from "./check-release-safety-case.js";
 import { checkProvenanceNoCollapse } from "./check-provenance-no-collapse.js";
 import { checkBrokerHubNoExecution } from "./check-broker-hub-no-execution.js";
+import { checkRouterReachability } from "./check-router-reachability.js";
 // NOTE: `check-no-user-facing-paper-only.ts` exists as a future guard but
 // is intentionally NOT registered yet — it finds 65 pre-existing UI
 // strings (login.tsx, onboarding.tsx, my-paper-trades.tsx, etc.) that are
@@ -145,6 +146,7 @@ const checks: Array<() => CheckResult> = [
   checkReleaseSafetyCase,
   checkProvenanceNoCollapse,
   checkBrokerHubNoExecution,
+  checkRouterReachability,
 ];
 
 let failed = 0;

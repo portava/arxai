@@ -283,6 +283,7 @@
     "test:flywheel-case-reward": "node --import tsx --test --test-force-exit src/lib/flywheel/__qa__/flywheelCaseReward.test.ts",
     "test:flywheel-posterior-bandit": "node --import tsx --test --test-force-exit src/lib/flywheel/__qa__/flywheelPosteriorBandit.test.ts",
     "test:flywheel-ope-ledger": "node --import tsx --test --test-force-exit src/lib/flywheel/__qa__/flywheelOpeLedger.test.ts",
+    "test:economic-reconciliation-read": "node --import tsx --test --test-force-exit src/routes/__qa__/meEconomicReconciliation.test.ts",
     "test:app-g-notification-isolation": "node --import tsx --test --test-force-exit src/lib/notifications/__qa__/notificationIsolation.test.ts",
     "test:backtest-synthetic-honesty": "node --import tsx --test-isolation=none --test --test-force-exit src/lib/__qa__/backtestSyntheticHonesty.test.ts",
     "test:shadow-mode-honesty": "node --import tsx --test-isolation=none --test --test-force-exit src/lib/__qa__/shadowModeHonesty.test.ts",

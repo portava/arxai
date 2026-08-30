@@ -104,6 +104,18 @@ const NORMAL_USER_EXACT: ReadonlySet<string> = new Set<string>([
   "/my-account",
   "/settings",
   "/help",
+  // Capability #37 — the authority-grant press. missionPromotionService
+  // refuses an automation increase with the words "requires an active
+  // owner-pressed authority grant"; without this entry that documented
+  // blocker has no destination and stays a dead end.
+  "/authority",
+  // Capability #44 — manual takeover of a live position. A safety
+  // affordance; it must be reachable by the person who owns the position.
+  "/position-control",
+  // Capability #46 — the broker-native escape route. The page and route
+  // existed; the allowlist entry did not, so a normal trader typing the URL
+  // was bounced home.
+  "/escape-route",
   // ── Advanced AI & Strategy (visible nav group) ──
   "/ai-coach",
   "/trade-grader",

@@ -26,6 +26,7 @@ import {
   ScrollText,
   Brain,
   Activity,
+  Scale,
   ChevronRight,
 } from "lucide-react";
 import { PageTabs, type PageTab } from "@/components/ui/PageTabs";
@@ -205,6 +206,29 @@ const ADMIN_TABS: AdminTabDef[] = [
           { href: "/learning", label: "Learning Center", desc: "Learning progress and history" },
           { href: "/brain", label: "Brain Analysis", desc: "Decision and reasoning analysis" },
           { href: "/admin/ruby-voice", label: "Ruby Voice Settings", desc: "Assistant voice configuration" },
+        ],
+      },
+    ],
+  },
+  {
+    id: "governance",
+    label: "Governance",
+    icon: <Scale className="h-4 w-4" />,
+    intro:
+      "Operator controls that gate real user access, plus the always-on evidence workers. These backends shipped without any UI; each card below is the only in-product way to reach one.",
+    groups: [
+      {
+        heading: "Access & structure",
+        links: [
+          { href: "/admin/governance", label: "Governance", desc: "Compliance eligibility, lifecycle roles, execution-policy promotion press, as-of reconstruction" },
+          { href: "/admin/org-structure", label: "Org Structure", desc: "Legal-entity hierarchy, beneficial ownership, consolidated exposure" },
+        ],
+      },
+      {
+        heading: "Capacity & engines",
+        links: [
+          { href: "/admin/edge-capacity", label: "Edge Capacity", desc: "Ruin/capacity simulator verdict and the USD deployable ceiling (gate #23)" },
+          { href: "/admin/engine-drivers", label: "Engine Drivers", desc: "Intelligence ROI, champion vs challenger, meta-strategy posture, recovery probation" },
         ],
       },
     ],

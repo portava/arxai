@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useAssistantName } from "@/lib/assistant-name";
+import { LedgerBasisStrip } from "@/components/money/LedgerBasisStrip";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -2247,6 +2248,13 @@ export default function InvestorPortal() {
           </p>
         </div>
       </div>
+
+      {/* Basis of every dollar figure in this portal: whether the posting
+          ledger has been reconciled against the broker's own reported balance.
+          A view-only reader has no other way to learn the verdict was
+          DISPUTED — and a view-only reader can do nothing about it, which
+          makes seeing it the only remedy they have. */}
+      <LedgerBasisStrip />
 
       <Tabs defaultValue="overview">
         <TabsList className="flex w-full flex-wrap justify-start gap-1">

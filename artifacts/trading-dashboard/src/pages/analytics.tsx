@@ -29,6 +29,11 @@ import {
 import { cn } from "@/lib/utils";
 import { formatPnl, formatPercent } from "@/lib/format";
 import { useAssistantName } from "@/lib/assistant-name";
+// Basis of the money on this page: whether the posting ledger has been
+// reconciled against the broker. Previously the reconciliation worker's
+// DISCREPANCY verdict reached no human at all.
+import { LedgerBasisStrip } from "@/components/money/LedgerBasisStrip";
+import { OriginClassCard } from "@/components/analytics/OriginClassCard";
 
 const RUBY_OPEN_KEY = "arx.assistant.open.v2";
 function openRubyLiveChat() {
@@ -38,7 +43,7 @@ function openRubyLiveChat() {
   } catch { /* silent */ }
 }
 
-type Tab = "overview" | "calendar" | "risk" | "allocation" | "timeline";
+type Tab = "overview" | "calendar" | "risk" | "allocation" | "timeline" | "origin";
 
 function money(n: number | null | undefined): string {
   const v = n ?? 0;
@@ -73,7 +78,7 @@ export default function Analytics() {
 
   const tabs: Array<[Tab, string]> = [
     ["overview", "Overview"], ["calendar", "Calendar P/L"], ["risk", "Risk"],
-    ["allocation", "Allocation"], ["timeline", "Timeline"],
+    ["allocation", "Allocation"], ["timeline", "Timeline"], ["origin", "Origin"],
   ];
 
   return (
@@ -105,6 +110,9 @@ export default function Analytics() {
       {/* Summary strip */}
       <AccountSummaryStrip equity={equity} openPnl={openPnl} summary={summary} />
 
+      {/* Basis of every figure below: reconciled against the broker, or not. */}
+      <LedgerBasisStrip />
+
       {/* Tabs */}
       <div className="flex gap-1.5 overflow-x-auto pb-1">
         {tabs.map(([k, label]) => (
@@ -128,6 +136,7 @@ export default function Analytics() {
       {tab === "risk" && <RiskTab summary={summary} />}
       {tab === "allocation" && <AllocationTab balance={balance} equity={equity} openPnl={openPnl} positions={positions} />}
       {tab === "timeline" && <TimelineTab />}
+      {tab === "origin" && <OriginClassCard />}
     </div>
   );
 }
