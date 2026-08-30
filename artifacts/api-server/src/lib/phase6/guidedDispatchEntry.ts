@@ -16,6 +16,8 @@ import {
 } from "./guidedExecutionService.js";
 import { resolveDerivDependencies } from "./derivDependencyResolver.js";
 import { resolveExecutionTier } from "@workspace/domain/safety-contracts/executionTier";
+import { assertVenueGateParity, type VenueGateParityVerdict } from "@workspace/domain/safety-contracts/venueGateParity";
+import { DERIV_DEMO_GATE_PARITY } from "@workspace/domain/safety-contracts/derivDemoGateParity";
 import { guidedBuy } from "../deriv/execution/derivGuidedBuy.js";
 import { ARX_LOCK_NS, withTxAdvisoryLock } from "../concurrency/advisoryLock.js";
 import { fetchAccounts, isDemoAccount, isRealAccount } from "../deriv/newApi/accounts.js";
@@ -175,6 +177,18 @@ async function loadGuidedObservedState(userId: number, instrument?: string): Pro
  *   - any read failure counts as ENGAGED. Not being able to read the stop
  *     button is not permission to trade.
  */
+/**
+ * The parity map is a module constant, so its totality verdict cannot change
+ * within a process. Memoized so every dispatch pays a map-sized loop exactly
+ * once; NOT computed at import time, so loading this module stays inert and a
+ * broken map surfaces as a dispatch refusal, never an import crash.
+ */
+let cachedParityVerdict: VenueGateParityVerdict | null = null;
+function derivDemoParityVerdict(): VenueGateParityVerdict {
+  cachedParityVerdict ??= assertVenueGateParity("DERIV_DEMO", DERIV_DEMO_GATE_PARITY);
+  return cachedParityVerdict;
+}
+
 async function liveKillSwitchEngaged(userId: number): Promise<boolean> {
   try {
     const [arming] = await db.select({ k: arxLiveArmingTable.killSwitchEngaged })
@@ -777,6 +791,22 @@ async function dispatchGuidedTicketInner(
         venueContractRef: null, indeterminate: false, intentId: null, claimed: false,
       };
     }
+  }
+
+  // ── GATE-PARITY TOTALITY, before anything can claim the ticket ──────────
+  // Audit B4: the parity map was a compile-time contract with no runtime
+  // consumer — the design document promised "the venue evaluator refuses to
+  // dispatch if any of the 23 keys has no disposition", and nothing on the
+  // dispatch path checked it. The map is a constant, so this evaluates once
+  // per process; a not-ok verdict refuses every dispatch, pre-claim, until
+  // the map is repaired alongside whatever gate change broke it.
+  const parity = derivDemoParityVerdict();
+  if (!parity.ok) {
+    return {
+      ok: false, refusal: "TICKET_AUTHORIZATION_REFUSED",
+      detail: `GATE_PARITY_INCOMPLETE: ${parity.problems.length} Phase B gate(s) lack a valid DERIV_DEMO disposition (first: ${parity.problems[0]?.gate ?? "?"}); nothing was sent`,
+      venueContractRef: null, indeterminate: false, intentId: null, claimed: false,
+    };
   }
 
   // ── GATE 18, before anything can claim the ticket ───────────────────────

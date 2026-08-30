@@ -362,13 +362,18 @@ test("with NO transport override, the LIVE path runs and still fabricates nothin
   }
 });
 
-test("with NO observed state wired, the product still refuses — never trades blind", async () => {
-  // The default is now the LIVE guided-ledger loader. In an environment where
-  // that read fails (no database here), the pre-transmission wrapper turns the
-  // throw into a DEFINITE refusal. The property under certification is
-  // unchanged: unreadable account state must refuse, never read as zero loss —
-  // only the refusal now arrives via the infra wrapper instead of a NaN
-  // sentinel, because production needs the real loader to dispatch at all.
+test("an UNREADABLE observed state refuses definitively — never trades blind", async () => {
+  // Audit B2: this test used to leave the dependency resolver LIVE, so its
+  // result depended on mutable database state — no DB here meant the
+  // observed-state read failed (the wall under test), while a live DB with the
+  // kill switch engaged refused one wall EARLIER, and the assertion had been
+  // widened to accept either. A certificate whose outcome varies by
+  // environment cannot be cited as evidence. Hermetic form: every dependency
+  // that would touch a database is stubbed to its permissive reading, and the
+  // observed-state read fails DETERMINISTICALLY. The certified property is
+  // unchanged — an unreadable account state must refuse pre-transmission,
+  // never read as zero loss — and the companion source pin below certifies
+  // that production wires the real ledger loader, not a stub.
   const prev = process.env["ARX_EXECUTION_TIER"];
   process.env["ARX_EXECUTION_TIER"] = "TIER_1_DEMO_GUIDED";
   try {
@@ -384,28 +389,54 @@ test("with NO observed state wired, the product still refuses — never trades b
         serializeDispatch: async <T,>(_uid: number, fn: () => Promise<T>) => ({ acquired: true, value: await fn() }),
         resolveProbation: async () => ({ kind: "none" as const }),
         recordAudit: async () => {},
+        depSources: {
+          loadConnection: async () => ({
+            id: 11, ownerUserId: USER,
+            venue: "DERIV_DEMO", credentialHandle: "handle_server_side_only",
+          }),
+          loadAccount: async () => ({ accountRef: "VRTC1234", connectionId: 11 }),
+          classifyAccount: async () => ({
+            isDemo: true, source: "VENUE_ACCOUNT_ATTRIBUTE", evidence: "is_virtual=1",
+          }),
+          killSwitchEngaged: async () => false,
+          hasUnresolvedIntent: async () => false,
+        },
+        loadObservedState: async () => {
+          throw new Error("observed-state store unreachable (deterministic)");
+        },
         buyViaCertifiedTransport: async () => {
           throw new Error("THE TRANSPORT MUST NOT BE REACHED ON UNREADABLE STATE");
         },
-        // NO loadObservedState — the default must be unusable.
       },
     );
     assert.equal(outcome.ok, false, "the product traded on unreadable account state");
     assert.equal(outcome.indeterminate, false,
       "an unreadable PRE-transmission state was reported as possibly-sent");
-    // Two legitimate pre-transmission refusal families exist, and which one
-    // fires is environmental: with no readable database the default
-    // observed-state loader fails (the original path this test certified);
-    // on a live environment the cold-platform doorway's ENGAGED kill switch
-    // refuses even earlier. Both are DEFINITE refusals in which the transport
-    // stub above was provably never reached — the certified property.
+    // Deterministic now: with every earlier wall stubbed permissive, the ONLY
+    // refusal that can fire is the observed-state read failing before
+    // transmission. The environmental KILL_SWITCH_ENGAGED escape hatch is
+    // deliberately gone from this regex.
     assert.match(outcome.detail,
-      /nothing was sent|could not establish dispatch preconditions|KILL_SWITCH_ENGAGED/,
-      `the refusal is not a recognized pre-transmission refusal: ${outcome.detail}`);
+      /nothing was sent|could not establish dispatch preconditions/,
+      `the refusal is not the observed-state pre-transmission refusal: ${outcome.detail}`);
   } finally {
     if (prev === undefined) delete process.env["ARX_EXECUTION_TIER"];
     else process.env["ARX_EXECUTION_TIER"] = prev;
   }
+});
+
+test("production wires the LIVE guided-ledger observed-state loader, not a stub", () => {
+  // The hermetic test above injects a failing loader, which means it can no
+  // longer prove what the old non-hermetic form proved incidentally: that the
+  // DEFAULT is the real ledger read. Pin it on stripped source, the same way
+  // the kill-switch wiring is pinned.
+  const entry = readFileSync(new URL("../guidedDispatchEntry.ts", import.meta.url), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  assert.match(entry,
+    /loadObservedState:\s*overrides\.loadObservedState\s*\?\?\s*\(\(userId, instrument\) => loadGuidedObservedState\(userId, instrument\)\)/,
+    "the production default for loadObservedState is not the live guided-ledger loader");
+  assert.ok(!/loadObservedState:\s*async\s*\(\)\s*=>/.test(entry),
+    "a hard-stubbed observed-state default exists in the live wiring");
 });
 
 // ── settlement: the ticket must leave DISPATCHING on every outcome ────────
@@ -581,6 +612,23 @@ test("the LIVE kill-switch wiring consults the real switch and fails CLOSED", ()
   const catchAt = fn.indexOf("catch");
   assert.ok(catchAt > 0 && /return true/.test(fn.slice(catchAt)),
     "a read failure does not count as ENGAGED — an unreadable stop button permitted trading");
+});
+
+test("the gate-parity map has a RUNTIME consumer on the dispatch path", () => {
+  // Audit B4: the parity map was a compile-time contract plus a tested pure
+  // function — nothing on the dispatch path evaluated it, despite the design
+  // document's promise. Pin that the entry consults the verdict pre-claim and
+  // refuses on an incomplete map. (Behavioral proof is the mutation: removing
+  // one key from DERIV_DEMO_GATE_PARITY must refuse EVERY dispatch in this
+  // suite with GATE_PARITY_INCOMPLETE.)
+  const entry = readFileSync(new URL("../guidedDispatchEntry.ts", import.meta.url), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  assert.match(entry, /derivDemoParityVerdict\(\)/,
+    "the dispatch path does not consult the parity verdict");
+  assert.match(entry, /GATE_PARITY_INCOMPLETE/,
+    "an incomplete parity map has no refusal on the dispatch path");
+  assert.match(entry, /assertVenueGateParity\("DERIV_DEMO", DERIV_DEMO_GATE_PARITY\)/,
+    "the verdict is not computed from the shipped DERIV_DEMO map");
 });
 
 test("A CLAIM-LOSER'S OUTCOME SETTLES NOTHING — the winner owns the ticket", async () => {

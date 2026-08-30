@@ -22,7 +22,12 @@ const SRC = resolve(dirname(fileURLToPath(import.meta.url)), "../../../lib/marke
 
 // Builtins that Vite externalises. If one of these is reachable from the
 // barrel, the client bundle breaks at runtime, not at build time.
-const NODE_ONLY = /from\s+"(node:[a-z_/]+|fs|path|crypto|os|child_process|net|tls|http|https|worker_threads)"/;
+// Verification 2026-08-30 widened both regexes: the original matched only
+// double-quoted `from "..."` forms, so a single-quoted import, a bare
+// side-effect `import "node:x"`, or a dynamic `import("fs")` slid past the
+// guard while crashing the browser exactly the same way.
+const NODE_ONLY =
+  /(?:from\s+|import\s+|import\s*\(\s*)["'](node:[a-z_/]+|fs|path|crypto|os|child_process|net|tls|http|https|worker_threads)["']/;
 
 /** Follow every relative re-export/import from the barrel, transitively. */
 function reachableFromBarrel(): string[] {
@@ -33,7 +38,7 @@ function reachableFromBarrel(): string[] {
     seen.add(file);
     out.push(file);
     const src = readFileSync(file, "utf8");
-    for (const m of src.matchAll(/from\s+"(\.[^"]*)"/g)) {
+    for (const m of src.matchAll(/(?:from\s+|import\s+|import\s*\(\s*)["'](\.[^"']*)["']/g)) {
       const spec = m[1]!.replace(/\.js$/, "");
       for (const cand of [`${spec}.ts`, `${spec}/index.ts`]) {
         const p = resolve(dirname(file), cand);

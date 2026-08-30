@@ -1,14 +1,17 @@
-// ── Profit Mission Phase 1 — Planner, Feasibility & Dashboard Shell ─────────
+// ── Profit Missions — Planner, Feasibility, Dashboard & Driver ──────────────
 //
-// SAFETY / SCOPE:
-//   - PLANNING + DISPLAY ONLY. A profit_missions row is a user's stated goal
-//     plus the SERVER-COMPUTED feasibility / probability / pace read. It NEVER
-//     gates, relaxes, or touches any execution path — no agents, no proposals,
-//     no trade drafts, no live/demo dispatch in this phase.
+// SAFETY / SCOPE (updated 2026-08-30 — the Phase 1 "display only" note had
+// gone stale and was lying about the driver):
+//   - A profit_missions row is a user's stated goal plus the SERVER-COMPUTED
+//     feasibility / probability / pace read. Later phases DID plug execution
+//     into this shell: missionDriver.ts ticks active missions and generates
+//     trade drafts through missionExecution.ts. Driver-originated entries are
+//     stamped with their autonomous origin and are bound by the foundation
+//     gates (#20 edge promotion, #23 capacity) — unattended LIVE entries
+//     refuse until an edge is promoted and capacitated.
 //   - Strictly per-user: every read/write is scoped by user_id. No row from one
 //     user is ever returned to another.
 //   - Missions default to status='draft' and automationLevel=2 (approval mode).
-//     There is no execution path yet; later phases plug into this shell.
 //
 // Constrained text vocabularies (validated in app code, not DB enums — same
 // "single text column" pattern as users.role / agents.currentStatus):
