@@ -41,6 +41,8 @@ import {
   isCalendarSpanRefusal,
   isSeriesRefusal,
   parseSnapshot,
+  provenanceDigest,
+  provenanceDigestPreimage,
   serialiseSnapshot,
   usEquityHolidaysForYear,
   usEquityNonTradingReason,
@@ -498,6 +500,103 @@ test("snapshot: round-trips, and a snapshot edited after it was written fails it
   const bad = parseSnapshot(tampered);
   assert.equal(bad.ok, false);
   assert.equal(bad.ok === false ? bad.code : "", "FINGERPRINT_MISMATCH");
+});
+
+// ── 7b. the provenance digest — the licence gate's own tamper-evidence ───────
+//
+// The bar fingerprint deliberately excludes the provenance so that a re-fetch of
+// the same bars keeps the same no-respin identity. The cost of that correct
+// choice is that `termsOfUse: "UNVERIFIED"` — an owner gate that is supposed to
+// ride WITH the data — sat outside every integrity check the module advertised.
+// These are the tests that make the gate's arrival provable, not just its
+// departure.
+
+test("snapshot: promoting the UNVERIFIED licence stamp by hand is CAUGHT — the gate is tamper-evident now", () => {
+  const series = seriesOf(cleanBars("2024-01-02", "2024-03-28"), { termsOfUse: "UNVERIFIED" });
+  const text = serialiseSnapshot(series);
+  assert.equal(parseSnapshot(text).ok, true, "the honest snapshot must parse");
+
+  const forged = text.replace('"termsOfUse": "UNVERIFIED"', '"termsOfUse": "DOCUMENTED_PUBLIC"');
+  assert.notEqual(forged, text, "the fixture must actually have been edited");
+
+  // The bars are untouched, so the OLD check — the one the module used to have —
+  // still passes on this file. That is precisely why a second digest was needed.
+  const asJson = JSON.parse(forged) as { fingerprint: string; bars: DailyBar[]; symbol: string };
+  assert.equal(
+    asJson.fingerprint,
+    dataFingerprint({ symbol: asJson.symbol, adjustment: "split_dividend_adjusted", bars: asJson.bars }),
+    "the bar fingerprint is untouched by a provenance edit — this is the hole",
+  );
+
+  const bad = parseSnapshot(forged);
+  assert.equal(bad.ok, false);
+  assert.equal(bad.ok === false ? bad.code : "", "PROVENANCE_MISMATCH");
+  assert.match(bad.ok === false ? bad.detail : "", /DOCUMENTED_PUBLIC/);
+});
+
+test("snapshot: every provenance field is covered — source, request and fetchedAt too, not just the licence", () => {
+  const series = seriesOf(cleanBars("2024-01-02", "2024-02-29"));
+  const text = serialiseSnapshot(series);
+  const edits: Array<[string, string]> = [
+    ['"source": "test"', '"source": "a-vendor-with-a-licence"'],
+    ['"request": "test://fixture"', '"request": "https://example.invalid/real"'],
+    [`"fetchedAt": "${AT}"`, '"fetchedAt": "2020-01-01T00:00:00.000Z"'],
+    ['"sourceSymbol": "TEST"', '"sourceSymbol": "SPY"'],
+    ['"detail": "fixture"', '"detail": "audited"'],
+  ];
+  for (const [from, to] of edits) {
+    const forged = text.replace(from, to);
+    assert.notEqual(forged, text, `the fixture edit ${from} must apply`);
+    const r = parseSnapshot(forged);
+    assert.equal(r.ok, false, `${from} must be caught`);
+    assert.equal(r.ok === false ? r.code : "", "PROVENANCE_MISMATCH");
+  }
+});
+
+test("snapshot: a snapshot with NO provenanceDigest is MALFORMED — deleting the digest is not a way past it", () => {
+  const series = seriesOf(cleanBars("2024-01-02", "2024-02-29"), { termsOfUse: "UNVERIFIED" });
+  const o = JSON.parse(serialiseSnapshot(series)) as Record<string, unknown>;
+  assert.equal(typeof o.provenanceDigest, "string");
+  delete o.provenanceDigest;
+  const r = parseSnapshot(JSON.stringify(o));
+  assert.equal(r.ok, false);
+  assert.equal(r.ok === false ? r.code : "", "MALFORMED");
+  assert.match(r.ok === false ? r.detail : "", /provenanceDigest/);
+});
+
+test("provenanceDigest: a crafted free-text detail cannot forge a field boundary", () => {
+  // `detail` is adapter free text. Without escaping, a detail ending in a
+  // newline plus `termsOfUse="DOCUMENTED_PUBLIC"` could make two different
+  // provenance blocks share a preimage.
+  const honest = { ...GOOD_PROVENANCE, termsOfUse: "UNVERIFIED" as const, detail: "x" };
+  const crafted = {
+    ...GOOD_PROVENANCE,
+    termsOfUse: "UNVERIFIED" as const,
+    detail: 'x"\ntermsOfUse="DOCUMENTED_PUBLIC',
+  };
+  assert.notEqual(provenanceDigest(honest), provenanceDigest(crafted));
+  assert.equal(provenanceDigestPreimage(honest).split("\n").length, 8, "version line + 7 fields, always");
+  assert.equal(provenanceDigestPreimage(crafted).split("\n").length, 8, "the crafted detail adds no row");
+});
+
+test("provenanceDigest: it is NOT a data identity — a re-fetch moves it while dataFingerprint holds", () => {
+  const bars = cleanBars("2024-01-02", "2024-02-29");
+  const first = seriesOf(bars, { fetchedAt: "2026-01-01T00:00:00.000Z" });
+  const later = seriesOf(bars, { fetchedAt: "2026-06-01T00:00:00.000Z" });
+  const fp = (s: DailySeries): string =>
+    dataFingerprint({ symbol: s.symbol, adjustment: s.provenance.adjustment, bars: s.bars });
+  assert.equal(fp(first), fp(later), "the no-respin identity must survive pressing the button twice");
+  assert.notEqual(
+    provenanceDigest(first.provenance),
+    provenanceDigest(later.provenance),
+    "the provenance digest must move, which is exactly why it cannot be folded into the fingerprint",
+  );
+});
+
+test("provenanceDigest: an incomplete provenance has no digest — it throws rather than hashing 'undefined'", () => {
+  const broken = { ...GOOD_PROVENANCE } as Partial<SeriesProvenance>;
+  delete broken.termsOfUse;
+  assert.throws(() => provenanceDigest(broken as SeriesProvenance), /termsOfUse is missing/);
 });
 
 test("snapshot: a file-import of an ARX snapshot carries the ORIGINAL provenance forward", async () => {

@@ -19,7 +19,8 @@ short of the verdict.
 | Types, adapter interface, typed refusals | `lib/markets/src/dailySeries/types.ts` |
 | US equity **daily** session calendar (declared NYSE/Nasdaq rule set) | `lib/markets/src/dailySeries/usEquityCalendar.ts` |
 | Integrity guard (12 defect classes) | `lib/markets/src/dailySeries/integrity.ts` |
-| `dataFingerprint` (the no-respin key) | `lib/markets/src/dailySeries/fingerprint.ts` |
+| `dataFingerprint` (the no-respin key) + `provenanceDigest` (the licence gate's tamper-evidence) | `lib/markets/src/dailySeries/fingerprint.ts` |
+| One-shot ledger — the only no-respin memory that spans processes | `scripts/src/c8VerdictLedger.ts` |
 | CSV/JSON parsing + bot-challenge classification | `lib/markets/src/dailySeries/parse.ts` |
 | Snapshot format (self-verifying) | `lib/markets/src/dailySeries/snapshot.ts` |
 | Source adapters | `lib/markets/src/dailySeries/sources/{fredCsv,stooqCsv,stockAnalysisJson,fileImport}.ts` |
@@ -164,8 +165,19 @@ NODE_USE_ENV_PROXY=1 node --import tsx ./src/c8DailySeriesIngest.ts \
 ```
 
 The snapshot is written **only** if the integrity guard passes, and it carries
-its own fingerprint — a snapshot edited after it was written fails its own
-identity check on load.
+**two** digests, both re-verified on load:
+
+* `fingerprint` — over the bars. This is the harness's no-respin identity, and
+  it deliberately **excludes** the fetch (`fetchedAt`, `source`, `request`), so
+  re-downloading the same bars keeps the same identity and the no-respin rule
+  cannot be defeated by pressing the button twice.
+* `provenanceDigest` — over the **whole provenance block**, licence stamp
+  included. Without it, `termsOfUse: "UNVERIFIED"` could be hand-edited to
+  `DOCUMENTED_PUBLIC` in a written snapshot and the file would still pass its own
+  fingerprint check: the owner gate travelled with the data, but nothing proved
+  it arrived unchanged. A snapshot with an edited provenance is now refused with
+  `PROVENANCE_MISMATCH`, and one with the digest **deleted** is refused as
+  `MALFORMED`.
 
 **Two decisions are yours before this data may back capital, and neither is
 made anywhere in this branch:**
@@ -192,6 +204,16 @@ node --import tsx ./src/c8TurnOfMonthEvaluate.ts \
 Repeatable and retires nothing — but you cannot unsee the answer, and every
 later decision is made by someone who knows it. That is why it has its own flag.
 
+**Read step `2b. PBO PRE-FLIGHT` in the output before going any further.** PBO is
+computed from the **fit-stage selection field alone** — the holdout never enters
+it — so that clause of the pass bar is decided before the holdout is opened. If
+it says the clause `WOULD FAIL`, the verdict is a **MISS in advance whatever the
+holdout says**, because the pass bar is an AND. Spending the one shot in that
+state retires the experiment and charges FDR for a number that was free an hour
+earlier. Step 4 refuses to run in that state; the honest moves are a different
+**dataset** or a different pre-registered **search** (a new experiment key, never
+a re-pinned hash).
+
 ### Step 3 — accrue ≥6 live-shadow month-boundary observations
 
 Write them to `docs/c8-data/SPY.shadow.json` as a JSON array of numbers (or of
@@ -209,9 +231,36 @@ node --import tsx ./src/c8TurnOfMonthEvaluate.ts \
   --evidence ../docs/c8-data/SPY.verdict.json
 ```
 
-A `MISS` retires the experiment, emits an FDR charge for `lib/discovery`'s
-`controlFdr`, and permanently refuses re-evaluation of this spec on this data.
-There is no undo.
+`--evidence` is **required** here (it is optional in step 2): the shot may not be
+spent without writing down what it produced.
+
+A `MISS` retires the experiment and emits an FDR charge for `lib/discovery`'s
+`controlFdr`.
+
+**Where "no second spin" actually lives — stated exactly, because an earlier
+version of this runbook overstated it.** `TransferProofHarness` keeps its
+retirement memory in private in-memory fields, and the CLI builds a **new**
+harness on every invocation, so the harness alone refuses nothing across runs:
+re-running the command after a MISS would have produced a clean second verdict.
+
+The durable half is the **one-shot ledger**, `docs/c8-data/verdict-ledger.jsonl`
+(`--ledger <path>` to relocate it):
+
+* Step 4 reads it **before** the press and refuses if this spec + this
+  `dataFingerprint` already appears.
+* It writes a `VERDICT_INTENT` row **before** calling `verdict()` and the outcome
+  row after, so a process killed mid-press still leaves the shot spent.
+* An unreadable ledger, an unparsable line, or a failed append **refuses**. Not
+  being able to read the record of the shot is not permission to re-take it.
+
+The honest limit: it is a file. Deleting it to respin is possible — but it is a
+visible act in git history rather than something that happens to someone who
+pressed the up arrow. **Commit the ledger after the press.**
+
+Step 4 also refuses when the fit-stage PBO already fails the bar (see step 2).
+`--accept-certain-miss` is the deliberate override for an owner who wants to
+formally retire an experiment they know cannot pass; it spends the shot and says
+so.
 
 ---
 
@@ -229,7 +278,19 @@ There is no undo.
   boundary at each seam. The alternative is a leak.
 * **Adjustment is in the fingerprint**, so a losing spec cannot respin by
   switching vendors' adjustment basis. `fetchedAt` and the source are **not**,
-  so the no-respin rule cannot be defeated by pressing the button twice.
+  so the no-respin rule cannot be defeated by pressing the button twice — and
+  because they are excluded, the provenance gets its **own** digest so the
+  licence stamp is tamper-evident too.
+* **The PBO pre-flight.** PBO is a property of the fit-stage selection, not of
+  the out-of-sample track: `TransferProofHarness.evaluate` computes it from
+  `input.selectionField` alone. So it is the second clause after `SHADOW_CI` that
+  can be known-failed before the shot, and the press script prints it in step 2b
+  and refuses the verdict when it already fails. The wiring suite asserts the
+  property directly — inverting every OOS return must move the PBO by exactly
+  zero — because a guard against a behaviour nobody verified is decoration.
+* **The one-shot ledger** is the only thing that spans processes. The harness's
+  `retiredOnData` set does not, and the suite asserts that too: a second harness
+  re-registers a spec the first one retired.
 * **Adjusted history is restated on every ex-dividend date.** The same request
   a week later is genuinely different numbers. That is why the evaluation reads
   a **snapshot file**, never a live feed.
@@ -239,14 +300,14 @@ There is no undo.
 ## 8. Verification
 
 ```bash
-pnpm --filter @workspace/scripts run test:c8-daily-series      # 29 pass
-pnpm --filter @workspace/scripts run test:c8-turn-of-month     # 18 pass
+pnpm --filter @workspace/scripts run test:c8-daily-series      # 35 pass
+pnpm --filter @workspace/scripts run test:c8-turn-of-month     # 25 pass
 pnpm run typecheck
 ```
 
 Both suites are appended to the end of the root `ci` chain.
 
-**Mutation proof** (a test nobody has watched fail proves nothing) — four
+**Mutation proof** (a test nobody has watched fail proves nothing) — nine
 behaviours were removed one at a time against a compiling tree and each killed
 its test:
 
@@ -256,6 +317,11 @@ its test:
 | fingerprint stops covering the adjustment basis | `fingerprint: stable across price formatting …` |
 | bot-challenge classification removed | `HTTP 200 carrying a JavaScript browser check …` |
 | trade generator stops window-checking the entry bar | `a boundary whose entry bar sits outside the window …` |
+| `parseSnapshot` stops comparing the provenance digest | `snapshot: promoting the UNVERIFIED licence stamp …` + `snapshot: every provenance field is covered …` |
+| `findSpentShot` ignores `VERDICT_INTENT` rows | `ledger: an INTENT row with no outcome still spends the shot …` |
+| a malformed ledger line is skipped instead of refusing the file | `ledger: round-trips as one JSON line …` |
+| the harness's PBO uses a different CSCV block count than the pre-flight | `a fit field whose PBO fails the bar …` |
+| `pboPreflight` treats UNMEASURABLE as a pass | `pboPreflight decides the clause the same way the pass bar does …` |
 
 One assertion in the trade-generator test was written wrong by hand and the code
 corrected it: April 2015's fourth session is the **7th**, not the 6th, because

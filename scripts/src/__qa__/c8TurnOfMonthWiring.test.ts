@@ -20,6 +20,17 @@
 //   5. COSTS ONLY SUBTRACT, and the fingerprint covers exactly the bars used.
 //   6. THE SELECTION FIELD is rectangular and contains the pre-registered
 //      variant — PBO against a field the search never held is a fiction.
+//   7. PBO IS DECIDED BEFORE THE HOLDOUT IS READ. The harness computes it from
+//      the fit-stage selection field alone, so inverting every out-of-sample
+//      return moves it not at all. That makes it the SECOND clause (after
+//      SHADOW_CI) that can be known-failed in advance, and a runbook followed
+//      end-to-end would spend the one shot and charge FDR on a foregone MISS.
+//      Asserted directly, because the owner-press script's pre-flight guard is
+//      only worth having if this property is actually true.
+//   8. THE NO-RESPIN MEMORY IS NOT IN THE HARNESS. A second `TransferProofHarness`
+//      re-registers a spec the first one retired — that is asserted here as the
+//      fact it is, not assumed away — so the durable half lives in the one-shot
+//      ledger file, whose parse/match rules are covered here too.
 //
 // Offline, deterministic, no clock. Nothing here evaluates the real holdout.
 //
@@ -35,15 +46,26 @@ import {
   buildCostModel,
   buildFitSelectionField,
   buildTurnOfMonthEvaluationInput,
+  estimatePbo,
   generateTurnOfMonthTrades,
   isRefusal,
   isTurnOfMonthBuildRefusal,
   monthBoundaryIndices,
+  pboPreflight,
+  PBO_PREFLIGHT_BLOCKS,
   specHashOf,
   verifyTurnOfMonthPreRegistration,
   type ExperimentSpec,
 } from "@workspace/validation";
 import { dataFingerprint, expectedTradingDays, isCalendarSpanRefusal, type DailyBar } from "@workspace/markets";
+import {
+  VERDICT_LEDGER_FORMAT,
+  describeLedgerEntry,
+  findSpentShot,
+  parseVerdictLedger,
+  serialiseLedgerEntry,
+  type VerdictLedgerEntry,
+} from "../c8VerdictLedger.js";
 
 const AT = "2026-08-29T00:00:00.000Z";
 
@@ -353,4 +375,171 @@ test("without a selection field the PBO clause FAILS — unmeasurable is not low
   assert.equal(pbo.pass, false);
   assert.equal(pbo.observed, null);
   assert.match(pbo.detail, /UNMEASURABLE/);
+});
+
+// ── 7. the PBO clause is decided BEFORE the holdout is read ──────────────────
+//
+// This is the trap the owner-press script's step 2b exists to catch, and it is
+// the same shape as the SHADOW_CI trap: a clause of an AND-ed pass bar whose
+// value is knowable in advance, so a runbook followed end-to-end can spend the
+// one shot on an arithmetic certainty and charge FDR for it.
+
+test("PBO is computed from the FIT selection field ALONE — the holdout never enters it", () => {
+  const fitBars = fixtureBars("2005-01-03", "2015-12-31");
+  const sel = buildFitSelectionField(fitBars, TURN_OF_MONTH_SPEC, TURN_OF_MONTH_SPEC.fitWindow, COST_MODEL);
+  const preflight = estimatePbo(sel.field, 10);
+  assert.ok(Number.isFinite(preflight.pbo), "the fixture must produce a measurable PBO");
+
+  // Two DIFFERENT out-of-sample tracks, same selection field. If PBO depended on
+  // the holdout at all, these two evaluations would disagree.
+  const { build } = holdoutBuild();
+  const withField = (mutate: (r: number[]) => number[]) => {
+    const h = new TransferProofHarness();
+    const reg = h.register(TURN_OF_MONTH_SPEC, AT);
+    assert.ok(!isRefusal(reg));
+    const ev = h.evaluate(TURN_OF_MONTH_SPEC, {
+      ...build.input,
+      netOosReturns: mutate([...build.input.netOosReturns]),
+      selectionField: sel.field,
+      pboBlocks: 10,
+    });
+    assert.ok(!isRefusal(ev));
+    return ev.evaluation!;
+  };
+
+  const asIs = withField((r) => r);
+  const flipped = withField((r) => r.map((x) => -x));
+  assert.notEqual(asIs.netSharpe, flipped.netSharpe, "the two holdout tracks must genuinely differ");
+  assert.equal(asIs.pbo, preflight.pbo, "the harness's PBO IS the fit-only pre-flight number");
+  assert.equal(flipped.pbo, preflight.pbo, "inverting every OOS return moves PBO not at all");
+});
+
+test("pboPreflight decides the clause the same way the pass bar does, UNMEASURABLE included", () => {
+  const fitBars = fixtureBars("2005-01-03", "2015-12-31");
+  const sel = buildFitSelectionField(fitBars, TURN_OF_MONTH_SPEC, TURN_OF_MONTH_SPEC.fitWindow, COST_MODEL);
+  const pre = pboPreflight(sel.field);
+  assert.equal(pre.blocks, PBO_PREFLIGHT_BLOCKS, "the pre-flight and the clause must share a block count");
+  assert.equal(pre.pbo, estimatePbo(sel.field, PBO_PREFLIGHT_BLOCKS).pbo);
+  assert.equal(pre.wouldPass, pre.pbo < TURN_OF_MONTH_SPEC.passBar.maxPbo);
+
+  // A single-strategy field is UNMEASURABLE, and unmeasurable must FAIL: the
+  // clause is `pbo < bar`, and !(NaN < bar) is true.
+  const single = pboPreflight([[0.01, -0.02, 0.03]]);
+  assert.ok(Number.isNaN(single.pbo));
+  assert.equal(single.wouldPass, false, "an unmeasurable overfitting probability is not a low one");
+
+  // And the bar comes from the SPEC, not from a literal: a spec with a bar of 1
+  // passes the same field the pre-registered bar of 0.2 rejects.
+  const permissive: ExperimentSpec = {
+    ...TURN_OF_MONTH_SPEC,
+    passBar: { ...TURN_OF_MONTH_SPEC.passBar, maxPbo: 1 },
+  };
+  assert.equal(pboPreflight(sel.field, permissive).wouldPass, true);
+});
+
+test("a fit field whose PBO fails the bar makes the verdict a MISS whatever the holdout says", () => {
+  // A selection field of pure noise ranks the in-sample winner at random out of
+  // sample, so PBO lands near 0.5 — far above the 0.2 bar. This is the state in
+  // which pressing on retires the experiment for nothing.
+  const noise: number[][] = [];
+  for (let s = 0; s < 12; s++) {
+    const row: number[] = [];
+    // Deterministic, decorrelated per strategy. No RNG: the assertion has to be
+    // reproducible or it is not evidence.
+    for (let t = 0; t < 120; t++) row.push(Math.sin((s + 1) * 7.13 + t * 1.7) * 0.01);
+    noise.push(row);
+  }
+  const pre = estimatePbo(noise, 10);
+  assert.ok(Number.isFinite(pre.pbo));
+  assert.ok(
+    pre.pbo >= TURN_OF_MONTH_SPEC.passBar.maxPbo,
+    `the fixture must be a failing field; got PBO ${pre.pbo} against a bar of < ${TURN_OF_MONTH_SPEC.passBar.maxPbo}`,
+  );
+
+  const { build } = holdoutBuild();
+  const h = new TransferProofHarness();
+  const reg = h.register(TURN_OF_MONTH_SPEC, AT);
+  assert.ok(!isRefusal(reg));
+  assert.ok(!isRefusal(h.evaluate(TURN_OF_MONTH_SPEC, { ...build.input, selectionField: noise, pboBlocks: 10 })));
+  // Satisfy the OTHER blocking clause so the MISS cannot be blamed on shadow data.
+  for (let i = 0; i < TURN_OF_MONTH_SPEC.passBar.minShadowObservations + 2; i++) {
+    assert.ok(!isRefusal(h.recordShadowPnl(reg.specHash, 5, AT)));
+  }
+  const v = h.verdict(reg.specHash, AT);
+  assert.ok(!isRefusal(v));
+  assert.equal(v.verdict, "MISS");
+  const pbo = v.clauses.find((c) => c.clause === "PBO")!;
+  assert.equal(pbo.pass, false, "the clause that was decided before the holdout is the one that fails");
+  assert.equal(pbo.observed, pre.pbo, "and it is exactly the number a pre-flight could have printed for free");
+  assert.ok(v.fdrCharge, "a foregone MISS charges FDR just like a real one — which is the harm");
+});
+
+// ── 8. the one-shot ledger — the durable half of "no second spin" ────────────
+//
+// The harness's own retirement memory is three private in-memory fields, so a
+// fresh process starts with an empty `retiredOnData` and a MISS retires nothing
+// across runs. These cover the file that does span runs.
+
+const LEDGER_ROW: VerdictLedgerEntry = {
+  format: VERDICT_LEDGER_FORMAT,
+  kind: "VERDICT",
+  experimentKey: TURN_OF_MONTH_SPEC.experimentKey,
+  specHash: TURN_OF_MONTH_LOCKED_SPEC_HASH,
+  dataFingerprint: "a".repeat(64),
+  at: AT,
+  verdict: "MISS",
+  detail: "fixture",
+};
+
+test("the in-memory harness genuinely does NOT remember a retirement across processes", () => {
+  // Not a wish: the exact behaviour the durable ledger exists to cover. A second
+  // harness — which is what every CLI invocation builds — knows nothing.
+  const { build } = holdoutBuild();
+  const first = new TransferProofHarness();
+  const reg = first.register(TURN_OF_MONTH_SPEC, AT);
+  assert.ok(!isRefusal(reg));
+  assert.ok(!isRefusal(first.evaluate(TURN_OF_MONTH_SPEC, build.input)));
+  const v1 = first.verdict(reg.specHash, AT);
+  assert.ok(!isRefusal(v1));
+  assert.equal(v1.verdict, "MISS");
+  assert.equal(first.get(reg.specHash)!.status, "RETIRED");
+
+  const second = new TransferProofHarness();
+  assert.ok(second.get(reg.specHash) == null, "a new harness has no memory of the retirement");
+  const reg2 = second.register(TURN_OF_MONTH_SPEC, AT);
+  assert.ok(!isRefusal(reg2), "and it re-registers the retired spec cleanly — this is the hole the file closes");
+});
+
+test("ledger: the same spec on the same data is refused, and a different dataset is a different shot", () => {
+  const entries = [LEDGER_ROW];
+  assert.ok(findSpentShot(entries, LEDGER_ROW.specHash, LEDGER_ROW.dataFingerprint), "same spec + same data is spent");
+  assert.equal(findSpentShot(entries, LEDGER_ROW.specHash, "b".repeat(64)), null, "new data is a new shot");
+  assert.equal(findSpentShot(entries, "c".repeat(64), LEDGER_ROW.dataFingerprint), null, "a new spec is a new shot");
+  assert.equal(findSpentShot([], LEDGER_ROW.specHash, LEDGER_ROW.dataFingerprint), null, "an empty ledger blocks nothing");
+});
+
+test("ledger: an INTENT row with no outcome still spends the shot — a crash mid-press is not a refund", () => {
+  const intentOnly: VerdictLedgerEntry = { ...LEDGER_ROW, kind: "VERDICT_INTENT", verdict: undefined, detail: undefined };
+  const hit = findSpentShot([intentOnly], LEDGER_ROW.specHash, LEDGER_ROW.dataFingerprint);
+  assert.ok(hit, "the shot is spent the moment the press begins");
+  assert.match(describeLedgerEntry(hit), /the press BEGAN and no outcome row followed/);
+});
+
+test("ledger: round-trips as one JSON line, and a malformed line REFUSES THE WHOLE FILE", () => {
+  const text = serialiseLedgerEntry(LEDGER_ROW) + serialiseLedgerEntry({ ...LEDGER_ROW, kind: "VERDICT_INTENT" });
+  assert.equal(text.split("\n").filter((l) => l.length > 0).length, 2, "one entry, one line");
+  const parsed = parseVerdictLedger(text);
+  assert.ok(parsed.ok);
+  assert.equal(parsed.entries.length, 2);
+  assert.deepEqual(parsed.entries[0], LEDGER_ROW);
+
+  // The dangerous failure is a corrupt ledger read as "nothing here" — that is
+  // how a spent shot gets handed back — so it must be a refusal, not a skip.
+  for (const corrupt of ["{not json}", '{"format":"something-else"}', `{"format":"${VERDICT_LEDGER_FORMAT}","kind":"VERDICT"}`]) {
+    const bad = parseVerdictLedger(text + corrupt + "\n");
+    assert.equal(bad.ok, false, `${corrupt} must refuse the file`);
+  }
+  const blanks = parseVerdictLedger("\n\n" + text + "\n\n");
+  assert.ok(blanks.ok, "blank lines are not corruption");
+  assert.equal(blanks.entries.length, 2);
 });

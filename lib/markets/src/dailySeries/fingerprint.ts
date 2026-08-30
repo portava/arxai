@@ -23,10 +23,36 @@
 // zeros. PRECISION is 8 decimal places; anything finer than that is below the
 // resolution of every daily equity close in existence.
 //
+// WHY A SECOND, SEPARATE DIGEST OVER THE PROVENANCE
+// -------------------------------------------------
+// Property 2 above means the provenance block is deliberately OUTSIDE
+// `dataFingerprint`. That is correct for the no-respin rule and wrong for
+// everything else, because the provenance carries claims that gate capital —
+// above all `termsOfUse`, whose "UNVERIFIED" value is an owner gate that is
+// supposed to travel with the bars so it cannot be forgotten. With only one
+// hash, an "UNVERIFIED" stamp in a written snapshot can be hand-edited to
+// "DOCUMENTED_PUBLIC" and the file still passes its own integrity check: the
+// gate travels, but nothing proves it arrived unchanged.
+//
+// So there are TWO digests with two different jobs, and neither can do the
+// other's:
+//
+//   dataFingerprint     — WHAT the numbers are. The no-respin identity.
+//                         Excludes the fetch so the same data hashes the same.
+//   provenanceDigest    — WHAT THE NUMBERS ARE CLAIMED TO BE. Covers the whole
+//                         provenance block including fetchedAt, source, request
+//                         and termsOfUse. Tamper-evidence for the claims, never
+//                         an identity for the data.
+//
+// Folding the provenance into `dataFingerprint` would have been the shorter fix
+// and would have broken the no-respin rule outright: re-downloading the same
+// bars changes `fetchedAt`, which would change the identity, which would let a
+// retired spec respin by pressing the button twice.
+//
 // Pure: node:crypto only.
 
 import { createHash } from "node:crypto";
-import type { DailyBar, PriceAdjustment } from "./types.js";
+import type { DailyBar, PriceAdjustment, SeriesProvenance } from "./types.js";
 
 export const FINGERPRINT_VERSION = "arx-daily-close-v1";
 export const FINGERPRINT_PRECISION = 8;
@@ -68,4 +94,53 @@ export function fingerprintPreimage(input: FingerprintInput): string {
 /** sha256 over the preimage, hex. This is the harness's dataFingerprint. */
 export function dataFingerprint(input: FingerprintInput): string {
   return createHash("sha256").update(fingerprintPreimage(input), "utf8").digest("hex");
+}
+
+export const PROVENANCE_DIGEST_VERSION = "arx-series-provenance-v1";
+
+/** Every field of `SeriesProvenance`, in a fixed order. All of them are covered. */
+const PROVENANCE_FIELDS = [
+  "source",
+  "sourceSymbol",
+  "request",
+  "fetchedAt",
+  "adjustment",
+  "termsOfUse",
+  "detail",
+] as const satisfies readonly (keyof SeriesProvenance)[];
+
+/**
+ * The exact bytes hashed for the provenance digest.
+ *
+ * Every value goes through `JSON.stringify`, which escapes quotes and newlines.
+ * That matters: `detail` is free text supplied by an adapter, and without
+ * escaping a crafted detail string containing `\ntermsOfUse="DOCUMENTED_PUBLIC"`
+ * could forge a row boundary and make two different provenance blocks hash
+ * alike. A missing or non-string field THROWS rather than hashing `undefined` —
+ * an incomplete provenance has no digest, exactly as a non-finite price has no
+ * fingerprint.
+ */
+export function provenanceDigestPreimage(provenance: SeriesProvenance): string {
+  const rows = PROVENANCE_FIELDS.map((k) => {
+    const v: unknown = provenance[k];
+    if (typeof v !== "string") {
+      throw new Error(
+        `provenanceDigestPreimage: provenance.${k} is ${v === undefined ? "missing" : typeof v} — ` +
+          "an incomplete provenance has no digest",
+      );
+    }
+    return `${k}=${JSON.stringify(v)}`;
+  });
+  return [PROVENANCE_DIGEST_VERSION, ...rows].join("\n");
+}
+
+/**
+ * sha256 over the whole provenance block, hex.
+ *
+ * This is NOT an identity for the data and must never be used as one — it
+ * changes when the same bars are re-fetched. It is tamper-evidence for the
+ * claims attached to the bars, and the licence gate is the claim that matters.
+ */
+export function provenanceDigest(provenance: SeriesProvenance): string {
+  return createHash("sha256").update(provenanceDigestPreimage(provenance), "utf8").digest("hex");
 }

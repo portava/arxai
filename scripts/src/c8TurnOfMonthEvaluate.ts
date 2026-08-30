@@ -3,10 +3,27 @@
 // READ THIS BEFORE RUNNING ANYTHING HERE
 // --------------------------------------
 // This script is the only path from a provisioned dataset to a C8 verdict. It
-// is gated because a verdict here is IRREVERSIBLE: a MISS retires the
-// experiment, emits an FDR charge against the family, and permanently refuses
-// re-evaluation of the same spec on the same data. There is no undo and no
-// second spin.
+// is gated because a verdict here is meant to be IRREVERSIBLE: a MISS retires
+// the experiment, emits an FDR charge against the family, and refuses
+// re-evaluation of the same spec on the same data.
+//
+// WHERE THE "NO SECOND SPIN" PROPERTY ACTUALLY LIVES — say it exactly
+// --------------------------------------------------------------------
+// `TransferProofHarness` enforces the rule in memory, and that memory dies with
+// the process: this script builds a NEW harness on every invocation, so the
+// harness alone retires nothing across runs. An earlier version of this header
+// asserted cross-run permanence as a fact. It was not one, and stating a safety
+// property that does not exist is worse than not having it, because it stops
+// anyone looking.
+//
+// The durable half is `docs/c8-data/verdict-ledger.jsonl` (see
+// ./c8VerdictLedger.ts): the verdict phase reads it before the press and
+// refuses when this spec+data pair already appears, writes a VERDICT_INTENT row
+// BEFORE calling verdict() so a crash mid-press still spends the shot, and
+// writes the outcome after. An unreadable ledger or a failed append REFUSES —
+// not being able to read the record of the shot is not permission to re-take
+// it. The honest limit: it is a committed file. Deleting it to respin is a
+// visible act in git history, not an accident.
 //
 // THE TWO PHASES, AND WHY THEY ARE SEPARATE
 // ------------------------------------------
@@ -36,10 +53,29 @@
 // why. Accruing them is a separate, slower job: shadow the strategy live across
 // at least that many month boundaries, recording each boundary's P&L.
 //
+// THE SECOND GUARANTEED-MISS TRAP: PBO IS DECIDED BEFORE THE HOLDOUT IS READ
+// ---------------------------------------------------------------------------
+// The shadow clause is not the only clause that can be known-failed in advance,
+// and the other one is easier to miss because it looks like an out-of-sample
+// measurement. It is not. `TransferProofHarness.evaluate` computes PBO as
+// `estimatePbo(input.selectionField, ...)` — from the FIT-STAGE selection field
+// ALONE. The OOS returns never enter it. So the PBO clause's pass/fail is fully
+// determined by the fit window, i.e. before the holdout is touched at all.
+//
+// That means a dataset can be arranged such that the verdict is a deterministic
+// MISS no matter what the holdout says, and running the runbook end-to-end
+// would spend the one shot, retire the niche and charge FDR on a number that
+// was knowable an hour earlier for free. Same harm as the shadow trap, same
+// remedy: this script computes the fit-stage PBO in step 2, PRINTS it before
+// anything irreversible, and the verdict phase REFUSES when it already fails
+// the bar. `--accept-certain-miss` is the deliberate override for an owner who
+// wants to formally retire an experiment they know cannot pass; it is not a
+// default and it names what it is doing.
+//
 // Nothing in this script places, sizes, or authorises a trade. It reads a
-// snapshot file and writes an evidence file.
+// snapshot file and writes an evidence file plus a ledger row.
 
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile, writeFile, appendFile, mkdir } from "node:fs/promises";
 import { dirname, resolve as resolvePath } from "node:path";
 import {
   TURN_OF_MONTH_SPEC,
@@ -49,12 +85,30 @@ import {
   buildTurnOfMonthEvaluationInput,
   isRefusal,
   isTurnOfMonthBuildRefusal,
+  pboPreflight,
+  PBO_PREFLIGHT_BLOCKS,
   verifyTurnOfMonthPreRegistration,
 } from "@workspace/validation";
 import { checkSeriesIntegrity, formatIntegrityReport, parseSnapshot } from "@workspace/markets";
 import { parseArgv, requireStr } from "./c8DataFeed.js";
+import {
+  DEFAULT_VERDICT_LEDGER,
+  VERDICT_LEDGER_FORMAT,
+  describeLedgerEntry,
+  findSpentShot,
+  parseVerdictLedger,
+  serialiseLedgerEntry,
+  type VerdictLedgerEntry,
+} from "./c8VerdictLedger.js";
 
 const SPEC = TURN_OF_MONTH_SPEC;
+
+/**
+ * CSCV block count. The SAME constant the pre-flight uses, passed to the
+ * harness, so the number printed in step 2b is the number the PBO clause is
+ * later judged on. Step 4 asserts they came out identical.
+ */
+const PBO_BLOCKS = PBO_PREFLIGHT_BLOCKS;
 
 function line(s = ""): void {
   console.log(s);
@@ -74,10 +128,16 @@ function usage(): void {
   line("      --phase verdict --confirm-one-shot \\");
   line("      --snapshot docs/c8-data/<SYMBOL>.snapshot.json \\");
   line(`      --shadow docs/c8-data/<SYMBOL>.shadow.json   # >= ${SPEC.passBar.minShadowObservations} observations`);
-  line("      --at <iso instant> --evidence docs/c8-data/<SYMBOL>.verdict.json");
+  line("      --at <iso instant> --evidence docs/c8-data/<SYMBOL>.verdict.json   # REQUIRED for a verdict");
   line("");
   line("  Both phases refuse without their confirmation flag. --at is always required:");
   line("  the harness never reads a clock.");
+  line("");
+  line("  Other flags:");
+  line(`    --ledger <path>          the durable one-shot record (default ${DEFAULT_VERDICT_LEDGER}).`);
+  line("                             The verdict phase refuses if this spec+data pair is already in it.");
+  line("    --accept-certain-miss    proceed to a verdict whose PBO clause is ALREADY known to fail from");
+  line("                             the fit window alone. Spends the shot on a foregone MISS, deliberately.");
 }
 
 /** Shadow P&L file: a JSON array of numbers, or of {pnl:number} objects. */
@@ -114,8 +174,25 @@ async function main(): Promise<number> {
   }
   if (phase === "verdict" && argv["confirm-one-shot"] !== true) {
     line("REFUSED: --phase verdict needs --confirm-one-shot.");
-    line("A verdict is irreversible: a MISS retires the experiment, charges the family's FDR, and the same");
-    line("spec can never be re-run on this data. Confirm deliberately.");
+    line("A verdict is irreversible: a MISS retires the experiment, charges the family's FDR, and this script");
+    line("will refuse to re-run the same spec on this data (see the one-shot ledger). Confirm deliberately.");
+    return 2;
+  }
+
+  const evidencePath = typeof argv.evidence === "string" && argv.evidence.length > 0 ? argv.evidence : undefined;
+  if (phase === "verdict" && evidencePath === undefined) {
+    line("REFUSED: --phase verdict needs --evidence <path>.");
+    line("The shot may not be spent without writing down what it produced. An unrecorded verdict is a decision");
+    line("nobody can audit and a retirement nobody can point at — the evidence file is not optional here.");
+    return 2;
+  }
+
+  const ledgerPath = typeof argv.ledger === "string" && argv.ledger.length > 0 ? argv.ledger : DEFAULT_VERDICT_LEDGER;
+  const ledger = await readLedger(ledgerPath);
+  if (!ledger.ok) {
+    line(`REFUSED: the one-shot ledger at ${resolvePath(ledgerPath)} could not be read — ${ledger.detail}`);
+    line("Fail closed. Not being able to read the record of whether the shot was already taken is not");
+    line("permission to take it again.");
     return 2;
   }
 
@@ -196,6 +273,43 @@ async function main(): Promise<number> {
   );
   line();
 
+  // ── 2b. PBO PRE-FLIGHT — the clause that is decided before the holdout ─────
+  // PBO is a property of the SELECTION, not of the out-of-sample track: the
+  // harness computes it from this field alone. So its verdict is knowable right
+  // now, for free, and printing it here is what stops the runbook from spending
+  // the one shot on an arithmetic certainty.
+  const fitPbo = pboPreflight(selection.field, SPEC, PBO_BLOCKS);
+  const pboClauseWouldPass = fitPbo.wouldPass;
+  line("2b. PBO PRE-FLIGHT (decided by the FIT window alone — no holdout involved)");
+  line(
+    `   PBO ${Number.isFinite(fitPbo.pbo) ? fitPbo.pbo.toFixed(6) : "UNMEASURABLE"}   ` +
+      `(bar < ${SPEC.passBar.maxPbo})   medianOosRank ` +
+      `${Number.isFinite(fitPbo.medianOosRank) ? fitPbo.medianOosRank.toFixed(6) : "n/a"}, ` +
+      `${fitPbo.combinations} CSCV partition(s) over ${fitPbo.blocks} blocks`,
+  );
+  line(`   ${fitPbo.detail}`);
+  line(`   the PBO clause of the pass bar WOULD ${pboClauseWouldPass ? "PASS" : "FAIL"} on this dataset, today`);
+  if (!pboClauseWouldPass) {
+    line("   WARNING — THE VERDICT IS ALREADY DECIDED. The pass bar is an AND. This clause fails from the fit");
+    line("   window alone, so no holdout result of any kind can produce a PASS. Seeking a verdict on this data");
+    line("   spends the one shot on a foregone MISS: it retires the experiment and charges the family's FDR for");
+    line("   a number that did not need the holdout to be known. The honest moves are to change the DATASET or");
+    line("   the pre-registered SEARCH (a new experiment key, not a re-pinned hash) — not to press on.");
+  }
+  line();
+
+  if (phase === "verdict" && !pboClauseWouldPass && argv["accept-certain-miss"] !== true) {
+    line("VERDICT — REFUSED: the PBO clause already fails from the fit window alone.");
+    line(
+      `   PBO ${Number.isFinite(fitPbo.pbo) ? fitPbo.pbo.toFixed(6) : "UNMEASURABLE"} against a bar of < ${SPEC.passBar.maxPbo}. ` +
+        "The pass bar is an AND, and this clause does not read the holdout, so the verdict is a MISS before",
+    );
+    line("   the holdout is opened. This script will not spend the one shot on a foregone conclusion.");
+    line("   If you intend to formally retire this experiment anyway, re-run with --accept-certain-miss.");
+    line("   Nothing has been retired and no FDR has been charged. The holdout was NOT read on this run.");
+    return 2;
+  }
+
   // ── 3. the OOS input ──────────────────────────────────────────────────────
   const build = buildTurnOfMonthEvaluationInput(snap.series.bars, SPEC, SPEC.holdoutWindow, {
     at,
@@ -206,7 +320,7 @@ async function main(): Promise<number> {
     // the DSR only for the one variant would understate the multiplicity.
     nTrials: selection.variants.length,
     selectionField: selection.field,
-    pboBlocks: 10,
+    pboBlocks: PBO_BLOCKS,
   });
   if (isTurnOfMonthBuildRefusal(build)) {
     line(`3. OOS TRACK — REFUSED ${build.code}: ${build.detail}`);
@@ -218,6 +332,27 @@ async function main(): Promise<number> {
   line(`   data window ${build.input.dataWindow.start}..${build.input.dataWindow.end}`);
   line(`   dataFingerprint ${build.input.dataFingerprint}`);
   line(`   total cost charged over the track ${build.totalCostCharged.toFixed(6)}`);
+  line();
+
+  // ── 3b. THE ONE-SHOT LEDGER — the durable no-respin memory ────────────────
+  // The harness's own `retiredOnData` set dies with this process, so on its own
+  // it retires nothing across runs. This is the check that actually spans them.
+  const spent = findSpentShot(ledger.entries, pre.specHash, build.input.dataFingerprint);
+  line("3b. ONE-SHOT LEDGER");
+  line(`   ${resolvePath(ledgerPath)}  (${ledger.entries.length} row(s)${ledger.existed ? "" : ", file does not exist yet"})`);
+  if (spent) {
+    line(`   THIS SPEC + THIS DATA IS ALREADY IN THE LEDGER:`);
+    line(`     ${describeLedgerEntry(spent)}`);
+    if (phase === "verdict") {
+      line("   VERDICT — REFUSED. The shot on this spec and this dataset has been taken. Re-running it would be");
+      line("   a second spin on the same pre-registration, which is the one thing this apparatus exists to prevent.");
+      line("   A genuine change of mind is a NEW experiment key on NEW data, not a repeat of this command.");
+      return 2;
+    }
+    line("   NOTE: re-reading the holdout is allowed and retires nothing, but the verdict phase will refuse.");
+  } else {
+    line("   no prior row for this spec+data pair — the shot is unspent");
+  }
   line();
 
   // ── 4. register + evaluate ────────────────────────────────────────────────
@@ -243,7 +378,17 @@ async function main(): Promise<number> {
   line(`   cost model   ${e.costModelHash}`);
   line();
 
-  const evidencePath = typeof argv.evidence === "string" ? argv.evidence : undefined;
+  // The pre-flight and the clause must be the same number, or the pre-flight is
+  // reassurance about a different quantity. Both come from the same field and
+  // the same block count, so a divergence means one of them changed.
+  if (Number.isFinite(e.pbo) !== Number.isFinite(fitPbo.pbo) || (Number.isFinite(e.pbo) && e.pbo !== fitPbo.pbo)) {
+    line(
+      `   REFUSED: the pre-flight PBO (${fitPbo.pbo}) and the harness's PBO (${e.pbo}) disagree. They are computed ` +
+        "from the same selection field with the same block count and must be identical; a divergence means the",
+    );
+    line("   pre-flight guard is no longer guarding the clause it claims to guard. Nothing has been retired.");
+    return 1;
+  }
 
   if (phase === "evaluate") {
     line("PHASE STOPS HERE. No verdict has been issued and nothing has been retired.");
@@ -256,6 +401,13 @@ async function main(): Promise<number> {
   }
 
   // ── 5. shadow observations — required before a verdict may be sought ──────
+  // The real refusal for a missing --evidence happened before the OOS read; this
+  // is the same condition restated where the type system can see it, so that no
+  // future edit can reach the press with nowhere to write the result.
+  if (evidencePath === undefined) {
+    line("5. VERDICT — REFUSED: --evidence <path> is required. The shot is not spent without a written record.");
+    return 2;
+  }
   const shadowPath = typeof argv.shadow === "string" ? argv.shadow : undefined;
   if (shadowPath === undefined) {
     line("5. VERDICT — REFUSED: no --shadow file.");
@@ -284,9 +436,35 @@ async function main(): Promise<number> {
   line();
 
   // ── 6. THE VERDICT ────────────────────────────────────────────────────────
+  // The INTENT row goes down FIRST. If this process dies between here and the
+  // outcome row, the pair is still marked spent — a crash mid-press must not
+  // hand the shot back. A failed append refuses before anything is spent.
+  if (reg.specHash !== pre.specHash) {
+    line(`6. VERDICT — REFUSED: the registered spec hash ${reg.specHash} is not the locked ${pre.specHash}.`);
+    line("   The ledger check in step 3b was keyed on the locked hash, so proceeding would spend a shot the");
+    line("   ledger was not consulted about.");
+    return 1;
+  }
+  const base = {
+    format: VERDICT_LEDGER_FORMAT,
+    experimentKey: SPEC.experimentKey,
+    specHash: reg.specHash,
+    dataFingerprint: build.input.dataFingerprint,
+    at,
+    evidence: resolvePath(evidencePath),
+  } as const;
+  const intent = await appendLedger(ledgerPath, { ...base, kind: "VERDICT_INTENT" });
+  if (!intent.ok) {
+    line(`6. VERDICT — REFUSED: could not write the one-shot ledger at ${resolvePath(ledgerPath)} — ${intent.detail}`);
+    line("   Fail closed. A verdict that cannot be recorded as taken is a verdict that can be taken twice.");
+    return 2;
+  }
+
   const verdict = harness.verdict(reg.specHash, at);
   if (isRefusal(verdict)) {
     line(`6. VERDICT — REFUSED ${verdict.code}: ${verdict.detail}`);
+    line("   NOTE: the VERDICT_INTENT row is already in the ledger and this spec+data pair now counts as spent.");
+    line("   That is deliberate — the alternative is a refusal path that quietly restores the shot.");
     return 1;
   }
   line("6. VERDICT");
@@ -299,10 +477,57 @@ async function main(): Promise<number> {
     line(`   FDR charge emitted: key ${verdict.fdrCharge.key}, p ${verdict.fdrCharge.p.toFixed(6)}`);
     line("   Feed this to lib/discovery controlFdr — choosing this niche was itself a trial.");
   }
-  if (evidencePath !== undefined) {
-    await writeEvidence(evidencePath, { phase, at, harness, build, integrity, snapshotPath, verdict });
+  await writeEvidence(evidencePath, { phase, at, harness, build, integrity, snapshotPath, verdict });
+
+  const outcome = await appendLedger(ledgerPath, {
+    ...base,
+    kind: "VERDICT",
+    verdict: verdict.verdict,
+    detail: verdict.detail,
+  });
+  if (!outcome.ok) {
+    line(`   WARNING: the outcome row could not be appended to the ledger — ${outcome.detail}`);
+    line("   The VERDICT_INTENT row IS there, so the shot is correctly recorded as spent; what is missing is the");
+    line(`   outcome. The full result is in ${resolvePath(evidencePath)}. Reconcile the ledger by hand.`);
+    return 1;
   }
+  line(`   LEDGER: the shot is recorded at ${resolvePath(ledgerPath)}. Commit it — that record is the no-respin rule.`);
   return 0;
+}
+
+// ── the one-shot ledger's I/O (the parsing and shapes live in ./c8VerdictLedger.ts) ──
+
+type LedgerRead =
+  | { ok: true; entries: VerdictLedgerEntry[]; existed: boolean }
+  | { ok: false; detail: string };
+
+/**
+ * A missing file is an EMPTY ledger — the first shot has to be able to happen.
+ * Every other failure (permissions, a directory in the way, an unparsable line)
+ * REFUSES: an unreadable record of the shot is not evidence it was not taken.
+ */
+async function readLedger(path: string): Promise<LedgerRead> {
+  let text: string;
+  try {
+    text = await readFile(resolvePath(path), "utf8");
+  } catch (e) {
+    if ((e as { code?: string })?.code === "ENOENT") return { ok: true, entries: [], existed: false };
+    return { ok: false, detail: e instanceof Error ? e.message : String(e) };
+  }
+  const parsed = parseVerdictLedger(text);
+  if (!parsed.ok) return { ok: false, detail: parsed.detail };
+  return { ok: true, entries: parsed.entries, existed: true };
+}
+
+async function appendLedger(path: string, entry: VerdictLedgerEntry): Promise<{ ok: true } | { ok: false; detail: string }> {
+  try {
+    const abs = resolvePath(path);
+    await mkdir(dirname(abs), { recursive: true });
+    await appendFile(abs, serialiseLedgerEntry(entry), "utf8");
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, detail: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 async function writeEvidence(

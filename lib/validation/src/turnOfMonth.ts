@@ -47,6 +47,7 @@ import type {
   TransferEvaluationInput,
 } from "./transferProof.js";
 import { specHashOf, TURN_OF_MONTH_SPEC } from "./transferProof.js";
+import { estimatePbo } from "./pbo.js";
 
 // ── The pre-registration lock ────────────────────────────────────────────────
 
@@ -478,4 +479,60 @@ export function buildFitSelectionField(
   );
 
   return { field, variants: [...variants], commonBoundaryMonths, specVariantIndex };
+}
+
+// ── The PBO pre-flight ───────────────────────────────────────────────────────
+
+/**
+ * CSCV block count used by BOTH the pre-flight and the harness's PBO clause.
+ *
+ * They must be the same number or the pre-flight is a reassurance about a
+ * different quantity: PBO at 8 blocks and PBO at 10 blocks are different
+ * statistics, and a guard that clears one while the bar judges the other is
+ * worse than no guard, because it is trusted.
+ */
+export const PBO_PREFLIGHT_BLOCKS = 10;
+
+export interface PboPreflight {
+  /** The PBO the pass bar's PBO clause will be judged on. NaN when unmeasurable. */
+  pbo: number;
+  /** Would the PBO clause pass, as of now, on this fit field? NaN counts as FAIL. */
+  wouldPass: boolean;
+  blocks: number;
+  combinations: number;
+  medianOosRank: number;
+  detail: string;
+}
+
+/**
+ * Decide the PBO clause BEFORE the holdout is opened.
+ *
+ * This is not a convenience. `TransferProofHarness.evaluate` computes PBO as
+ * `estimatePbo(input.selectionField, …)` — from the FIT-STAGE field alone. The
+ * out-of-sample returns never enter it. So the PBO clause of an AND-ed pass bar
+ * is fully determined by the fit window, and a dataset can be in a state where
+ * the verdict is a MISS no matter what the holdout says.
+ *
+ * That is the same shape as the SHADOW_CI trap — a clause knowably failed in
+ * advance, whose verdict nonetheless retires the experiment and charges the
+ * family's FDR — and it deserves the same treatment: compute it early, print
+ * it, and refuse the one shot rather than spend it on an arithmetic certainty.
+ *
+ * NaN is a FAIL, matching the clause exactly (`!(NaN < x)` is true). An
+ * unmeasurable overfitting probability is not a low one.
+ */
+export function pboPreflight(
+  selectionField: readonly (readonly number[])[],
+  spec: ExperimentSpec = TURN_OF_MONTH_SPEC,
+  blocks: number = PBO_PREFLIGHT_BLOCKS,
+): PboPreflight {
+  const r = estimatePbo(selectionField, blocks);
+  return {
+    pbo: r.pbo,
+    wouldPass: Number.isFinite(r.pbo) && r.pbo < spec.passBar.maxPbo,
+    blocks,
+    combinations: r.combinations,
+    medianOosRank: r.medianOosRank,
+    detail: r.detail,
+  };
 }

@@ -60,9 +60,12 @@ export type {
 export {
   FINGERPRINT_PRECISION,
   FINGERPRINT_VERSION,
+  PROVENANCE_DIGEST_VERSION,
   canonicalPrice,
   dataFingerprint,
   fingerprintPreimage,
+  provenanceDigest,
+  provenanceDigestPreimage,
 } from "./fingerprint.js";
 export type { FingerprintInput } from "./fingerprint.js";
 

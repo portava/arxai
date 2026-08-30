@@ -21,7 +21,7 @@
 //                       used for the real experiment (transferProof.ts section
 //                       "THE experiment" pins exactly that prohibition).
 //
-// The plumbing proof has three parts:
+// The plumbing proof has three parts, plus one thing that is NOT plumbing:
 //
 //   1. TRADES. The generator's entries and exits are printed against the bar
 //      dates, so a human can check "close of T−1 → close of T+3" by eye.
@@ -32,6 +32,15 @@
 //      out of the fit era — is registered, evaluated and given a verdict, so
 //      every stage of the pipe is exercised. Its verdict is a statement about
 //      plumbing and about nothing else.
+//
+// And then section 5, which is the exception to all of the above: THE REAL PBO
+// CLAUSE. `TransferProofHarness` computes PBO from the fit-stage selection field
+// alone — the holdout never enters it — so the pre-registered pass bar's PBO
+// clause is fully determined by the fit window, which is the only window this
+// script touches. That number is therefore real, and it is free. If it already
+// fails the bar, the one-shot verdict is a MISS in advance whatever the holdout
+// says, and the cheapest possible place to find that out is here rather than
+// after the press has retired the experiment and charged the family's FDR.
 //
 // Exit 0 when every stage behaved. Nothing here places, sizes or authorises a
 // trade, and nothing here can produce a verdict on the real experiment.
@@ -46,6 +55,7 @@ import {
   gaussian,
   isRefusal,
   isTurnOfMonthBuildRefusal,
+  pboPreflight,
   seeded,
   verifyTurnOfMonthPreRegistration,
   type ExperimentSpec,
@@ -278,6 +288,10 @@ async function main(): Promise<number> {
     `   net Sharpe ${ev.evaluation!.netSharpe.toFixed(4)}  net DSR ${ev.evaluation!.netDsr.toFixed(4)}  ` +
       `PBO ${Number.isFinite(ev.evaluation!.pbo) ? ev.evaluation!.pbo.toFixed(4) : "UNMEASURABLE"}`,
   );
+  line(
+    "   NOTE: that PBO came from the THROWAWAY spec's inner fit window, so it is not the pre-registered " +
+      "clause's number. Section 5 computes that one.",
+  );
   const verdict = h2.verdict(reg2.specHash, at);
   if (isRefusal(verdict)) {
     line(`   FAILED: verdict refused — ${verdict.code}`);
@@ -288,6 +302,38 @@ async function main(): Promise<number> {
     line(`     ${c.pass ? "pass" : "FAIL"}  ${c.clause.padEnd(12)} ${c.bar.padEnd(42)} ${c.detail}`);
   }
   line(`   chain rows written: ${h2.chain().length}`);
+  line();
+
+  // ── 5. the PBO clause of the REAL pass bar, decided here, for free ─────────
+  // Not a throwaway number and not a holdout read. PBO is computed by the
+  // harness from the fit-stage selection field ALONE, so the pre-registered
+  // clause's value is fully determined by the fit window — which is the only
+  // window this script ever touches. Printing it here is the cheapest possible
+  // place to discover that a verdict would be a foregone MISS: after the press
+  // it costs the experiment and an FDR charge.
+  line("5. THE REAL PBO CLAUSE, PRE-FLIGHT (pre-registered spec, pre-registered fit window)");
+  const realSelection = buildFitSelectionField(clipped, TURN_OF_MONTH_SPEC, FIT, costModel);
+  if (realSelection.specVariantIndex < 0) {
+    line("   SKIPPED: the pre-registered offsets are not in the declared fit grid on this data.");
+  } else {
+    const pre5 = pboPreflight(realSelection.field, TURN_OF_MONTH_SPEC);
+    line(
+      `   ${realSelection.variants.length} variants over ${realSelection.commonBoundaryMonths.length} common boundary ` +
+        `months; PBO ${Number.isFinite(pre5.pbo) ? pre5.pbo.toFixed(4) : "UNMEASURABLE"} against the bar ` +
+        `(< ${TURN_OF_MONTH_SPEC.passBar.maxPbo}) over ${pre5.blocks} blocks / ${pre5.combinations} partitions`,
+    );
+    line(`   the pre-registered PBO clause WOULD ${pre5.wouldPass ? "PASS" : "FAIL"} on this dataset`);
+    if (!pre5.wouldPass) {
+      line("   So a verdict on this data is a MISS in advance, whatever the holdout says — the pass bar is an AND");
+      line("   and this clause never reads the holdout. Pressing on would retire the experiment and charge the");
+      line("   family's FDR for a number that was knowable here, for free. c8TurnOfMonthEvaluate.ts refuses it.");
+      line("   The honest moves are a different DATASET or a different pre-registered SEARCH (a new experiment");
+      line("   key, never a re-pinned hash).");
+    }
+    if (source.synthetic) {
+      line("   (SYNTHETIC bars: this says nothing about SPY. Re-run with --snapshot to get the real answer.)");
+    }
+  }
   line();
 
   line("RESULT: plumbing proven on the fit window. The holdout was never read.");
