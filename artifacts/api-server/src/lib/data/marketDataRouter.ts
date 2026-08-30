@@ -76,6 +76,59 @@ export interface ProviderAttempt {
   ms: number;
 }
 
+/**
+ * Per-attempt deadline for one provider hop.
+ *
+ * WHY THIS EXISTS: nothing in this router or in six of its seven non-WebSocket
+ * providers bounded a request. With no feed attached — the state a fresh
+ * install is in — every symbol walked the whole chain and each hop failed only
+ * as fast as the underlying call happened to fail. The scanner fans out over
+ * the approved universe at a shared concurrency of 8, so a handful of slow
+ * hops parked every worker and a scan that should report "no feed" in a
+ * fraction of a second took tens of seconds to say the same thing.
+ *
+ * HONESTY: a timeout is NOT "the provider said no data". It is "we did not
+ * hear back", and it is recorded as its own reason (PROVIDER_TIMEOUT_MS) so the
+ * admin detail can never present silence as a negative answer. The verdict is
+ * unchanged either way — an unanswered provider yields no candles, exactly as
+ * a refusing one does, and the caller still gets the same honest empty.
+ */
+export const PROVIDER_ATTEMPT_TIMEOUT_MS = 4_000;
+
+export async function withAttemptDeadline<T extends { ok: boolean; reason: string | null; ms: number }>(
+  provider: string,
+  timeoutMs: number,
+  run: () => Promise<T>,
+  onTimeout: (attempt: ProviderAttempt) => T,
+): Promise<T> {
+  const started = Date.now();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const TIMED_OUT = Symbol("timed-out");
+  try {
+    const raced = await Promise.race([
+      run(),
+      new Promise<typeof TIMED_OUT>((resolve) => {
+        timer = setTimeout(() => resolve(TIMED_OUT), timeoutMs);
+      }),
+    ]);
+    if (raced === TIMED_OUT) {
+      // The in-flight call is abandoned, not cancelled: these providers expose
+      // no abort handle. It may still settle and is simply ignored — it can
+      // never write a result, because the caller already moved on.
+      return onTimeout({
+        provider,
+        ok: false,
+        reason: `PROVIDER_TIMEOUT_MS: the provider did not respond within ${timeoutMs}ms — silence, not an answer either way`,
+        candleCount: 0,
+        ms: Date.now() - started,
+      });
+    }
+    return raced;
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 export interface MarketCandlesResult {
   ok: boolean;
   symbol: string;
@@ -559,16 +612,25 @@ export async function routeCandles(symbol: string, timeframe: string, limit: num
   const tf = normalizeTimeframe(timeframe);
 
   for (const id of chain) {
+    // Every hop is deadlined (see withAttemptDeadline): an unanswered provider
+    // must cost the caller a bounded wait, not an open-ended one. The chain,
+    // its order, and the honest-empty verdict below are unchanged.
+    const timedOut = (provider: string) => (a: ProviderAttempt) => ({
+      ...a, provider, candles: [] as Candle[], provenance: null,
+    });
     if (id === "mt5_broker") {
-      const r = await tryMt5Candles(symbol, tf, limit);
+      const r = await withAttemptDeadline("mt5_broker", PROVIDER_ATTEMPT_TIMEOUT_MS,
+        () => tryMt5Candles(symbol, tf, limit), timedOut("mt5_broker") as never);
       attempts.push(stripCandles(r));
       if (r.ok) return success(symbol, assetClass, r.candles, r.provider, attempts, r.provenance, r.notes);
     } else if (id === "deriv") {
-      const r = await tryDerivCandles(symbol, tf, limit);
+      const r = await withAttemptDeadline("deriv", PROVIDER_ATTEMPT_TIMEOUT_MS,
+        () => tryDerivCandles(symbol, tf, limit), timedOut("deriv") as never);
       attempts.push(stripCandles(r));
       if (r.ok) return success(symbol, assetClass, r.candles, r.provider, attempts, r.provenance);
     } else if (id === "assistant_real") {
-      const r = await tryAssistantCandles(symbol, tf, limit);
+      const r = await withAttemptDeadline("assistant_real", PROVIDER_ATTEMPT_TIMEOUT_MS,
+        () => tryAssistantCandles(symbol, tf, limit), timedOut("assistant_real") as never);
       attempts.push(stripCandles(r));
       if (r.ok) return success(symbol, assetClass, r.candles, r.provider, attempts, r.provenance);
     }
@@ -729,16 +791,24 @@ export async function routeQuote(symbol: string): Promise<MarketQuoteResult> {
   const attempts: ProviderAttempt[] = [];
 
   for (const id of chain) {
+    // Deadlined for the same reason as routeCandles: an unanswered provider
+    // costs a bounded wait, and the silence is recorded as silence.
+    const timedOutQ = (provider: string) => (a: ProviderAttempt) => ({
+      ...a, provider, quote: null as MarketQuote | null, provenance: null,
+    });
     if (id === "mt5_broker") {
-      const r = await tryMt5Quote(symbol);
+      const r = await withAttemptDeadline("mt5_broker", PROVIDER_ATTEMPT_TIMEOUT_MS,
+        () => tryMt5Quote(symbol), timedOutQ("mt5_broker") as never);
       attempts.push(stripQuote(r));
       if (r.ok && r.quote) return successQuote(symbol, assetClass, r.quote, r.provider, attempts, r.provenance);
     } else if (id === "deriv") {
-      const r = await tryDerivQuote(symbol);
+      const r = await withAttemptDeadline("deriv", PROVIDER_ATTEMPT_TIMEOUT_MS,
+        () => tryDerivQuote(symbol), timedOutQ("deriv") as never);
       attempts.push(stripQuote(r));
       if (r.ok && r.quote) return successQuote(symbol, assetClass, r.quote, r.provider, attempts, r.provenance);
     } else if (id === "assistant_real") {
-      const r = await tryAssistantQuote(symbol);
+      const r = await withAttemptDeadline("assistant_real", PROVIDER_ATTEMPT_TIMEOUT_MS,
+        () => tryAssistantQuote(symbol), timedOutQ("assistant_real") as never);
       attempts.push(stripQuote(r));
       if (r.ok && r.quote) return successQuote(symbol, assetClass, r.quote, r.provider, attempts, r.provenance);
     }
