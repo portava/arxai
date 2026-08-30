@@ -312,7 +312,8 @@
     "test:trade-management-isolation": "node --import tsx --test --test-force-exit src/routes/__qa__/tradeManagementIsolation.test.ts",
     "test:mission-demo-ladder-domain": "node --import tsx --test --test-force-exit src/lib/__qa__/missionDemoLadderDomain.test.ts",
     "test:mission-demo-ladder": "node --import tsx --test --test-force-exit src/lib/__qa__/missionDemoLadder.test.ts",
-    "test:mission-demo-ladder-guards": "node --import tsx --test --test-force-exit src/lib/__qa__/missionDemoLadderGuards.test.ts"
+    "test:mission-demo-ladder-guards": "node --import tsx --test --test-force-exit src/lib/__qa__/missionDemoLadderGuards.test.ts",
+    "test:edge-capacity-proposal": "node --import tsx --test --test-force-exit src/lib/learning/__qa__/edgeCapacityProposal.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

@@ -88,8 +88,30 @@ router.post("/admin/learning/edges/:id/capacity", requireUser, async (req, res) 
     .from(productionEdgesTable).where(eq(productionEdgesTable.id, edgeId)).limit(1);
   if (!edge) return res.status(404).json({ ok: false, error: "EDGE_NOT_FOUND" });
 
-  const { estimateStrategyCapacity } = await import("@workspace/domain/decision-intelligence");
+  const { estimateStrategyCapacity, buildEdgeCapacityProposal } =
+    await import("@workspace/domain/decision-intelligence");
   const estimate = estimateStrategyCapacity(parsed.data.simulator);
+  const now = new Date();
+
+  // CONTEXT AT THE MOMENT OF THE PRESS — never authority.
+  //
+  // What the evidence-derived proposal said when the admin pressed is recorded
+  // ALONGSIDE the admin's own numbers, so a later reader can see whether the
+  // human was agreeing with the machine, overriding it, or acting where the
+  // machine had nothing to say. It is stored as context only: nothing below
+  // reads it, and no branch here consults it. A failed read degrades to a
+  // typed null with the reason — the press is the admin's either way.
+  let proposalAtPress: unknown = null;
+  let proposalUnavailableReason: string | null = null;
+  try {
+    const { gatherEdgeCapacityEvidence } = await import("../lib/learning/edgeCapacityEvidence.js");
+    proposalAtPress = buildEdgeCapacityProposal(
+      await gatherEdgeCapacityEvidence(edgeId, now),
+    );
+  } catch (e) {
+    proposalUnavailableReason = e instanceof Error ? e.message : String(e);
+    log.warn({ err: e, edgeId }, "edge_capacity_proposal_context_unavailable");
+  }
 
   // The pressed USD ceiling is honoured ONLY behind an ESTIMATED verdict —
   // a NO_SAFE_CAPACITY / DEGENERATE_INPUT record stores null and gate #23
@@ -97,7 +119,6 @@ router.post("/admin/learning/edges/:id/capacity", requireUser, async (req, res) 
   const ceiling = estimate.status === "ESTIMATED"
     ? (parsed.data.maxDeployedUsd ?? null)
     : null;
-  const now = new Date();
   // WRITE SCOPE: capacity_* columns ONLY. The promotion ladder (status,
   // liveAllowed, adminApproved, shadowValidated, evidence) is untouchable
   // from this router — pinned by test:tenant-capacity-gates.
@@ -111,6 +132,27 @@ router.post("/admin/learning/edges/:id/capacity", requireUser, async (req, res) 
       probes: estimate.probes,
       reasons: estimate.reasons,
       recordedAt: now.toISOString(),
+      // ── AUTHORSHIP ────────────────────────────────────────────────────────
+      // Who pressed, and the fact that the recorded numbers are the ADMIN's,
+      // not the machine's. capacity_recorded_by_admin_id carries the id; this
+      // block carries what the id MEANS, so a later reader never has to infer
+      // authorship from a bare integer.
+      authorship: {
+        authoredBy: "ADMIN",
+        pressedByAdminId: admin.id,
+        pressedByRole: admin.role,
+        // The distribution/friction assumptions came from the request body an
+        // authenticated admin submitted. Nothing here was derived, defaulted,
+        // or adopted from a proposal on the admin's behalf.
+        simulatorInputsDeclaredBy: "ADMIN_REQUEST_BODY",
+        maxDeployedUsdDeclaredBy: ceiling == null ? null : "ADMIN_REQUEST_BODY",
+        statement: "The recorded capacity numbers are admin-authored. The ruin/capacity simulator ran on inputs an admin supplied and can only refuse; it never set the USD ceiling and never wrote this row on its own.",
+      },
+      // Context only — what the evidence-derived proposal said at press time.
+      // Never consulted by any branch above; recorded so agreement, override,
+      // or absence of machine input is visible after the fact.
+      proposalAtPressTime: proposalAtPress,
+      proposalUnavailableReason,
     } as unknown as Record<string, unknown>,
     capacityEstimatedAt: now,
     capacityRecordedByAdminId: admin.id,
