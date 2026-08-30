@@ -135,6 +135,39 @@ export function hashRegistrationKeyPeppered(normalizedKey: string): string {
   return createHash("sha256").update(normalizedKey + pc.pepper, "utf8").digest("hex");
 }
 
+/**
+ * The ordered peppered-hash candidates for a raw code: current pepper first,
+ * then the previous pepper when a rotation window is open.
+ *
+ * SINGLE SOURCE OF TRUTH — every peppered lookup MUST go through this.
+ *
+ * WHY IT EXISTS. These tiers were written twice and drifted:
+ * `findInviteByCode` consulted REGISTRATION_KEY_PEPPER_PREVIOUS, but the
+ * transactional acceptance in `acceptInviteTx` did not. During a rotation
+ * window a key issued under the previous pepper therefore PASSED
+ * `validateInviteForRegistration` and then failed inside the registration
+ * transaction with INVITE_NOT_FOUND — the user insert rolled back, the key was
+ * never consumed, and the holder was refused with no way to tell why. The
+ * dual-read window existed but did nothing at the only point that matters.
+ *
+ * Fail-closed contract, unchanged: returns an EMPTY list when the current
+ * pepper is absent, and never offers the previous pepper on its own. A stale
+ * secret may not stand in for a missing primary.
+ */
+export function registrationKeyPepperedHashCandidates(rawCode: string): string[] {
+  const pc = getRegistrationKeyPepper();
+  if (!pc.ok) return [];
+  const normalizedKey = normalizeArxKey((rawCode ?? "").trim());
+  const hashes = [
+    createHash("sha256").update(normalizedKey + pc.pepper, "utf8").digest("hex"),
+  ];
+  const prev = getRegistrationKeyPepperPrevious();
+  if (prev !== null) {
+    hashes.push(createHash("sha256").update(normalizedKey + prev, "utf8").digest("hex"));
+  }
+  return hashes;
+}
+
 /** Legacy hash: sha256(rawCode.trim()). Used for pre-existing invite rows
  *  that were created before the peppered-hash rollout. */
 export function hashInviteCode(rawCode: string): string {
@@ -235,27 +268,15 @@ export async function findInviteByCode(rawCode: string): Promise<BetaInviteRow |
 
   const pc = getRegistrationKeyPepper();
 
-  // 1. Peppered hash (new ARX registration keys).
-  if (pc.ok) {
-    const normalizedKey = normalizeArxKey(code);
-    const pepperedHash = createHash("sha256").update(normalizedKey + pc.pepper, "utf8").digest("hex");
-    const byPeppered = await db.select().from(betaInvitesTable)
-      .where(eq(betaInvitesTable.inviteCodeHash, pepperedHash)).limit(1);
-    if (byPeppered[0]) return byPeppered[0];
-  }
-
-  // 1b. Previous pepper, ONLY during a rotation window and ONLY when the
-  //     current pepper is configured. Gated on pc.ok so a stale secret can
-  //     never stand in for a missing primary.
-  if (pc.ok) {
-    const prev = getRegistrationKeyPepperPrevious();
-    if (prev !== null) {
-      const normalizedKey = normalizeArxKey(code);
-      const prevHash = createHash("sha256").update(normalizedKey + prev, "utf8").digest("hex");
-      const byPrev = await db.select().from(betaInvitesTable)
-        .where(eq(betaInvitesTable.inviteCodeHash, prevHash)).limit(1);
-      if (byPrev[0]) return byPrev[0];
-    }
+  // 1 & 1b. Peppered hash tiers — current pepper, then the previous pepper if a
+  //         rotation window is open. Both come from the shared candidate list so
+  //         this path and acceptInviteTx cannot drift apart again. The list is
+  //         empty when the current pepper is absent, so a stale secret can never
+  //         stand in for a missing primary.
+  for (const candidateHash of registrationKeyPepperedHashCandidates(code)) {
+    const hit = await db.select().from(betaInvitesTable)
+      .where(eq(betaInvitesTable.inviteCodeHash, candidateHash)).limit(1);
+    if (hit[0]) return hit[0];
   }
 
   // Fail closed: ARX-format keys MUST be looked up via peppered hash only.
@@ -857,11 +878,16 @@ export async function acceptInviteTx(tx: any, params: {
     return { ok: false, error: "PEPPER_MISSING" } as const;
   }
 
-  const normalizedKey = normalizeArxKey(code);
-  const pepperedHash = createHash("sha256").update(normalizedKey + pc.pepper, "utf8").digest("hex");
-  const byPeppered = await tx.select().from(betaInvitesTable)
-    .where(eq(betaInvitesTable.inviteCodeHash, pepperedHash)).limit(1);
-  if (byPeppered[0]) invite = byPeppered[0];
+  // Peppered tiers — current pepper, then the previous pepper while a rotation
+  // window is open. MUST be the same candidate list findInviteByCode uses:
+  // validation and acceptance disagreeing is exactly the defect this replaces
+  // (a previous-pepper key validated, then failed here with INVITE_NOT_FOUND
+  // and rolled the whole registration back).
+  for (const candidateHash of registrationKeyPepperedHashCandidates(code)) {
+    const hit = await tx.select().from(betaInvitesTable)
+      .where(eq(betaInvitesTable.inviteCodeHash, candidateHash)).limit(1);
+    if (hit[0]) { invite = hit[0]; break; }
+  }
 
   if (!invite) {
     const legacyHash = hashInviteCode(code);

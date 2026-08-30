@@ -313,6 +313,7 @@
     "test:mission-demo-ladder-domain": "node --import tsx --test --test-force-exit src/lib/__qa__/missionDemoLadderDomain.test.ts",
     "test:mission-demo-ladder": "node --import tsx --test --test-force-exit src/lib/__qa__/missionDemoLadder.test.ts",
     "test:mission-demo-ladder-guards": "node --import tsx --test --test-force-exit src/lib/__qa__/missionDemoLadderGuards.test.ts",
+    "test:registration-key-pepper-press": "node --import tsx --test --test-force-exit src/lib/__qa__/registrationKeyPepperPress.test.ts",
     "test:router-attempt-deadline": "node --import tsx --test --test-force-exit src/lib/data/__qa__/routerAttemptDeadline.test.ts"
   },
   "dependencies": {

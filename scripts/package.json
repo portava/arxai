@@ -314,7 +314,10 @@
     "test:strategy-behavioral-diff": "node --import tsx --test --test-force-exit src/__qa__/strategyBehavioralDiff.test.ts",
     "lab:strategy-diff": "node --import tsx ./src/strategyBehavioralDiffCli.ts",
     "test:flywheel-isolation": "node --import tsx ./src/ci/check-flywheel-isolation.test.ts",
-    "test:router-reachability": "tsx ./src/ci/check-router-reachability.test.ts"
+    "test:router-reachability": "tsx ./src/ci/check-router-reachability.test.ts",
+    "preflight:registration-key-pepper": "tsx ./src/preflightRegistrationKeyPepper.ts",
+    "verify:registration-key-pepper": "tsx ./src/verifyRegistrationKeyPepperProvisioned.ts",
+    "test:registration-key-pepper-preflight": "node --import tsx --test --test-force-exit ./src/__qa__/registrationKeyPepperPreflight.test.ts"
   },
   "devDependencies": {
     "@types/node": "catalog:",

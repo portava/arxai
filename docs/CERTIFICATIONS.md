@@ -510,3 +510,29 @@ in the register's `evidenceRef`, update `certifiedAtIso` in a reviewed change,
 and record the run in this file. Drill fixtures:
 `artifacts/api-server/src/lib/phase6/__qa__/certificationExpiry.test.ts`
 (`test:certification-expiry`).
+
+---
+
+## REGISTRATION_KEY_PEPPER — the press machinery (2026-08-29, branch `hold/pepper-runbook`)
+
+Runbook: `docs/REGISTRATION_KEY_PEPPER_RUNBOOK.md`. The secret itself is **not
+set** — that press is the owner's, and nothing here performs it.
+
+| Claim | Grade | Evidence |
+|---|---|---|
+| The boot checklist reports an absent pepper as **required**-missing, with a reason, whenever the shield is ON or the env is production | **B** | `test:registration-key-pepper-press` (7 assertions). Mutation: reverting `REGISTRATION_KEY_PEPPER` to `always(false)` in `envChecklist.ts` turns **4** tests red. |
+| Shield ON + pepper absent raises a distinct `registrationShieldBlocked`, a `logger.error` at boot, and a CRITICAL `REGISTRATION_SHIELD_BLOCKED` launch blocker | **C** | same suite; the log and blocker are asserted at source level, not by capturing a boot. |
+| `acceptInviteTx` honours `REGISTRATION_KEY_PEPPER_PREVIOUS`, so a rotation window is redeemable end to end | **B** | same suite, 5 assertions over a transaction stand-in. Mutation: `…HashCandidates(code).slice(0, 1)` inside `acceptInviteTx` turns the previous-pepper test red and nothing else. |
+| Validation and acceptance cannot drift apart again | **C** | source-level assertion that both go through `registrationKeyPepperedHashCandidates` and that `acceptInviteTx` contains no inline `pc.pepper` hash. |
+| The pre-flight's at-risk count is accurate | **C** | `test:registration-key-pepper-preflight` — 14 assertions over fixtures, including a totals-reconcile check. Pure function, no DB. |
+| No checklist item, log, response or script emits the pepper value or its length | **C** | same suites: serialized-checklist scan plus a comment-stripped source scan over 8 files for log/response/template interpolation shapes. The length half was **false when first graded** — `verifyRegistrationKeyPepperProvisioned.ts` printed the real length in its `>= 32` label, and the cited assertion's negative lookahead (`pepperValue(?!\.length)`) exempted exactly that. Fixed 2026-08-29: the label is pass/fail only, and the suite now asserts no string or template interpolates `pepperValue.length`. |
+| The post-set verification cannot leave a residual account behind under a green verdict | **C** | source-level only: every cleanup `DELETE` now reports its own failure instead of `.catch(() => {})`, and after the deletes the rows are re-queried and their absence asserted (an unreadable check FAILS). `test:registration-key-pepper-press` guards that shape. The script itself has still never been executed, so this is a code-shape grade, not a run. |
+| The pepper is provisioned AND generation and validation agree on it | **NOT VERIFIED** | requires the owner's press. `verify:registration-key-pepper` is built and typechecks, but has **never been executed** — this sandbox blocks `listen(2)` and has no Postgres. It is unrun, not passing. |
+
+**Contested / honest gaps.**
+- The end-to-end verification lane (`verify:registration-key-pepper`) and the
+  pre-flight CLI (`preflight:registration-key-pepper`) were **not executed**
+  anywhere. Only their pure logic is covered by tests. First real run must be
+  on Replit.
+- `expiringKeysAdminRoute.test.ts` could not run here (needs a listener and a
+  live Postgres); it was not evaluated against this change.

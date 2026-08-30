@@ -230,6 +230,17 @@ describe("registration-key pepper rotation window", () => {
     assert.match(src, /NOT A FALLBACK FOR A MISSING PRIMARY/i,
       "the fail-closed limit is not documented");
     // And the lookup must gate it behind the current pepper.
-    assert.match(src, /Gated on pc\.ok/i, "the gating is not documented at the call site");
+    //
+    // SUPERSEDES an assertion on the literal phrase "Gated on pc.ok", which
+    // lived in a comment inside findInviteByCode. The two peppered tiers were
+    // written twice and drifted — acceptInviteTx never consulted the previous
+    // pepper at all — so they were collapsed into one shared
+    // registrationKeyPepperedHashCandidates(). The gating moved with them. This
+    // now pins the gating where it actually lives; asserting the old phrase
+    // would only have been satisfiable by a comment that is no longer true.
+    assert.match(src, /registrationKeyPepperedHashCandidates/,
+      "the shared candidate helper is gone — the tiers can drift apart again");
+    assert.match(src, /returns an EMPTY list when the current pepper is absent/i,
+      "the gating is not documented where the tiers are now built");
   });
 });
