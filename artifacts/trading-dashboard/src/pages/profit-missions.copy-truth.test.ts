@@ -110,7 +110,9 @@ describe("honest copy — the underlying behaviour these claims describe", () =>
   it("only a LIVE mission calls the live executor; paper/demo call the recorder", () => {
     const f = flat(execution);
     expect(f).toMatch(/executionMode === "live" \? await executor\(/);
-    expect(f).toMatch(/: await simulatedExecutor\(/);
+    // fix/demo-ladder made the simulated seam lazily resolved so the fill
+    // simulator can be swapped in tests; the branch shape is unchanged.
+    expect(f).toMatch(/: await \(await resolveSimulatedExecutor\(\)\)\(/);
   });
 
   it("the simulated recorder returns a sim: command id and contacts nothing", () => {
@@ -352,8 +354,8 @@ describe("honest copy — comments state which chain each mode runs", () => {
 
   it("missionExecution names the mission-layer chain vs the live-only chain", () => {
     const p = prose(execution);
-    expect(p).toMatch(/BOTH modes run the MISSION-LAYER chain/);
-    expect(p).toMatch(/ONLY `live` then calls `executor`/);
+    expect(p).toMatch(/a non-live mission runs the MISSION-LAYER chain/);
+    expect(p).toMatch(/ONLY `live` then reaches the live command pipeline/);
     expect(p).toMatch(/NONE of those run for paper\/demo/);
   });
 
@@ -402,11 +404,16 @@ describe("honest copy — the foundation gates' actor coverage is stated exactly
     expect(f).toMatch(/SELF_TRADE_AGENT or SYSTEM/);
   });
 
-  it("the mission-driver coverage gap in #20 is named, not implied", () => {
+  it("#20's coverage of driver-placed entries is stated as CLOSED, not as a gap", () => {
+    // fix/gate-binding closed the hole this used to pin open: a driver-placed
+    // entry is now classified SYSTEM by autonomyProvenance and IS bound by #20.
+    // The contract must describe the closure and the consequence, and must no
+    // longer carry the old KNOWN GAP text.
     const f = flat(gateContract);
-    expect(f).toMatch(/KNOWN GAP/);
+    expect(f).not.toMatch(/KNOWN GAP/);
     expect(f).toMatch(/Profit-Mission driver/);
-    expect(f).toMatch(/stamped USER/);
+    expect(f).toMatch(/stamped SYSTEM and IS bound\s+by #20/);
+    expect(f).toMatch(/tighten-only/);
   });
 
   it("#19/#21 are stated as binding every entry regardless of actor", () => {
@@ -446,9 +453,13 @@ describe("honest copy — the page states the paper/demo truth to the user", () 
     expect(renderedFlat).toMatch(/cannot build the track record the promotion gates ask for/i);
   });
 
-  it("realised figures are labelled live-only rather than reading as a full total", () => {
-    expect(renderedFlat).toMatch(/count realised closed live trades only/i);
-    expect(renderedFlat).toMatch(/Read these as a live-only total, not as the mission's full activity/i);
+  it("realised figures name which books they came from, and never blend them", () => {
+    // fix/demo-ladder gave paper/demo real (simulated) outcomes, so "live-only"
+    // stopped being true. The figure must now state its basis on both sides and
+    // say the two are never added together.
+    expect(renderedFlat).toMatch(/broker-confirmed closed trades only/i);
+    expect(renderedFlat).toMatch(/simulated fills, priced from real\s+quotes/i);
+    expect(renderedFlat).toMatch(/never added together/i);
   });
 
   it("the page never implies demo/paper are gate-checked", () => {

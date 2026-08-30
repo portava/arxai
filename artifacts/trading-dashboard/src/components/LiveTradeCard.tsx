@@ -391,16 +391,24 @@ export function LiveTradeCard({ trade, onCoach }: { trade: Trade; onCoach?: () =
                   fabricated money figure. */}
               <div>
                 <div className="text-muted-foreground">Move</div>
-                <div
-                  className={snap.priceMove >= 0 ? "text-success" : "text-destructive"}
-                  title="Price distance from entry. Dollar P/L is not available for this trade."
-                >
-                  {snap.priceMove >= 0 ? "+" : ""}{snap.priceMove.toFixed(5)}
-                </div>
+                {/* A snapshot that did not report a price move must read as
+                    unavailable, not crash the card and not render as 0. */}
+                {typeof snap.priceMove === "number" && Number.isFinite(snap.priceMove) ? (
+                  <div
+                    className={snap.priceMove >= 0 ? "text-success" : "text-destructive"}
+                    title="Price distance from entry. Dollar P/L is not available for this trade."
+                  >
+                    {snap.priceMove >= 0 ? "+" : ""}{snap.priceMove.toFixed(5)}
+                  </div>
+                ) : (
+                  <div className="text-muted-foreground" title="The snapshot did not report a price move.">
+                    unavailable
+                  </div>
+                )}
               </div>
               <div><div className="text-muted-foreground">SL</div><div className="text-destructive">{trade.stopLoss.toFixed(5)}</div></div>
               <div><div className="text-muted-foreground">TP</div><div className="text-success">{trade.takeProfit.toFixed(5)}</div></div>
-              <div><div className="text-muted-foreground">R</div><div className={snap.rMultiple >= 0 ? "text-success" : "text-destructive"}>{snap.rMultiple.toFixed(2)}R</div></div>
+              <div><div className="text-muted-foreground">R</div>{typeof snap.rMultiple === "number" && Number.isFinite(snap.rMultiple) ? (<div className={snap.rMultiple >= 0 ? "text-success" : "text-destructive"}>{snap.rMultiple.toFixed(2)}R</div>) : (<div className="text-muted-foreground">unavailable</div>)}</div>
             </div>
             <div>
               <div className="flex items-center justify-between text-xs mb-1">

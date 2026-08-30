@@ -224,9 +224,12 @@ export async function explainBlockedAction(action: BlockedAction, userId: number
   }
 
   const [pre, active, gov, gate, critical, live] = await Promise.all([
-    preflight().catch(() => null),
-    getActiveSession().catch(() => null),
-    evaluateGovernor().catch(() => null),
+    // userId on both: front B made these per-user. Without it this helper read
+    // whichever ACTIVE session existed on the instance and explained a
+    // stranger's state back to the caller — the exact leak B closed.
+    preflight(userId).catch(() => null),
+    getActiveSession(userId).catch(() => null),
+    evaluateGovernor({ userId }).catch(() => null),
     getGateStatus().catch(() => null),
     getCriticalUnread(userId).catch(() => []),
     readLiveReadiness(userId).catch((): LiveReadiness => ({ status: "UNKNOWN", plain: [], technical: [], fixes: [], degraded: true })),

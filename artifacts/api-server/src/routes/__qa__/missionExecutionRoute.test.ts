@@ -11,7 +11,9 @@
 //
 // Proven here:
 //   (59) DEMO/PAPER never touches the live broker — a non-live mission runs the
-//        SAME gate chain and dispatches onto the SIMULATED executor seam
+//        MISSION-LAYER chain (probation, mission gate, Phase 7, single-flight)
+//        — never the live pipeline or the 23-gate evaluator — and dispatches
+//        onto the SIMULATED executor seam
 //        (`sim:` command id, journaled + audited); the LIVE executor seam is
 //        never called. The simulated fill is modelled from a REAL quote and
 //        lands ONLY in the row's `sim_*` family — no broker-reconciled P/L,

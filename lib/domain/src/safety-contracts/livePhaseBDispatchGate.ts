@@ -40,8 +40,9 @@
 // (NOT an evaluated gate), preserving the Phase A safety semantic.
 //
 // ── ACTOR COVERAGE of the FOUNDATION gates — what each one binds TODAY ───────
-// This block exists because the header previously implied #20 binds every
-// autonomous entry. It does not. State the real coverage, not the intent:
+// This block exists because the header once implied #20 binds every autonomous
+// entry while the mission driver was exempt. That hole is CLOSED (see #20
+// below). State the real coverage per gate, not the intent:
 //
 //   #19 PROVENANCE_UNPROVEN    — binds EVERY live entry, whoever originated it.
 //                                Close/modify are exempt.
@@ -51,9 +52,10 @@
 //        `artifacts/api-server/src/lib/live/foundationGateInputs.ts`).
 //        actorType is stamped at draft insert from the command's classified
 //        ORIGIN (`./autonomyProvenance.ts`), not merely from the presence of a
-//        `selfTradeAgentId`: an entry placed by the unattended Profit-Mission
-//        driver on its own tick is stamped SYSTEM and IS bound by #20, while a
-//        mission trade the owner presses stays a USER actor. The classifier is
+//        `selfTradeAgentId`. An entry placed by the unattended
+//        Profit-Mission driver on its own tick is
+//        stamped SYSTEM and IS bound by #20, while a mission trade the owner
+//        presses stays a USER actor. The classifier is
 //        tighten-only (USER → SYSTEM, never the reverse) and fails CLOSED on an
 //        unrecognised origin literal. Consequence to know: a driver-placed live
 //        ENTRY refuses until an edge is owner-promoted and its capacity
@@ -65,8 +67,8 @@
 //        command type including close/modify; its unresolvable/unstamped
 //        branches bind entries only.
 //   #23 EDGE_CAPACITY_EXCEEDED — binds entries that are either autonomously
-//        originated (same actorType test as #20, so it inherits the same
-//        mission-driver gap) OR carry an `edgeId`. A human entry with no edge
+//        originated (same actorType test as #20, so a driver-placed entry is
+//        bound here too) OR carry an `edgeId`. A human entry with no edge
 //        reference is exempt.
 //
 // SAFETY (inviolable):

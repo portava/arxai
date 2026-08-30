@@ -226,7 +226,6 @@ const COVERED_LIB_FILES: readonly string[] = [
   "lib/traderCoach/weekly.ts",
   "lib/paperSession/manager.ts",
   "lib/riskGovernor/governor.ts",
-  "lib/alerts/ruleEngine.ts",
   "lib/paperExecution/paperExecutionService.ts",
   "lib/paperAutopilot/autopilotService.ts",
 ];

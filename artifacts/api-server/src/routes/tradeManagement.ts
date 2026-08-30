@@ -202,14 +202,14 @@ router.post("/trade-management/:id/close", requireUser, async (req, res) => {
     type: "TRADE_CLOSED",
     severity: status === "CLOSED_WIN" ? "success" : "warning",
     title: `Trade closed (${status === "CLOSED_WIN" ? "in profit" : "at a loss"})`,
-    message: detail,
+    message: `${detail} ${TRADE_MANAGEMENT_SIMULATION_NOTE}`,
     symbol: trade.symbol,
   });
 
   res.json({
     success: true,
     simulated: true,
-    message: detail,
+    message: `${detail} ${TRADE_MANAGEMENT_SIMULATION_NOTE}`,
     pnlStatus: "UNKNOWN",
     trade: serialiseTrade(row),
   });

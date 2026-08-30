@@ -167,14 +167,14 @@ test("the isolation-ok waiver requires a written reason", () => {
     // isolation-ok: instance-wide health row, carries no trader data
     const rows = await db.select().from(riskSettingsTable).limit(1);
   `;
-  assert.deepEqual(scanScopedSurfaceSource("lib/alerts/ruleEngine.ts", withReason).violations, []);
+  assert.deepEqual(scanScopedSurfaceSource("lib/traderCoach/coach.ts", withReason).violations, []);
 
   const bareWaiver = `
     // isolation-ok:
     const rows = await db.select().from(riskSettingsTable).limit(1);
   `;
   assert.equal(
-    scanScopedSurfaceSource("lib/alerts/ruleEngine.ts", bareWaiver).violations.length, 1,
+    scanScopedSurfaceSource("lib/traderCoach/coach.ts", bareWaiver).violations.length, 1,
     "a waiver with no reason must not silence the guard",
   );
 });
@@ -203,7 +203,12 @@ test("the real tree passes and coverage has not been narrowed", () => {
   }
   for (const f of [
     "lib/onboarding/state.ts", "lib/traderCoach/coach.ts", "lib/traderCoach/weekly.ts",
-    "lib/paperSession/manager.ts", "lib/riskGovernor/governor.ts", "lib/alerts/ruleEngine.ts",
+    "lib/paperSession/manager.ts", "lib/riskGovernor/governor.ts",
+    // lib/alerts/ruleEngine.ts was REMOVED from this pin because the file was
+    // deleted, not because coverage was narrowed: its 8 rules had zero callers
+    // and wiring them would have written per-user safety alerts into the GLOBAL
+    // alerts table. See alertManager.ts's note. If proactive alerting is ever
+    // built, its file must be added back to both this pin and the coverage list.
     "lib/paperExecution/paperExecutionService.ts", "lib/paperAutopilot/autopilotService.ts",
   ]) {
     assert.ok(SCOPED_SURFACE_COVERAGE.libFiles.includes(f), `service file dropped from coverage: ${f}`);

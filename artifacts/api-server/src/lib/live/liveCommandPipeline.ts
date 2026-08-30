@@ -2472,7 +2472,7 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   // Rank-1 audit finding: /emergency writes safety_core.kill_switch_engaged and
   // promises "All trading will halt immediately", but no gate on THIS pipeline
   // read that column — every real-money MT5 dispatch ignored it. Runs BEFORE
-  // the 18-gate evaluator in BOTH routing modes, additive only: it never
+  // the 23-gate evaluator in BOTH routing modes, additive only: it never
   // replaces or weakens any downstream gate, it only adds a refusal.
   // Fail-closed on an unreadable/absent safety_core row. The only exemption is
   // the same Cluster D admin-emergency-close CLOSE marker gate #5 and the

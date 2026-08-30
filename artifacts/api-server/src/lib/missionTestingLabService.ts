@@ -168,6 +168,8 @@ const EVIDENCE_BASES: ReadonlySet<string> = new Set([
 ]);
 function isEvidenceBasis(v: unknown): v is PromotionEvidenceBasis {
   return typeof v === "string" && EVIDENCE_BASES.has(v);
+}
+
 /**
  * Audit rank 41, applied to the sibling Mission Performance surface.
  *
