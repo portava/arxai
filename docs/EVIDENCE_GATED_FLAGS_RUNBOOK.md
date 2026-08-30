@@ -41,6 +41,15 @@ Three reading rules follow from that, and the surface enforces them:
 3. **`barMet` is derived from the verdict**, in one constructor
    (`buildEvidenceGateReport`). No caller can hand-set a met flag or present an
    unmet bar as pressable.
+4. **`sampleSize` is NOT the number the bar judges.** It counts the whole feed;
+   `bar.requiredSampleSize` bars something narrower — for #4 the *later*
+   chronological evaluation window, for #27 the *qualifying* subset. So a
+   report can read "200 journaled" against a requirement of 200 and still be
+   `INSUFFICIENT_HISTORY`, because the barred quantity is 100. Each report
+   names both (`sampleLabel`, `bar.requiredSampleLabel`) and points at the
+   measurement carrying the barred one
+   (`bar.requiredSampleMeasurementKey`), and the card renders **that** value
+   against the requirement. Read the line under the sample, not the sample.
 
 ---
 
@@ -169,11 +178,20 @@ Nothing auto-enables: automatic refresh can only move `SHADOW ↔ PRESS_UNLOCKED
 pnpm --filter @workspace/api-server       run test:conformal-coverage-report
 pnpm --filter @workspace/api-server       run test:execution-policy-promotion-report
 pnpm --filter @workspace/trading-dashboard run test:evidence-gate-card
+pnpm --filter @workspace/api-server       run test:evidence-gate-source-io
 ```
 
-All three are wired into the root `ci` chain. Between them they pin: the
+All four are wired into the root `ci` chain. Between them they pin: the
 verdict is `INSUFFICIENT_HISTORY` below the bar (zero sample, short window, and
 a vacuous unbounded interval alike); a synthetic fixture **at** the bar reads
-`BAR_MET`; an unreadable source is `null`, never `0`; no report path can flip
-the flag, write a row, or move the ladder; and the feeds' missing writers stay
-missing (or the grep pins fail red).
+`BAR_MET`; an unreadable source is `null`, never `0`; the number rendered
+against the arming bar is the barred quantity, not the feed total; no report
+path can flip the flag, write a row, or move the ladder; and the feeds' missing
+writers stay missing (or the grep pins fail red).
+
+`test:evidence-gate-source-io` is the end-to-end half: it runs the real IO
+adapters and the real route handlers against a fake `@workspace/db` whose
+query builder can be made to THROW, so "an outage is a null, never a zero" is
+proven where the decision is actually made, not only at the pure engines. It
+also executes the route's admin gate (401 anonymous / 403 non-admin / 200 for
+ADMIN and OWNER) rather than string-grepping it.

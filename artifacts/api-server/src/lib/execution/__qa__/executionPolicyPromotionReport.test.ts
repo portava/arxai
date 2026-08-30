@@ -171,6 +171,60 @@ test("a flip-flopping chooser with a large sample is BAR_NOT_MET, not INSUFFICIE
   assert.equal(r.ownerPress.available, false);
 });
 
+// ── 2b. sampleSize and the bar count DIFFERENT things, and say so ───────────
+//
+// The regression: `sampleSize` is `recommendationsSeen` (every readable row),
+// while `bar.requiredSampleSize` bars the QUALIFYING subset. 60 journaled
+// rows of which 3 qualify would read "60 / bar requires 50" to a skimmer.
+
+test("a large journal with few QUALIFYING rows is INSUFFICIENT — and the report says which quantity is barred", () => {
+  // 60 rows seen; only 3 have both shapes measured.
+  const rows = [
+    ...Array.from({ length: 57 }, () => summary({ bothShapesMeasured: false, fillAdvantageShape: null })),
+    ...journal(3, 3, 0),
+  ];
+  const r = buildExecutionPolicyPromotionReport(
+    input({ evidence: evaluatePromotionEvidence(rows), journalRowsSeen: 60 }),
+  );
+  assert.equal(r.sampleSize, 60, "the journal total is above the bar's number");
+  assert.equal(r.bar.requiredSampleSize, PROMOTION_MIN_QUALIFYING_RECOMMENDATIONS);
+  assert.ok(r.sampleSize! > r.bar.requiredSampleSize, "60 > 50 — the misreadable pairing");
+  assert.equal(r.verdict, "INSUFFICIENT_HISTORY", "and yet the bar is NOT met");
+  assert.equal(r.fillQuality.qualifyingCount, 3);
+  assert.match(r.sampleLabel, /qualifying or not/);
+  assert.match(r.bar.requiredSampleLabel, /QUALIFYING/);
+  assert.equal(r.bar.requiredSampleMeasurementKey, "qualifyingCount");
+  const barred = r.measurements.find((m) => m.key === r.bar.requiredSampleMeasurementKey);
+  assert.ok(barred, "the report must carry the measurement its bar points at");
+  assert.equal(barred!.value, 3, "the number a surface renders against the bar is 3, not 60");
+  assert.equal(barred!.met, false);
+});
+
+test("every verdict branch keeps the barred-measurement pointer resolvable", () => {
+  const cases = [
+    buildExecutionPolicyPromotionReport(input()),
+    buildExecutionPolicyPromotionReport(
+      input({ evidence: evaluatePromotionEvidence(journal(20, 15, 0)) }),
+    ),
+    buildExecutionPolicyPromotionReport(
+      input({ evidence: evaluatePromotionEvidence(journal(60, 55, 0)) }),
+    ),
+    buildExecutionPolicyPromotionReport(
+      input({ evidence: evaluatePromotionEvidence(journal(60, 30, 25)) }),
+    ),
+    buildExecutionPolicyPromotionReport(input({ evidence: null, sourceError: "boom" })),
+  ];
+  for (const r of cases) {
+    const key = r.bar.requiredSampleMeasurementKey;
+    assert.equal(key, "qualifyingCount", `verdict ${r.verdict} lost the pointer`);
+    assert.ok(
+      r.measurements.some((m) => m.key === key),
+      `verdict ${r.verdict} points at a measurement it does not carry`,
+    );
+    assert.ok(r.sampleLabel.length > 0 && r.bar.requiredSampleLabel.length > 0);
+  }
+});
+
 // ── 3. An unreadable journal is not an empty one ────────────────────────────
 
 test("SOURCE_UNREADABLE reports sampleSize null — never 0", () => {

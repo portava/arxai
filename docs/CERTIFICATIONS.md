@@ -525,11 +525,13 @@ producing a report cannot arm anything.
 |---|---|
 | Below the bar the verdict is `INSUFFICIENT_HISTORY` — for a zero sample, a short evaluation window, and a vacuous unbounded interval alike | `test:conformal-coverage-report`, `test:execution-policy-promotion-report` |
 | A synthetic fixture **at** the bar reads `BAR_MET` (the machinery is real, not a stub that always says "not yet") | same two suites; fixtures are hand-computed (calibration rank `ceil((200+1)·0.9) = 181`) |
-| An unreadable source is `sampleSize: null`, never `0` | same two suites |
+| An unreadable source is `sampleSize: null`, never `0` — proven at the pure engines **and end to end**, at the two `try/catch` blocks that actually make the decision | same two suites, plus `test:evidence-gate-source-io`, which runs the real IO adapters and the real route handlers against a fake `@workspace/db` whose query builder throws |
+| The admin gate on `GET /api/admin/evidence-gates/*` is executed, not grepped: 401 anonymous, 403 signed-in non-admin (and 403 for a session with no role), 200 read-only report for `ADMIN` and `OWNER` | `test:evidence-gate-source-io` |
+| The number rendered against the arming bar is the **barred quantity**, never the feed total — `sampleSize` counts the whole feed while `bar.requiredSampleSize` bars a narrower one (#4 the later evaluation window, #27 the qualifying subset) | `test:conformal-coverage-report` (200 journaled → window 100 → `INSUFFICIENT_HISTORY`), `test:execution-policy-promotion-report` (60 seen / 3 qualifying vs a bar of 50), `test:evidence-gate-card` (the card renders `100 of 200`, never a bare `Bar requires 200.`); `buildEvidenceGateReport` throws on a `requiredSampleMeasurementKey` that names no measurement |
 | A measurement that was not taken is `value: null` with a `NOT MEASURED` reason, and the surface renders those words rather than `0` | `test:evidence-gate-card` (renders the real component) |
 | No report path can flip `ARX_CONFORMAL_GATE_ENABLED`, write a row, or move the promotion ladder | source pins in both suites (`db.insert(`/`db.update(`/`db.delete(`, `refreshPromotionEvidence(`, `pressEnableExecutionPolicy(`, `process.env[`, GET-only route), plus a live assertion that an at-the-bar `BAR_MET` report leaves the env flag off |
 | `barMet` is derived from the verdict; a caller cannot present an unmet bar as pressable | `buildEvidenceGateReport` fixture in `test:conformal-coverage-report` |
-| Neither feed has a production writer today (so `0` means "no writer", not "quiet period") | grep pins in both suites over `artifacts/` and `lib/`; they fail RED the day a writer or an `applyConformalAuthority(` call site appears |
+| Neither feed has a production writer today (so `0` means "no writer", not "quiet period") | grep pins in both suites over `artifacts/` and `lib/`; they fail RED the day a writer or an `applyConformalAuthority(` call site appears. For #4 the event-type string is a contract this report *invented*, so the pin is deliberately wider than that string: it also fails RED if `calibrateConformal` / `validateCoverage` / `conformalGate` gains a production caller, or if a second `CONFORMAL`-named literal appears. **Residual, stated rather than papered over:** a writer that hand-rolls its intervals *and* avoids the word `CONFORMAL` would defeat both pins — the payload contract a real writer must emit is documented in `docs/CONFORMAL_GATE_AUTHORITY.md` ("The feed contract") |
 
 **Mutation proof** (run 2026-08-29, on a compiling tree):
 
@@ -537,6 +539,14 @@ producing a report cannot arm anything.
   → `available = …`: 5/17 and 3/13 tests red. Restored: green.
 - `if (evaluation.length < minWindow)` → `if (false)`, and
   `if (belowSampleBar)` → `if (false)`: 2/17 and 4/13 tests red. Restored: green.
+- Review fixes, run 2026-08-29 (the two suites above are 23 and 15 tests after
+  them; the counts on the earlier lines are as-run at the time):
+  the `catch` in `loadConformalAdvisoryRecords` softened to
+  `return { ok: true, records: [], rowsSeen: 0, unreadableRows: 0 }` — i.e. a
+  database outage rendered as a clean sample of `0`. **3/13 of
+  `test:evidence-gate-source-io` red; `test:conformal-coverage-report` stayed
+  23/23 green**, which is precisely why the end-to-end lane had to exist.
+  Restored: green.
 
 **Not certified:** the reports have never been rendered against a populated
 feed, because no feed exists. Every non-fixture number they can produce today

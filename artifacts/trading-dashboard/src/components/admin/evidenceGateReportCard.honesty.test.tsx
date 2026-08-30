@@ -12,6 +12,9 @@
 //   * a null measurement renders the words NOT MEASURED, never "0";
 //   * an unreadable source renders visibly differently from a sample of 0;
 //   * a feed with no production writer says so;
+//   * the number rendered against the arming bar is the BARRED quantity, not
+//     the feed total — the two count different things, and printing one
+//     under the other lets a skimmer read an unmet bar as met;
 //   * the card carries NO press — it informs one.
 //
 // Run: pnpm --filter @workspace/trading-dashboard run test:evidence-gate-card
@@ -32,8 +35,14 @@ function report(over: Partial<EvidenceGateReport> = {}): EvidenceGateReport {
     verdict: "INSUFFICIENT_HISTORY",
     verdictReason: "no labeled advisory predictions have been journaled",
     barMet: false,
-    bar: { description: "empirical coverage within ±0.05 of 0.9 over ≥200 records", requiredSampleSize: 200 },
+    bar: {
+      description: "empirical coverage within ±0.05 of 0.9 over ≥200 records",
+      requiredSampleSize: 200,
+      requiredSampleLabel: "labeled predictions in the LATER chronological evaluation window",
+      requiredSampleMeasurementKey: "evaluationWindowSize",
+    },
     sampleSize: 0,
+    sampleLabel: "labeled predictions journaled in total",
     window: null,
     feed: {
       feedId: "CONFORMAL_ADVISORY_PREDICTION",
@@ -44,6 +53,15 @@ function report(over: Partial<EvidenceGateReport> = {}): EvidenceGateReport {
       sourceError: null,
     },
     measurements: [
+      {
+        key: "evaluationWindowSize",
+        label: "Evaluation-window records (later chronological window)",
+        value: 0,
+        unit: "count",
+        target: "≥ 200",
+        met: false,
+        note: "no labeled predictions have been journaled at all",
+      },
       {
         key: "empiricalCoverage",
         label: "Empirical coverage",
@@ -87,7 +105,9 @@ describe("EvidenceGateReportCard honesty", () => {
     const { unmount } = render(
       <EvidenceGateReportCard report={report()} error="" loading={false} onReload={noop} testid="c" />,
     );
-    expect(screen.getByTestId("c-sample").textContent).toMatch(/0 records/);
+    expect(screen.getByTestId("c-sample").textContent).toMatch(
+      /^0 — labeled predictions journaled in total/,
+    );
     unmount();
 
     render(
@@ -106,6 +126,97 @@ describe("EvidenceGateReportCard honesty", () => {
     expect(screen.getByTestId("d-sample").textContent).toMatch(/could not read/);
     expect(screen.getByTestId("d-sample").textContent).not.toMatch(/^0/);
     expect(screen.getByTestId("d-feed").textContent).toMatch(/connection refused/);
+  });
+
+  // ── The sample tile must never invite "sample ≥ requirement, so met" ─────
+  //
+  // The regression this locks: at exactly 200 journaled records the report's
+  // chronological split leaves an evaluation window of 100 and the verdict is
+  // INSUFFICIENT_HISTORY — yet the tile used to print "200 records" over "Bar
+  // requires 200." An owner glancing at the one number would read it as met.
+
+  it("renders the BARRED quantity against the requirement, not the feed total", () => {
+    render(
+      <EvidenceGateReportCard
+        report={report({
+          // Exactly at the requirement by total, nowhere near it by window.
+          sampleSize: 200,
+          measurements: [
+            {
+              key: "evaluationWindowSize",
+              label: "Evaluation-window records (later chronological window)",
+              value: 100,
+              unit: "count",
+              target: "≥ 200",
+              met: false,
+              note: "200 journaled; 100 spent on calibration",
+            },
+          ],
+        })}
+        error=""
+        loading={false}
+        onReload={noop}
+        testid="c"
+      />,
+    );
+    const requirement = screen.getByTestId("c-bar-requirement").textContent ?? "";
+    // The measured value of the BARRED quantity is present…
+    expect(requirement).toMatch(/100 of 200/);
+    // …and the tile never renders the bare "Bar requires 200." that let the
+    // adjacent 200 read as satisfying it.
+    expect(requirement).not.toMatch(/^Bar requires 200\.$/);
+    expect(requirement).toMatch(/narrower than the sample above/);
+    // The sample itself says what it counts, so it cannot be read as the bar.
+    expect(screen.getByTestId("c-sample").textContent).toMatch(
+      /^200 — labeled predictions journaled in total/,
+    );
+  });
+
+  it("renders an unmeasured barred quantity as NOT MEASURED, never as 0", () => {
+    render(
+      <EvidenceGateReportCard
+        report={report({
+          verdict: "SOURCE_UNREADABLE",
+          sampleSize: null,
+          measurements: [
+            {
+              key: "evaluationWindowSize",
+              label: "Evaluation-window records",
+              value: null,
+              unit: "count",
+              target: "≥ 200",
+              met: null,
+              note: "NOT MEASURED — source unreadable",
+            },
+          ],
+        })}
+        error=""
+        loading={false}
+        onReload={noop}
+        testid="c"
+      />,
+    );
+    const requirement = screen.getByTestId("c-bar-requirement").textContent ?? "";
+    expect(requirement).toMatch(/NOT MEASURED of 200/);
+    expect(requirement).not.toMatch(/\b0 of 200\b/);
+  });
+
+  it("admits it when the report names no barred measurement it can render", () => {
+    render(
+      <EvidenceGateReportCard
+        report={report({
+          sampleSize: 200,
+          bar: { ...report().bar, requiredSampleMeasurementKey: "notInThisReport" },
+        })}
+        error=""
+        loading={false}
+        onReload={noop}
+        testid="c"
+      />,
+    );
+    const requirement = screen.getByTestId("c-bar-requirement").textContent ?? "";
+    expect(requirement).toMatch(/NOT AVAILABLE/);
+    expect(requirement).toMatch(/do not read the sample above/);
   });
 
   it("says out loud that the feed has no production writer", () => {

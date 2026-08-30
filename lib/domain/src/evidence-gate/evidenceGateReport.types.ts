@@ -32,6 +32,14 @@
 //      accumulated enough yet" from "nothing in production ever writes this
 //      feed, so it will never accumulate on its own" — a distinction an
 //      owner staring at `0` cannot otherwise make.
+//   6. TWO NUMBERS SIDE BY SIDE MUST COUNT THE SAME THING. `sampleSize` is
+//      the whole feed; `bar.requiredSampleSize` is a bar on some NARROWER
+//      quantity (a later window, a qualifying subset). Printing one under
+//      the other invites "200 ≥ 200, met" when the barred quantity is 100.
+//      So every report must name what each counts (`sampleLabel`,
+//      `bar.requiredSampleLabel`) and point at the measurement carrying the
+//      barred quantity (`bar.requiredSampleMeasurementKey`), which
+//      `buildEvidenceGateReport` REFUSES to leave dangling.
 //
 // Pure: no IO, no clock (the caller supplies `nowIso`), no randomness.
 
@@ -95,6 +103,33 @@ export interface EvidenceMeasurement {
   note: string;
 }
 
+/**
+ * The arming bar, and — crucially — WHAT its required sample size counts.
+ *
+ * `requiredSampleSize` is almost never a bar on the whole feed: #4 bars the
+ * LATER chronological evaluation window, #27 bars the QUALIFYING subset. A
+ * surface that prints it beneath `sampleSize` without saying so lets an owner
+ * read "200 records / bar requires 200" as met while the barred quantity sits
+ * at 100. These two fields make the comparison impossible to get wrong.
+ */
+export interface EvidenceBar {
+  /** The arming bar in one sentence. */
+  description: string;
+  /** The sample size the bar requires. */
+  requiredSampleSize: number;
+  /** What `requiredSampleSize` COUNTS — NOT necessarily what `sampleSize` does. */
+  requiredSampleLabel: string;
+  /**
+   * `key` of the measurement carrying the quantity `requiredSampleSize` bars,
+   * so a surface can render the RIGHT number against the requirement.
+   * `null` only when the bar genuinely counts the whole sample.
+   * `buildEvidenceGateReport` throws when it names a measurement that is not
+   * in the report — a dangling pointer would silently fall back to the bare,
+   * misreadable number.
+   */
+  requiredSampleMeasurementKey: string | null;
+}
+
 /** The single owner press this report exists to inform — never taken here. */
 export interface OwnerPressDescriptor {
   /** What the press is, named exactly (env var, endpoint, button). */
@@ -120,14 +155,15 @@ export interface EvidenceGateReport {
   verdictReason: string;
   /** Derived from `verdict` — true ONLY for BAR_MET. Never hand-set. */
   barMet: boolean;
-  bar: {
-    /** The arming bar in one sentence. */
-    description: string;
-    /** The sample size the bar requires. */
-    requiredSampleSize: number;
-  };
+  bar: EvidenceBar;
   /** The sample the verdict was judged on. `null` = unreadable, not empty. */
   sampleSize: number | null;
+  /**
+   * What `sampleSize` COUNTS, in words ("labeled predictions journaled").
+   * Required, because a bare count next to a bare requirement is the misread
+   * this surface exists to prevent.
+   */
+  sampleLabel: string;
   window: EvidenceWindow | null;
   feed: EvidenceFeedStatus;
   measurements: EvidenceMeasurement[];
@@ -142,8 +178,9 @@ export interface BuildEvidenceGateReportInput {
   title: string;
   verdict: EvidenceGateVerdict;
   verdictReason: string;
-  bar: { description: string; requiredSampleSize: number };
+  bar: EvidenceBar;
   sampleSize: number | null;
+  sampleLabel: string;
   window: EvidenceWindow | null;
   feed: EvidenceFeedStatus;
   measurements: EvidenceMeasurement[];
@@ -152,13 +189,22 @@ export interface BuildEvidenceGateReportInput {
 }
 
 /**
- * The ONLY constructor. It derives `barMet` from the verdict and refuses to
- * let a caller mark a press available under any verdict but `BAR_MET` — so a
- * bug in one report cannot present an unmet bar as pressable.
+ * The ONLY constructor. It derives `barMet` from the verdict, refuses to let
+ * a caller mark a press available under any verdict but `BAR_MET` — so a bug
+ * in one report cannot present an unmet bar as pressable — and refuses a
+ * `requiredSampleMeasurementKey` that points at no measurement, so a surface
+ * can always render the barred quantity rather than the misreadable total.
  */
 export function buildEvidenceGateReport(
   input: BuildEvidenceGateReportInput,
 ): EvidenceGateReport {
+  const key = input.bar.requiredSampleMeasurementKey;
+  if (key !== null && !input.measurements.some((m) => m.key === key)) {
+    throw new Error(
+      `bar.requiredSampleMeasurementKey "${key}" names no measurement in report ${input.gateId} — ` +
+        `the bar's quantity would be unrenderable and the total shown in its place`,
+    );
+  }
   const barMet = input.verdict === "BAR_MET";
   const requestedAvailable = input.ownerPress.available ?? barMet;
   const available = barMet && requestedAvailable;
@@ -170,6 +216,7 @@ export function buildEvidenceGateReport(
     barMet,
     bar: input.bar,
     sampleSize: input.sampleSize,
+    sampleLabel: input.sampleLabel,
     window: input.window,
     feed: input.feed,
     measurements: input.measurements,

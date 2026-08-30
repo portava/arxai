@@ -13,6 +13,13 @@
 //     visibly different from a sample of 0.
 //   * A feed with no production writer says so, next to the sample size, so
 //     "0" is never mistaken for a quiet period.
+//   * THE NUMBER SHOWN AGAINST THE BAR IS THE BARRED QUANTITY, never the
+//     feed total. `sampleSize` counts the whole feed; `bar.requiredSampleSize`
+//     bars a narrower thing (#4 the later evaluation window, #27 the
+//     qualifying subset). Printing "200 records / bar requires 200" from two
+//     different quantities is a reassuring misread, so the tile labels what
+//     it counts and renders the requirement against the measurement the
+//     report points at.
 //   * There is NO button here. This card informs a press; it never takes one.
 
 import { useState } from "react";
@@ -41,8 +48,17 @@ export interface EvidenceGateReport {
   verdict: EvidenceGateVerdict;
   verdictReason: string;
   barMet: boolean;
-  bar: { description: string; requiredSampleSize: number };
+  bar: {
+    description: string;
+    requiredSampleSize: number;
+    /** What `requiredSampleSize` counts — NOT necessarily what sampleSize does. */
+    requiredSampleLabel: string;
+    /** `key` of the measurement carrying the barred quantity. */
+    requiredSampleMeasurementKey: string | null;
+  };
   sampleSize: number | null;
+  /** What `sampleSize` counts, in words. */
+  sampleLabel: string;
   window: { fromIso: string; toIso: string; spanDays: number } | null;
   feed: {
     feedId: string;
@@ -82,6 +98,27 @@ const VERDICT_COPY: Record<EvidenceGateVerdict, { text: string; className: strin
     className: "border-danger/40 bg-danger/10 text-danger",
   },
 };
+
+/**
+ * The one line under the sample count. It must never place `sampleSize`
+ * against `requiredSampleSize`: those two count different things. When the
+ * report names the measurement the bar actually judges, that measurement's
+ * value is what gets rendered against the requirement — and a measurement
+ * that was not taken reads NOT MEASURED, never 0.
+ */
+function barRequirementText(report: EvidenceGateReport): string {
+  const key = report.bar.requiredSampleMeasurementKey;
+  const barred = key === null ? null : report.measurements.find((m) => m.key === key);
+  const required = `${report.bar.requiredSampleSize} — ${report.bar.requiredSampleLabel}`;
+  if (key === null) return `Bar requires ${required}.`;
+  if (!barred) {
+    // Defensive: the domain constructor refuses to emit this, but a surface
+    // must degrade to an admission, never to the misreadable total.
+    return `Bar requires ${required}. The measured value is NOT AVAILABLE in this report — do not read the sample above as the barred quantity.`;
+  }
+  const measured = barred.value === null ? "NOT MEASURED" : String(barred.value);
+  return `Bar counts something narrower than the sample above: ${measured} of ${required}.`;
+}
 
 function formatValue(m: EvidenceMeasurement): string {
   if (m.value === null) return "NOT MEASURED";
@@ -142,10 +179,13 @@ export function EvidenceGateReportCard({
                 <div className="font-mono" data-testid={`${testid}-sample`}>
                   {report.sampleSize === null
                     ? "could not read (not zero — the source failed)"
-                    : `${report.sampleSize} record${report.sampleSize === 1 ? "" : "s"}`}
+                    : `${report.sampleSize} — ${report.sampleLabel}`}
                 </div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  Bar requires {report.bar.requiredSampleSize}.
+                <div
+                  className="mt-1 text-xs text-muted-foreground"
+                  data-testid={`${testid}-bar-requirement`}
+                >
+                  {barRequirementText(report)}
                 </div>
               </div>
               <div className="rounded-md border border-border p-2">

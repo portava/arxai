@@ -218,8 +218,16 @@ export function buildExecutionPolicyPromotionReport(
         `(each at n≥${MIN_FILL_SAMPLE} fills), of which ≥ ${PROMOTION_MIN_MEASURED_ADVANTAGE} show a non-tie measured advantage, ` +
         `of which ≥ ${PROMOTION_MIN_ADVANTAGE_CONSISTENCY_01 * 100}% favor the same shape`,
       requiredSampleSize: PROMOTION_MIN_QUALIFYING_RECOMMENDATIONS,
+      // NOT a bar on the journal total: most journaled recommendations never
+      // qualify (a shape without n≥MIN_FILL_SAMPLE fills is not measured).
+      // Naming the barred quantity here stops a surface from printing
+      // `recommendationsSeen` against this requirement.
+      requiredSampleLabel: `QUALIFYING recommendations — those with fill quality measured for BOTH shapes at n≥${MIN_FILL_SAMPLE} fills each (always ≤ the journal total)`,
+      requiredSampleMeasurementKey: "qualifyingCount",
     },
     sampleSize: ev === null ? null : ev.recommendationsSeen,
+    sampleLabel:
+      "readable shadow recommendations journaled in total (qualifying or not)",
     window: input.window,
     feed: { ...feedBase, rowsRead: input.journalRowsSeen, sourceError: input.sourceError ?? null },
     measurements,

@@ -43,8 +43,15 @@ export const CONFORMAL_COVERAGE_EVIDENCE_WINDOW = 5000;
  * lib/validation's `conformalGate` / `calibrateConformal` either. So the feed
  * has no writer and its sample cannot grow on its own.
  *
- * This constant is not a runtime guess — the proof suite greps the tree for a
- * writer and fails RED if one appears, forcing this to be updated with it.
+ * This constant is not a runtime guess — the proof suite greps the tree and
+ * fails RED if a writer appears, forcing this to be updated with it. The grep
+ * is deliberately WIDER than this one event-type string, because the string is
+ * a contract this report invented: a future writer could journal coverage
+ * evidence under a different name and leave this report blind while it kept
+ * printing "no writer, sample 0". So the suite also pins that
+ * `calibrateConformal` / `validateCoverage` / `conformalGate` still have no
+ * production caller (a real coverage writer must compute intervals through
+ * one of them) and that no rival CONFORMAL-named event-type literal exists.
  */
 export const CONFORMAL_ADVISORY_FEED_WRITER_WIRED = false;
 
@@ -58,10 +65,13 @@ export const CONFORMAL_ADVISORY_FEED_WRITER_WIRED = false;
 export const CONFORMAL_AUTHORITY_CALL_SITE_WIRED = false;
 
 export const CONFORMAL_ADVISORY_FEED_WRITER_NOTE =
-  "No production call site writes CONFORMAL_ADVISORY_PREDICTION: applyConformalAuthority is never invoked " +
-  "(runConfidenceGate has no live assembler), and lib/validation's conformalGate/calibrateConformal have no " +
-  "caller outside tests. A sample of 0 here therefore means 'no writer', not 'quiet period'. " +
-  "See docs/CONFORMAL_GATE_AUTHORITY.md (\"Integration status\").";
+  "CONFORMAL_ADVISORY_PREDICTION is a feed CONTRACT this report declares — no writer has ever emitted it. " +
+  "applyConformalAuthority is never invoked (runConfidenceGate has no live assembler), and lib/validation's " +
+  "conformalGate/calibrateConformal/validateCoverage have no caller outside tests. A sample of 0 here therefore " +
+  "means 'no writer', not 'quiet period'. And this report reads ONLY this event type with the payload contract " +
+  "{predicted, actual, predictedAt}: coverage evidence journaled under any other name or shape would be invisible " +
+  "here, so a writer MUST be built against the contract in docs/CONFORMAL_GATE_AUTHORITY.md " +
+  "(\"The feed contract\"). See also \"Integration status\" there.";
 
 type LoadedRecords =
   | { ok: true; records: LabeledConformalRecord[]; rowsSeen: number; unreadableRows: number }

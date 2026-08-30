@@ -186,6 +186,76 @@ test("records are ordered chronologically by the report, never assumed ordered",
   assert.deepEqual(b.window, a.window);
 });
 
+// ── 2b. sampleSize and the bar count DIFFERENT things, and say so ───────────
+//
+// The regression: `sampleSize` is the whole feed, `bar.requiredSampleSize`
+// bars the LATER window. At exactly 200 journaled records those two numbers
+// are "200" and "200" while the verdict is INSUFFICIENT_HISTORY. The report
+// must name both quantities and point at the measurement carrying the barred
+// one, so no surface can render the total against the requirement.
+
+test("at exactly the required TOTAL the verdict is still INSUFFICIENT — and the report says which quantity is barred", () => {
+  const r = buildConformalCoverageReport(input({ records: chronological(100, 100, 100) }));
+  assert.equal(r.sampleSize, 200, "the feed total is exactly the bar's number");
+  assert.equal(r.bar.requiredSampleSize, 200);
+  assert.equal(r.verdict, "INSUFFICIENT_HISTORY", "the totals coincide; the bar is NOT met");
+  assert.equal(r.coverage.evaluationWindowSize, 100);
+  // The two labels must make the mismatch legible in words.
+  assert.match(r.sampleLabel, /whole feed/i);
+  assert.match(r.bar.requiredSampleLabel, /LATER chronological evaluation window/);
+  // And the barred quantity must be reachable from the report itself.
+  assert.equal(r.bar.requiredSampleMeasurementKey, "evaluationWindowSize");
+  const barred = r.measurements.find((m) => m.key === r.bar.requiredSampleMeasurementKey);
+  assert.ok(barred, "the report must carry the measurement its bar points at");
+  assert.equal(barred!.value, 100, "the number a surface renders against the bar is 100, not 200");
+  assert.equal(barred!.met, false);
+});
+
+test("every verdict branch keeps the barred-measurement pointer resolvable", () => {
+  const cases = [
+    buildConformalCoverageReport(input({ records: [] })),
+    buildConformalCoverageReport(input({ records: chronological(50, 50, 50) })),
+    buildConformalCoverageReport(input({ records: chronological(200, 200, 180) })),
+    buildConformalCoverageReport(input({ records: chronological(200, 200, 100) })),
+    buildConformalCoverageReport(input({ records: null, sourceError: "boom" })),
+  ];
+  for (const r of cases) {
+    const key = r.bar.requiredSampleMeasurementKey;
+    assert.equal(key, "evaluationWindowSize", `verdict ${r.verdict} lost the pointer`);
+    assert.ok(
+      r.measurements.some((m) => m.key === key),
+      `verdict ${r.verdict} points at a measurement it does not carry`,
+    );
+    assert.ok(r.sampleLabel.length > 0 && r.bar.requiredSampleLabel.length > 0);
+  }
+});
+
+test("the constructor REFUSES a barred-measurement pointer that names nothing", () => {
+  assert.throws(
+    () =>
+      buildEvidenceGateReport({
+        gateId: "x",
+        title: "x",
+        verdict: "INSUFFICIENT_HISTORY",
+        verdictReason: "r",
+        bar: {
+          description: "d",
+          requiredSampleSize: 200,
+          requiredSampleLabel: "l",
+          requiredSampleMeasurementKey: "missingKey",
+        },
+        sampleSize: 200,
+        sampleLabel: "s",
+        window: null,
+        feed: { feedId: "f", writerWired: false, writerNote: "n", rowsRead: 200, unreadableRows: 0, sourceError: null },
+        measurements: [],
+        ownerPress: { label: "l", steps: [], unavailableReason: null, whatItChanges: [] },
+        generatedAtIso: "2026-08-29T00:00:00.000Z",
+      }),
+    /names no measurement/,
+  );
+});
+
 // ── 3. An unreadable source is not an empty one ─────────────────────────────
 
 test("SOURCE_UNREADABLE reports sampleSize null — never 0", () => {
@@ -246,8 +316,14 @@ test("barMet is derived from the verdict — a caller cannot hand-set an availab
     title: "x",
     verdict: "BAR_NOT_MET",
     verdictReason: "r",
-    bar: { description: "d", requiredSampleSize: 1 },
+    bar: {
+      description: "d",
+      requiredSampleSize: 1,
+      requiredSampleLabel: "l",
+      requiredSampleMeasurementKey: null,
+    },
     sampleSize: 1,
+    sampleLabel: "s",
     window: null,
     feed: { feedId: "f", writerWired: false, writerNote: "n", rowsRead: 1, unreadableRows: 0, sourceError: null },
     measurements: [],
@@ -309,6 +385,69 @@ test("nothing writes the CONFORMAL_ADVISORY_PREDICTION feed (the constant must s
     ],
     "a new reference to the conformal advisory feed appeared — if it is a WRITER, flip CONFORMAL_ADVISORY_FEED_WRITER_WIRED to true",
   );
+});
+
+// The event-type grep above only catches a writer that uses THIS string. But
+// CONFORMAL_ADVISORY_PREDICTION is a contract this report invented — a writer
+// that journals coverage evidence under a different name would leave the
+// report blind while it kept printing "no writer, sample 0". These two pins
+// widen the net: any real coverage writer has to compute conformal intervals
+// through lib/validation, and a rival feed would almost certainly be named
+// with the word CONFORMAL. Neither is airtight (a hand-rolled interval under
+// an unrelated event name defeats both) — the residue is stated in
+// docs/CONFORMAL_GATE_AUTHORITY.md ("The feed contract") rather than papered
+// over here.
+
+test("nothing computes conformal intervals in production — no writer can exist under ANY event name", () => {
+  const roots = [path.join(REPO_ROOT, "artifacts"), path.join(REPO_ROOT, "lib")];
+  for (const fn of ["calibrateConformal(", "validateCoverage(", "conformalGate("]) {
+    const files = roots
+      .flatMap((root) => grepFiles(fn, root))
+      .filter((f) => !f.includes("__qa__") && !/\.test\.tsx?$/.test(f))
+      // lib/validation DEFINES these; defining them is not calling them.
+      .filter((f) => f !== "lib/validation/src/conformal.ts");
+    assert.deepEqual(
+      files.sort(),
+      [],
+      `${fn} gained a production call site: ${files.join(", ")} — a conformal writer may now exist. ` +
+        "Check whether it journals coverage evidence, and if so wire the feed constants and this test together.",
+    );
+  }
+});
+
+test("no RIVAL conformal-named audit event type exists in production source", () => {
+  const roots = [path.join(REPO_ROOT, "artifacts"), path.join(REPO_ROOT, "lib")];
+  const seen = new Set<string>();
+  for (const root of roots) {
+    for (const rel of grepFiles("CONFORMAL", root)) {
+      if (rel.includes("__qa__") || /\.test\.tsx?$/.test(rel)) continue;
+      const text = readFileSync(path.join(REPO_ROOT, rel), "utf8");
+      // Event-type literals are SCREAMING_SNAKE strings; collect every one
+      // that mentions CONFORMAL so a second feed name cannot slip in quietly.
+      for (const m of text.matchAll(/"([A-Z][A-Z0-9_]*CONFORMAL[A-Z0-9_]*|CONFORMAL[A-Z0-9_]*)"/g)) {
+        seen.add(m[1]!);
+      }
+    }
+  }
+  // The flag's env-var name is the one other CONFORMAL literal production
+  // source is allowed to carry; it names a press, not a feed.
+  assert.deepEqual(
+    [...seen].sort(),
+    ["ARX_CONFORMAL_GATE_ENABLED", CONFORMAL_ADVISORY_PREDICTION_EVENT_TYPE].sort(),
+    "a new CONFORMAL-named literal appeared — if it is a rival evidence feed, this report is blind to it",
+  );
+});
+
+test("the writer note names the feed as a CONTRACT, not an existing empty feed", () => {
+  const src = readFileSync(SOURCE_FILE, "utf8");
+  assert.match(src, /CONFORMAL_ADVISORY_PREDICTION is a feed CONTRACT this report declares/);
+  // A future writer must be able to find the payload shape it has to emit.
+  assert.match(src, /\{predicted, actual, predictedAt\}/);
+  const doc = readFileSync(path.join(REPO_ROOT, "docs/CONFORMAL_GATE_AUTHORITY.md"), "utf8");
+  assert.match(doc, /## The feed contract/);
+  for (const field of ["`payload.predicted`", "`payload.actual`", "`payload.predictedAt`"]) {
+    assert.ok(doc.includes(field), `the feed contract must document ${field}`);
+  }
 });
 
 test("applyConformalAuthority still has no production call site (the flag is a no-op today)", () => {

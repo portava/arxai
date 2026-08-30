@@ -369,8 +369,17 @@ function finish(args: {
         `measured on a LATER chronological window of at least ${args.minWindow} labeled predictions ` +
         `(proveConformalCoverage — the same proof the authority path requires)`,
       requiredSampleSize: args.minWindow,
+      // NOT a bar on the whole feed: the chronological split spends the
+      // earliest half on calibration, so a feed of exactly `minWindow` rows
+      // clears nothing. Naming the barred quantity here stops a surface from
+      // printing the total against this requirement.
+      requiredSampleLabel:
+        "labeled predictions in the LATER chronological evaluation window (the earlier share is spent on calibration, so this is always smaller than the feed total)",
+      requiredSampleMeasurementKey: "evaluationWindowSize",
     },
     sampleSize: args.sampleSize,
+    sampleLabel:
+      "labeled predictions journaled in total (the whole feed, before the calibration/evaluation split)",
     window: args.window,
     feed: args.feed,
     measurements: args.measurements,
