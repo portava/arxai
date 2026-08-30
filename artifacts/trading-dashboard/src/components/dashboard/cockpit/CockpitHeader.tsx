@@ -5,7 +5,7 @@
 // (notification count), useCurrentUser/useLogout (profile + sign out).
 
 import type { ReactNode } from "react";
-import { User as UserIcon } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { ARXLogoMark, ARXWordmark } from "@/components/brand/ARXLogo";
 import { SymbolPicker } from "@/components/layout/SymbolPicker";
 import { NotificationBell } from "@/components/alerts/NotificationBell";
@@ -35,20 +35,30 @@ export function CockpitHeader({ onMobileMenu }: { onMobileMenu?: ReactNode }) {
           <SymbolPicker />
         </div>
 
-        {/* bell + profile */}
+        {/* bell + sign out
+            This control's ONLY handler is logout. It used to render a generic
+            person icon titled with the user's name, so it read as a profile /
+            account button — one click signed the user out mid-session on the
+            home page of a live-trading platform, with no confirmation. It now
+            looks like, and says, what it does. */}
         <div className="flex items-center gap-1">
           <NotificationBell />
           {user && (
             <Button
               variant="ghost"
-              size="icon"
-              onClick={() => logout.mutate()}
+              size="sm"
+              onClick={() => {
+                if (logout.isPending) return;
+                if (window.confirm("Sign out of ARX AI?")) logout.mutate();
+              }}
               disabled={logout.isPending}
               data-testid="button-logout"
-              title={user.name || user.email || "Account"}
+              title="Sign out"
               aria-label="Sign out"
+              className="gap-1.5"
             >
-              <UserIcon className="h-5 w-5" />
+              <LogOut className="h-4 w-4" />
+              <span className="hidden text-xs sm:inline">Sign out</span>
             </Button>
           )}
         </div>

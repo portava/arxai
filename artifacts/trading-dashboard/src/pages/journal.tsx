@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { EmptyState } from "@/components/ui/EmptyState";
 import { NotebookPen } from "lucide-react";
 import { STATUS_COLORS, directionTone } from "@/lib/design-tokens";
+import { resolveJournalStats, type JournalLikeEntry } from "@/lib/moneyBasis";
 import { cn } from "@/lib/utils";
 
 function fetchJournal() {
@@ -68,9 +69,15 @@ export default function JournalPage() {
   const filtered = filterEmotion === "All" ? entries : entries.filter((e: any) => e.emotionTag === filterEmotion);
 
   // Stats
-  const totalPnl = entries.reduce((s: number, e: any) => s + (e.pnl ?? 0), 0);
-  const wins = entries.filter((e: any) => (e.pnl ?? 0) > 0).length;
-  const winRate = entries.length > 0 ? Math.round((wins / entries.length) * 100) : 0;
+  //
+  // Win rate is computed over DECIDED entries only. An entry with no P/L, and
+  // a `WAIT` row (a no-trade observation, not a trade), are not losses — the
+  // old denominator was `entries.length`, so logging a WAIT observation or a
+  // trade you had not priced yet silently dropped the displayed win rate.
+  // The denominator is shown next to the figure so it is never ambiguous.
+  // See lib/moneyBasis.ts (resolveJournalStats) for the pinned contract.
+  const stats = resolveJournalStats(entries as JournalLikeEntry[]);
+  const { decided: decidedCount, undecided: undecidedCount, winRate, totalPnl } = stats;
   const emotions: Record<string, number> = {};
   entries.forEach((e: any) => { if (e.emotionTag) emotions[e.emotionTag] = (emotions[e.emotionTag] ?? 0) + 1; });
   const topEmotion = Object.entries(emotions).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "—";
@@ -90,14 +97,35 @@ export default function JournalPage() {
       {/* Stats row */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         {[
-          { label: "Total Entries", value: entries.length, cls: "text-foreground" },
-          { label: "Win Rate", value: `${winRate}%`, cls: winRate >= 50 ? "text-success" : "text-danger" },
-          { label: "Total P&L", value: `$${totalPnl.toFixed(2)}`, cls: totalPnl >= 0 ? "text-success" : "text-danger" },
-          { label: "Top Emotion", value: topEmotion, cls: topEmotion === "Disciplined" ? "text-success" : topEmotion === "FOMO" || topEmotion === "Revenge" ? "text-danger" : "text-warning" },
+          {
+            label: "Total Entries",
+            value: entries.length,
+            cls: "text-foreground",
+            sub: undecidedCount > 0 ? `${decidedCount} decided · ${undecidedCount} without P/L` : undefined,
+          },
+          {
+            label: "Win Rate",
+            value: winRate == null ? "—" : `${winRate}%`,
+            cls: winRate == null ? "text-txt-muted" : winRate >= 50 ? "text-success" : "text-danger",
+            sub: winRate == null ? "No entry has a P/L yet" : `of ${decidedCount} decided`,
+          },
+          {
+            label: "Total P&L",
+            value: totalPnl == null ? "—" : `$${totalPnl.toFixed(2)}`,
+            cls: totalPnl == null ? "text-txt-muted" : totalPnl >= 0 ? "text-success" : "text-danger",
+            sub: "Self-reported — not broker-confirmed",
+          },
+          {
+            label: "Top Emotion",
+            value: topEmotion,
+            cls: topEmotion === "Disciplined" ? "text-success" : topEmotion === "FOMO" || topEmotion === "Revenge" ? "text-danger" : "text-warning",
+            sub: undefined,
+          },
         ].map((s) => (
           <div key={s.label} className="rounded-xl border border-card-border bg-card p-4 shadow-sm">
             <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{s.label}</div>
             <div className={cn("text-xl font-bold tabular-nums", s.cls)}>{s.value}</div>
+            {s.sub && <div className="mt-0.5 text-[10px] leading-tight text-muted-foreground">{s.sub}</div>}
           </div>
         ))}
       </div>

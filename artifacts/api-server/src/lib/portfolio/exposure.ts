@@ -1,4 +1,9 @@
 import type { Trade } from "@workspace/db";
+import {
+  resolveTradeScope,
+  inScope,
+  type ScopeMode,
+} from "../performance/tradeScope.js";
 
 export interface CurrencyExposure {
   currency: string;
@@ -8,13 +13,31 @@ export interface CurrencyExposure {
 export interface PortfolioExposure {
   totalOpen: number;
   totalClosed: number;
-  floatingPnl: number;
+  /**
+   * Unrealised P/L on OPEN positions, or null when no mark-to-market source
+   * exists. `trades.pnl` is written ONLY at close — every writer in this repo
+   * does — so summing it over OPEN rows produced a permanent, confident
+   * "$0.00" on a page showing genuinely open positions. A missing read is a
+   * typed null with a reason, never a reassuring zero.
+   */
+  floatingPnl: number | null;
+  floatingPnlStatus: "NOT_MARKED_TO_MARKET" | "COMPUTED";
   realizedPnl: number;
+  /** Closed rows dropped from realizedPnl because pnlStatus === "UNKNOWN". */
+  realizedPnlExcludedUnknownCount: number;
   exposureByMarket: Record<string, number>;
   exposureByStrategy: Record<string, number>;
   exposureByCurrency: CurrencyExposure[];
-  dailyDrawdown: number;
-  weeklyDrawdown: number;
+  /**
+   * NET realised P/L over the window. Deliberately NOT called "drawdown":
+   * a day that ran +$500 then -$300 nets +$200, and the real $300 intraday
+   * drawdown is invisible to a sum of closed P/L. Naming it "drawdown" made
+   * a risk figure that could never fire.
+   */
+  netPnlToday: number;
+  netPnlWeek: number;
+  /** Which execution environment every figure above belongs to. */
+  scopeMode: ScopeMode;
 }
 
 export interface CorrelationWarning {
@@ -45,20 +68,28 @@ function marketTypeOf(symbol: string): string {
   return "Other";
 }
 
-export function computeExposure(trades: Trade[]): PortfolioExposure {
+export function computeExposure(allTrades: Trade[]): PortfolioExposure {
+  // Environment scoping — a real broker close and a simulator close never
+  // land in the same total. See lib/performance/tradeScope.ts.
+  const scope = resolveTradeScope(allTrades);
+  const trades = inScope(allTrades, scope.mode);
+
   const open = trades.filter((t) => t.status === "OPEN");
-  const closed = trades.filter((t) => t.status === "CLOSED_WIN" || t.status === "CLOSED_LOSS");
+  const closedAll = trades.filter((t) => t.status === "CLOSED_WIN" || t.status === "CLOSED_LOSS");
+  // pnlStatus="UNKNOWN" means the broker never reported a usable close fill.
+  // Such a row contributed $0.00 to realizedPnl AND still counted as a
+  // closed win/loss — an under-count presented as a complete figure.
+  const excludedUnknown = closedAll.filter((t) => t.pnlStatus === "UNKNOWN");
+  const closed = closedAll.filter((t) => t.pnlStatus !== "UNKNOWN");
 
   const exposureByMarket: Record<string, number> = {};
   const exposureByStrategy: Record<string, number> = {};
   const currencyMap = new Map<string, number>();
-  let floating = 0;
 
   for (const t of open) {
     const mt = marketTypeOf(t.symbol);
     exposureByMarket[mt] = (exposureByMarket[mt] ?? 0) + t.lot;
     exposureByStrategy[t.strategy] = (exposureByStrategy[t.strategy] ?? 0) + t.lot;
-    floating += t.pnl ?? 0;
     const pair = PAIR_CURRENCIES[t.symbol];
     if (pair) {
       const sign = t.direction === "BUY" ? 1 : -1;
@@ -72,23 +103,30 @@ export function computeExposure(trades: Trade[]): PortfolioExposure {
   const now = Date.now();
   const dailyTrades = closed.filter((t) => t.closedAt && now - new Date(t.closedAt).getTime() < dayMs);
   const weeklyTrades = closed.filter((t) => t.closedAt && now - new Date(t.closedAt).getTime() < 7 * dayMs);
-  const dailyDrawdown = Math.min(0, dailyTrades.reduce((a, t) => a + (t.pnl ?? 0), 0));
-  const weeklyDrawdown = Math.min(0, weeklyTrades.reduce((a, t) => a + (t.pnl ?? 0), 0));
+  const netPnlToday = dailyTrades.reduce((a, t) => a + (t.pnl ?? 0), 0);
+  const netPnlWeek = weeklyTrades.reduce((a, t) => a + (t.pnl ?? 0), 0);
 
   return {
     totalOpen: open.length,
     totalClosed: closed.length,
-    floatingPnl: floating,
+    // No mark-to-market source exists on this path. Report the hole.
+    floatingPnl: null,
+    floatingPnlStatus: "NOT_MARKED_TO_MARKET",
     realizedPnl: realized,
+    realizedPnlExcludedUnknownCount: excludedUnknown.length,
     exposureByMarket,
     exposureByStrategy,
     exposureByCurrency: [...currencyMap.entries()].map(([currency, netLots]) => ({ currency, netLots })),
-    dailyDrawdown,
-    weeklyDrawdown,
+    netPnlToday,
+    netPnlWeek,
+    scopeMode: scope.mode,
   };
 }
 
-export function detectCorrelationWarnings(trades: Trade[]): CorrelationWarning[] {
+export function detectCorrelationWarnings(allTrades: Trade[]): CorrelationWarning[] {
+  // Same environment scope as computeExposure, so a warning never names a
+  // position that the exposure panel beside it does not show.
+  const trades = inScope(allTrades, resolveTradeScope(allTrades).mode);
   const open = trades.filter((t) => t.status === "OPEN");
   const warnings: CorrelationWarning[] = [];
 

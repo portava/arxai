@@ -10,7 +10,22 @@ export interface TradeManagementSnapshot {
   tradeId: number;
   currentPrice: number;
   rMultiple: number;
-  floatingPnl: number;
+  /**
+   * Unrealised P/L in account currency — ALWAYS null on this path.
+   *
+   * This module has no contract size, no pip value and no quote-currency
+   * conversion. The previous implementation was
+   *   (currentPrice - entryPrice) * direction * lot * 100
+   * — a universal x100 that priced a JPY pair, an index and a gold position
+   * identically. That invented dollar amount was written straight into
+   * `trades.pnl` by POST /trade-management/:id/close and then flowed into
+   * "Realized P/L" on Account Analytics and "Realized P&L" on Portfolio.
+   * The only honest value here is null with a reason.
+   */
+  floatingPnl: number | null;
+  floatingPnlStatus: "NOT_PRICEABLE" | "COMPUTED";
+  /** Signed price distance from entry, positive when in profit. Unit-free of dollars. */
+  priceMove: number;
   health: ReturnType<typeof tradeHealthScore>;
   suggestions: {
     breakEven: ReturnType<typeof breakEvenSuggestion>;
@@ -28,7 +43,9 @@ export async function evaluateTrade(trade: Trade): Promise<TradeManagementSnapsh
   const risk = Math.abs(trade.entryPrice - trade.stopLoss) || 1e-6;
   const direction = trade.direction === "BUY" ? 1 : -1;
   const rMultiple = ((currentPrice - trade.entryPrice) * direction) / risk;
-  const floatingPnl = (currentPrice - trade.entryPrice) * direction * trade.lot * 100;
+  // Signed price move only. No dollar figure is produced here — see the
+  // `floatingPnl` doc comment on TradeManagementSnapshot.
+  const priceMove = (currentPrice - trade.entryPrice) * direction;
 
   const health = tradeHealthScore(trade, currentPrice);
   const suggestions = {
@@ -49,7 +66,9 @@ export async function evaluateTrade(trade: Trade): Promise<TradeManagementSnapsh
     tradeId: trade.id,
     currentPrice,
     rMultiple,
-    floatingPnl,
+    floatingPnl: null,
+    floatingPnlStatus: "NOT_PRICEABLE",
+    priceMove,
     health,
     suggestions,
     primarySuggestion: ranked[0]?.suggestion ?? "Hold — no action recommended.",

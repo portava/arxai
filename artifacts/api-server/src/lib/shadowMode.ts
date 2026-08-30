@@ -331,6 +331,26 @@ export const TOURNAMENT_STRATEGIES = [
 let tournamentStartedAt: string | null = null;
 let tournamentEnabled = false;
 
+/**
+ * Expectancy per trade, in R, from SEPARATED win and loss legs.
+ *
+ * The previous inline formula was
+ *   winRate * max(0, avgR) - (1 - winRate) * 1
+ * where `avgR = sumR / n` is already the mean R across wins AND losses. The
+ * loss leg was therefore subtracted a second time, and the size of a loss was
+ * pinned to a hardcoded 1R regardless of what the losses actually were. The
+ * result was systematically too low and almost always negative — and the
+ * tournament sorts `bestOverall` / picks `toRetire` by it, so it could crown
+ * the wrong winner and recommend retiring a profitable strategy.
+ *
+ * @param winRate  fraction in [0,1]
+ * @param avgWinR  mean R of winning trades (>= 0 in practice)
+ * @param avgLossR mean R of losing trades — ALREADY NEGATIVE, not an absolute
+ */
+export function expectancyFromLegs(winRate: number, avgWinR: number, avgLossR: number): number {
+  return winRate * avgWinR + (1 - winRate) * avgLossR;
+}
+
 export function startTournament(): { running: boolean } {
   tournamentEnabled = true; tournamentStartedAt = new Date().toISOString();
   if (!shadowEnabled) startShadowMode();
@@ -339,19 +359,22 @@ export function startTournament(): { running: boolean } {
 export function tournamentResults() {
   const since = tournamentStartedAt ? Date.parse(tournamentStartedAt) : 0;
   const arr = [...decisions.values()].filter((d) => Date.parse(d.ts) >= since);
-  const byStrategy: Record<string, { n: number; wins: number; losses: number; sumR: number; rgBlocks: number; gradeSum: number; gradeN: number }> = {};
+  const byStrategy: Record<string, { n: number; wins: number; losses: number; sumR: number; sumWinR: number; sumLossR: number; rgBlocks: number; gradeSum: number; gradeN: number }> = {};
   for (const d of arr) {
-    const s = byStrategy[d.strategy] = byStrategy[d.strategy] ?? { n: 0, wins: 0, losses: 0, sumR: 0, rgBlocks: 0, gradeSum: 0, gradeN: 0 };
+    const s = byStrategy[d.strategy] = byStrategy[d.strategy] ?? { n: 0, wins: 0, losses: 0, sumR: 0, sumWinR: 0, sumLossR: 0, rgBlocks: 0, gradeSum: 0, gradeN: 0 };
     s.gradeSum += d.grade; s.gradeN++;
     if (!d.riskGovernor.approved) s.rgBlocks++;
-    if (d.status === "SHADOW_WIN") { s.n++; s.wins++; s.sumR += d.pnlR ?? 0; }
-    else if (d.status === "SHADOW_LOSS") { s.n++; s.losses++; s.sumR += d.pnlR ?? 0; }
+    if (d.status === "SHADOW_WIN") { s.n++; s.wins++; s.sumR += d.pnlR ?? 0; s.sumWinR += d.pnlR ?? 0; }
+    else if (d.status === "SHADOW_LOSS") { s.n++; s.losses++; s.sumR += d.pnlR ?? 0; s.sumLossR += d.pnlR ?? 0; }
   }
   const rows = Object.entries(byStrategy).map(([strategy, s]) => {
     const winRate = s.n ? s.wins / s.n : 0;
     const avgR = s.n ? s.sumR / s.n : 0;
     const profitFactor = s.losses ? Math.max(0, s.sumR + s.losses) / s.losses : s.wins;
-    const expectancy = winRate * Math.max(0, avgR) - (1 - winRate) * 1;
+    // Expectancy per trade in R, from SEPARATED legs. See expectancyFromLegs.
+    const avgWinR = s.wins ? s.sumWinR / s.wins : 0;
+    const avgLossR = s.losses ? s.sumLossR / s.losses : 0; // already negative
+    const expectancy = expectancyFromLegs(winRate, avgWinR, avgLossR);
     const riskAdj = s.n ? avgR / Math.max(0.5, Math.sqrt(s.n)) : 0;
     return {
       strategy, sample: s.n, winRate: Number((winRate * 100).toFixed(1)),

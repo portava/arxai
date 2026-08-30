@@ -6,13 +6,17 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { TradeHealth } from "./tradeHealth";
+import type { TradeSnapshotFloatingPnlStatus } from "./tradeSnapshotFloatingPnlStatus";
 import type { TradeSnapshotSuggestions } from "./tradeSnapshotSuggestions";
 
 export interface TradeSnapshot {
   tradeId: number;
   currentPrice: number;
   rMultiple: number;
-  floatingPnl: number;
+  /** @nullable */
+  floatingPnl: number | null;
+  floatingPnlStatus: TradeSnapshotFloatingPnlStatus;
+  priceMove: number;
   health: TradeHealth;
   primarySuggestion: string;
   invalidated: boolean;

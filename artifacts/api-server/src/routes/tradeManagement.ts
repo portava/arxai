@@ -29,6 +29,7 @@ import { z } from "zod/v4";
 import { requireUser } from "../lib/auth/middleware.js";
 import { evaluateTrade } from "../lib/tradeManagement/tradeManager.js";
 import { createAlert } from "../lib/alerts/alertManager.js";
+import { PNL_FLAG_SIMULATED_CLOSE } from "@workspace/domain/safety-contracts/eaCloseFill";
 
 const router = Router();
 
@@ -168,24 +169,48 @@ router.post("/trade-management/:id/close", requireUser, async (req, res) => {
   if (isLiveRow(trade)) { refuseLive(res); return; }
 
   const snap = await evaluateTrade(trade);
-  const status: "CLOSED_WIN" | "CLOSED_LOSS" = snap.floatingPnl >= 0 ? "CLOSED_WIN" : "CLOSED_LOSS";
+  // Win/loss direction is honest — it is the SIGN of the price move, which
+  // needs no contract size. The DOLLAR amount is not: this path has no pip
+  // value or quote-currency conversion, so it writes NO pnl and marks the row
+  // pnlStatus="UNKNOWN". Every money aggregate (/performance/summary,
+  // /performance/daily, /performance/strategy-breakdown, /portfolio/exposure)
+  // already excludes UNKNOWN rows and the Trade Logs UI renders
+  // "P/L unavailable" for them. A number labelled "(mock)" in its own
+  // response must never enter a money aggregate.
+  const status: "CLOSED_WIN" | "CLOSED_LOSS" = snap.priceMove >= 0 ? "CLOSED_WIN" : "CLOSED_LOSS";
   const updated = await db.update(tradesTable).set({
-    status, pnl: Number(snap.floatingPnl.toFixed(2)), closedAt: new Date(),
+    status,
+    pnl: null,
+    pnlStatus: "UNKNOWN",
+    // Shared constant: the Trade Logs P/L cell reads this exact flag to decide
+    // that the row's missing P/L is NOT an EA-age problem, so it must never
+    // show the "EA too old — upgrade to v1.28" nudge for a close that had no
+    // EA and no broker in it. See @workspace/domain/safety-contracts/eaCloseFill.
+    dataQualityFlag: PNL_FLAG_SIMULATED_CLOSE,
+    closedAt: new Date(),
+    // ownedRow(), not eq(id): the id space is sequential across tenants, so an
+    // unscoped update let any signed-in user close a stranger's trade.
   }).where(ownedRow(id, userId)).returning();
   const row = requireUpdated(updated, res); if (!row) return;
+
+  const detail =
+    `${trade.symbol} ${trade.direction} closed at ${snap.currentPrice.toFixed(5)} ` +
+    `(${snap.priceMove >= 0 ? "+" : ""}${snap.priceMove.toFixed(5)} from entry). ` +
+    `P/L unavailable — this simulated close is not priced in account currency.`;
 
   await createAlert({
     type: "TRADE_CLOSED",
     severity: status === "CLOSED_WIN" ? "success" : "warning",
-    title: `Trade closed (${status === "CLOSED_WIN" ? "win" : "loss"})`,
-    message: `${trade.symbol} ${trade.direction} closed at ${snap.currentPrice.toFixed(5)} for ${snap.floatingPnl.toFixed(2)}. ${TRADE_MANAGEMENT_SIMULATION_NOTE}`,
+    title: `Trade closed (${status === "CLOSED_WIN" ? "in profit" : "at a loss"})`,
+    message: detail,
     symbol: trade.symbol,
   });
 
   res.json({
     success: true,
     simulated: true,
-    message: `Trade closed at ${snap.currentPrice.toFixed(5)} for ${snap.floatingPnl.toFixed(2)}. ${TRADE_MANAGEMENT_SIMULATION_NOTE}`,
+    message: detail,
+    pnlStatus: "UNKNOWN",
     trade: serialiseTrade(row),
   });
 });

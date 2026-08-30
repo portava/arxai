@@ -51,6 +51,43 @@ describe("PnlCell — EA upgrade nudge", () => {
     expect(screen.queryByText("P/L unavailable")).toBeNull();
   });
 
+  // REVIEW FINDING (high): the rank-29 fix routes every simulated close to
+  // pnlStatus="UNKNOWN" with reportedEaVersion left null, and
+  // eaTooOldForCloseFill(null) is true by design — so the EA nudge rendered on
+  // every one of them. That prints a false causal claim: it blames an EA that
+  // was never involved (POST /trade-management/:id/close touches no EA and no
+  // broker) and sends the user to /mt5-setup to upgrade to v1.28, which cannot
+  // make a simulated close priceable. The row already carries
+  // dataQualityFlag="SIMULATED_CLOSE_NO_PRICED_PNL" and trade-logs.tsx already
+  // passes it in; it just was not consulted.
+  it("never shows the EA nudge for a SIMULATED close (no EA was involved)", () => {
+    render(
+      <PnlCell
+        id={201}
+        pnlStatus="UNKNOWN"
+        reportedEaVersion={null}
+        dataQualityFlag="SIMULATED_CLOSE_NO_PRICED_PNL"
+      />,
+    );
+    expect(screen.queryByTestId("trade-ea-upgrade-hint-201")).toBeNull();
+    expect(screen.queryByText(/EA too old/)).toBeNull();
+    expect(screen.queryByText("upgrade to v1.28")).toBeNull();
+    // The honest headline is unchanged.
+    expect(screen.getByText("P/L unavailable")).toBeTruthy();
+  });
+
+  it("still shows the EA nudge for a real BROKER close with a missing fill", () => {
+    render(
+      <PnlCell
+        id={202}
+        pnlStatus="UNKNOWN"
+        reportedEaVersion={null}
+        dataQualityFlag="MISSING_CLOSE_FILL_PRICE"
+      />,
+    );
+    expect(screen.getByTestId("trade-ea-upgrade-hint-202")).toBeTruthy();
+  });
+
   it("only shows the reported-version diagnostic to operators", () => {
     const { rerender } = render(
       <PnlCell id={107} pnlStatus="UNKNOWN" reportedEaVersion="1.27" />,

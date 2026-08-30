@@ -18364,10 +18364,56 @@ components:
           type: object
           additionalProperties: true
 
+    PerformanceTodayBlock:
+      type: object
+      description: >-
+        Aggregates recomputed over trades CLOSED TODAY ONLY (server-local
+        yyyy-mm-dd of closedAt). The sibling top-level fields on
+        PerformanceSummary are all-time; a surface titled "Today" MUST read
+        this block instead of them.
+      required: [trades, wins, losses, winRate, pnl, bestTradePnl, worstTradePnl, excludedUnknownCount]
+      properties:
+        trades: { type: integer }
+        wins: { type: integer }
+        losses: { type: integer }
+        winRate: { type: number }
+        pnl: { type: number }
+        bestTradePnl: { type: ["number", "null"] }
+        worstTradePnl: { type: ["number", "null"] }
+        excludedUnknownCount: { type: integer }
+
     PerformanceSummary:
       type: object
-      required: [accountBalance, todayPnl, todayPnlPct, totalPnl, winRate, maxDrawdown, totalTrades, winningTrades, losingTrades, openTrades, bestTradePnl, worstTradePnl, profitFactor, avgConfidence, excludedUnknownCount]
+      required: [accountBalance, todayPnl, todayPnlPct, totalPnl, winRate, maxDrawdown, totalTrades, winningTrades, losingTrades, openTrades, bestTradePnl, worstTradePnl, profitFactor, avgConfidence, excludedUnknownCount, scopeMode, scopeModeReason, otherModeTradeCount, baselineSource, baselineValue, today]
       properties:
+        # ── Basis declaration ────────────────────────────────────────────
+        # Every money figure in this response is scoped to EXACTLY ONE
+        # execution environment. Real broker P/L and simulator P/L are never
+        # summed into one number. The UI MUST render scopeMode next to any
+        # figure it takes from here.
+        scopeMode:
+          type: string
+          enum: [LIVE, DEMO]
+        scopeModeReason:
+          type: string
+          enum: [LIVE_TRADES_PRESENT, ONLY_DEMO_TRADES, NO_TRADES]
+        # Closed trades belonging to the OTHER environment that were
+        # deliberately excluded from every aggregate here.
+        otherModeTradeCount:
+          type: integer
+        # Where the equity-curve / drawdown anchor came from.
+        #   ASSIGNED — operator-assigned capital (a real figure).
+        #   NOTIONAL — a fixed notional anchor used only for curve SHAPE.
+        #              Absolute dollar values built on it are NOT the user's
+        #              broker balance and MUST be labelled as notional.
+        #   NONE     — no anchor at all (no assigned capital, no trades).
+        baselineSource:
+          type: string
+          enum: [ASSIGNED, NOTIONAL, NONE]
+        baselineValue:
+          type: number
+        today:
+          $ref: "#/components/schemas/PerformanceTodayBlock"
         accountBalance:
           type: number
         todayPnl:
@@ -19055,12 +19101,24 @@ components:
 
     TradeSnapshot:
       type: object
-      required: [tradeId, currentPrice, rMultiple, floatingPnl, health, primarySuggestion, invalidated, suggestions]
+      required: [tradeId, currentPrice, rMultiple, floatingPnl, floatingPnlStatus, priceMove, health, primarySuggestion, invalidated, suggestions]
       properties:
         tradeId: { type: integer }
         currentPrice: { type: number }
         rMultiple: { type: number }
-        floatingPnl: { type: number }
+        # Unrealised P/L in account currency. NULL on this path: the snapshot
+        # has no contract size, pip value or quote-currency conversion, so a
+        # dollar figure here would be invented (the previous implementation
+        # applied a universal x100 to every instrument, giving a JPY pair and
+        # a gold position the same multiplier). `rMultiple` and `priceMove`
+        # are unit-free and remain honest.
+        floatingPnl: { type: ["number", "null"] }
+        floatingPnlStatus:
+          type: string
+          enum: [NOT_PRICEABLE, COMPUTED]
+        # Signed price distance from entry in the instrument's own quote
+        # units, positive when the trade is in profit.
+        priceMove: { type: number }
         health:
           $ref: "#/components/schemas/TradeHealth"
         primarySuggestion: { type: string }
@@ -19908,12 +19966,28 @@ components:
 
     PortfolioExposure:
       type: object
-      required: [totalOpen, totalClosed, floatingPnl, realizedPnl, exposureByMarket, exposureByStrategy, exposureByCurrency, dailyDrawdown, weeklyDrawdown]
+      required: [totalOpen, totalClosed, floatingPnl, floatingPnlStatus, realizedPnl, realizedPnlExcludedUnknownCount, exposureByMarket, exposureByStrategy, exposureByCurrency, netPnlToday, netPnlWeek, scopeMode]
       properties:
         totalOpen: { type: integer }
         totalClosed: { type: integer }
-        floatingPnl: { type: number }
+        # Floating (unrealised) P/L on OPEN positions. NOTHING in this code
+        # path marks an open row to market — `trades.pnl` is written only at
+        # close — so this is null with a stated reason rather than a
+        # confident $0.00. It becomes a number only when a mark-to-market
+        # source exists.
+        floatingPnl: { type: ["number", "null"] }
+        floatingPnlStatus:
+          type: string
+          enum: [NOT_MARKED_TO_MARKET, COMPUTED]
         realizedPnl: { type: number }
+        # Closed rows whose realised P/L could not be trusted
+        # (pnlStatus="UNKNOWN") and are therefore NOT in realizedPnl.
+        realizedPnlExcludedUnknownCount: { type: integer }
+        # Which execution environment every figure above belongs to. Real
+        # broker money and simulator money are never summed.
+        scopeMode:
+          type: string
+          enum: [LIVE, DEMO]
         exposureByMarket:
           type: object
           additionalProperties: { type: number }
@@ -19928,8 +20002,12 @@ components:
             properties:
               currency: { type: string }
               netLots: { type: number }
-        dailyDrawdown: { type: number }
-        weeklyDrawdown: { type: number }
+        # NET realised P/L over the window — NOT a drawdown. A day that ran
+        # +$500 then -$300 nets +$200 and has a real intraday drawdown of
+        # $300; this field cannot see that, so it must never be labelled
+        # "drawdown". (Was `dailyDrawdown`/`weeklyDrawdown`.)
+        netPnlToday: { type: number }
+        netPnlWeek: { type: number }
 
     CorrelationWarning:
       type: object

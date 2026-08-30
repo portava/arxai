@@ -3,7 +3,7 @@ import { AlertCircle } from "lucide-react";
 import { Link } from "wouter";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatPnl } from "@/lib/format";
-import { eaTooOldForCloseFill } from "@workspace/domain/safety-contracts/eaCloseFill";
+import { explainUnknownPnl } from "@workspace/domain/safety-contracts/eaCloseFill";
 
 export interface PnlCellProps {
   /** Trade id, used to build the stable testids. */
@@ -25,8 +25,12 @@ export interface PnlCellProps {
  *
  * Extracted so the EA-upgrade nudge (testid `trade-ea-upgrade-hint-<id>`)
  * can be unit-rendered without standing up the whole page + React Query.
- * The upgrade nudge appears only when the trade's P/L is UNKNOWN *and* the
- * closing EA is too old to report a close fill (null / < v1.28).
+ * The upgrade nudge appears only when the trade's P/L is UNKNOWN, the close
+ * came from a real BROKER, *and* the closing EA is too old to report a close
+ * fill (null / < v1.28). A simulated close (dataQualityFlag
+ * "SIMULATED_CLOSE_NO_PRICED_PNL") involved no EA and no broker, so it gets its
+ * own explanation and never the upgrade nudge — see
+ * `explainUnknownPnl` in @workspace/domain/safety-contracts/eaCloseFill.
  */
 export function PnlCell({
   id,
@@ -54,7 +58,11 @@ export function PnlCell({
         ) : null}
       </span>
     );
-    const showUpgradeHint = eaTooOldForCloseFill(reportedEaVersion);
+    // Which explanation this row gets is decided by the shared contract, not
+    // inline here: a simulated close has no EA and no broker, so it must not
+    // be told its EA is too old nor that "the broker did not return" anything.
+    const explanation = explainUnknownPnl({ dataQualityFlag, reportedEaVersion });
+    const showUpgradeHint = explanation.showEaUpgradeHint;
     return (
       <div className="inline-flex flex-col items-end gap-1">
         <TooltipProvider delayDuration={150}>
@@ -62,10 +70,11 @@ export function PnlCell({
             <TooltipTrigger asChild>
               <span>{cell}</span>
             </TooltipTrigger>
-            <TooltipContent className="max-w-xs text-xs">
-              The broker did not return a usable close fill price for this
-              trade, so we won't show a profit/loss number we can't trust.
-              This row is excluded from your totals and win-rate.
+            <TooltipContent
+              className="max-w-xs text-xs"
+              data-testid={`trade-pnl-unknown-tooltip-${id}`}
+            >
+              {explanation.tooltip}
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>

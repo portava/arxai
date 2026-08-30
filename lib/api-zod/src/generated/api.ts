@@ -4386,6 +4386,29 @@ export const ResetStrategiesResponse = zod.array(ResetStrategiesResponseItem);
  * @summary Get account performance summary (today + all time)
  */
 export const GetPerformanceSummaryResponse = zod.object({
+  scopeMode: zod.enum(["LIVE", "DEMO"]),
+  scopeModeReason: zod.enum([
+    "LIVE_TRADES_PRESENT",
+    "ONLY_DEMO_TRADES",
+    "NO_TRADES",
+  ]),
+  otherModeTradeCount: zod.number(),
+  baselineSource: zod.enum(["ASSIGNED", "NOTIONAL", "NONE"]),
+  baselineValue: zod.number(),
+  today: zod
+    .object({
+      trades: zod.number(),
+      wins: zod.number(),
+      losses: zod.number(),
+      winRate: zod.number(),
+      pnl: zod.number(),
+      bestTradePnl: zod.number().nullable(),
+      worstTradePnl: zod.number().nullable(),
+      excludedUnknownCount: zod.number(),
+    })
+    .describe(
+      'Aggregates recomputed over trades CLOSED TODAY ONLY (server-local yyyy-mm-dd of closedAt). The sibling top-level fields on PerformanceSummary are all-time; a surface titled \"Today\" MUST read this block instead of them.',
+    ),
   accountBalance: zod.number(),
   todayPnl: zod.number(),
   todayPnlPct: zod.number(),
@@ -9320,7 +9343,9 @@ export const GetTradeSnapshotResponse = zod.object({
   tradeId: zod.number(),
   currentPrice: zod.number(),
   rMultiple: zod.number(),
-  floatingPnl: zod.number(),
+  floatingPnl: zod.number().nullable(),
+  floatingPnlStatus: zod.enum(["NOT_PRICEABLE", "COMPUTED"]),
+  priceMove: zod.number(),
   health: zod.object({
     score: zod.number(),
     state: zod.enum(["healthy", "watching", "at_risk", "invalidated"]),
@@ -12291,8 +12316,11 @@ export const ToggleWatchlistItemFavoriteResponse = zod.object({
 export const GetPortfolioExposureResponse = zod.object({
   totalOpen: zod.number(),
   totalClosed: zod.number(),
-  floatingPnl: zod.number(),
+  floatingPnl: zod.number().nullable(),
+  floatingPnlStatus: zod.enum(["NOT_MARKED_TO_MARKET", "COMPUTED"]),
   realizedPnl: zod.number(),
+  realizedPnlExcludedUnknownCount: zod.number(),
+  scopeMode: zod.enum(["LIVE", "DEMO"]),
   exposureByMarket: zod.record(zod.string(), zod.number()),
   exposureByStrategy: zod.record(zod.string(), zod.number()),
   exposureByCurrency: zod.array(
@@ -12301,8 +12329,8 @@ export const GetPortfolioExposureResponse = zod.object({
       netLots: zod.number(),
     }),
   ),
-  dailyDrawdown: zod.number(),
-  weeklyDrawdown: zod.number(),
+  netPnlToday: zod.number(),
+  netPnlWeek: zod.number(),
 });
 
 /**
