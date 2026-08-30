@@ -465,6 +465,9 @@ In order.
 3. **Run the Tier 1 demo certification** once 1 and 2 are clear, with the
    explicit `--i-authorize-one-demo-order` consent flag, one order only, fully
    reconciled before any second is considered.
+   → **DONE 2026-08-30 — CERTIFIED.** Contract `11161223559`, EXECUTED, lineage
+   complete, no UNKNOWN. See CERTIFICATIONS.md Grade A. The position is OPEN at
+   the venue; close-side reconciliation is the next build.
 4. **Close the OpenAPI gap (B3)** — add the twelve Phase 6 paths to
    `lib/api-spec/openapi.yaml`, regenerate, and move the frontend onto the
    generated client.

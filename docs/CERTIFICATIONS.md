@@ -85,6 +85,38 @@ run in this session. Its status at HEAD is **UNKNOWN**.
   reconciliation that always returned zero would have produced byte-identical
   output.
 
+### Tier 1 — ONE guided demo order, end to end (the first order through the guided path)
+- **Authorized by:** Owner Ruling 19 (2026-08-27). **Executed:** 2026-08-30,
+  ~22:00 UTC. Contract **`11161223559`**, venue-classified demo account
+  (`****1092`). Terms: BUY R_100, $1 stake, ×100 multiplier, $0.50 stop.
+- **The full product path, every step the real surface:** audited cold-platform
+  kill-switch release (shell press, cold-posture wall consulted —
+  `ADMIN_RELEASED_LIVE_SHARED_KILL_SWITCH` audit row); `tier1:seed`
+  (Constitution v1, one PENDING ticket, 60-min TTL); the owner's own
+  **Approve** and **Send to broker** clicks in `/approval-inbox` as user 1
+  (the human consent acts Ruling 19 requires — deliberately not scriptable);
+  dispatch through the guided composition point (gate-parity wall, three-switch
+  kill check, Gate 18 disclosure, Constitution evaluated at proposal AND
+  dispatch, CAS ticket claim, per-user advisory lock); the Phase 5 certified
+  transport; the venue returned a contract id; settlement **EXECUTED** with the
+  venue reference; `certify:tier1-demo --verify` reconstructed the lineage from
+  the single intent id `di_tkt_9baa4e49-391c-4a8e-8b34-274e7146a8ea` —
+  `complete: true`, **no UNKNOWN at any point**.
+- **A label worth understanding, not a defect:** the intent row reads
+  `UNRECORDED (resolved)` — intents are BORN `UNRECORDED` (the crash footprint
+  design) and success resolves them with venue evidence rather than rewriting
+  the write disposition. The resolution carrying contract `11161223559` is the
+  authoritative fact.
+- **Explicitly NOT certified by this run:** closing or reconciling the
+  resulting position (no reconciliation worker exists — the guided position
+  centre will honestly show OPEN until the venue close is manually
+  reconciled); a rejected order / partial fill / requote (still unexercised;
+  the Ruling 18 caveat stands); P/L settlement through the guided ledger; any
+  second order (`maxTradesPerDay: 1` and the EXECUTED-counts-open ratchet
+  block it by design — that is the certificate working, not a gap).
+- **Re-runnable:** the `--verify` reconstruction, at any time. The order
+  itself was authorized once and is not.
+
 ### Deriv P/L reconciliation on a non-zero result
 - **Ruling:** Owner Ruling 18, 2026-08-25. Contract `10548672559`.
 - **Evidence:** bought at 1, held 60s, sold for 1.03, venue-confirmed settled.
@@ -479,7 +511,7 @@ Named so no reader assumes otherwise.
 
 | Claim | Status |
 |---|---|
-| **Tier 1 demo guided execution end to end** | **NOT certified.** Zero demo orders have ever been placed through the guided path (`deriv_order_intents` = 0, `guided_attempt_events` = 0). The harness exists and the environment is armed; it has never been run. |
+| **Tier 1 demo guided execution end to end** | **CERTIFIED 2026-08-30** — see the Grade A entry above (contract `11161223559`). The bounds that entry names (no close reconciliation, no rejected/partial/requote, no guided P/L) remain NOT certified. |
 | Tier 2 (supervised continuous session) | Not built, not authorized to enable. |
 | Tier 3 (live guided), Tier 4 (autonomous) | **Must not be enabled** (Ruling 19). |
 | Real-money execution | Standing hold. Real money remains OFF (Constitution Article VII). |
