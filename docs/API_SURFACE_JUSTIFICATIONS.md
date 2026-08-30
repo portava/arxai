@@ -40,6 +40,7 @@ The module name is the file stem under `artifacts/api-server/src/routes/`.
 - `mt5DemoBridge` — EA_BRIDGE: the demo command-poll and result endpoints the MT5 Expert Advisor calls with a per-user bridge token; there is no browser client by design.
 - `mt5Live` — EA_BRIDGE: the Phase B live command-poll and fill-report endpoints the EA calls with a per-user bridge token; a browser must never be able to call these.
 - `mt5RemoteOps` — EA_BRIDGE: remote EA config delivery, update check and update report, all authenticated by the per-user bridge token rather than a session.
+- `watchdogIngest` — WEBHOOK: `POST /watchdog/alerts` is called by the independent protection watchdog (#28), a SEPARATE PROCESS that deliberately holds no user session — surviving the app's session layer being broken is the point. It is bearer-token authenticated inside the handler and fails closed when `ARX_WATCHDOG_INGEST_TOKEN` is unset. Its findings surface to humans through the ordinary notification service (`/api/me/notifications`, the bell, web push), so the *alerts* are reachable even though the ingest itself has no browser client. The companion read `GET /admin/watchdog/status` is admin-only and is consumed by `docs/WATCHDOG_DRILL.md` part 3 — it has no screen yet, which is honestly recorded here rather than counted as delivered.
 
 ## CI / QA-driven surfaces
 

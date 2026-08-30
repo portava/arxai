@@ -169,6 +169,8 @@ import meProtectiveAutoCloseRouter from "./meProtectiveAutoClose";
 import meMarketDataRouter from "./meMarketData";
 import historicalAnalysisRouter from "./historicalAnalysis";
 import newsIntelligenceRouter from "./newsIntelligence";
+// #28 — landing pad for the independent protection watchdog process.
+import watchdogIngestRouter from "./watchdogIngest";
 import { attachSecurityContext } from "../lib/security/middleware";
 import { requireAuthOrPublic } from "../lib/auth/globalGate";
 import { enforceProductRoleAccess, denyTraderInvestorArea } from "../lib/auth/productRole";
@@ -357,6 +359,10 @@ router.use(dataImportRouter);
 router.use(brokerReadOnlyRouter);
 router.use(notificationsRouter);
 router.use(systemHealthRouter);
+// #28 — POST /watchdog/alerts is on the public allowlist and bearer-token
+// gated INSIDE the handler (fail-closed when the token env is unset), exactly
+// like the EA bridge endpoints. GET /admin/watchdog/status is admin-only.
+router.use(watchdogIngestRouter);
 router.use(attachSecurityContext);
 router.use(securityRouter);
 router.use(readinessRouter);

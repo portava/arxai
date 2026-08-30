@@ -504,3 +504,8 @@ export * from "./institutional";
 // Additive-only; applied via docs/migrations-pending/build-flywheel-machinery.sql.
 // The allocation journal + OPE reports are APPEND-ONLY (check-vault-mutations).
 export * from "./flywheel";
+// ── #28 Independent protection watchdog — heartbeat / dead-man's switch ──
+// Additive-only; applied via docs/migrations-pending/hold-watchdog-deploy.sql.
+// Written ONLY by the app-side ingest route: the watchdog process itself runs
+// a forced read-only session and holds no write path.
+export * from "./watchdogHeartbeats";

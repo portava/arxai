@@ -108,6 +108,15 @@ const PUBLIC_EXACT = new Set<string>([
   // so the token check can run; without this entry every TradingView
   // alert is rejected with HTTP 401 before reaching the token validator.
   "/webhooks/tradingview",
+  // Capability #28 — the independent protection watchdog POSTs each pass here.
+  // It is a SEPARATE PROCESS, deliberately holding no user session (the whole
+  // point is that it survives the app's session/auth layer being broken), so
+  // the global gate must let the request through to the handler's own
+  // `Authorization: Bearer <ARX_WATCHDOG_INGEST_TOKEN>` check. That check
+  // FAILS CLOSED: with the env unset the route 503s and accepts nothing, so an
+  // unauthenticated caller can inject neither a fake all-clear nor a fake
+  // CRITICAL. The route places no order and touches no gate.
+  "/watchdog/alerts",
 ]);
 
 const PUBLIC_PREFIXES: readonly string[] = [

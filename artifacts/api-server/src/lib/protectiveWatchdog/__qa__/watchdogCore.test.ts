@@ -192,14 +192,26 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const WATCHDOG_ENTRY = path.resolve(HERE, "../../../watchdog.ts");
 const entrySrc = readFileSync(WATCHDOG_ENTRY, "utf8");
 
-test("watchdog.ts imports only pg + the pure core — no app modules, no @workspace/db singleton", () => {
+test("watchdog.ts imports only pg + node builtins + the pure protectiveWatchdog modules", () => {
   // Multi-line-safe: every module specifier in an import ... from "<src>".
   const sources = [...entrySrc.matchAll(/^import[\s\S]*?from\s+["']([^"']+)["'];/gm)].map((m) => m[1]!);
-  assert.deepEqual(
-    sources.sort(),
-    ["./lib/protectiveWatchdog/watchdogCore.js", "pg"].sort(),
-    `watchdog entry imports must stay minimal, got: ${sources.join(", ")}`,
-  );
+  // The deployment work (branch hold/watchdog-deploy) added the alert path,
+  // the wire envelope and the process's own liveness surface. Every added
+  // module is PURE and lives under ./lib/protectiveWatchdog/ — the pin is
+  // widened to exactly those, and watchdogDeployment.test.ts now enforces the
+  // stronger TRANSITIVE version of this rule across the whole import graph.
+  const ALLOWED = new Set([
+    "pg",
+    "node:http",
+    "node:os",
+    "./lib/protectiveWatchdog/watchdogCore.js",
+    "./lib/protectiveWatchdog/watchdogAlertEnvelope.js",
+    "./lib/protectiveWatchdog/watchdogAlertSink.js",
+    "./lib/protectiveWatchdog/watchdogHealth.js",
+  ]);
+  for (const s of sources) {
+    assert.ok(ALLOWED.has(s), `watchdog entry may not import "${s}" — allowed: ${[...ALLOWED].join(", ")}`);
+  }
   // Prohibited import targets — checked against the specifier list (comments
   // may MENTION them; the module may not IMPORT them).
   for (const banned of ["@workspace/db", "./app", "auditVault", "routes", "missionDriver"]) {

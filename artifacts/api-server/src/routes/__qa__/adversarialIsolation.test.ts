@@ -150,6 +150,10 @@ const PUBLIC_EXACT = new Set<string>([
   "/mt5/remote-config", "/mt5/update-check", "/mt5/update-report",
   "/bridge/v2/ingest", "/bridge/v2/config", "/bridge/v2/commands",
   "/webhooks/tradingview",
+  // #28 — the independent protection watchdog is a separate PROCESS with no
+  // user session by design; it authenticates with its own bearer token inside
+  // the handler and fails closed when that env is unset.
+  "/watchdog/alerts",
 ]);
 const PUBLIC_PREFIXES = ["/health/", "/auth/", "/auth", "/release/", "/release"] as const;
 
