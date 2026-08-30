@@ -23,6 +23,53 @@ consumer of `runConfidenceGate` that calls `applyConformalAuthority` with
 proof. Until that lands, the honest state of this flag is OFF, and this
 document must not be read as a live arming procedure.
 
+## Before you press: look at the coverage report
+
+`GET /api/admin/evidence-gates/conformal-coverage` (rendered on **Admin →
+Governance**) measures empirical coverage against the declared level over a
+chronological evaluation window and returns an explicit verdict —
+`INSUFFICIENT_HISTORY` / `BAR_NOT_MET` / `BAR_MET` / `SOURCE_UNREADABLE` —
+with the sample size, the window, and the miscoverage rate.
+
+**Today it reads `INSUFFICIENT_HISTORY` at a sample of ZERO**, and the report
+says why: nothing writes the `CONFORMAL_ADVISORY_PREDICTION` feed, so the
+sample cannot grow on its own. That is the honest state of this flag, and the
+report is the thing to look at rather than this document's prose. It is
+read-only — producing it can never arm the flag. See
+`docs/EVIDENCE_GATED_FLAGS_RUNBOOK.md`.
+
+## The feed contract (read this before wiring a writer)
+
+`CONFORMAL_ADVISORY_PREDICTION` is a **contract the coverage report declares,
+not a feed that exists**. Nothing has ever emitted it. The report reads that
+event type and no other, so coverage evidence journaled under a different name
+— or a different payload shape — would leave the report blind while it kept
+printing "NO PRODUCTION WRITER" over a sample of `0`. A writer must therefore
+be built against this contract exactly:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `eventType` | `"CONFORMAL_ADVISORY_PREDICTION"` | exact string; the report matches on it |
+| `payload.predicted` | finite `number` | the point prediction the advisory verdict was stated about |
+| `payload.actual` | finite `number` | the REALIZED outcome. Omit the row until it is realized — an unresolved prediction is not coverage evidence, and the reader excludes it |
+| `payload.predictedAt` | ISO string or epoch-ms (`payload.at` also accepted) | when the prediction was MADE. The report splits chronologically on this; a wrong stamp leaks the future into calibration and overstates coverage |
+
+Rows that do not parse are excluded and counted (`feed.unreadableRows`), never
+guessed at. One prediction per row; the report reads the newest 5000.
+
+Two guards make a silently-stale contract less likely, and neither is
+airtight — say so rather than trusting them blindly:
+
+* the proof suite fails RED if `calibrateConformal`, `validateCoverage` or
+  `conformalGate` gains a production caller (any real coverage writer must
+  compute intervals through one of them), and
+* it fails RED if a second `CONFORMAL`-named event-type literal appears in
+  production source.
+
+A writer that computes intervals by hand **and** names its event type without
+the word `CONFORMAL` would defeat both. If you wire one, update
+`CONFORMAL_ADVISORY_FEED_WRITER_WIRED` and this section together.
+
 ## What exists
 
 Capability #4 (Conformal Decision Bounds) is built in three layers:

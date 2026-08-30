@@ -652,6 +652,11 @@ router.use(adminOwnerDecisionsRouter);
 // evidence-gated, typed-confirmation execution-policy enable press.
 import adminResilienceRouter from "./adminResilience.js";
 router.use(adminResilienceRouter);
+// Evidence-gated flag reports (#4 conformal coverage, #27 promotion evidence).
+// READ-ONLY: these endpoints only SELECT and only describe the owner press —
+// no handler here arms a flag, unlocks a press, or writes any row.
+import adminEvidenceGatesRouter from "./adminEvidenceGates.js";
+router.use(adminEvidenceGatesRouter);
 // ── Self-trading polish (build/product-polish) ──────────────────────────────
 // #37 — unified owner-grantable authority ledger (scoped, expiring grants).
 // Grants only PERMIT later explicit raises through existing gated seams.
