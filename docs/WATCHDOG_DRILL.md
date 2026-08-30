@@ -85,9 +85,27 @@ export ARX_WATCHDOG_INGEST_TOKEN="<the value you set on the server>"
 pnpm --filter @workspace/api-server run drill:watchdog -- --deliver
 ```
 
-Every delivered message is prefixed **`DRILL (not a real condition) —`** and
-carries a `drill:<scenario>` instance id, so a drill alert can never be mistaken
-for a real one and the drill's heartbeat never overwrites a real watchdog's row.
+Every drill envelope carries a `drill:<scenario>` instance id, and the
+notification mapper keys off that id to make the drill unmistakable **before**
+a human reads a word of it:
+
+* the **title** is prefixed `DRILL (not a real condition) —`. This is the part
+  that matters: the title is what a web-push notification shows first, and a
+  CRITICAL bypasses both per-source preferences and quiet hours. Until this was
+  fixed, a drill pushed an unqualified *"Open position with no stop loss
+  recorded"* to every ADMIN/OWNER phone, byte-identical to the real thing;
+* the **message** carries the same prefix, plus `(DRILL; watchdog instance
+  drill:<scenario>)`;
+* the notification lands on its own type (`PROTECTION_WATCHDOG_DRILL`) and its
+  own `entityType`, so a drill can never occupy a real alert's 15-minute dedupe
+  slot and turn a genuine CRITICAL into a silent repeat-count bump;
+* the drill's heartbeat row is keyed by the `drill:*` instance id, so it never
+  overwrites a real watchdog's row.
+
+Severity is deliberately **not** downgraded — proving the CRITICAL delivery path
+works is the whole point of this part. The label, not a downgrade, is what keeps
+it honest.
+
 The script **refuses** to run `--deliver` when the alert path is not armed
 rather than pretending to send.
 
@@ -96,9 +114,13 @@ Confirm, in this order:
 1. `delivery: app:delivered,...` appears for each scenario. Anything else —
    `app:unreachable`, `app:refused`, `app:not_configured` — means the owner was
    **not** told; fix that before trusting the watchdog.
-2. Open `/notifications` in the app. Four drill notifications, clearly labelled,
-   at the right severities.
-3. If web push is configured, confirm the CRITICAL ones reached the phone.
+2. Open `/notifications` in the app. Four drill notifications, each with a
+   **title** beginning `DRILL (not a real condition) —`, at the right
+   severities. A drill notification whose title is not labelled is a bug —
+   stop and report it.
+3. If web push is configured, confirm the CRITICAL ones reached the phone **and
+   that the push title itself says DRILL** (this is the check that a drill
+   cannot be mistaken for a 3am emergency).
 4. `GET /api/admin/watchdog/status` shows the `drill:*` instances.
 5. Dismiss the drill notifications.
 

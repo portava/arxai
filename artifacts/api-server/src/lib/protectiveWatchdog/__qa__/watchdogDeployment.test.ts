@@ -44,10 +44,17 @@ import {
 } from "../watchdogAlertSink.js";
 import {
   handleWatchdogHealthRequest,
+  healthDetailForHost,
   newLivenessState,
   renderWatchdogHealth,
 } from "../watchdogHealth.js";
-import { mapEnvelopeToNotifications, WATCHDOG_NOTIFICATION_TYPE } from "../watchdogNotificationMapper.js";
+import {
+  mapEnvelopeToNotifications,
+  WATCHDOG_DRILL_INSTANCE_PREFIX,
+  WATCHDOG_DRILL_LABEL,
+  WATCHDOG_DRILL_NOTIFICATION_TYPE,
+  WATCHDOG_NOTIFICATION_TYPE,
+} from "../watchdogNotificationMapper.js";
 import { DRILL_NOW_MS, DRILL_SCENARIOS, drillScenario } from "../watchdogDrillFixtures.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -188,6 +195,124 @@ test("every drill scenario produces the finding it claims to produce", () => {
   }
 });
 
+// ── A DRILL IS UNMISTAKABLE — IN THE TITLE, NOT ONLY THE BODY ───────────────
+
+test("a drill alert is labelled in the TITLE, which is what web push shows first", () => {
+  const env = envelopeFor(drillScenario("position_without_protective_orders").snapshot);
+  const real = mapEnvelopeToNotifications(env.findings, "prod-host:4242");
+  const drill = mapEnvelopeToNotifications(env.findings, `${WATCHDOG_DRILL_INSTANCE_PREFIX}position_without_protective_orders`);
+
+  const realTitle = real.find((n) => n.entityType === "watchdog:unprotected_position")!.title;
+  const drillNotif = drill.find((n) => n.entityType === "watchdog_drill:unprotected_position")!;
+
+  // The defect this test exists for: the drill's title used to be byte-identical
+  // to the real CRITICAL, so a 3am push read "Open position with no stop loss
+  // recorded" with nothing to distinguish it.
+  assert.notEqual(drillNotif.title, realTitle, "a drill title must not be byte-identical to a real alert's");
+  assert.ok(drillNotif.title.startsWith(WATCHDOG_DRILL_LABEL), "the title itself must carry the drill label");
+  assert.ok(drillNotif.message.startsWith(WATCHDOG_DRILL_LABEL));
+  // Severity is deliberately NOT downgraded — the drill proves the critical path.
+  assert.equal(drillNotif.severity, "critical");
+});
+
+test("a drill cannot occupy a real alert's dedupe slot and swallow it", () => {
+  const env = envelopeFor(drillScenario("position_without_protective_orders").snapshot);
+  const real = mapEnvelopeToNotifications(env.findings, "prod-host:4242")[0]!;
+  const drill = mapEnvelopeToNotifications(env.findings, `${WATCHDOG_DRILL_INSTANCE_PREFIX}x`)[0]!;
+
+  // createNotification dedupes on (userId, notificationType, entityType,
+  // entityId, bucket). Sharing all of those inside one 15-minute cooldown
+  // window would turn a REAL critical into a silent repeatCount bump on the
+  // drill's row, with no push. At least one component must differ.
+  assert.equal(real.notificationType, WATCHDOG_NOTIFICATION_TYPE);
+  assert.equal(drill.notificationType, WATCHDOG_DRILL_NOTIFICATION_TYPE);
+  assert.notEqual(drill.entityType, real.entityType);
+});
+
+test("the drill label is defined once and the drill script imports it", () => {
+  const src = readFileSync(path.resolve(API_SERVER_ROOT, "src/scripts/watchdogDrill.ts"), "utf8");
+  assert.ok(src.includes("WATCHDOG_DRILL_LABEL"), "the drill must import the shared label, not redeclare the string");
+  assert.ok(src.includes("WATCHDOG_DRILL_INSTANCE_PREFIX"), "the drill instance prefix the mapper keys off must be the shared one");
+  assert.ok(!/const DRILL_PREFIX = "/.test(src), "a second copy of the label would let the two sides drift apart");
+});
+
+test("the drill label is idempotent — the mapper never double-prefixes an already-labelled message", () => {
+  const env = envelopeFor(drillScenario("main_app_outage").snapshot);
+  const preLabelled = env.findings.map((f) => ({ ...f, message: WATCHDOG_DRILL_LABEL + f.message }));
+  const n = mapEnvelopeToNotifications(preLabelled, `${WATCHDOG_DRILL_INSTANCE_PREFIX}main_app_outage`)[0]!;
+  const occurrences = n.message.split(WATCHDOG_DRILL_LABEL).length - 1;
+  assert.equal(occurrences, 1, "the label must appear exactly once in the message");
+});
+
+// ── THE HEALTH PORT IS UNAUTHENTICATED ──────────────────────────────────────
+
+test("the health port binds loopback by default and the doc states why", () => {
+  const src = readFileSync(path.resolve(API_SERVER_ROOT, "src/watchdog.ts"), "utf8");
+  assert.ok(src.includes('WATCHDOG_DEFAULT_HEALTH_HOST = "127.0.0.1"'), "an unauthenticated body must not default to a public bind");
+  assert.ok(!/ARX_WATCHDOG_HEALTH_HOST \?\? "0\.0\.0\.0"/.test(src), "0.0.0.0 must not be the fallback");
+  const doc = readFileSync(path.resolve(REPO_ROOT, "docs/WATCHDOG_DEPLOYMENT.md"), "utf8");
+  assert.match(doc, /unauthenticated/i, "the doc must warn that /healthz has no auth");
+  assert.match(doc, /127\.0\.0\.1/, "the doc must state the loopback default");
+});
+
+test("a non-loopback bind serves counts, never the scoped keys that name individual positions", () => {
+  assert.equal(healthDetailForHost("127.0.0.1"), "full");
+  assert.equal(healthDetailForHost("::1"), "full");
+  assert.equal(healthDetailForHost("0.0.0.0"), "redacted");
+  assert.equal(healthDetailForHost("10.0.0.5"), "redacted");
+
+  const state = newLivenessState({ instanceId: "prod-box-7:4242", topology: "external_host", startedAtMs: DRILL_NOW_MS - 60_000, intervalMs: 60_000 });
+  state.lastPassCompletedAtMs = DRILL_NOW_MS;
+  state.lastVerdict = "FINDINGS";
+  state.activeFindingKeys = ["unprotected_position:9002", "stuck_command:311"];
+  state.lastDeliverySummary = "app:delivered";
+  state.passCount = 3;
+
+  const local = renderWatchdogHealth(state, DRILL_NOW_MS, "full");
+  assert.deepEqual(local.body.activeFindingKeys, ["unprotected_position:9002", "stuck_command:311"]);
+  assert.equal(local.body.instanceId, "prod-box-7:4242");
+
+  const exposed = renderWatchdogHealth(state, DRILL_NOW_MS, "redacted");
+  const wire = JSON.stringify(exposed.body);
+  assert.ok(!wire.includes("9002"), "an anonymous caller must not learn WHICH position is unprotected");
+  assert.ok(!wire.includes("311"));
+  assert.ok(!wire.includes("prod-box-7"), "nor the host the watchdog runs on");
+  assert.ok(!wire.includes("external_host"));
+  assert.deepEqual(exposed.body.activeFindingKeys, []);
+  // …while the monitoring signal is byte-for-byte unchanged.
+  assert.equal(exposed.httpStatus, local.httpStatus);
+  assert.equal(exposed.body.status, local.body.status);
+  assert.equal(exposed.body.ok, local.body.ok);
+  assert.equal(exposed.body.activeFindingCount, 2);
+  assert.equal(exposed.body.alertPath.degraded, local.body.alertPath.degraded);
+});
+
+test("the cannot-verify driver message is withheld on the unauthenticated body but the status is not", () => {
+  const state = newLivenessState({ instanceId: "i", topology: "same_host", startedAtMs: DRILL_NOW_MS - 60_000, intervalMs: 60_000 });
+  state.lastPassCompletedAtMs = DRILL_NOW_MS;
+  state.lastVerdict = "CANNOT_VERIFY";
+  state.lastCannotVerifyReason = "connect ECONNREFUSED db.internal.example:5432";
+  state.passCount = 1;
+
+  const exposed = renderWatchdogHealth(state, DRILL_NOW_MS, "redacted");
+  assert.equal(exposed.httpStatus, 503, "redaction must never soften the verdict");
+  assert.equal(exposed.body.status, "cannot_verify");
+  assert.match(exposed.body.reason, /not a green light/);
+  assert.ok(!exposed.body.reason.includes("db.internal.example"), "a driver message can name the database host");
+
+  assert.match(renderWatchdogHealth(state, DRILL_NOW_MS, "full").body.reason, /db\.internal\.example/);
+});
+
+test("the detail level travels through the request router, so /healthz cannot bypass it", () => {
+  const state = newLivenessState({ instanceId: "secret-host:9", topology: "same_host", startedAtMs: DRILL_NOW_MS - 60_000, intervalMs: 60_000 });
+  state.lastPassCompletedAtMs = DRILL_NOW_MS;
+  state.lastVerdict = "VERIFIED_HEALTHY";
+  state.passCount = 1;
+  const r = handleWatchdogHealthRequest("/healthz", state, DRILL_NOW_MS, "redacted");
+  assert.equal(r.httpStatus, 200);
+  assert.ok(!JSON.stringify(r.body).includes("secret-host"));
+});
+
 // ── 3. DELIVERY IS NEVER ASSUMED ────────────────────────────────────────────
 
 function armedConfig(): AlertSinkConfig {
@@ -290,27 +415,103 @@ test("the app re-redacts on receipt and refuses malformed or oversized envelopes
 const WRITE_SQL = /\b(INSERT\s+INTO|UPDATE\s+\w+\s+SET|DELETE\s+FROM|TRUNCATE|CREATE\s+(TABLE|ROLE|INDEX)|DROP\s+|GRANT\s+|ALTER\s+TABLE)\b/i;
 const ALLOWED_BARE_SPECIFIERS = new Set(["pg", "node:http", "node:os"]);
 
+/** Comments are stripped before specifier extraction so prose about imports
+ *  (these files are full of it) can neither add nor hide an edge. */
+function stripComments(src: string): string {
+  return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
+}
+
+/**
+ * Every syntactic form that can pull another module into this graph. The
+ * original pin matched only `… from "x";` — with the trailing semicolon —
+ * which silently skipped `await import(…)`, `require(…)`, a side-effect
+ * `import "x"`, and any semicolon-less import. An import the walker does not
+ * match is never enqueued and never scanned, so a blind spot here is a hole in
+ * the whole no-write-path guarantee, not a cosmetic gap.
+ */
+const SPECIFIER_PATTERNS: readonly RegExp[] = [
+  /\bfrom\s*["']([^"']+)["']/g,                 // import/export … from "x"  (semicolon optional)
+  /^\s*(?:import|export)\s*["']([^"']+)["']/gm, // side-effect import "x"
+  /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g,     // dynamic  await import("x")
+  /\brequire\s*\(\s*["']([^"']+)["']\s*\)/g,    // CJS      require("x")
+];
+
+/** A dynamic specifier that is not a string literal cannot be followed
+ *  statically, so it must not exist inside this graph at all. */
+const UNANALYZABLE_DYNAMIC = /\b(?:import|require)\s*\(\s*(?!["'])[^)\s]/g;
+
+export interface ExtractedSpecifiers {
+  specifiers: string[];
+  /** Count of `import(expr)` / `require(expr)` the walker cannot follow. */
+  unanalyzable: number;
+}
+
+/** PURE and directly testable — the walker's blind spots are now assertable. */
+export function extractModuleSpecifiers(rawSrc: string): ExtractedSpecifiers {
+  const src = stripComments(rawSrc);
+  const specifiers = new Set<string>();
+  for (const re of SPECIFIER_PATTERNS) {
+    for (const m of src.matchAll(re)) specifiers.add(m[1]!);
+  }
+  return { specifiers: [...specifiers], unanalyzable: [...src.matchAll(UNANALYZABLE_DYNAMIC)].length };
+}
+
 /** Walk the import graph from watchdog.ts and return every local file it pulls in. */
-function watchdogModuleGraph(): { files: string[]; bareSpecifiers: Set<string> } {
+function watchdogModuleGraph(): { files: string[]; bareSpecifiers: Set<string>; unanalyzable: { file: string; count: number }[] } {
   const entry = path.resolve(API_SERVER_ROOT, "src/watchdog.ts");
   const seen = new Set<string>();
   const bare = new Set<string>();
+  const unanalyzable: { file: string; count: number }[] = [];
   const queue = [entry];
   while (queue.length > 0) {
     const file = queue.pop()!;
     if (seen.has(file)) continue;
     seen.add(file);
-    const src = readFileSync(file, "utf8");
-    for (const m of src.matchAll(/^(?:import|export)[\s\S]*?from\s+["']([^"']+)["'];/gm)) {
-      const spec = m[1]!;
+    const { specifiers, unanalyzable: dyn } = extractModuleSpecifiers(readFileSync(file, "utf8"));
+    if (dyn > 0) unanalyzable.push({ file, count: dyn });
+    for (const spec of specifiers) {
       if (!spec.startsWith(".")) { bare.add(spec); continue; }
-      const resolved = path.resolve(path.dirname(file), spec.replace(/\.js$/, ".ts"));
-      if (existsSync(resolved)) queue.push(resolved);
+      const base = path.resolve(path.dirname(file), spec.replace(/\.js$/, ".ts"));
+      const resolved = [base, `${base}.ts`, path.join(base, "index.ts")].find((c) => existsSync(c));
+      if (resolved) queue.push(resolved);
       else throw new Error(`watchdog graph: cannot resolve ${spec} from ${file}`);
     }
   }
-  return { files: [...seen], bareSpecifiers: bare };
+  return { files: [...seen], bareSpecifiers: bare, unanalyzable };
 }
+
+test("the import walker itself has no blind spot — every module-pulling form is matched", () => {
+  // This is the test the pin was missing. Each line below is a real way to
+  // reach @workspace/db that the previous `… from "x";` regex silently skipped.
+  const evasions = [
+    'import { db } from "@workspace/db"',                 // no trailing semicolon
+    'const { db } = await import("@workspace/db");',      // dynamic
+    'const { db } = require("@workspace/db");',           // CJS
+    'import "@workspace/db";',                            // side-effect only
+    'export { db } from "@workspace/db"',                 // re-export, no semicolon
+    'export * from "@workspace/db";',                     // star re-export
+    'import\n  type X\n  from "@workspace/db";',          // multi-line
+  ];
+  for (const line of evasions) {
+    const { specifiers } = extractModuleSpecifiers(line);
+    assert.ok(specifiers.includes("@workspace/db"), `the walker missed an import form: ${JSON.stringify(line)}`);
+  }
+  // A commented-out import is NOT an edge.
+  assert.deepEqual(extractModuleSpecifiers('// import { db } from "@workspace/db";').specifiers, []);
+  assert.deepEqual(extractModuleSpecifiers('/* import { db } from "@workspace/db"; */').specifiers, []);
+  // …and a specifier the walker cannot follow is counted, not ignored.
+  assert.equal(extractModuleSpecifiers("await import(someVariable);").unanalyzable, 1);
+  assert.equal(extractModuleSpecifiers('await import("./x.js");').unanalyzable, 0);
+});
+
+test("no module in the watchdog graph imports through an expression the pin cannot follow", () => {
+  const { unanalyzable } = watchdogModuleGraph();
+  assert.deepEqual(
+    unanalyzable.map((u) => `${path.relative(REPO_ROOT, u.file)} (${u.count})`),
+    [],
+    "a computed import() specifier makes the transitive pin unenforceable — keep watchdog imports static and literal",
+  );
+});
 
 test("the ENTIRE watchdog import graph contains no write statement and no execution surface", () => {
   const { files } = watchdogModuleGraph();
@@ -323,7 +524,7 @@ test("the ENTIRE watchdog import graph contains no write statement and no execut
     assert.ok(!WRITE_SQL.test(code), `${path.relative(REPO_ROOT, f)} must contain no write/DDL SQL`);
     // `killSwitchEngaged` is a READ of safety_core and is allowed; anything
     // that could ENGAGE, RELEASE or BYPASS it is not.
-    for (const banned of ["deliver(", "liveCommandPipeline", "guidedDispatchEntry", "killSwitchBypass", "engageKillSwitch", "releaseKillSwitch", "approvalTickets", "drizzle"]) {
+    for (const banned of ["@workspace/db", "deliver(", "liveCommandPipeline", "guidedDispatchEntry", "killSwitchBypass", "engageKillSwitch", "releaseKillSwitch", "approvalTickets", "drizzle"]) {
       assert.ok(!code.includes(banned), `${path.relative(REPO_ROOT, f)} must not reference the execution surface: ${banned}`);
     }
   }

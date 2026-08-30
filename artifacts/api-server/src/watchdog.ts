@@ -62,6 +62,7 @@ import {
 } from "./lib/protectiveWatchdog/watchdogAlertSink.js";
 import {
   handleWatchdogHealthRequest,
+  healthDetailForHost,
   newLivenessState,
   type WatchdogLivenessState,
 } from "./lib/protectiveWatchdog/watchdogHealth.js";
@@ -71,6 +72,8 @@ const { Client } = pg;
 export const WATCHDOG_DEFAULT_INTERVAL_MS = 60 * 1000;
 export const WATCHDOG_MIN_INTERVAL_MS = 5 * 1000;
 export const WATCHDOG_DEFAULT_HEALTH_PORT = 8091;
+/** Loopback: /healthz has no auth and its full body names individual positions. */
+export const WATCHDOG_DEFAULT_HEALTH_HOST = "127.0.0.1";
 
 /** Self-reported deployment topology. It is a CLAIM, not a verified fact —
  *  nothing in-process can prove which box it is on. Documented as such. */
@@ -278,11 +281,24 @@ async function runOnePass(deps: PassDeps): Promise<PassResult & { activeKeys: st
 // unless the last pass actually READ everything) and /livez (process liveness
 // only). Binding failure degrades loudly and does NOT kill the watchdog —
 // losing the probe must never cost us the watching.
+//
+// THE PORT IS UNAUTHENTICATED. It therefore binds LOOPBACK by default, and any
+// wider bind (needed to point an external uptime monitor at it) automatically
+// drops to the redacted body: counts, not scoped finding keys; no instance id;
+// no topology. Widening the bind is an explicit operator act
+// (ARX_WATCHDOG_HEALTH_HOST) and is logged as such at startup.
 
 function startHealthServer(state: WatchdogLivenessState, port: number, host: string): http.Server | null {
+  const detail = healthDetailForHost(host);
+  if (detail !== "full") {
+    log("warn", "watchdog_health_port_publicly_bound", {
+      host, port,
+      detail: "the /healthz body is UNAUTHENTICATED, so it is being served redacted (finding counts only, no instance id, no topology). Bind 127.0.0.1 and probe locally, or put this port behind your own auth.",
+    });
+  }
   const server = http.createServer((req, res) => {
     const pathname = (req.url ?? "/").split("?")[0] ?? "/";
-    const out = handleWatchdogHealthRequest(pathname, state, Date.now());
+    const out = handleWatchdogHealthRequest(pathname, state, Date.now(), detail);
     const body = JSON.stringify(out.body);
     res.writeHead(out.httpStatus, { "content-type": "application/json", "cache-control": "no-store" });
     res.end(body);
@@ -296,7 +312,7 @@ function startHealthServer(state: WatchdogLivenessState, port: number, host: str
   });
   try {
     server.listen(port, host, () => {
-      log("info", "watchdog_health_listening", { port, host, paths: ["/healthz", "/livez"] });
+      log("info", "watchdog_health_listening", { port, host, detail, paths: ["/healthz", "/livez"] });
     });
     return server;
   } catch (err) {
@@ -329,6 +345,13 @@ function resolveHealthPort(raw: string | undefined): number {
   const n = raw === undefined ? WATCHDOG_DEFAULT_HEALTH_PORT : Number(raw);
   if (!Number.isInteger(n) || n < 1 || n > 65535) return WATCHDOG_DEFAULT_HEALTH_PORT;
   return n;
+}
+
+/** Default LOOPBACK. The health body is unauthenticated; a wider bind is an
+ *  explicit operator decision, not something the default hands out. */
+export function resolveHealthHost(raw: string | undefined): string {
+  const v = String(raw ?? "").trim();
+  return v.length > 0 ? v : WATCHDOG_DEFAULT_HEALTH_HOST;
 }
 
 async function main(): Promise<void> {
@@ -382,7 +405,13 @@ async function main(): Promise<void> {
   }
 
   // Loop mode only: the probe port exists to be scraped over time.
-  const healthServer = startHealthServer(state, resolveHealthPort(process.env.ARX_WATCHDOG_HEALTH_PORT), process.env.ARX_WATCHDOG_HEALTH_HOST ?? "0.0.0.0");
+  // Loopback by DEFAULT: /healthz is unauthenticated and its full body names
+  // individual unprotected positions. A wider bind must be asked for.
+  const healthServer = startHealthServer(
+    state,
+    resolveHealthPort(process.env.ARX_WATCHDOG_HEALTH_PORT),
+    resolveHealthHost(process.env.ARX_WATCHDOG_HEALTH_HOST),
+  );
 
   let running = false;
   const tick = async (): Promise<void> => {

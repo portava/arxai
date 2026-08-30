@@ -10,16 +10,23 @@
 //
 // DRY RUN BY DEFAULT. `--deliver` additionally POSTs each envelope to the live
 // ingest endpoint so the owner can prove the alert reaches their screen and
-// their phone. In that mode every message is prefixed
-// "DRILL (not a real condition) —" and the envelope carries a `drill:` instance
-// id, so a drill alert can never be mistaken for a real one and the drill's
-// heartbeat never overwrites the real watchdog's row.
+// their phone. Every drill envelope carries a `drill:<scenario>` instance id;
+// the notification mapper keys off that id and prefixes BOTH the notification
+// title (which is what web push shows first) and the message with
+// "DRILL (not a real condition) —", and routes the drill to its own
+// notificationType so it never occupies a real alert's dedupe slot. The drill
+// also labels the wire message itself, so the raw envelope in a webhook or a
+// log line is self-describing too.
 //
 // Procedure and expected output: docs/WATCHDOG_DRILL.md.
 
 import { assessSnapshot } from "../lib/protectiveWatchdog/watchdogCore.js";
 import { buildAlertEnvelope } from "../lib/protectiveWatchdog/watchdogAlertEnvelope.js";
-import { mapEnvelopeToNotifications } from "../lib/protectiveWatchdog/watchdogNotificationMapper.js";
+import {
+  mapEnvelopeToNotifications,
+  WATCHDOG_DRILL_INSTANCE_PREFIX,
+  WATCHDOG_DRILL_LABEL,
+} from "../lib/protectiveWatchdog/watchdogNotificationMapper.js";
 import {
   alertSinkConfigFromEnv,
   deliverAlert,
@@ -27,7 +34,9 @@ import {
 } from "../lib/protectiveWatchdog/watchdogAlertSink.js";
 import { DRILL_NOW_MS, DRILL_SCENARIOS, type DrillScenario } from "../lib/protectiveWatchdog/watchdogDrillFixtures.js";
 
-const DRILL_PREFIX = "DRILL (not a real condition) — ";
+/** One definition, owned by the mapper — the drill and the app must agree. */
+const DRILL_PREFIX = WATCHDOG_DRILL_LABEL;
+const drillInstanceId = (id: string): string => `${WATCHDOG_DRILL_INSTANCE_PREFIX}${id}`;
 
 function out(line: string): void {
   process.stdout.write(line + "\n");
@@ -46,7 +55,7 @@ export interface DrillOutcome {
 export function runScenarioOffline(s: DrillScenario): DrillOutcome {
   const assessment = assessSnapshot(s.snapshot, DRILL_NOW_MS);
   const envelope = buildAlertEnvelope({
-    instanceId: `drill:${s.id}`,
+    instanceId: drillInstanceId(s.id),
     topology: "unknown",
     activeFindings: assessment.findings,
     newFindings: assessment.findings,
@@ -89,7 +98,7 @@ async function main(): Promise<void> {
       const assessment = assessSnapshot(s.snapshot, Date.now());
       const labelled = assessment.findings.map((f) => ({ ...f, message: DRILL_PREFIX + f.message }));
       const envelope = buildAlertEnvelope({
-        instanceId: `drill:${s.id}`,
+        instanceId: drillInstanceId(s.id),
         topology: "unknown",
         activeFindings: labelled,
         newFindings: labelled,

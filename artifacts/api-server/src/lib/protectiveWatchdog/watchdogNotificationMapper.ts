@@ -13,6 +13,14 @@
 // read-only, outside the app") and the standing ALERT-ONLY disclaimer. The
 // watchdog has no execution authority, and its notification must never read
 // as though something was done about the problem.
+//
+// DRILL SAFETY: a drill envelope arrives with a `drill:` instance id. This
+// mapper — not the drill script — is what makes that visible to a human,
+// because the mapper is the LAST place both the drill path and the real path
+// pass through. It labels the TITLE (which is what a push notification shows
+// first, and what a woken owner reads before anything else), and it moves the
+// drill onto its own notificationType/entityType so a drill can never occupy
+// a real alert's dedupe slot and silently swallow it.
 
 import type { WatchdogWireFinding } from "./watchdogAlertEnvelope.js";
 
@@ -34,6 +42,29 @@ export interface WatchdogNotifyPayload {
 export const WATCHDOG_NOTIFICATION_TYPE = "PROTECTION_WATCHDOG";
 /** A persistent condition collapses into one row per 15 minutes. */
 export const WATCHDOG_NOTIFICATION_COOLDOWN_MS = 15 * 60_000;
+
+// ── Drill labelling ─────────────────────────────────────────────────────────
+
+/** Instance-id prefix the drill uses (`drill:<scenario>`), and the single
+ *  source of truth for it — the drill script imports this rather than
+ *  redeclaring the string. */
+export const WATCHDOG_DRILL_INSTANCE_PREFIX = "drill:";
+/** Prefixed onto BOTH the title and the message of a drill notification. */
+export const WATCHDOG_DRILL_LABEL = "DRILL (not a real condition) — ";
+/** Drills land on their own type, so a drill row can never occupy the dedupe
+ *  slot (type, entityType, entityId, bucket) of a real alert and turn the real
+ *  one into a silent repeatCount bump with no push. */
+export const WATCHDOG_DRILL_NOTIFICATION_TYPE = "PROTECTION_WATCHDOG_DRILL";
+
+export function isDrillInstanceId(instanceId: string): boolean {
+  return instanceId.trim().toLowerCase().startsWith(WATCHDOG_DRILL_INSTANCE_PREFIX);
+}
+
+/** Idempotent: the drill script already labels the wire `message`, so a
+ *  second pass here must not produce a double prefix. */
+function withDrillLabel(text: string): string {
+  return text.startsWith(WATCHDOG_DRILL_LABEL) ? text : WATCHDOG_DRILL_LABEL + text;
+}
 
 /** The standing disclaimer. The watchdog observes; it never acts. */
 export const WATCHDOG_ALERT_ONLY_SUFFIX =
@@ -96,15 +127,21 @@ function severityOf(f: WatchdogWireFinding): WatchdogNotifyPayload["severity"] {
 export function mapFindingToNotification(f: WatchdogWireFinding, instanceId: string): WatchdogNotifyPayload {
   const family = findingFamily(f.key);
   const route = ROUTES.find((r) => r.family === family) ?? FALLBACK;
+  const isDrill = isDrillInstanceId(instanceId);
+  // Severity is NOT downgraded for a drill: the whole point of the live drill
+  // is to prove the CRITICAL path (per-source preference bypass, quiet-hours
+  // bypass, web push) actually works. The label is what keeps it honest.
   return {
-    notificationType: WATCHDOG_NOTIFICATION_TYPE,
+    notificationType: isDrill ? WATCHDOG_DRILL_NOTIFICATION_TYPE : WATCHDOG_NOTIFICATION_TYPE,
     severity: severityOf(f),
-    title: route.title,
-    message: `${f.message} — ${WATCHDOG_ALERT_ONLY_SUFFIX} (watchdog instance ${instanceId})`,
+    title: isDrill ? withDrillLabel(route.title) : route.title,
+    message: isDrill
+      ? `${withDrillLabel(f.message)} — ${WATCHDOG_ALERT_ONLY_SUFFIX} (DRILL; watchdog instance ${instanceId})`
+      : `${f.message} — ${WATCHDOG_ALERT_ONLY_SUFFIX} (watchdog instance ${instanceId})`,
     source: route.source,
     // entityType carries the family so dedupe is per-condition-kind, and
     // entityId carries the scope so two unprotected positions are two alerts.
-    entityType: `watchdog:${family}`,
+    entityType: `${isDrill ? "watchdog_drill" : "watchdog"}:${family}`,
     entityId: findingEntityId(f.key),
     actionLabel: route.actionLabel,
     actionTarget: route.actionTarget,
