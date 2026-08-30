@@ -116,6 +116,16 @@ run in this session. Its status at HEAD is **UNKNOWN**.
   block it by design — that is the certificate working, not a gap).
 - **Re-runnable:** the `--verify` reconstruction, at any time. The order
   itself was authorized once and is not.
+- **Close, same day (22:13 UTC):** the owner closed the position via
+  `close:deriv-demo-position` (venue-side recovery path). Contract
+  `11161223559` **CONFIRMED settled by the venue** — proceeds `1.04`,
+  Deriv-reported realized P/L **`+0.04`** (non-zero, so the settlement read
+  was exercised on a value that could not be faked by a zero-echo). As the
+  bounds above state, this close ran OUTSIDE the guided ledger: the guided
+  position centre still shows the attempt as OPEN, and will until the
+  close-reconciliation worker exists. That displayed OPEN is the documented
+  gap being honest, observed in reality for the first time — it is the next
+  build, not a display bug.
 
 ### Deriv P/L reconciliation on a non-zero result
 - **Ruling:** Owner Ruling 18, 2026-08-25. Contract `10548672559`.
