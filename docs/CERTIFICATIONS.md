@@ -443,6 +443,23 @@ precisely what a certificate must be. This is a defect in the evidence, not in
 the product. **Until it is fixed, this suite may not be cited as reproducible
 evidence for the observed-state wall.**
 
+**RESOLVED 2026-08-30** (commit `3764d62`). The observed-state test is
+hermetic: every dependency that would touch a database is stubbed and the
+observed-state read fails deterministically, so the assertion reaches exactly
+the wall it targets in every environment; the widened
+`KILL_SWITCH_ENGAGED` escape hatch was removed from its regex. A companion
+source pin certifies production still wires the real guided-ledger loader
+(the property the old non-hermetic form proved incidentally), and the
+kill-switch wall keeps its own dedicated hermetic test. Proof on a machine
+with NO database: 38/38, and two mutations killed — swallowing the
+infra-failure catch (2 red) and stubbing the production default loader
+(12 red). The same commit gave the gate-parity map its promised runtime
+consumer: `dispatchGuidedTicketInner` refuses `GATE_PARITY_INCOMPLETE`
+pre-claim on a not-ok verdict (mutation: one key removed from
+`DERIV_DEMO_GATE_PARITY` refused all 11 dispatch tests). Per the expiry
+rule, `lib/phase6/**` changed — the phase-6 suites must be re-run on Replit
+before these rows are cited as current.
+
 **Fix:** stub the resolver in that test so it reaches its intended wall, and add
 a separate test asserting the kill-switch wall refuses first when engaged — that
 ordering is real safety behaviour and deserves its own coverage rather than

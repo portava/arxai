@@ -286,6 +286,9 @@ reconciliation model.
 ## 6. Known blockers
 
 ### B1 — The global emergency kill switch is ENGAGED (hard blocker)
+
+> **2026-08-30:** answered — leftover fail-closed default, not a hold; the owner-approved cold release press is queued. See §8 item 1.
+
 ```sql
 select emergency_kill_switch from global_trading_settings limit 1;  -- t
 select kill_switch_engaged   from safety_core             limit 1;  -- f
@@ -298,6 +301,9 @@ state is **UNKNOWN** — it requires an owner answer, not an agent's assumption.
 Do not clear it without one.
 
 ### B2 — `tier0ProductCertificate.test.ts` fails 1/33 at HEAD (reproducible here)
+
+> **2026-08-30:** RESOLVED in `3764d62` — the certificate is hermetic (38/38 with no database). See §8 item 2 and CERTIFICATIONS.md §Contested.
+
 ```
 ✖ with NO observed state wired, the product still refuses — never trades blind
   AssertionError: the refusal does not state that nothing was sent:
@@ -328,6 +334,9 @@ schemas and no generated React-Query hooks for them, and the frontend reaches
 them outside the generated client. This is a contract gap, not a runtime bug.
 
 ### B4 — The gate-parity map has no runtime consumer
+
+> **2026-08-30:** RESOLVED in `3764d62` — the dispatch path evaluates the verdict pre-claim and refuses `GATE_PARITY_INCOMPLETE` on a not-ok map.
+
 `DERIV_DEMO_GATE_PARITY` and `assertVenueGateParity` are referenced **only**
 inside `lib/domain/src/safety-contracts/` (and the compiled `dist/`). Nothing in
 `artifacts/api-server` evaluates the parity map at dispatch time.
@@ -429,10 +438,30 @@ In order.
 
 1. **Get an owner answer on the global emergency kill switch (B1).** Nothing
    downstream can proceed while it reads `true`, and an agent must not clear it.
+   → **ANSWERED 2026-08-30** from the 2026-08-27 session's own history: it is
+   the fail-closed schema default, never once released — NOT a deliberate hold.
+   Two guided dispatches were refused `KILL_SWITCH_ENGAGED` on 08-27, the owner
+   approved a cold-platform release doorway for exactly this
+   (`{action:"RELEASE"}` on POST /admin/live-shared/kill-switch, commit
+   `2f8feb8`, owner-applied), and the release PRESS is still the owner's —
+   queued ahead of the Tier 1 attempt. O6 in DECISIONS.md is the same question;
+   a recorded ruling remains open for the owner.
 2. **Fix the Tier 0 product certificate's hermeticity (B2).** Stub the Deriv
    dependency resolver in the observed-state test so the assertion reaches the
    wall it targets, and add a separate test that asserts the kill-switch wall
    refuses first. Mutation-prove both.
+   → **DONE 2026-08-30** (commit `3764d62`): resolver stubbed, observed-state
+   read fails deterministically, escape-hatch regex tightened, production
+   default loader source-pinned; the kill-switch wall already had its own
+   hermetic test ("the kill switch stops the product path"). 38/38 on a
+   DB-less machine; both prescribed mutations killed (2 red / 12 red). The
+   same commit closed **B4**: the parity verdict is now consulted pre-claim
+   and an incomplete map refuses `GATE_PARITY_INCOMPLETE` (mutation: one
+   removed key → 11 red). Also closed the same day (commit `44c44e8`): the
+   `/admin/trading/reset-kill` bypass now enforces the cold-posture wall
+   (guard rule R4 pins the writer set), unbuilt TIER_2 is denied at the
+   resolver AND at `tierPermitsVenueSend`, and the dead
+   `AUTONOMOUS_ENTRY_REFUSAL_NOTE` now actually reaches the journal.
 3. **Run the Tier 1 demo certification** once 1 and 2 are clear, with the
    explicit `--i-authorize-one-demo-order` consent flag, one order only, fully
    reconciled before any second is considered.
