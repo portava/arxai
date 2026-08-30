@@ -15,6 +15,7 @@ export * from "./executionTier.js";
 export * from "./guidedTtlPolicy.js";
 export * from "./executionVenue.js";
 export * from "./foundationGates.js";
+export * from "./edgeCapacityReadout.js";
 export * from "./isLiveBrokerExecutionEnabled.js";
 export * from "./preTradeBrokerGuard.js";
 export * from "./syntheticLiveFloor.js";

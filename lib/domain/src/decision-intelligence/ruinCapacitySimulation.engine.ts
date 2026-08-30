@@ -183,17 +183,34 @@ export interface CapacityEstimateResult {
   reasons: string[];
 }
 
-export function estimateStrategyCapacity(
+/**
+ * The capacity search, written ONCE as a generator.
+ *
+ * WHY A GENERATOR: this search is CPU-bound — 2 bracket probes + up to 24
+ * bisection iterations, each a full Monte-Carlo run. On the proposal framing
+ * (4000 paths × 250 trades) that is ~14M inner-loop steps and roughly half a
+ * second of *uninterruptible* JavaScript per call. The API process that would
+ * call it also runs the kill switch, the heartbeats and broker command
+ * dispatch, so a caller that must not stall the event loop needs to interleave
+ * — but a second, hand-written async copy of a bisection is exactly how two
+ * implementations silently drift apart and start reporting different capacity
+ * numbers for the same edge.
+ *
+ * So the search yields the risk level it wants probed and is resumed with that
+ * probe's result. `estimateStrategyCapacity` drives it straight through;
+ * `estimateStrategyCapacityYielding` drives it with an awaited breath between
+ * probes. Same generator, same probe sequence, provably identical output —
+ * pinned by the sync/async equivalence test.
+ */
+function* capacitySearch(
   base: Omit<FrictionRuinInput, "candidateRiskR">,
   opts?: { maxRiskR?: number; iterations?: number },
-): CapacityEstimateResult {
+): Generator<number, CapacityEstimateResult, FrictionRuinResult> {
   const maxRiskR = Math.max(opts?.maxRiskR ?? 8, 0.01);
   const iterations = Math.max(4, Math.min(opts?.iterations ?? 12, 24));
   const probes: Array<{ riskR: number; ruinProbability01: number }> = [];
-  const runAt = (riskR: number) =>
-    simulateRuinWithFrictions({ ...base, candidateRiskR: riskR });
 
-  const sanity = runAt(0.01);
+  const sanity = yield 0.01;
   if (sanity.blockers.some((b) => b.includes("degenerate"))) {
     return {
       status: "DEGENERATE_INPUT", capacityRiskR: 0, probes,
@@ -211,7 +228,7 @@ export function estimateStrategyCapacity(
   // Bisection on the (empirically monotone) ruin-vs-risk curve.
   let lo = 0.01;                       // known safe
   let hi = maxRiskR;                   // possibly unsafe
-  const atMax = runAt(hi);
+  const atMax = yield hi;
   probes.push({ riskR: hi, ruinProbability01: atMax.ruinProbability01 });
   if (atMax.withinGuardrail) {
     return {
@@ -221,7 +238,7 @@ export function estimateStrategyCapacity(
   }
   for (let i = 0; i < iterations; i++) {
     const mid = (lo + hi) / 2;
-    const r = runAt(mid);
+    const r = yield mid;
     probes.push({ riskR: mid, ruinProbability01: r.ruinProbability01 });
     if (r.withinGuardrail) lo = mid; else hi = mid;
   }
@@ -229,6 +246,46 @@ export function estimateStrategyCapacity(
     status: "ESTIMATED", capacityRiskR: lo, probes,
     reasons: [`capacity ≈ ${lo.toFixed(3)}R per trade (largest probed risk keeping ruin ≤ ${RUIN_PROB_GUARDRAIL} over ${base.horizonTrades} trades)`],
   };
+}
+
+export function estimateStrategyCapacity(
+  base: Omit<FrictionRuinInput, "candidateRiskR">,
+  opts?: { maxRiskR?: number; iterations?: number },
+): CapacityEstimateResult {
+  const search = capacitySearch(base, opts);
+  let step = search.next(undefined as unknown as FrictionRuinResult);
+  while (!step.done) {
+    step = search.next(simulateRuinWithFrictions({ ...base, candidateRiskR: step.value }));
+  }
+  return step.value;
+}
+
+/**
+ * The same estimate, computed without holding the event loop for the whole
+ * search: the caller's `breathe` is awaited between probes, so the longest
+ * uninterrupted block is ONE Monte-Carlo run instead of all ~14 of them.
+ *
+ * `breathe` is injected rather than reached for here (no `setImmediate` in the
+ * domain): this module stays IO-free, clock-free and testable offline. Omitting
+ * it makes this an async function that still never yields — which is a caller
+ * bug, not a safe default, so the parameter is required.
+ *
+ * This does NOT make the work cheaper, and it is not concurrency: a probe still
+ * runs to completion once started. It bounds the STALL, nothing else.
+ */
+export async function estimateStrategyCapacityYielding(
+  base: Omit<FrictionRuinInput, "candidateRiskR">,
+  breathe: () => Promise<void>,
+  opts?: { maxRiskR?: number; iterations?: number },
+): Promise<CapacityEstimateResult> {
+  const search = capacitySearch(base, opts);
+  let step = search.next(undefined as unknown as FrictionRuinResult);
+  while (!step.done) {
+    const probe = simulateRuinWithFrictions({ ...base, candidateRiskR: step.value });
+    await breathe();
+    step = search.next(probe);
+  }
+  return step.value;
 }
 
 // ── Simulated vs realized comparison ───────────────────────────────────────

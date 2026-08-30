@@ -627,6 +627,14 @@ router.use(adminLearningVersionsRouter);
 import adminEdgeCapacityRouter from "./adminEdgeCapacity.js";
 router.use(adminEdgeCapacityRouter);
 
+// Edge capacity PROPOSALS + gate #23 readout. READ-ONLY sibling of the router
+// above: it derives what the ruin/capacity simulator WOULD say from recorded
+// evidence (or an explicit INSUFFICIENT_EVIDENCE), and reports what gate #23
+// does to a driver-placed live entry on each edge today. It never writes — the
+// press stays on the recording route, where an admin authors the number.
+import adminEdgeCapacityProposalsRouter from "./adminEdgeCapacityProposals.js";
+router.use(adminEdgeCapacityProposalsRouter);
+
 // Owner Decision Registry (blueprint Phase 0) — append-only rulings ledger.
 // ADMIN/OWNER gated inside the router; no update/delete surface exists.
 // Multi-broker spec §15 — GET /api/brokers/catalog. Read-only venue catalog:
