@@ -328,6 +328,8 @@ All counts below were re-run in this audit at HEAD.
 | Forensic lineage + sweeper | `test:phase6-lineage-sweeper` | **19/19** |
 | Guided HTTP surfaces | `test:phase6-surfaces` | **14/14** |
 | Approval Inbox UI honesty | `test:approval-inbox-honesty` (vitest) | **15/15** |
+| Protection watchdog — assessment core (#28) | `test:protection-watchdog` | **12/12** |
+| Protection watchdog — deployment + alert path (#28) | `test:watchdog-deployment` | **25/25** |
 
 **Phase 6 node-test total: 209 tests, 208 pass, 1 fail** (the failure is in
 `test:phase6-tier0-product`, below).
@@ -472,6 +474,8 @@ Named so no reader assumes otherwise.
 | Phase 6 endpoints in the API contract | **Absent.** `grep -cE '/me/approval-tickets\|/me/guided-' lib/api-spec/openapi.yaml` → **0**. No generated Zod schemas or React-Query hooks exist for them. |
 | `pnpm run ci` (full named-suite gate) at HEAD | **UNKNOWN** — not run in this session. |
 | Mutation counts quoted in commit messages | **Self-reported at commit time.** No mutation report artifact is stored; not independently re-derivable today. |
+| Protection watchdog (#28) **deployed anywhere** | **NOT certified — not deployed.** The runnable package now exists (`pnpm run watchdog`, `scripts/watchdog/start-watchdog.sh`, `docs/WATCHDOG_DEPLOYMENT.md`) and every layer of it is test-pinned offline. No instance is running on any host, `watchdog_heartbeats` has never been created or written, and `ARX_WATCHDOG_INGEST_TOKEN` has never been set — so no watchdog alert has ever reached a human. The remaining steps are owner presses (deployment doc §7). |
+| Protection watchdog **live outage drill** (`docs/WATCHDOG_DRILL.md` part 4) | **NOT run.** Parts 1–2 (offline scenario drill + blindness drill) pass and run in CI; part 3 (live delivery) and part 4 (deliberate api-server outage) both require the owner presses and a deployed instance. Until part 4 has been run once, "the watchdog would notice the app dying" is an untested inference from a passing fixture, not an observed fact. |
 
 ---
 

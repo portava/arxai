@@ -259,7 +259,7 @@
     "test:manual-takeover": "node --import tsx --test --test-force-exit src/lib/__qa__/manualTakeover.test.ts",
     "test:origin-attribution": "node --import tsx --test --test-force-exit src/lib/attribution/__qa__/originClassAnalytics.test.ts",
     "test:escape-route": "node --import tsx --test --test-force-exit src/lib/brokerHub/__qa__/escapeRoute.test.ts",
-    "watchdog": "node --import tsx src/watchdog.ts",
+    "watchdog": "node --enable-source-maps --import tsx src/watchdog.ts",
     "as-of": "node --import tsx src/scripts/asOfCli.ts",
     "test:execution-policy-promotion": "node --import tsx --test --test-force-exit src/lib/execution/__qa__/executionPolicyPromotion.test.ts",
     "test:protection-watchdog": "node --import tsx --test --test-force-exit src/lib/protectiveWatchdog/__qa__/watchdogCore.test.ts",
@@ -312,7 +312,10 @@
     "test:trade-management-isolation": "node --import tsx --test --test-force-exit src/routes/__qa__/tradeManagementIsolation.test.ts",
     "test:mission-demo-ladder-domain": "node --import tsx --test --test-force-exit src/lib/__qa__/missionDemoLadderDomain.test.ts",
     "test:mission-demo-ladder": "node --import tsx --test --test-force-exit src/lib/__qa__/missionDemoLadder.test.ts",
-    "test:mission-demo-ladder-guards": "node --import tsx --test --test-force-exit src/lib/__qa__/missionDemoLadderGuards.test.ts"
+    "test:mission-demo-ladder-guards": "node --import tsx --test --test-force-exit src/lib/__qa__/missionDemoLadderGuards.test.ts",
+    "watchdog:once": "node --enable-source-maps --import tsx src/watchdog.ts --once",
+    "drill:watchdog": "node --import tsx src/scripts/watchdogDrill.ts",
+    "test:watchdog-deployment": "node --import tsx --test --test-force-exit src/lib/protectiveWatchdog/__qa__/watchdogDeployment.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
