@@ -126,6 +126,15 @@ run in this session. Its status at HEAD is **UNKNOWN**.
   close-reconciliation worker exists. That displayed OPEN is the documented
   gap being honest, observed in reality for the first time — it is the next
   build, not a display bug.
+- **Gap closed, same day (22:36 UTC):** the close-reconciliation worker was
+  built (`c7c77c8`), its 12-case suite ran green ON REPLIT, and its first
+  real run reconciled exactly this attempt: `RECONCILED contract
+  11161223559  P/L 0.04` — 1 reconciled, 0 still open, 0 unreadable,
+  0 anomalies. The venue-reported P/L now lives in the guided ledger
+  (`venue_profit_usd`), the attempt reconstructs as CLOSED/complete, and
+  the observed-state ratchet released on venue evidence. One real
+  settlement is one datapoint: the loss-streak path has still never seen a
+  venue-confirmed LOSS, and stays uncertified until it has.
 
 ### Deriv P/L reconciliation on a non-zero result
 - **Ruling:** Owner Ruling 18, 2026-08-25. Contract `10548672559`.
