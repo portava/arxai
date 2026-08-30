@@ -245,6 +245,7 @@
     "test:admin-cockpit-route": "node --import tsx --test --test-force-exit src/routes/__qa__/adminCockpitRoute.test.ts",
     "certify:tier1-demo": "node --import tsx src/scripts/tier1DemoCertify.ts",
     "tier1:seed": "node --import tsx src/scripts/tier1SeedCertificationTicket.ts",
+    "press:release-kill-switch": "node --import tsx src/scripts/pressReleaseKillSwitch.ts",
     "test:execution-policy-shadow": "node --import tsx --test --test-force-exit src/lib/execution/__qa__/executionPolicyShadow.test.ts",
     "test:incident-replay": "node --import tsx --test --test-force-exit src/lib/replaySim/__qa__/incidentReplay.test.ts",
     "test:certification-expiry": "node --import tsx --test --test-force-exit src/lib/phase6/__qa__/certificationExpiry.test.ts",

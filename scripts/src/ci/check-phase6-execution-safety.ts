@@ -128,24 +128,46 @@ export function checkPhase6ExecutionSafety(): CheckResult {
       // writes emergencyKillSwitch:false must be one of the two release
       // surfaces, and any surface outside the activate-step ceremony must
       // consult the cold-posture policy in the same file.
-      if (path.startsWith("artifacts/api-server/src/routes/")) {
+      {
+        const inRoutes = path.startsWith("artifacts/api-server/src/routes/");
+        const inScripts = path.startsWith("artifacts/api-server/src/scripts/") || path.startsWith("scripts/src/");
         const releaseWriteRe = /emergencyKillSwitch\s*:\s*false/;
-        if (releaseWriteRe.test(src)) {
+        if ((inRoutes || inScripts) && releaseWriteRe.test(src)) {
           killSwitchReleaseFiles++;
+          // The audited release surfaces. The owner shell press and the
+          // reset-kill route are sanctioned ONLY while they consult the
+          // cold-posture policy — checked below.
           const allowed = [
             "artifacts/api-server/src/routes/adminLiveSharedReadiness.ts",
             "artifacts/api-server/src/routes/adminTrading.ts",
+            "artifacts/api-server/src/scripts/pressReleaseKillSwitch.ts",
           ];
-          if (!allowed.includes(path)) {
+          // Pre-existing QA/dryrun seeds, grandfathered 2026-08-30. Dev-only
+          // tools that stage a released switch for their own scenario. Do NOT
+          // add new entries here — a new release writer goes through the
+          // cold-posture policy or the activate-step ceremony.
+          const grandfatheredQa = [
+            "artifacts/api-server/src/scripts/phase3-demo-dryrun.ts",
+            "artifacts/api-server/src/scripts/phase-ux1-trades-test.ts",
+            "artifacts/api-server/src/scripts/phase35-routing-test.ts",
+            "scripts/src/livePreflightReadinessObservationTest.ts",
+            "scripts/src/rubySafetyEnvelopeDerivedTest.ts",
+            "scripts/src/unifiedLiveReadinessDecisionTest.ts",
+          ];
+          const mustConsultWall = [
+            "artifacts/api-server/src/routes/adminTrading.ts",
+            "artifacts/api-server/src/scripts/pressReleaseKillSwitch.ts",
+          ];
+          if (!allowed.includes(path) && !grandfatheredQa.includes(path)) {
             violations.push(
               `${path} → writes emergencyKillSwitch:false. Releasing the emergency stop is ` +
-              `restricted to the two audited release surfaces (activate-step ceremony and the ` +
-              `cold-posture doorways); a third writer bypasses both.`,
+              `restricted to the audited release surfaces (activate-step ceremony and the ` +
+              `cold-posture doorways); a new writer bypasses both.`,
             );
-          } else if (path.endsWith("adminTrading.ts") && !src.includes("killSwitchReleaseViolations")) {
+          } else if (mustConsultWall.includes(path) && !src.includes("killSwitchReleaseViolations")) {
             violations.push(
               `${path} → writes emergencyKillSwitch:false without consulting ` +
-              `killSwitchReleaseViolations. The reset-kill route must keep the cold-posture wall.`,
+              `killSwitchReleaseViolations. This surface is sanctioned only WITH the cold-posture wall.`,
             );
           }
         }
@@ -179,7 +201,7 @@ export function checkPhase6ExecutionSafety(): CheckResult {
   notes.push(`R1 adapter deliver() call sites: ${deliverSites} (allowed: dispatch pipeline, guided composition point, adapter definitions).`);
   notes.push(`R2 tier-from-environment reads: ${tierEnvSites} (allowed: ${TIER_ENV_READER}).`);
   notes.push(`R3 files touching approvalTicketsRepo: ${ticketRepoFiles}.`);
-  notes.push(`R4 route files writing emergencyKillSwitch:false: ${killSwitchReleaseFiles} (allowed: the two audited release surfaces).`);
+  notes.push(`R4 files writing emergencyKillSwitch:false: ${killSwitchReleaseFiles} (audited surfaces + grandfathered QA seeds; new writers forbidden).`);
   notes.push(
     "Inviolable: order delivery passes the gate wall; tiers come from resolveExecutionTier; " +
     "approval tickets are owner-scoped in the query.",
