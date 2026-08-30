@@ -1,6 +1,7 @@
 export * from "./confidenceGate.types";
 export * from "./confidenceGate.engine";
 export * from "./conformalAuthority.engine";
+export * from "./conformalCoverageReport.engine.js";
 export * from "./strategyEdgeScore.engine";
 export * from "./marketRegimeScore.engine";
 export * from "./multiTimeframeScore.engine";

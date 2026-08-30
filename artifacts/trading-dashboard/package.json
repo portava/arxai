@@ -81,7 +81,8 @@
     "test:trade-surface-honesty": "vitest run src/pages/tradeSurfaceHonesty.test.ts src/components/execution/executionLayerMounted.test.ts src/components/scanner/RecentScannerTrades.liveShared.test.tsx src/components/LiveTradeCard.actions.test.tsx",
     "test:testing-lab-honesty": "vitest run src/components/testing-lab/TestingLabHonesty.test.tsx",
     "test:mission-outcome-truth": "vitest run src/pages/profit-missions.outcome-truth.test.ts",
-    "test:mission-copy-truth": "vitest run src/pages/profit-missions.copy-truth.test.ts"
+    "test:mission-copy-truth": "vitest run src/pages/profit-missions.copy-truth.test.ts",
+    "test:evidence-gate-card": "vitest run src/components/admin/evidenceGateReportCard.honesty.test.tsx"
   },
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",

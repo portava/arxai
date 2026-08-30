@@ -510,3 +510,34 @@ in the register's `evidenceRef`, update `certifiedAtIso` in a reviewed change,
 and record the run in this file. Drill fixtures:
 `artifacts/api-server/src/lib/phase6/__qa__/certificationExpiry.test.ts`
 (`test:certification-expiry`).
+
+---
+
+## Evidence-gated flag reports (#4 conformal authority, #27 promotion)
+
+Added 2026-08-29. These are **honesty** certifications, not authority ones:
+they certify what the two evidence reports may and may not claim, and that
+producing a report cannot arm anything.
+
+**Certified (offline, deterministic, mutation-checked on a compiling tree):**
+
+| Claim | Evidence |
+|---|---|
+| Below the bar the verdict is `INSUFFICIENT_HISTORY` — for a zero sample, a short evaluation window, and a vacuous unbounded interval alike | `test:conformal-coverage-report`, `test:execution-policy-promotion-report` |
+| A synthetic fixture **at** the bar reads `BAR_MET` (the machinery is real, not a stub that always says "not yet") | same two suites; fixtures are hand-computed (calibration rank `ceil((200+1)·0.9) = 181`) |
+| An unreadable source is `sampleSize: null`, never `0` | same two suites |
+| A measurement that was not taken is `value: null` with a `NOT MEASURED` reason, and the surface renders those words rather than `0` | `test:evidence-gate-card` (renders the real component) |
+| No report path can flip `ARX_CONFORMAL_GATE_ENABLED`, write a row, or move the promotion ladder | source pins in both suites (`db.insert(`/`db.update(`/`db.delete(`, `refreshPromotionEvidence(`, `pressEnableExecutionPolicy(`, `process.env[`, GET-only route), plus a live assertion that an at-the-bar `BAR_MET` report leaves the env flag off |
+| `barMet` is derived from the verdict; a caller cannot present an unmet bar as pressable | `buildEvidenceGateReport` fixture in `test:conformal-coverage-report` |
+| Neither feed has a production writer today (so `0` means "no writer", not "quiet period") | grep pins in both suites over `artifacts/` and `lib/`; they fail RED the day a writer or an `applyConformalAuthority(` call site appears |
+
+**Mutation proof** (run 2026-08-29, on a compiling tree):
+
+- `barMet = input.verdict === "BAR_MET"` → `true`, and `available = barMet && …`
+  → `available = …`: 5/17 and 3/13 tests red. Restored: green.
+- `if (evaluation.length < minWindow)` → `if (false)`, and
+  `if (belowSampleBar)` → `if (false)`: 2/17 and 4/13 tests red. Restored: green.
+
+**Not certified:** the reports have never been rendered against a populated
+feed, because no feed exists. Every non-fixture number they can produce today
+is a null with a reason. Nothing here grants authority to anything.

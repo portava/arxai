@@ -27,6 +27,7 @@
     "./live-position": "./src/live-position/index.ts",
     "./execution-gate": "./src/execution-gate/index.ts",
     "./confidence-gate": "./src/confidence-gate/index.ts",
+    "./evidence-gate": "./src/evidence-gate/index.ts",
     "./execution-pyramid": "./src/execution-pyramid/index.ts",
     "./ai-agents": "./src/ai-agents/index.ts",
     "./live-inputs": "./src/live-inputs/index.ts",

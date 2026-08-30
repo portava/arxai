@@ -21,6 +21,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AdminDiagnosticsGate } from "@/components/admin/AdminDiagnosticsGate";
+import {
+  EvidenceGateReportCard,
+  type EvidenceGateReport,
+} from "@/components/admin/EvidenceGateReportCard";
 
 type Json = Record<string, unknown>;
 
@@ -301,6 +305,55 @@ function ExecutionPolicyPanel() {
   );
 }
 
+// ── Evidence reports for the two held flags (#4, #27) — READ ONLY ───────────
+//
+// Both flags are held OFF because nobody could SEE whether the arming bar was
+// met. These panels are that seeing. They render the server's report shape
+// unchanged, including its honest nulls: a measurement that was never taken
+// shows "NOT MEASURED" with the reason, never a plausible-looking zero.
+// Neither panel has a press — they inform the press that lives elsewhere
+// (the flag is an environment variable; the promotion press is the panel
+// above).
+
+function EvidenceGatePanel({
+  path,
+  testid,
+}: {
+  path: string;
+  testid: string;
+}) {
+  const [report, setReport] = useState<EvidenceGateReport | null>(null);
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    setBusy(true);
+    setErr("");
+    const r = await call(path);
+    if (!r.ok || !r.body.report) {
+      setReport(null);
+      setErr(
+        `Read failed (${r.status}): ${String(r.body.error ?? "unknown")}` +
+          (r.body.detail ? ` — ${String(r.body.detail)}` : ""),
+      );
+    } else {
+      setReport(r.body.report as unknown as EvidenceGateReport);
+    }
+    setBusy(false);
+  }, [path]);
+  useEffect(() => { void load(); }, [load]);
+
+  return (
+    <EvidenceGateReportCard
+      report={report}
+      error={err}
+      loading={busy}
+      onReload={() => void load()}
+      testid={testid}
+    />
+  );
+}
+
 // ── As-of reconstruction (#35) ──────────────────────────────────────────────
 
 function AsOfPanel() {
@@ -356,7 +409,15 @@ export default function AdminGovernancePage() {
         </div>
         <CompliancePanel />
         <LifecycleRolesPanel />
+        <EvidenceGatePanel
+          path="/api/admin/evidence-gates/execution-policy-promotion"
+          testid="evidence-execution-policy-promotion"
+        />
         <ExecutionPolicyPanel />
+        <EvidenceGatePanel
+          path="/api/admin/evidence-gates/conformal-coverage"
+          testid="evidence-conformal-coverage"
+        />
         <AsOfPanel />
       </div>
     </AdminDiagnosticsGate>

@@ -23,6 +23,21 @@ consumer of `runConfidenceGate` that calls `applyConformalAuthority` with
 proof. Until that lands, the honest state of this flag is OFF, and this
 document must not be read as a live arming procedure.
 
+## Before you press: look at the coverage report
+
+`GET /api/admin/evidence-gates/conformal-coverage` (rendered on **Admin →
+Governance**) measures empirical coverage against the declared level over a
+chronological evaluation window and returns an explicit verdict —
+`INSUFFICIENT_HISTORY` / `BAR_NOT_MET` / `BAR_MET` / `SOURCE_UNREADABLE` —
+with the sample size, the window, and the miscoverage rate.
+
+**Today it reads `INSUFFICIENT_HISTORY` at a sample of ZERO**, and the report
+says why: nothing writes the `CONFORMAL_ADVISORY_PREDICTION` feed, so the
+sample cannot grow on its own. That is the honest state of this flag, and the
+report is the thing to look at rather than this document's prose. It is
+read-only — producing it can never arm the flag. See
+`docs/EVIDENCE_GATED_FLAGS_RUNBOOK.md`.
+
 ## What exists
 
 Capability #4 (Conformal Decision Bounds) is built in three layers:
