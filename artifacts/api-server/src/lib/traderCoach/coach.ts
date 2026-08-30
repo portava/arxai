@@ -24,6 +24,17 @@ import { and, desc, eq, gte } from "drizzle-orm";
 import { evaluateGovernor } from "../riskGovernor/governor.js";
 import { getOrCreateUserRiskSettings } from "../risk/userRiskSettings.js";
 import { generatePlaybook, type PlaybookUpdateSummary } from "./playbook.js";
+import {
+  evaluateAutoChecklist,
+  type PreSessionChecklistItem,
+} from "./autoChecklist.js";
+
+export {
+  evaluateAutoChecklist,
+  type AutoCheckGovernorView,
+  type AutoCheckResult,
+  type PreSessionChecklistItem,
+} from "./autoChecklist.js";
 
 export type CoachReportType = "DAILY" | "WEEKLY" | "SESSION" | "PLAYBOOK";
 
@@ -60,7 +71,7 @@ export interface CoachReport {
   activeRiskFlags: { code: string; message: string; severity?: string }[];
   currentFocusAreas: string[];
   nextBestActions: string[];
-  preSessionChecklist: { id: string; label: string; required: boolean; auto?: boolean }[];
+  preSessionChecklist: PreSessionChecklistItem[];
   postSessionReviewQuestions: string[];
   /**
    * The trader's OWN session limits. Previously the coach's daily view shipped
@@ -391,9 +402,15 @@ export async function generateCoachReport(userId: number, opts: GenerateCoachOpt
   if (governor && !governor.paperTradingAllowed) warnings.push(`Risk Governor currently blocks new paper trades (${govStatus}).`);
 
   // ── Pre-session checklist (governor-driven extras) ──────────────────────
-  const preSessionChecklist = [...SAFE_DEFAULT_CHECKLIST];
+  const preSessionChecklist = evaluateAutoChecklist(SAFE_DEFAULT_CHECKLIST, governor);
   if (govStatus === "LOCKED") {
-    preSessionChecklist.unshift({ id: "system_locked", label: "STOP — Risk Governor is LOCKED. Do NOT proceed.", required: true, auto: true });
+    preSessionChecklist.unshift({
+      id: "system_locked",
+      label: "STOP — Risk Governor is LOCKED. Do NOT proceed.",
+      required: true, auto: true,
+      autoResult: "FAIL",
+      autoDetail: "Risk Governor overall status is LOCKED.",
+    });
   }
 
   // ── Playbook updates (optional; cheap by default) ───────────────────────

@@ -180,6 +180,9 @@ export function maskSimulatorMarketAnalysis(
 ): MarketAnalysis & { withheld: true } {
   return {
     ...a,
+    // Every number below is a placeholder, not a measurement. Say so in the
+    // same field the no-feed path uses so one branch covers both refusals.
+    dataAvailable: false,
     marketBias: "neutral",
     trendStrength: 0,
     setupQualityScore: 0,
@@ -233,6 +236,11 @@ export function maskSimulatorEntrySniperScore(
     score: 0,
     label: "DO_NOT_ENTER",
     factors: zeroNumbers(s.factors),
+    // A withheld read is an unavailable read: the page must render the reason,
+    // not the zeroes. `withheld` says WHY it is unavailable (role gate).
+    available: false,
+    unavailableReason: null,
+    unavailableMessage: WAITING_FOR_FEED_REASON,
     dataSource: "SIMULATOR",
     withheld: true,
   };
@@ -249,7 +257,12 @@ export function maskSimulatorTradeGrade(
     weaknesses: [],
     mistakesDetected: [],
     improvementSuggestion: WAITING_FOR_FEED_REASON,
-    shouldHaveTakenTrade: false,
+    // Not "should NOT take" — the model has no opinion, it was not allowed to
+    // form one. null so the page cannot render a verdict from a withheld read.
+    shouldHaveTakenTrade: null,
+    available: false,
+    unavailableReason: null,
+    unavailableMessage: WAITING_FOR_FEED_REASON,
     dataSource: "SIMULATOR",
     withheld: true,
   };

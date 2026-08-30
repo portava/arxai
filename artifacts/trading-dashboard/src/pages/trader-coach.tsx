@@ -21,7 +21,12 @@ interface CoachReport {
   activeRiskFlags: { code: string; message: string; severity?: string }[];
   currentFocusAreas: string[];
   nextBestActions: string[];
-  preSessionChecklist: { id: string; label: string; required: boolean; auto?: boolean }[];
+  preSessionChecklist: {
+    id: string; label: string; required: boolean; auto?: boolean;
+    /** Present on auto items. NOT_CHECKED = unverified; never render as a pass. */
+    autoResult?: "PASS" | "FAIL" | "NOT_CHECKED";
+    autoDetail?: string;
+  }[];
   postSessionReviewQuestions: string[];
   warnings: string[];
   coachingSummary: string;
@@ -83,12 +88,37 @@ const GOV_BADGE: Record<string, string> = {
   UNKNOWN: "bg-muted text-white",
 };
 
+/** Manual prep ticks are per-device and per-UTC-day; they gate nothing. */
+function manualTickStorageKey(): string {
+  return `arx.traderCoach.prepTicks.${new Date().toISOString().slice(0, 10)}`;
+}
+
+function readManualTicks(): Record<string, boolean> {
+  try {
+    const raw = window.localStorage.getItem(manualTickStorageKey());
+    if (!raw) return {};
+    const parsed: unknown = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, boolean>) : {};
+  } catch {
+    return {};
+  }
+}
+
 export default function TraderCoachPage() {
   const [coach, setCoach] = useState<CoachReport | null>(null);
   const [playbook, setPlaybook] = useState<PlaybookEntry[]>([]);
   const [weekly, setWeekly] = useState<WeeklyPlan | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const [manualTicks, setManualTicks] = useState<Record<string, boolean>>(() => readManualTicks());
+
+  function toggleManualTick(id: string, checked: boolean) {
+    setManualTicks((prev) => {
+      const next = { ...prev, [id]: checked };
+      try { window.localStorage.setItem(manualTickStorageKey(), JSON.stringify(next)); } catch { /* storage unavailable — ticks stay in memory */ }
+      return next;
+    });
+  }
 
   async function loadAll() {
     setLoading(true); setErr(null);
@@ -184,14 +214,58 @@ export default function TraderCoachPage() {
         </section>
       </div>
 
+      {/* Daily Prep.
+          BEFORE: every row was `<input type="checkbox" disabled={item.auto} />`
+          — no checked, no onChange, no state, no persistence. The five items
+          labelled "(auto-checked)" rendered visibly UNCHECKED and could not be
+          clicked; the manual ones lost their tick on any re-render.
+          AFTER: auto items show the system's real evaluated answer (from the
+          Risk Governor read) as a pass/fail/unverified result, and manual ticks
+          are real state kept for the current UTC day. */}
       <section className="bg-card p-4 rounded">
         <h3 className="font-semibold mb-2">Daily Prep — pre-session checklist</h3>
-        <ul className="text-sm space-y-1">
+        <p className="text-xs text-txt-muted mb-2">
+          Manual ticks are yours and are kept on this device for today only — they are not sent
+          anywhere and do not gate anything.
+        </p>
+        <ul className="text-sm space-y-1.5">
           {coach.preSessionChecklist.map(item => (
-            <li key={item.id} className="flex gap-2">
-              <input type="checkbox" disabled={item.auto} />
-              <span>{item.label}</span>
-              {item.auto && <span className="text-xs text-primary">(auto-checked)</span>}
+            <li key={item.id} className="flex gap-2 items-start">
+              {item.auto ? (
+                <span
+                  className={
+                    item.autoResult === "PASS" ? "text-success" :
+                    item.autoResult === "FAIL" ? "text-danger" : "text-warning"
+                  }
+                  title={item.autoDetail ?? ""}
+                  aria-label={item.autoResult ?? "NOT_CHECKED"}
+                >
+                  {item.autoResult === "PASS" ? "✓" : item.autoResult === "FAIL" ? "✗" : "?"}
+                </span>
+              ) : (
+                <input
+                  type="checkbox"
+                  checked={manualTicks[item.id] ?? false}
+                  onChange={(e) => toggleManualTick(item.id, e.target.checked)}
+                  className="mt-0.5"
+                />
+              )}
+              <span className="flex-1">
+                {item.label}
+                {item.auto && (
+                  <span className={`ml-2 text-xs ${
+                    item.autoResult === "PASS" ? "text-success" :
+                    item.autoResult === "FAIL" ? "text-danger" : "text-warning"
+                  }`}>
+                    {item.autoResult === "PASS" ? "checked by the system"
+                      : item.autoResult === "FAIL" ? "FAILED"
+                      : "not verified"}
+                  </span>
+                )}
+                {item.auto && item.autoDetail && (
+                  <span className="block text-xs text-txt-muted">{item.autoDetail}</span>
+                )}
+              </span>
             </li>
           ))}
         </ul>

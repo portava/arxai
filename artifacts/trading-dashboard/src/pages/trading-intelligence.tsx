@@ -190,7 +190,14 @@ function MoodTab() {
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-sm">How are you feeling right now?</CardTitle>
-          <CardDescription>A quick check-in helps {name} protect you from emotional trading.</CardDescription>
+          {/* HONESTY: this used to say the check-in "helps {name} protect you
+              from emotional trading". Nothing consumes a check-in at trade
+              time — meMood.ts is explicit that it "Never blocks trade
+              execution" — so no protection happens. It records and warns. */}
+          <CardDescription>
+            A check-in is recorded and warns you now; it does not block or change any trade.
+            Over time it shows {name} which states you trade in and how those trades ended.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
@@ -249,6 +256,10 @@ function MoodTab() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">Your Mood Patterns ({patterns.daysBack}d)</CardTitle>
+            <CardDescription className="text-xs">
+              How often you check in in each state — a count, not an outcome. Trade results
+              per state are below.
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
@@ -277,6 +288,40 @@ function MoodTab() {
                   <span className="w-8 text-right text-muted-foreground">{m.pct}%</span>
                 </div>
               ))}
+            </div>
+
+            {/* What each state actually cost — real closed-trade outcomes joined
+                to the check-in you made before opening. Refuses visibly when no
+                trade can be attributed rather than implying a correlation. */}
+            <div className="border-t border-border pt-3 space-y-1.5">
+              <p className="text-xs font-medium">Trade results by state</p>
+              {patterns.outcomeCorrelation?.available ? (
+                <>
+                  {(patterns.outcomeCorrelation.byMood as Array<{
+                    mood: string; label: string; emoji: string; trades: number; winRatePct: number; netPnl: number;
+                  }>).map((m) => (
+                    <div key={m.mood} className="flex items-center gap-2 text-xs">
+                      <span>{m.emoji}</span>
+                      <span className="flex-1">{m.label}</span>
+                      <span className="text-muted-foreground">{m.trades} trades · {m.winRatePct}% win</span>
+                      <span className={`w-16 text-right font-mono ${m.netPnl < 0 ? "text-danger" : "text-success"}`}>
+                        {m.netPnl > 0 ? "+" : ""}{m.netPnl}
+                      </span>
+                    </div>
+                  ))}
+                  <p className="text-[10px] text-muted-foreground">
+                    {patterns.outcomeCorrelation.attributedTrades} closed trades opened within{" "}
+                    {patterns.outcomeCorrelation.windowHours}h of a check-in
+                    {patterns.outcomeCorrelation.unattributedTrades > 0 &&
+                      ` · ${patterns.outcomeCorrelation.unattributedTrades} closed trades had no check-in near them and are not counted`}
+                  </p>
+                </>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  {patterns.outcomeCorrelation?.note ??
+                    "Not computed — no closed trade could be tied to a check-in."}
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>

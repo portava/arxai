@@ -11,6 +11,7 @@ import {
   type MarketTimingRead,
 } from "@workspace/api-client-react";
 import { useChartSymbol, bareSymbol } from "@/lib/use-chart-symbol";
+import { scorePercent, TRAP_WARNING_THRESHOLD } from "@/lib/score-percent";
 import { useAssistantName } from "@/lib/assistant-name";
 import { PageTabs } from "@/components/ui/PageTabs";
 import { useTradingMode } from "@/hooks/useTradingMode";
@@ -246,7 +247,7 @@ function NowTab({ data, isLoading, symbol }: { data: MarketTimingRead | undefine
             <ScorePill label="Tradeability" value={Math.round(data.tradeabilityScore)} />
             <ScorePill label="Edge" value={Math.round(data.edgeScore)} />
             <ScorePill label="Danger" value={Math.round(data.dangerScore)} cls="border-danger/20" />
-            <ScorePill label="Trap prob." value={`${Math.round(data.trapProbability * 100)}%`} />
+            <ScorePill label="Trap prob." value={scorePercent(data.trapProbability)} />
             <ScorePill label="Room to move" value={Math.round(data.roomToMove)} />
             <ScorePill
               label="Pressure"
@@ -306,7 +307,7 @@ function NowTab({ data, isLoading, symbol }: { data: MarketTimingRead | undefine
           </div>
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">Primary confidence</span>
-            <span className="font-mono tabular-nums">{Math.round(data.heatSource.primaryConfidence * 100)}%</span>
+            <span className="font-mono tabular-nums">{scorePercent(data.heatSource.primaryConfidence)}</span>
           </div>
           {data.heatSource.backup && (
             <>
@@ -317,7 +318,7 @@ function NowTab({ data, isLoading, symbol }: { data: MarketTimingRead | undefine
               {data.heatSource.backupConfidence != null && (
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Backup confidence</span>
-                  <span className="font-mono tabular-nums">{Math.round(data.heatSource.backupConfidence * 100)}%</span>
+                  <span className="font-mono tabular-nums">{scorePercent(data.heatSource.backupConfidence)}</span>
                 </div>
               )}
             </>
@@ -383,7 +384,7 @@ function TodayTab({ data, multiData }: { data: MarketTimingRead | undefined; mul
                         <div className="space-y-0.5 text-muted-foreground">
                           <div>Kill zone: <span className="text-foreground">{session.killZone}</span></div>
                           <div>Heat bonus: <span className="text-foreground font-mono">+{session.sessionHeatBonus}</span></div>
-                          <div>Fakeout risk: <span className="text-foreground font-mono">{Math.round(session.fakeoutRisk * 100)}%</span></div>
+                          <div>Fakeout risk: <span className="text-foreground font-mono">{scorePercent(session.fakeoutRisk)}</span></div>
                         </div>
                       )}
                     </div>
@@ -539,7 +540,7 @@ function SessionCard({
         )}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
           <ScorePill label="Heat bonus" value={`+${session.sessionHeatBonus}`} />
-          <ScorePill label="Fakeout risk" value={`${Math.round(session.fakeoutRisk * 100)}%`} />
+          <ScorePill label="Fakeout risk" value={scorePercent(session.fakeoutRisk)} />
           <ScorePill label="Trade bonus" value={`+${session.tradeabilityBonus}`} />
         </div>
         {session.bestSymbols.length > 0 && (
@@ -714,7 +715,7 @@ function DangerWindowsTab({ data, results }: { data: MarketTimingRead | undefine
           <CardContent className="space-y-3">
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               <ScorePill label="Danger score" value={Math.round(data.dangerScore)} cls={data.dangerScore >= 60 ? "border-danger/20" : ""} />
-              <ScorePill label="Trap prob." value={`${Math.round(data.trapProbability * 100)}%`} cls={data.trapProbability >= 0.5 ? "border-warning/20" : ""} />
+              <ScorePill label="Trap prob." value={scorePercent(data.trapProbability)} cls={data.trapProbability >= TRAP_WARNING_THRESHOLD ? "border-warning/20" : ""} />
               <ScorePill label="Move stage" value={humanizeMoveStage(data.moveStage)} />
             </div>
             {data.newsOverlay.blocksTrade && (
@@ -761,7 +762,7 @@ function DangerWindowsTab({ data, results }: { data: MarketTimingRead | undefine
                     />
                   </div>
                   <span className="text-xs font-mono tabular-nums w-8 text-right">{Math.round(r.dangerScore)}</span>
-                  {r.trapProbability >= 0.5 && (
+                  {r.trapProbability >= TRAP_WARNING_THRESHOLD && (
                     <Badge variant="outline" className="text-[9px] px-1 bg-warning/10 text-warning border-warning/30">
                       Trap
                     </Badge>
@@ -839,7 +840,7 @@ function NewsHeatTab({ data }: { data: MarketTimingRead | undefined }) {
                   cls={news.heatAdjustment > 0 ? "border-warning/20" : ""}
                 />
                 {news.surpriseScore != null && (
-                  <ScorePill label="Surprise score" value={`${Math.round(news.surpriseScore * 100)}%`} />
+                  <ScorePill label="Surprise score" value={scorePercent(news.surpriseScore)} />
                 )}
                 <ScorePill
                   label="Blocks trade"

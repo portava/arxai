@@ -4,17 +4,27 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { GraduationCap, Star, AlertTriangle, ThumbsUp, ThumbsDown } from "lucide-react";
+import { GraduationCap, Star, AlertTriangle, ThumbsUp, ThumbsDown, Ban } from "lucide-react";
 
+// The grader answers with either a verdict OR a refusal. `available: false`
+// means nothing was scored — either the simulator does not know the symbol
+// (unavailableMessage) or the read was withheld by the server's role gate
+// (`withheld: true`). Both must render as a refusal, never as a grade.
 type Grade = {
-  tradeGrade: string; overallScore: number;
+  tradeGrade: string | null; overallScore: number | null;
   strengths: string[]; weaknesses: string[];
   mistakesDetected: string[]; improvementSuggestion: string;
-  shouldHaveTakenTrade: boolean; dataSource: string;
+  shouldHaveTakenTrade: boolean | null; dataSource: string;
+  available: boolean;
+  unavailableMessage: string | null;
+  withheld?: boolean;
 };
 type Sniper = {
-  score: number; label: string;
+  score: number | null; label: string | null;
   factors: Record<string, number>;
+  available: boolean;
+  unavailableMessage: string | null;
+  withheld?: boolean;
 };
 
 const GRADE_COLORS: Record<string, string> = {
@@ -48,7 +58,13 @@ export default function TradeGrader() {
         stopLoss: Number(sl), takeProfit: Number(tp),
         lotSize: Number(lot), confidenceScore: Number(conf),
       };
-      const headers = { "content-type": "application/json", "x-security-role": "ADMIN" };
+      // SECURITY/HONESTY: no client-supplied role header. The server resolves
+      // authority from the signed session cookie and IGNORES `x-security-role`
+      // in production (lib/security/middleware.ts). Sending ADMIN from the
+      // browser only produced a false "grade" in dev while a real user in
+      // production silently received the withheld payload and saw it rendered
+      // as a verdict. The withheld state is now rendered as a refusal instead.
+      const headers = { "content-type": "application/json" };
       const [g, s] = await Promise.all([
         fetch("/api/ai/grade-trade", { method: "POST", headers, body: JSON.stringify(body) }).then((r) => r.json()),
         fetch("/api/ai/entry-sniper-score", {
@@ -60,6 +76,19 @@ export default function TradeGrader() {
     } catch (e) { setErr(String(e)); } finally { setBusy(false); }
   }
 
+  // A verdict is only shown when BOTH reads actually produced one. Anything
+  // else — unknown symbol, withheld by role, malformed payload — is a refusal.
+  const graded =
+    grade?.available === true &&
+    sniper?.available === true &&
+    grade.tradeGrade != null &&
+    sniper.score != null;
+
+  const refusalReason =
+    grade?.unavailableMessage ??
+    sniper?.unavailableMessage ??
+    "The grader returned no scored result for this trade idea.";
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
@@ -67,7 +96,9 @@ export default function TradeGrader() {
         <div>
           <h1 className="text-2xl font-bold">Trade Grader</h1>
           <p className="text-sm text-muted-foreground">
-            Score a trade idea against the AI brain. Simulator only — never sends to broker.
+            Scores a trade idea against <strong>simulated</strong> price action, not the live market.
+            The simulator prices eight symbols from fixed 2024 base prices; it is a rules checker for
+            your entry, stop and target — not a read on what the market is doing now. Never sends to broker.
           </p>
         </div>
         <Badge variant="outline" className="ml-auto">SIMULATOR</Badge>
@@ -98,12 +129,43 @@ export default function TradeGrader() {
         </CardContent>
       </Card>
 
-      {grade && sniper && (
+      {grade && sniper && !graded && (
+        <Card className="border-warning/40 bg-warning/5">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Ban className="h-5 w-5 text-warning" /> Not graded
+            </CardTitle>
+            <CardDescription>
+              No grade was produced. Nothing below was scored — this is a refusal, not a verdict.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <p>{refusalReason}</p>
+            {(grade.withheld || sniper.withheld) && (
+              <p className="text-muted-foreground text-xs">
+                Your account cannot see simulator-derived scores. This page does not grade trades
+                for you yet; it will once a verified live feed is wired to your account.
+              </p>
+            )}
+            {!grade.withheld && !sniper.withheld && (
+              <p className="text-muted-foreground text-xs">
+                Symbols this simulator can price: EURUSD, GBPUSD, USDJPY, XAUUSD, BTCUSDT, ETHUSDT,
+                AAPL, TSLA.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {grade && sniper && graded && (
         <div className="grid gap-4 md:grid-cols-2">
-          <Card className={GRADE_COLORS[grade.tradeGrade] ?? ""}>
+          <Card className={(grade.tradeGrade && GRADE_COLORS[grade.tradeGrade]) || ""}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2"><Star className="h-5 w-5" /> Grade</CardTitle>
-              <CardDescription>Score {grade.overallScore}/100 · should{grade.shouldHaveTakenTrade ? "" : " NOT"} take</CardDescription>
+              <CardDescription>
+                Score {grade.overallScore}/100
+                {grade.shouldHaveTakenTrade != null && ` · should${grade.shouldHaveTakenTrade ? "" : " NOT"} take`}
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="text-6xl font-black text-center mb-3">{grade.tradeGrade}</div>

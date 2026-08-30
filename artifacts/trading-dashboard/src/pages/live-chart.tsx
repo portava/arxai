@@ -177,7 +177,13 @@ export default function LiveChartPage() {
       </div>
       <div className="grid gap-4 lg:grid-cols-[1fr_380px]">
         {chartView === "tv" ? (
-          <TradingViewLiveChart defaultSymbol={chartSymbol || "V75"} height={680} />
+          <TradingViewLiveChart
+            defaultSymbol={chartSymbol || "V75"}
+            height={680}
+            // Synthetics (the default V75) have no TradingView feed. The chart
+            // says so and offers the one view that CAN render them.
+            onRequestNativeChart={() => setChartView("native")}
+          />
         ) : (
           <div className="space-y-4">
             <ARXNativeChart

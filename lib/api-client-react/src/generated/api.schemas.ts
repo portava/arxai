@@ -11365,7 +11365,15 @@ export type MarketBrainResultSessionDetails = { [key: string]: unknown };
 
 export type MarketBrainResultNewsDetails = { [key: string]: unknown };
 
+/**
+ * A full analysis. `available` is always true on this shape.
+ */
 export interface MarketBrainResult {
+  /** Always true here. Discriminates against MarketBrainRefusal. */
+  available: boolean;
+  /** "caller" when the caller supplied candles, otherwise the router provider id that served the real bars. */
+  candleSource?: string;
+  candleCount?: number;
   symbol: string;
   category: string;
   direction: MarketBrainResultDirection;
@@ -11391,6 +11399,37 @@ export interface MarketBrainResult {
   macroDetails?: MarketBrainResultMacroDetails;
   sessionDetails?: MarketBrainResultSessionDetails;
   newsDetails?: MarketBrainResultNewsDetails;
+}
+
+export type MarketBrainRefusalReason =
+  (typeof MarketBrainRefusalReason)[keyof typeof MarketBrainRefusalReason];
+
+export const MarketBrainRefusalReason = {
+  INSUFFICIENT_REAL_DATA: "INSUFFICIENT_REAL_DATA",
+} as const;
+
+export type MarketBrainRefusalDirection =
+  (typeof MarketBrainRefusalDirection)[keyof typeof MarketBrainRefusalDirection];
+
+export const MarketBrainRefusalDirection = {
+  WAIT: "WAIT",
+} as const;
+
+/**
+ * Honest refusal returned INSTEAD of an analysis when the market-data router cannot serve enough real closed candles (60). It deliberately carries NO market numbers — no technicalDetails, macroDetails, scoring, entry, stop or target. A consumer that renders this as an analysis will read undefined; branch on `available === false` first.
+ */
+export interface MarketBrainRefusal {
+  /** Always false here. Discriminates against MarketBrainResult. */
+  available: boolean;
+  reason: MarketBrainRefusalReason;
+  symbol: string;
+  direction: MarketBrainRefusalDirection;
+  /** Always 0 — a withheld read, not a measured zero. Do not render as a score. */
+  confidence: number;
+  riskApproved: boolean;
+  blockedReason: string;
+  reasons: string[];
+  timestamp: string;
 }
 
 export type SymbolRegistryItemCategory =

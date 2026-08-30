@@ -519,6 +519,7 @@ import type {
   ManageMissionTradeExit404,
   ManageMissionTradeExit409,
   ManageMissionTradeExit422,
+  MarketBrainRefusal,
   MarketBrainResult,
   MarketHeatDiagnostics,
   MarketHeatResponse,
@@ -20248,13 +20249,16 @@ export const getRunBrainAnalysisUrl = () => {
 export const runBrainAnalysis = async (
   brainAnalyzeRequest: BrainAnalyzeRequest,
   options?: RequestInit,
-): Promise<MarketBrainResult> => {
-  return customFetch<MarketBrainResult>(getRunBrainAnalysisUrl(), {
-    ...options,
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(brainAnalyzeRequest),
-  });
+): Promise<MarketBrainResult | MarketBrainRefusal> => {
+  return customFetch<MarketBrainResult | MarketBrainRefusal>(
+    getRunBrainAnalysisUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(brainAnalyzeRequest),
+    },
+  );
 };
 
 export const getRunBrainAnalysisMutationOptions = <

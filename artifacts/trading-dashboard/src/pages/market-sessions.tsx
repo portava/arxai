@@ -8,8 +8,11 @@ type Clock = {
   activeSessions: string[];
   overlap: boolean;
   sessionLabel: string;
+  /** False across the weekend (FX week: Sun 21:00 → Fri 21:00 UTC). */
+  marketOpen: boolean;
+  weekOpensInHours: number | null;
   recommendation: string;
-  sessions: Array<{ id: string; isActive: boolean; nextOpenInHours: number; nextCloseInHours: number }>;
+  sessions: Array<{ id: string; isActive: boolean; nextOpenInHours: number | null; nextCloseInHours: number | null }>;
 };
 const COLOR: Record<string, string> = {
   QUIET: "bg-muted text-txt-secondary",
@@ -17,7 +20,12 @@ const COLOR: Record<string, string> = {
   ACTIVE: "bg-success/20 text-success",
   HIGH_VOLATILITY: "bg-warning/20 text-warning",
   AVOID: "bg-danger/20 text-danger",
+  MARKET_CLOSED: "bg-danger/20 text-danger",
 };
+
+function hours(v: number | null): string {
+  return v == null ? "—" : `${v}h`;
+}
 
 export default function MarketSessionsPage() {
   const [c, setC] = useState<Clock | null>(null);
@@ -34,17 +42,39 @@ export default function MarketSessionsPage() {
           <h1 className="text-2xl font-bold">Market Sessions</h1>
           <p className="text-sm text-muted-foreground">Sydney · Tokyo · London · New York with overlap windows.</p>
         </div>
-        <Badge variant="outline">SIMULATOR</Badge>
-        {c && <Badge className={COLOR[c.sessionLabel] ?? ""}>{c.sessionLabel}</Badge>}
+        {/* This page is a real UTC clock over fixed session windows — it is not
+            simulator output, and the old hardcoded "SIMULATOR" badge said it was. */}
+        <Badge variant="outline">UTC CLOCK</Badge>
+        {c && <Badge className={COLOR[c.sessionLabel] ?? ""}>{c.sessionLabel.replace(/_/g, " ")}</Badge>}
       </div>
 
       {!c ? <p className="text-sm text-muted-foreground">Loading…</p> : (
         <>
+          {c.marketOpen === false && (
+            <Card className="border-danger/40 bg-danger/10">
+              <CardHeader>
+                <CardTitle className="text-base">Markets closed</CardTitle>
+                <CardDescription>
+                  The FX trading week runs Sunday 21:00 → Friday 21:00 UTC.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="text-sm">
+                <p>
+                  Every session below is shut. No session read, volatility label or window
+                  recommendation applies right now
+                  {c.weekOpensInHours != null && <> — spot FX and equities reopen in about {c.weekOpensInHours}h</>}.
+                </p>
+              </CardContent>
+            </Card>
+          )}
+
           <Card>
             <CardHeader><CardTitle className="text-base">Active right now</CardTitle><CardDescription>UTC {new Date(c.nowUTC).toUTCString()}</CardDescription></CardHeader>
             <CardContent>
               {c.activeSessions.length === 0
-                ? <p className="text-sm text-muted-foreground">No major session active.</p>
+                ? <p className="text-sm text-muted-foreground">
+                    {c.marketOpen === false ? "Markets are closed for the weekend." : "No major session active."}
+                  </p>
                 : c.activeSessions.map((s) => <Badge key={s} className="mr-1">{s}</Badge>)}
               {c.overlap && <Badge className="ml-2 bg-warning/20 text-warning">OVERLAP</Badge>}
               <p className="text-sm mt-3">{c.recommendation}</p>
@@ -59,8 +89,8 @@ export default function MarketSessionsPage() {
                   <Badge className={s.isActive ? "bg-success/20 text-success" : "bg-muted text-txt-secondary"}>
                     {s.isActive ? "OPEN" : "CLOSED"}
                   </Badge>
-                  <p className="text-xs text-muted-foreground">Next open in {s.nextOpenInHours}h</p>
-                  <p className="text-xs text-muted-foreground">Next close in {s.nextCloseInHours}h</p>
+                  <p className="text-xs text-muted-foreground">Next open in {hours(s.nextOpenInHours)}</p>
+                  <p className="text-xs text-muted-foreground">Next close in {hours(s.nextCloseInHours)}</p>
                 </CardContent>
               </Card>
             ))}

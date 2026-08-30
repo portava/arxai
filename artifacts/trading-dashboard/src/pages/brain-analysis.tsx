@@ -5,7 +5,7 @@ import {
   getGetBrainSymbolsQueryKey,
   getBrainSymbols,
 } from "@workspace/api-client-react";
-import type { MarketBrainResult } from "@workspace/api-client-react";
+import type { MarketBrainResult, MarketBrainRefusal } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -129,64 +129,61 @@ function TechnicalPanel({ data }: { data: MarketBrainResult["technicalDetails"] 
   );
 }
 
+/**
+ * Macro panel.
+ *
+ * `analyzeMacro` (brain/macro/macroEngine.ts) returns exactly two shapes:
+ * `type: "synthetic"` and `type: "unavailable"`. It has returned nothing else
+ * since the R7 fabrication removal — the hardcoded CURRENCY_MACRO /
+ * SECTOR_MACRO tables that fed Interest Rate / Inflation / Jobs / GDP / Fed
+ * Bias / Sector grids were deleted there. Those three grids in this panel were
+ * therefore dead code reading undefined fields, and they are removed here.
+ *
+ * The "Macro Score" progress bar is also gone. macroScore is fixed at
+ * NEUTRAL_MACRO_SCORE (50) and is documented in the engine as "NOT a reading";
+ * rendering it in the same colour-coded bar used for measured values presented
+ * a constant as a measurement. It is now stated as what it is.
+ */
 function MacroPanel({ data }: { data: object }) {
-  const d = data as any;
-  if (d.type === "synthetic") {
-    return (
-      <div className="text-sm space-y-2">
-        <BiasChip bias={d.macroBias} />
-        <div className="space-y-1 text-txt-secondary text-xs">{d.notes?.map((n: string, i: number) => <p key={i}>• {n}</p>)}</div>
-      </div>
-    );
-  }
+  const d = data as {
+    type?: string;
+    macroBias?: string;
+    providerConnected?: boolean;
+    notes?: string[];
+  };
+  const notes = d.notes ?? [];
   return (
     <div className="text-sm space-y-3">
       <div className="flex items-center justify-between">
         <span className="text-txt-secondary">Macro Bias</span>
-        <BiasChip bias={d.macroBias} />
+        <BiasChip bias={d.macroBias ?? "Neutral"} />
       </div>
-      <div className="flex items-center justify-between">
-        <span className="text-txt-secondary">Macro Score</span>
-        <ConfidenceBar value={d.macroScore} />
-      </div>
-      {d.type === "forex" && (
-        <div className="grid grid-cols-2 gap-1.5 text-xs">
-          <div><span className="text-txt-muted">Interest Rate: </span><span className="text-foreground">{d.interestRateBias}</span></div>
-          <div><span className="text-txt-muted">Inflation: </span><span className="text-foreground">{d.inflationBias}</span></div>
-          <div><span className="text-txt-muted">Jobs: </span><span className="text-foreground">{d.jobsBias}</span></div>
-          <div><span className="text-txt-muted">GDP: </span><span className="text-foreground">{d.GDPBias}</span></div>
-          <div><span className="text-txt-muted">Base Currency: </span><span className="text-foreground">{d.baseCurrencyStrength}/100</span></div>
-          <div><span className="text-txt-muted">Quote Currency: </span><span className="text-foreground">{d.quoteCurrencyStrength}/100</span></div>
+      {d.type !== "synthetic" && (
+        <div className="flex items-start justify-between gap-2">
+          <span className="text-txt-secondary shrink-0">Macro Score</span>
+          <span className="text-xs text-txt-muted text-right">
+            Not measured — no macro provider connected
+          </span>
         </div>
       )}
-      {d.type === "indices" && (
-        <div className="grid grid-cols-2 gap-1.5 text-xs">
-          <div><span className="text-txt-muted">Dollar: </span><span className="text-foreground">{d.dollarBias}</span></div>
-          <div><span className="text-txt-muted">Bond Yields: </span><span className="text-foreground">{d.bondYieldBias}</span></div>
-          <div><span className="text-txt-muted">Fed Bias: </span><span className="text-foreground">{d.fedBias}</span></div>
-          <div><span className="text-txt-muted">Earnings: </span><span className="text-foreground">{d.earningsSentiment}</span></div>
-          <div><span className="text-txt-muted">Risk Sentiment: </span><span className="text-foreground">{d.riskSentiment}</span></div>
-          <div><span className="text-txt-muted">Inflation Risk: </span><span className="text-foreground">{d.inflationRisk}</span></div>
+      {notes.length > 0 && (
+        <div className="space-y-1 text-txt-secondary text-xs pt-1 border-t border-border">
+          {notes.map((n, i) => <p key={i}>• {n}</p>)}
         </div>
       )}
-      {d.type === "stocks" && (
-        <div className="grid grid-cols-2 gap-1.5 text-xs">
-          <div><span className="text-txt-muted">Sector Bias: </span><span className="text-foreground">{d.sectorBias}</span></div>
-          <div><span className="text-txt-muted">Earnings Risk: </span><span className="text-foreground">{d.earningsRisk}</span></div>
-          <div><span className="text-txt-muted">News Sentiment: </span><span className="text-foreground">{d.newsSentiment}</span></div>
-          <div><span className="text-txt-muted">Rel. Strength: </span><span className="text-foreground">{d.relativeStrength}/100</span></div>
-        </div>
-      )}
-      {d.notes?.length > 0 && <div className="space-y-1 text-txt-secondary text-xs pt-1 border-t border-border">{d.notes.map((n: string, i: number) => <p key={i}>• {n}</p>)}</div>}
     </div>
   );
 }
 
 function ScoringPanel({ result }: { result: MarketBrainResult }) {
   const { scoring } = result;
+  // Macro is deliberately NOT in this list. macroScore is a fixed neutral 50
+  // (macroEngine.NEUTRAL_MACRO_SCORE, documented "NOT a reading"), so
+  // macroContrib is a constant — 10 for forex/indices/stocks, 0 for synthetic.
+  // A scored bar would present that constant as a measured contribution; it is
+  // shown below as the fixed neutral it is.
   const items = [
     { label: "Technical Contrib", value: scoring.breakdown.technicalContrib, max: 65 },
-    { label: "Macro Contrib", value: scoring.breakdown.macroContrib, max: 20 },
     { label: "Session Contrib", value: scoring.breakdown.sessionContrib, max: 10 },
     { label: "Strategy Contrib", value: scoring.breakdown.strategyContrib, max: 25 },
   ];
@@ -211,6 +208,12 @@ function ScoringPanel({ result }: { result: MarketBrainResult }) {
           </div>
         ))}
       </div>
+      <div className="flex items-start justify-between gap-2 text-xs pt-1 border-t border-border">
+        <span className="text-txt-secondary shrink-0">Macro Contrib</span>
+        <span className="text-txt-muted text-right">
+          Fixed neutral +{scoring.breakdown.macroContrib} — not measured, no macro provider connected
+        </span>
+      </div>
       {deductions.some((d) => d.value > 0) && (
         <div className="pt-2 border-t border-border space-y-1">
           <p className="text-[10px] text-txt-muted uppercase tracking-wider">Deductions</p>
@@ -232,10 +235,54 @@ function ScoringPanel({ result }: { result: MarketBrainResult }) {
   );
 }
 
+/**
+ * The brain answers with an analysis OR a refusal — the union the generated
+ * client now models (openapi `/brain/analyze` → oneOf). The refusal carries no
+ * technicalDetails/macroDetails/scoring, so the page MUST branch before it
+ * renders any panel. It previously did not, and read `d.trendDirection` off
+ * `undefined` — a TypeError that blanked the page mid-render, right after
+ * showing a WAIT decision bar, on exactly the case the backend refused.
+ */
+type BrainOutcome = MarketBrainResult | MarketBrainRefusal;
+
+function isRefusal(r: BrainOutcome): r is MarketBrainRefusal {
+  return r.available === false;
+}
+
+function RefusalCard({ refusal }: { refusal: MarketBrainRefusal }) {
+  return (
+    <Card className="border-2 border-warning/50 bg-warning/10">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <AlertTriangle size={18} className="text-warning" />
+          No analysis for {refusal.symbol}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-sm text-foreground">
+          Analysis is withheld until a real feed serves enough closed bars. Nothing was scored —
+          there is no direction, confidence, entry, stop or target below because none were computed.
+        </p>
+        <ul className="space-y-1">
+          {refusal.reasons.filter(Boolean).map((r, i) => (
+            <li key={i} className="text-xs text-txt-secondary flex items-start gap-2">
+              <span className="text-warning/70 mt-0.5 shrink-0">›</span>
+              <span>{r}</span>
+            </li>
+          ))}
+        </ul>
+        <p className="text-xs text-txt-muted border-t border-border pt-2">
+          Refused at {new Date(refusal.timestamp).toLocaleTimeString()} · {refusal.reason}
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function BrainAnalysis() {
   const [selectedCategory, setSelectedCategory] = useState<Category>("forex");
   const [selectedSymbol, setSelectedSymbol] = useState("");
-  const [result, setResult] = useState<MarketBrainResult | null>(null);
+  const [outcome, setOutcome] = useState<BrainOutcome | null>(null);
   const [enableNewsFilter, setEnableNewsFilter] = useState(true);
   const [enableSessionFilter, setEnableSessionFilter] = useState(true);
 
@@ -246,8 +293,11 @@ export default function BrainAnalysis() {
 
   const { mutate: analyze, isPending } = useMutation({
     ...getRunBrainAnalysisMutationOptions(),
-    onSuccess: setResult,
+    onSuccess: setOutcome,
   });
+
+  const refusal = outcome && isRefusal(outcome) ? outcome : null;
+  const result = outcome && !isRefusal(outcome) ? outcome : null;
 
   const handleAnalyze = () => {
     if (!selectedSymbol) return;
@@ -281,7 +331,7 @@ export default function BrainAnalysis() {
                 {CATEGORIES.map((cat) => (
                   <button
                     key={cat}
-                    onClick={() => { setSelectedCategory(cat); setSelectedSymbol(""); setResult(null); }}
+                    onClick={() => { setSelectedCategory(cat); setSelectedSymbol(""); setOutcome(null); }}
                     className={cn("px-3 py-1 rounded text-xs font-semibold capitalize transition-colors", selectedCategory === cat ? "bg-primary text-primary-foreground" : "bg-secondary text-txt-secondary hover:text-foreground")}
                   >
                     {cat}
@@ -293,7 +343,7 @@ export default function BrainAnalysis() {
               <div className="relative">
                 <select
                   value={selectedSymbol}
-                  onChange={(e) => { setSelectedSymbol(e.target.value); setResult(null); }}
+                  onChange={(e) => { setSelectedSymbol(e.target.value); setOutcome(null); }}
                   className="w-full appearance-none bg-secondary border border-border text-foreground rounded-md px-3 py-2 text-sm pr-8 focus:outline-none focus:ring-1 focus:ring-primary"
                 >
                   <option value="">— Select a symbol —</option>
@@ -333,6 +383,9 @@ export default function BrainAnalysis() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Refusal — rendered INSTEAD of any analysis panel */}
+      {refusal && <RefusalCard refusal={refusal} />}
 
       {/* Results */}
       {result && (
@@ -495,11 +548,19 @@ export default function BrainAnalysis() {
             </ul>
           </SectionCard>
 
-          <p className="text-center text-xs text-txt-muted">Analysis generated at {new Date(result.timestamp).toLocaleTimeString()} — data is simulated for demo mode</p>
+          {/* The brain analyses REAL routed candles only (marketBrain.ts refuses
+              below 60 real closed bars) — the old "data is simulated for demo
+              mode" footer was false. Report the actual provenance instead. */}
+          <p className="text-center text-xs text-txt-muted">
+            Analysis generated at {new Date(result.timestamp).toLocaleTimeString()}
+            {result.candleCount != null && result.candleSource
+              ? ` — ${result.candleCount} closed bars from ${result.candleSource}`
+              : ""}
+          </p>
         </div>
       )}
 
-      {!result && !isPending && (
+      {!outcome && !isPending && (
         <div className="flex flex-col items-center justify-center py-20 text-center text-txt-muted">
           <Brain size={48} className="mb-4 opacity-30" />
           <p className="text-lg font-medium mb-1">Select a symbol and run analysis</p>

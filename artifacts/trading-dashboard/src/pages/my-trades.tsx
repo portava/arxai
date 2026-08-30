@@ -45,6 +45,54 @@ function openRubyLiveChat() {
 }
 
 // Same shape MyOpenTradesPanel uses (MT5-confirmed open positions only).
+/**
+ * How far price has travelled from entry toward a level, as a 0–1 fraction.
+ * 0 = still at entry, 1 = the level has been reached. Values outside [0,1] are
+ * clamped.
+ *
+ * Returns `null` when there is no span to measure against — entry and level
+ * coincide (a stop moved to break-even is the ordinary case), or an input is
+ * not finite. That is a non-measurement and must stay one: returning 0 here
+ * meant a break-even-stop position was counted as "not near its stop" while
+ * price sat exactly on it.
+ */
+export function proximityToLevel(entry: number, current: number, level: number): number | null {
+  const span = Math.abs(level - entry);
+  if (!Number.isFinite(span) || span === 0) return null;
+  const travelled = (current - entry) / (level - entry);
+  return Math.max(0, Math.min(1, travelled));
+}
+
+/** A position counts as "near" a level once price has covered 80% of the way. */
+export const NEAR_LEVEL_THRESHOLD = 0.8;
+
+/**
+ * Count how many positions are near their level, and how many carry that level
+ * but could not be measured at all.
+ *
+ * `near` is null when NOTHING was measurable — the tile then renders "—" rather
+ * than a confident 0. Rows with no level are not counted here at all; they are
+ * what the "Without SL"/"Without TP" tiles report. Rows that HAVE a level but
+ * cannot be measured (missing price, break-even stop) are surfaced as
+ * `unmeasurable` so they are never silently dropped from the denominator.
+ */
+export function countNearLevel(
+  rows: Array<{ entry: number | null; current: number | null; level: number | null }>,
+): { near: number | null; unmeasurable: number } {
+  let measured = 0;
+  let near = 0;
+  let unmeasurable = 0;
+  for (const row of rows) {
+    if (row.level == null) continue;
+    if (row.entry == null || row.current == null) { unmeasurable += 1; continue; }
+    const p = proximityToLevel(row.entry, row.current, row.level);
+    if (p == null) { unmeasurable += 1; continue; }
+    measured += 1;
+    if (p >= NEAR_LEVEL_THRESHOLD) near += 1;
+  }
+  return { near: measured > 0 ? near : null, unmeasurable };
+}
+
 type OpenCard = {
   id: string;
   source: "user_owned_mt5" | "shared_master_attribution";
@@ -180,8 +228,29 @@ export default function MyTradesPage() {
     const shortLots = cards.filter((c) => c.side === "SELL").reduce((s, c) => s + c.lotSize, 0);
     const noSL = cards.filter((c) => c.stopLoss == null).length;
     const noTP = cards.filter((c) => c.takeProfit == null).length;
-    return { openPnl, totalLots, protectedN, unprotectedN, withWinner, withLoser, longLots, shortLots, noSL, noTP };
+    // "Near Stop Loss" / "Near Take Profit" used to be hardcoded "—" beside
+    // four working tiles, so the user read "no positions near stop loss" from a
+    // field that never computed. Both are derivable from data already on the
+    // card: entry, current price and the level. `null` (rendered "—") is kept
+    // for the honest case where NO card has enough of those to measure, and any
+    // card that carries the level but cannot be measured (missing price, or a
+    // stop moved to break-even, where the fraction has no span) is reported
+    // beside the count rather than quietly counted as "not near".
+    const sl = countNearLevel(cards.map((c) => ({ entry: c.entryPrice, current: c.currentPrice, level: c.stopLoss })));
+    const tp = countNearLevel(cards.map((c) => ({ entry: c.entryPrice, current: c.currentPrice, level: c.takeProfit })));
+    const nearSL = sl.near;
+    const nearTP = tp.near;
+    return { openPnl, totalLots, protectedN, unprotectedN, withWinner, withLoser, longLots, shortLots, noSL, noTP, nearSL, nearTP, nearSLUnmeasurable: sl.unmeasurable, nearTPUnmeasurable: tp.unmeasurable };
   }, [cards]);
+
+  /** Open positions that reported an open time, newest first. Real rows only. */
+  const recentlyOpened = useMemo(
+    () => cards
+      .filter((c) => c.openedAt != null && !Number.isNaN(Date.parse(c.openedAt)))
+      .sort((a, b) => Date.parse(b.openedAt!) - Date.parse(a.openedAt!))
+      .slice(0, 5),
+    [cards],
+  );
 
   const visible = useMemo(() => {
     let list = cards;
@@ -365,9 +434,9 @@ export default function MyTradesPage() {
           ) : (
             <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
               <Stat dot="bg-success" label="Protected" value={sum.protectedN} />
-              <Stat dot="bg-danger" label="Near Stop Loss" value="—" />
+              <Stat dot="bg-danger" label="Near Stop Loss" value={sum.nearSL ?? "—"} note={sum.nearSLUnmeasurable > 0 ? `${sum.nearSLUnmeasurable} not measurable` : undefined} />
               <Stat dot="bg-danger" label="Unprotected" value={sum.unprotectedN} />
-              <Stat dot="bg-warning" label="Near Take Profit" value="—" />
+              <Stat dot="bg-warning" label="Near Take Profit" value={sum.nearTP ?? "—"} note={sum.nearTPUnmeasurable > 0 ? `${sum.nearTPUnmeasurable} not measurable` : undefined} />
               <Stat dot="bg-danger" label="Without SL" value={sum.noSL} />
               <Stat dot="bg-warning" label="Without TP" value={sum.noTP} />
             </div>
@@ -568,12 +637,34 @@ export default function MyTradesPage() {
           </button>
         </div>
 
-        {/* Live Activity */}
+        {/* Recently opened.
+            This card used to render the permanent literal "Live activity will
+            appear as positions update." — a sentence that promised data no code
+            path ever produced. There is no activity feed endpoint, so the card
+            now shows the one real thing this page already holds: when the open
+            positions were opened, newest first. */}
         <div className="rounded-2xl border border-border bg-card p-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2"><Clock className="h-4 w-4 text-primary" /><h3 className="text-sm font-semibold">Live Activity</h3></div>
+            <div className="flex items-center gap-2"><Clock className="h-4 w-4 text-primary" /><h3 className="text-sm font-semibold">Recently opened</h3></div>
           </div>
-          <p className="mt-3 text-sm text-txt-muted">Live activity will appear as positions update.</p>
+          {recentlyOpened.length === 0 ? (
+            <p className="mt-3 text-sm text-txt-muted">
+              {cards.length === 0
+                ? "No open positions."
+                : "Your broker did not report an open time for these positions."}
+            </p>
+          ) : (
+            <ul className="mt-3 space-y-1.5">
+              {recentlyOpened.map((c) => (
+                <li key={c.id} className="flex items-center gap-2 text-xs">
+                  <span className={cn("font-medium", c.side === "BUY" ? "text-success" : "text-danger")}>{c.side}</span>
+                  <span className="flex-1 truncate">{c.symbol}</span>
+                  <span className="text-txt-muted">{c.lotSize} lots</span>
+                  <span className="text-txt-muted">{new Date(c.openedAt!).toLocaleString()}</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
 
         {/* Quick Actions */}
@@ -615,11 +706,14 @@ function Mini({ label, value, tone, sub }: { label: string; value: string; tone?
     </div>
   );
 }
-function Stat({ dot, label, value }: { dot: string; label: string; value: number | string }) {
+function Stat({ dot, label, value, note }: { dot: string; label: string; value: number | string; note?: string }) {
   return (
     <div className="flex items-center justify-between">
       <span className="inline-flex items-center gap-1.5 text-txt-secondary"><span className={cn("h-2 w-2 rounded-full", dot)} />{label}</span>
-      <span className="font-mono text-foreground">{value}</span>
+      <span className="font-mono text-foreground">
+        {value}
+        {note && <span className="ml-1.5 font-sans text-[11px] text-txt-muted">({note})</span>}
+      </span>
     </div>
   );
 }
