@@ -86,7 +86,25 @@ async function computeReadiness(): Promise<{
   const launchBlockers: Blocker[] = [];
 
   if (envSummary.missingRequired.length > 0) {
-    launchBlockers.push({ code: "ENV_REQUIRED_MISSING", severity: "CRITICAL", message: `Missing required env vars: ${envSummary.missingRequired.join(", ")}` });
+    const reasons = Object.entries(envSummary.missingRequiredReasons)
+      .map(([k, v]) => `${k}: ${v}`);
+    launchBlockers.push({
+      code: "ENV_REQUIRED_MISSING", severity: "CRITICAL",
+      message: `Missing required env vars: ${envSummary.missingRequired.join(", ")}`
+        + (reasons.length > 0 ? ` — ${reasons.join("; ")}` : ""),
+    });
+  }
+  // Named separately from ENV_REQUIRED_MISSING because the consequence is
+  // specific and total: with the shield ON and no pepper, every signup is
+  // refused with PEPPER_MISSING and the admin cannot mint a key to work around
+  // it. An operator reading "a required var is missing" would not know that.
+  if (envSummary.registrationShieldBlocked) {
+    launchBlockers.push({
+      code: "REGISTRATION_SHIELD_BLOCKED", severity: "CRITICAL",
+      message: "ARX_BETA_INVITE_REQUIRED=true but REGISTRATION_KEY_PEPPER is absent. "
+        + "Every account creation is refused with PEPPER_MISSING and no registration key can be issued. "
+        + "Set the secret in Replit Secrets and redeploy — see docs/REGISTRATION_KEY_PEPPER_RUNBOOK.md.",
+    });
   }
   if (envSummary.legacyBridgeTokenPresent) {
     launchBlockers.push({ code: "LEGACY_SERVER_WIDE_BRIDGE_TOKEN_PRESENT", severity: "CRITICAL", message: "MT5_BRIDGE_TOKEN env value is set. It is rejected on every EA endpoint and must be removed before public launch." });

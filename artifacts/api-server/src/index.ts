@@ -124,14 +124,41 @@ ensureSafetyCoreInitialized()
             envTotal: summary.total,
             envPresent: summary.presentCount,
             missingRequired: summary.missingRequired,
+            missingRequiredReasons: summary.missingRequiredReasons,
             missingOptional: summary.missingOptional,
             liveMasterSwitchEnabled: summary.liveMasterSwitchEnabled,
             legacyBridgeTokenPresent: summary.legacyBridgeTokenPresent,
+            registrationShieldBlocked: summary.registrationShieldBlocked,
           },
           "Production Launch Readiness — env checklist (presence only, no values)",
         );
         if (summary.missingRequired.length > 0) {
-          logger.warn({ missingRequired: summary.missingRequired }, "Required env vars missing — launch readiness is BLOCKED");
+          logger.warn(
+            { missingRequired: summary.missingRequired, missingRequiredReasons: summary.missingRequiredReasons },
+            "Required env vars missing — launch readiness is BLOCKED",
+          );
+        }
+        // Loud, specific and separate. The shield being ON without the pepper is
+        // not "a variable is missing" — it is "no human being can create an
+        // account on this deployment, and the admin cannot mint a key to fix
+        // it". It is logged at ERROR so it cannot be lost among startup warnings.
+        //
+        // Deliberately NOT fatal. Killing the process would take the trading,
+        // bridge and safety surfaces down with it to protect a signup path that
+        // is already correctly fail-closed — a strictly worse outcome than
+        // running loudly degraded. The registration path itself refuses; this
+        // says so where an operator will read it.
+        if (summary.registrationShieldBlocked) {
+          logger.error(
+            {
+              varName: "REGISTRATION_KEY_PEPPER",
+              shield: "ARX_BETA_INVITE_REQUIRED=true",
+              effect: "every POST /api/auth/register returns 403 PEPPER_MISSING; registration-key issuance returns PEPPER_MISSING",
+              remedy: "set REGISTRATION_KEY_PEPPER in Replit Secrets, then REDEPLOY — a published build does not pick up a newly-set secret until it is republished",
+              runbook: "docs/REGISTRATION_KEY_PEPPER_RUNBOOK.md",
+            },
+            "REGISTRATION SHIELD BLOCKED — the registration-key shield is ON and REGISTRATION_KEY_PEPPER is ABSENT. No account can be created and no registration key can be issued.",
+          );
         }
         if (summary.legacyBridgeTokenPresent) {
           logger.warn({}, "LEGACY MT5_BRIDGE_TOKEN env value is set — it is rejected on every EA endpoint and must be removed before public launch");
