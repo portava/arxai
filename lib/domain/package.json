@@ -142,6 +142,7 @@
     "./safety-contracts/tradingConstitution": "./src/safety-contracts/tradingConstitution.ts",
     "./safety-contracts/approvalTicket": "./src/safety-contracts/approvalTicket.ts",
     "./safety-contracts/executionTier": "./src/safety-contracts/executionTier.ts",
+    "./safety-contracts/guidedMt5PipelineParity": "./src/safety-contracts/guidedMt5PipelineParity.ts",
     "./safety-contracts/guidedTtlPolicy": "./src/safety-contracts/guidedTtlPolicy.ts",
     "./safety-contracts/executionVenue": "./src/safety-contracts/executionVenue.ts",
     "./safety-contracts/certificationExpiry": "./src/safety-contracts/certificationExpiry.ts",

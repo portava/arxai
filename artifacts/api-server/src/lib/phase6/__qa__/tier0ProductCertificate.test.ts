@@ -104,6 +104,11 @@ async function drive(over: {
   loseClaim?: boolean;
   /** #34 probation read (persistence substitute). Default: no active probation. */
   probation?: import("../../recoveryProbation.js").EffectiveProbation;
+  /** Operator stop controls (persistence substitute). Default: nothing engaged. */
+  stopState?: {
+    closeOnlyMode: boolean | null;
+    riskLocks: Array<{ lockType: string; isActive: boolean; endTime: Date | string | null }>;
+  };
 } = {}): Promise<{ outcome: Awaited<ReturnType<typeof dispatchGuidedTicketForRequest>>; spy: Spy }> {
   const spy: Spy = { wireWrites: 0, audits: [], claims: 0, intents: 0, settlements: [] };
   const prev = process.env["ARX_EXECUTION_TIER"];
@@ -121,6 +126,8 @@ async function drive(over: {
           return id === TKT && uid === USER ? TICKET() : null;
         },
         loadActiveConstitution: async () => CONSTITUTION,
+        loadOperatorStopState: async () =>
+          over.stopState ?? { closeOnlyMode: false, riskLocks: [] },
         deriveCurrentTerms: async (t) => t.terms,
         hasUnresolvedIntent: async () => false,
         claimForDispatch: async () => {
@@ -214,6 +221,57 @@ test("a venue-classified LIVE account never reaches the venue", async () => {
   assert.equal(spy.wireWrites, 0, "a real-money account reached the venue");
   assert.equal(outcome.ok, false);
   assert.match(outcome.detail, /ACCOUNT_IS_LIVE_MONEY/, `refused for the wrong reason: ${outcome.detail}`);
+});
+
+test("OPERATOR close-only mode refuses guided entries pre-claim", async () => {
+  // Parity audit 2026-08-30 GAP fix: close_only_mode bound MT5 dispatch while
+  // guided entries sailed past it. Every guided order opens a position, so
+  // close-only refuses ALL of them — before any claim, so the ticket stays
+  // APPROVED for when the operator releases the control.
+  const { outcome, spy } = await drive({
+    tier: "TIER_1_DEMO_GUIDED",
+    stopState: { closeOnlyMode: true, riskLocks: [] },
+  });
+  assert.equal(spy.wireWrites, 0);
+  assert.equal(spy.claims, 0, "close-only refused AFTER claiming the ticket");
+  assert.equal(outcome.ok, false);
+  assert.equal(outcome.indeterminate, false);
+  assert.match(outcome.detail, /CLOSE_ONLY_MODE/, `refused for the wrong reason: ${outcome.detail}`);
+});
+
+test("an ACTIVE risk lock refuses guided entries; an expired one does not", async () => {
+  // Same audit, same class: risk locks (manual / revenge / cooldown) are the
+  // operator's stop-NEW-risk control and must bind every dispatch path. The
+  // decider is the SAME pure helper the MT5 pipeline uses.
+  const { outcome, spy } = await drive({
+    tier: "TIER_1_DEMO_GUIDED",
+    stopState: {
+      closeOnlyMode: false,
+      riskLocks: [{ lockType: "REVENGE_TRADING", isActive: true, endTime: null }],
+    },
+  });
+  assert.equal(spy.wireWrites, 0);
+  assert.equal(spy.claims, 0);
+  assert.equal(outcome.ok, false);
+  assert.match(outcome.detail, /RISK_LOCK_ENGAGED/, `refused for the wrong reason: ${outcome.detail}`);
+  assert.match(outcome.detail, /REVENGE_TRADING/, "the lock type is not named to the user");
+
+  // Expired and inactive locks must NOT block — a released control releases.
+  const past = new Date(Date.now() - 60_000).toISOString();
+  const { outcome: ok } = await drive({
+    tier: "TIER_0_DRY_RUN",
+    stopState: {
+      closeOnlyMode: false,
+      riskLocks: [
+        { lockType: "COOLDOWN", isActive: true, endTime: past },
+        { lockType: "MANUAL", isActive: false, endTime: null },
+      ],
+    },
+  });
+  // TIER_0 runs the full chain and refuses at the transport — reaching that
+  // refusal proves the expired/inactive locks did not block upstream.
+  assert.equal(ok.ok, false);
+  assert.doesNotMatch(ok.detail, /RISK_LOCK_ENGAGED|CLOSE_ONLY_MODE/);
 });
 
 test("the kill switch stops the product path", async () => {
@@ -331,6 +389,7 @@ test("with NO transport override, the LIVE path runs and still fabricates nothin
       {
         loadOwnedTicket: async () => TICKET(),
         loadActiveConstitution: async () => CONSTITUTION,
+        loadOperatorStopState: async () => ({ closeOnlyMode: false, riskLocks: [] }),
         deriveCurrentTerms: async (t) => t.terms,
         hasUnresolvedIntent: async () => false,
         claimForDispatch: async () => ({ claimed: true }),
@@ -382,6 +441,7 @@ test("an UNREADABLE observed state refuses definitively — never trades blind",
       {
         loadOwnedTicket: async () => TICKET(),
         loadActiveConstitution: async () => CONSTITUTION,
+        loadOperatorStopState: async () => ({ closeOnlyMode: false, riskLocks: [] }),
         deriveCurrentTerms: async (t) => t.terms,
         hasUnresolvedIntent: async () => false,
         claimForDispatch: async () => ({ claimed: true }),
@@ -455,6 +515,7 @@ test("a SUCCESSFUL dispatch settles EXECUTED with the venue's reference", async 
       {
         loadOwnedTicket: async () => TICKET(),
         loadActiveConstitution: async () => CONSTITUTION,
+        loadOperatorStopState: async () => ({ closeOnlyMode: false, riskLocks: [] }),
         deriveCurrentTerms: async (t) => t.terms,
         hasUnresolvedIntent: async () => false,
         claimForDispatch: async () => ({ claimed: true }),

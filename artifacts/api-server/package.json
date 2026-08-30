@@ -248,6 +248,7 @@
     "press:release-kill-switch": "node --import tsx src/scripts/pressReleaseKillSwitch.ts",
     "reconcile:guided-closures": "node --import tsx src/scripts/reconcileGuidedClosures.ts",
     "test:phase6-close-reconciler": "node --import tsx --test --test-force-exit src/lib/phase6/__qa__/guidedCloseReconciler.test.ts",
+    "test:phase6-mt5-parity": "node --import tsx --test --test-force-exit src/lib/phase6/__qa__/guidedMt5Parity.test.ts",
     "test:execution-policy-shadow": "node --import tsx --test --test-force-exit src/lib/execution/__qa__/executionPolicyShadow.test.ts",
     "test:incident-replay": "node --import tsx --test --test-force-exit src/lib/replaySim/__qa__/incidentReplay.test.ts",
     "test:certification-expiry": "node --import tsx --test --test-force-exit src/lib/phase6/__qa__/certificationExpiry.test.ts",

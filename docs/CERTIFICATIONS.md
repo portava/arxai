@@ -535,7 +535,7 @@ Named so no reader assumes otherwise.
 | Tier 3 (live guided), Tier 4 (autonomous) | **Must not be enabled** (Ruling 19). |
 | Real-money execution | Standing hold. Real money remains OFF (Constitution Article VII). |
 | Deriv rejected order / partial fill / requote | **Unexercised by any live run** (Ruling 18). |
-| Guided-path parity with the MT5 pre-gates | **UNKNOWN.** The guided path does not enter `dispatchLiveCommand`, so it does not run the ~20 MT5 pre-gates (risk locks, price collars, exposure reservation, allocation gate, double-send CAS). It has its own walls, several stricter. No artifact maps one set onto the other. |
+| Guided-path parity with the MT5 pre-gates | **RECORDED 2026-08-30** — `lib/domain/src/safety-contracts/guidedMt5PipelineParity.ts`: all 40 distinct MT5 pre-gate checks mapped and adversarially verified (20-agent sweep, 25 dangerous claims attacked, 0 corrected). 16 EQUIVALENT, 9 STRICTER, 9 NOT_APPLICABLE, 6 WEAKER (each stating exactly what is weaker), 0 GAP — the two GAPs found (operator risk locks, close-only mode) were FIXED the same day: guided dispatch now runs the SAME pure deciders pre-claim (`test:phase6-mt5-parity`, mutation-proven). |
 | Replay determinism | **NOT implemented** (Ruling 14). Decisions are re-runnable, **not** replayable, and must not be described as replayable. |
 | `stableStringify` bigint/string injectivity | **Known collision, pinned not fixed** (Ruling 13). `BigInt(1)` and `"1n"` share a canonical form. The parity suite pins current behaviour so a future fix must consciously break the pin. |
 | Reconciler verified against the production database | **Not done.** Ruling 10a's precondition for flipping `ARX_REQUIRE_FRESH_RECONCILIATION`. |

@@ -471,7 +471,10 @@ In order.
 4. **Close the OpenAPI gap (B3)** — add the twelve Phase 6 paths to
    `lib/api-spec/openapi.yaml`, regenerate, and move the frontend onto the
    generated client.
-5. **Resolve B5 explicitly**: either write and test a mapping from the MT5
+5. **Resolve B5 explicitly** → **DONE 2026-08-30, first option**: the mapping
+   exists (`guidedMt5PipelineParity.ts`, 40 checks, adversarially verified,
+   0 GAP after same-day fixes — see CERTIFICATIONS.md). Original text:
+   either write and test a mapping from the MT5
    pre-gates onto the guided walls, or route the guided path through
    `dispatchLiveCommand` as the design document intended. This is an
    architecture decision, so it is an owner decision.

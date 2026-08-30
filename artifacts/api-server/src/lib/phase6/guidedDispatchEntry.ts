@@ -24,13 +24,15 @@ import { fetchAccounts, isDemoAccount, isRealAccount } from "../deriv/newApi/acc
 import { resolveNewApiConfig } from "../deriv/newApi/restClient.js";
 import { DerivExecutionAdapter } from "../deriv/execution/derivExecutionAdapter.js";
 import { isIndeterminateDelivery } from "../live/executionAdapter.js";
+import { closeOnlyBlocksDispatch, activeRiskLockBlockReason } from "../live/liveCommandPipeline.js";
 import {
   approvalTicketsRepo, derivOrderIntentsRepo, tradingConstitutionRepo, guidedAttemptEventsRepo,
   db, arxLiveArmingTable, globalTradingSettingsTable, safetyCoreTable,
   approvalTicketsTable, derivOrderIntentsTable,
   liveRiskDisclosureAcceptancesTable, userMasterLiveAccessTable,
+  userSlotAllocationTable, riskLocksTable,
 } from "@workspace/db";
-import { and, eq, gte, sql } from "drizzle-orm";
+import { and, eq, gte, isNull, or, sql } from "drizzle-orm";
 import { buildLineageRecord, type GuidedAuditEvent } from "./guidedLineage.js";
 import {
   resolveEffectiveProbation,
@@ -200,6 +202,36 @@ let cachedParityVerdict: VenueGateParityVerdict | null = null;
 function derivDemoParityVerdict(): VenueGateParityVerdict {
   cachedParityVerdict ??= assertVenueGateParity("DERIV_DEMO", DERIV_DEMO_GATE_PARITY);
   return cachedParityVerdict;
+}
+
+/**
+ * The operator's "stop NEW risk" controls, read live (parity audit 2026-08-30,
+ * GAP fixes). Risk locks and close-only mode bound MT5 dispatch while the
+ * guided path enforced neither — an operator who engaged them believed ALL
+ * order flow was bound. Every guided dispatch is an ENTRY, so both apply
+ * unconditionally, decided by the SAME pure helpers the MT5 pipeline uses so
+ * the contract cannot drift. A read failure here throws, and the caller's
+ * position (pre-claim) means a throw refuses the dispatch — fail-closed.
+ */
+async function loadOperatorStopState(userId: number): Promise<{
+  closeOnlyMode: boolean | null;
+  riskLocks: Array<{ lockType: string; isActive: boolean; endTime: Date | string | null }>;
+}> {
+  const [alloc] = await db.select({ c: userSlotAllocationTable.closeOnlyMode })
+    .from(userSlotAllocationTable)
+    .where(eq(userSlotAllocationTable.userId, userId)).limit(1);
+  const riskLocks = await db.select({
+    lockType: riskLocksTable.lockType,
+    isActive: riskLocksTable.isActive,
+    endTime: riskLocksTable.endTime,
+  })
+    .from(riskLocksTable)
+    .where(and(
+      eq(riskLocksTable.isActive, true),
+      // Legacy ownerless rows bind everyone — same reading the MT5 gate uses.
+      or(eq(riskLocksTable.userId, userId), isNull(riskLocksTable.userId)),
+    ));
+  return { closeOnlyMode: alloc?.c ?? null, riskLocks };
 }
 
 async function liveKillSwitchEngaged(userId: number): Promise<boolean> {
@@ -393,6 +425,15 @@ function toDomainConstitution(row: Awaited<ReturnType<typeof tradingConstitution
  * certify nothing.
  */
 export interface GuidedDispatchOverrides {
+  /**
+   * Operator stop-control state (close-only mode + risk locks). A substitute
+   * replaces the READS; the pure deciders (closeOnlyBlocksDispatch,
+   * activeRiskLockBlockReason — shared with the MT5 pipeline) always run.
+   */
+  loadOperatorStopState?: (userId: number) => Promise<{
+    closeOnlyMode: boolean | null;
+    riskLocks: Array<{ lockType: string; isActive: boolean; endTime: Date | string | null }>;
+  }>;
   /**
    * PERSISTENCE substitutes only — never decision logic.
    *
@@ -818,6 +859,28 @@ async function dispatchGuidedTicketInner(
     return {
       ok: false, refusal: "TICKET_AUTHORIZATION_REFUSED",
       detail: `GATE_PARITY_INCOMPLETE: ${parity.problems.length} Phase B gate(s) lack a valid DERIV_DEMO disposition (first: ${parity.problems[0]?.gate ?? "?"}); nothing was sent`,
+      venueContractRef: null, indeterminate: false, intentId: null, claimed: false,
+    };
+  }
+
+  // ── OPERATOR STOP CONTROLS, before anything can claim the ticket ────────
+  // Parity audit 2026-08-30, the two confirmed GAPs: risk locks and
+  // close-only mode. Pre-claim like GATE 18 — a refusal leaves the ticket
+  // APPROVED, so releasing the lock lets the SAME ticket dispatch (unless it
+  // expires first). No ledger event: nothing was claimed, nothing was sent.
+  const stopState = await (overrides.loadOperatorStopState ?? loadOperatorStopState)(args.userId);
+  if (closeOnlyBlocksDispatch({ closeOnlyMode: stopState.closeOnlyMode, isEntryCommand: true })) {
+    return {
+      ok: false, refusal: "TICKET_AUTHORIZATION_REFUSED",
+      detail: "CLOSE_ONLY_MODE: the operator has set this account to close-only; a guided order opens a new position and is refused; nothing was sent",
+      venueContractRef: null, indeterminate: false, intentId: null, claimed: false,
+    };
+  }
+  const riskLockReason = activeRiskLockBlockReason({ locks: stopState.riskLocks, isEntryCommand: true });
+  if (riskLockReason !== null) {
+    return {
+      ok: false, refusal: "TICKET_AUTHORIZATION_REFUSED",
+      detail: `RISK_LOCK_ENGAGED: an active risk lock refuses new entries (${riskLockReason}); nothing was sent`,
       venueContractRef: null, indeterminate: false, intentId: null, claimed: false,
     };
   }
