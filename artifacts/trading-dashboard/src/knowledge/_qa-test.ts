@@ -955,8 +955,21 @@ function walk(dir: string): string[] {
 }
 const srcRoot = pathResolve(__dirname7, "..");
 const triggerTestId = 'data-testid="floating-help-trigger"';
+// The invariant is about files that RENDER. Test and spec files that assert on
+// the testid (e.g. help/mountedAssistantTrigger.test.ts, which pins that no
+// mounted component re-introduces the retired trigger) necessarily quote the
+// literal and are not render sites; counting them turned the guard red for
+// adding a guard. They are excluded by the same rule that excludes this file.
+const isNonRenderingSource = (p: string) =>
+  p.includes("/_qa-test.ts") ||
+  p.includes("/uiElementRegistry") ||
+  p.includes("/arxAppKnowledge") ||
+  p.includes("/onboarding/") ||
+  /\.(test|spec)\.tsx?$/.test(p) ||
+  p.includes("/__qa__/") ||
+  p.includes("/__tests__/");
 const triggerHostFiles = walk(srcRoot)
-  .filter((p) => !p.includes("/_qa-test.ts") && !p.includes("/uiElementRegistry") && !p.includes("/arxAppKnowledge") && !p.includes("/onboarding/"))
+  .filter((p) => !isNonRenderingSource(p))
   .filter((p) => readFileSync(p, "utf8").includes(triggerTestId));
 const noDuplicateTriggers = triggerHostFiles.length === 1
   && triggerHostFiles[0].endsWith("FloatingHelpWidget.tsx");

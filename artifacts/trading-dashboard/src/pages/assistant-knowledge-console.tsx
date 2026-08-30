@@ -13,6 +13,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Loader2, RefreshCw, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ROUTE_KNOWLEDGE, resolveRoute } from "@/knowledge/routeKnowledge";
+import { DECLARED_ROUTES } from "@/knowledge/declaredRoutes";
 import { ARX_KNOWLEDGE } from "@/knowledge/arxAppKnowledge";
 import { routeCoverage, badgeCoverage, REQUIRED_BADGES } from "@/knowledge/coverage";
 import { UI_ELEMENTS } from "@/knowledge/uiElementRegistry";
@@ -67,7 +68,11 @@ export default function AssistantKnowledgeConsole() {
   useEffect(() => { void load(); }, []);
 
   const stats = useMemo(() => {
-    const route = routeCoverage(ROUTE_KNOWLEDGE.map((r) => r.route));
+    // RANK 74: this used to pass ROUTE_KNOWLEDGE's OWN route list, so `missing`
+    // was always empty and the card always read N/N green while 59 declared
+    // routes were undocumented. It measures against the real App.tsx route
+    // table now (DECLARED_ROUTES, pinned to App.tsx by declaredRoutes.test.ts).
+    const route = routeCoverage([...DECLARED_ROUTES]);
     const badge = badgeCoverage();
     const dupKbIds = duplicateIds(ARX_KNOWLEDGE.map((e) => e.id));
     const dupRouteIds = duplicateIds(ROUTE_KNOWLEDGE.map((r) => r.route));

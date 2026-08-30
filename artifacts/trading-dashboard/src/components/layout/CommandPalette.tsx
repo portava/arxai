@@ -40,8 +40,24 @@ function buildCommandPaletteItems(name: string): CommandPaletteItem[] {
   { label: "Testing Control Center",     href: "/testing-control-center", admin: true },
   { label: "Admin Cockpit",              href: "/admin/cockpit", admin: true },
   // Trading
-  { label: "Manual Trade Ticket",        href: "/orders", hint: "Order entry", approvedOnly: true },
-  { label: "Demo Trading",               href: "/trade-command-room", hint: "Simulator", approvedOnly: true },
+  // `/orders` is the simulator OMS ticket: every mutation in routes/oms.ts is
+  // requireAdmin, and the sidebar marks it adminOnly. The palette matched the
+  // sidebar's group tier (approvedOnly) instead of the ITEM tier, so an
+  // approved non-admin could jump to a ticket whose every action 403s.
+  { label: "Manual Trade Ticket",        href: "/orders", hint: "Order entry (admin)", admin: true },
+  // RANK 6 (critical): this entry read `Demo Trading — Simulator` and pointed
+  // at /trade-command-room — the LIVE intent-submission room, which already has
+  // its own honest entry three lines above. On a platform that dispatches real
+  // orders, labelling the live room "Simulator" is the single most dangerous
+  // string in the navigation layer.
+  //
+  // It is retargeted, not deleted, so searching "demo" still lands somewhere
+  // real: /mt5-setup carries the per-user Demo Execution Readiness + arm/disarm
+  // cards and is already both nav-visible and route-allowlisted for approved
+  // traders. The standalone simulator page at /demo-trading is deliberately NOT
+  // used here — routes/paperTrading.ts is not user-scoped, so pointing traders
+  // at it would hand one user another user's paper account.
+  { label: "Demo Execution (MT5)",       href: "/mt5-setup", hint: "Per-user demo bridge — no live orders", approvedOnly: true },
   { label: "Live Manual Tester",         href: "/live-manual", admin: true },
   { label: "Live AI Assist Tester",      href: "/live-ai-assist", admin: true },
   { label: "Live AI Auto Tester",        href: "/live-ai-auto-test", admin: true },
@@ -49,31 +65,41 @@ function buildCommandPaletteItems(name: string): CommandPaletteItem[] {
   // AI
   { label: "Market Scanner",             href: "/market-scanner", approvedOnly: true },
   { label: "Market Heat Map",            href: "/market-heat-map", hint: "Heat scores, news heat, broad flow", approvedOnly: true },
-  { label: "AI Coach",                   href: "/ai-coach", admin: true },
+  // RANK 75: these five were `admin: true` in the palette while the sidebar
+  // shows them to any APPROVED trader. The search box therefore returned "No
+  // matches" for four surfaces the user could see in their own menu. The
+  // sidebar tier wins — palette and nav now declare the same thing, pinned by
+  // navPaletteTierParity.test.ts.
+  { label: "AI Coach",                   href: "/ai-coach", approvedOnly: true },
   { label: "Autopilot Control Center",   href: "/autopilot-control-center", admin: true },
   { label: "Shadow Mode",                href: "/testing-lab?tab=shadow", admin: true },
   { label: "AI Readiness Score",         href: "/ai-readiness-score", admin: true },
   // Strategy
-  { label: "Strategy Lab",               href: "/strategy-lab", admin: true },
-  { label: "Testing Lab",                href: "/testing-lab", admin: true },
+  { label: "Strategy Lab",               href: "/strategy-lab", approvedOnly: true },
+  { label: "Testing Lab",                href: "/testing-lab", approvedOnly: true },
   { label: "Market Replay",              href: "/market-replay", admin: true },
-  { label: "Trade Grader",               href: "/trade-grader", admin: true },
+  { label: "Trade Grader",               href: "/trade-grader", hint: "Trade Review", approvedOnly: true },
   { label: "Strategy Tournament",        href: "/testing-lab?tab=tournament", admin: true },
   { label: "Strategy Promotion",         href: "/testing-lab?tab=promotion", admin: true },
   { label: "Confidence Calibration",     href: "/confidence-calibration", admin: true },
   // Risk
   { label: "Risk Command Center",        href: "/risk-command-center", approvedOnly: true },
-  { label: "Risk Profile",               href: "/risk-profile", approvedOnly: true },
+  { label: "Risk Profile",               href: "/risk-profile", admin: true },
   { label: "Risk Events",                href: "/risk-events", admin: true },
-  { label: "Market Health",              href: "/market-health", admin: true },
+  { label: "Market Health",              href: "/market-health", hint: "Market Bias", approvedOnly: true },
   { label: "News Risk",                  href: "/news-risk", approvedOnly: true },
   { label: "Data Quality",               href: "/data-quality", admin: true },
   { label: "Prop Firm Mode",             href: "/prop-firm-mode", admin: true },
   // Records
-  { label: "Orders",                     href: "/orders", approvedOnly: true },
-  { label: "Positions",                  href: "/positions", approvedOnly: true },
+  { label: "Orders",                     href: "/orders", hint: "Simulator OMS (admin)", admin: true },
+  { label: "Positions",                  href: "/positions", hint: "Simulator OMS (admin)", admin: true },
   { label: "Approval Inbox",             href: "/approval-inbox", approvedOnly: true },
-  { label: "Journal",                    href: "/shadow-journal", approvedOnly: true },
+  // RANK 75: "Journal" pointed at /shadow-journal — admin-gated SHADOW data.
+  // A non-admin searching "journal" got exactly one result, and it landed on an
+  // access-denied card, while their real per-user journal at /journal (already
+  // fixed in the sidebar by navAccessTier.test.ts) had no palette entry at all.
+  { label: "Journal",                    href: "/journal", hint: "Your trading journal", approvedOnly: true },
+  { label: "Shadow Journal",             href: "/shadow-journal", hint: "Shadow data (admin)", admin: true },
   { label: "Scalp Journal",              href: "/scalp-journal", hint: `${name} scalp history & lessons`, approvedOnly: true },
   { label: "Calendar",                   href: "/trading-calendar", approvedOnly: true },
   { label: "Performance Scorecard",      href: "/performance-scorecard", approvedOnly: true },

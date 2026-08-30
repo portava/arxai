@@ -1,6 +1,6 @@
 import { Link, useLocation } from "wouter";
 import {
-  Target, Brain, Search, Activity, Menu, User,
+  Target, Brain, Search, Activity, Database, User,
   ShieldCheck, Wallet, Settings, HelpCircle, GraduationCap, type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -13,7 +13,7 @@ import { useTraderTier } from "@/hooks/useTraderTier";
 // Nov-2025 nav spec: Cockpit · Trade · Scanner · AI · More/Me.
 // Scanner has first-class bottom access because it drives trade discovery.
 // Risk stays available in the side menu + Primary Tools group.
-// The 5th slot is role-gated: ADMIN/OWNER see "More" → /admin/data-management;
+// The 5th slot is role-gated: ADMIN/OWNER see "Data" → /admin/data-management;
 // regular USER sees "Me" → /my-account. The backend rejects admin API
 // calls from non-admins regardless; this just prevents a regular user
 // from landing on an empty admin page skeleton.
@@ -30,7 +30,12 @@ const BASE_ITEMS: readonly BottomItem[] = [
   { href: "/market-scanner",            label: "Scanner", icon: Search,   arxId: "nav-scanner" },
   { href: "/ai-command-center",         label: "AI",      icon: Brain,    arxId: "nav-ai" },
 ];
-const ADMIN_TAIL: BottomItem = { href: "/admin/data-management", label: "More", icon: Menu, arxId: "nav-more" };
+// RANK 92 — this slot showed a hamburger icon labelled "More", which reads as
+// "open the rest of the menu". It is a single link to ONE admin page, so an
+// admin on mobile tapping "More ☰" was thrown onto Data Management. The label
+// now says where it goes; the actual "rest of the menu" on mobile is the
+// hamburger in the Topbar (MobileMenuTrigger), which opens the full sidebar.
+const ADMIN_TAIL: BottomItem = { href: "/admin/data-management", label: "Data", icon: Database, arxId: "nav-admin-data" };
 const USER_TAIL:  BottomItem = { href: "/my-account",            label: "Me",   icon: User, arxId: "nav-me"   };
 
 // PENDING / unapproved human trader (Task #768) — reduced, non-execution bar.

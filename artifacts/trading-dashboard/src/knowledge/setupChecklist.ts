@@ -6,6 +6,7 @@
  */
 import type { AskContext } from "./answerEngine";
 import { resolveRoute } from "./routeKnowledge";
+import { isNormalUserAllowedPath } from "@/lib/routeAccess";
 
 export type ChecklistStatus = "complete" | "incomplete" | "blocked" | "unavailable";
 
@@ -28,6 +29,23 @@ interface Builder {
 const BADGES = (ctx: AskContext) => (ctx.safetyStatuses ?? []).map((b) => b.toUpperCase());
 const has = (ctx: AskContext, re: RegExp) => BADGES(ctx).some((b) => re.test(b));
 
+// RANK 4 (review pass) — several `explanation` strings were constants that
+// asserted an absolute about execution ("you can't lose real money", "no order
+// will be sent") while the item's own `status` computed to "incomplete", i.e.
+// while ctx said the user was NOT in that state. This checklist renders on
+// /status-command-center, which is in NORMAL_USER_EXACT, so every human trader
+// saw it. Explanations that make an execution claim are now derived from the
+// same ctx the status is derived from, and say UNKNOWN when ctx cannot tell.
+const inDemoMode = (ctx: AskContext) =>
+  ctx.tradingModeHint === "paper" || has(ctx, /PAPER\s*ONLY/);
+
+const brokerReadOnlyState = (ctx: AskContext): "readonly" | "not-readonly" | "unknown" => {
+  if (has(ctx, /BROKER\s*READ[-\s]?ONLY/)) return "readonly";
+  if (ctx.tradingModeHint === "broker-readonly") return "readonly";
+  if (ctx.tradingModeHint === "live") return "not-readonly";
+  return "unknown";
+};
+
 const BUILDERS: Builder[] = [
   {
     id: "app-status",
@@ -35,7 +53,7 @@ const BUILDERS: Builder[] = [
     build: (ctx) => ({
       status: BADGES(ctx).length > 0 ? "complete" : "incomplete",
       explanation: "ARX is rendering safety badges, which means the dashboard wired up correctly.",
-      related: { label: "Dashboard", route: "/dashboard" },
+      related: { label: "Cockpit", route: "/" },
       safeNextAction: "Skim the badges at the top of the dashboard to confirm safe-defaults.",
     }),
   },
@@ -43,10 +61,12 @@ const BUILDERS: Builder[] = [
     id: "paper-only-understood",
     title: "Demo mode understood",
     build: (ctx) => ({
-      status: ctx.tradingModeHint === "paper" || has(ctx, /PAPER\s*ONLY/) ? "complete" : "incomplete",
-      explanation: "ARX is in demo mode — every order routes to your MT5 demo account. You can't lose real money in this mode.",
-      related: { label: "Demo Trading", route: "/demo-trading" },
-      safeNextAction: "Open Demo Trading and run a session to see how orders flow.",
+      status: inDemoMode(ctx) ? "complete" : "incomplete",
+      explanation: inDemoMode(ctx)
+        ? "This session is in demo mode — every order routes to your MT5 demo account, so no real money is at risk while it stays that way."
+        : "Demo mode routes every order to your MT5 demo account. This session is NOT in demo mode, so do not assume an order here is harmless — check the mode badge in the header.",
+      related: { label: "MT5 Setup", route: "/mt5-setup" },
+      safeNextAction: "Open MT5 Setup and confirm which account this session routes to.",
     }),
   },
   {
@@ -55,8 +75,8 @@ const BUILDERS: Builder[] = [
     build: () => ({
       status: "incomplete",
       explanation: "Simulator generates synthetic candles every 5 seconds for demo purposes — not market data.",
-      related: { label: "Replay Simulator", route: "/replay-simulator" },
-      safeNextAction: "Run Replay against historical data to compare with synthetic.",
+      related: { label: "Testing Lab", route: "/testing-lab" },
+      safeNextAction: "Open Testing Lab and run a replay against historical data to compare with synthetic.",
     }),
   },
   {
@@ -65,8 +85,8 @@ const BUILDERS: Builder[] = [
     build: () => ({
       status: "incomplete",
       explanation: "Risk Governor enforces max-loss, lot size, and confidence thresholds before any order leaves ARX.",
-      related: { label: "Risk Governor", route: "/risk-governor" },
-      safeNextAction: "Open Risk Governor and review every active rule.",
+      related: { label: "Risk Command Center", route: "/risk-command-center" },
+      safeNextAction: "Open Risk Command Center and review every active rule.",
     }),
   },
   {
@@ -75,8 +95,8 @@ const BUILDERS: Builder[] = [
     build: (ctx) => ({
       status: has(ctx, /AUTOPILOT\s*BLOCKED/) ? "blocked" : "incomplete",
       explanation: "Readiness gates govern whether the bot can move past demo.",
-      related: { label: "Readiness Checklist", route: "/readiness-checklist" },
-      safeNextAction: "Open Readiness Checklist and address the red gates one at a time.",
+      related: { label: "ARX Status", route: "/status-command-center" },
+      safeNextAction: "Open ARX Status and address the red readiness gates one at a time.",
       blockerReason: has(ctx, /AUTOPILOT\s*BLOCKED/) ? "Autopilot is blocked by failing gates." : undefined,
     }),
   },
@@ -86,8 +106,8 @@ const BUILDERS: Builder[] = [
     build: (ctx) => ({
       status: ctx.mt5Hint === "connected" ? "complete" : ctx.mt5Hint === "disconnected" ? "blocked" : "incomplete",
       explanation: "Confirm whether the bridge is configured (deferred), live (connected), or offline (disconnected).",
-      related: { label: "MT5 Bridge", route: "/mt5-bridge" },
-      safeNextAction: "Open MT5 Bridge and read the EA setup steps.",
+      related: { label: "MT5 Setup", route: "/mt5-setup" },
+      safeNextAction: "Open MT5 Setup and read the EA setup steps.",
       blockerReason: ctx.mt5Hint === "disconnected" ? "Bridge is offline — heartbeat missing." : undefined,
     }),
   },
@@ -97,20 +117,28 @@ const BUILDERS: Builder[] = [
     build: (ctx) => ({
       status: ctx.mt5Hint === "connected" ? "complete" : ctx.mt5Hint === "disconnected" ? "blocked" : "incomplete",
       explanation: "A recent heartbeat is proof the EA is alive and using the right token.",
-      related: { label: "MT5 Status", route: "/mt5-status" },
-      safeNextAction: "Open MT5 Status and confirm the heartbeat timestamp is recent.",
+      related: { label: "MT5 Setup", route: "/mt5-setup" },
+      safeNextAction: "Open MT5 Setup and confirm the heartbeat timestamp is recent.",
       blockerReason: ctx.mt5Hint === "disconnected" ? "No recent heartbeat from EA." : undefined,
     }),
   },
   {
     id: "broker-state-understood",
     title: "Broker read-only / execution state understood",
-    build: () => ({
-      status: "incomplete",
-      explanation: "Broker connection is read-only by default. Even if it shows account data, no order will be sent.",
-      related: { label: "Broker Read-only", route: "/broker-readonly" },
-      safeNextAction: "Open Broker Read-only and confirm the badge state.",
-    }),
+    build: (ctx) => {
+      const state = brokerReadOnlyState(ctx);
+      return {
+        status: "incomplete" as const,
+        explanation:
+          state === "readonly"
+            ? "Read-only is the default, and this connection is read-only right now: it can show account data, but no order goes through it."
+            : state === "not-readonly"
+              ? "Read-only is the default, but this connection is NOT read-only. Orders can reach the broker once the server-side gates pass."
+              : "Read-only is the default, but this page could not read your current broker mode. Treat execution as possible until you have confirmed otherwise on MT5 Setup.",
+        related: { label: "MT5 Setup", route: "/mt5-setup" },
+        safeNextAction: "Open MT5 Setup and confirm the broker mode badge.",
+      };
+    },
   },
   {
     id: "emergency-understood",
@@ -143,8 +171,8 @@ const BUILDERS: Builder[] = [
     build: () => ({
       status: "incomplete",
       explanation: "If anything misbehaves, you can submit feedback from the assistant or the Feedback Center.",
-      related: { label: "Feedback Center", route: "/feedback-center" },
-      safeNextAction: "Open Feedback Center to confirm where reports land.",
+      related: { label: "Help Center", route: "/help" },
+      safeNextAction: "Open the Help Center to confirm where reports land.",
     }),
   },
 ];
@@ -152,11 +180,18 @@ const BUILDERS: Builder[] = [
 export function buildSetupChecklist(ctx: AskContext): ChecklistItem[] {
   return BUILDERS.map((b) => {
     const item = b.build(ctx);
-    // Validate referenced route exists; if not, mark unavailable.
+    // RANK 51 — "Validate referenced route exists" only checked the assistant's
+    // DOCUMENTATION registry (ROUTE_KNOWLEDGE), never App.tsx's route table and
+    // never the trader allowlist. /dashboard, /demo-trading, /replay-simulator,
+    // /risk-governor, /readiness-checklist, /mt5-bridge, /mt5-status,
+    // /broker-readonly and /feedback-center all passed that check while being
+    // either undeclared routes or admin-only surfaces — so the checklist's own
+    // "Open page" links bounced a new trader back to the cockpit. The route must
+    // now be documented AND reachable by a human trader.
     let status = item.status;
     let related = item.related;
     if (related) {
-      const resolved = resolveRoute(related.route);
+      const resolved = isNormalUserAllowedPath(related.route) ? resolveRoute(related.route) : null;
       if (!resolved) {
         related = undefined;
         if (status === "complete") status = "incomplete";

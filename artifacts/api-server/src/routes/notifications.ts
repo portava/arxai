@@ -22,8 +22,20 @@ import {
 } from "../lib/notifications/rules.js";
 import { ingest } from "../lib/notifications/ingest.js";
 import { requireUser } from "../lib/auth/middleware.js";
+import { readRoleFromRequest } from "../lib/security/middleware.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
+import type { Request, Response, NextFunction } from "express";
 
 const router = Router();
+
+/** ADMIN/OWNER only, via the single source of truth for operator roles. */
+function requireAdmin(req: Request, res: Response, next: NextFunction): void {
+  if (operatorRoleFromSession(readRoleFromRequest(req)) === null) {
+    res.status(403).json({ error: "Forbidden", requiredRole: "ADMIN_OR_OWNER" });
+    return;
+  }
+  next();
+}
 const TAG = "Build LL — Notification Center + Safety Alerts. Alerts/notifications only. Never places trades, never enables live trading, never calls MT5, never modifies canPlaceTrades, never exposes secrets.";
 
 function envelope(body: Record<string, unknown>) {
@@ -81,12 +93,19 @@ router.post("/notifications/preferences", requireUser, async (req, res) => {
   }
 });
 
-router.post("/notifications/demo", requireUser, async (req, res) => {
+// RANK 79 — "Generate demo" was exposed to every end user and seeds FABRICATED
+// CRITICAL safety alerts ("Risk Governor LOCKED", "Unsafe BROKER_MODE
+// rejected") straight into the caller's real inbox, immediately firing the red
+// "⚠ CRITICAL alert — review immediately" banner. A curious trader could not
+// tell them from real ones at a glance. Seeding and system ingest are operator
+// tools; they are admin-gated here (the UI hides them too, but the server is
+// what has to be true), and every seeded row is now stamped DEMO by seedDemo().
+router.post("/notifications/demo", requireAdmin, async (req, res) => {
   try { res.json(envelope({ demo: true, ...(await seedDemo(req.authUser!.id)) })); }
   catch (err) { res.status(500).json(envelope({ error: "demo failed", detail: String(err).slice(0, 200) })); }
 });
 
-router.post("/notifications/test-event", requireUser, async (req, res) => {
+router.post("/notifications/test-event", requireAdmin, async (req, res) => {
   try {
     const b = (req.body ?? {}) as Record<string, unknown>;
     const source = String(b.sourceBuild ?? "").toUpperCase();
@@ -186,7 +205,9 @@ router.post("/notifications/test-event", requireUser, async (req, res) => {
   }
 });
 
-router.post("/notifications/ingest", requireUser, async (req, res) => {
+// Bulk re-ingest across every source build — an operator maintenance action,
+// not something a trader should be able to fire at their own inbox.
+router.post("/notifications/ingest", requireAdmin, async (req, res) => {
   try {
     const limit = req.body?.limitPerSource ? Number(req.body.limitPerSource) : 50;
     res.json(envelope({ ingest: await ingest({ limitPerSource: limit, userId: req.authUser!.id }) }));
@@ -195,21 +216,29 @@ router.post("/notifications/ingest", requireUser, async (req, res) => {
   }
 });
 
-router.get("/notifications/digest", requireUser, async (_req, res) => {
-  try { res.json(envelope({ digest: await latestDigest() })); }
+// RANK 35 — this handler took `_req`: the authenticated user was explicitly
+// discarded and latestDigest() returned the newest digest row in the table,
+// whoever it belonged to. Every user saw platform-wide counts and the literal
+// titles of other users' CRITICAL alerts.
+router.get("/notifications/digest", requireUser, async (req, res) => {
+  try { res.json(envelope({ digest: await latestDigest(req.authUser!.id) })); }
   catch (err) { res.status(500).json(envelope({ error: "digest failed", detail: String(err).slice(0, 200) })); }
 });
 
 router.post("/notifications/digest/generate", requireUser, async (req, res) => {
   try {
     const hours = req.body?.rangeHours ? Number(req.body.rangeHours) : 24;
-    res.json(envelope({ digest: await generateDigest(hours) }));
+    res.json(envelope({ digest: await generateDigest(req.authUser!.id, hours) }));
   } catch (err) {
     res.status(500).json(envelope({ error: "digest generate failed", detail: String(err).slice(0, 200) }));
   }
 });
 
-router.get("/notifications/logs", requireUser, async (req, res) => {
+// notification_logs has no owner column — it is the delivery pipeline's debug
+// trail across every user (PREF_BLOCKED reasons, dedupe decisions, digest
+// runs). It was served to any authenticated caller. requireAdmin now, because
+// nothing in it can be shown to be the requesting user's own data.
+router.get("/notifications/logs", requireAdmin, async (req, res) => {
   try {
     const limit = req.query.limit ? Number(req.query.limit) : 50;
     res.json(envelope({ logs: await listLogs(limit) }));

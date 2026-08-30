@@ -51,6 +51,14 @@ const PENDING_USER_EXACT: ReadonlySet<string> = new Set<string>([
   // ── Notification surfaces reachable from the bell ──
   "/notifications",
   "/alerts-center",
+  // RANK 76: the alerts drawer's "Preferences" link (AlertsDrawer.tsx) pointed
+  // here from a surface every human trader can open, but the path was on
+  // NEITHER allowlist — so clicking it threw the user back to the cockpit with
+  // no explanation. The page is now backed by the per-user
+  // /api/me/notification-preferences store (see pages/alert-preferences.tsx),
+  // which is requireUser and scoped to req.authUser.id, so it belongs in the
+  // reduced tier alongside /notifications.
+  "/alert-preferences",
 ]);
 
 // Prefix-match routes a PENDING human trader may reach (dynamic segments).
@@ -128,6 +136,13 @@ const NORMAL_USER_EXACT: ReadonlySet<string> = new Set<string>([
   "/my-performance", // personal DEMO trade journal (Demo, never Paper)
   "/notifications", // notification-bell target
   "/alerts-center", // alert detail surface
+  "/alert-preferences", // linked from the alerts drawer (see the pending tier)
+  // RANK 76: settings.tsx renders "Open Protective Auto-Close settings →" for
+  // every non-investor, and the target was on no allowlist. Auto-close is
+  // ALERT_ONLY (it never closes a position for the user), so the page is a
+  // per-user preference surface and belongs here rather than being a link that
+  // silently redirects home.
+  "/protective-auto-close",
   "/onboarding", // first-run flow for new accounts
   "/status-command-center", // ARX Status (reduced-essential, visible to every tier)
 ]);

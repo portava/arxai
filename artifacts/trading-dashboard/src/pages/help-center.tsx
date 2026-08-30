@@ -3,9 +3,13 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Link } from "wouter";
 import { LifeBuoy, Search, Wand2 } from "lucide-react";
 import { WhyBlockedDrawer } from "@/components/help/WhyBlockedDrawer";
 import { useTradingMode } from "@/hooks/useTradingMode";
+import { useTraderTier } from "@/hooks/useTraderTier";
+import { useViewMode } from "@/hooks/useViewMode";
+import { isHumanTraderAllowedPath } from "@/lib/routeAccess";
 import { safeArray } from "@/lib/safeFormat";
 
 const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
@@ -15,11 +19,24 @@ interface ExplainResult { help_id: string; status: string; plainEnglishExplanati
 
 export default function HelpCenter() {
   const mode = useTradingMode();
+  const { effectiveIsAdmin: isAdmin } = useViewMode();
+  const { isApprovedTrader } = useTraderTier();
+
+  // RANK 51 — 100% of the Help Center's "Open page" links were un-followable.
+  // The catalogue pointed at /trading-cockpit and /paper-testing-launch (no
+  // <Route> exists for either) and at six admin surfaces on no trader
+  // allowlist, so a trader clicking one either landed on Not Found or was
+  // silently redirected to the cockpit by RouteAccessGuard. The catalogue is
+  // fixed server-side, and this is the second line of defence: a link is only
+  // rendered when THIS viewer's tier can actually reach it.
+  const canOpen = (route: string | null): route is string =>
+    typeof route === "string" && route.startsWith("/") &&
+    (isAdmin || isHumanTraderAllowedPath(route, { isApprovedTrader }));
   const [topics, setTopics] = useState<HelpTopic[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [q, setQ] = useState("");
   const [cat, setCat] = useState<string>("ALL");
-  const [topicQuestion, setTopicQuestion] = useState("Why can't I start a demo session?");
+  const [topicQuestion, setTopicQuestion] = useState("Why can't I start a session?");
   const [explainResult, setExplainResult] = useState<ExplainResult | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -82,7 +99,11 @@ export default function HelpCenter() {
             <Button onClick={explain} disabled={busy} className="bg-primary text-white hover:bg-primary/90">{busy ? "Explaining…" : "Explain"}</Button>
           </div>
           <div className="flex flex-wrap gap-1 text-[11px]">
-            {["Why can't I start a demo session?", "Why is autopilot blocked?", "Why is broker read-only?", "Why is live trading disabled?", "What is the safest next step?"].map(s => (
+            {/* RANK 4: two of these presupposed the PAPER_ONLY lie — "Why is
+                broker read-only?" and "Why is live trading disabled?" both
+                asserted, in the question itself, something that is not true of
+                this build. They ask about the user's real state now. */}
+            {["Why can't I start a session?", "Why is autopilot blocked?", "Why can't I use the broker bridge?", "Can I trade live?", "What is the safest next step?"].map(s => (
               <Button key={s} size="sm" variant="ghost" className="h-6 px-2 text-[11px]" onClick={() => setTopicQuestion(s)}>{s}</Button>
             ))}
           </div>
@@ -115,7 +136,9 @@ export default function HelpCenter() {
               <div key={t.help_key} className="rounded-xl border border-border bg-background/40 p-3">
                 <div className="mb-1 flex items-center gap-1">
                   <Badge variant="outline" className="text-[10px]">{t.category}</Badge>
-                  {t.page_route && <a className="ml-auto text-[10px] text-primary underline" href={`${BASE}${t.page_route}`}>Open page</a>}
+                  {canOpen(t.page_route) && (
+                    <Link className="ml-auto text-[10px] text-primary underline" href={t.page_route}>Open page</Link>
+                  )}
                 </div>
                 <h4 className="text-sm font-semibold">{t.title}</h4>
                 <p className="mt-1 text-xs text-txt-secondary">{t.content}</p>

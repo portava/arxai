@@ -41,7 +41,16 @@ export default function AdminControlPage() {
     <div className="space-y-4" data-testid="page-admin-control">
       <div>
         <h1 className="text-2xl font-bold">Admin Control Center</h1>
-        <p className="text-sm text-muted-foreground">Build MM — Safe controls only. Live trading is permanently DISABLED.</p>
+        {/* RANK 78 — "Live trading is permanently DISABLED" was false on a
+            build that dispatches real broker orders, and it was printed on the
+            ADMIN landing page, one click from the Admin Hub's Live Controls
+            tab. What is true of THIS page is that it exposes no execution
+            control, so that is what it says now. */}
+        <p className="text-sm text-muted-foreground">
+          Safe operator actions only. Nothing on this page places, modifies or closes an order, and
+          nothing here arms live execution — those controls live in the Admin Hub&apos;s Live
+          Controls tab and are separately gated.
+        </p>
       </div>
 
       <Card>

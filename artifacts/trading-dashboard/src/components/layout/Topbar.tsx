@@ -1,4 +1,5 @@
 import React from "react";
+import { Link } from "wouter";
 import { useGetMt5Status, useGetBotStatus, getGetMt5StatusQueryKey, getGetBotStatusQueryKey } from "@workspace/api-client-react";
 import { SymbolPicker } from "./SymbolPicker";
 import { NotificationBell } from "@/components/alerts/NotificationBell";
@@ -12,6 +13,7 @@ import { ARXLogoMark, ARXWordmark } from "@/components/brand/ARXLogo";
 import { useAllUnlocks } from "@/hooks/useFeatureUnlock";
 import { useCurrentUser, useLogout } from "@/hooks/useCurrentUser";
 import { useViewMode } from "@/hooks/useViewMode";
+import { useTraderTier } from "@/hooks/useTraderTier";
 import { LogOut, User as UserIcon, ShieldCheck, Eye } from "lucide-react";
 
 const SESSION_META = {
@@ -30,6 +32,8 @@ const MODE_META = {
 
 export function Topbar({ onMobileMenu }: { onMobileMenu?: React.ReactNode }) {
   const unlocks = useAllUnlocks();
+  const { effectiveIsAdmin } = useViewMode();
+  const { isApprovedTrader } = useTraderTier();
   // Only poll MT5 / bot status once the user has unlocked those surfaces.
   // Fresh browser sessions get no leak of the global single-tenant state
   // (account, broker, mode, running flag) into the global header.
@@ -82,6 +86,8 @@ export function Topbar({ onMobileMenu }: { onMobileMenu?: React.ReactNode }) {
           modeTone={modeMeta.tone}
           SessionIcon={SessionIcon}
           ModeIcon={ModeIcon}
+          isAdmin={effectiveIsAdmin}
+          isApprovedTrader={effectiveIsAdmin || isApprovedTrader}
         />
 
         <div className="ml-auto flex items-center gap-1">
@@ -151,6 +157,14 @@ type CompactStatusRowProps = {
   modeTone: "neutral" | "info" | "warning" | "danger";
   SessionIcon: React.ComponentType<{ className?: string }>;
   ModeIcon: React.ComponentType<{ className?: string }>;
+  /** Operator links in the status drawer render for admin/owner sessions only. */
+  isAdmin: boolean;
+  /**
+   * /mt5-setup and /risk-command-center are on the APPROVED trader allowlist
+   * only. Rendering them to a pending trader produced a silent redirect home —
+   * the same dead-end class as the two broken operator links below.
+   */
+  isApprovedTrader: boolean;
 };
 
 function CompactStatusRow(p: CompactStatusRowProps) {
@@ -190,15 +204,41 @@ function CompactStatusRow(p: CompactStatusRowProps) {
           {(p.bot as any).lastScanAt && <DetailRow label="Last scan" value={new Date((p.bot as any).lastScanAt).toLocaleTimeString()} />}
         </>
       )}
+      {/* RANK 76: two of these four links had never worked.
+          `/operator-dashboard` is declared by no <Route> anywhere in the app
+          (the real page is /admin/operator-command-center) and
+          `/admin-diagnostics` was missing the slash (/admin/diagnostics). Both
+          were also plain <a href> in a wouter SPA, so clicking them triggered a
+          full page reload onto a 404 for an admin, or a bounce back to the
+          cockpit for anyone else. They are wouter <Link>s now, aimed at the
+          real routes, and the two operator links only render for an admin —
+          neither path is on any human-trader allowlist, so showing them to a
+          trader could only ever produce a silent redirect.
+          Pinned by inAppHrefAllowlist.test.ts. */}
       <div className="pt-2 border-t space-y-1">
-        <a className="block text-primary underline" href="/mt5-setup">MT5 setup &amp; bridge token →</a>
-        <a className="block text-primary underline" href="/operator-dashboard">Operator dashboard →</a>
-        <a className="block text-primary underline" href="/admin-diagnostics">Admin diagnostics →</a>
-        <a className="block text-primary underline" href="/risk-command-center">Kill switch / risk controls →</a>
+        {p.isApprovedTrader && (
+          <>
+            <Link className="block text-primary underline" href="/mt5-setup">MT5 setup &amp; bridge token →</Link>
+            <Link className="block text-primary underline" href="/risk-command-center">Kill switch / risk controls →</Link>
+          </>
+        )}
+        {p.isAdmin && (
+          <>
+            <Link className="block text-primary underline" href="/admin/operator-command-center">Operator command center →</Link>
+            <Link className="block text-primary underline" href="/admin/diagnostics">Admin diagnostics →</Link>
+          </>
+        )}
       </div>
+      {/* The gate count here said 16; the Phase B evaluator has been a 23-gate
+          evaluator since the foundation gates landed
+          (livePhaseBDispatchGate.ts). The env-var literal is admin-only
+          information (meUnifiedMode.ts keeps `envExpectedLiteral` inside
+          adminDiagnostics for exactly this reason), so a trader now gets the
+          same fact without the operator switch name. */}
       <p className="text-[10px] text-muted-foreground pt-2 border-t">
-        Live broker dispatch stays OFF unless an operator flips
-        ARX_LIVE_BROKER_EXECUTION_ENABLED AND all 16 Phase B gates pass.
+        {p.isAdmin
+          ? "Live broker dispatch stays OFF unless an operator arms the master switch AND all 23 Phase B gates pass."
+          : "Live broker dispatch stays OFF unless your operator has armed it AND every Phase B safety gate passes."}
       </p>
     </div>
   );

@@ -87,6 +87,14 @@ export const notificationLogsTable = pgTable("notification_logs", {
 
 export const notificationDigestsTable = pgTable("notification_digests", {
   id: serial("id").primaryKey(),
+  // RANK 35 — digests had NO owner column, so generateDigest() aggregated every
+  // user's notifications and latestDigest() returned the newest row globally.
+  // The Notification Center then rendered `summary.topCritical` — the literal
+  // TITLES of other users' critical alerts — directly under copy promising
+  // "We never show other users' notifications or global admin alerts."
+  // Additive and nullable: pre-existing rows keep NULL and are treated as
+  // legacy cross-user aggregates that no per-user read may ever return.
+  userId: integer("user_id"),
   digestId: text("digest_id").notNull(),
   rangeStart: timestamp("range_start", { withTimezone: true }).notNull(),
   rangeEnd: timestamp("range_end", { withTimezone: true }).notNull(),
@@ -100,4 +108,5 @@ export const notificationDigestsTable = pgTable("notification_digests", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
   digestIdIdx: uniqueIndex("notification_digests_digest_id_idx").on(t.digestId),
+  userCreatedIdx: index("notification_digests_user_created_at_idx").on(t.userId, t.createdAt),
 }));

@@ -11,7 +11,17 @@ import { sendPushToUser, isPushConfigured, getPushSummaryForUser } from "../lib/
 
 const router = Router();
 
-const SAFETY_ENVELOPE = { safetyMode: "paper_only" as const, liveLocked: true as const, readOnlyMode: true as const, allowOrderExecution: false as const };
+// This envelope describes what THIS ROUTER can do, not what the platform can
+// do. It used to assert `safetyMode: "paper_only"` and `liveLocked: true` —
+// platform-wide claims that are false on a build that dispatches real orders,
+// and that this router has no standing to make. It now states only the fact it
+// can actually vouch for: nothing under /me/notifications* can place, modify or
+// close an order.
+const SAFETY_ENVELOPE = {
+  surface: "notifications" as const,
+  placesOrders: false as const,
+  allowOrderExecution: false as const,
+};
 
 // ── Notifications ─────────────────────────────────────────────────────────
 router.get("/me/notifications", requireUser, async (req, res) => {
@@ -103,21 +113,61 @@ const PREF_BOOL_KEYS = [
 ] as const;
 const PREF_STR_KEYS = ["quietHoursStart", "quietHoursEnd", "timezone"] as const;
 
+// RANK 77 — `minimumPushSeverity` is the push-delivery floor sendService.ts
+// reads on every non-critical push. It was in NEITHER key list here and had no
+// other writer anywhere in the repo, so no user, admin or script could ever
+// change it: real gate code that no value could ever reach. It is accepted here
+// with a strict enum (never a free string — an unrecognised value would make
+// severityAtLeast() behave unpredictably on the delivery path).
+export const PUSH_SEVERITY_VALUES = ["info", "warning", "critical"] as const;
+type PushSeverity = (typeof PUSH_SEVERITY_VALUES)[number];
+const isPushSeverity = (v: unknown): v is PushSeverity =>
+  typeof v === "string" && (PUSH_SEVERITY_VALUES as readonly string[]).includes(v);
+
 router.get("/me/notification-preferences", requireUser, async (req, res) => {
   const userId = req.authUser!.id;
   const prefs = await ensurePrefs(userId);
-  res.json({ ...prefs, ...SAFETY_ENVELOPE });
+  res.json({
+    ...prefs,
+    // The two facts the preference UI must state truthfully rather than imply:
+    // CRITICAL cannot be silenced by any of these switches, and push delivery
+    // additionally depends on server-side VAPID configuration.
+    criticalAlwaysDelivered: true as const,
+    pushConfigured: isPushConfigured(),
+    ...SAFETY_ENVELOPE,
+  });
 });
 
-router.patch("/me/notification-preferences", requireUser, async (req, res) => {
+router.patch("/me/notification-preferences", requireUser, async (req, res): Promise<void> => {
   const userId = req.authUser!.id;
   await ensurePrefs(userId);
   const body = (req.body ?? {}) as Record<string, unknown>;
   const patch: Record<string, unknown> = { updatedAt: new Date() };
   for (const k of PREF_BOOL_KEYS) if (typeof body[k] === "boolean") patch[k] = body[k];
   for (const k of PREF_STR_KEYS) if (typeof body[k] === "string" || body[k] === null) patch[k] = body[k];
+  if ("minimumPushSeverity" in body) {
+    if (!isPushSeverity(body["minimumPushSeverity"])) {
+      // Refuse loudly rather than dropping the field — a silently ignored
+      // preference write is exactly the failure this defect was made of.
+      res.status(400).json({
+        error: "INVALID_MINIMUM_PUSH_SEVERITY",
+        allowed: PUSH_SEVERITY_VALUES,
+        message: "minimumPushSeverity must be one of: info, warning, critical.",
+      });
+      return;
+    }
+    patch["minimumPushSeverity"] = body["minimumPushSeverity"];
+  }
   const u = await db.update(userNotificationPreferencesTable).set(patch).where(eq(userNotificationPreferencesTable.userId, userId)).returning();
-  res.json({ ...u[0], ...SAFETY_ENVELOPE });
+  res.json({
+    ...u[0],
+    // Echo exactly which keys were persisted so the client can never render a
+    // "Saved" state for a field the server dropped.
+    updatedFields: Object.keys(patch).filter((k) => k !== "updatedAt"),
+    criticalAlwaysDelivered: true as const,
+    pushConfigured: isPushConfigured(),
+    ...SAFETY_ENVELOPE,
+  });
 });
 
 // ── Push subscriptions (real web-push delivery when VAPID env present) ────

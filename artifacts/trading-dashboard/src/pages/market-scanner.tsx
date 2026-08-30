@@ -979,7 +979,7 @@ export default function MarketScanner() {
         the floating Ruby orb (bottom-20 right-4 on mobile); add the device
         safe-area inset so content is not hidden behind a home indicator. */}
     <div className="mx-auto w-full max-w-[1200px] space-y-4 pt-1 sm:pt-2 pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-6">
-      <ScannerHeaderSummary running={Boolean(status?.running)} />
+      <ScannerHeaderSummary running={Boolean(status?.running)} busy={busy} />
 
       {err && (
         <CompactAlert

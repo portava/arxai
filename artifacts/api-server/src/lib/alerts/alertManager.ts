@@ -65,6 +65,27 @@ const CATEGORY_KEYS: Partial<Record<AlertType, keyof AlertPreferences>> = {
 function isCritical(p: AlertPriority): boolean { return p === "CRITICAL"; }
 
 export interface CreateAlertInput {
+  /**
+   * RANK 53 — the owner of this alert, when one is known.
+   *
+   * THE DEFECT: createAlert() wrote into `alerts`, and the ONLY readers of that
+   * table were alertManager's own listAlerts()/getUnreadCount(). routes/alerts.ts
+   * is fully deprecated (every GET a fixed empty envelope, every mutation 410),
+   * so nothing in the app could ever open an alert written here. Twelve-plus
+   * call sites — MT5 reconnects, fund-control breaches, reconciliation
+   * failures, trade-plan invalidation, portfolio risk — were writing user-facing
+   * alert CONTENT into a write-only table.
+   *
+   * When a userId is supplied the alert is ALSO mirrored into `user_alerts`,
+   * the per-user store that the header bell counts, the alerts drawer lists,
+   * and /api/me/alerts serves. That is the only path by which an alert raised
+   * here can actually reach a person.
+   *
+   * When it is omitted the row stays operator-scope: it is recorded, but NO
+   * user-facing surface will show it. That is stated here rather than implied,
+   * because a caller that wants a user to see something MUST pass a userId.
+   */
+  userId?: number;
   type: AlertType;
   priority?: AlertPriority;
   severity?: AlertSeverity;
@@ -150,6 +171,7 @@ export async function createAlert(input: CreateAlertInput): Promise<Alert> {
   // 4. Persist. Redact-before-write: user-visible free text never carries a
   //    raw secret even if a caller accidentally interpolates one.
   const inserted = await db.insert(alertsTable).values({
+    userId: input.userId ?? null,
     type: input.type,
     priority,
     severity: input.severity ?? defaultSeverity(priority),
@@ -162,10 +184,40 @@ export async function createAlert(input: CreateAlertInput): Promise<Alert> {
     actionRequired: input.actionRequired ?? false,
     dedupeKey,
   }).returning();
+  // RANK 53 — mirror into the canonical per-user store so the alert is
+  // actually reachable. Without this the row is invisible to every surface.
+  if (typeof input.userId === "number") {
+    await mirrorToUserAlerts(input.userId, input, priority).catch((err) => {
+      logger.warn({ err: String(err), type: input.type }, "alert mirror to user_alerts failed");
+    });
+  } else {
+    logger.debug(
+      { type: input.type },
+      "createAlert without userId: recorded operator-scope only — no user-facing surface reads it",
+    );
+  }
   void sendEmailAlert(inserted[0]!);
   void sendSMSAlert(inserted[0]!);
   void sendPushNotification(inserted[0]!);
   return inserted[0]!;
+}
+
+/**
+ * Write the same alert into `user_alerts` (the store /api/me/alerts serves)
+ * through the existing idempotent helper, so a re-fired condition collapses
+ * into one row per (user, type, hour) rather than spamming the drawer.
+ */
+async function mirrorToUserAlerts(userId: number, input: CreateAlertInput, priority: AlertPriority): Promise<void> {
+  const { upsertAlertOnce } = await import("../../routes/meAlerts.js");
+  const severity: "info" | "warning" | "critical" =
+    priority === "CRITICAL" ? "critical" : priority === "HIGH" ? "warning" : "info";
+  await upsertAlertOnce(userId, {
+    alertType: input.type.toLowerCase(),
+    severity,
+    title: scrubString(input.title),
+    message: scrubString(input.message),
+    source: "alerts",
+  });
 }
 
 function defaultSeverity(p: AlertPriority): AlertSeverity {
@@ -193,9 +245,20 @@ export async function getUnreadCount(): Promise<number> {
   return r[0]?.c ?? 0;
 }
 
-export async function getCriticalUnread(): Promise<Alert[]> {
+/**
+ * RANK 53 (isolation) — this returned every CRITICAL unread alert in the table,
+ * across all users, to whichever caller asked. whyBlocked() used it to tell one
+ * user they had "N unacknowledged critical safety alerts" that might belong to
+ * somebody else entirely. Pass a userId to scope it; without one it returns
+ * only the operator-scope rows (user_id IS NULL), never another user's.
+ */
+export async function getCriticalUnread(userId?: number): Promise<Alert[]> {
   return db.select().from(alertsTable)
-    .where(and(eq(alertsTable.read, 0), eq(alertsTable.priority, "CRITICAL")))
+    .where(and(
+      eq(alertsTable.read, 0),
+      eq(alertsTable.priority, "CRITICAL"),
+      typeof userId === "number" ? eq(alertsTable.userId, userId) : isNull(alertsTable.userId),
+    ))
     .orderBy(desc(alertsTable.createdAt))
     .limit(10);
 }

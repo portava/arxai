@@ -181,6 +181,14 @@ const buildNavGroups = (name: string): NavGroup[] => [
     defaultOpen: false,
     items: [
       { href: "/my-account", label: "Account",  icon: Wallet },
+      // RANK 75: the Notification Center was pinned ONLY inside the adminOnly
+      // "Records & System" group, so the sidebar declared it admin-only while
+      // the alert bell, the command palette, and BOTH route allowlists
+      // (PENDING_USER_EXACT + NORMAL_USER_EXACT) treat it as a per-user
+      // surface. routes/notifications.ts is requireUser and scoped to
+      // req.authUser.id throughout — the admin flag was the outlier, not the
+      // truth. It lives here now, declared once, for every human trader.
+      { href: "/notifications", label: "Notifications", icon: Bell },
       { href: "/settings",   label: "Settings", icon: Settings },
       { href: "/help",       label: "Help",     icon: HelpCircle },
     ],
@@ -247,7 +255,8 @@ const buildNavGroups = (name: string): NavGroup[] => [
     items: [
       { href: "/audit-vault",           label: "Audit Vault",     icon: FileText, adminOnly: true },
       { href: "/safety-logs",           label: "Safety Logs",     icon: FileText, adminOnly: true },
-      { href: "/notifications",         label: "Notifications",   icon: Bell, adminOnly: true },
+      // /notifications moved to "Account & Control" — it is a per-user surface,
+      // not an admin one. See the comment there.
       { href: "/admin-control",         label: "Profile",         icon: User, adminOnly: true },
       { href: "/release-status",        label: "Release Status",  icon: Sparkles, adminOnly: true },
       { href: "/release-notes",         label: "Release Notes",   icon: FileText, adminOnly: true },

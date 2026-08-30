@@ -4,6 +4,7 @@
  * The wizard NEVER enables live trading or changes broker/MT5 state.
  */
 import { resolveRoute } from "@/knowledge/routeKnowledge";
+import { isNormalUserAllowedPath } from "@/lib/routeAccess";
 import type { RuntimeContext } from "@/assistant/runtimeContextTypes";
 
 export type WizardStepStatus = "complete" | "attention" | "blocked" | "info";
@@ -21,9 +22,49 @@ export interface WizardStep {
   completionCondition: string;
 }
 
+// RANK 51 — safeRoute only ever asked "is this route DOCUMENTED?".
+//
+// resolveRoute() consults ROUTE_KNOWLEDGE, which is the assistant's
+// documentation registry — not App.tsx's route table and not the trader route
+// allowlist. So a step could name a route that is documented, has no <Route>
+// at all (/dashboard: the dashboard lives at "/"), and is on no allowlist —
+// and safeRoute would happily return it. 9 of the 10 wizard steps targeted such
+// a route, and their audience is precisely the new or pending trader following
+// the wizard, so the advertised onboarding path could not be completed.
+//
+// It now requires the route to be reachable by a human trader as well as
+// documented. The page additionally re-checks each surviving route against the
+// VIEWER's own tier before rendering the link (status-command-center.tsx), so a
+// pending trader is never handed an approved-only destination.
 function safeRoute(route: string): { route: string; label: string } | undefined {
   const r = resolveRoute(route);
-  return r ? { route, label: r.title } : undefined;
+  if (!r) return undefined;
+  if (!isNormalUserAllowedPath(route)) return undefined;
+  return { route, label: r.title };
+}
+
+// RANK 4 (review pass) — the wizard's `shortExplanation` fields were constant
+// strings while only `statusText` was derived from ctx. So a step could print
+// "Broker is NOT read-only — investigate." directly beneath the sentence
+// "Broker is read-only by default. You can see balance/positions, but ARX
+// cannot send orders." That is the same defect the help system was fixed for:
+// an unconditional claim that ARX cannot trade, on a page (/status-command-
+// center, in NORMAL_USER_EXACT) every human trader can open. Explanations that
+// make a claim about execution are now derived from the same ctx flag that
+// drives the step's status, so the two halves can never contradict each other.
+//
+// The rule applied throughout: describe the DEFAULT as a default and the
+// CURRENT state as the current state; never assert an absolute ("cannot",
+// "nothing reaches", "you can't lose real money") unless ctx proves it right
+// now, and say UNKNOWN when ctx cannot.
+function brokerExecutionSentence(ctx: RuntimeContext): string {
+  if (ctx.brokerReadOnly) {
+    return "Right now this connection is read-only: balance and positions are visible and no order can be sent through it.";
+  }
+  if (ctx.tradingMode === "unknown") {
+    return "Read-only is the default, but this session could not read your current broker mode — treat execution as possible until you have confirmed otherwise.";
+  }
+  return "Read-only is the default, but this connection is NOT read-only right now. Orders can reach the broker once the server-side gates pass.";
 }
 
 export function buildSetupWizard(ctx: RuntimeContext): WizardStep[] {
@@ -37,7 +78,7 @@ export function buildSetupWizard(ctx: RuntimeContext): WizardStep[] {
   {
     const mode = ctx.tradingMode;
     const known = mode !== "unknown";
-    const x = r("/dashboard", "Dashboard");
+    const x = r("/", "Cockpit");
     steps.push({
       id: "wz-mode",
       title: "Understand the current ARX mode",
@@ -56,7 +97,9 @@ export function buildSetupWizard(ctx: RuntimeContext): WizardStep[] {
     steps.push({
       id: "wz-locks",
       title: "Review active safety locks",
-      shortExplanation: "Safety locks are protective. They keep ARX from sending real orders until every gate is verified server-side.",
+      shortExplanation: locks.length > 0
+        ? "Safety locks are protective. While these are on, they hold back the actions they name until the matching gate is verified server-side."
+        : "Safety locks are protective. The client view sees none active right now — that is not proof none exist, only that none were reported to this page.",
       currentStatus: locks.length > 0 ? "info" : "attention",
       statusText: locks.length > 0 ? `Active locks: ${locks.join(", ")}` : "No safety locks detected from the client view.",
       assistantQuestion: "Explain my active safety locks",
@@ -67,27 +110,29 @@ export function buildSetupWizard(ctx: RuntimeContext): WizardStep[] {
   // 3. Check simulator/demo mode
   {
     const ok = ctx.paperOnly || ctx.simulatorMode;
-    const x = r("/demo-trading", "Demo Trading");
+    const x = r("/mt5-setup", "MT5 Setup");
     steps.push({
       id: "wz-demo-sim",
       title: "Check simulator / demo mode",
-      shortExplanation: "Simulator/demo is the safe practice surface. Nothing reaches a real broker.",
+      shortExplanation: ok
+        ? "Simulator/demo is the safe practice surface, and it is the active one — nothing you do here reaches a real broker."
+        : "Simulator/demo is the safe practice surface, but it is NOT what this session is in. Check the mode in the header before you place anything.",
       currentStatus: ok ? "complete" : "attention",
       statusText: ok ? "Demo/simulator mode is active." : "Demo/simulator not detected.",
       pageRoute: x.route, pageLabel: x.label,
       assistantQuestion: "Where do I practice in demo?",
-      completionCondition: "Demo Trading is open and you've reviewed the execution controls.",
+      completionCondition: "You've opened MT5 Setup and reviewed which account this session routes to.",
     });
   }
 
   // 4. Check MT5 bridge status
   {
     const mode = ctx.bridge?.bridgeMode ?? "unknown";
-    const x = r("/mt5-bridge", "MT5 Bridge");
+    const x = r("/mt5-setup", "MT5 Setup");
     steps.push({
       id: "wz-mt5",
       title: "Check MT5 bridge status",
-      shortExplanation: "The bridge is deferred by default. Even if connected, broker stays read-only until execution is cleared server-side.",
+      shortExplanation: `The bridge is deferred by default. ${brokerExecutionSentence(ctx)}`,
       currentStatus: mode === "connected" ? "complete" : mode === "deferred" ? "info" : "attention",
       statusText: `Bridge mode: ${mode}`,
       pageRoute: x.route, pageLabel: x.label,
@@ -99,7 +144,7 @@ export function buildSetupWizard(ctx: RuntimeContext): WizardStep[] {
   // 5. Check heartbeat
   {
     const present = ctx.heartbeatPresent;
-    const x = r("/mt5-status", "MT5 Status");
+    const x = r("/mt5-setup", "MT5 Setup");
     steps.push({
       id: "wz-heartbeat",
       title: "Check heartbeat",
@@ -108,17 +153,17 @@ export function buildSetupWizard(ctx: RuntimeContext): WizardStep[] {
       statusText: present ? `Heartbeat present (${ctx.heartbeatAgeSeconds ?? "?"}s ago)` : ctx.mt5Deferred ? "Heartbeat not expected — bridge deferred." : "No recent heartbeat.",
       pageRoute: x.route, pageLabel: x.label,
       assistantQuestion: "Where do I check the heartbeat?",
-      completionCondition: "You've opened MT5 Status and confirmed the heartbeat timestamp.",
+      completionCondition: "You've opened MT5 Setup and confirmed the heartbeat timestamp.",
     });
   }
 
   // 6. Review broker mode
   {
-    const x = r("/broker-readonly", "Broker Read-only");
+    const x = r("/mt5-setup", "MT5 Setup");
     steps.push({
       id: "wz-broker-mode",
       title: "Review broker mode",
-      shortExplanation: "Broker is read-only by default. You can see balance/positions, but ARX cannot send orders.",
+      shortExplanation: brokerExecutionSentence(ctx),
       currentStatus: ctx.brokerReadOnly ? "info" : "attention",
       statusText: ctx.brokerReadOnly ? "Broker is read-only." : "Broker is NOT read-only — investigate.",
       pageRoute: x.route, pageLabel: x.label,
@@ -129,7 +174,7 @@ export function buildSetupWizard(ctx: RuntimeContext): WizardStep[] {
 
   // 7. Review readiness
   {
-    const x = r("/readiness-checklist", "Readiness Checklist");
+    const x = r("/status-command-center", "ARX Status");
     steps.push({
       id: "wz-readiness",
       title: "Review readiness",
@@ -138,13 +183,13 @@ export function buildSetupWizard(ctx: RuntimeContext): WizardStep[] {
       statusText: `Readiness: ${ctx.readiness}`,
       pageRoute: x.route, pageLabel: x.label,
       assistantQuestion: "What's blocking readiness?",
-      completionCondition: "You've opened Readiness Checklist and reviewed every gate.",
+      completionCondition: "You've opened ARX Status and reviewed every readiness gate.",
     });
   }
 
   // 8. Review risk controls
   {
-    const x = r("/risk-governor", "Risk Governor");
+    const x = r("/risk-command-center", "Risk Command Center");
     steps.push({
       id: "wz-risk",
       title: "Review risk controls",
@@ -153,7 +198,7 @@ export function buildSetupWizard(ctx: RuntimeContext): WizardStep[] {
       statusText: "Manual review required.",
       pageRoute: x.route, pageLabel: x.label,
       assistantQuestion: "Explain my risk controls",
-      completionCondition: "You've opened Risk Governor and read every active rule.",
+      completionCondition: "You've opened Risk Command Center and read every active rule.",
     });
   }
 
@@ -174,26 +219,32 @@ export function buildSetupWizard(ctx: RuntimeContext): WizardStep[] {
 
   // 10. Practice only in demo/simulator
   {
-    const x = r("/demo-trading", "Demo Trading");
+    const x = r("/mt5-setup", "MT5 Setup");
     steps.push({
       id: "wz-practice",
       title: "Practice only in demo/simulator",
-      shortExplanation: "Run sessions, validate strategies, and review P&L charts — all without touching a real broker.",
-      currentStatus: "info",
-      statusText: "Practice surface ready in demo/simulator.",
+      shortExplanation: ctx.paperOnly || ctx.simulatorMode
+        ? "Run sessions, validate strategies, and review P&L charts. This session is in demo/simulator, so none of it touches a real broker."
+        : "Run sessions, validate strategies, and review P&L charts. Do this in demo/simulator — this session is NOT in one, so confirm the mode before you act.",
+      currentStatus: ctx.paperOnly || ctx.simulatorMode ? "info" : "attention",
+      statusText: ctx.paperOnly || ctx.simulatorMode
+        ? "Practice surface active (demo/simulator)."
+        : `Practice surface not active — current mode: ${ctx.tradingMode.toUpperCase()}.`,
       pageRoute: x.route, pageLabel: x.label,
       assistantQuestion: "Guide me through demo",
-      completionCondition: "You've run at least one demo session.",
+      completionCondition: "You've run at least one demo session from MT5 Setup.",
     });
   }
 
   // 11. Report unresolved issues
   {
-    const x = r("/feedback-center", "Feedback Center");
+    const x = r("/help", "Help Center");
     steps.push({
       id: "wz-report",
       title: "Report unresolved issues",
-      shortExplanation: "If anything misbehaves, report it from the floating assistant or the Feedback Center. Safe diagnostic context auto-attaches.",
+      // /feedback-center is on neither human-trader allowlist, so naming it
+      // sent the trader after a page the guard below correctly refuses to link.
+      shortExplanation: "If anything misbehaves, report it from the floating assistant or the Help Center. Safe diagnostic context auto-attaches.",
       currentStatus: "info",
       statusText: "Reporting available.",
       pageRoute: x.route, pageLabel: x.label,
