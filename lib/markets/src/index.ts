@@ -52,6 +52,13 @@ export {
   MINUTES_PER_YEAR,
 } from "./expectedMove.js";
 export { expectedMoveOverHorizon, resolveSigma1min } from "./expectedMoveService.js";
+
+// ── Daily-close series ingestion (C8 data feed) ─────────────────────────────
+// Source adapters + the integrity guard + the content fingerprint. Provenance
+// is mandatory on every bar set; a series failing any integrity check is
+// REFUSED whole with a typed reason, never trimmed or interpolated. The only
+// I/O lives in the adapters and is injected, so the subtree runs offline.
+export * from "./dailySeries/index.js";
 export type {
   ExpectedMoveFlavor,
   ExpectedMoveQuery,
