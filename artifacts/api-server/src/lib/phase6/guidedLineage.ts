@@ -83,6 +83,12 @@ export interface GuidedLineageRecord {
   detail: string;
   scannerSignalId: string | null;
   rubyExplanation: string | null;
+  /**
+   * VENUE-REPORTED realized P/L. Permitted ONLY on RECONCILED (null = the
+   * venue stated no number). Any other event carrying it is refused —
+   * a P/L claim without a venue settlement behind it is a fabrication.
+   */
+  venueProfitUsd?: number | null;
 }
 
 /**
@@ -159,6 +165,12 @@ export function buildLineageRecord(r: GuidedLineageRecord): GuidedLineageRecord 
   }
   if (r.event === "DRY_RUN_REFUSED" && r.venueContractRef !== null) {
     throw new Error("LINEAGE_REFUSED: a dry run cannot produce a venue contract reference");
+  }
+  if (r.event === "RECONCILED" && (typeof r.venueContractRef !== "string" || r.venueContractRef.trim() === "")) {
+    throw new Error("LINEAGE_REFUSED: RECONCILED is venue evidence by definition and requires the venue's contract reference");
+  }
+  if (r.event !== "RECONCILED" && r.venueProfitUsd !== undefined && r.venueProfitUsd !== null) {
+    throw new Error("LINEAGE_REFUSED: a realized P/L may only ride on a RECONCILED event — anywhere else it is a claim without a settlement");
   }
   assertNoSecretLeak(r, "guided lineage record");
   return r;

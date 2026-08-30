@@ -48,6 +48,7 @@ function toRecord(r: EventRow): GuidedLineageRecord {
     detail: r.detail,
     scannerSignalId: r.scannerSignalId,
     rubyExplanation: r.rubyExplanation,
+    venueProfitUsd: r.venueProfitUsd ?? null,
   };
 }
 
@@ -68,6 +69,12 @@ function present(records: GuidedLineageRecord[]) {
     venueContractRef: a.venueContractRef,
     /** False while the outcome is still uncertain, however old the attempt is. */
     complete: a.complete,
+    /**
+     * VENUE-REPORTED realized P/L from the RECONCILED settlement event. Null
+     * until the venue confirms a settlement (and null when the venue stated
+     * no number) — never derived, never a confident zero.
+     */
+    realizedProfitUsd: records.find((r) => r.event === "RECONCILED")?.venueProfitUsd ?? null,
     /** True when a human must intervene; a poll will not settle it. */
     needsReconciliation: a.state === "UNRESOLVED" || a.state === "RECONCILIATION_REQUIRED",
     events: records.map((r) => ({
@@ -75,6 +82,7 @@ function present(records: GuidedLineageRecord[]) {
       occurredAtIso: r.occurredAtIso,
       detail: screenFreeText(r.detail),
       venueContractRef: r.venueContractRef,
+      venueProfitUsd: r.venueProfitUsd ?? null,
     })),
   };
 }

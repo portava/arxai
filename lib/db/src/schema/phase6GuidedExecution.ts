@@ -281,6 +281,14 @@ export const guidedAttemptEventsTable = pgTable("guided_attempt_events", {
    * a row that violates this.
    */
   venueContractRef: text("venue_contract_ref"),
+  /**
+   * VENUE-REPORTED realized P/L, present ONLY on RECONCILED events. Null means
+   * the venue did not state a number — never "zero", never derived from stop
+   * levels or spot deltas (the exact fabrication the spine bans). The
+   * close-reconciliation worker writes it verbatim from the venue's settled
+   * contract read; buildLineageRecord refuses it on any other event type.
+   */
+  venueProfitUsd: doublePrecision("venue_profit_usd"),
   scannerSignalId: text("scanner_signal_id"),
   rubyExplanation: text("ruby_explanation"),
   /** Human-readable. Passed through assertNoSecretLeak before it gets here. */

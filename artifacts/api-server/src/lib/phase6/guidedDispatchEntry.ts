@@ -93,6 +93,14 @@ async function loadGuidedObservedState(userId: number, instrument?: string): Pro
   const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   const weekStart = new Date(dayStart.getTime() - ((dayStart.getUTCDay() + 6) % 7) * 86_400_000);
 
+  // Venue-reconciled attempts drop out of the stake-as-loss reading: their
+  // settlement is a venue fact, and their REAL losses are added back below
+  // from reconciled P/L (wins never offset — the cap is a ceiling, not a net).
+  const notReconciled = sql`not exists (
+    select 1 from guided_attempt_events r
+    where r.ticket_id = ${approvalTicketsTable.ticketId}
+      and r.event_type = 'RECONCILED'
+  )`;
   const staked = async (since: Date): Promise<number> => {
     const [r] = await db.select({ v: sql<number>`coalesce(sum(stake_usd), 0)` })
       .from(approvalTicketsTable)
@@ -100,23 +108,22 @@ async function loadGuidedObservedState(userId: number, instrument?: string): Pro
         eq(approvalTicketsTable.userId, userId),
         sql`state in ('EXECUTED','UNRESOLVED','DISPATCHING')`,
         gte(approvalTicketsTable.updatedAt, since),
+        notReconciled,
       ));
     return Number(r?.v ?? 0);
   };
 
-  // HONEST RATCHET, stated loudly (critic finding): EXECUTED tickets count as
-  // OPEN until position-close reconciliation exists, because nothing here can
-  // yet PROVE a venue position closed — and assuming closed is the falsely-
-  // certain direction. Under maxSimultaneousPositions=1 this means the surface
-  // REFUSES further trades after the first success until the reconciliation
-  // worker lands. For the Tier 1 certification that is exactly the owner's
-  // "one order, then stop"; for anything beyond it, reconciliation is the
-  // named prerequisite, not a nice-to-have.
+  // HONEST RATCHET, now with its release valve: EXECUTED tickets count as
+  // OPEN until a RECONCILED ledger event carries the venue's own settlement
+  // for that attempt (reconcileGuidedClosures). Nothing else releases them —
+  // assuming closed without venue evidence stays the falsely-certain
+  // direction, and a failed reconciliation read leaves the attempt OPEN.
   const [openTickets] = await db.select({ n: sql<number>`count(*)` })
     .from(approvalTicketsTable)
     .where(and(
       eq(approvalTicketsTable.userId, userId),
       sql`state in ('EXECUTED','DISPATCHING','UNRESOLVED')`,
+      notReconciled,
     ));
   const [openIntents] = await db.select({ n: sql<number>`count(*)` })
     .from(derivOrderIntentsTable)
@@ -140,23 +147,29 @@ async function loadGuidedObservedState(userId: number, instrument?: string): Pro
     .where(and(
       eq(approvalTicketsTable.userId, userId),
       sql`state in ('EXECUTED','DISPATCHING','UNRESOLVED')`,
+      notReconciled,
       ...(instrument ? [eq(approvalTicketsTable.instrument, instrument)] : []),
     ));
 
+  // Venue-settled results feed the loss gates for REAL now: the trailing
+  // consecutive-loss streak and today's venue-confirmed losses come from
+  // RECONCILED events' verbatim P/L. A settled-with-unstated-P/L counts as a
+  // loss for the streak (assuming a win is the falsely-certain direction);
+  // wins never offset the loss ceilings.
+  const lossState = await guidedAttemptEventsRepo.reconciledLossStateForUser(userId, dayStart);
+  const weekLoss = await guidedAttemptEventsRepo.reconciledLossStateForUser(userId, weekStart);
+
   return {
     nowIso: now.toISOString(),
-    realisedDailyLossUsd: await staked(dayStart),
-    realisedWeeklyLossUsd: await staked(weekStart),
+    // Stake-as-loss for OPEN/uncertain attempts (conservative), plus the REAL
+    // venue-confirmed losses of settled ones.
+    realisedDailyLossUsd: (await staked(dayStart)) + lossState.lossesSinceUsd,
+    realisedWeeklyLossUsd: (await staked(weekStart)) + weekLoss.lossesSinceUsd,
     openPositionCount: Math.max(Number(openTickets?.n ?? 0), Number(openIntents?.n ?? 0)),
     openExposureForSymbolUsd: Number(exposure?.v ?? 0),
     tradesTakenToday: Number(today?.n ?? 0),
-    // Loss-streak needs settled P/L, which is not reconciled back yet. Zero
-    // consecutive losses is the one field where the conservative direction is
-    // PERMISSIVE, so it is stated loudly: the cooldown gate is INERT until
-    // P/L reconciliation lands. The daily-stake ceiling above is what bounds
-    // damage in the meantime.
-    consecutiveLosses: 0,
-    lastLossAtIso: null,
+    consecutiveLosses: lossState.consecutiveLosses,
+    lastLossAtIso: lossState.lastLossAtIso,
   };
 }
 
