@@ -41,19 +41,45 @@ export default function StrategyLab() {
 
   return (
     <PageShell
-      title="Strategy Lab"
-      description="Build JJ — Strategy Lab. Compare playbook setups across replay scenarios. Never places trades, never recommends live trading."
+      title="Strategy Lab (demo only)"
+      description="Runs one fixed demo experiment. There is no setup builder here yet — see the note below for exactly what this page can and cannot do."
       icon={<Brain className="h-6 w-6" />}
       replayOnly
-      actions={<Button size="sm" disabled={busy} onClick={runDemo}>{busy ? "Running demo…" : "Run Demo Experiment"}</Button>}
+      actions={<Button size="sm" disabled={busy} onClick={runDemo}>{busy ? "Running demo…" : "Run demo experiment"}</Button>}
     >
+      {/* HONESTY (audit rank 71): the page described itself as "Compare playbook
+          setups across replay scenarios", but its only control posts to
+          /api/strategy-lab/demo, which hardcodes V75 / M5 / three synthetic
+          scenarios and passes an empty playbookEntryId — so no playbook is
+          applied and every run is the identical experiment. The builder and the
+          compare view the API supports have no caller in this app. Rather than
+          keep the promise, the page now states what it actually is. */}
+      <Card className="border-warning/40 bg-warning/10">
+        <CardContent className="pt-4 text-xs space-y-1">
+          <p className="font-semibold text-warning">This page is a fixed demo, not a lab.</p>
+          <p className="text-warning/80">
+            The button runs one hardcoded experiment: <span className="font-mono">V75</span> on{" "}
+            <span className="font-mono">M5</span> across three generated scenarios
+            (trending up, trending down, ranging), with <strong>no playbook applied</strong>.
+            Every press produces the same experiment, so repeated runs are duplicates, not
+            variations.
+          </p>
+          <p className="text-warning/80">
+            Not available here: choosing a symbol, timeframe, scenario or playbook entry;
+            editing settings; and the side-by-side compare view. The backend supports those
+            endpoints; this page has no interface for them yet. Nothing here is a
+            recommendation and no trade is ever placed.
+          </p>
+        </CardContent>
+      </Card>
+
       {err && <ErrorState description={err} onRetry={load} />}
       {loading && <LoadingState label="Loading experiments…" />}
 
       {!loading && experiments.length === 0 && (
         <EmptyState
           title="No experiments yet"
-          description="Strategy Lab compares playbook setups across replay scenarios. All results are simulation only and do not guarantee future performance."
+          description="The demo experiment runs three generated scenarios on V75 M5 with no playbook. Results are simulation on generated candles and say nothing about future performance."
           action={{ label: "Run demo experiment", onClick: runDemo }}
         />
       )}

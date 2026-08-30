@@ -2,6 +2,8 @@
 
 import { useQuery } from "@tanstack/react-query";
 
+import { backtestVerdict } from "./verificationVerdict";
+
 interface DataReliability {
   status: "sufficient" | "partial" | "insufficient" | "blocked";
   availableClosedCandles: number;
@@ -47,15 +49,21 @@ export function BacktestResultsDashboard({ runId }: { runId: number | null }) {
   if (!runId) return <p className="text-xs text-txt-muted">Pick a run to see results.</p>;
   if (isLoading || !run) return <p className="text-xs text-txt-muted">Loading…</p>;
 
-  const verified = run.isVerified === "VERIFIED";
   // The verdict pill describes this BACKTEST run over HISTORICAL candles — it is
   // never a live-readiness signal. The tooltip makes that explicit so "VERIFIED"
   // can't be mistaken for "this market is live-confirmed / executable now".
-  const verdictPill = verified
-    ? <span className="rounded bg-success/15 px-2 py-0.5 text-[10px] font-semibold text-white" title="Backtest verdict over historical candles — not a live-readiness or execution signal.">VERIFIED</span>
-    : run.status === "INSUFFICIENT_DATA"
-      ? <span className="rounded bg-warning/15 px-2 py-0.5 text-[10px] font-semibold text-white" title="Not enough historical candles to verify this backtest run.">INSUFFICIENT DATA</span>
-      : <span className="rounded bg-muted px-2 py-0.5 text-[10px] font-semibold text-foreground" title="This backtest run has not been verified.">UNVERIFIED</span>;
+  //
+  // Audit rank 41 (read path). This pill used to read `run.isVerified === "VERIFIED"`
+  // alone, so a row stored before the write-path fix — dataSource "synthetic"
+  // with isVerified "VERIFIED" — still showed a green VERIFIED next to this
+  // card's own SYNTHETIC DATA pill. Provenance is now checked first, in the one
+  // shared rule every backtest surface uses.
+  const verdict = backtestVerdict(run);
+  const verdictPill = verdict.tone === "verified"
+    ? <span className="rounded bg-success/15 px-2 py-0.5 text-[10px] font-semibold text-white" title={verdict.title}>{verdict.label}</span>
+    : verdict.tone === "warn"
+      ? <span className="rounded bg-warning/15 px-2 py-0.5 text-[10px] font-semibold text-white" title={verdict.title}>{verdict.label}</span>
+      : <span className="rounded bg-muted px-2 py-0.5 text-[10px] font-semibold text-foreground" title={verdict.title}>{verdict.label}</span>;
 
   // PART B (Phase 2) — DISPLAY-only reliability badge. Reflects whether the run
   // had enough historical candle depth to trust the sample; never blocks a run.

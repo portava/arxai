@@ -10429,6 +10429,7 @@ export type BacktestRunIsVerified =
 export const BacktestRunIsVerified = {
   UNVERIFIED: "UNVERIFIED",
   VERIFIED: "VERIFIED",
+  SYNTHETIC_NOT_VERIFIABLE: "SYNTHETIC_NOT_VERIFIABLE",
 } as const;
 
 export type BacktestRunDataSource =

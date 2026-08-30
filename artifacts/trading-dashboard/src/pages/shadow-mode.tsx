@@ -6,7 +6,20 @@ import { Badge } from "@/components/ui/badge";
 import { Eye, Play, StopCircle } from "lucide-react";
 import { AccessCheckingShell, AccessDeniedCard, SHADOW_ADMIN_DENIED_NOTE, shadowAdminDeniedMessage } from "@/components/access/AdminOnlyGate";
 
-type Status = { enabled: boolean; startedAt: string | null; totalsObserved: number; totalDecisions: number; tracking: number; wins: number; losses: number; breakevens: number; expired: number; rejected: number; waits: number };
+type Status = {
+  enabled: boolean; startedAt: string | null; totalsObserved: number; totalDecisions: number;
+  tracking: number; wins: number; losses: number; breakevens: number; expired: number;
+  rejected: number; waits: number;
+  // Coverage truth (audit rank 67). The scanner's only candle source knows a
+  // handful of symbols; the requested scan set is much larger. These say which
+  // symbols are actually observed and which are not, instead of letting the
+  // stats read as coverage of the platform's market list.
+  scannedSymbols?: string[];
+  skippedSymbols?: string[];
+  skippedSymbolCount?: number;
+  coverageNote?: string;
+  candleSource?: string;
+};
 type Dec = { id: string; ts: string; symbol: string; strategy: string; marketCondition: string; action: string; entry: number; sl: number; tp: number; confidence: number; status: string; pnlR?: number; reason: string; reasonToAvoid: string; riskGovernor: { approved: boolean; level: string; hardBlocks: string[] } };
 
 const STATUS_COLOR: Record<string, string> = { SHADOW_WIN: "bg-success/20 text-success", SHADOW_LOSS: "bg-danger/20 text-danger", SHADOW_BREAKEVEN: "bg-muted text-txt-secondary", SHADOW_TRACKING_OUTCOME: "bg-primary/20 text-primary", SHADOW_REJECTED: "bg-warning/20 text-warning", SHADOW_WAIT: "bg-muted text-txt-secondary", SHADOW_EXPIRED: "bg-muted text-txt-secondary" };
@@ -83,8 +96,29 @@ export default function ShadowMode() {
         </div>
       )}
 
+      {/* Coverage truth (audit rank 67): "scans default symbols" read as
+          coverage of the platform's market list. The scanner only ever observes
+          the symbols its candle source generates; the rest are named here. */}
+      {s?.coverageNote && (
+        <Card className="border-warning/40 bg-warning/10">
+          <CardContent className="p-3 text-xs text-warning space-y-1">
+            <p className="font-semibold">
+              Coverage: {s.scannedSymbols?.length ?? 0} symbol(s) observed
+              {s.skippedSymbolCount ? ` · ${s.skippedSymbolCount} not shadow-tested` : ""}
+            </p>
+            <p className="text-warning/80">{s.coverageNote}</p>
+            {s.candleSource && (
+              <p className="text-warning/80">
+                Candle source: <span className="font-mono">{s.candleSource}</span> — these are
+                generated prices, not market data. Every statistic above is computed on them.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
-        <CardHeader><CardTitle className="text-base">Controls</CardTitle><CardDescription>Shadow scans default symbols every ~5s. Admin-gated.</CardDescription></CardHeader>
+        <CardHeader><CardTitle className="text-base">Controls</CardTitle><CardDescription>Shadow scans the symbols its candle source covers, every ~5s. Admin-gated.</CardDescription></CardHeader>
         <CardContent className="flex gap-2 flex-wrap">
           <Button onClick={() => api("/api/shadow-mode/start", { method: "POST", body: JSON.stringify({ intervalSec: 5 }) }).then(load)}><Play className="h-4 w-4 mr-1" />Start</Button>
           <Button variant="outline" onClick={() => api("/api/shadow-mode/stop", { method: "POST" }).then(load)}><StopCircle className="h-4 w-4 mr-1" />Stop</Button>

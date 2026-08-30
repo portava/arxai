@@ -17,6 +17,7 @@ import {
   sessionBreakoutStrategy, noTradeFilter,
   type Candle, type SignalOutput,
 } from "./strategyEngine.js";
+import { resolveArxMarket } from "@workspace/domain/market";
 
 export type StrategyId =
   | "trendContinuation" | "breakOfStructure" | "liquiditySweep"
@@ -36,6 +37,18 @@ export const STRATEGY_REGISTRY: Record<StrategyId, (c: Candle[], s: string) => S
 export function isKnownStrategyId(id: string): id is StrategyId {
   return id in STRATEGY_REGISTRY;
 }
+
+/**
+ * The strategy DISPLAY names the engine can actually emit, derived from the
+ * engine itself rather than hand-written. Every strategy core returns its own
+ * `strategy` name on its insufficient-data early return, so calling each with
+ * an empty candle array yields the exact name that later appears on a decision
+ * row. Deriving it here means a tournament / promotion universe can never
+ * drift from the set of strategies that can produce a decision.
+ */
+export const ENGINE_STRATEGY_NAMES: string[] = (
+  Object.keys(STRATEGY_REGISTRY) as StrategyId[]
+).map((id) => STRATEGY_REGISTRY[id]([], id).strategy);
 
 export function runSingleStrategy(
   strategyId: StrategyId,
@@ -82,35 +95,112 @@ function hashSeed(s: string): number {
   return h >>> 0;
 }
 
-const BASE_PRICES: Record<string, number> = {
-  "Volatility 75 Index": 8000, "Volatility 75 1s Index": 8000, "Volatility 25 1s Index": 500,
-  "EURUSD": 1.0850, "GBPUSD": 1.2720, "USDJPY": 149.50, "USDCHF": 0.8980,
-  "USDCAD": 1.3580, "AUDUSD": 0.6540, "NZDUSD": 0.5980,
-  "EURJPY": 162.30, "GBPJPY": 190.20, "EURGBP": 0.8520,
-  "AUDJPY": 97.80, "CADJPY": 110.20, "CHFJPY": 166.40,
-  "EURCAD": 1.4730, "GBPCAD": 1.7320, "EURCHF": 0.9720,
-  "US30": 39200, "NAS100": 18150, "SPX500": 5230,
-  "GER40": 18400, "UK100": 8280, "JP225": 38900,
-  "AAPL": 189.50, "TSLA": 178.30, "MSFT": 415.20,
-  "NVDA": 875.40, "AMZN": 192.30, "GOOGL": 170.50,
-  "META": 510.20, "JPM": 198.40, "NFLX": 640.20, "BABA": 79.40,
+// ── Synthetic price models (Task: synthetic-honesty fix) ────────────────────
+//
+// WHAT THESE ARE: nominal SCALE ANCHORS for the fabricated candle generator —
+// the order of magnitude and typical per-bar movement of each instrument, so a
+// fabricated series at least sits in the right numeric range. They are NOT
+// market prices, NOT quotes, and NOT history. Every candle built from them is
+// invented and must be labelled synthetic wherever it is displayed.
+//
+// KEYED BY canonicalSymbol. The previous table was keyed by DISPLAY names
+// ("Volatility 75 Index") while every caller passes the ARX canonicalSymbol
+// ("V75"), so ~22 of the 44 approved markets silently fell through to a
+// `?? 1.0` default and produced a series starting at 1.0000 for Gold, V75,
+// BTCUSD and friends. There is no default any more: an unmodelled symbol is a
+// refusal (NoSyntheticPriceModelError), never a fabricated 1.0000 series.
+type SyntheticPriceModel = { basePrice: number; volatility: number };
+
+const SYNTHETIC_PRICE_MODELS: Record<string, SyntheticPriceModel> = {
+  // Synthetic indices (Deriv). Scale anchors only.
+  V75:       { basePrice: 8000,  volatility: 0.008 },
+  V75_1S:    { basePrice: 8000,  volatility: 0.012 },
+  V100:      { basePrice: 1200,  volatility: 0.010 },
+  V50:       { basePrice: 250,   volatility: 0.006 },
+  V50_1S:    { basePrice: 250,   volatility: 0.009 },
+  V25_1S:    { basePrice: 500,   volatility: 0.005 },
+  V10:       { basePrice: 6000,  volatility: 0.003 },
+  BOOM1000:  { basePrice: 9500,  volatility: 0.006 },
+  CRASH1000: { basePrice: 8800,  volatility: 0.006 },
+  BOOM500:   { basePrice: 9800,  volatility: 0.008 },
+  CRASH500:  { basePrice: 9200,  volatility: 0.008 },
+  BOOM300:   { basePrice: 9400,  volatility: 0.010 },
+  CRASH300:  { basePrice: 9100,  volatility: 0.010 },
+  JUMP10:    { basePrice: 9800,  volatility: 0.004 },
+  JUMP25:    { basePrice: 3200,  volatility: 0.006 },
+  JUMP50:    { basePrice: 21000, volatility: 0.008 },
+  JUMP75:    { basePrice: 9500,  volatility: 0.010 },
+  JUMP100:   { basePrice: 6500,  volatility: 0.012 },
+  // Forex majors.
+  EURUSD: { basePrice: 1.0850, volatility: 0.0006 },
+  GBPUSD: { basePrice: 1.2720, volatility: 0.0007 },
+  USDJPY: { basePrice: 149.50, volatility: 0.0007 },
+  USDCHF: { basePrice: 0.8980, volatility: 0.0006 },
+  USDCAD: { basePrice: 1.3580, volatility: 0.0006 },
+  AUDUSD: { basePrice: 0.6540, volatility: 0.0006 },
+  NZDUSD: { basePrice: 0.5980, volatility: 0.0006 },
+  // Forex minors.
+  EURJPY: { basePrice: 162.30, volatility: 0.0008 },
+  EURGBP: { basePrice: 0.8520, volatility: 0.0005 },
+  EURAUD: { basePrice: 1.6320, volatility: 0.0007 },
+  EURCAD: { basePrice: 1.4730, volatility: 0.0007 },
+  GBPJPY: { basePrice: 190.20, volatility: 0.0009 },
+  GBPAUD: { basePrice: 1.9150, volatility: 0.0009 },
+  GBPCAD: { basePrice: 1.7320, volatility: 0.0008 },
+  AUDJPY: { basePrice: 97.80,  volatility: 0.0007 },
+  CADJPY: { basePrice: 110.20, volatility: 0.0007 },
+  CHFJPY: { basePrice: 166.40, volatility: 0.0008 },
+  // Metals.
+  XAUUSD: { basePrice: 2380.0, volatility: 0.006 },
+  XAGUSD: { basePrice: 28.50,  volatility: 0.012 },
+  // Indices.
+  DXY:    { basePrice: 104.50, volatility: 0.002 },
+  SPX500: { basePrice: 5230,   volatility: 0.003 },
+  GER30:  { basePrice: 18400,  volatility: 0.004 },
+  US30:   { basePrice: 39200,  volatility: 0.003 },
+  // Crypto.
+  BTCUSD: { basePrice: 68500,  volatility: 0.020 },
+  ETHUSD: { basePrice: 3450,   volatility: 0.024 },
 };
-const VOLATILITIES: Record<string, number> = {
-  "Volatility 75 Index": 0.008, "Volatility 75 1s Index": 0.012, "Volatility 25 1s Index": 0.005,
-  "EURUSD": 0.0006, "GBPUSD": 0.0007, "USDJPY": 0.0007,
-  "USDCHF": 0.0006, "USDCAD": 0.0006, "AUDUSD": 0.0006, "NZDUSD": 0.0006,
-  "EURJPY": 0.0008, "GBPJPY": 0.0009, "EURGBP": 0.0005,
-  "AUDJPY": 0.0007, "CADJPY": 0.0007, "CHFJPY": 0.0008,
-  "EURCAD": 0.0007, "GBPCAD": 0.0008, "EURCHF": 0.0005,
-  "US30": 0.003, "NAS100": 0.004, "SPX500": 0.003,
-  "GER40": 0.004, "UK100": 0.003, "JP225": 0.004,
-  "AAPL": 0.008, "TSLA": 0.018, "MSFT": 0.007,
-  "NVDA": 0.020, "AMZN": 0.009, "GOOGL": 0.008,
-  "META": 0.012, "JPM": 0.007, "NFLX": 0.015, "BABA": 0.016,
-};
+
+/** Thrown instead of fabricating a 1.0000 series for an unmodelled symbol. */
+export class NoSyntheticPriceModelError extends Error {
+  readonly code = "NO_SYNTHETIC_PRICE_MODEL";
+  readonly requestedSymbol: string;
+  constructor(requestedSymbol: string) {
+    super(
+      `No synthetic price model for "${requestedSymbol}" — refusing to fabricate ` +
+      `a candle series for an instrument whose scale is unknown.`,
+    );
+    this.name = "NoSyntheticPriceModelError";
+    this.requestedSymbol = requestedSymbol;
+  }
+}
+
+/**
+ * Resolve a free-text / canonical / broker symbol to its synthetic scale model,
+ * or null when there is none. Resolution goes through the ARX Focus registry so
+ * "Volatility 75 Index", "gold" and "V75" all land on the canonical key.
+ */
+export function resolveSyntheticPriceModel(
+  symbol: string,
+): (SyntheticPriceModel & { canonicalSymbol: string }) | null {
+  const canonical = resolveArxMarket(symbol)?.canonicalSymbol ?? symbol.toUpperCase();
+  const model = SYNTHETIC_PRICE_MODELS[canonical];
+  return model ? { ...model, canonicalSymbol: canonical } : null;
+}
+
+/** Canonical symbols that have a synthetic scale model (test/coverage helper). */
+export function modelledSyntheticSymbols(): string[] {
+  return Object.keys(SYNTHETIC_PRICE_MODELS);
+}
 
 // Deterministic candle stream. Identical (symbol, count, timeframe, seed,
 // baseTimeMs) inputs always produce the identical output. No clock reads.
+//
+// THROWS NoSyntheticPriceModelError for a symbol with no scale model — a
+// fabricated series is already weak evidence; a fabricated series at a
+// fabricated scale is a lie about the instrument.
 export function generateDeterministicCandles(opts: {
   symbol: string;
   count: number;
@@ -123,15 +213,22 @@ export function generateDeterministicCandles(opts: {
   const baseTimeMs = opts.baseTimeMs ?? Date.UTC(2024, 0, 1, 0, 0, 0);
   const stepMs = timeframeMs(timeframe);
   const rng = mulberry32(hashSeed(`${opts.seed}|${symbol}|${count}|${timeframe}`));
-  let price = BASE_PRICES[symbol] ?? 1.0;
-  const vol = VOLATILITIES[symbol] ?? 0.008;
+  const model = resolveSyntheticPriceModel(symbol);
+  if (!model) throw new NoSyntheticPriceModelError(symbol);
+  let price = model.basePrice;
+  const vol = model.volatility;
   // Larger timeframes ⇒ more intra-bar movement. Scale linearly with sqrt(steps),
   // capped to avoid runaway prices on D1.
   const tfScale = Math.min(4, Math.sqrt(stepMs / TF_MS["M1"]!));
   const candles: Candle[] = [];
   for (let i = 0; i < count; i++) {
     const open = price;
-    const change = (rng() - 0.48) * price * vol * tfScale;
+    // ZERO-MEAN step. The old `(rng() - 0.48)` subtracted 0.48 from a U[0,1)
+    // draw, baking a persistent +0.02·price·vol drift into every bar — long-
+    // biased strategies trended profitable on fabricated data by construction.
+    // A driftless random walk is still not evidence, but it no longer rigs the
+    // result in the direction the surface then reports as an edge.
+    const change = (rng() - 0.5) * price * vol * tfScale;
     const close = Math.max(open + change, price * 0.9);
     const high = Math.max(open, close) + rng() * price * vol * tfScale * 0.5;
     const low  = Math.min(open, close) - rng() * price * vol * tfScale * 0.5;

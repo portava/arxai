@@ -28,7 +28,7 @@ import {
 } from "@workspace/domain/backtest";
 import {
   generateDeterministicCandles, runSingleStrategy, isKnownStrategyId,
-  timeframeMs, type StrategyId,
+  timeframeMs, NoSyntheticPriceModelError, type StrategyId,
 } from "../lib/backtestStrategyRegistry.js";
 import type { Candle } from "../lib/strategyEngine.js";
 import {
@@ -43,6 +43,21 @@ import {
 } from "../lib/backtest/backtestChartSeries.js";
 
 const router = Router();
+
+// ── Synthetic-run honesty (audit ranks 41/42) ───────────────────────────────
+// A run simulated over fabricated candles can never be "VERIFIED". It carries
+// its own verdict token so no surface can mistake a metric threshold met on
+// invented data for evidence about the market.
+export const SYNTHETIC_NOT_VERIFIABLE = "SYNTHETIC_NOT_VERIFIABLE";
+
+/** Leading sentence stamped on the summary of every synthetic run. */
+export function syntheticSummaryPrefix(dataSource: string): string {
+  return dataSource === "broker"
+    ? ""
+    : "SYNTHETIC DATA — this run was simulated over candles ARX fabricated from a " +
+      "deterministic random walk, not over market history. Nothing below is evidence " +
+      "about the real instrument, and this run can never be marked VERIFIED. ";
+}
 
 async function vaultBehavior(kind: string, payload: Record<string, unknown>) {
   await db.insert(vaultEventsTable).values({
@@ -288,12 +303,34 @@ router.post("/backtest-runs", async (req, res): Promise<void> => {
     // Anchor the synthetic candle stream so endTime is deterministic &
     // spec-compliant (endTime = baseTime + (count-1) * timeframeMs).
     const baseTimeMs = Date.UTC(2024, 0, 1, 0, 0, 0);
-    const candles: Candle[] = useBrokerHistory
-      ? brokerCandles
-      : generateDeterministicCandles({
+    let candles: Candle[];
+    if (useBrokerHistory) {
+      candles = brokerCandles;
+    } else {
+      try {
+        candles = generateDeterministicCandles({
           symbol: body.symbol, count: body.candleCount,
           timeframe: body.timeframe, seed, baseTimeMs,
         });
+      } catch (genErr) {
+        // No synthetic scale model for this instrument. Refuse honestly — the
+        // old behaviour fabricated a series starting at 1.0000 and reported a
+        // full results dashboard on it.
+        if (genErr instanceof NoSyntheticPriceModelError) {
+          res.status(422).json({
+            error: "NO_SYNTHETIC_PRICE_MODEL",
+            requestedSymbol: body.symbol,
+            canonicalSymbol: focusMarket.canonicalSymbol,
+            message:
+              `No synthetic price model for ${focusMarket.canonicalSymbol}, and no broker history ` +
+              `is available for this window. No simulation was run — ARX will not fabricate a ` +
+              `price series for an instrument whose scale it does not know.`,
+          });
+          return;
+        }
+        throw genErr;
+      }
+    }
 
     // Pure-domain simulation: route binds the *single* requested strategy
     // (not the multi-strategy scanner) so verification/AI summary attribution
@@ -319,9 +356,15 @@ router.post("/backtest-runs", async (req, res): Promise<void> => {
     const status = sim.metrics.totalTrades === 0
       ? "INSUFFICIENT_DATA"
       : "COMPLETED";
-    const isVerified = sim.metrics.totalTrades > 0 && isVerificationEligible(sim.metrics)
-      ? "VERIFIED" : "UNVERIFIED";
-    const aiSummary = summarizeBacktest({
+    // VERIFIED is the strongest word on the Testing Lab. It may ONLY be granted
+    // to a run simulated over REAL closed broker bars. A synthetic run is
+    // fabricated data: it can meet every metric threshold and still be evidence
+    // of nothing, so it gets the explicit SYNTHETIC_NOT_VERIFIABLE verdict
+    // instead of a green VERIFIED badge next to a grey SYNTHETIC one.
+    const isVerified = dataSource !== "broker"
+      ? SYNTHETIC_NOT_VERIFIABLE
+      : (sim.metrics.totalTrades > 0 && isVerificationEligible(sim.metrics) ? "VERIFIED" : "UNVERIFIED");
+    const aiSummary = syntheticSummaryPrefix(dataSource) + summarizeBacktest({
       strategyId, symbol: body.symbol,
       timeframe: body.timeframe, metrics: sim.metrics,
     });
@@ -574,7 +617,7 @@ router.post("/backtest-runs/:id/ai-review", async (req, res): Promise<void> => {
       })),
       run.initialBalance, equity,
     );
-    const aiSummary = summarizeBacktest({
+    const aiSummary = syntheticSummaryPrefix(run.dataSource) + summarizeBacktest({
       strategyId: run.strategyId, symbol: run.symbol,
       timeframe: run.timeframe, metrics,
     });

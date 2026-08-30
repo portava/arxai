@@ -9,6 +9,7 @@ import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ComparisonOverlayChart, type OverlaySeries } from "./ComparisonOverlayChart";
+import { ForwardAccessDeniedCard, isAccessDeniedStatus } from "./ForwardAccessDeniedCard";
 import type { BacktestRunRow, ForwardResults } from "./types";
 import type { BacktestChartSeries, ForwardChartSeries } from "@workspace/api-client-react";
 
@@ -30,14 +31,20 @@ export function ComparisonTab({ strategyId }: { strategyId?: string }) {
       return r.json();
     },
   });
-  const { data: fwd } = useQuery<ForwardResults>({
+  // A 403/401 here means "you may not read this", NOT "there is nothing".
+  // Distinguish the two so the drift verdict is never computed on a sample that
+  // is only invisible (audit rank 69).
+  const { data: fwdEnvelope } = useQuery<{ denied: boolean; results: ForwardResults | null }>({
     queryKey: ["forward-testing-results"],
     queryFn: async () => {
       const r = await fetch("/api/forward-testing/results");
+      if (isAccessDeniedStatus(r.status)) return { denied: true, results: null };
       if (!r.ok) throw new Error("failed");
-      return r.json();
+      return { denied: false, results: (await r.json()) as ForwardResults };
     },
   });
+  const forwardDenied = fwdEnvelope?.denied === true;
+  const fwd = fwdEnvelope?.results ?? undefined;
 
   const allRuns = btData?.runs ?? [];
   const [runA, setRunA] = useState<number | null>(null);
@@ -101,10 +108,10 @@ export function ComparisonTab({ strategyId }: { strategyId?: string }) {
 
   const hasData = runs.length > 0 || fwdTrades > 0;
 
-  let driftLabel = "Not enough data";
+  let driftLabel = forwardDenied ? "Forward side not readable" : "Not enough data";
   let driftTone: "warn" | "ok" | "muted" = "muted";
   let drift: number | null = null;
-  if (btWinRatePct != null && fwdWinRatePct != null && btTrades >= MIN_SAMPLE && fwdTrades >= MIN_SAMPLE) {
+  if (!forwardDenied && btWinRatePct != null && fwdWinRatePct != null && btTrades >= MIN_SAMPLE && fwdTrades >= MIN_SAMPLE) {
     drift = Math.abs(btWinRatePct - fwdWinRatePct);
     if (drift > DRIFT_THRESHOLD_PCTPTS) {
       driftLabel = `Drift ${drift.toFixed(0)} pts`;
@@ -116,7 +123,11 @@ export function ComparisonTab({ strategyId }: { strategyId?: string }) {
   }
 
   let recommendation: string;
-  if (!hasData) {
+  if (forwardDenied) {
+    recommendation = "The forward-test side of this comparison is admin-gated and was not " +
+      "readable by this session. No drift verdict is possible — the forward sample is " +
+      "unknown here, not zero.";
+  } else if (!hasData) {
     recommendation = "No comparison data yet.";
   } else if (drift == null) {
     recommendation = "Run both a backtest and a forward test for this strategy (at least " +
@@ -125,8 +136,13 @@ export function ComparisonTab({ strategyId }: { strategyId?: string }) {
     recommendation = "Backtest and forward win rates diverge meaningfully. The strategy may be " +
       "overfit to historical candles — keep it on the demo/shadow path and do not trust it live yet.";
   } else {
-    recommendation = "Backtest and forward results are consistent. The edge is holding up out of " +
-      "sample, but continue forward testing before increasing exposure.";
+    recommendation = "Backtest and forward win rates are consistent with each other. Both sides are " +
+      "simulations — the forward side is SHADOW data on simulator candles — so this agreement is " +
+      "not out-of-sample evidence about the live market. Continue forward testing.";
+  }
+
+  if (forwardDenied && runs.length === 0) {
+    return <ForwardAccessDeniedCard what="the Comparison tab's forward-test side" />;
   }
 
   if (!hasData) {
@@ -168,12 +184,21 @@ export function ComparisonTab({ strategyId }: { strategyId?: string }) {
         <Card>
           <CardHeader><CardTitle className="text-base">Forward test (live sim)</CardTitle></CardHeader>
           <CardContent className="space-y-1 text-sm">
-            <Row label="Decisions" value={String(fwd?.totalShadowDecisions ?? 0)} />
-            <Row label="Sample (trades)" value={String(fwdTrades)} />
-            <Row label="Win rate" value={fwdWinRatePct != null ? `${fwdWinRatePct}%` : "—"} />
-            <Row label="Avg R" value={fwd ? String(fwd.avgR) : "—"} />
-            <Row label="Max DD (R)" value={fwd ? String(fwd.maxDrawdownR) : "—"} />
-            <Row label="Best / worst symbol" value={`${fwd?.bestSymbol ?? "—"} / ${fwd?.worstSymbol ?? "—"}`} />
+            {forwardDenied ? (
+              <p className="text-xs text-warning">
+                Not readable by this session (Admin/Owner only). These figures are unknown
+                here — they are not zero.
+              </p>
+            ) : (
+              <>
+                <Row label="Decisions" value={String(fwd?.totalShadowDecisions ?? 0)} />
+                <Row label="Sample (trades)" value={String(fwdTrades)} />
+                <Row label="Win rate" value={fwdWinRatePct != null ? `${fwdWinRatePct}%` : "—"} />
+                <Row label="Avg R" value={fwd ? String(fwd.avgR) : "—"} />
+                <Row label="Max DD (R)" value={fwd ? String(fwd.maxDrawdownR) : "—"} />
+                <Row label="Best / worst symbol" value={`${fwd?.bestSymbol ?? "—"} / ${fwd?.worstSymbol ?? "—"}`} />
+              </>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -217,17 +242,17 @@ export function ComparisonTab({ strategyId }: { strategyId?: string }) {
       </Card>
 
       <Card>
-        <CardHeader><CardTitle className="text-base">{nameHint()} recommendation</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-base">Comparison verdict</CardTitle></CardHeader>
         <CardContent>
           <p className="text-sm text-txt-secondary">{recommendation}</p>
+          <p className="mt-2 text-[10px] text-txt-muted">
+            Chosen from four fixed sentences by the win-rate gap above. No model wrote this,
+            and it is not attributed to the assistant.
+          </p>
         </CardContent>
       </Card>
     </div>
   );
-}
-
-function nameHint(): string {
-  return "Eleanor";
 }
 
 function Row({ label, value, muted }: { label: string; value: string; muted?: boolean }) {

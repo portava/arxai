@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Bot, Play, Pause, StopCircle, AlertOctagon, Zap, ThumbsUp, ThumbsDown, Brain, ShieldAlert } from "lucide-react";
+import { Bot, Play, Pause, StopCircle, AlertOctagon, Zap, ThumbsUp, ThumbsDown, Brain, ShieldAlert, RotateCcw } from "lucide-react";
 
 type Status = {
   mode: string; state: string;
@@ -68,6 +68,8 @@ export default function AutopilotControlCenter() {
   const [decisions, setDecisions] = useState<Decision[]>([]);
   const [locks, setLocks] = useState<Lock[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [resetting, setResetting] = useState(false);
+  const [resetMsg, setResetMsg] = useState<string | null>(null);
   const [form, setForm] = useState({
     name: "Default Safe Session",
     mode: "DEMO_AUTO_SIMULATOR",
@@ -117,6 +119,41 @@ export default function AutopilotControlCenter() {
   async function ctl(kind: string) {
     await api("/api/autopilot/human-override", { method: "POST", body: JSON.stringify({ kind })});
     load();
+  }
+  // Emergency Stop latches the kill switch for the life of the API process and
+  // nothing clears it (audit rank 43). The reset itself lives in the autopilot
+  // library; this is the operator control for it. If the endpoint is not present
+  // in the running build, say exactly that instead of silently appearing to work.
+  async function resetKillSwitch() {
+    setResetting(true); setResetMsg(null);
+    try {
+      const r = await fetch("/api/autopilot/reset-kill-switch", {
+        method: "POST", headers: { "content-type": "application/json" },
+      });
+      if (r.status === 404) {
+        setResetMsg(
+          "This build has no kill-switch reset endpoint. The latch can only be cleared by restarting the API process.",
+        );
+        return;
+      }
+      if (r.status === 401 || r.status === 403) {
+        setResetMsg("Access denied — Admin or Owner role is required to reset the kill switch.");
+        return;
+      }
+      const body = await r.json().catch(() => null);
+      if (!r.ok) {
+        setResetMsg(`Reset failed: ${body?.error ?? `HTTP ${r.status}`}`);
+        return;
+      }
+      // Report exactly what the reset did — including "nothing to reset" and the
+      // fact that it does NOT clear the loss locks. Never a silent success.
+      setResetMsg(typeof body?.note === "string" ? body.note : null);
+      await load();
+    } catch (e) {
+      setResetMsg(`Reset failed: ${(e as Error).message}`);
+    } finally {
+      setResetting(false);
+    }
   }
   async function approve(id: string) { await api("/api/autopilot/human-override", { method: "POST", body: JSON.stringify({ kind: "APPROVE", decisionId: id })}); load(); }
   async function rejectD(id: string) { await api("/api/autopilot/human-override", { method: "POST", body: JSON.stringify({ kind: "REJECT", decisionId: id })}); load(); }
@@ -183,8 +220,24 @@ export default function AutopilotControlCenter() {
 
       {s?.killSwitchEngaged && (
         <Card className="border-danger/40 bg-danger/10">
-          <CardContent className="p-3 text-danger text-sm flex items-center gap-2">
-            <AlertOctagon className="h-4 w-4" />Kill switch is engaged — autopilot cannot start.
+          <CardContent className="p-3 text-sm space-y-2">
+            <div className="flex items-center gap-2 text-danger">
+              <AlertOctagon className="h-4 w-4 shrink-0" />
+              <span>Kill switch is engaged — autopilot cannot start.</span>
+            </div>
+            <p className="text-xs text-danger/80">
+              Emergency Stop latches. Nothing clears it automatically: start, resume and every
+              scan stay refused until an Admin resets it here. Reset clears the KILL_SWITCH lock
+              only — a tripped DAILY_LOSS / WEEKLY_LOSS / CONSECUTIVE_LOSSES lock below is not
+              cleared by this button and stays tripped for the life of the API process.
+            </p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button size="sm" variant="outline" disabled={resetting} onClick={resetKillSwitch}>
+                <RotateCcw className="h-4 w-4 mr-1" />
+                {resetting ? "Resetting…" : "Reset kill switch"}
+              </Button>
+              {resetMsg && <span className="text-xs text-danger/80">{resetMsg}</span>}
+            </div>
           </CardContent>
         </Card>
       )}
@@ -214,7 +267,11 @@ export default function AutopilotControlCenter() {
             <Button variant="outline" onClick={() => ctl("PAUSE")}><Pause className="h-4 w-4 mr-1" />Pause</Button>
             <Button variant="outline" onClick={() => ctl("RESUME")}><Play className="h-4 w-4 mr-1" />Resume</Button>
             <Button variant="outline" onClick={() => ctl("STOP")}><StopCircle className="h-4 w-4 mr-1" />Stop</Button>
-            <Button variant="destructive" onClick={() => ctl("EMERGENCY_STOP")}><AlertOctagon className="h-4 w-4 mr-1" />Emergency Stop</Button>
+            <Button
+              variant="destructive"
+              title="Latches the kill switch. Autopilot cannot start again until the kill switch is reset."
+              onClick={() => ctl("EMERGENCY_STOP")}
+            ><AlertOctagon className="h-4 w-4 mr-1" />Emergency Stop</Button>
             <Button variant="secondary" onClick={() => ctl("FORCE_SCAN")}><Zap className="h-4 w-4 mr-1" />Force Scan</Button>
           </div>
         </CardContent>
@@ -234,7 +291,13 @@ export default function AutopilotControlCenter() {
       )}
 
       <Card>
-        <CardHeader><CardTitle className="text-base">Safety locks</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle className="text-base">Safety locks</CardTitle>
+          <CardDescription>
+            A tripped lock latches — it does not clear on its own at session start or on a day
+            rollover. It stays tripped for the life of the API process unless it is reset.
+          </CardDescription>
+        </CardHeader>
         <CardContent className="flex flex-wrap gap-1">
           {locks.length === 0 && <p className="text-xs text-muted-foreground">No locks data yet.</p>}
           {locks.map((l) => (

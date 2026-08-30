@@ -7,8 +7,19 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import type { BacktestRunRow, ForwardResults } from "./types";
+import { isAccessDeniedStatus } from "./ForwardAccessDeniedCard";
 
-function readiness(r: BacktestRunRow): { label: string; tone: "ready" | "warn" | "muted" } {
+function readiness(r: BacktestRunRow): { label: string; tone: "ready" | "warn" | "muted"; title?: string } {
+  // "Ready for review" requires a run over REAL broker bars. A synthetic run is
+  // fabricated data — it can hit every threshold and still be evidence of
+  // nothing, so it is never promoted to a readiness verdict.
+  if (r.dataSource !== "broker") {
+    return {
+      label: "Synthetic — not verifiable",
+      tone: "muted",
+      title: "Simulated over candles ARX fabricated from a deterministic random walk. No verdict can be drawn about the real instrument.",
+    };
+  }
   if (r.isVerified === "VERIFIED" && r.totalTrades >= 30) return { label: "Ready for review", tone: "ready" };
   if (r.status === "INSUFFICIENT_DATA") return { label: "Insufficient data", tone: "warn" };
   return { label: "Needs more data", tone: "muted" };
@@ -39,14 +50,19 @@ export function ResultsHistoryTab({ strategyId }: { strategyId?: string }) {
       return r.json();
     },
   });
-  const { data: fwd } = useQuery<ForwardResults>({
+  // 403/401 = not readable by this session, which is NOT the same as empty
+  // (audit rank 69). Shared query key + shape with ComparisonTab.
+  const { data: fwdEnvelope } = useQuery<{ denied: boolean; results: ForwardResults | null }>({
     queryKey: ["forward-testing-results"],
     queryFn: async () => {
       const r = await fetch("/api/forward-testing/results");
+      if (isAccessDeniedStatus(r.status)) return { denied: true, results: null };
       if (!r.ok) throw new Error("failed");
-      return r.json();
+      return { denied: false, results: (await r.json()) as ForwardResults };
     },
   });
+  const forwardDenied = fwdEnvelope?.denied === true;
+  const fwd = fwdEnvelope?.results ?? undefined;
 
   const allRuns = btData?.runs ?? [];
   const runs = strategyId ? allRuns.filter((r) => r.strategyId === strategyId) : allRuns;
@@ -97,7 +113,7 @@ export function ResultsHistoryTab({ strategyId }: { strategyId?: string }) {
                         <td className="py-1 pr-3">{r.profitFactor >= 999 ? "∞" : r.profitFactor.toFixed(2)}</td>
                         <td className={`py-1 pr-3 ${r.netProfitLoss >= 0 ? "text-success" : "text-danger"}`}>{r.netProfitLoss.toFixed(2)}</td>
                         <td className="py-1 pr-3">
-                          <Badge className={
+                          <Badge title={rd.title} className={
                             rd.tone === "ready" ? "bg-success/20 text-success"
                               : rd.tone === "warn" ? "bg-warning/20 text-warning"
                                 : ""
@@ -116,7 +132,12 @@ export function ResultsHistoryTab({ strategyId }: { strategyId?: string }) {
       <Card>
         <CardHeader><CardTitle className="text-base">Forward test summary</CardTitle></CardHeader>
         <CardContent className="text-sm">
-          {fwdTracked === 0 ? (
+          {forwardDenied ? (
+            <p className="text-xs text-warning">
+              Forward-test results are Admin/Owner-only and were not readable by this
+              session. Results may exist — this is unknown, not empty.
+            </p>
+          ) : fwdTracked === 0 ? (
             <p className="text-xs text-txt-muted">No forward-test results yet.</p>
           ) : (
             <div className="grid gap-1 sm:grid-cols-3">

@@ -12,7 +12,9 @@ import {
   runDecisionPipeline, listDecisions, listSessions, getSession,
   humanOverride, markDecision, getStateMachine, getSafetyLocks, generateReport,
   resetSafetyLock, safetyLockCodes,
+  setKillSwitch,
 } from "../lib/autopilot.js";
+import { pushDecision } from "../lib/marketScanner.js";
 
 const router = Router();
 
@@ -92,6 +94,48 @@ router.post("/autopilot/human-override", requireAdmin, (req, res) => {
   if (!p.success) return res.status(400).json({ error: "invalid", issues: p.error.issues });
   const r = humanOverride(p.data);
   return res.json(r);
+});
+
+// Audit rank 43 — the Emergency Stop latch had no way out.
+//
+// humanOverride("EMERGENCY_STOP") calls setKillSwitch(true), and until now
+// setKillSwitch(false) had ZERO callers anywhere in the repo: startSession and
+// runDecisionPipeline both hard-refuse while KILL_SWITCH is tripped and nothing
+// ever cleared it, so one press bricked the Autopilot Control Center for the
+// life of the API process. The page shipped a "Reset kill switch" button
+// pointing at this path with no route behind it.
+//
+// This is the route. Clearing a safety latch is a deliberate human act, so it
+// is ADMIN/OWNER-only and written to the decision log with who did it and why
+// (setKillSwitch → clearLock does not itself log, while tripLock does). It
+// clears ONLY the
+// KILL_SWITCH lock: DAILY_LOSS / WEEKLY_LOSS / CONSECUTIVE_LOSSES stay tripped,
+// and the page says so rather than implying this button clears them.
+router.post("/autopilot/reset-kill-switch", requireAdmin, (req, res) => {
+  const Body = z.object({ reason: z.string().max(500).optional() }).optional();
+  const p = Body.safeParse(req.body ?? {});
+  if (!p.success) return res.status(400).json({ error: "invalid", issues: p.error.issues });
+  const before = getSafetyLocks().find((l) => l.code === "KILL_SWITCH");
+  if (!before?.tripped) {
+    return res.json({
+      ok: true,
+      changed: false,
+      note: "Kill switch was not engaged — nothing to reset.",
+      locks: getSafetyLocks(),
+    });
+  }
+  setKillSwitch(false);
+  pushDecision({
+    type: "AUTOPILOT_LOCK_RESET",
+    summary: `Safety lock KILL_SWITCH cleared by ${readRoleFromRequest(req)}${p.data?.reason ? `: ${p.data.reason}` : ""}`,
+    payload: { code: "KILL_SWITCH", reason: p.data?.reason ?? null },
+  });
+  return res.json({
+    ok: true,
+    changed: true,
+    note: "Kill switch cleared. Loss locks (DAILY_LOSS / WEEKLY_LOSS / CONSECUTIVE_LOSSES) are not cleared by this action.",
+    locks: getSafetyLocks(),
+  });
 });
 
 router.post("/autopilot/mark-decision", requireAdmin, (req, res) => {

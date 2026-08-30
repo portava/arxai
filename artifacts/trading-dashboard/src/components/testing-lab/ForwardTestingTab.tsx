@@ -6,14 +6,19 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { ShieldAlert } from "lucide-react";
 import { ForwardChartPanel } from "./ForwardChartPanel";
+import { ForwardAccessDeniedCard } from "./ForwardAccessDeniedCard";
 import type { ForwardResults } from "./types";
 
 type Status = {
   running: boolean;
   startedAt: string | null;
   endsAt: string | null;
+  // Set when Stop closed the window (audit rank 69). Before the fix, Stop only
+  // nulled the config: the scanner kept running and the tiles below kept
+  // climbing on a "finished" test, so two people saw different numbers.
+  endedAt?: string | null;
+  windowFrozen?: boolean;
   observedSinceStart: number;
   config: Record<string, unknown> | null;
 };
@@ -68,25 +73,7 @@ export function ForwardTestingTab({ strategyId }: { strategyId?: string }) {
     };
   }, []);
 
-  if (accessDenied) {
-    return (
-      <Card className="mt-2 border-warning/40 bg-warning/10">
-        <CardContent className="p-4 flex items-start gap-3">
-          <ShieldAlert className="h-5 w-5 text-warning mt-0.5 shrink-0" />
-          <div>
-            <p className="text-sm font-medium text-warning">
-              Access denied — Admin or Owner role required for Forward Testing.
-            </p>
-            <p className="text-xs text-warning/70 mt-1">
-              Forward testing observes SHADOW (non-live) data and is restricted to
-              Admin and Owner sessions. Backtesting and the other Testing Lab tabs
-              remain available to you.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
+  if (accessDenied) return <ForwardAccessDeniedCard />;
 
   return (
     <div className="space-y-4 pt-2">
@@ -99,6 +86,7 @@ export function ForwardTestingTab({ strategyId }: { strategyId?: string }) {
         </div>
         <Badge variant="outline">SHADOW</Badge>
         {status && <Badge className={status.running ? "bg-success/20 text-success" : ""}>{status.running ? "RUNNING" : "IDLE"}</Badge>}
+        {status?.windowFrozen && <Badge variant="outline" title="These results cover the stopped test's window only. New shadow decisions are not added to them.">window frozen</Badge>}
       </div>
 
       <Card>
@@ -113,7 +101,9 @@ export function ForwardTestingTab({ strategyId }: { strategyId?: string }) {
           <Input type="number" className="w-32" value={duration} onChange={(e) => setDuration(Number(e.target.value))} placeholder="duration min" />
           <Button onClick={() => api("/api/forward-testing/start", { method: "POST", body: JSON.stringify({ durationMin: duration }) }).then(load)}>Start ({duration} min)</Button>
           <Button variant="outline" onClick={() => api("/api/forward-testing/stop", { method: "POST" }).then(load)}>Stop</Button>
-          {status?.endsAt && <span className="text-xs text-muted-foreground">ends at {new Date(status.endsAt).toLocaleTimeString()} · observed {status.observedSinceStart}</span>}
+          {status?.windowFrozen && status.endedAt
+            ? <span className="text-xs text-muted-foreground">stopped at {new Date(status.endedAt).toLocaleTimeString()} · results below are frozen to that window</span>
+            : status?.endsAt && <span className="text-xs text-muted-foreground">ends at {new Date(status.endsAt).toLocaleTimeString()} · observed {status.observedSinceStart}</span>}
         </CardContent>
       </Card>
 

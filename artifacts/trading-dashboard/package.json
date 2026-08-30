@@ -60,6 +60,7 @@
     "test:scanner-truth": "vitest run src/lib/scannerTruth.test.ts src/lib/scannerTruthRegression.test.ts src/components/live/TradeHealthPanel.test.tsx src/components/scanner/BroadScanOpportunityMap.test.tsx src/components/scanner/SelectedMarketPanel.test.tsx src/pages/market-scanner.empty-state.test.tsx src/components/scanner/ScannerHeaderSummary.action-timeframe.test.tsx src/components/scanner/RubyChartRead.test.tsx",
     "test:admin-cockpit": "vitest run src/pages/admin/cockpit.render.test.tsx src/pages/admin/cockpit.pattern-sync-containment.test.ts src/components/admin/cockpit/cockpitShared.interaction.test.tsx",
     "test:testing-lab": "vitest run src/components/testing-lab/TestingLab.test.tsx src/components/testing-lab/ChartPanels.test.tsx",
+    "test:testing-lab-honesty": "vitest run src/components/testing-lab/TestingLabHonesty.test.tsx",
     "test:live-ai-harness": "vitest run src/pages/live-ai-auto-test.honesty.test.tsx",
     "test:mission-honest-labelling": "vitest run src/pages/profit-missions.honest-labelling.test.ts",
     "test:mission-outcome-truth": "vitest run src/pages/profit-missions.outcome-truth.test.ts",

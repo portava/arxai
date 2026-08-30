@@ -19552,7 +19552,11 @@ components:
         expectancy:     { type: number }
         profitFactor:   { type: number }
         status:         { type: string, enum: [PENDING, RUNNING, COMPLETED, FAILED, INSUFFICIENT_DATA] }
-        isVerified:     { type: string, enum: [UNVERIFIED, VERIFIED] }
+        # VERIFIED requires REAL broker bars. A run over the deterministic
+        # synthetic generator carries SYNTHETIC_NOT_VERIFIABLE: it may meet every
+        # metric threshold and still be evidence of nothing, so it can never be
+        # stamped VERIFIED.
+        isVerified:     { type: string, enum: [UNVERIFIED, VERIFIED, SYNTHETIC_NOT_VERIFIABLE] }
         # Which candle series fed the simulation: real broker bars or the
         # clearly-labeled deterministic synthetic generator.
         dataSource:     { type: string, enum: [broker, synthetic] }

@@ -13,6 +13,16 @@ type CheckRow = {
   run: () => Promise<{ pass: boolean; detail: string }>;
   status: CheckStatus;
   detail?: string;
+  /**
+   * True when running this check WRITES persistent state a human then has to
+   * deal with (audit rank 72: each "Run all checks" press injected three
+   * fabricated pending intents into the Live Intent Queue / Approval Inbox,
+   * indistinguishable from real ones). Write checks are excluded from "Run all"
+   * and must be started deliberately.
+   */
+  writes?: boolean;
+  /** What the write leaves behind, shown next to the Run button. */
+  writesNote?: string;
 };
 
 async function jget(url: string, init?: RequestInit) {
@@ -161,17 +171,16 @@ const AVAILABLE_NOW: Omit<CheckRow, "status">[] = [
       return { pass: ok, detail: `status=${status} reason=${reason}` };
     },
   },
-  {
-    id: "live-chart-embed",
-    label: "Live chart embed reachable",
-    describe: "Confirms /live-chart route renders (TradingView widget loads client-side).",
-    run: async () => {
-      const r = await fetch("/live-chart");
-      return { pass: r.ok, detail: `HTTP ${r.status}` };
-    },
-  },
+  // REMOVED (audit rank 72): "Live chart embed reachable" fetched the SPA path
+  // /live-chart and passed on r.ok while describing itself as confirming the
+  // route renders and the TradingView widget loads. Fetching an SPA path returns
+  // the index HTML shell for ANY path — the check could never fail for the
+  // reason it claimed, so a green pass proved nothing. A check that cannot fail
+  // is worse than no check. Deleted rather than left as reassuring decoration.
   {
     id: "live-manual-tester",
+    writes: true,
+    writesNote: "Persists a pending live-intent that a human must clear from the Approval Inbox.",
     label: "Live manual tester workflow",
     describe: "Submits a MANUAL live-intent — must return PENDING_MT5_CONNECTION (no broker order).",
     run: async () => {
@@ -185,6 +194,8 @@ const AVAILABLE_NOW: Omit<CheckRow, "status">[] = [
   },
   {
     id: "live-ai-assist-tester",
+    writes: true,
+    writesNote: "Persists a pending live-intent that a human must clear from the Approval Inbox.",
     label: "Live AI assist tester workflow",
     describe: "Submits an AI_ASSIST live-intent — must capture without placing real order.",
     run: async () => {
@@ -198,6 +209,8 @@ const AVAILABLE_NOW: Omit<CheckRow, "status">[] = [
   },
   {
     id: "live-ai-auto-tester",
+    writes: true,
+    writesNote: "Persists a pending live-intent that a human must clear from the Approval Inbox.",
     label: "Live AI auto tester workflow",
     describe: "Submits an AI_AUTO live-intent — must capture without placing real order.",
     run: async () => {
@@ -212,11 +225,21 @@ const AVAILABLE_NOW: Omit<CheckRow, "status">[] = [
   {
     id: "live-intent-queue",
     label: "Live intent queue",
-    describe: "Lists captured tester intents.",
+    describe: "Confirms the queue endpoint responds with a well-formed counts envelope. An empty queue is a PASS.",
     run: async () => {
+      // Audit rank 72: this asserted `total > 0`, which was only ever satisfied
+      // by the three write-checks above polluting the queue immediately before
+      // it ran. It now asserts the endpoint's SHAPE — a genuinely empty queue is
+      // a healthy queue, not a failure.
       const r = await jget("/api/live-intent/queue");
-      const total = r.body?.counts?.total ?? 0;
-      return { pass: r.ok && total > 0, detail: `${total} intents · ${JSON.stringify(r.body?.counts)}` };
+      const counts = r.body?.counts;
+      const wellFormed = !!counts && typeof counts === "object" && typeof counts.total === "number";
+      return {
+        pass: r.ok && wellFormed,
+        detail: wellFormed
+          ? `HTTP ${r.status} · counts envelope OK · total=${counts.total}`
+          : `HTTP ${r.status} · missing or malformed counts envelope`,
+      };
     },
   },
   {
@@ -275,14 +298,21 @@ function TestingControlCenterPageInner() {
       setRows(prev => prev.map(r => r.id === id ? { ...r, status: "fail", detail: String((e as Error).message) } : r));
     }
   }
+  // "Run all checks" runs the READ-ONLY checks only. The three live-intent
+  // checks persist pending intents a human then has to sort out of the Approval
+  // Inbox, so they are opt-in per row (audit rank 72).
   async function runAll() {
     setBusy(true);
-    for (const row of rows) await runOne(row.id);
+    for (const row of rows) {
+      if (row.writes) continue;
+      await runOne(row.id);
+    }
     setBusy(false);
   }
 
   const passCount = rows.filter(r => r.status === "pass").length;
   const failCount = rows.filter(r => r.status === "fail").length;
+  const writeCount = rows.filter(r => r.writes).length;
 
   return (
     <div className="container mx-auto py-6 space-y-6 max-w-5xl">
@@ -292,8 +322,11 @@ function TestingControlCenterPageInner() {
           <p className="text-sm text-muted-foreground">Run the simulator-only test ladder. The MT5 bridge is not required for any of the checks in section A.</p>
         </div>
         <div className="flex gap-2">
-          <Button size="sm" onClick={runAll} disabled={busy} data-testid="button-run-all">
-            <RefreshCw className={`w-4 h-4 mr-2 ${busy ? "animate-spin" : ""}`} /> Run all checks
+          <Button
+            size="sm" onClick={runAll} disabled={busy} data-testid="button-run-all"
+            title="Runs the read-only checks. Checks that persist state are excluded and must be run individually."
+          >
+            <RefreshCw className={`w-4 h-4 mr-2 ${busy ? "animate-spin" : ""}`} /> Run all read-only checks
           </Button>
           <Button size="sm" variant="outline" asChild>
             <a href="/mt5-setup">Open MT5 Setup Wizard</a>
@@ -364,14 +397,27 @@ function TestingControlCenterPageInner() {
       <Card data-testid="section-available-now">
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><CheckCircle2 className="w-5 h-5 text-success" /> A. Available Now (no MT5 needed)</CardTitle>
-          <CardDescription>{rows.length} checks · {passCount} pass · {failCount} fail · run individually or all at once.</CardDescription>
+          <CardDescription>
+            {rows.length} checks · {passCount} pass · {failCount} fail ·
+            {" "}&quot;Run all&quot; covers the {rows.length - writeCount} read-only checks;
+            the {writeCount} marked <strong>writes state</strong> are excluded and must be run
+            one at a time.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">
           {rows.map(row => (
             <div key={row.id} className="flex items-start gap-3 p-3 rounded border border-border bg-muted/20" data-testid={`row-${row.id}`}>
               <div className="flex-1 min-w-0">
-                <div className="font-semibold text-sm">{row.label}</div>
+                <div className="font-semibold text-sm flex items-center gap-2 flex-wrap">
+                  {row.label}
+                  {row.writes && (
+                    <Badge className="bg-warning/15 text-warning border-warning/30 text-[10px]">writes state</Badge>
+                  )}
+                </div>
                 <div className="text-xs text-muted-foreground">{row.describe}</div>
+                {row.writesNote && (
+                  <div className="text-xs text-warning/80 mt-0.5">{row.writesNote}</div>
+                )}
                 {row.detail && <div className="text-xs font-mono mt-1 text-muted-foreground/80 break-all">{row.detail}</div>}
               </div>
               <div className="flex items-center gap-2 shrink-0">
