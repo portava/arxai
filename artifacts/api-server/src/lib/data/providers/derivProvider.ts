@@ -14,7 +14,7 @@
 //   - When unconfigured, getDerivCandles returns `{ ok:false }` and
 //     never fabricates synthetic candles.
 
-import { getDerivWsClient, type DerivCandle, type DerivGranularity } from "./derivWsClient.js";
+import { getDerivWsClient, DERIV_PUBLIC_DATA_ONLY, type DerivCandle, type DerivGranularity } from "./derivWsClient.js";
 import { getInstrumentPassport, venueCodeSymbol } from "@workspace/domain/market";
 
 export interface DerivSyntheticSymbol {
@@ -200,7 +200,10 @@ export function getDerivFeedStatus(): DerivFeedStatus {
     !appIdConfigured                                            ? "UNCONFIGURED" :
     !connected                                                   ? "CONNECTING" :
     hasRecentTick                                                ? "LIVE_FEED" :
-    (!authorized && (process.env.DERIV_API_TOKEN ?? "").trim() && authErr) ? "AUTH_FAILED" :
+    // A PUBLIC-DATA-ONLY session (new mode) never attempted authorize — by
+    // design, per Ruling 15 — so it must never present as a failed one.
+    (!authorized && (process.env.DERIV_API_TOKEN ?? "").trim() && authErr
+      && authErr !== DERIV_PUBLIC_DATA_ONLY)                     ? "AUTH_FAILED" :
     activeSymbolsLoaded                                          ? "HISTORY_READY_AWAITING_LIVE_TICK" :
                                                                    "CONNECTED_AWAITING_FEED";
 
@@ -322,7 +325,8 @@ export function getDerivSymbolFeedStatus(
     !appIdConfigured                                                        ? "UNCONFIGURED" :
     !connected                                                              ? "CONNECTING" :
     hasRecentTick                                                           ? "LIVE_FEED" :
-    (!authorized && (process.env.DERIV_API_TOKEN ?? "").trim() && authErr)  ? "AUTH_FAILED" :
+    (!authorized && (process.env.DERIV_API_TOKEN ?? "").trim() && authErr
+      && authErr !== DERIV_PUBLIC_DATA_ONLY)                                ? "AUTH_FAILED" :
     activeSymbolsLoaded                                                     ? "HISTORY_READY_AWAITING_LIVE_TICK" :
                                                                              "CONNECTED_AWAITING_FEED";
 

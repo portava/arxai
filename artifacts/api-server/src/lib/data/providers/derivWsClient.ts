@@ -45,6 +45,16 @@ const DEFAULT_WS_URL = "wss://ws.derivws.com/websockets/v3";
  *  credential. Its real flow is Bearer PAT + Deriv-App-ID -> REST account
  *  discovery -> account OTP -> authenticated new WebSocket. */
 export const DERIV_NEW_API_NOT_IMPLEMENTED = "DERIV_NEW_API_NOT_IMPLEMENTED";
+
+/** New-mode sessions are PUBLIC-DATA-ONLY on this legacy socket: charts and
+ *  ticks flow, `authorize` is structurally withheld, and no credential ever
+ *  rides the wire. NOT an error and NEVER a credential verdict — account
+ *  features run on the new API transport instead. */
+export const DERIV_PUBLIC_DATA_ONLY = "DERIV_PUBLIC_DATA_ONLY";
+/** Deriv's public bootstrap app id — valid for UNAUTHENTICATED legacy-WS
+ *  market data (active_symbols / ticks_history). The removed Ruling-15 shim's
+ *  sin was pairing this socket with a PAT `authorize`, not the id itself. */
+export const DERIV_PUBLIC_BOOTSTRAP_APP_ID = "1089";
 const PING_MS = 30_000;
 const REQUEST_TIMEOUT_MS = 8_000;
 const MAX_BACKOFF_MS = 30_000;
@@ -254,18 +264,19 @@ class DerivWsClient {
           this.accountIdentity = null;
           this.realAccountWarnedThisConnect = false;
           this.startPing();
-          // Ruling 15 — SECOND barrier. resolveWsUrl() already refuses to open
-          // a socket in new mode, so this should be unreachable; it exists
-          // because the failure it prevents (a PAT sent to legacy `authorize`)
-          // presents as a bad credential and cost two good demo tokens to
-          // diagnose. Cheap guard, expensive failure.
+          // Ruling 15 — THE barrier. In new mode this socket is a
+          // PUBLIC-DATA-ONLY session: `authorize` is withheld BY DESIGN, so a
+          // PAT can never ride the legacy wire (the failure this prevents
+          // presented as a bad credential and cost two good demo tokens to
+          // diagnose). The sentinel is deliberately NOT an error code — the
+          // session is healthy, just credential-free.
           if (DerivWsClient.detectMode() === "new") {
             this.authorized = false;
-            this.lastAuthorizeError = DERIV_NEW_API_NOT_IMPLEMENTED;
-            this.lastAuthorizeErrorCode = DERIV_NEW_API_NOT_IMPLEMENTED;
-            logger.warn(
-              { derivErrorCode: DERIV_NEW_API_NOT_IMPLEMENTED },
-              "deriv_new_mode_pat_blocked_from_legacy_authorize",
+            this.lastAuthorizeError = DERIV_PUBLIC_DATA_ONLY;
+            this.lastAuthorizeErrorCode = DERIV_PUBLIC_DATA_ONLY;
+            logger.info(
+              { derivSession: DERIV_PUBLIC_DATA_ONLY },
+              "deriv_new_mode_public_data_session_authorize_withheld",
             );
             void this.runEagerWarmup();
             return;
@@ -330,21 +341,25 @@ class DerivWsClient {
     const mode = DerivWsClient.detectMode();
     const base = (process.env.DERIV_WS_URL ?? "").trim() || DEFAULT_WS_URL;
     if (mode === "new") {
-      // QUARANTINED — Owner Decision Registry, Ruling 15.
+      // PUBLIC-DATA-ONLY — Ruling 15's invariant, kept exactly: new-mode
+      // credentials must NEVER reach the legacy transport. What the removed
+      // shim broke was pairing this socket with a PAT `authorize` (a valid
+      // token then presented as InvalidToken); a CREDENTIAL-FREE public
+      // socket is a different thing — the legacy WS serves active_symbols and
+      // ticks_history without auth, and the open-handler barrier below keeps
+      // `authorize` structurally unreachable in new mode. Owner directive
+      // 2026-08-30 ("bring the scanner chart live"): the quarantine's total
+      // refusal starved every chart, scanner and tick surface even though the
+      // public data needs no credential at all.
       //
-      // This branch previously substituted the public bootstrap app id (1089)
-      // and then called the LEGACY `authorize` with the PAT. That shim is
-      // removed: Deriv's new API is a different GENERATION, not a second
-      // credential format for the same handshake, and legacy app ids do not
-      // work with the new APIs (nor PATs with the legacy one). The shim made a
-      // valid PAT look like a bad credential — two good demo tokens were
-      // rejected as InvalidToken before the cause was found.
-      //
-      // The real flow is: Bearer PAT + Deriv-App-ID -> REST account discovery
-      // -> account-scoped OTP -> authenticated NEW WebSocket. Until that
-      // transport exists and is integration-tested, new mode fails CLOSED with
-      // an explicit reason. A PAT must never reach legacy `authorize`.
-      return null;
+      // The URL carries ONLY a legacy-SYSTEM app id — never the configured
+      // DERIV_APP_ID (that belongs to the new generation) and never any
+      // token. Account-scoped reads on this session stay refused; account
+      // features run on the new API transport (Bearer PAT + Deriv-App-ID ->
+      // REST discovery -> OTP -> authenticated new WebSocket).
+      const publicId = (process.env.DERIV_WS_LEGACY_APP_ID ?? "").trim()
+        || DERIV_PUBLIC_BOOTSTRAP_APP_ID;
+      return `${base}?app_id=${encodeURIComponent(publicId)}`;
     }
     if (mode === "legacy") {
       const legacyId = (process.env.DERIV_WS_LEGACY_APP_ID ?? this.appId).trim();

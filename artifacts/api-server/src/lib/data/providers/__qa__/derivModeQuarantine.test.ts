@@ -69,23 +69,34 @@ test("a numeric app id still selects legacy — the certification path is untouc
   });
 });
 
-test("the bootstrap-1089 compatibility shim is GONE", () => {
-  // The removed shim: `const bootstrap = (... ?? "1089")` inside the new-mode
-  // branch of resolveWsUrl, which then built a legacy URL from it.
+test("new mode opens a CREDENTIAL-FREE public socket — nothing secret can ride the URL", () => {
+  // Evolution of the original "shim is GONE" pin (owner directive 2026-08-30:
+  // bring the chart live). The shim's sin was pairing this socket with a PAT
+  // `authorize`; Ruling 15's invariant — new-mode credentials never reach the
+  // legacy transport — is now pinned directly on what the branch may touch,
+  // instead of forbidding the socket entirely and starving every public data
+  // surface.
   const fnStart = src.indexOf("private async resolveWsUrl");
   assert.ok(fnStart > -1, "resolveWsUrl must exist");
   const start = src.indexOf('if (mode === "new")', fnStart);
   const end = src.indexOf('if (mode === "legacy")', start);
   assert.ok(start > -1 && end > start, "both mode branches must exist");
-  // Strip comments first: the explanatory comment necessarily NAMES the shim
-  // it replaced, and matching prose instead of code has already produced three
-  // false failures in this codebase.
+  // Strip comments first: prose necessarily names the things it forbids, and
+  // matching prose instead of code has already produced three false failures
+  // in this codebase.
   const newBranch = src.slice(start, end)
     .replace(/\/\/.*$/gm, "")
     .replace(/\/\*[\s\S]*?\*\//g, "");
-  assert.ok(!/1089/.test(newBranch), "new mode must not substitute a bootstrap app id");
-  assert.ok(!/app_id=/.test(newBranch), "new mode must not build a legacy WS URL");
-  assert.match(newBranch, /return null;/, "new mode must refuse to resolve a URL");
+  assert.ok(!/DERIV_API_TOKEN/.test(newBranch),
+    "the public-socket URL branch must never touch the token");
+  assert.ok(!/authorize/i.test(newBranch),
+    "the public-socket URL branch must never reference authorize");
+  assert.ok(!/this\.appId/.test(newBranch),
+    "the NEW-generation app id must not be sent to the legacy system");
+  assert.match(newBranch, /DERIV_WS_LEGACY_APP_ID/,
+    "an explicit legacy-system app id override must be honoured");
+  assert.match(newBranch, /DERIV_PUBLIC_BOOTSTRAP_APP_ID/,
+    "the public bootstrap id is the only fallback identity for this socket");
 });
 
 test("legacy mode still resolves a URL from its own app id (no collateral damage)", () => {
@@ -108,11 +119,13 @@ test("a PAT can never reach legacy authorize — a second barrier guards the cal
   );
 });
 
-test("the quarantine reports a transport gap, never a bad credential", () => {
+test("the public session reports its own non-error sentinel, never a bad credential", () => {
   const openIdx = src.indexOf('ws.on("open"');
   const authorizeIdx = src.indexOf("this.request({ authorize: token })");
   const guarded = src.slice(openIdx, authorizeIdx);
-  assert.match(guarded, /lastAuthorizeErrorCode = DERIV_NEW_API_NOT_IMPLEMENTED/);
+  assert.match(guarded, /lastAuthorizeErrorCode = DERIV_PUBLIC_DATA_ONLY/);
+  // The sentinel itself must never read as a credential verdict.
+  assert.ok(!/InvalidToken/i.test("DERIV_PUBLIC_DATA_ONLY"));
 });
 
 test("the real new-API flow is documented as the follow-up, not silently dropped", () => {
