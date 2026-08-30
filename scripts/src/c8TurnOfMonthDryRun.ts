@@ -66,7 +66,7 @@ import {
   parseSnapshot,
   type DailyBar,
   type PriceAdjustment,
-} from "@workspace/markets";
+} from "@workspace/markets/daily-series";
 import { parseArgv } from "./c8DataFeed.js";
 
 const FIT = TURN_OF_MONTH_SPEC.fitWindow;

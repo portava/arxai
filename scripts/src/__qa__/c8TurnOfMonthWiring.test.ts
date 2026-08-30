@@ -57,7 +57,7 @@ import {
   verifyTurnOfMonthPreRegistration,
   type ExperimentSpec,
 } from "@workspace/validation";
-import { dataFingerprint, expectedTradingDays, isCalendarSpanRefusal, type DailyBar } from "@workspace/markets";
+import { dataFingerprint, expectedTradingDays, isCalendarSpanRefusal, type DailyBar } from "@workspace/markets/daily-series";
 import {
   VERDICT_LEDGER_FORMAT,
   describeLedgerEntry,

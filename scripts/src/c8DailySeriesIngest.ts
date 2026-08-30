@@ -26,7 +26,7 @@
 // only on a clean pass.
 
 import { TURN_OF_MONTH_SPEC } from "@workspace/validation";
-import type { PriceAdjustment } from "@workspace/markets";
+import type { PriceAdjustment } from "@workspace/markets/daily-series";
 import {
   fileSource,
   ingest,

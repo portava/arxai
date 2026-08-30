@@ -25,7 +25,7 @@ import {
   type PriceAdjustment,
   type SeriesFetchResult,
   type SeriesRange,
-} from "@workspace/markets";
+} from "@workspace/markets/daily-series";
 
 /**
  * True when the environment routes egress through an HTTP proxy but this Node

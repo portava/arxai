@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./daily-series": "./src/dailySeries/index.ts"
   },
-  "scripts": {},
   "dependencies": {},
   "devDependencies": {
     "@types/node": "catalog:"

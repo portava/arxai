@@ -319,7 +319,8 @@
     "test:c8-turn-of-month": "node --import tsx --test --test-force-exit ./src/__qa__/c8TurnOfMonthWiring.test.ts",
     "preflight:registration-key-pepper": "tsx ./src/preflightRegistrationKeyPepper.ts",
     "verify:registration-key-pepper": "tsx ./src/verifyRegistrationKeyPepperProvisioned.ts",
-    "test:registration-key-pepper-preflight": "node --import tsx --test --test-force-exit ./src/__qa__/registrationKeyPepperPreflight.test.ts"
+    "test:registration-key-pepper-preflight": "node --import tsx --test --test-force-exit ./src/__qa__/registrationKeyPepperPreflight.test.ts",
+    "test:markets-barrel-browser-safe": "node --import tsx --test --test-force-exit ./src/__qa__/marketsBarrelBrowserSafe.test.ts"
   },
   "devDependencies": {
     "@types/node": "catalog:",

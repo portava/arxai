@@ -89,7 +89,7 @@ import {
   PBO_PREFLIGHT_BLOCKS,
   verifyTurnOfMonthPreRegistration,
 } from "@workspace/validation";
-import { checkSeriesIntegrity, formatIntegrityReport, parseSnapshot } from "@workspace/markets";
+import { checkSeriesIntegrity, formatIntegrityReport, parseSnapshot } from "@workspace/markets/daily-series";
 import { parseArgv, requireStr } from "./c8DataFeed.js";
 import {
   DEFAULT_VERDICT_LEDGER,

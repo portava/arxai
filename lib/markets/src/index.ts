@@ -58,7 +58,13 @@ export { expectedMoveOverHorizon, resolveSigma1min } from "./expectedMoveService
 // is mandatory on every bar set; a series failing any integrity check is
 // REFUSED whole with a typed reason, never trimmed or interpolated. The only
 // I/O lives in the adapters and is injected, so the subtree runs offline.
-export * from "./dailySeries/index.js";
+// NOT re-exported here on purpose. dailySeries/fingerprint.ts imports
+// node:crypto, and this barrel is reachable from the browser bundle
+// (artifacts/trading-dashboard/src/lib/symbolRegistry.ts imports
+// "@workspace/markets"). Re-exporting it crashed the dashboard with
+// 'Module "node:crypto" has been externalized for browser compatibility'.
+// Server-side callers import "@workspace/markets/daily-series" instead.
+// Guarded by test:markets-barrel-browser-safe.
 export type {
   ExpectedMoveFlavor,
   ExpectedMoveQuery,

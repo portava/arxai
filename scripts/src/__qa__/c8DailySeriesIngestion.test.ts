@@ -51,7 +51,7 @@ import {
   type FetchLike,
   type IntegrityDefectCode,
   type SeriesProvenance,
-} from "@workspace/markets";
+} from "@workspace/markets/daily-series";
 
 const AT = "2026-08-29T00:00:00.000Z";
 const RANGE = { from: "2024-01-01", to: "2024-12-31" };

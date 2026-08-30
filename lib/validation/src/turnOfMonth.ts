@@ -37,8 +37,8 @@
 // Pure: no I/O, no clock, no randomness. Nothing here places, sizes, or
 // authorises a trade.
 
-import type { DailyBar } from "@workspace/markets";
-import { dataFingerprint } from "@workspace/markets";
+import type { DailyBar } from "@workspace/markets/daily-series";
+import { dataFingerprint } from "@workspace/markets/daily-series";
 import type { InstrumentCostModel } from "./costModel.js";
 import { netReturns } from "./costModel.js";
 import type {
