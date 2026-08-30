@@ -598,7 +598,7 @@ export async function dispatchApprovedDraft(
     await journalMissionEvent({
       missionId: args.missionId,
       type: "draft_execution_rejected",
-      message: `${executionMode === "live" ? "Live dispatch" : `Simulated (${executionMode}) dispatch`} rejected for ${draft.symbol} ${draft.direction}: ${result.primaryReason ?? result.error}. Draft remains approved.`,
+      message: `${executionMode === "live" ? "Live dispatch" : `Simulated (${executionMode}) dispatch`} rejected for ${draft.symbol} ${draft.direction}: ${result.primaryReason ?? result.error}. Draft remains approved.${autonomyNote}`,
       metadata: {
         draftId: draft.draftId,
         error: result.error,

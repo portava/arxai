@@ -65,6 +65,7 @@ export function checkPhase6ExecutionSafety(): CheckResult {
   let deliverSites = 0;
   let tierEnvSites = 0;
   let ticketRepoFiles = 0;
+  let killSwitchReleaseFiles = 0;
 
   for (const root of SCAN_ROOTS) {
     for (const f of walk(root)) {
@@ -120,6 +121,36 @@ export function checkPhase6ExecutionSafety(): CheckResult {
         }
       }
 
+      // ── R4 — kill-switch release writers ──────────────────────────────
+      // Audit 2026-08-30: POST /admin/trading/reset-kill released the global
+      // emergency stop with nothing but an admin session and four characters
+      // of prose — a third writer neither ceremony knew about. Any ROUTE that
+      // writes emergencyKillSwitch:false must be one of the two release
+      // surfaces, and any surface outside the activate-step ceremony must
+      // consult the cold-posture policy in the same file.
+      if (path.startsWith("artifacts/api-server/src/routes/")) {
+        const releaseWriteRe = /emergencyKillSwitch\s*:\s*false/;
+        if (releaseWriteRe.test(src)) {
+          killSwitchReleaseFiles++;
+          const allowed = [
+            "artifacts/api-server/src/routes/adminLiveSharedReadiness.ts",
+            "artifacts/api-server/src/routes/adminTrading.ts",
+          ];
+          if (!allowed.includes(path)) {
+            violations.push(
+              `${path} → writes emergencyKillSwitch:false. Releasing the emergency stop is ` +
+              `restricted to the two audited release surfaces (activate-step ceremony and the ` +
+              `cold-posture doorways); a third writer bypasses both.`,
+            );
+          } else if (path.endsWith("adminTrading.ts") && !src.includes("killSwitchReleaseViolations")) {
+            violations.push(
+              `${path} → writes emergencyKillSwitch:false without consulting ` +
+              `killSwitchReleaseViolations. The reset-kill route must keep the cold-posture wall.`,
+            );
+          }
+        }
+      }
+
       // ── R3 — approval owner scoping ───────────────────────────────────
       if (src.includes("approvalTicketsRepo")) {
         ticketRepoFiles++;
@@ -148,6 +179,7 @@ export function checkPhase6ExecutionSafety(): CheckResult {
   notes.push(`R1 adapter deliver() call sites: ${deliverSites} (allowed: dispatch pipeline, guided composition point, adapter definitions).`);
   notes.push(`R2 tier-from-environment reads: ${tierEnvSites} (allowed: ${TIER_ENV_READER}).`);
   notes.push(`R3 files touching approvalTicketsRepo: ${ticketRepoFiles}.`);
+  notes.push(`R4 route files writing emergencyKillSwitch:false: ${killSwitchReleaseFiles} (allowed: the two audited release surfaces).`);
   notes.push(
     "Inviolable: order delivery passes the gate wall; tiers come from resolveExecutionTier; " +
     "approval tickets are owner-scoped in the query.",

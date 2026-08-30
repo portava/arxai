@@ -169,6 +169,18 @@ test("the refusal reason is documented in owner-readable terms", () => {
   assert.match(AUTONOMOUS_ENTRY_REFUSAL_NOTE, /EDGE_CAPACITY_EXCEEDED/);
 });
 
+test("SOURCE PIN: the note actually reaches the journal message, not just a dead variable", () => {
+  // Audit 2026-08-30: `autonomyNote` was computed and then dropped on the floor
+  // — the journal entry never carried the note the comments promised. Pin that
+  // the rejected-dispatch journal message interpolates it.
+  const src = read("../missionExecution.ts");
+  assert.match(
+    src,
+    /Draft remains approved\.\$\{autonomyNote\}/,
+    "the draft_execution_rejected journal message must interpolate autonomyNote",
+  );
+});
+
 // ── 3. The provenance chain is wired end to end ─────────────────────────────
 
 test("SOURCE PIN: the mission driver stamps driverOriginated on its own dispatch", () => {

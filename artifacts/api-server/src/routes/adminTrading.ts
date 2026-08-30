@@ -27,6 +27,11 @@ import {
 } from "@workspace/db/schema";
 import { eq, desc, asc, and, gte, sql } from "drizzle-orm";
 import { tradingModeGate } from "@workspace/db/repositories";
+import {
+  killSwitchReleaseViolations,
+  postureFromSettingsRow,
+} from "../lib/phase6/killSwitchReleasePolicy.js";
+import { liveBrokerExecutionEnabled } from "../lib/live/phaseBConfig.js";
 import { z } from "zod/v4";
 import { getEnvelope, getGlobalSettings } from "../lib/adminTrading/safetyEnvelope.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
@@ -158,6 +163,27 @@ router.post("/admin/trading/reset-kill", async (req, res) => {
   const adminId = (req as Request & { authUser?: { id?: number } }).authUser?.id ?? null;
   const reason = String((req.body as { reason?: string })?.reason ?? "").trim();
   if (reason.length < 4) { res.status(400).json({ ok: false, error: "REASON_REQUIRED" }); return; }
+
+  // Releasing the emergency stop is subject to the SAME cold-platform wall as
+  // the live-shared RELEASE doorway. Before this check, this route was a third
+  // writer that bypassed both release ceremonies with nothing but an admin
+  // session and four characters of prose — while any live control is hot,
+  // release must go through the full activate-step ceremony instead.
+  const releaseViolations = killSwitchReleaseViolations(
+    postureFromSettingsRow(before, liveBrokerExecutionEnabled()),
+  );
+  if (releaseViolations.length > 0) {
+    res.status(409).json({
+      ok: false,
+      error: "COLD_POSTURE_REQUIRED_FOR_RELEASE",
+      violations: releaseViolations,
+      detail:
+        "The kill switch may only be reset while every live control is off. Releasing while a " +
+        "listed control is hot requires the shared-live activation ceremony " +
+        "(POST /api/admin/live-shared/activate-step).",
+    });
+    return;
+  }
 
   const updated = await db.update(globalTradingSettingsTable)
     .set({

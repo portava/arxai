@@ -69,12 +69,20 @@ test("TIER_3 (live) and TIER_4 (autonomous) are REFUSED, not merely absent", () 
   }
 });
 
-test("the demo tiers resolve, and only they permit a venue send", () => {
+test("only the built demo tier resolves to a venue send; TIER_2 clamps until its machinery exists", () => {
   assert.equal(resolveExecutionTier("TIER_1_DEMO_GUIDED").tier, "TIER_1_DEMO_GUIDED");
-  assert.equal(resolveExecutionTier("TIER_2_DEMO_SUPERVISED").tier, "TIER_2_DEMO_SUPERVISED");
+  // TIER_2 is in the vocabulary but DENIED: the supervised-session machinery is
+  // not built, so the value clamps to dry run with a stated reason instead of
+  // granting venue-sends without the supervision the name promises.
+  const t2 = resolveExecutionTier("TIER_2_DEMO_SUPERVISED");
+  assert.equal(t2.tier, "TIER_0_DRY_RUN");
+  assert.equal(t2.requestedGranted, false);
+  assert.match(String(t2.denyReason), /not built/);
   assert.equal(tierPermitsVenueSend("TIER_0_DRY_RUN"), false);
   assert.equal(tierPermitsVenueSend("TIER_1_DEMO_GUIDED"), true);
-  assert.equal(tierPermitsVenueSend("TIER_2_DEMO_SUPERVISED"), true);
+  // Belt to the resolver's suspenders: even a hand-constructed TIER_2 value
+  // that never passed resolution cannot send.
+  assert.equal(tierPermitsVenueSend("TIER_2_DEMO_SUPERVISED"), false);
   assert.equal(tierPermitsVenueSend("TIER_3_LIVE_GUIDED"), false);
   assert.equal(tierPermitsVenueSend("TIER_4_AUTONOMOUS"), false);
 });

@@ -49,9 +49,18 @@ export const TIER_1_DEMO_GUIDED: ExecutionTier = "TIER_1_DEMO_GUIDED";
 
 /**
  * Tiers this build refuses to run at, with the reason surfaced in the resolution
- * so a refusal is never silent. Both are held by owner Ruling 19.
+ * so a refusal is never silent. TIER_3/TIER_4 are held by owner Ruling 19.
+ *
+ * TIER_2 is denied for a different reason: Ruling 19's ladder authorizes it in
+ * principle, but the supervised-session machinery does not exist in this build
+ * (docs/CERTIFICATIONS.md: "Not built, not authorized to enable"). Before this
+ * entry, the env VALUE alone granted TIER_2 venue-sends with none of the
+ * supervision the tier's name promises. Building Tier 2 removes this entry
+ * deliberately, alongside the machinery.
  */
 export const DENIED_TIERS: Readonly<Record<string, string>> = {
+  TIER_2_DEMO_SUPERVISED:
+    "supervised continuous demo sessions are not built; the tier would grant venue-sends without the supervision it names",
   TIER_3_LIVE_GUIDED:
     "live-money guided execution is not authorized (owner Ruling 19: prepare architecture only)",
   TIER_4_AUTONOMOUS:
@@ -115,7 +124,11 @@ export function resolveExecutionTier(requested: string | null | undefined): Exec
  * makes a dry run meaningful: everything upstream is exercised for real.
  */
 export function tierPermitsVenueSend(tier: ExecutionTier): boolean {
-  return tier === "TIER_1_DEMO_GUIDED" || tier === "TIER_2_DEMO_SUPERVISED";
+  // TIER_2 is deliberately absent while it sits in DENIED_TIERS: the resolver
+  // already clamps it to TIER_0, and this second refusal means even a
+  // hand-constructed TIER_2 value that never passed resolution cannot send.
+  // Re-admit it here together with removing the DENIED_TIERS entry, not before.
+  return tier === "TIER_1_DEMO_GUIDED";
 }
 
 /** May this tier reach a real-money account? No tier this build can resolve to. */
