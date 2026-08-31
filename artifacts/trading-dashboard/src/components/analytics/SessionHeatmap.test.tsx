@@ -46,7 +46,10 @@ describe("SessionHeatmap", () => {
     );
     expect(screen.getByTestId("session-empty-ASIA")).toBeTruthy();
     expect(screen.getByTestId("session-empty-NEWYORK")).toBeTruthy();
-    expect(screen.queryByText(/0% win/)).toBeNull();
+    // \b matters: an unanchored /0% win/ also matches the TAIL of the measured
+    // session's legitimate "50% win", so the original assertion failed against
+    // correct output. Only a win-rate that is literally zero must be absent.
+    expect(screen.queryByText(/\b0% win/)).toBeNull();
     expect(screen.getAllByText("No trades")).toHaveLength(2);
     // The measured session still shows its real figures — in synthetic units,
     // never with a fabricated "$" sign.
