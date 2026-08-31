@@ -129,3 +129,59 @@ describe("outcome truth — the realised figure carries its completeness state",
     expect(rendered).not.toMatch(/assumed (profit|loss)/i);
   });
 });
+
+// ── LOW-severity truth wave: absent verdicts, and the basis of "Expected" ────
+//
+// Two claims the page used to make that the code did not deliver:
+//   1. The Phase 7 advisory badges were two-state ternaries keyed on
+//      `=== false`. A legacy or partially-populated executionQualityJson row
+//      carries no `allowed` flag at all, so an ABSENT verdict rendered as a
+//      green "Execution OK" / "Net profit OK" / "Exposure OK" — a degraded
+//      state wearing a healthy colour, against the rule stated in that very
+//      section of the file.
+//   2. The proposal row showed the scanner's heuristic score as a bare
+//      "Confidence NN%", and the same number is reinterpreted server-side as
+//      the win probability weighting the Mission-impact "Expected" row
+//      (missionAgents.ts / missionDrafts.ts: `confidence / 100`, defaulting to
+//      0.5). Neither surface said what the number was.
+/** Collapse JSX line-wrapping so a sentence split across lines reads as one. */
+const flatRendered = rendered.replace(/\s+/g, " ");
+
+describe("advisory verdicts are three-state — absent is not a pass", () => {
+  it("an absent verdict renders as unknown, never as OK", () => {
+    expect(rendered).toMatch(/unknown: "Execution unknown"/);
+    expect(rendered).toMatch(/unknown: "Net profit unknown"/);
+    expect(rendered).toMatch(/unknown: "Exposure unknown"/);
+  });
+
+  it("the healthy colour requires an explicit true, and unknown reads neutral", () => {
+    expect(rendered).toMatch(/allowed === true\) return "bg-success\/15 text-success"/);
+    expect(rendered).toMatch(/return "bg-muted text-muted-foreground"/);
+  });
+
+  it("the old two-state ternaries are gone from all three badges", () => {
+    expect(rendered).not.toMatch(/execAllowed === false \? "Execution blocked"/);
+    expect(rendered).not.toMatch(/netAllowed === false \? "Net profit too thin"/);
+    expect(rendered).not.toMatch(/expoAllowed === false \? "Exposure blocked"/);
+  });
+});
+
+describe("the scanner score names its own basis on both surfaces", () => {
+  it("the proposal row labels the number as a heuristic, not a win rate", () => {
+    expect(rendered).toMatch(/Scanner confidence \(heuristic\)/);
+    expect(rendered).not.toMatch(/text-muted-foreground">Confidence<\/span>/);
+  });
+
+  it("the mission-impact footer states what weights the Expected row", () => {
+    expect(flatRendered).toMatch(
+      /The Expected row weights the two outcomes by an assumed .{0,120}win rate/,
+    );
+    expect(flatRendered).toMatch(/scanner's heuristic confidence, or a 50% placeholder/);
+    expect(flatRendered).toMatch(/not a measured or back-tested win rate/);
+  });
+
+  it("a payload with no win probability reads unknown rather than a silent 50%", () => {
+    expect(rendered).toMatch(/Number\.isFinite\(impact\.winProbability\)/);
+    expect(rendered).toMatch(/winRatePct != null \? `\$\{winRatePct\}%` : "unknown"/);
+  });
+});

@@ -41,18 +41,32 @@ export function WhyBlockedDrawer({ defaultAction = "START_PAPER_SESSION" as Bloc
   const [action, setAction] = useState<BlockedAction>(defaultAction);
   const [exp, setExp] = useState<Explanation | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const { effectiveIsAdmin: isAdmin } = useViewMode();
   const { isApprovedTrader } = useTraderTier();
   const visibleLinks = (exp?.links ?? []).filter(
     (l) => isAdmin || isHumanTraderAllowedPath(l.href, { isApprovedTrader }),
   );
 
+  /** CONFIDENT_ABSENT fix: this ignored `r.ok` and had no catch, so a failed
+   *  read set `exp` to null and — once "Loading…" cleared — rendered an empty
+   *  drawer body with no explanation and no reason why. A drawer whose whole
+   *  job is to say what is blocking you must say "I couldn't find out" out
+   *  loud, never go blank. */
   async function load(a: BlockedAction) {
-    setLoading(true); setAction(a);
-    const r = await fetch(`${BASE}/api/help/why-blocked`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ blockedAction: a }) });
-    const d = await r.json();
-    setExp(d.explanation ?? null);
-    setLoading(false);
+    setLoading(true); setAction(a); setError(null);
+    try {
+      const r = await fetch(`${BASE}/api/help/why-blocked`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ blockedAction: a }) });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      if (!d?.explanation) throw new Error("the server returned no explanation");
+      setExp(d.explanation as Explanation);
+    } catch (e) {
+      setExp(null);
+      setError(e instanceof Error ? e.message : "the read failed");
+    } finally {
+      setLoading(false);
+    }
   }
 
   function openWith(a: BlockedAction) { setOpen(true); load(a); }
@@ -80,7 +94,18 @@ export function WhyBlockedDrawer({ defaultAction = "START_PAPER_SESSION" as Bloc
           </div>
           <div className="mt-4 space-y-3">
             {loading && <p className="text-xs text-muted-foreground">Loading…</p>}
-            {!loading && exp && (
+            {!loading && error && (
+              <Alert variant="destructive" data-testid="why-blocked-error">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>Couldn't load the explanation</AlertTitle>
+                <AlertDescription className="text-xs space-y-2">
+                  <p>Nothing is known about what is blocking <span className="font-mono">{action}</span> right now — treat that as unknown, not as allowed.</p>
+                  <p className="font-mono text-[10px]">{error}</p>
+                  <Button size="sm" variant="outline" onClick={() => load(action)}>Retry</Button>
+                </AlertDescription>
+              </Alert>
+            )}
+            {!loading && !error && exp && (
               <>
                 <Alert variant={exp.highestSeverity === "CRITICAL" || exp.highestSeverity === "BLOCK" ? "destructive" : "default"}>
                   <AlertTriangle className="h-4 w-4" />

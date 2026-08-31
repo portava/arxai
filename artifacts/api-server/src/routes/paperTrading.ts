@@ -111,6 +111,11 @@ async function markToMarket(accountId: number) {
       }
     }
     if (hit) {
+      // FILL MODEL — same contract as the EE monitor and as
+      // SIMULATED_FILL_ASSUMPTIONS.gapRisk: the stop/target is modelled as
+      // filling EXACTLY at its level. Gap risk and slippage are NOT modelled,
+      // so this realized P&L is an optimistic bound; the cockpit discloses it
+      // via TodayPerformance.fillModel.
       const exitPx = hit === "SL" ? o.stopLoss : o.takeProfit;
       const pnl = pnlFor(o.direction, o.lotSize, o.entryPrice, exitPx);
       const status = hit === "SL" ? "CLOSED_SL" : "CLOSED_TP";

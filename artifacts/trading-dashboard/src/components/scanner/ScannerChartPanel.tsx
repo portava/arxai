@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { CandlestickChart, RefreshCw, Loader2, X, Flame, AlertTriangle, Clock } from "lucide-react";
 import { formatMarketClosedLabel } from "@/components/charts/marketFrozenFormat";
+import { useTickStreamWatchdog } from "@/components/charts/useTickStreamWatchdog";
 import { useChartSymbol, bareSymbol } from "@/lib/use-chart-symbol";
 // `Candle` + the pure `adaptChartCandles` mapping live in scannerCandleAdapter.ts
 // so the field-shape handling is unit-tested (Task #367 — see that test).
@@ -550,6 +551,16 @@ export function ScannerChartPanel() {
   const [marketFrozen, setMarketFrozen] = useState<{ lastBrokerTimeMs: number | null } | null>(
     null,
   );
+
+  // ── Tick-stream watchdog (Theme C3.4/C3.5, retrofitted to the Scanner).
+  // The SSE `onerror` here used to be a no-op on the reasoning that the browser
+  // auto-reconnects an EventSource. That covers only errors the browser
+  // surfaces; a proxy idle-timeout / sleeping tab / network change leaves the
+  // connection nominally OPEN while it silently stops delivering, so the tip
+  // stopped ticking while the panel still read tick-live. Same hook, same
+  // detection, as the ARX native chart — display/telemetry only, no execution
+  // path and no market data of its own.
+  const streamWatchdog = useTickStreamWatchdog();
 
   // ── Phase 4 — draggable draft-order lines (Entry/SL/TP).
   //    These are purely a *proposal* the user shapes by dragging; nothing
@@ -1356,7 +1367,11 @@ export function ScannerChartPanel() {
     } catch {
       return; // EventSource unavailable — the 15s poll still keeps the tip fresh.
     }
+    streamWatchdog.noteStreamOpened();
     es.onmessage = (ev) => {
+      // Any frame — tip, feed_status, or heartbeat — proves the stream is alive.
+      // Recorded before parsing so even an unrecognised frame counts as liveness.
+      streamWatchdog.noteFrame();
       let msg: {
         type?: string;
         frozen?: boolean;
@@ -1436,13 +1451,20 @@ export function ScannerChartPanel() {
       newestBarSecRef.current = tipSec;
     };
     es.onerror = () => {
-      // The browser auto-reconnects an EventSource; nothing to do. The poll
+      // The browser retries an EventSource on its own, but only for errors it
+      // actually surfaces — and it never recovers a connection that stays "open"
+      // while silently delivering nothing. Record the state so the badge is
+      // honest; the watchdog owns the reconnect for both cases. The 15s poll
       // remains the reconciliation backstop while the stream is down.
+      streamWatchdog.noteError();
     };
     return () => {
       es?.close();
     };
-  }, [symbol, apiTf]);
+    // The watchdog's callbacks are stable; `epoch` is the reconnect signal and
+    // this effect's cleanup closes the dead stream before the replacement opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [symbol, apiTf, streamWatchdog.epoch]);
 
   // ── Display-truth: keep the candlestick series' built-in last-price line +
   //    last-value label in lockstep with the live/non-live display status,
@@ -2255,6 +2277,21 @@ export function ScannerChartPanel() {
                 title="The broker is replaying its last quote — the market is closed (derived from real tick broker-time staleness, not a calendar)."
               >
                 <Clock className="h-3 w-3" /> {formatMarketClosedLabel(marketFrozen.lastBrokerTimeMs)}
+              </Badge>
+            )}
+            {/* Theme C3.5 — an honestly-labelled stalled stream. A chart whose
+                tick-stream has stopped delivering must SAY so; the failure mode
+                being fixed is precisely a frozen tip that still looked tick-live.
+                Suppressed when the market is legitimately closed, because that
+                already explains the silence and is the more specific verdict. */}
+            {streamWatchdog.stalled && !marketFrozen && (
+              <Badge
+                variant="outline"
+                className="flex items-center gap-1 border-warning/25 bg-warning/10 text-[10px] text-warning"
+                data-testid="scanner-chart-stream-reconnecting"
+                title="The live tick stream stopped delivering and is being reopened. Prices shown are the last received — they are not updating right now."
+              >
+                <RefreshCw className="h-3 w-3 animate-spin" /> Reconnecting — prices delayed
               </Badge>
             )}
             {/* Candle-close countdown (Task #524). Honesty-gated: only when the

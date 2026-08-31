@@ -5,7 +5,10 @@ import { ARXLogoMark } from "@/components/brand/ARXLogo";
 
 export function Footer() {
   const year = new Date().getFullYear();
-  const [v, setV] = useState<{ version?: string; stage?: string; mt5Deferred?: boolean } | null>(null);
+  // `version` is the static release label; `build` is the deployed build id and
+  // is null when the deploy published none — in that case no build badge is
+  // rendered, so the release label is never passed off as the deployed build.
+  const [v, setV] = useState<{ version?: string; stage?: string; build?: string | null; mt5Deferred?: boolean } | null>(null);
   useEffect(() => { void fetch("/api/release/version").then((r) => r.ok ? r.json() : null).then(setV).catch(() => {}); }, []);
   return (
     <footer
@@ -19,7 +22,8 @@ export function Footer() {
           <span className="font-semibold text-foreground/80" title="Analyze. Risk. eXecute.">ARX AI</span>
           <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70">Analyze · Risk · eXecute</span>
           <span>· © {year}</span>
-          {v?.version && <Badge variant="outline" className="text-[10px] font-mono" data-testid="footer-version">{v.version}</Badge>}
+          {v?.version && <Badge variant="outline" className="text-[10px] font-mono" data-testid="footer-version" title="Release label">{v.version}</Badge>}
+          {v?.build && <Badge variant="outline" className="text-[10px] font-mono text-muted-foreground" data-testid="footer-build" title="Deployed build">build {v.build}</Badge>}
           {v?.stage && v.stage !== "LIVE" && <Badge className="text-[10px] bg-warning/10 text-warning border border-warning/25">{v.stage}</Badge>}
           {v?.mt5Deferred && false && <Badge className="text-[10px] bg-muted/60 text-txt-secondary border border-border">MT5 DEFERRED</Badge>}
         </div>

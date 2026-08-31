@@ -248,8 +248,14 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     <Ctx.Provider value={ctx}>
       {children}
       {/* App Shell 3.0: removed pinned bottom-left "Help / Tour" pill — it
-          was overlapping the sidebar/risk-notice. Tour is now reachable from
-          the FloatingHelpWidget ("Start app tour" row) via useOnboarding(). */}
+          was overlapping the sidebar/risk-notice.
+          CORRECTION: this note used to say the tour was "reachable from the
+          FloatingHelpWidget", which has zero importers and never renders
+          (pinned by components/help/mountedAssistantTrigger.test.ts) — so
+          showTour() had no mounted caller at all. The tour is now reachable
+          from the Help Center's "Restart the guided tour" button
+          (pages/help-center.tsx), which is what the onboarding "complete"
+          step's help_text points users at. */}
       {bootstrapped ? null : null}
 
       {/* First-time onboarding modal */}

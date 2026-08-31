@@ -324,14 +324,21 @@ function resolveDataQuality(
   const parts: string[] = [];
   if (!hasCandleData) parts.push("candles unavailable (session-only estimate)");
   if (!hasQuoteData) parts.push("live quote unavailable");
-  if (!hasNewsData) parts.push("no scheduled news events");
+  // hasNewsData is FALSE both when no calendar provider is wired AND when a
+  // wired provider is simply quiet — the overlay carries no flag separating
+  // the two, so this note must not assert that the feed is missing.
+  if (!hasNewsData) parts.push("no news event in window (calendar connection not reported)");
   if (!hasBroadFlowData) parts.push("broad flow unavailable");
 
+  // Only candles+quote move the label (see above). News/broad-flow gaps are
+  // informational, so a "real" read must not describe itself as "Partial data".
   const note = label === "unavailable"
     ? "Candle and quote feeds are both unavailable — not enough live data to produce a timing read."
     : parts.length === 0
       ? "All data sources available — read is based on real data."
-      : `Partial data: ${parts.join("; ")}.`;
+      : label === "real"
+        ? `Live candles and quote available. Not in this read: ${parts.join("; ")}.`
+        : `Partial data: ${parts.join("; ")}.`;
 
   return {
     label,

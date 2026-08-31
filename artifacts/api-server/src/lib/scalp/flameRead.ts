@@ -410,6 +410,13 @@ function classifyStage(m: Metrics, prof: PersonalityProfile): FlameStage {
   return "ACTIVE";
 }
 
+/**
+ * NOT data freshness. This is BURST freshness: how far along the momentum move
+ * is, derived purely from the flame stage. It says nothing about how recently
+ * the candles were fetched — data recency lives in the read's own expiry /
+ * quote-and-candle status. Any surface rendering this must say so; a user who
+ * reads "Fresh" as a live-feed guarantee has been misled.
+ */
 function freshnessFor(stage: FlameStage): FlameFreshness {
   switch (stage) {
     case "IGNITING": return "FRESH";

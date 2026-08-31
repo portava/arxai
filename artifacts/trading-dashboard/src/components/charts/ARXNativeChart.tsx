@@ -114,7 +114,19 @@ function loadTimeframe(): ArxTimeframe {
 }
 
 // Mirror status — derived from feed quality + fetch state.
-type MirrorStatus = "Mirrored" | "Syncing" | "Stale" | "Conflict" | "Refreshing";
+//
+// HONESTY (Theme C3.6): "delayed" and "partial" used to collapse into the green
+// success "Mirrored" dot. The prominent feed banner was honest about the
+// degradation, but the strip's green dot contradicted it — a degraded state
+// wearing a healthy colour. They now carry their own caution-toned state so the
+// dot never claims more than the feed delivers.
+type MirrorStatus =
+  | "Mirrored"
+  | "Delayed"
+  | "Syncing"
+  | "Stale"
+  | "Conflict"
+  | "Refreshing";
 
 function getMirrorStatus(
   quality: string | null | undefined,
@@ -124,7 +136,7 @@ function getMirrorStatus(
   if (isFetching) return "Refreshing";
   if (!quality) return "Syncing";
   if (quality === "clean") return stale ? "Stale" : "Mirrored";
-  if (quality === "delayed" || quality === "partial") return "Mirrored";
+  if (quality === "delayed" || quality === "partial") return "Delayed";
   if (quality === "stale") return "Stale";
   if (quality === "invalid") return "Conflict";
   return "Syncing"; // empty / unavailable
@@ -135,6 +147,11 @@ const MIRROR_STYLE: Record<MirrorStatus, { dot: string; text: string; label: str
     dot: "bg-success",
     text: "text-success",
     label: "Mirrored",
+  },
+  Delayed: {
+    dot: "bg-warning",
+    text: "text-warning",
+    label: "Mirrored (delayed)",
   },
   Refreshing: {
     dot: "bg-ruby animate-pulse",
@@ -1003,7 +1020,7 @@ export function ARXNativeChart({
           className={`inline-flex h-1.5 w-1.5 shrink-0 rounded-full ${mirrorStyle.dot}`}
         />
         <span className={`font-medium ${mirrorStyle.text}`} data-testid="arx-mirror-status">
-          {mirrorStatus}
+          {mirrorStyle.label}
         </span>
         {/* Symbol · Timeframe */}
         <span className="text-txt-muted">

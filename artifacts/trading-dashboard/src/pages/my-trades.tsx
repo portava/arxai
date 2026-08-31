@@ -215,12 +215,21 @@ export default function MyTradesPage() {
 
   // ── Derived summary (real data only) ──────────────────────────────────────
   const sum = useMemo(() => {
-    const openPnl = cards.reduce((s, c) => s + (c.unrealizedPnl ?? 0), 0);
+    // A card whose P/L has never synced is unknown, not zero. It is excluded
+    // from the total and counted, so the tile can say the sum is incomplete —
+    // the same rows the table already flags "syncing…" used to be folded in as
+    // a silent 0, making a partial total read as a complete one.
+    const pricedCards = cards.filter((c) => c.unrealizedPnl != null);
+    const openPnlMissing = cards.length - pricedCards.length;
+    const openPnl = pricedCards.reduce((s, c) => s + (c.unrealizedPnl ?? 0), 0);
+    const openPnlKnown = pricedCards.length > 0 || cards.length === 0;
     const totalLots = cards.reduce((s, c) => s + (c.lotSize ?? 0), 0);
     const protectedN = cards.filter(isProtected).length;
     const unprotectedN = cards.length - protectedN;
-    const withWinner = cards.reduce<OpenCard | null>((b, c) => (!b || (c.unrealizedPnl ?? 0) > (b.unrealizedPnl ?? 0) ? c : b), null);
-    const withLoser = cards.reduce<OpenCard | null>((b, c) => (!b || (c.unrealizedPnl ?? 0) < (b.unrealizedPnl ?? 0) ? c : b), null);
+    // Ranked over priced cards only: a card with no synced P/L cannot be named
+    // the biggest winner (or loser) at a fabricated 0.00.
+    const withWinner = pricedCards.reduce<OpenCard | null>((b, c) => (!b || (c.unrealizedPnl ?? 0) > (b.unrealizedPnl ?? 0) ? c : b), null);
+    const withLoser = pricedCards.reduce<OpenCard | null>((b, c) => (!b || (c.unrealizedPnl ?? 0) < (b.unrealizedPnl ?? 0) ? c : b), null);
     const longLots = cards.filter((c) => c.side === "BUY").reduce((s, c) => s + c.lotSize, 0);
     const shortLots = cards.filter((c) => c.side === "SELL").reduce((s, c) => s + c.lotSize, 0);
     const noSL = cards.filter((c) => c.stopLoss == null).length;
@@ -237,7 +246,7 @@ export default function MyTradesPage() {
     const tp = countNearLevel(cards.map((c) => ({ entry: c.entryPrice, current: c.currentPrice, level: c.takeProfit })));
     const nearSL = sl.near;
     const nearTP = tp.near;
-    return { openPnl, totalLots, protectedN, unprotectedN, withWinner, withLoser, longLots, shortLots, noSL, noTP, nearSL, nearTP, nearSLUnmeasurable: sl.unmeasurable, nearTPUnmeasurable: tp.unmeasurable };
+    return { openPnl, openPnlMissing, openPnlKnown, totalLots, protectedN, unprotectedN, withWinner, withLoser, longLots, shortLots, noSL, noTP, nearSL, nearTP, nearSLUnmeasurable: sl.unmeasurable, nearTPUnmeasurable: tp.unmeasurable };
   }, [cards]);
 
   /** Open positions that reported an open time, newest first. Real rows only. */
@@ -303,6 +312,15 @@ export default function MyTradesPage() {
     return Array.from(m.entries()).map(([symbol, lots]) => ({ symbol, lots, pct: Math.round((lots / total) * 100) }));
   }, [cards, sum.totalLots]);
 
+  // Header-strip Open P/L: the broker snapshot's own figure when we have one,
+  // otherwise the locally derived sum — which is incomplete whenever a card's
+  // P/L has not synced, and must say so rather than read as a finished total.
+  const headerSnapshotPL = !liveSnap.isUnavailable && liveSnap.snapshot?.openPL != null
+    ? liveSnap.snapshot.openPL
+    : null;
+  const headerOpenPL = headerSnapshotPL ?? (sum.openPnlKnown ? sum.openPnl : null);
+  const headerOpenPLIncomplete = headerSnapshotPL == null && sum.openPnlMissing > 0;
+
   return (
     <div className="mx-auto w-full max-w-[1280px] space-y-4 pb-32 md:pb-6">
       {/* Hero */}
@@ -341,15 +359,16 @@ export default function MyTradesPage() {
                 ? liveSnap.snapshot.openPositionsCount
                 : cards.length) === 1 ? "" : "s")}
         </span>
-        <span className="text-txt-muted">Open P/L <span className={cn("font-medium", pnlTone(
-          !liveSnap.isUnavailable && liveSnap.snapshot?.openPL != null
-            ? liveSnap.snapshot.openPL
-            : sum.openPnl
-        ))}>{money(
-          !liveSnap.isUnavailable && liveSnap.snapshot?.openPL != null
-            ? liveSnap.snapshot.openPL
-            : sum.openPnl
-        )}</span></span>
+        <span className="text-txt-muted">Open P/L{" "}
+          <span className={cn("font-medium", headerOpenPL == null ? "text-txt-muted" : pnlTone(headerOpenPL))}>
+            {headerOpenPL == null ? "—" : money(headerOpenPL)}
+          </span>
+          {headerOpenPLIncomplete && (
+            <span className="ml-1 text-[11px] text-warning">
+              incomplete — {sum.openPnlMissing} syncing
+            </span>
+          )}
+        </span>
         <span className="text-txt-muted">Total Lots <span className="text-foreground font-medium">{sum.totalLots.toFixed(2)}</span></span>
         <span className="text-txt-muted">Exposure <span className="text-success font-medium">{cards.length === 0 ? "None" : "Active"}</span></span>
         {liveSnap.snapshot != null && (
@@ -390,7 +409,14 @@ export default function MyTradesPage() {
           ) : (
             <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
               <Mini label="Open Trades" value={String(cards.length)} />
-              <Mini label="Open P/L" value={money(sum.openPnl)} tone={pnlTone(sum.openPnl)} />
+              <Mini
+                label="Open P/L"
+                value={sum.openPnlKnown ? money(sum.openPnl) : "—"}
+                tone={sum.openPnlKnown ? pnlTone(sum.openPnl) : "text-txt-muted"}
+                sub={sum.openPnlMissing > 0
+                  ? `incomplete — ${sum.openPnlMissing} syncing`
+                  : undefined}
+              />
               <Mini label="Total Lots" value={sum.totalLots.toFixed(2)} />
               <Mini label="Protected" value={`${sum.protectedN} / ${cards.length}`} />
               <Mini label="Unprotected" value={String(sum.unprotectedN)} tone={sum.unprotectedN ? "text-danger" : undefined} />
@@ -408,7 +434,11 @@ export default function MyTradesPage() {
           ) : (
             <>
               <p className="mt-2 text-sm text-txt-secondary">
-                {sum.openPnl >= 0 ? "Your open trades are net positive right now." : "Your open trades are net negative right now."}{" "}
+                {!sum.openPnlKnown
+                  ? "No P/L has synced for your open trades yet, so there is nothing to call positive or negative."
+                  : sum.openPnlMissing > 0
+                    ? `Across the trades that have synced, your open trades are net ${sum.openPnl >= 0 ? "positive" : "negative"} — ${sum.openPnlMissing} more ${sum.openPnlMissing === 1 ? "is" : "are"} still syncing.`
+                    : sum.openPnl >= 0 ? "Your open trades are net positive right now." : "Your open trades are net negative right now."}{" "}
                 {sum.unprotectedN > 0 ? `${sum.unprotectedN} position${sum.unprotectedN === 1 ? " is" : "s are"} unprotected — consider adding a stop.` : "All positions have a stop in place."}
               </p>
               <div className="mt-3 flex flex-wrap gap-1.5">
@@ -509,8 +539,14 @@ export default function MyTradesPage() {
                         <td className="py-2.5 pr-3 font-mono text-txt-secondary">{c.lotSize}</td>
                         <td className="py-2.5 pr-3 font-mono text-txt-secondary">{c.entryPrice ?? "—"}</td>
                         <td className="py-2.5 pr-3 font-mono text-txt-secondary">{c.currentPrice ?? "—"}</td>
-                        <td className={cn("py-2.5 pr-3 text-right font-mono", pnlTone(c.unrealizedPnl ?? 0))}>
-                          {c.waitingForSync ? <span className="text-warning text-xs">syncing…</span> : money(c.unrealizedPnl ?? 0)}
+                        <td className={cn("py-2.5 pr-3 text-right font-mono", c.unrealizedPnl == null ? "text-txt-muted" : pnlTone(c.unrealizedPnl))}>
+                          {c.waitingForSync
+                            ? <span className="text-warning text-xs">syncing…</span>
+                            : c.unrealizedPnl == null
+                              // No synced P/L and not flagged syncing: still unknown,
+                              // never a confident "$0.00" break-even claim.
+                              ? <span title="No P/L reported for this position">—</span>
+                              : money(c.unrealizedPnl)}
                           {c.pnlIsEstimate && !c.waitingForSync && <span className="ml-1 text-[10px] text-txt-muted">est.</span>}
                         </td>
                         <td className="py-2.5 pr-3 font-mono text-txt-secondary">{c.stopLoss ?? "—"}</td>

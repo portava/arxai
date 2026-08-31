@@ -91,6 +91,18 @@ function ageLabel(dataIso: string | null | undefined, nowTs: number): string {
   const rem = s % 60;
   return `updated ${m}m ${rem}s ago`;
 }
+// The no-trade "confidence" is a FIXED per-rule score chosen by the explain
+// engine's branch (90/92/78/74/66/60/45) — a rule-based strength band, never a
+// measured probability. Rendering it as "N% sure" dressed a hand-set constant as
+// a statistic, so the panel shows the band in words and names it as rule-based.
+function noTradeBandLabel(score: number | null | undefined): string {
+  if (score == null || !Number.isFinite(score)) return "rule-based";
+  if (score >= 85) return "rule-based: very strong case to wait";
+  if (score >= 70) return "rule-based: strong case to wait";
+  if (score >= 55) return "rule-based: moderate case to wait";
+  return "rule-based: mild case to wait";
+}
+
 const FRESHNESS_TONE: Record<string, string> = {
   FRESH: "text-success",
   ACTIVE: "text-success",
@@ -445,7 +457,13 @@ export function RubyMarketReadCard({
                 <div className="rounded-xl border border-border bg-background/40 p-3" data-testid="ruby-market-read-no-trade">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-semibold text-foreground">Why sitting out is the trade</span>
-                    <span className="ml-auto text-xs text-txt-muted">{Math.round(explanation.noTrade.confidence)}% sure</span>
+                    <span
+                      className="ml-auto text-xs text-txt-muted"
+                      title="A rule-based strength band from the read's conditions — not a measured probability."
+                      data-testid="ruby-market-read-no-trade-band"
+                    >
+                      {noTradeBandLabel(explanation.noTrade.confidence)}
+                    </span>
                   </div>
                   {explanation.noTrade.reason && (
                     <p className="mt-1 text-sm leading-snug text-txt-secondary">{explanation.noTrade.reason}</p>

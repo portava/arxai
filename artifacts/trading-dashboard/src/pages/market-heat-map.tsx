@@ -553,6 +553,14 @@ function SessionCard({
         {!compact && (
           <p className="text-xs text-muted-foreground leading-relaxed">{session.sessionDescription}</p>
         )}
+        {/* These three numbers and the two symbol lists below come from
+            sessionKillZoneEngine's fixed per-session/kill-zone lookup table —
+            they are session-typical constants, NOT anything measured from this
+            symbol's live feed. Label them so they can't be read as live
+            per-session intelligence sitting next to the computed scores. */}
+        <div className="text-[10px] text-muted-foreground">
+          Typical for this session — fixed session characteristics, not live readings for this symbol.
+        </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
           <ScorePill label="Heat bonus" value={`+${session.sessionHeatBonus}`} />
           <ScorePill label="Fakeout risk" value={scorePercent(session.fakeoutRisk)} />
@@ -560,7 +568,7 @@ function SessionCard({
         </div>
         {session.bestSymbols.length > 0 && (
           <div>
-            <div className="text-[10px] text-muted-foreground mb-1">Best this session</div>
+            <div className="text-[10px] text-muted-foreground mb-1">Typically best in this session</div>
             <div className="flex flex-wrap gap-1">
               {session.bestSymbols.map((s) => (
                 <Badge key={s} variant="outline" className="text-[10px] bg-success/10 text-success border-success/30">
@@ -572,7 +580,7 @@ function SessionCard({
         )}
         {session.dangerSymbols.length > 0 && (
           <div>
-            <div className="text-[10px] text-muted-foreground mb-1">Caution this session</div>
+            <div className="text-[10px] text-muted-foreground mb-1">Typically risky in this session</div>
             <div className="flex flex-wrap gap-1">
               {session.dangerSymbols.map((s) => (
                 <Badge key={s} variant="outline" className="text-[10px] bg-danger/10 text-danger border-danger/30">
@@ -876,11 +884,17 @@ function NewsHeatTab({ data }: { data: MarketTimingRead | undefined }) {
               {humanizeNewsPhase(news.phase)}
             </Badge>
           </div>
+          {/* hasNewsData is TRUE only when an event is actually in window (or
+              news is blocking). It is FALSE both when no calendar provider is
+              connected AND when a connected provider is simply quiet — the read
+              carries no flag separating the two, so this card must assert
+              neither. State only what is known, and never discredit a real
+              reading by claiming the feed is down. */}
           {data.dataQuality.hasNewsData ? (
-            <CardDescription className="text-xs">Live news data</CardDescription>
+            <CardDescription className="text-xs">News event in window for this read</CardDescription>
           ) : (
-            <CardDescription className="text-xs text-warning/80">
-              No live news feed connected — showing basic timing estimate only
+            <CardDescription className="text-xs text-muted-foreground">
+              No news event in this read — feed connection status isn't reported here
             </CardDescription>
           )}
         </CardHeader>
@@ -916,11 +930,14 @@ function NewsHeatTab({ data }: { data: MarketTimingRead | undefined }) {
               </div>
             </>
           ) : (
+            /* Muted, not green: an empty news overlay is "nothing found",
+               which is not the same as a verified all-clear — the read does
+               not say whether a calendar provider was connected. */
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
+              <CheckCircle2 className="h-4 w-4 text-muted-foreground shrink-0" />
               No active news events detected for {data.symbol}.
               {!data.dataQuality.hasNewsData && (
-                <span className="text-warning/80"> (No live news feed)</span>
+                <span className="text-muted-foreground"> Feed status isn't reported in this read.</span>
               )}
             </div>
           )}
@@ -939,8 +956,10 @@ function NewsHeatTab({ data }: { data: MarketTimingRead | undefined }) {
             <div className="flex items-start gap-2 text-xs text-muted-foreground">
               <Info className="h-3.5 w-3.5 shrink-0 mt-0.5 text-primary" />
               <span>
-                Real-time news heat requires a connected news/economic calendar provider.
-                Timing estimates are still available — they're labelled as "basic timing estimate."
+                This read found no news event in window. That is not the same as "no news risk":
+                the timing read does not report whether an economic calendar provider is connected,
+                so an empty news overlay can mean a quiet calendar or a calendar that was never wired.
+                Check the news provider status before treating this as an all-clear.
               </span>
             </div>
           </CardContent>
@@ -1352,7 +1371,9 @@ function AdminDataStatusTab({ data, isLoading }: { data: MarketTimingRead | unde
                 {[
                   { label: "Candle data", ok: data.dataQuality.hasCandleData },
                   { label: "Quote data", ok: data.dataQuality.hasQuoteData },
-                  { label: "News data", ok: data.dataQuality.hasNewsData },
+                  // hasNewsData means "an event was in window", not "the feed is
+                  // connected" — a quiet-but-connected calendar reads false here.
+                  { label: "News event", ok: data.dataQuality.hasNewsData },
                   { label: "Broad flow", ok: data.dataQuality.hasBroadFlowData },
                 ].map(({ label, ok }) => (
                   <div

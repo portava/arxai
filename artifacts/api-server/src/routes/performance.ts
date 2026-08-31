@@ -85,6 +85,13 @@ router.get("/performance/summary", requireUser, async (req, res) => {
     const worstTradePnl = pnlValues.length > 0 ? Math.min(...pnlValues) : 0;
     const grossProfit = wins.reduce((a, t) => a + (t.pnl ?? 0), 0);
     const grossLoss = Math.abs(losses.reduce((a, t) => a + (t.pnl ?? 0), 0));
+    // SENTINEL, not a measurement: with zero gross loss the ratio is
+    // undefined. The response contract types `profitFactor` as a plain
+    // number (GetPerformanceSummaryResponse), so null cannot be sent from
+    // here — 9.99 is the legacy stand-in. Clients MUST NOT render it as a
+    // measured ratio: read `losingTrades === 0` and say "no losses yet"
+    // instead (see trading-dashboard/src/pages/analytics.tsx
+    // profitFactorText).
     const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? 9.99 : 0;
     const avgConfidence = trades.length > 0 ? trades.reduce((a, t) => a + t.confidence, 0) / trades.length : 0;
 

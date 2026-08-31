@@ -538,11 +538,17 @@ router.post("/positions/:id/close-confirmation", requireUser, async (req, res): 
       res.status(409).json({ error: "Position already terminal", status: row.status });
       return;
     }
+    // The price the operator confirms against must say WHICH price it is. When
+    // the sync has never reported a current price, falling back to the entry
+    // silently would read as "the market is here now" — it is not.
+    const priceLabel = row.currentPrice != null
+      ? `${row.currentPrice}`
+      : `${row.entryPrice} (entry price — no current price synced)`;
     res.json({
       requiresConfirmation: true,
       // uPnL degrades to a labeled unknown when the sync never reported one —
       // "0" would be a confident claim of break-even we cannot make.
-      summary: `Close ${row.direction} ${row.symbol} @ ${row.currentPrice ?? row.entryPrice} (uPnL ${row.unrealizedProfitLoss ?? "unknown — not yet synced"})`,
+      summary: `Close ${row.direction} ${row.symbol} @ ${priceLabel} (uPnL ${row.unrealizedProfitLoss ?? "unknown — not yet synced"})`,
       blockers: [],
       aiExplanation: "Manual closes lock in current P&L and skip the planned exit. Confirm only if your original setup is truly invalidated.",
     });

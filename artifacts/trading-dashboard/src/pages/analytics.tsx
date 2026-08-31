@@ -49,6 +49,19 @@ function money(n: number | null | undefined): string {
 function plain(n: number | null | undefined): string {
   return `$${(n ?? 0).toFixed(2)}`;
 }
+// Profit factor is grossProfit / grossLoss. With no losing trades there is no
+// denominator and the ratio is undefined — but the response contract types
+// `profitFactor` as a plain number, so the server sends a 9.99 sentinel
+// (routes/performance.ts). Rendering that as "9.99" states a measured ratio
+// that was never measured. The sample shape tells us when to distrust it:
+// zero losing trades means zero denominator.
+function profitFactorText(summary: { profitFactor?: number | null; totalTrades?: number | null; losingTrades?: number | null } | null | undefined): string {
+  const pf = summary?.profitFactor;
+  if (pf == null) return "—";
+  if ((summary?.totalTrades ?? 0) === 0) return "—";
+  if ((summary?.losingTrades ?? 0) === 0) return "No losses yet";
+  return pf.toFixed(2);
+}
 const pnlTone = (n: number) => (n > 0 ? "text-success" : n < 0 ? "text-danger" : "text-txt-secondary");
 
 interface DailyRow { date: string; pnl: number; endBalance?: number; }
@@ -238,7 +251,6 @@ function OverviewTab({ summary, daily, loadingDaily, balance, equity, openPnl, a
   const realized = summary?.totalPnl ?? null;
   const maxDD = summary?.maxDrawdown ?? null;
   const totalTrades = summary?.totalTrades ?? 0;
-  const profitFactor = summary?.profitFactor ?? null;
   const hasAcct = balance != null || equity != null;
   // Closed trades the server dropped from EVERY aggregate above because the
   // broker never reported a usable close fill (pnlStatus="UNKNOWN"). Without
@@ -301,7 +313,7 @@ function OverviewTab({ summary, daily, loadingDaily, balance, equity, openPnl, a
                 <Metric label={`Realized P/L${basisSuffix}`} value={realized != null ? money(realized) : "—"} tone={realized != null ? pnlTone(realized) : undefined} />
                 <Metric label="Max Drawdown" value={maxDD != null ? formatPercent(maxDD) : "—"} tone="text-danger" />
                 <Metric label={`Total Trades${basisSuffix}`} value={String(totalTrades)} />
-                <Metric label="Profit Factor" value={profitFactor != null ? profitFactor.toFixed(2) : "—"} />
+                <Metric label="Profit Factor" value={profitFactorText(summary)} />
                 <Metric label="Open Positions" value={positionsReadFailed ? "—" : String(positions.length)} />
               </div>
               {excludedUnknown > 0 && (
@@ -379,7 +391,7 @@ function OverviewTab({ summary, daily, loadingDaily, balance, equity, openPnl, a
         {loadingDaily ? (
           <p className="py-12 text-center text-sm text-txt-muted">Loading…</p>
         ) : equitySeries.length === 0 ? (
-          <p className="py-12 text-center text-sm text-txt-muted">Equity history will appear after account snapshots are recorded.</p>
+          <p className="py-12 text-center text-sm text-txt-muted">Equity history will appear once trades close — this curve is built from closed trades, not from account snapshots.</p>
         ) : (
           <>
             <div className="mt-3 h-[260px] w-full">
@@ -420,12 +432,22 @@ function OverviewTab({ summary, daily, loadingDaily, balance, equity, openPnl, a
           ) : (
             <div className="mt-3 space-y-3">
               <Bar2 label="Max Drawdown" pct={maxDD ?? 0} right={maxDD != null ? formatPercent(maxDD) : "—"} tone="bg-danger" />
-              <Bar2
-                label="Open Exposure"
-                pct={positionsReadFailed ? 0 : positions.length ? 100 : 0}
-                right={positionsReadFailed ? "not read" : positions.length ? `${positions.length} position${positions.length === 1 ? "" : "s"}` : plain(0)}
-                tone="bg-primary"
-              />
+              {/* Open Exposure is a COUNT, not a proportion. The old meter
+                  filled to 100% the moment a single position existed — a
+                  full red-lining gauge with no exposure quantity behind it.
+                  Nothing on this page knows the exposure cap that would give
+                  a meter its denominator, so the fill is gone and only the
+                  real count (or an honest "not read") remains. */}
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-txt-secondary">Open Exposure</span>
+                <span className="text-txt-muted">
+                  {positionsReadFailed
+                    ? "not read"
+                    : positions.length
+                      ? `${positions.length} position${positions.length === 1 ? "" : "s"}`
+                      : "none open"}
+                </span>
+              </div>
               <p className="text-[11px] text-txt-muted">Daily/weekly risk limits appear here once account risk data is available.</p>
             </div>
           )}
@@ -590,7 +612,7 @@ function CalendarPLTab({ daily, loading, summary, navigate }: any) {
           {loading ? (
             <p className="py-12 text-center text-sm text-txt-muted">Loading…</p>
           ) : !hasAnyData ? (
-            <p className="py-12 text-center text-sm text-txt-muted">Daily P/L will appear after trades close or account snapshots are recorded.</p>
+            <p className="py-12 text-center text-sm text-txt-muted">Daily P/L will appear once trades close.</p>
           ) : (
             <>
               <div className="mt-4 grid grid-cols-7 gap-1 text-center text-[11px] text-txt-muted">
@@ -629,7 +651,7 @@ function CalendarPLTab({ daily, loading, summary, navigate }: any) {
               and are ALL-TIME within the stated environment, not month-to-date. */}
           <Metric label={`Trades (all-time${summary?.scopeMode ? `, ${summary.scopeMode}` : ""})`} value={String(summary?.totalTrades ?? 0)} />
           <Metric label="Win Rate (all-time)" value={summary?.winRate != null ? `${Math.round(summary.winRate)}%` : "—"} />
-          <Metric label="Profit Factor (all-time)" value={summary?.profitFactor != null ? summary.profitFactor.toFixed(2) : "—"} />
+          <Metric label="Profit Factor (all-time)" value={profitFactorText(summary)} />
         </div>
         {(summary?.excludedUnknownCount ?? 0) > 0 && (
           <p className="text-[11px] text-warning">
@@ -691,7 +713,7 @@ function RiskTab({ summary }: any) {
             <Metric label="Account Risk" value="Not computed" tone="text-txt-muted" />
             <Metric label="Max Drawdown" value={formatPercent(maxDD)} tone="text-danger" />
             <Metric label={`Total Trades${scopeSuffix}`} value={String(summary?.totalTrades ?? 0)} />
-            <Metric label="Profit Factor" value={summary?.profitFactor != null ? summary.profitFactor.toFixed(2) : "—"} />
+            <Metric label="Profit Factor" value={profitFactorText(summary)} />
           </div>
         )}
         <p className="mt-3 text-[11px] text-txt-muted">

@@ -37,10 +37,18 @@ const ACK_LABELS: { key: keyof Status; text: string }[] = [
   { key: "brokerReadonlyAcknowledged", text: "I understand the broker connection is read-only." },
 ];
 
+/** CONFIDENT_ABSENT fix: this used to `return r.json()` regardless of r.ok, so
+ *  an error envelope (or a 500 HTML body) resolved to an object with no
+ *  `status`, `setStatus(undefined)` left the page on "Loading onboarding…"
+ *  forever, and a failed acknowledgement looked exactly like a successful one.
+ *  A failed read must be an error, never a silent empty answer. */
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const r = await fetch(`${BASE}${path}`, { headers: { "content-type": "application/json" }, ...init });
+  if (!r.ok) throw new Error(`${path} — HTTP ${r.status}`);
   return r.json();
 }
+
+const errText = (e: unknown) => (e instanceof Error ? e.message : "the read failed");
 
 export default function OnboardingPage() {
   const canOpen = useCanOpenRoute();
@@ -48,28 +56,66 @@ export default function OnboardingPage() {
   const [liveTrading, setLiveTrading] = useState<LiveTradingInfo | null>(null);
   const [steps, setSteps] = useState<Step[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   async function refresh() {
-    const [s, sd] = await Promise.all([
-      api<{ status: Status; liveTrading?: LiveTradingInfo }>("/api/onboarding/status"),
-      api<{ steps: Step[] }>("/api/onboarding/steps"),
-    ]);
-    setStatus(s.status); setLiveTrading(s.liveTrading ?? null); setSteps(sd.steps);
+    try {
+      const [s, sd] = await Promise.all([
+        api<{ status: Status; liveTrading?: LiveTradingInfo }>("/api/onboarding/status"),
+        api<{ steps: Step[] }>("/api/onboarding/steps"),
+      ]);
+      if (!s?.status) throw new Error("/api/onboarding/status returned no status");
+      setStatus(s.status); setLiveTrading(s.liveTrading ?? null); setSteps(Array.isArray(sd?.steps) ? sd.steps : []);
+      setLoadError(null);
+    } catch (e) {
+      setLoadError(errText(e));
+    }
   }
   useEffect(() => { refresh(); document.title = "Onboarding — ARX AI"; }, []);
 
-  if (!status) return <div className="text-sm text-muted-foreground">Loading onboarding…</div>;
+  if (!status) {
+    // A failed read is reported as a failed read. It is NOT "still loading",
+    // and it is NOT a fresh/zeroed onboarding.
+    if (loadError) {
+      return (
+        <Alert variant="destructive" data-testid="onboarding-load-error">
+          <AlertTitle>Couldn't load onboarding</AlertTitle>
+          <AlertDescription className="text-xs space-y-2">
+            <p>Your onboarding status could not be read, so none of it is known — this is a failed read, not a reset or completed onboarding. Your trading mode is unchanged either way.</p>
+            <p className="font-mono text-[10px]">{loadError}</p>
+            <Button size="sm" variant="outline" onClick={() => { setLoadError(null); refresh(); }}>Retry</Button>
+          </AlertDescription>
+        </Alert>
+      );
+    }
+    return <div className="text-sm text-muted-foreground">Loading onboarding…</div>;
+  }
 
   const completed = new Set(status.completedSteps);
   const skipped = new Set(status.skippedSteps);
   const completedCount = completed.size + skipped.size;
   const pct = Math.round((completedCount / Math.max(1, status.totalSteps)) * 100);
 
-  async function start() { setBusy("start"); await api("/api/onboarding/start", { method: "POST", body: "{}" }); await refresh(); setBusy(null); }
-  async function complete(step_id: string) { setBusy(step_id); await api("/api/onboarding/complete-step", { method: "POST", body: JSON.stringify({ stepId: step_id }) }); await refresh(); setBusy(null); }
-  async function skip(step_id: string) { setBusy(step_id); await api("/api/onboarding/skip-step", { method: "POST", body: JSON.stringify({ stepId: step_id }) }); await refresh(); setBusy(null); }
-  async function reset() { setBusy("reset"); await api("/api/onboarding/reset", { method: "POST", body: "{}" }); await refresh(); setBusy(null); }
-  async function ack(key: string) { setBusy(key); await api("/api/onboarding/acknowledge", { method: "POST", body: JSON.stringify({ key }) }); await refresh(); setBusy(null); }
+  /** Every mutation reports its own failure and always clears `busy`, so a
+   *  rejected write can never leave the page silently stuck mid-action or
+   *  looking as though it succeeded. */
+  async function run(key: string, path: string, body: unknown) {
+    setBusy(key); setActionError(null);
+    try {
+      await api(path, { method: "POST", body: JSON.stringify(body) });
+    } catch (e) {
+      setActionError(errText(e));
+    } finally {
+      await refresh();
+      setBusy(null);
+    }
+  }
+  const start = () => run("start", "/api/onboarding/start", {});
+  const complete = (step_id: string) => run(step_id, "/api/onboarding/complete-step", { stepId: step_id });
+  const skip = (step_id: string) => run(step_id, "/api/onboarding/skip-step", { stepId: step_id });
+  const reset = () => run("reset", "/api/onboarding/reset", {});
+  const ack = (key: string) => run(key, "/api/onboarding/acknowledge", { key });
 
   return (
     <div className="space-y-4 pb-8">
@@ -90,6 +136,24 @@ export default function OnboardingPage() {
         <h1 className="text-xl font-bold flex items-center gap-2"><GraduationCap className="h-5 w-5" />Guided Onboarding</h1>
         <p className="text-xs text-muted-foreground">Learn how to safely operate the ARX AI trading workflow. Acknowledgements never bypass admin-set trading mode.</p>
       </div>
+
+      {/* A refresh that failed AFTER the first successful read leaves stale
+          numbers on screen — say so rather than presenting them as current. */}
+      {loadError && (
+        <Alert variant="destructive" data-testid="onboarding-refresh-error">
+          <AlertTitle>Onboarding couldn't be re-read — showing the last known state</AlertTitle>
+          <AlertDescription className="text-xs space-y-2">
+            <p className="font-mono text-[10px]">{loadError}</p>
+            <Button size="sm" variant="outline" onClick={() => { setLoadError(null); refresh(); }}>Retry</Button>
+          </AlertDescription>
+        </Alert>
+      )}
+      {actionError && (
+        <Alert variant="destructive" data-testid="onboarding-action-error">
+          <AlertTitle>That didn't go through</AlertTitle>
+          <AlertDescription className="text-xs"><span className="font-mono text-[10px]">{actionError}</span> — nothing was recorded. Your trading mode is unchanged.</AlertDescription>
+        </Alert>
+      )}
 
       <Card>
         <CardHeader className="pb-2">

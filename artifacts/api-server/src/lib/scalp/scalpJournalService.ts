@@ -31,6 +31,7 @@ import {
   deriveReview,
   higherUrgency,
   realizedFromClosedLegs,
+  quotableWinRatePct,
   EMPTY_PERSONALITY_COUNTS,
   type JournalEntrySnapshot,
   type PersonalityClosedTrade,
@@ -532,7 +533,10 @@ export async function getSymbolPersonalities(
     wins: p.wins,
     losses: p.losses,
     breakevens: p.breakevens,
-    winRatePct: p.tradesClosed > 0 ? Math.round((p.wins / p.tradesClosed) * 100) : null,
+    // Honest win rate: DECIDED closes only (UNKNOWN outcomes decide nothing and
+    // must not sit in the denominator as silent non-wins), and null until the
+    // sample is big enough to quote — never "1 closed · 100% won".
+    winRatePct: quotableWinRatePct(p),
     reversalCount: p.reversalCount,
     fakeoutCount: p.fakeoutCount,
     continuationCount: p.continuationCount,

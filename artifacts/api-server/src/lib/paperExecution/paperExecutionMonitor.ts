@@ -116,6 +116,13 @@ export async function runPaperMonitor(opts?: {
 
     if (!hit) { summary.stillOpen++; continue; }
 
+    // FILL MODEL (same contract as SIMULATED_FILL_ASSUMPTIONS.gapRisk in
+    // @workspace/domain/profit-mission): a stop or target is modelled as
+    // filling EXACTLY at its level. Gap risk and slippage are NOT modelled —
+    // when `currentPrice` has already run past the level, a real fill would be
+    // worse than this one, so realized P&L here is an optimistic bound, not a
+    // measured outcome. Every surface that totals these rows must say so; the
+    // cockpit does it via TodayPerformance.fillModel.
     const exitPrice = hit === "SL" ? order.stopLoss : order.takeProfit;
     const realized = unrealizedPnl(order.direction, order.lotSize, order.entryPrice, exitPrice);
     const status = hit === "SL" ? "CLOSED_SL" : "CLOSED_TP";

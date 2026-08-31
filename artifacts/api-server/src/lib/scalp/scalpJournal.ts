@@ -462,6 +462,35 @@ export interface PersonalityBias {
 
 /** Minimum closed trades before learning nudges anything (honest small-sample). */
 export const PERSONALITY_MIN_SAMPLE = 3;
+
+/**
+ * Minimum DECIDED closes (win/loss/breakeven — an UNKNOWN outcome decides
+ * nothing) before we are willing to QUOTE a win-rate percentage to the user.
+ * Below this the number is noise, and a bare "100% won" off one close reads as
+ * a learned edge the data cannot support. The learning nudge above may still
+ * tighten from 3 closes; that is an internal, bounded, tightening-only bias —
+ * quoting a rate at the user is a stronger claim and needs a stronger sample.
+ * Mirrors WIN_RATE_MIN_SAMPLE on the journal page.
+ */
+export const WIN_RATE_MIN_DECIDED = 5;
+
+/** Closes that actually resolved into an outcome. UNKNOWN is not a non-win. */
+export function decidedCount(p: Pick<PersonalityCounts, "wins" | "losses" | "breakevens">): number {
+  return p.wins + p.losses + p.breakevens;
+}
+
+/**
+ * Win rate over DECIDED closes only, or null when the sample is too thin to
+ * quote. Never divides by tradesClosed: that counts UNKNOWN-outcome closes as
+ * non-wins and silently deflates the rate.
+ */
+export function quotableWinRatePct(
+  p: Pick<PersonalityCounts, "wins" | "losses" | "breakevens">,
+): number | null {
+  const decided = decidedCount(p);
+  if (decided < WIN_RATE_MIN_DECIDED) return null;
+  return Math.round((p.wins / decided) * 100);
+}
 const MAX_QUALITY_PENALTY = 8;
 const MAX_MIN_QUALITY_DELTA = 10;
 
@@ -493,14 +522,17 @@ export function computeQualityBias(p: PersonalityCounts): PersonalityBias {
   const floorRaise = (reversalRate + fakeoutRate) * 6 * synthFactor;
   const minQualityDelta = clamp(floorRaise, 0, MAX_MIN_QUALITY_DELTA);
 
-  const winRatePct = Math.round((p.wins / p.tradesClosed) * 100);
+  // Only quote a percentage once enough closes have actually DECIDED. Below
+  // that the parenthetical is dropped entirely rather than printing noise.
+  const winRatePct = quotableWinRatePct(p);
+  const rate = (suffix: string) => (winRatePct != null ? ` (${winRatePct}% ${suffix})` : "");
   let notes: string;
   if (qualityBias <= -4) {
-    notes = `${DEFAULT_ASSISTANT_NAME} is being stricter on ${p.isSynthetic ? "this synthetic index" : "this market"} — it has reversed or faded on you more often than it has paid (${winRatePct}% wins so far).`;
+    notes = `${DEFAULT_ASSISTANT_NAME} is being stricter on ${p.isSynthetic ? "this synthetic index" : "this market"} — it has reversed or faded on you more often than it has paid${rate("wins so far")}.`;
   } else if (qualityBias < 0) {
-    notes = `${DEFAULT_ASSISTANT_NAME} is a little more cautious here based on your history (${winRatePct}% wins so far).`;
+    notes = `${DEFAULT_ASSISTANT_NAME} is a little more cautious here based on your history${rate("wins so far")}.`;
   } else {
-    notes = `This market has behaved normally for you so far (${winRatePct}% wins).`;
+    notes = `This market has behaved normally for you so far${rate("wins")}.`;
   }
   return { qualityBias, minQualityDelta, notes };
 }

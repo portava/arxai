@@ -448,9 +448,20 @@ function twelveDataProvider(apiKey: string, newsApiKey: string | null): MarketPr
         return q;
       }
       const num = (s: string | undefined) => (s == null ? null : Number.isFinite(Number(s)) ? Number(s) : null);
+      // A present-but-unparseable close is a FAILED read, not a price of zero.
+      // Defaulting to 0 here would surface a confident REALTIME "price 0" when
+      // TwelveData is the only configured quote provider (the composite chain's
+      // price > 0 filter never sees it). Degrade to an honest UNAVAILABLE quote.
+      const price = num(j.close);
+      if (price == null) {
+        markError(`quote ${symbol}: close present but not numeric`);
+        const bad = emptyQuote(symbol, "twelve_data", "UNAVAILABLE");
+        cacheSet(quoteCache, `td:${symbol}`, bad);
+        return bad;
+      }
       const q: MarketQuote = {
         symbol,
-        price: num(j.close) ?? 0,
+        price,
         bid: null, ask: null,
         change: num(j.change), changePct: num(j.percent_change),
         high: num(j.high), low: num(j.low),

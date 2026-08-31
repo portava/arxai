@@ -19,6 +19,17 @@ export const APP_VERSION = "0.9.0-beta";
 export const RELEASE_STAGE = "BETA_TESTER" as const;
 
 /**
+ * Deployed build identity, read from the environment exactly the way /healthz
+ * and /admin/runtime-health read it. APP_VERSION above is a static RELEASE
+ * LABEL compiled into the bundle — it does not move when a new build deploys,
+ * so it must never be presented as the deployed build. null = the deploy set
+ * no build id; surfaces show nothing rather than passing the release label off
+ * as the build.
+ */
+export const BUILD_ID: string | null =
+  process.env["APP_VERSION"] ?? process.env["REPL_BUILD_ID"] ?? null;
+
+/**
  * Real platform arm state. true = live broker execution is armed (env AND DB
  * switch), false = locked, null = the read failed — callers must report
  * unknown, never a fabricated "locked".
@@ -30,7 +41,11 @@ export async function readLiveBrokerExecutionArmed(): Promise<boolean | null> {
 export async function versionEnvelope() {
   const armed = await readLiveBrokerExecutionArmed();
   return {
+    // Static release label (compile-time constant), NOT the deployed build.
     version: APP_VERSION,
+    // Deployed build id, or null when the deploy published none. Same source
+    // as /healthz and /admin/runtime-health, so the surfaces cannot disagree.
+    build: BUILD_ID,
     stage: RELEASE_STAGE,
     fullTesterAccess: true,
     mt5Deferred: true,

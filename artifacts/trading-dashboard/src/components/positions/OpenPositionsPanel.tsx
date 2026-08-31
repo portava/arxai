@@ -8,7 +8,16 @@ const STATUS_TONE: Record<string, string> = {
 };
 
 export function OpenPositionsPanel({ onSelect }: { onSelect?: (id: number) => void }) {
-  const { data, isLoading } = useGetOpenPositions({ query: { queryKey: getGetOpenPositionsQueryKey(), refetchInterval: 5_000 } });
+  const { data, isLoading, isError } = useGetOpenPositions({ query: { queryKey: getGetOpenPositionsQueryKey(), refetchInterval: 5_000 } });
+  // A failed read used to render "Loading positions…" forever — indistinguishable
+  // from a slow load, and never resolving. Say the read failed instead.
+  if (isError || (!isLoading && !data)) {
+    return (
+      <div className="rounded-lg border border-warning/40 bg-warning/10 p-4 text-sm text-warning">
+        Positions unavailable — the open-positions read failed. This is not a claim that you have no open positions.
+      </div>
+    );
+  }
   if (isLoading || !data) return <div className="text-xs text-txt-muted">Loading positions…</div>;
   if (data.positions.length === 0) return <div className="rounded-lg border border-border bg-background/50 p-4 text-sm text-txt-muted">No open positions.</div>;
   return (
@@ -28,7 +37,9 @@ export function OpenPositionsPanel({ onSelect }: { onSelect?: (id: number) => vo
         </thead>
         <tbody className="divide-y divide-border">
           {data.positions.map((p) => {
-            const upnl = p.unrealizedProfitLoss ?? 0;
+            // null = the broker has never synced a P/L for this row. Rendered
+            // "—" in a neutral tone: "0.00" in green would claim break-even.
+            const upnl = p.unrealizedProfitLoss;
             return (
               <tr key={p.id} onClick={() => onSelect?.(p.id)}
                 className="cursor-pointer bg-background/40 hover:bg-muted/60">
@@ -37,7 +48,10 @@ export function OpenPositionsPanel({ onSelect }: { onSelect?: (id: number) => vo
                 <td className="px-3 py-2 text-right text-txt-secondary">{p.lotSize}</td>
                 <td className="px-3 py-2 text-right text-txt-secondary">{p.entryPrice}</td>
                 <td className="px-3 py-2 text-right text-txt-secondary">{p.currentPrice ?? "—"}</td>
-                <td className={`px-3 py-2 text-right ${upnl >= 0 ? "text-success" : "text-danger"}`}>{upnl.toFixed(2)}</td>
+                <td className={`px-3 py-2 text-right ${upnl == null ? "text-txt-muted" : upnl >= 0 ? "text-success" : "text-danger"}`}
+                  title={upnl == null ? "Not yet synced from the broker" : undefined}>
+                  {upnl == null ? "—" : upnl.toFixed(2)}
+                </td>
                 <td className="px-3 py-2"><span className={`rounded-full px-2 py-0.5 text-[11px] ring-1 ${STATUS_TONE[p.status] ?? "bg-muted/40 text-txt-secondary ring-border"}`}>{p.status.replace(/_/g, " ")}</span></td>
                 <td className="px-3 py-2 text-right">
                   <button

@@ -173,7 +173,10 @@ export function LiveOpenTradesPanel() {
                     <th className="py-2 pr-2 text-right">SL / TP</th>
                     <th className="py-2 pr-2 text-right">Swap</th>
                     <th className="py-2 pr-2 text-right">Commission</th>
-                    <th className="py-2 pr-2 text-right">Net P/L</th>
+                    {/* "Net" would imply swap and commission are folded in. The
+                        EA does not report them per position (both arrive null),
+                        so this figure is the gross floating P/L and says so. */}
+                    <th className="py-2 pr-2 text-right" title="Gross floating P/L. Swap and commission are not reported per position, so they are not deducted here.">Floating P/L</th>
                     <th className="py-2 pr-2 text-right">% of Slot</th>
                     <th className="py-2 pr-2 text-right">Updated</th>
                   </tr>

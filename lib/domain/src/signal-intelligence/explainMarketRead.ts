@@ -279,6 +279,10 @@ function computeBestAction(d: Derived, stage: SignalLifecycleStage): string {
   return "Watch — no action needed yet.";
 }
 
+// `confidence` here is a FIXED per-branch strength score, not a measured or
+// calibrated probability. Surfaces must render it as a qualitative band (e.g.
+// "strong case to wait") and never as "N% sure" — that would present a
+// hand-set rule constant as a statistic.
 function computeNoTrade(
   d: Derived,
   stage: SignalLifecycleStage,

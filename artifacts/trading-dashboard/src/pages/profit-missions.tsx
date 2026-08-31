@@ -1079,7 +1079,10 @@ function ProposalRow({ p }: { p: MissionProposal }) {
           <div>{p.agentKey}</div>
         </div>
         <div>
-          <span className="text-muted-foreground">Confidence</span>
+          {/* A scanner heuristic score, not a measured or back-tested win rate.
+              It is also what the Mission-impact "Expected" row is weighted by,
+              so the basis is named on both surfaces. */}
+          <span className="text-muted-foreground">Scanner confidence (heuristic)</span>
           <div>{Math.round(p.confidence)}%</div>
         </div>
         <div>
@@ -1143,6 +1146,12 @@ function MissionImpactPreview({ impact }: { impact: MissionImpact }) {
     { key: "expected", label: "Expected", v: impact.expected, cls: "text-muted-foreground" },
     { key: "loss", label: "If stop hits", v: impact.loss, cls: "text-destructive" },
   ];
+  // The weight behind the "Expected" row. A legacy payload may not carry it —
+  // that reads as unknown, never as a silent 50%.
+  const winRatePct =
+    typeof impact.winProbability === "number" && Number.isFinite(impact.winProbability)
+      ? Math.round(impact.winProbability * 100)
+      : null;
   return (
     <div className="rounded-md border border-border p-3" data-testid="mission-impact-preview">
       <div className="mb-2 flex items-center gap-2 text-sm font-medium">
@@ -1177,9 +1186,12 @@ function MissionImpactPreview({ impact }: { impact: MissionImpact }) {
           </tbody>
         </table>
       </div>
-      <p className="mt-2 text-[11px] text-muted-foreground">
-        Estimate only — based on the planned stop and target. Markets can gap or
-        slip; outcomes are not guaranteed.
+      <p className="mt-2 text-[11px] text-muted-foreground" data-testid="impact-basis-note">
+        Estimate only — based on the planned stop and target. The Expected row
+        weights the two outcomes by an assumed {winRatePct != null ? `${winRatePct}%` : "unknown"}{" "}
+        win rate — the scanner's heuristic confidence, or a 50% placeholder when
+        it gave none. That is not a measured or back-tested win rate. Markets can
+        gap or slip; outcomes are not guaranteed.
       </p>
     </div>
   );
@@ -1206,6 +1218,24 @@ function vNum(o: Record<string, unknown> | null | undefined, k: string): number 
 function vArr(o: Record<string, unknown> | null | undefined, k: string): string[] {
   const v = o?.[k];
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+}
+
+// A boolean verdict is THREE-state on this surface: true / false / absent.
+// A legacy or partially-populated executionQualityJson row carries no `allowed`
+// flag at all, and an absent verdict is NOT a pass — it never borrows the
+// healthy colour and it never gets to say "OK".
+function verdictCls(allowed: boolean | null): string {
+  if (allowed === false) return "bg-danger/20 text-danger";
+  if (allowed === true) return "bg-success/15 text-success";
+  return "bg-muted text-muted-foreground";
+}
+function verdictText(
+  allowed: boolean | null,
+  labels: { blocked: string; ok: string; unknown: string },
+): string {
+  if (allowed === false) return labels.blocked;
+  if (allowed === true) return labels.ok;
+  return labels.unknown;
 }
 
 // A status chip; unknown/empty reads neutral as "Unknown" — never a positive word.
@@ -1246,11 +1276,12 @@ function ExecutionQualityDetail({ eq }: { eq: MissionExecutionQuality }) {
         <ShieldCheck className="h-3.5 w-3.5" /> Execution quality (advisory)
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <Badge
-          className={execAllowed === false ? "bg-danger/20 text-danger" : "bg-success/15 text-success"}
-          data-testid="exec-quality-verdict"
-        >
-          {execAllowed === false ? "Execution blocked" : "Execution OK"}
+        <Badge className={verdictCls(execAllowed)} data-testid="exec-quality-verdict">
+          {verdictText(execAllowed, {
+            blocked: "Execution blocked",
+            ok: "Execution OK",
+            unknown: "Execution unknown",
+          })}
         </Badge>
         <StatusChip label="Spread" value={vStr(exec, "spreadStatus")} />
         <StatusChip label="Slippage" value={vStr(exec, "slippageRisk")} />
@@ -1267,11 +1298,12 @@ function ExecutionQualityDetail({ eq }: { eq: MissionExecutionQuality }) {
       )}
 
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        <Badge
-          className={netAllowed === false ? "bg-danger/20 text-danger" : "bg-success/15 text-success"}
-          data-testid="net-profit-verdict"
-        >
-          {netAllowed === false ? "Net profit too thin" : "Net profit OK"}
+        <Badge className={verdictCls(netAllowed)} data-testid="net-profit-verdict">
+          {verdictText(netAllowed, {
+            blocked: "Net profit too thin",
+            ok: "Net profit OK",
+            unknown: "Net profit unknown",
+          })}
         </Badge>
         <span className="text-muted-foreground">
           Est. net after costs: {netEstimate != null ? money(netEstimate) : "unknown"}
@@ -1291,10 +1323,12 @@ function ExecutionQualityDetail({ eq }: { eq: MissionExecutionQuality }) {
 
       {expo && (
         <div className="mt-2" data-testid="exposure-verdict">
-          <Badge
-            className={expoAllowed === false ? "bg-danger/20 text-danger" : "bg-success/15 text-success"}
-          >
-            {expoAllowed === false ? "Exposure blocked" : "Exposure OK"}
+          <Badge className={verdictCls(expoAllowed)}>
+            {verdictText(expoAllowed, {
+              blocked: "Exposure blocked",
+              ok: "Exposure OK",
+              unknown: "Exposure unknown",
+            })}
           </Badge>
           {vStr(expo, "reason") && (
             <span className="ml-2 text-muted-foreground">{vStr(expo, "reason")}</span>

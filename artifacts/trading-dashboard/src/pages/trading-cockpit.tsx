@@ -24,10 +24,15 @@ type CockpitNextAction = { code: string; label: string; cta: string; severity: "
 interface CockpitSummary {
   cockpit_id: string;
   generated_at: string;
-  mode: "PAPER_ONLY";
-  liveTradingStatus: "DISABLED";
-  canPlaceLiveTrade: false;
-  canProceedToLiveTrading: false;
+  // The shape itself used to encode the paper-only lie — `mode: "PAPER_ONLY"`,
+  // `liveTradingStatus: "DISABLED"`, `canPlaceLiveTrade: false` are literal
+  // types that cannot express any other answer, the same defect RANK 4 fixed in
+  // WhyBlockedDrawer. Nothing renders these fields, but a re-added route must
+  // not inherit a type that makes the honest answer unrepresentable.
+  mode: string;
+  liveTradingStatus: string;
+  canPlaceLiveTrade: boolean;
+  canProceedToLiveTrading: boolean;
   readiness: { status?: string; score?: number; grade?: string; paperTestingAllowed?: boolean; generatedAt?: string };
   riskGovernor: { overallStatus?: string; paperTradingAllowed?: boolean; autopilotAllowed?: boolean; readinessScore?: number; readinessGrade?: string; readinessLevel?: string; hardBlocks?: { code: string; message: string }[]; softWarnings?: { code: string; message: string }[] };
   security: { rolesSeeded: boolean; forbiddenLocked: boolean; secretsRedacted: string };
@@ -43,10 +48,14 @@ interface CockpitSummary {
   // syntheticPricedTrades = closes settled by the deterministic synthetic price
   // model rather than market data. pnlUnit: all paper P&L is symbol-blind
   // "sim points" (dir × Δprice × lot × 100) — not a currency amount.
+  // fillModelNote = the fill assumption behind the closed totals: SL/TP settle
+  // at exactly the level, so gaps/slippage are unmodelled and these results are
+  // an optimistic bound. It must render wherever netPnl / winRate render.
   todayPerformance: {
     totalTrades: number | null; wins: number | null; losses: number | null; breakEven: number | null;
     netPnl: number | null; winRate: number | null; dayRating: string;
     pnlUnit?: string; syntheticPricedTrades?: number | null;
+    fillModel?: string; fillModelNote?: string;
     readFailed?: boolean; readFailedReason?: string | null;
   };
   // `profitLoss` is gone on purpose: for OPEN rows it was the write-at-close
@@ -119,8 +128,11 @@ function SafetyHeader({ s }: { s: CockpitSummary }) {
   return (
     <div className="sticky top-0 z-20 -mx-4 px-4 py-3 bg-background/95 backdrop-blur border-b">
       <div className="flex flex-wrap items-center gap-2">
-        <Badge className="bg-primary/15 text-primary dark:text-primary border-primary/30 hover:bg-primary/20" variant="outline">DEMO ONLY</Badge>
-        <Badge className="bg-danger/15 text-danger dark:text-danger border-danger/30 hover:bg-danger/20" variant="outline">LIVE TRADING DISABLED</Badge>
+        {/* DEAD_GAUGE fix: two hardcoded badges — "DEMO ONLY" and "LIVE
+            TRADING DISABLED" — that read no state and asserted the retired
+            PAPER_ONLY claim on every render. Removed rather than rewired:
+            this page is unmounted (its <Route> was removed in Phase 3) and the
+            header's real mode chip is the single source for trading mode. */}
         <AaciSyncChip symbol={bareSymbol(chartSym)} />
         <span className="text-xs text-muted-foreground hidden sm:inline">|</span>
         <span className="text-xs text-muted-foreground">Readiness</span><StatusBadge status={s.readiness.status} />
@@ -353,6 +365,13 @@ function TodayPerfPanel({ s }: { s: CockpitSummary }) {
                 against the synthetic price model, not market data — totals include those.
               </p>
             )}
+            {/* The fill assumption must travel with the number: both settlers
+                close at exactly the stop/target level, so a real gap through
+                the level would fill worse and these totals flatter the result.
+                A model caveat, not an anomaly — muted, not warning-coloured. */}
+            <p className="text-xs text-muted-foreground mt-2" data-testid="cockpit-today-perf-fill-model-note">
+              {t.fillModelNote ?? "Closes fill at exactly the stop/target level — gaps and slippage are not modelled, so these results are an optimistic bound, not a measured outcome."}
+            </p>
           </>
         )}
       </CardContent>
@@ -513,7 +532,13 @@ function HelperCopy() {
       </CardHeader>
       {open && (
         <CardContent className="text-xs text-muted-foreground space-y-1">
-          <p>• This system is currently <span className="font-mono">PAPER_ONLY</span>. Live trading is disabled.</p>
+          {/* DEAD_GAUGE fix: this bullet asserted "This system is currently
+              PAPER_ONLY. Live trading is disabled." — the retired paper-only
+              lie, latent in a page whose route was removed in Phase 3. Live
+              dispatch is real on this build and admin-gated; only the header's
+              mode chip reports a user's actual mode. Re-adding a <Route> for
+              this page must not re-arm the claim. */}
+          <p>• Your trading mode (Off / Demo / Live) is set by your admin — the mode chip in the header is the only place that reports it.</p>
           <p>• Always run preflight before starting a paper session.</p>
           <p>• The Risk Governor can pause new paper trades when risk gets too high.</p>
           <p>• The Coach turns paper results into clear improvement steps.</p>
@@ -556,13 +581,13 @@ export default function TradingCockpit() {
     },
   });
 
-  useEffect(() => { document.title = "Trading Cockpit — DEMO ONLY"; }, []);
+  useEffect(() => { document.title = "Trading Cockpit (retired) — ARX AI"; }, []);
 
   if (isLoading) {
     return <div className="space-y-3"><Skeleton className="h-12 w-full" /><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{[0,1,2,3,4,5].map(i => <Skeleton key={i} className="h-44 w-full" />)}</div></div>;
   }
   if (error || !data) {
-    return <div><Alert variant="destructive"><AlertTitle>Cockpit unavailable</AlertTitle><AlertDescription className="text-xs">Unable to read cockpit summary. Existing safety rules remain in force; live trading remains DISABLED.</AlertDescription></Alert></div>;
+    return <div><Alert variant="destructive"><AlertTitle>Cockpit unavailable</AlertTitle><AlertDescription className="text-xs">Unable to read cockpit summary. Existing safety rules remain in force. This read failed, so nothing here reports your trading mode — check the mode chip in the header.</AlertDescription></Alert></div>;
   }
   const s = data.summary;
 
@@ -571,7 +596,7 @@ export default function TradingCockpit() {
       <SafetyHeader s={s} />
       <div className="px-1 sm:px-0">
         <h1 className="text-xl font-bold flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-success" />Trading Cockpit</h1>
-        <p className="text-xs text-muted-foreground">One clean place to operate the paper-only system. No live execution controls live here — and they never will.</p>
+        <p className="text-xs text-muted-foreground">Retired legacy page (its route was removed in Phase 3). It carries no live execution controls; it makes no claim about your trading mode.</p>
       </div>
       {actionMsg && <Alert><AlertDescription className="text-xs">{actionMsg}</AlertDescription></Alert>}
       <PrimaryActionCard s={s} onAction={(k) => act.mutate(k)} busy={busy} />
@@ -588,7 +613,7 @@ export default function TradingCockpit() {
       <OpenTradesPanel s={s} />
       <OnboardingWidget />
       <HelperCopy />
-      <p className="text-[10px] text-muted-foreground text-center">cockpit_id {s.cockpit_id} • generated {new Date(s.generated_at).toLocaleTimeString()} • PAPER_ONLY • LIVE TRADING DISABLED</p>
+      <p className="text-[10px] text-muted-foreground text-center">cockpit_id {s.cockpit_id} • generated {new Date(s.generated_at).toLocaleTimeString()}</p>
     </div>
   );
 }

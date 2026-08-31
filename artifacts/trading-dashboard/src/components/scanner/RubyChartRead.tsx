@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Sparkles, Loader2, RefreshCw, MessageCircle, Crosshair, ShieldAlert } from "lucide-react";
@@ -45,6 +45,21 @@ function biasTone(bias: string): string {
   if (b.includes("bear")) return "text-danger";
   if (b.includes("range")) return "text-primary";
   return "text-txt-secondary";
+}
+
+// A read is REPLAYED from the page-level store for as long as the symbol and
+// timeframe stay selected, so a read taken minutes ago would otherwise render
+// identically to one taken a second ago. This labels the read with its own age
+// (from the client fetch stamp) — an unstamped read reports an unknown age
+// rather than being assumed fresh.
+function readAgeLabel(stamp: number | undefined, nowTs: number): string {
+  if (stamp == null || !Number.isFinite(stamp)) return "read age unknown";
+  const s = Math.max(0, Math.round((nowTs - stamp) / 1000));
+  if (s < 60) return `read ${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `read ${m}m ${s % 60}s ago`;
+  const h = Math.floor(m / 60);
+  return `read ${h}h ${m % 60}m ago`;
 }
 
 function confTone(conf: string): string {
@@ -101,6 +116,15 @@ export function RubyChartRead({
   const setRead = (next: ChartRead | null) => store.set(symbol, timeframe, next);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Ticking clock for the read-age label. Only runs while a read is on screen.
+  const [nowTs, setNowTs] = useState(() => Date.now());
+  const hasRead = read != null;
+  useEffect(() => {
+    if (!hasRead) return;
+    setNowTs(Date.now());
+    const id = setInterval(() => setNowTs(Date.now()), 5000);
+    return () => clearInterval(id);
+  }, [hasRead]);
 
   // Resolve the SHARED scanner truth for this exact symbol/timeframe so the
   // panel can warn the user BEFORE Ruby reads a stale or invalid feed — and so
@@ -155,7 +179,9 @@ export function RubyChartRead({
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const j = (await r.json()) as { chartRead: ChartRead };
-      setRead(j.chartRead);
+      // Stamp the fetch time so a replayed read can never pass for a fresh one.
+      setRead({ ...j.chartRead, receivedAt: Date.now() });
+      setNowTs(Date.now());
     } catch (e) {
       setErr(e instanceof Error ? e.message : "network error");
     } finally {
@@ -173,6 +199,17 @@ export function RubyChartRead({
         {/* Level 3 feed-quality chip — capped by the ONE resolved verdict so it
             can never read Clean/AI when the panel says the feed isn't confirmed. */}
         <FeedConfidenceBadge feedStatus={feedStatus} aiUsableResolved={panel.badgeAiUsable} />
+        {/* Age of the READ ITSELF (not the feed) — the panel replays a stored
+            read, so its age must be visible or a minutes-old read looks new. */}
+        {read && (
+          <span
+            className="text-[11px] text-txt-muted"
+            title="How long ago this read was taken. Press Re-read for a current one."
+            data-testid="ruby-chart-read-age"
+          >
+            {readAgeLabel(read.receivedAt, nowTs)}
+          </span>
+        )}
         <Button
           size="sm"
           variant="outline"

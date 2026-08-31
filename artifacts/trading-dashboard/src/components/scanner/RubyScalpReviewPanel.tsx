@@ -108,13 +108,22 @@ function ReviewRow({ entry, name }: { entry: ScalpJournalEntry; name: string }) 
   );
 }
 
+// A symbol's personality only carries a trustworthy win rate / behaviour split
+// once it has enough closed trades behind it. Below that we say so honestly
+// instead of implying a learned edge from one or two samples. Mirrors the
+// scalp-journal page's PERSONALITY_MIN_SAMPLE — the two surfaces must not
+// disagree about when a number is quotable.
+const PERSONALITY_MIN_SAMPLE = 5;
+
 function PersonalityRow({ p, name }: { p: ScalpSymbolPersonality; name: string }) {
+  const stillLearning = p.tradesClosed < PERSONALITY_MIN_SAMPLE;
   return (
     <div
       className="rounded-lg border border-border/60 bg-card/40 p-3 space-y-2"
       data-testid="scalp-personality-row"
       data-symbol={p.symbol}
       data-cautious={p.cautious ? "true" : "false"}
+      data-still-learning={stillLearning ? "true" : "false"}
     >
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-semibold">{p.displayName ?? p.symbol}</span>
@@ -123,21 +132,35 @@ function PersonalityRow({ p, name }: { p: ScalpSymbolPersonality; name: string }
             Synthetic
           </Badge>
         )}
-        {p.cautious && (
-          <Badge variant="outline" className="text-warning border-warning/25">
-            {name} is being more careful here
+        {stillLearning ? (
+          <Badge variant="outline" className="text-ruby border-ruby/25">
+            Still learning
           </Badge>
+        ) : (
+          p.cautious && (
+            <Badge variant="outline" className="text-warning border-warning/25">
+              {name} is being more careful here
+            </Badge>
+          )
         )}
         <span className="ml-auto text-xs text-muted-foreground">
           {p.tradesClosed} closed
-          {p.winRatePct != null ? ` · ${p.winRatePct}% won` : ""}
+          {!stillLearning && p.winRatePct != null ? ` · ${p.winRatePct}% won` : ""}
         </span>
       </div>
 
-      {p.notes && (
-        <p className="text-sm text-muted-foreground" data-testid="scalp-personality-note">
-          {p.notes}
+      {stillLearning ? (
+        <p className="text-sm text-muted-foreground">
+          Not enough data yet. {name} needs a few more closed trades on this
+          market ({p.tradesClosed} of {PERSONALITY_MIN_SAMPLE}) before its win
+          rate and behaviour are meaningful.
         </p>
+      ) : (
+        p.notes && (
+          <p className="text-sm text-muted-foreground" data-testid="scalp-personality-note">
+            {p.notes}
+          </p>
+        )
       )}
 
       <div className="grid grid-cols-3 gap-x-3 text-[11px] text-muted-foreground/80">

@@ -148,7 +148,12 @@ function BasketRow({ basket, name }: { basket: ScalpBasket; name: string }) {
           <div className="font-mono">{basket.averageEntry > 0 ? basket.averageEntry : "—"}</div>
         </div>
         <div>
-          <span className="text-muted-foreground">Break-even</span>
+          {/* HONESTY: the server sets breakEvenPrice = the volume-weighted
+              average entry (scalpManage.ts). It carries NO spread, commission
+              or swap, so the real break-even sits past it — calling it plain
+              "Break-even" claims a cost-aware number the code never computes.
+              Labelled for what it actually is. */}
+          <span className="text-muted-foreground">Break-even (excl. costs)</span>
           <div className="font-mono">{basket.breakEvenPrice > 0 ? basket.breakEvenPrice : "—"}</div>
         </div>
         <div>

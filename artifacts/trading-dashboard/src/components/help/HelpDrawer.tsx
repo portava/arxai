@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { HelpCircle, Lock, ShieldOff } from "lucide-react";
+import { HelpCircle } from "lucide-react";
 
 const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
@@ -12,13 +12,30 @@ export function HelpDrawer({ route, trigger }: { route?: string; trigger?: React
   const [open, setOpen] = useState(false);
   const [topics, setTopics] = useState<HelpTopic[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
+  // CONFIDENT_ABSENT fix: this `.then(...)` chain had no `r.ok` check and no
+  // `.catch`, so a failed help read fell through to `topics = []` and rendered
+  // the confident empty state "No help topics for this page yet" — asserting
+  // the library is empty when in fact it could not be read. A failed read now
+  // says so and offers a retry.
   useEffect(() => {
     if (!open) return;
-    setLoading(true);
+    let cancelled = false;
+    setLoading(true); setError(null);
     const url = route ? `${BASE}/api/help/page?route=${encodeURIComponent(route)}` : `${BASE}/api/help/topics`;
-    fetch(url).then(r => r.json()).then(d => setTopics(d.topics ?? [])).finally(() => setLoading(false));
-  }, [open, route]);
+    fetch(url)
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .then(d => { if (!cancelled) setTopics(Array.isArray(d?.topics) ? d.topics : []); })
+      .catch(e => {
+        if (cancelled) return;
+        setTopics([]);
+        setError(e instanceof Error ? e.message : "the read failed");
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [open, route, attempt]);
 
   return (
     <>
@@ -31,14 +48,28 @@ export function HelpDrawer({ route, trigger }: { route?: string; trigger?: React
         <SheetContent className="overflow-y-auto w-full sm:max-w-md">
           <SheetHeader>
             <SheetTitle className="flex items-center gap-2"><HelpCircle className="h-4 w-4" />Help{route ? ` — ${route}` : ""}</SheetTitle>
-            <SheetDescription>
-              <Badge variant="outline" className="bg-success/15 text-success border-success/30 mr-1">LIVE</Badge>
-              <Badge variant="outline" className="bg-danger/15 text-danger border-danger/30"><ShieldOff className="h-3 w-3 mr-1" />LIVE TRADING DISABLED</Badge>
+            {/* DEAD_GAUGE fix: this header hard-coded a green "LIVE" badge next
+                to a red "LIVE TRADING DISABLED" badge on every open. Neither
+                read any state — they contradicted each other, and the second
+                asserted the retired PAPER_ONLY claim on a build where live
+                dispatch is real and admin-gated. Help content makes no
+                trading-mode claim; the mode chip in the header is the one
+                place that reports it. */}
+            <SheetDescription className="text-xs">
+              Read-only help content. Nothing in this drawer places a trade or changes your trading mode — check the mode chip in the header for that.
             </SheetDescription>
           </SheetHeader>
           <div className="mt-4 space-y-3">
             {loading && <p className="text-xs text-muted-foreground">Loading…</p>}
-            {!loading && topics.length === 0 && <p className="text-xs text-muted-foreground">No help topics for this page yet. Open the Help Center for the full library.</p>}
+            {!loading && error && (
+              <div className="rounded-md border border-danger/30 bg-danger/10 p-3 text-xs text-danger" data-testid="help-drawer-error">
+                <p className="font-semibold">Couldn't load help topics</p>
+                <p className="mt-1">This is a failed read, not an empty library — there may well be topics for this page.</p>
+                <p className="mt-1 font-mono text-[10px]">{error}</p>
+                <Button size="sm" variant="outline" className="mt-2" onClick={() => setAttempt(a => a + 1)}>Retry</Button>
+              </div>
+            )}
+            {!loading && !error && topics.length === 0 && <p className="text-xs text-muted-foreground">No help topics for this page yet. Open the Help Center for the full library.</p>}
             {topics.map(t => (
               <div key={t.help_key} className="border rounded-md p-3">
                 <div className="flex items-center gap-2 mb-1">

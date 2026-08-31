@@ -146,3 +146,24 @@ test("aggregates sum correctly and count synthetic-model-settled closes (non-EE 
   // not the market — the UI badges the total with this count.
   assert.equal(t.syntheticPricedTrades, 2);
 });
+
+// ── Fill model: the assumption travels with the number ─────────────────────
+// Both settlers (paperExecutionMonitor and paperTrading's mark-to-market) close
+// SL/TP at EXACTLY the level, even when the observed price has already run past
+// it. That is an optimistic bound, not a measured fill, so the totals panel may
+// not present it bare — the assumption must ship inside the payload.
+
+test("closed totals declare the stop/target fill assumption — gaps are not modelled", () => {
+  const t = summarizeTodayPerformance([{ profitLoss: 25, strategyId: "build_ee_paper_execution" }]);
+  assert.equal(t.fillModel, "STOP_AND_TARGET_FILL_AT_LEVEL_NO_GAP_OR_SLIPPAGE");
+  assert.ok(t.fillModelNote && t.fillModelNote.length > 0, "the fill model must carry renderable prose");
+  assert.match(t.fillModelNote, /gap/i, "the note must name the unmodelled gap risk");
+});
+
+test("the fill assumption is a model property, so it survives a failed read", () => {
+  // Unlike the counts, this is not a measurement — a DB outage does not make
+  // the fill model unknown, and dropping it would let a later render of the
+  // failed shape omit the caveat.
+  assert.equal(TODAY_PERFORMANCE_READ_FAILED.fillModel, "STOP_AND_TARGET_FILL_AT_LEVEL_NO_GAP_OR_SLIPPAGE");
+  assert.ok((TODAY_PERFORMANCE_READ_FAILED.fillModelNote ?? "").length > 0);
+});

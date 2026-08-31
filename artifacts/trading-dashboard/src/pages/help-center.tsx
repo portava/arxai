@@ -4,8 +4,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Link } from "wouter";
-import { LifeBuoy, Search, Wand2 } from "lucide-react";
+import { GraduationCap, LifeBuoy, Search, Wand2 } from "lucide-react";
 import { WhyBlockedDrawer } from "@/components/help/WhyBlockedDrawer";
+import { useOnboarding } from "@/components/onboarding/OnboardingProvider";
 import { useTradingMode } from "@/hooks/useTradingMode";
 import { useTraderTier } from "@/hooks/useTraderTier";
 import { useViewMode } from "@/hooks/useViewMode";
@@ -21,6 +22,14 @@ export default function HelpCenter() {
   const mode = useTradingMode();
   const { effectiveIsAdmin: isAdmin } = useViewMode();
   const { isApprovedTrader } = useTraderTier();
+  // DEAD_GAUGE fix: the onboarding "complete" step tells every user "You can
+  // re-run onboarding any time from the Help Center", but this page carried no
+  // onboarding or tour affordance at all — the only "Start app tour" control
+  // lived in the retired FloatingHelpWidget, which components/help/
+  // mountedAssistantTrigger.test.ts pins as having ZERO importers, so
+  // useOnboarding().showTour was unreachable from anything that mounts. The
+  // promise named a control no user could find. It exists here now.
+  const { showTour } = useOnboarding();
 
   // RANK 51 — 100% of the Help Center's "Open page" links were un-followable.
   // The catalogue pointed at /trading-cockpit and /paper-testing-launch (no
@@ -89,6 +98,23 @@ export default function HelpCenter() {
           <h1 className="text-2xl font-bold leading-tight">Help Center</h1>
           <p className="text-sm text-txt-secondary">Plain-English explanations of every safety system. Help content is read-only — nothing on this page places a trade.</p>
         </div>
+      </div>
+
+      {/* The affordance the onboarding "complete" step promises lives here. */}
+      <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-card p-4">
+        <GraduationCap className="h-4 w-4 shrink-0 text-primary" />
+        <span className="text-sm font-semibold">New here, or want a refresher?</span>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={showTour}
+          data-testid="button-restart-tour"
+        >
+          Restart the guided tour
+        </Button>
+        <Link className="text-xs text-primary underline" href="/onboarding" data-testid="link-onboarding-checklist">
+          Open the onboarding checklist →
+        </Link>
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-4">

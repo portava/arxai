@@ -333,13 +333,22 @@ export function ScalpSignalCard({
                 {flame.scalpScore}/100
               </Badge>
             </Tip>
-            <Tip
-              className="ml-auto text-[10px] text-muted-foreground"
-              help="How recent the live candle read behind this signal is — a fresher read is more reliable, while a stale read means the signal may be out of date."
-            >
-              {FLAME_FRESHNESS_LABEL[flame.freshness]}
-              {flame.flameAgeCandles > 0 ? ` · ${flame.flameAgeCandles} ${flame.flameAgeCandles === 1 ? "candle" : "candles"}` : ""}
-            </Tip>
+            {/* HONESTY: this reads how far along the momentum BURST is (derived
+                from the flame stage), NOT how recently the data was fetched.
+                The tooltip used to promise data recency, which a user could
+                take as a live-feed guarantee. Data recency is the timing/
+                countdown chip above and the scanner's own staleness banner.
+                Stage NONE has no burst to be early or late in, so nothing is
+                claimed there rather than showing a reassuring "Still good". */}
+            {flame.flameStage !== "NONE" && (
+              <Tip
+                className="ml-auto text-[10px] text-muted-foreground"
+                help="How far along this momentum burst is — early in the move, still running, or already fading. It describes the move's stage, not how recently the data was fetched."
+              >
+                {FLAME_FRESHNESS_LABEL[flame.freshness]}
+                {flame.flameAgeCandles > 0 ? ` · ${flame.flameAgeCandles} ${flame.flameAgeCandles === 1 ? "candle" : "candles"}` : ""}
+              </Tip>
+            )}
           </div>
         )}
       </CardHeader>

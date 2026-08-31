@@ -71,6 +71,14 @@ export interface ChartRead extends RubyReadServerState {
   htfBias?: string;
   cautions?: string[];
   disclaimer?: string;
+  /**
+   * Client stamp (ms epoch) of when this read was fetched, set by the panel that
+   * performed the fetch. The read is lifted to a page-level store and replayed
+   * for as long as the symbol/timeframe stays selected, so surfaces MUST be able
+   * to show how old the replayed read is instead of rendering a minutes-old read
+   * identically to a fresh one. Absent ⇒ age unknown (never assume "just now").
+   */
+  receivedAt?: number;
 }
 
 /** The Ruby read status capped against the server read + an optional override. */

@@ -234,13 +234,18 @@ export async function getRoutingContext(userId: number) {
         : "Your orders go to your own MT5 connection. ARX never holds your broker password — only your local terminal/EA touches it.",
     };
   } catch {
+    // Honest unknown — NEVER a guessed routing mode. The envelope read failed,
+    // so we do not know where this user's orders would go; answering with a
+    // concrete enum ("USER_OWNED_MT5") would let the assistant quote a definite
+    // wrong routing mode to a shared-master user. Typed nulls + "unknown" so the
+    // model has nothing confident to repeat.
     return {
-      accountRoutingMode: "USER_OWNED_MT5" as const,
-      connectionType: "user_owned" as const,
-      routingOverride: "inherit" as const,
-      sharedDemoConfigured: false, sharedLiveConfigured: false, sharedLiveTradingEnabled: false,
+      accountRoutingMode: null,
+      connectionType: "unknown" as const,
+      routingOverride: null,
+      sharedDemoConfigured: null, sharedLiveConfigured: null, sharedLiveTradingEnabled: null,
       brokerLabel: null, sharedMasterLabel: null,
-      explanation: "Routing context temporarily unavailable. Trading remains read-only.",
+      explanation: "Routing context temporarily unavailable — the account routing mode could not be read, so it is unknown right now. Do not state where orders would go. Trading remains read-only.",
     };
   }
 }

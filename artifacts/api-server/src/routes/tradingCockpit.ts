@@ -105,9 +105,24 @@ export interface TodayPerformance {
   pnlUnit: "SIM_POINTS";
   /** How many of today's closes were settled by the synthetic price model (non-EE orders). */
   syntheticPricedTrades: number | null;
+  /**
+   * The fill assumption behind every SL/TP-settled row inside these totals.
+   * Both settlers (paperExecutionMonitor and paperTrading's mark-to-market)
+   * close at EXACTLY the stop/target level even when the observed price has
+   * already run past it, so realized P&L is an optimistic bound — a real gap
+   * through the level would fill worse. Not a measurement, so it holds on a
+   * failed read too. Surfaces rendering netPnl/winRate must disclose it.
+   */
+  fillModel: "STOP_AND_TARGET_FILL_AT_LEVEL_NO_GAP_OR_SLIPPAGE";
+  /** Plain-language form of `fillModel`, for direct rendering. */
+  fillModelNote: string;
   readFailed: boolean;
   readFailedReason: string | null;
 }
+
+const FILL_MODEL = "STOP_AND_TARGET_FILL_AT_LEVEL_NO_GAP_OR_SLIPPAGE" as const;
+const FILL_MODEL_NOTE =
+  "Closes fill at exactly the stop/target level — gaps and slippage are not modelled, so these results are an optimistic bound, not a measured outcome.";
 
 // A failed paper_orders read is NOT a flat day. The old fallback was
 // {totalTrades:0, ..., netPnl:0, dayRating:'NO_TRADES'}, which rendered the
@@ -119,6 +134,8 @@ export const TODAY_PERFORMANCE_READ_FAILED: TodayPerformance = {
   dayRating: "UNKNOWN",
   pnlUnit: "SIM_POINTS",
   syntheticPricedTrades: null,
+  fillModel: FILL_MODEL,
+  fillModelNote: FILL_MODEL_NOTE,
   readFailed: true,
   readFailedReason: "The paper-orders read failed — today's results are unknown, not zero.",
 };
@@ -138,6 +155,8 @@ export function summarizeTodayPerformance(
     totalTrades, wins, losses, breakEven, netPnl, winRate, dayRating,
     pnlUnit: "SIM_POINTS",
     syntheticPricedTrades,
+    fillModel: FILL_MODEL,
+    fillModelNote: FILL_MODEL_NOTE,
     readFailed: false,
     readFailedReason: null,
   };
