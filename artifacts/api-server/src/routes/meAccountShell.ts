@@ -59,7 +59,16 @@ export type AccountShellResponse = {
   allocation: {
     assignedStartingBalance: number | null;
     currentBalance: number;
-    equity: number;
+    /**
+     * Marked-to-market equity, or null when no real equity read exists.
+     * NEVER defined as equal to currentBalance: that duplicated the balance
+     * under an equity label and hid floating losses on open positions from
+     * the "My Equity" tile a user checks before adding risk.
+     */
+    equity: number | null;
+    equitySource: "LIVE_SNAPSHOT" | "VIRTUAL_ACCOUNT" | "UNAVAILABLE";
+    /** Set ONLY when equity is null — why no marked-to-market read exists. */
+    equityUnavailableReason: string | null;
     marginUsed: number;
     // T004: split allocation from user_slot_allocation (the authoritative
     // admin-allocated number). manualAllocation + aiSleeveAllocation
@@ -187,6 +196,72 @@ export function computeClosedPnlFromTrades(
       excludedUnknownPnlCount,
     },
   };
+}
+
+// ── "My Equity" (pure) ─────────────────────────────────────────────────────
+// The shell used to define an allocated user's equity as EXACTLY the balance
+// (`allocatedEquity = allocatedBalance`), so floating losses on open
+// positions could never appear in the "My Equity" tile a user would check
+// before adding risk — a duplicate of balance wearing an equity label.
+// Equity is now only ever a real marked-to-market read:
+//   * allocated users: balance + the canonical live snapshot's floatingPnL
+//     (Task #430 single source of truth; floatingPnL is 0 only for a genuine
+//     zero-open-trades book and null when it could not be read). With no
+//     usable floating read, equity is a typed null WITH the reason — never
+//     the balance dressed up as equity.
+//   * non-allocated users: the stored virtual_trading_accounts.virtual_equity
+//     read — except a 0 equity next to a non-zero balance, which means the
+//     sync never wrote it (unknown, not $0).
+// Exported for the offline unit lane.
+export interface AllocationEquityRead {
+  equity: number | null;
+  equitySource: "LIVE_SNAPSHOT" | "VIRTUAL_ACCOUNT" | "UNAVAILABLE";
+  /** Set ONLY when equity is null — why no marked-to-market read exists. */
+  equityUnavailableReason: string | null;
+}
+
+export function deriveAllocationEquity(args: {
+  hasAlloc: boolean;
+  allocatedBalance: number;
+  vAccountCount: number;
+  shellEquity: number;
+  shellBalance: number;
+  /** From the canonical investor live snapshot; null = not read / no snapshot. */
+  floatingPnL: number | null;
+}): AllocationEquityRead {
+  const round2 = (n: number): number => Math.round(n * 100) / 100;
+  if (args.hasAlloc) {
+    if (args.floatingPnL != null) {
+      return {
+        equity: round2(args.allocatedBalance + args.floatingPnL),
+        equitySource: "LIVE_SNAPSHOT",
+        equityUnavailableReason: null,
+      };
+    }
+    return {
+      equity: null,
+      equitySource: "UNAVAILABLE",
+      equityUnavailableReason:
+        "Floating P/L on open positions could not be read, so marked-to-market equity is unknown right now. Balance is not equity.",
+    };
+  }
+  if (args.vAccountCount === 0) {
+    return {
+      equity: null,
+      equitySource: "UNAVAILABLE",
+      equityUnavailableReason:
+        "No allocation and no virtual account exists for this user — there is no equity to read.",
+    };
+  }
+  if (args.shellEquity === 0 && args.shellBalance !== 0) {
+    return {
+      equity: null,
+      equitySource: "UNAVAILABLE",
+      equityUnavailableReason:
+        "The virtual account's equity was never written by the sync — unknown, not $0.",
+    };
+  }
+  return { equity: round2(args.shellEquity), equitySource: "VIRTUAL_ACCOUNT", equityUnavailableReason: null };
 }
 
 // Exported so Ruby (the assistant) can call it directly without an HTTP
@@ -326,9 +401,11 @@ export async function computeAccountShell(
     const allocatedBalance = hasAlloc
       ? round2(totalAlloc + allocatedOpenPnl)
       : shellBalance;
-    const allocatedEquity = hasAlloc
-      ? allocatedBalance
-      : (shellEquity || shellBalance);
+    // NOTE: equity is NOT derived here — it needs the canonical live
+    // snapshot's floating P/L (built below) and is computed by
+    // deriveAllocationEquity() just before the response. The old
+    // `allocatedEquity = allocatedBalance` made "My Equity" a copy of the
+    // balance for every allocated user.
     const availableCapacity = hasAlloc
       ? Math.max(0, round2(totalAlloc - allocatedMargin))
       : null;
@@ -502,6 +579,18 @@ export async function computeAccountShell(
       ? null
       : await buildInvestorLiveBalanceSnapshot(userId);
 
+    // Marked-to-market equity from a REAL read (see deriveAllocationEquity).
+    // In the cycle-break path (inv == null) an allocated user's equity is a
+    // typed null with a reason — the caller discards `allocation` there.
+    const equityRead = deriveAllocationEquity({
+      hasAlloc,
+      allocatedBalance,
+      vAccountCount: vAccounts.length,
+      shellEquity,
+      shellBalance,
+      floatingPnL: inv ? inv.floatingPnL : null,
+    });
+
     const response: AccountShellResponse = {
       ok: true,
       userId,
@@ -518,7 +607,9 @@ export async function computeAccountShell(
           ? round2(totalAlloc)
           : (vAccounts.length > 0 ? allocatedBalance : null),
         currentBalance: allocatedBalance,
-        equity: allocatedEquity || allocatedBalance,
+        equity: equityRead.equity,
+        equitySource: equityRead.equitySource,
+        equityUnavailableReason: equityRead.equityUnavailableReason,
         marginUsed: allocatedMargin,
         totalAllocation: hasAlloc ? round2(totalAlloc) : null,
         manualAllocation: hasAlloc ? round2(manualAlloc) : null,

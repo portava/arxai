@@ -51,13 +51,10 @@ type HeatReport = {
   symbolBreakdown?: Array<{ symbol: string; avgHeat: number; bestGrade: string; count: number }>;
 };
 
-const RUBY_OPEN_KEY = "arx.assistant.open.v2";
-function openRubyLiveChat() {
-  try {
-    sessionStorage.setItem(RUBY_OPEN_KEY, "1");
-    window.dispatchEvent(new StorageEvent("storage", { key: RUBY_OPEN_KEY }));
-  } catch { /* silent */ }
-}
+// Opens the mounted assistant panel NOW via its real open event.
+// (The old body forged a StorageEvent nothing listened to — the button
+// silently no-oped. See lib/assistantPanelBus.)
+import { openAssistantPanel as openRubyLiveChat } from "@/lib/assistantPanelBus";
 
 function money(n: number): string {
   const s = n >= 0 ? "+" : "-";

@@ -279,6 +279,19 @@ export interface ScannerOpportunity {
   statusBadge: StatusBadge;
   opportunity: OpportunityScore;
   entry: number; stopLoss: number; takeProfit: number;
+  /**
+   * The analyzer's REAL trend strength (0..100). Carried so downstream
+   * consumers (the scalp engine's mode tilts + ANY-mode type label) run on a
+   * live reading instead of a dead constant fallback. Withheld (undefined)
+   * when the readability contract withholds directional presentation.
+   */
+  trendStrength?: number;
+  /**
+   * The analyzer's structural entry zone. Carried so the scalp engine can use
+   * real market structure instead of synthesizing a band from spread/point
+   * constants. Withheld (undefined) when directional presentation is withheld.
+   */
+  entryZone?: { low: number; high: number };
   generatedAt: string;
   dataSource: "SIMULATOR" | "LIVE_FEED" | "LIVE_DELAYED" | "AWAITING_FEED" | "HISTORY_READY_AWAITING_LIVE_TICK" | "STALE_FEED";
   feedProvider?: string;
@@ -446,7 +459,7 @@ export interface ScannerTimingContext {
   trapProbability: number;    // 0-100
   roomToMove: number;         // 0-100
   heatBoost: number;          // bounded −10..+10 adjustment applied to score
-  dataQualityLabel: string;   // real/partial/basic_timing_estimate
+  dataQualityLabel: string;   // real/partial/basic_timing_estimate/unavailable
 }
 
 /**
@@ -1555,6 +1568,16 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
       statusBadge: statusBadgeFor(a, opp),
       opportunity: opp,
       entry, stopLoss: a.stopLoss, takeProfit: a.takeProfit,
+      // Real analyzer readings, gated by the same readability contract as the
+      // directional fields — never a constant stand-in.
+      trendStrength: mayShowBias && Number.isFinite(a.trendStrength) ? a.trendStrength : undefined,
+      entryZone:
+        mayShowBias &&
+        Number.isFinite(a.entryZone?.low) &&
+        Number.isFinite(a.entryZone?.high) &&
+        a.entryZone.high > a.entryZone.low
+          ? { low: a.entryZone.low, high: a.entryZone.high }
+          : undefined,
       generatedAt: a.generatedAt,
       dataSource: ds,
       feedProvider: a.feedProvider,

@@ -43,13 +43,10 @@ type Notification = {
   createdAt?: string | null;
 };
 
-const RUBY_OPEN_KEY = "arx.assistant.open.v2";
-function openRubyLiveChat() {
-  try {
-    sessionStorage.setItem(RUBY_OPEN_KEY, "1");
-    window.dispatchEvent(new StorageEvent("storage", { key: RUBY_OPEN_KEY }));
-  } catch { /* silent */ }
-}
+// Opens the mounted assistant panel NOW via its real open event.
+// (The old body forged a StorageEvent nothing listened to — the button
+// silently no-oped. See lib/assistantPanelBus.)
+import { openAssistantPanel as openRubyLiveChat } from "@/lib/assistantPanelBus";
 
 async function jget(url: string, init?: RequestInit) {
   const r = await fetch(url, { credentials: "include", headers: { "content-type": "application/json", ...(init?.headers ?? {}) }, ...init });

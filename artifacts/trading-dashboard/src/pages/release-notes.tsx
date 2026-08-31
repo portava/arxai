@@ -3,18 +3,22 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
 interface Brand { name: string; shortName: string; tagline: string; lockup: string; meaning: { analyze: string; risk: string; execute: string }; ownerTesterAccess: boolean; mt5Deferred: boolean; simulatorReady: boolean; realBrokerExecutionLocked: boolean; }
-interface Notes { brand?: Brand; version: string; stage: string; worksNow: string[]; deferred: string[]; knownIssues: string[]; testingInstructions: string[]; nextMilestone: string; }
+// knownIssues: real open P0/P1 rows from the feedback tracker; null = the
+// server could not read the tracker (rendered as unavailable, never "None").
+interface Notes { brand?: Brand; version: string; stage: string; worksNow: string[]; deferred: string[]; knownIssues: string[] | null; testingInstructions: string[]; nextMilestone: string; }
 
 export default function ReleaseNotes() {
   const [n, setN] = useState<Notes | null>(null);
   useEffect(() => { void fetch("/api/release/notes").then((r) => r.json()).then(setN); }, []);
   if (!n) return <div className="text-sm text-muted-foreground">Loading…</div>;
 
-  const Section = ({ title, items, tone }: { title: string; items: string[]; tone: "ok" | "warn" | "info" }) => (
+  const Section = ({ title, items, tone }: { title: string; items: string[] | null; tone: "ok" | "warn" | "info" }) => (
     <Card>
       <CardHeader><CardTitle className="text-base">{title}</CardTitle></CardHeader>
       <CardContent>
-        {items.length === 0 ? <p className="text-sm text-muted-foreground">None.</p> : (
+        {items === null ? (
+          <p className="text-sm text-warning">Unavailable — the issue tracker could not be read, so this list is unknown (not empty).</p>
+        ) : items.length === 0 ? <p className="text-sm text-muted-foreground">None.</p> : (
           <ul className="space-y-1 text-sm">
             {items.map((s, i) => (
               <li key={i} className="flex items-start gap-2">

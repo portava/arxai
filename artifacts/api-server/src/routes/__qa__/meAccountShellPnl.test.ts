@@ -19,7 +19,7 @@ process.env["DATABASE_URL"] ??= "postgres://user:pass@127.0.0.1:1/nonexistent";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-const { computeClosedPnlFromTrades } = await import("../meAccountShell.js");
+const { computeClosedPnlFromTrades, deriveAllocationEquity } = await import("../meAccountShell.js");
 
 const NOW = new Date("2026-08-30T12:00:00.000Z");
 
@@ -93,4 +93,60 @@ test("OPEN and CANCELLED rows never contribute money", () => {
     row({ pnl: -999, status: "CANCELLED" }),
   ], NOW);
   assert.equal(b.closedPnlTotal, -10);
+});
+
+// ── "My Equity" honesty (deriveAllocationEquity) ───────────────────────────
+// The shell used to define an allocated user's equity as EXACTLY the balance,
+// so floating losses on open positions could never appear in the "My Equity"
+// tile a user checks before adding risk.
+
+const EQ = { hasAlloc: true, allocatedBalance: 1000, vAccountCount: 1, shellEquity: 0, shellBalance: 0 };
+
+test("an allocated user's floating LOSS reaches My Equity — the shipped bug pinned equity = balance", () => {
+  const r = deriveAllocationEquity({ ...EQ, floatingPnL: -250 });
+  assert.equal(r.equity, 750);
+  assert.equal(r.equitySource, "LIVE_SNAPSHOT");
+  assert.equal(r.equityUnavailableReason, null);
+});
+
+test("a genuine zero-open-trades book is an honest equity = balance (floating 0 is a real read)", () => {
+  const r = deriveAllocationEquity({ ...EQ, floatingPnL: 0 });
+  assert.equal(r.equity, 1000);
+  assert.equal(r.equitySource, "LIVE_SNAPSHOT");
+});
+
+test("no floating read → typed null WITH a reason, never balance dressed up as equity", () => {
+  const r = deriveAllocationEquity({ ...EQ, floatingPnL: null });
+  assert.equal(r.equity, null);
+  assert.equal(r.equitySource, "UNAVAILABLE");
+  assert.ok(r.equityUnavailableReason && r.equityUnavailableReason.length > 0);
+});
+
+test("non-allocated user: the stored virtual_equity read is used as-is", () => {
+  const r = deriveAllocationEquity({
+    hasAlloc: false, allocatedBalance: 0, vAccountCount: 1,
+    shellEquity: 480.505, shellBalance: 500, floatingPnL: null,
+  });
+  assert.equal(r.equity, 480.51);
+  assert.equal(r.equitySource, "VIRTUAL_ACCOUNT");
+});
+
+test("non-allocated user: a 0 equity next to a non-zero balance is an UNWRITTEN sync, not $0", () => {
+  const r = deriveAllocationEquity({
+    hasAlloc: false, allocatedBalance: 0, vAccountCount: 1,
+    shellEquity: 0, shellBalance: 500, floatingPnL: null,
+  });
+  assert.equal(r.equity, null, "the old `shellEquity || shellBalance` rendered the balance here");
+  assert.equal(r.equitySource, "UNAVAILABLE");
+  assert.ok(r.equityUnavailableReason);
+});
+
+test("no allocation and no virtual account → null with a reason (nothing to read)", () => {
+  const r = deriveAllocationEquity({
+    hasAlloc: false, allocatedBalance: 0, vAccountCount: 0,
+    shellEquity: 0, shellBalance: 0, floatingPnL: null,
+  });
+  assert.equal(r.equity, null);
+  assert.equal(r.equitySource, "UNAVAILABLE");
+  assert.ok(r.equityUnavailableReason);
 });

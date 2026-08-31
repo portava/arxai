@@ -177,11 +177,48 @@ function mergeProgress(local: SchoolProgress, server: SchoolProgress): SchoolPro
 
 let syncInFlight: Promise<SchoolProgress> | null = null;
 
+// ── sync status (distinct error-vs-empty state) ──────────────────────────────
+// CONFIDENT_ABSENT fixed: a failed server read (new device, 401, offline) used
+// to be swallowed silently, so the UI rendered the LOCAL cache — "0% of 10
+// steps", "Not attempted", re-locked steps — as if it were the user's real
+// cross-device progress. The failure is now a first-class, subscribable state
+// so views can say "this may be out of date" instead of asserting the cache.
+//
+//   "pending" — no read-through has finished yet this session;
+//   "synced"  — at least one server read succeeded this session (sticky:
+//               a later transient failure does not un-earn it);
+//   "failed"  — every server read so far failed; the numbers on screen are
+//               the local cache only and may be stale or empty.
+export type SchoolSyncStatus = "pending" | "synced" | "failed";
+
+let syncStatus: SchoolSyncStatus = "pending";
+
+/** Current read-through sync status (see SchoolSyncStatus). */
+export function getSyncStatus(): SchoolSyncStatus {
+  return syncStatus;
+}
+
+/**
+ * Reactive sync status for React views. Re-renders on every progress
+ * notification (syncs notify on both success and first failure).
+ */
+export function useSchoolSyncStatus(): SchoolSyncStatus {
+  const [status, setStatus] = useState<SchoolSyncStatus>(() => getSyncStatus());
+  useEffect(() => {
+    const unsubscribe = subscribe(() => setStatus(getSyncStatus()));
+    setStatus(getSyncStatus());
+    return unsubscribe;
+  }, []);
+  return status;
+}
+
 /**
  * Read-through sync: fetch the server copy, merge with the local cache, persist
  * the merged result locally, push it back to the server, and notify listeners.
  * On any failure (unauthenticated / offline) the local cache is returned
- * unchanged. Concurrent calls share one in-flight request.
+ * unchanged — and the failure is RECORDED in the sync status (and notified) so
+ * the UI can label the numbers as local-cache-only rather than presenting them
+ * as the user's real progress. Concurrent calls share one in-flight request.
  */
 export function syncFromServer(): Promise<SchoolProgress> {
   if (syncInFlight) return syncInFlight;
@@ -191,12 +228,18 @@ export function syncFromServer(): Promise<SchoolProgress> {
       const res = await getMeTradingSchoolProgress();
       const server = { ...EMPTY, ...res.progress } as SchoolProgress;
       const merged = mergeProgress(local, server);
+      syncStatus = "synced";
       writeLocal(merged);
       notify();
       void pushToServer(merged);
       return merged;
     } catch {
-      // unauthenticated or offline — keep local as the source of truth
+      // unauthenticated or offline — keep local as the source of truth, but
+      // never silently: surface the failed sync unless one already succeeded.
+      if (syncStatus !== "synced") {
+        syncStatus = "failed";
+        notify();
+      }
       return local;
     } finally {
       syncInFlight = null;

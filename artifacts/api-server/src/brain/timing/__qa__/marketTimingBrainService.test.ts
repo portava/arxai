@@ -75,7 +75,7 @@ function baseDeps(over: Partial<TimingBrainDeps> = {}): TimingBrainDeps {
   };
 }
 
-test("no candles and no quote → honest basic_timing_estimate", async () => {
+test("no candles and no quote → honest unavailable label, and never a clock-only GO", async () => {
   const read = await computeTimingRead(
     { symbol: "EURUSD", persistSnapshot: false },
     baseDeps({
@@ -84,10 +84,46 @@ test("no candles and no quote → honest basic_timing_estimate", async () => {
       computeBroadFlowFn: async () => broadUnavailable,
     }),
   );
-  assert.equal(read.dataQuality.label, "basic_timing_estimate");
+  // Feed fully down: the only reachable label is "unavailable" — the frontend's
+  // honest collapse branch keys on exactly this. "basic_timing_estimate" must
+  // never be emitted for a fully-down feed (it read as a usable estimate).
+  assert.equal(read.dataQuality.label, "unavailable");
   assert.equal(read.dataQuality.hasCandleData, false);
   assert.equal(read.dataQuality.hasQuoteData, false);
-  assert.match(read.dataQuality.note, /candles unavailable/);
+  assert.match(read.dataQuality.note, /unavailable/);
+  // The wall clock alone (session bonus) must never grant a green GO.
+  assert.notEqual(read.entryPermission, "GO");
+  assert.equal(read.entryPermission, "WAIT_FOR_ENTRY");
+});
+
+test("high trap score renders as N/100 in actionReason — never with a % sign", async () => {
+  // 79 baseline candles + a PDH sweep candle with weak follow-through, plus a
+  // CONFLICTED broad flow: trap score = 35 (sweep) + 20 (weak body) + 15
+  // (broad conflict) = 70 (+ up to ~2 from kill-zone fakeout), which crosses
+  // the >65 WATCH_ONLY branch deterministically while danger stays below the
+  // STAND_DOWN bar regardless of wall-clock session state.
+  const base = candlesOk(80);
+  const sweep = {
+    time: new Date(Date.UTC(2026, 0, 5, 2, 0)).toISOString(),
+    open: 100.45, high: 101.0, low: 100.3, close: 100.4, volume: 1000,
+  };
+  const candles = [...base.candles.slice(0, 79), sweep];
+  const broadConflicted: BroadFlow = {
+    ...broadAligned, verdict: "CONFLICTED",
+  };
+  const read = await computeTimingRead(
+    { symbol: "EURUSD", persistSnapshot: false },
+    baseDeps({
+      routeCandlesFn: async () => ({ ...base, candles }),
+      computeBroadFlowFn: async () => broadConflicted,
+    }),
+  );
+  assert.ok(read.trapProbability > 65, `expected trap > 65, got ${read.trapProbability}`);
+  assert.equal(read.bestAction, "WATCH_ONLY");
+  assert.match(read.actionReason, /High trap score \(\d+\/100\)/);
+  // Uncalibrated rule-points score: a "%" would present it as a measured
+  // probability (codebase honesty rule — see liveScanner signalStrength).
+  assert.ok(!read.actionReason.includes("%"), `actionReason must not use %: ${read.actionReason}`);
 });
 
 test("real candles + quote + news + broad flow → dataQuality real", async () => {

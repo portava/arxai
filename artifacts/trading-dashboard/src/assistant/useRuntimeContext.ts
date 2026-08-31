@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { useChartSymbol } from "@/lib/use-chart-symbol";
 import { collectRuntimeContext } from "./runtimeContext";
@@ -22,6 +22,13 @@ export function useRuntimeContext(): RuntimeContext {
   // null = kill-switch state unknown (read failed / not yet loaded) — the
   // context reports it as unknown rather than a fabricated "off".
   const [emergencyStop, setEmergencyStop] = useState<boolean | null>(null);
+  // STALE-UNLABELED guard: health/bridge keep the last successful snapshot on
+  // a failed refresh (a transient blip should not blank the page), but a
+  // snapshot frozen for ≥2 intervals must be FLAGGED stale — otherwise
+  // "Heartbeat present (Ns)" etc. freeze at old values with no signal.
+  const lastFullSuccessRef = useRef<number | null>(null);
+  const [runtimeDataStale, setRuntimeDataStale] = useState(false);
+  const [lastSuccessfulRefreshAt, setLastSuccessfulRefreshAt] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
@@ -38,6 +45,16 @@ export function useRuntimeContext(): RuntimeContext {
       if (cancelled) return;
       if (h) setHealth(h);
       if (b) setBridge(b);
+      if (h && b) {
+        lastFullSuccessRef.current = Date.now();
+        setLastSuccessfulRefreshAt(new Date().toISOString());
+        setRuntimeDataStale(false);
+      } else {
+        const last = lastFullSuccessRef.current;
+        // Never succeeded, or frozen for more than ~2 refresh intervals →
+        // the kept snapshot is stale/unreachable and must be labeled so.
+        setRuntimeDataStale(last === null || Date.now() - last > REFRESH_MS * 2);
+      }
       // Unlike health/bridge we do NOT keep a stale value on failure: a
       // kill-switch state we could not confirm degrades to null (unknown).
       setEmergencyStop(typeof sys?.killSwitchEngaged === "boolean" ? sys.killSwitchEngaged : null);
@@ -65,5 +82,7 @@ export function useRuntimeContext(): RuntimeContext {
     bridge,
     health,
     emergencyStop,
-  }), [location, chartSymbol, bridge, health, emergencyStop, tick]);
+    runtimeDataStale,
+    lastSuccessfulRefreshAt,
+  }), [location, chartSymbol, bridge, health, emergencyStop, runtimeDataStale, lastSuccessfulRefreshAt, tick]);
 }

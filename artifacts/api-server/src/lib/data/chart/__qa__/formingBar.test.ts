@@ -204,6 +204,40 @@ test("[B3] buildFeedStatus: silent forming tip ⇒ stale-frozen with honest warn
   assert.equal(v.warning, "Live tick stream silent — forming bar frozen.");
 });
 
+test("[B5] buildFeedStatus: a fresh tip can NEVER override a stale closed-bar feed", () => {
+  // The EA keeps pushing ticks (fresh forming tip) but the closed-candle feed
+  // has stalled: the newest CLOSED bar trails the current bar by 3+ intervals
+  // (callers pass the closed-bar trailing gap, computed BEFORE the tip is
+  // appended). The trailing hole between the last closed bar and the
+  // synthesized tip means the feed is NOT verifiable live truth — the honest
+  // stale/not-aiUsable verdict must survive, never be upgraded by tick age.
+  const v = buildFeedStatus({
+    routerOk: true,
+    hasSource: true,
+    candleCount: 30,
+    trailingIntervals: 4, // closed bars stalled (>= STALE_TRAILING_INTERVALS)
+    formingTipPresent: true,
+    formingTickAgeMs: 2_000, // ticks still flowing — must not launder the hole
+  });
+  assert.equal(v.quality, "stale", "stalled closed candles keep the stale verdict");
+  assert.equal(v.stale, true);
+  assert.equal(v.aiUsable, false);
+  assert.match(v.warning ?? "", /closed candles trail/i, "warning names the stalled closed feed");
+
+  // Control: closed bars within the delayed threshold — the fresh tip still
+  // governs and reads clean (the original Task #496 behaviour is preserved).
+  const ok = buildFeedStatus({
+    routerOk: true,
+    hasSource: true,
+    candleCount: 30,
+    trailingIntervals: 1,
+    formingTipPresent: true,
+    formingTickAgeMs: 2_000,
+  });
+  assert.equal(ok.quality, "clean");
+  assert.equal(ok.aiUsable, true);
+});
+
 test("[B4] buildFeedStatus: closed-bar integrity failure wins over a fresh tip", () => {
   const v = buildFeedStatus({
     routerOk: true,

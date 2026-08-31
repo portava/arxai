@@ -298,7 +298,9 @@ describe("cross-surface consistency (one truth, every surface agrees)", () => {
   //   • read-gate      → analysis.level + downgraded (level !== "full")
   // A regression that moved one surface without the others would break here.
 
-  // Mirror useScannerReadGate's derivation exactly (truth != null && level !== "full").
+  // Mirror useScannerReadGate's derivation for a RESOLVED truth (level !== "full").
+  // The hook itself is fail-closed on top of this: a null truth (fetch failure /
+  // unresolved) is also downgraded — covered in useScannerReadGate.test.ts.
   const readGate = (t: ReturnType<typeof resolveScannerTruth>) => ({
     level: t.analysis.level,
     downgraded: t.analysis.level !== "full",

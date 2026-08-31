@@ -29,7 +29,9 @@ import {
   loadAccountInput,
   candleWindowFor,
   loadExecutionInput,
-  currentPriceFor,
+  currentQuoteFor,
+  liveSpreadPointsFrom,
+  withLiveSpread,
   deriveHtfBias,
   SCALP_TIMEFRAME,
 } from "./scalpServiceInputs.js";
@@ -157,10 +159,20 @@ function oppToScannerInput(opp: DecoratedOpportunity): ScalpScannerInput {
     recommendedAction: coerceAction(opp.recommendedAction),
     confidenceScore: opp.confidenceScore,
     entrySniperScore: opp.entrySniperScore,
+    // The analyzer's REAL trend strength — without it the engine's trend-based
+    // mode tilts and the ANY-mode type label ran forever on a constant 50
+    // (every card "Sniper Scalp", every tilt zero). Absent ⇒ honest undefined.
+    trendStrength:
+      typeof opp.trendStrength === "number" && Number.isFinite(opp.trendStrength)
+        ? opp.trendStrength
+        : undefined,
     setupType: opp.setupType,
     entry: opp.entry,
     stopLoss: opp.stopLoss,
     takeProfit: opp.takeProfit,
+    // The analyzer's structural entry zone — without it the engine synthesized
+    // a band from spread/point constants and presented it as a precise range.
+    entryZone: opp.entryZone ?? undefined,
     reasonForTrade: opp.reasonForTrade,
     reasonToAvoid: opp.reasonToAvoid,
     dataSource: opp.dataSource,
@@ -183,15 +195,16 @@ export interface ScalpFocusArgs {
 
 /** Focus card: on-demand live read of ONE symbol, evaluated by the engine. */
 export async function evaluateScalpForSymbol(userId: number, args: ScalpFocusArgs): Promise<ScalpResult> {
-  const [spec, account, opp, price, candles, execution, personality] = await Promise.all([
+  const [spec, account, opp, quote, candles, execution, personality] = await Promise.all([
     loadSpecInput(userId, args.symbol),
     loadAccountInput(userId),
     scanSymbolTimeframe(args.symbol, SCALP_TIMEFRAME),
-    currentPriceFor(args.symbol),
+    currentQuoteFor(args.symbol),
     candleWindowFor(args.symbol),
     loadExecutionInput(userId),
     loadSymbolPersonality(userId, args.symbol),
   ]);
+  const price = quote.price;
 
   let scanner: ScalpScannerInput | null = null;
   if (opp) {
@@ -209,7 +222,10 @@ export async function evaluateScalpForSymbol(userId: number, args: ScalpFocusArg
     riskAmount: args.riskAmount ?? null,
     targetProfitAmount: args.targetProfitAmount ?? null,
     candles,
-    execution,
+    // Live quote spread (converted to points) rides on the execution input so
+    // the engine's spread evidence + the flame's spread-spike guard run on the
+    // CURRENT market, not on the EA's last snapshot.
+    execution: withLiveSpread(execution, liveSpreadPointsFrom(quote.spreadPrice, spec)),
     htfBias: deriveHtfBias(candles),
     riskPersonality: args.riskPersonality ?? "BALANCED",
     symbolPersonality: personality
@@ -407,10 +423,10 @@ async function buildRankInputs(
   // which made the two values identical, so `movedToward` was always ~0 and
   // every late/chase gate silently evaluated to "not late" — the one gate whose
   // whole job is to catch a stale pick could not fire on these surfaces.
-  const [specs, personalities, livePrices] = await Promise.all([
+  const [specs, personalities, liveQuotes] = await Promise.all([
     Promise.all(decoratedList.map((o) => loadSpecInput(userId, o.symbol))),
     Promise.all(decoratedList.map((o) => loadSymbolPersonality(userId, o.symbol))),
-    Promise.all(decoratedList.map((o) => currentPriceFor(o.symbol))),
+    Promise.all(decoratedList.map((o) => currentQuoteFor(o.symbol))),
   ]);
 
   return decoratedList.map((o, i) => {
@@ -422,14 +438,20 @@ async function buildRankInputs(
         // A real quote, or an honest null. Deliberately NOT falling back to
         // `o.entry`: that is what produced the fake "price hasn't moved" read.
         // The engine already refuses to build a trade on a null price.
-        currentPrice: livePrices[i] ?? null,
+        currentPrice: liveQuotes[i]?.price ?? null,
         spec: specs[i]!,
         scanner: oppToScannerInput(o),
         account,
         riskAmount: extra.riskAmount ?? null,
         targetProfitAmount: extra.targetProfitAmount ?? null,
         candles: null,
-        execution,
+        // Per-symbol LIVE spread from the same quote read — the shared per-user
+        // execution signals plus the one per-symbol reading that must not be
+        // shared across symbols.
+        execution: withLiveSpread(
+          execution,
+          liveSpreadPointsFrom(liveQuotes[i]?.spreadPrice ?? null, specs[i]!),
+        ),
         htfBias: null,
         riskPersonality: extra.riskPersonality ?? "BALANCED",
         // Learned per-symbol tightening also applies on Broad/Builder, not just

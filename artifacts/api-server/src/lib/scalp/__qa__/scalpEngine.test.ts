@@ -442,3 +442,68 @@ test("flame no fabrication: candles present but non-live data source stays blind
   assert.equal(r.flame.blind, true, "no live data => no flame read, even with candles");
   assert.equal(r.flame.flameStage, "NONE");
 });
+
+// ── Truth-system fixes: honest risk bands, spread evidence, zone provenance ──
+
+test("reject states carry NO fabricated risk bands (null, not LOW)", () => {
+  // AWAITING_DATA with no scanner at all: nothing was evaluated.
+  const awaiting = evaluateScalp(baseInput({ scanner: null }));
+  assert.equal(awaiting.status, "AWAITING_DATA");
+  assert.equal(awaiting.spreadRisk, null, "spreadRisk must be unknown, not LOW");
+  assert.equal(awaiting.slippageRisk, null, "slippageRisk must be unknown, not LOW");
+  assert.equal(awaiting.newsRisk, null, "newsRisk must be unknown with no scanner");
+
+  // MARKET_CLOSED with a scanner read: news was genuinely consulted upstream
+  // and may carry through, but spread/slippage were never evaluated.
+  const closed = evaluateScalp(baseInput({ spec: v75Spec({ marketOpen: false }) }));
+  assert.equal(closed.status, "MARKET_CLOSED");
+  assert.equal(closed.spreadRisk, null);
+  assert.equal(closed.slippageRisk, null);
+});
+
+test("no spread evidence at all → spreadRisk is an honest unknown on a live read", () => {
+  const r = evaluateScalp(
+    baseInput({ spec: v75Spec({ spreadPoints: null, category: "forex" }) }),
+  );
+  assert.equal(r.status, "READY", "setup itself is still readable");
+  assert.equal(r.spreadRisk, null, "no snapshot + no live spread => unknown band");
+  assert.equal(r.slippageRisk, null, "non-synthetic slippage inherits the unknown");
+});
+
+test("synthetics keep their structural MEDIUM slippage even with unknown spread", () => {
+  const r = evaluateScalp(baseInput({ spec: v75Spec({ spreadPoints: null }) }));
+  assert.equal(r.spreadRisk, null);
+  assert.equal(r.slippageRisk, "MEDIUM", "asset-class knowledge, not a live reading");
+});
+
+test("LIVE quote spread beats a stale-favourable snapshot: spike trips SPREAD_TOO_WIDE", () => {
+  // Snapshot claims a tight 20-point spread; the live quote says 4000 points.
+  const r = evaluateScalp(
+    baseInput({
+      spec: v75Spec({ spreadPoints: 20 }),
+      execution: { heartbeatAgeSeconds: 2, bridgeConnected: true, liveSpreadPoints: 4000 },
+    }),
+  );
+  assert.equal(r.status, "SPREAD_TOO_WIDE", "live spike must not hide behind the snapshot");
+});
+
+test("entry zone provenance: structural zone used verbatim, synthesized zone flagged", () => {
+  const structural = evaluateScalp(baseInput());
+  assert.equal(structural.entryZoneEstimated, false);
+  assert.equal(structural.entryZone!.from, 4602);
+  assert.equal(structural.entryZone!.to, 4608);
+
+  const synthesized = evaluateScalp(baseInput({ scanner: sellScanner({ entryZone: undefined }) }));
+  assert.equal(synthesized.entryZoneEstimated, true, "invented band must be flagged");
+  assert.ok(synthesized.entryZone, "band still shown, just labeled approximate");
+});
+
+test("ANY-mode scalp type: real trend drives the label; no trend reading → generic label", () => {
+  const withTrend = evaluateScalp(baseInput({ scanner: buyScanner({ trendStrength: 72 }), currentPrice: 4600 }));
+  assert.equal(withTrend.scalpType, "Momentum Scalp");
+  const reversal = evaluateScalp(baseInput({ scanner: buyScanner({ trendStrength: 30 }), currentPrice: 4600 }));
+  assert.equal(reversal.scalpType, "Reversal Scalp");
+  // No analyzer trend reading: the label must NOT claim a style off a constant.
+  const noTrend = evaluateScalp(baseInput({ scanner: sellScanner({ trendStrength: undefined }) }));
+  assert.equal(noTrend.scalpType, "Scalp");
+});

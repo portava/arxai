@@ -99,13 +99,10 @@ function fromDb(e: EconomicEvent): DisplayEvent {
 }
 
 // Open the existing Ruby live chat (same cross-tab mechanism the AI hub uses).
-const RUBY_OPEN_KEY = "arx.assistant.open.v2";
-function openRubyLiveChat() {
-  try {
-    sessionStorage.setItem(RUBY_OPEN_KEY, "1");
-    window.dispatchEvent(new StorageEvent("storage", { key: RUBY_OPEN_KEY }));
-  } catch { /* sessionStorage unavailable — silent */ }
-}
+// Opens the mounted assistant panel NOW via its real open event.
+// (The old body forged a StorageEvent nothing listened to — the button
+// silently no-oped. See lib/assistantPanelBus.)
+import { openAssistantPanel as openRubyLiveChat } from "@/lib/assistantPanelBus";
 
 const IMPACT_TONE: Record<ImpactLevel, { text: string; dot: string; chip: string; label: string }> = {
   CRITICAL: { text: "text-[#E11D48]", dot: "bg-[#E11D48]", chip: "border-[#E11D48]/40 bg-[#E11D48]/10 text-[#E11D48]", label: "Critical" },

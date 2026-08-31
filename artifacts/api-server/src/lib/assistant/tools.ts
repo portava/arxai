@@ -169,7 +169,8 @@ export async function getCurrentUserContext(userId: number) {
     tradingStatus: string;
     accountStatus: string;
     currentBalance: number;
-    equity: number;
+    // null = no marked-to-market equity read exists (never balance-as-equity).
+    equity: number | null;
     availableRisk: number | null;
     availableRiskAmount: number | null;
     dailyLossRemaining: number | null;

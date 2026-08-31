@@ -36,13 +36,10 @@ import { FreshnessBadge } from "@/components/ui/FreshnessBadge";
 const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
 const u = (p: string) => `${BASE}${p}`;
 
-const RUBY_OPEN_KEY = "arx.assistant.open.v2";
-function openRubyLiveChat() {
-  try {
-    sessionStorage.setItem(RUBY_OPEN_KEY, "1");
-    window.dispatchEvent(new StorageEvent("storage", { key: RUBY_OPEN_KEY }));
-  } catch { /* silent */ }
-}
+// Opens the mounted assistant panel NOW via its real open event.
+// (The old body forged a StorageEvent nothing listened to — the button
+// silently no-oped. See lib/assistantPanelBus.)
+import { openAssistantPanel as openRubyLiveChat } from "@/lib/assistantPanelBus";
 
 // Same shape MyOpenTradesPanel uses (MT5-confirmed open positions only).
 /**

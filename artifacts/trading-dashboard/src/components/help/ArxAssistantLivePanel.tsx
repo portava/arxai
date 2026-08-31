@@ -24,9 +24,12 @@ import { useChartSymbol } from "@/lib/use-chart-symbol";
 import { useScannerTimeframe } from "@/hooks/useScannerTimeframe";
 import { markActionStart, markActionEnd, markUiFeedback, markRenderComplete, markApiStart, markApiEnd } from "@/lib/perf";
 import { useAssistantName, DEFAULT_ASSISTANT_NAME } from "@/lib/assistant-name";
+import { ASSISTANT_OPEN_EVENT, ASSISTANT_OPEN_STORAGE_KEY } from "@/lib/assistantPanelBus";
 
 const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
-const STORAGE_OPEN_KEY = "arx.assistant.open.v2";
+// The open key + live open event are shared with every "Ask Ruby" button via
+// lib/assistantPanelBus — see the DEAD GAUGE note there.
+const STORAGE_OPEN_KEY = ASSISTANT_OPEN_STORAGE_KEY;
 // Phase 22D — voice clip safety caps. Mobile mics + opus typically sit at
 // ~24-48 kbps so 20 MB ≈ several minutes; we still cap recording to 15 s
 // to keep mobile uploads fast and predictable.
@@ -224,6 +227,15 @@ export function ArxAssistantLivePanel() {
     typing: status === "streaming",
     error: status === "error",
   });
+
+  // Live open signal from any "Ask Ruby to explain" button (assistantPanelBus).
+  // The sessionStorage key alone only affects the NEXT mount's initial state;
+  // this listener is what actually opens the already-mounted panel on click.
+  useEffect(() => {
+    const onOpenRequest = () => setOpen(true);
+    window.addEventListener(ASSISTANT_OPEN_EVENT, onOpenRequest);
+    return () => window.removeEventListener(ASSISTANT_OPEN_EVENT, onOpenRequest);
+  }, []);
 
   // Persist UI prefs
   useEffect(() => {

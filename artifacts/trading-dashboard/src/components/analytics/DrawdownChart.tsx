@@ -7,7 +7,8 @@ export function DrawdownChart({ points, maxDrawdown }: { points: EquityPoint[]; 
     <div className="rounded-lg border border-danger/50 bg-danger/20 p-3">
       <div className="mb-2 flex items-baseline justify-between">
         <h3 className="text-sm font-semibold text-danger">Drawdown</h3>
-        <span className="text-[11px] text-danger">Peak-to-trough: ${maxDrawdown.toFixed(2)}</span>
+        {/* Synthetic units ((exit − entry) × lots × 100), not account currency. */}
+        <span className="text-[11px] text-danger">Peak-to-trough: {maxDrawdown.toFixed(2)} units</span>
       </div>
       <div className="h-44">
         <ResponsiveContainer width="100%" height="100%">

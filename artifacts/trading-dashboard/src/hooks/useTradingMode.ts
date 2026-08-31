@@ -38,7 +38,8 @@ export interface UnifiedAccountModeEnvelope {
     hasAllocation: boolean;
     currentBalance: number;
     assignedStartingBalance: number | null;
-    equity: number;
+    // null = no marked-to-market equity read exists (never balance-as-equity).
+    equity: number | null;
     marginUsed: number;
   };
   userRiskCaps: {

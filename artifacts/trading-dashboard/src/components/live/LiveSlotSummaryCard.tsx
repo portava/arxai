@@ -16,6 +16,7 @@ type SlotSummary = {
   marginSource?: string;
   marginEstimateIncomplete?: boolean;
   openPnL: number;
+  openPnLIncomplete?: boolean;
   positions: unknown[];
   positionSyncIncomplete?: boolean;
   snapshotWarning?: string | null;
@@ -125,6 +126,15 @@ export function LiveSlotSummaryCard() {
           <div className="mt-2 text-[11px] text-ruby/90 flex items-start gap-1" data-testid="slot-sync-incomplete">
             <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
             <span>{s.snapshotWarning ?? "Position sync incomplete — waiting for broker confirmation."}</span>
+          </div>
+        ) : null}
+        {s.openPnLIncomplete ? (
+          <div className="mt-2 text-[11px] text-warning/90 flex items-start gap-1" data-testid="slot-openpnl-incomplete">
+            <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
+            <span>
+              One or more open positions haven't reported a P/L yet, so Open
+              P/L and Slot Equity are partial figures.
+            </span>
           </div>
         ) : null}
         {s.marginEstimateIncomplete ? (

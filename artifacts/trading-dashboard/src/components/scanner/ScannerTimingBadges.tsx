@@ -79,6 +79,20 @@ function ScorePill({ label, value, lo, hi, tone }: { label: string; value: numbe
 export function ScannerTimingBadges({ ctx, className, isGold }: { ctx: ScannerTimingContext; className?: string; isGold?: boolean }) {
   if (!ctx) return null;
 
+  // Honest collapse: with the candle/quote feed fully down the backend emits
+  // dataQualityLabel="unavailable" — the grade/permission/score values in ctx
+  // are clock-derived defaults, not market facts, so render a single honest
+  // line instead of confident-looking badges.
+  if (ctx.dataQualityLabel === "unavailable") {
+    return (
+      <div className={cn("border-t border-border/60 pt-2", className)} data-testid="scanner-timing-unavailable">
+        <p className="text-[10px] text-txt-muted">
+          Timing read unavailable — no live candle/quote data for this symbol.
+        </p>
+      </div>
+    );
+  }
+
   const isEstimate = ctx.dataQualityLabel === "basic_timing_estimate";
   const showNewsPhase = ctx.newsPhase !== "NONE" && !!NEWS_PHASE_LABELS[ctx.newsPhase];
   const heatBoostLabel = ctx.heatBoost > 0 ? `+${ctx.heatBoost}` : ctx.heatBoost < 0 ? `${ctx.heatBoost}` : null;

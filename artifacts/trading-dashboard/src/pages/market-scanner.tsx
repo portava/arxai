@@ -52,13 +52,18 @@ type Opp = {
   bias: string; recommendedAction: string;
   // signalStrength is the canonical wire name; confidenceScore is the
   // deprecated dual-emit alias (kept for the live-intent submit payload).
-  setupType: string; signalStrength?: number; confidenceScore: number; riskScore: number;
-  entrySniperScore: number; riskRewardRatio: number;
+  // Numbers are null on a server-masked simulator row (withheld, not measured):
+  // the card renders "—" for them, never a fake measured 0.
+  setupType: string; signalStrength?: number | null; confidenceScore: number | null; riskScore: number | null;
+  entrySniperScore: number | null; riskRewardRatio: number | null;
   reasonForTrade: string; reasonToAvoid: string;
   rulesPassed: string[]; rulesFailed: string[];
   statusBadge: string;
-  opportunity: { score: number; label: string };
-  entry: number; stopLoss: number; takeProfit: number;
+  opportunity: { score: number | null; label: string };
+  entry: number | null; stopLoss: number | null; takeProfit: number | null;
+  // True on a simulator row masked for this (non-privileged) viewer: every
+  // score/level above is withheld. Trade actions must never seed from it.
+  withheld?: boolean;
   timingContext?: ScannerTimingContext;
 };
 
@@ -686,7 +691,8 @@ export default function MarketScanner() {
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between gap-2">
                   <CardTitle className="text-base">{o.symbol} <span className="text-xs text-muted-foreground">{o.timeframe}</span></CardTitle>
-                  <Badge className={LABEL_COLORS[o.opportunity.label] ?? ""}>{o.opportunity.label} {o.opportunity.score}</Badge>
+                  {/* Withheld (masked simulator) rows carry no score — "—", never a measured-looking 0. */}
+                  <Badge className={LABEL_COLORS[o.opportunity.label] ?? ""}>{o.opportunity.label} {o.opportunity.score ?? "—"}</Badge>
                 </div>
                 <CardDescription className="flex flex-wrap items-center gap-1.5 mt-1">
                   <Badge variant={o.recommendedAction === "BUY" ? "default" : o.recommendedAction === "SELL" ? "destructive" : "outline"} className="text-xs">{o.recommendedAction}</Badge>
@@ -717,22 +723,24 @@ export default function MarketScanner() {
                   const c = cohesionMap.get(o.symbol);
                   const mult = c?.confidenceMultiplier ?? 1;
                   // Canonical field first; deprecated alias as fallback for older payloads.
+                  // null = withheld (server-masked simulator row): render "—" so a
+                  // withheld read can never masquerade as a measured score of 0.
                   const strength = o.signalStrength ?? o.confidenceScore;
-                  const adjusted = mult < 1 ? Math.round(strength * mult) : strength;
+                  const adjusted = strength == null ? null : mult < 1 ? Math.round(strength * mult) : strength;
                   return (
                     <>
                       <div className="grid grid-cols-3 gap-1 text-center">
                         <div className="rounded-md bg-muted/40 p-1.5">
                           <div className="text-muted-foreground">Conf</div>
                           <div className="font-mono font-semibold tabular-nums" data-testid={`scanner-conf-${o.symbol}`}>
-                            {adjusted}
-                            {mult < 1 && (
+                            {adjusted ?? "—"}
+                            {mult < 1 && strength != null && (
                               <span className="ml-1 text-[10px] font-normal text-muted-foreground line-through">{strength}</span>
                             )}
                           </div>
                         </div>
-                        <div className="rounded-md bg-muted/40 p-1.5"><div className="text-muted-foreground">Risk</div><div className="font-mono font-semibold tabular-nums">{o.riskScore}</div></div>
-                        <div className="rounded-md bg-muted/40 p-1.5"><div className="text-muted-foreground">Sniper</div><div className="font-mono font-semibold tabular-nums">{o.entrySniperScore}</div></div>
+                        <div className="rounded-md bg-muted/40 p-1.5"><div className="text-muted-foreground">Risk</div><div className="font-mono font-semibold tabular-nums">{o.riskScore ?? "—"}</div></div>
+                        <div className="rounded-md bg-muted/40 p-1.5"><div className="text-muted-foreground">Sniper</div><div className="font-mono font-semibold tabular-nums">{o.entrySniperScore ?? "—"}</div></div>
                       </div>
                       {mult < 1 && (
                         <div className="text-[10px] text-muted-foreground italic" data-testid={`scanner-conf-note-${o.symbol}`}>
@@ -752,11 +760,12 @@ export default function MarketScanner() {
                   signal={{
                     symbol: o.symbol, timeframe: o.timeframe,
                     recommendedAction: o.recommendedAction, bias: o.bias,
-                    signalStrength: o.signalStrength ?? o.confidenceScore,
-                    confidenceScore: o.confidenceScore, riskScore: o.riskScore,
-                    entrySniperScore: o.entrySniperScore, reasonForTrade: o.reasonForTrade,
+                    // Withheld (null) values stay absent — never coerced to 0.
+                    signalStrength: (o.signalStrength ?? o.confidenceScore) ?? undefined,
+                    confidenceScore: o.confidenceScore ?? undefined, riskScore: o.riskScore ?? undefined,
+                    entrySniperScore: o.entrySniperScore ?? undefined, reasonForTrade: o.reasonForTrade,
                     reasonToAvoid: o.reasonToAvoid, setupType: o.setupType,
-                    entry: o.entry, stopLoss: o.stopLoss, takeProfit: o.takeProfit,
+                    entry: o.entry ?? undefined, stopLoss: o.stopLoss ?? undefined, takeProfit: o.takeProfit ?? undefined,
                     statusBadge: o.statusBadge,
                   }}
                   dense
@@ -765,10 +774,16 @@ export default function MarketScanner() {
                   <ScannerTimingBadges ctx={o.timingContext} isGold={isGoldMode(o.symbol)} />
                 )}
                 <div className="grid grid-cols-3 gap-1 pt-2 border-t">
+                  {/* A withheld (masked simulator) row has no entry/SL/TP — the
+                      trade ticket must never be seeded from it, so the trade
+                      actions are honestly disabled with the reason. */}
                   <Button
                     size="sm"
                     className="h-9 border border-success/30 bg-success/15 text-sm font-bold text-success"
+                    disabled={o.withheld === true}
+                    title={o.withheld ? "Waiting for verified feed — trade setup withheld" : undefined}
                     onClick={() => {
+                      if (o.withheld) return;
                       // PART B — Scanner.openTradeModal timing.
                       // Target: modal visible <250ms. The end mark fires
                       // from ScannerTradeModal once its shell renders.
@@ -785,7 +800,10 @@ export default function MarketScanner() {
                   <Button
                     size="sm"
                     className="h-9 border border-danger/30 bg-danger/15 text-sm font-bold text-danger"
+                    disabled={o.withheld === true}
+                    title={o.withheld ? "Waiting for verified feed — trade setup withheld" : undefined}
                     onClick={() => {
+                      if (o.withheld) return;
                       const tid = markActionStart("scanner.openTradeModal", { page: "market-scanner" });
                       setTradeTarget({ opp: o, side: "SELL" });
                       markUiFeedback(tid);
@@ -797,7 +815,9 @@ export default function MarketScanner() {
                     size="sm"
                     variant="outline"
                     className="h-9 text-xs"
-                    onClick={() => setTradeTarget({ opp: o, side: o.recommendedAction === "SELL" ? "SELL" : "BUY" })}
+                    disabled={o.withheld === true}
+                    title={o.withheld ? "Waiting for verified feed — trade setup withheld" : undefined}
+                    onClick={() => { if (!o.withheld) setTradeTarget({ opp: o, side: o.recommendedAction === "SELL" ? "SELL" : "BUY" }); }}
                   >
                     <Sliders className="h-3 w-3 mr-1" />Trade Setup
                   </Button>
@@ -1033,12 +1053,15 @@ export default function MarketScanner() {
           signal={{
             symbol: tradeTarget.opp.symbol, timeframe: tradeTarget.opp.timeframe,
             recommendedAction: tradeTarget.opp.recommendedAction, bias: tradeTarget.opp.bias,
-            signalStrength: tradeTarget.opp.signalStrength ?? tradeTarget.opp.confidenceScore,
-            confidenceScore: tradeTarget.opp.confidenceScore, riskScore: tradeTarget.opp.riskScore,
-            entrySniperScore: tradeTarget.opp.entrySniperScore,
+            // Withheld (null) values seed as absent — the ticket shows empty
+            // price fields, never a fabricated entry/SL/TP of 0. (The trade
+            // buttons on a withheld row are disabled; this is defense in depth.)
+            signalStrength: (tradeTarget.opp.signalStrength ?? tradeTarget.opp.confidenceScore) ?? undefined,
+            confidenceScore: tradeTarget.opp.confidenceScore ?? undefined, riskScore: tradeTarget.opp.riskScore ?? undefined,
+            entrySniperScore: tradeTarget.opp.entrySniperScore ?? undefined,
             reasonForTrade: tradeTarget.opp.reasonForTrade, reasonToAvoid: tradeTarget.opp.reasonToAvoid,
             setupType: tradeTarget.opp.setupType,
-            entry: tradeTarget.opp.entry, stopLoss: tradeTarget.opp.stopLoss, takeProfit: tradeTarget.opp.takeProfit,
+            entry: tradeTarget.opp.entry ?? undefined, stopLoss: tradeTarget.opp.stopLoss ?? undefined, takeProfit: tradeTarget.opp.takeProfit ?? undefined,
             statusBadge: tradeTarget.opp.statusBadge,
           }}
           defaultSide={tradeTarget.side}

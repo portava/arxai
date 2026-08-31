@@ -187,6 +187,11 @@ router.get("/me/live/slot-summary", requireUser, async (req, res) => {
   // such as V75/V25), so the margin/free-margin totals are a forex-only lower
   // bound — we never fabricate a synthetic-index margin.
   let marginEstimateIncomplete = false;
+  // True when a visible position has NEVER reported a floating P/L (floatingPl
+  // is null — the EA hasn't synced one yet). Its unknown P/L is EXCLUDED from
+  // openPnL rather than counted as 0, so the total is honestly flagged as a
+  // partial figure instead of silently claiming "$0.00" for an unsynced leg.
+  let openPnLIncomplete = false;
   const slotBalanceForPct = allocatedFunds + realisedPnl;
   const mapped = openPositions.map((p) => {
     const syncedMs = p.lastSyncedAt ? new Date(p.lastSyncedAt).getTime() : null;
@@ -197,7 +202,10 @@ router.get("/me/live/slot-summary", requireUser, async (req, res) => {
     // Visible = not broker-confirmed-absent. A stale row stays visible (and
     // counted) whenever we lack a reliable snapshot proving it closed.
     const visible = !cls.brokerConfirmedAbsent;
-    const floating = p.floatingPl != null ? Number(p.floatingPl) : 0;
+    // null = the EA has never synced a P/L for this position. Kept null all the
+    // way to the wire (grossProfit/netProfit are number|null) so the UI renders
+    // "—", not a fabricated "0.00" flat claim.
+    const floating = p.floatingPl != null ? Number(p.floatingPl) : null;
     const vol = Number(p.volume);
     const price = p.currentPrice != null ? Number(p.currentPrice) : Number(p.entryPrice);
     // Margin is estimable only for forex (known 100k contract size). For other
@@ -206,13 +214,18 @@ router.get("/me/live/slot-summary", requireUser, async (req, res) => {
     const forex = isForexPair(p.symbol);
     const marginEst = forex ? estimateMarginUsd(vol, price, leverage) : 0;
     if (visible) {
-      openPnL += floating;
+      // A never-synced P/L is unknown, not zero: exclude it and flag the total
+      // incomplete instead of silently folding a fabricated 0 into openPnL.
+      if (floating != null) openPnL += floating;
+      else openPnLIncomplete = true;
       usedMargin += marginEst;
       if (!forex) marginEstimateIncomplete = true;
     } else {
       stalePositionCount += 1;
     }
-    const profitPercentOfSlot = slotBalanceForPct > 0 ? (floating / slotBalanceForPct) * 100 : null;
+    const profitPercentOfSlot = floating != null && slotBalanceForPct > 0
+      ? (floating / slotBalanceForPct) * 100
+      : null;
     return {
       brokerTicket: p.brokerTicket,
       symbol: p.symbol,
@@ -222,12 +235,14 @@ router.get("/me/live/slot-summary", requireUser, async (req, res) => {
       currentPrice: p.currentPrice != null ? Number(p.currentPrice) : null,
       stopLoss: p.stopLoss != null ? Number(p.stopLoss) : null,
       takeProfit: p.takeProfit != null ? Number(p.takeProfit) : null,
-      grossProfit: floating,
+      // number|null on the wire: null = P/L never synced by the EA. The UI's
+      // fmtMoney renders "—" for null instead of a confident "0.00".
+      grossProfit: floating as number | null,
       // EA does not currently push swap/commission per-position; we surface
       // null honestly rather than zero so the UI can omit the row.
       swap: null as number | null,
       commission: null as number | null,
-      netProfit: floating,
+      netProfit: floating as number | null,
       profitPercentOfSlot,
       openedAt: p.openedAt,
       lastUpdated: p.lastSyncedAt,
@@ -282,6 +297,10 @@ router.get("/me/live/slot-summary", requireUser, async (req, res) => {
     marginSource: "ESTIMATED" as const,
     marginEstimateIncomplete,
     openPnL,
+    // True when a visible open position has no synced P/L yet — its unknown
+    // P/L is excluded from openPnL (and therefore equity/freeMargin), so those
+    // totals are a partial figure, not a claim that the missing leg is at 0.
+    openPnLIncomplete,
     openPositionCount: positions.length,
     positions,
     stalePositions,

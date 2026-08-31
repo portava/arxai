@@ -243,12 +243,16 @@ export type DispatchApprovedDraftResult =
       httpStatus: number;
     };
 
-/** Conservative defaults: no observed anomaly. `feedStatus`/`quoteFresh` are the
- * NEUTRAL element of the additive mission gate ("no extra degradation observed",
- * NOT a claim the feed is live). The real live pipeline re-derives every safety
- * signal server-side, and Phase 7 resolves real per-symbol feed truth itself from
- * the mt5_broker-aware seam; this channel can solely ADD strictness. */
-const DEFAULT_SIGNALS: MissionLiveSignals = {
+/** NEUTRAL fallback for INJECTED callers only (tests that isolate the mission
+ * gate). Every PRODUCTION caller — the routes and the mission driver — resolves
+ * the REAL platform signals via `resolveMissionLiveSignals` (safety-core kill
+ * switch + broker-health verdict) and passes them in explicitly; leaving these
+ * constants on a production path is exactly the dead gauge an audit flagged
+ * (an emergency read that could never fire). The real live pipeline re-derives
+ * every safety signal server-side, and Phase 7 resolves real per-symbol feed
+ * truth itself from the mt5_broker-aware seam; this channel can solely ADD
+ * strictness. */
+const NEUTRAL_TEST_SIGNALS: MissionLiveSignals = {
   killSwitchActive: false,
   brokerConnected: true,
   feedStatus: "live",
@@ -386,7 +390,7 @@ export async function dispatchApprovedDraft(
   const risk = await refreshMissionRisk({
     userId: args.userId,
     missionId: args.missionId,
-    signals: args.signals ?? DEFAULT_SIGNALS,
+    signals: args.signals ?? NEUTRAL_TEST_SIGNALS,
     nowMs,
   });
   if (!risk.ok) return { ok: false, kind: "mission_not_found" };
@@ -468,7 +472,7 @@ export async function dispatchApprovedDraft(
       expectedR: draft.expectedR,
     },
     budget: exposureBudgetFrom(state.budget),
-    signals: args.signals ?? DEFAULT_SIGNALS,
+    signals: args.signals ?? NEUTRAL_TEST_SIGNALS,
     nowMs,
   });
 

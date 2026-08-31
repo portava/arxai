@@ -38,7 +38,17 @@ interface CockpitSummary {
     paperTradesOpened: number; paperTradesClosed: number; netPnl: number; winRate: number;
     activeWarnings: { code: string; message: string }[];
   };
-  todayPerformance: { totalTrades: number; wins: number; losses: number; breakEven: number; netPnl: number; winRate: number; dayRating: string };
+  // Counts are null when the paper-orders read FAILED (readFailed=true): a DB
+  // outage must not render as the confident "no trades yet today" empty state.
+  // syntheticPricedTrades = closes settled by the deterministic synthetic price
+  // model rather than market data. pnlUnit: all paper P&L is symbol-blind
+  // "sim points" (dir × Δprice × lot × 100) — not a currency amount.
+  todayPerformance: {
+    totalTrades: number | null; wins: number | null; losses: number | null; breakEven: number | null;
+    netPnl: number | null; winRate: number | null; dayRating: string;
+    pnlUnit?: string; syntheticPricedTrades?: number | null;
+    readFailed?: boolean; readFailedReason?: string | null;
+  };
   // `profitLoss` is gone on purpose: for OPEN rows it was the write-at-close
   // DB column's default 0, so every open position rendered flat forever. The
   // server now prices each open row against a fresh quote at read time and
@@ -46,8 +56,12 @@ interface CockpitSummary {
   openPaperTrades: {
     id: number; symbol: string; direction: string; lotSize: number; entryPrice: number;
     stopLoss: number; takeProfit: number; status: string; openedAt: string;
-    unrealizedPnl: { value: number | null; asOf: string | null; source: string | null; quality: string | null; reason: string | null };
+    unrealizedPnl: { value: number | null; asOf: string | null; source: string | null; quality: string | null; reason: string | null; unit?: string };
   }[];
+  // Distinct from an empty openPaperTrades list: true means the read FAILED
+  // and open positions are unknown, not zero.
+  openPaperTradesReadFailed?: boolean;
+  openPaperTradesReadFailedReason?: string | null;
   coachSummary: { dailyFocus: string; mistakeToAvoid: string[]; setupsToWatch: string[]; setupsToAvoid: string[]; nextBestActions: string[] };
   // Alert text (`title`/`message`) is deliberately absent: the alerts table is
   // not per-user scoped, so the server withholds it rather than hand one
@@ -229,7 +243,11 @@ function ActiveSessionPanel({ s }: { s: CockpitSummary }) {
           <div><div className="text-[10px] uppercase text-muted-foreground">Timeframes</div><div className="font-mono text-xs">{a.timeframes.join(", ") || "—"}</div></div>
           <div><div className="text-[10px] uppercase text-muted-foreground">Elapsed</div><div className="font-mono text-xs">{elapsedMin} min</div></div>
           <div><div className="text-[10px] uppercase text-muted-foreground">Trades</div><div className="font-mono text-xs">{a.paperTradesOpened} open / {a.paperTradesClosed} closed</div></div>
-          <div><div className="text-[10px] uppercase text-muted-foreground">Net P&L (cents)</div><div className={`font-mono text-xs ${a.netPnl > 0 ? "text-success" : a.netPnl < 0 ? "text-danger" : ""}`}>{a.netPnl}</div></div>
+          {/* Session netPnl is stored ×100 ("cents" of the paper P&L figure) —
+              but that figure is symbol-blind sim points, not currency, so
+              "(cents)" implied money that doesn't exist. Convert back and
+              label the honest unit. */}
+          <div><div className="text-[10px] uppercase text-muted-foreground">Net P&L (sim pts)</div><div className={`font-mono text-xs ${a.netPnl > 0 ? "text-success" : a.netPnl < 0 ? "text-danger" : ""}`}>{(a.netPnl / 100).toFixed(2)}</div></div>
           <div><div className="text-[10px] uppercase text-muted-foreground">Win rate</div><div className="font-mono text-xs">{a.winRate}%</div></div>
         </div>
         {a.activeWarnings.length > 0 && (
@@ -251,13 +269,20 @@ function OpenTradesPanel({ s }: { s: CockpitSummary }) {
     <Card>
       <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><FlaskConical className="h-4 w-4" />Open paper trades</CardTitle></CardHeader>
       <CardContent>
-        {t.length === 0 ? (
+        {s.openPaperTradesReadFailed ? (
+          // A failed read is NOT "flat". Render the failure, never the
+          // confident empty-state copy a genuinely-empty list gets.
+          <p className="text-sm font-medium text-warning dark:text-warning" role="alert" data-testid="cockpit-open-trades-read-failed">
+            <AlertTriangle className="inline h-3.5 w-3.5 mr-1 align-text-bottom" />
+            {s.openPaperTradesReadFailedReason ?? "Couldn't read open paper trades — positions are unknown, not zero."}
+          </p>
+        ) : t.length === 0 ? (
           <p className="text-sm text-muted-foreground">No open paper trades. They will appear here when paper execution opens positions.</p>
         ) : (
           <div className="overflow-x-auto -mx-2">
             <table className="w-full text-xs">
               <thead className="text-[10px] uppercase text-muted-foreground">
-                <tr><th className="text-left px-2 py-1">Symbol</th><th className="text-left px-2 py-1">Side</th><th className="text-right px-2 py-1">Entry</th><th className="text-right px-2 py-1 hidden sm:table-cell">SL</th><th className="text-right px-2 py-1 hidden sm:table-cell">TP</th><th className="text-right px-2 py-1">Unrealized P&L</th></tr>
+                <tr><th className="text-left px-2 py-1">Symbol</th><th className="text-left px-2 py-1">Side</th><th className="text-right px-2 py-1">Entry</th><th className="text-right px-2 py-1 hidden sm:table-cell">SL</th><th className="text-right px-2 py-1 hidden sm:table-cell">TP</th><th className="text-right px-2 py-1">Unrealized P&L (sim pts)</th></tr>
               </thead>
               <tbody>
                 {t.map(o => {
@@ -301,16 +326,34 @@ function TodayPerfPanel({ s }: { s: CockpitSummary }) {
     <Card>
       <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><Icon className={`h-4 w-4 ${tone}`} />Today's performance</CardTitle></CardHeader>
       <CardContent className="text-sm">
-        {t.totalTrades === 0 ? (
+        {t.readFailed ? (
+          // A failed paper-orders read is NOT a flat day — the empty-state
+          // copy below asserts a measured "no trades" from no measurement.
+          <p className="font-medium text-warning dark:text-warning" role="alert" data-testid="cockpit-today-perf-read-failed">
+            <AlertTriangle className="inline h-3.5 w-3.5 mr-1 align-text-bottom" />
+            {t.readFailedReason ?? "Couldn't read today's paper performance — results are unknown, not zero."}
+          </p>
+        ) : t.totalTrades === 0 ? (
           <p className="text-muted-foreground">No closed paper trades yet today. Take only A-grade setups and debrief each one.</p>
         ) : (
-          <div className="grid grid-cols-2 gap-2">
-            <div><div className="text-[10px] uppercase text-muted-foreground">Trades</div><div className="font-mono">{t.totalTrades}</div></div>
-            <div><div className="text-[10px] uppercase text-muted-foreground">W / L / BE</div><div className="font-mono">{t.wins} / {t.losses} / {t.breakEven}</div></div>
-            <div><div className="text-[10px] uppercase text-muted-foreground">Net P&L</div><div className={`font-mono ${tone}`}>{t.netPnl}</div></div>
-            <div><div className="text-[10px] uppercase text-muted-foreground">Win rate</div><div className="font-mono">{t.winRate}%</div></div>
-            <div className="col-span-2"><div className="text-[10px] uppercase text-muted-foreground">Day rating</div><Badge variant="outline" className={tone}>{t.dayRating}</Badge></div>
-          </div>
+          <>
+            <div className="grid grid-cols-2 gap-2">
+              <div><div className="text-[10px] uppercase text-muted-foreground">Trades</div><div className="font-mono">{t.totalTrades}</div></div>
+              <div><div className="text-[10px] uppercase text-muted-foreground">W / L / BE</div><div className="font-mono">{t.wins} / {t.losses} / {t.breakEven}</div></div>
+              <div><div className="text-[10px] uppercase text-muted-foreground">Net P&L (sim pts)</div><div className={`font-mono ${tone}`}>{t.netPnl}</div></div>
+              <div><div className="text-[10px] uppercase text-muted-foreground">Win rate</div><div className="font-mono">{t.winRate}%</div></div>
+              <div className="col-span-2"><div className="text-[10px] uppercase text-muted-foreground">Day rating</div><Badge variant="outline" className={tone}>{t.dayRating}</Badge></div>
+            </div>
+            {(t.syntheticPricedTrades ?? 0) > 0 && (
+              // Mock-settled closes must not read as market outcomes: non-EE
+              // paper orders are SL/TP-settled against a deterministic
+              // synthetic price model, and their P&L is inside these totals.
+              <p className="text-xs text-warning dark:text-warning mt-2" data-testid="cockpit-today-perf-synthetic-note">
+                {t.syntheticPricedTrades} of {t.totalTrades} close{t.totalTrades === 1 ? " was" : "s were"} settled
+                against the synthetic price model, not market data — totals include those.
+              </p>
+            )}
+          </>
         )}
       </CardContent>
     </Card>

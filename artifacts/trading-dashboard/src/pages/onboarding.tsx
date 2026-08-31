@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -6,10 +7,16 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
 import { GraduationCap, Check, SkipForward, RotateCcw, ShieldOff, Lock, BookOpen } from "lucide-react";
+import { useCanOpenRoute } from "@/lib/useCanOpenRoute";
 
 const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
-interface Step { step_id: string; title: string; description: string; page_route: string; action_type: string; required: boolean; help_text: string; safety_note: string }
+/** `page_route` mirrors the server catalogue (lib/onboarding/steps.ts): a real
+ *  trader-reachable route, or null = no page. Each link is additionally
+ *  re-checked against THIS viewer's tier before rendering (useCanOpenRoute) —
+ *  the same RANK 51 second line of defence the Help Center uses, so a pending
+ *  trader is never offered a link RouteAccessGuard would silently bounce. */
+interface Step { step_id: string; title: string; description: string; page_route: string | null; action_type: string; required: boolean; help_text: string; safety_note: string }
 
 interface Status {
   onboardingId: string; status: string; currentStep: string | null;
@@ -36,6 +43,7 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export default function OnboardingPage() {
+  const canOpen = useCanOpenRoute();
   const [status, setStatus] = useState<Status | null>(null);
   const [liveTrading, setLiveTrading] = useState<LiveTradingInfo | null>(null);
   const [steps, setSteps] = useState<Step[]>([]);
@@ -96,8 +104,10 @@ export default function OnboardingPage() {
             {status.status === "NOT_STARTED" && <Button onClick={start} disabled={busy !== null}>Start Onboarding</Button>}
             {status.status !== "NOT_STARTED" && <Button variant="outline" onClick={reset} disabled={busy !== null}><RotateCcw className="h-3 w-3 mr-1" />Reset</Button>}
           </div>
+          {/* "Use the Trading Cockpit as your home base" named a page removed in
+              Phase 3 — the real home base is the cockpit home page at "/". */}
           {status.walkthroughCompleted && (
-            <Alert><AlertTitle>Onboarding complete</AlertTitle><AlertDescription className="text-xs">Onboarding never changes your trading mode — check the mode chip for your current mode. Use the Trading Cockpit as your home base.</AlertDescription></Alert>
+            <Alert><AlertTitle>Onboarding complete</AlertTitle><AlertDescription className="text-xs">Onboarding never changes your trading mode — check the mode chip for your current mode. Your home base is the cockpit — the app home page.</AlertDescription></Alert>
           )}
         </CardContent>
       </Card>
@@ -142,7 +152,12 @@ export default function OnboardingPage() {
                     <div className="flex flex-wrap gap-2 mt-2">
                       {!isCompleted && <Button size="sm" variant="outline" onClick={() => complete(s.step_id)} disabled={busy !== null}><Check className="h-3 w-3 mr-1" />Mark complete</Button>}
                       {!isCompleted && !isSkipped && !s.required && <Button size="sm" variant="ghost" onClick={() => skip(s.step_id)} disabled={busy !== null}><SkipForward className="h-3 w-3 mr-1" />Skip</Button>}
-                      {s.page_route && s.page_route !== "/onboarding" && <a className="text-xs underline self-center" href={`${BASE}${s.page_route}`}>Open {s.page_route} →</a>}
+                      {/* Link only when the route exists AND this viewer's tier can
+                          actually open it — a link RouteAccessGuard would silently
+                          bounce home must render NO link, never a dead one. */}
+                      {s.page_route && s.page_route !== "/onboarding" && canOpen(s.page_route) && (
+                        <Link className="text-xs underline self-center" href={s.page_route}>Open {s.page_route} →</Link>
+                      )}
                     </div>
                   </div>
                 </div>

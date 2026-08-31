@@ -53,18 +53,18 @@ export async function evaluateGates(): Promise<{ gates: Gate[]; criticalIssues: 
   const gates: Gate[] = [];
   const push = (key: string, label: string, pass: boolean, detail?: string) => gates.push({ key, label, pass, detail });
 
-  // Route + API health (router is up if this code runs).
-  push("api_health", "API health", true, "Express router responding");
-  push("route_health", "Route health", true, "All routes registered");
+  // Every gate below is PROBED — a gate whose subject this module cannot
+  // actually observe is not listed at all. The former hard-coded pass:true
+  // gates (api_health "Express router responding", route_health "All routes
+  // registered", simulator_trade_pass, ai_simulator_pass, live_intent_pass
+  // "Queue endpoints reachable", mt5_deferred_honesty) were dead gauges: they
+  // rendered as green PASS pills and put a floor under the Readiness Score
+  // with the server half-broken. Real endpoint/route probing lives in
+  // lib/systemHealth/health.ts (System Health page).
 
   // OMS / simulator
   const oms = omsDashboardSummary();
   push("oms_pass", "OMS pass", typeof oms === "object" && oms !== null);
-  push("simulator_trade_pass", "Simulator trade pass", true, "Paper engine alive");
-  push("ai_simulator_pass", "AI simulator pass", true, "Autopilot engine reachable");
-
-  // Live intent layer (mt5-deferred but pipeline up)
-  push("live_intent_pass", "Live intent pass", true, "Queue endpoints reachable");
 
   // Risk
   const perms = permissions();
@@ -80,9 +80,12 @@ export async function evaluateGates(): Promise<{ gates: Gate[]; criticalIssues: 
   const recent = await listAudit({ limit: 25 });
   push("audit_pass", "Audit pass", Array.isArray(recent));
 
-  // MT5 deferred honesty — realBrokerExecutionAvailable is derived from the
-  // live arming switch, never asserted as a constant.
-  push("mt5_deferred_honesty_pass", "MT5 deferred honesty", true, "realBrokerExecutionAvailable read from the live arming switch at request time");
+  // Broker-lock honesty, as an actual probe: the fact this module CAN check is
+  // whether the live arming switch is readable right now. A failed read means
+  // every "real broker locked/armed" claim downstream is UNKNOWN.
+  const armed = await readLiveBrokerExecutionArmed();
+  push("arm_switch_readable", "Live arm switch readable", armed !== null,
+    armed === null ? "read failed — broker-lock state UNKNOWN" : `read OK (armed=${armed})`);
 
   // No critical open bugs (P0 or severity=critical, not closed/wont_fix/fixed)
   const open = await db.select({ feedbackId: feedbackTable.feedbackId, title: feedbackTable.title })
@@ -153,6 +156,34 @@ export async function diagnosticsPackage() {
     })),
     notes: "Diagnostics package excludes secrets, MT5 tokens, and API keys by construction.",
   };
+}
+
+/**
+ * Open P0/P1 issues from the real feedback tracker — the source behind the
+ * Release Notes "Known issues" section. Returns null when the query fails so
+ * callers render "unavailable", never a fabricated empty list.
+ */
+export async function listOpenKnownIssues(): Promise<Array<{ feedbackId: string; title: string; priority: string; status: string }> | null> {
+  try {
+    const rows = await db.select({
+      feedbackId: feedbackTable.feedbackId,
+      title: feedbackTable.title,
+      priority: feedbackTable.priority,
+      status: feedbackTable.status,
+    })
+      .from(feedbackTable)
+      .where(
+        and(
+          inArray(feedbackTable.status, ["NEW", "TRIAGED", "IN_PROGRESS", "NEEDS_RETEST"]),
+          inArray(feedbackTable.priority, ["P0", "P1"]),
+        ),
+      )
+      .orderBy(desc(feedbackTable.createdAt))
+      .limit(50);
+    return rows;
+  } catch {
+    return null;
+  }
 }
 
 export async function listFeedback(opts: { limit?: number; status?: string } = {}) {

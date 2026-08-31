@@ -30,6 +30,7 @@ import {
   deriveResult,
   deriveReview,
   higherUrgency,
+  realizedFromClosedLegs,
   EMPTY_PERSONALITY_COUNTS,
   type JournalEntrySnapshot,
   type PersonalityClosedTrade,
@@ -71,6 +72,15 @@ export async function recordScalpBasketsObservation(
   userId: number,
   accountMode: JournalAccountMode,
   snapshots: ObservationSnapshot[],
+  opts: {
+    /**
+     * True ONLY when the live-positions feed itself is fresh (broker sync
+     * within the liveness window). Absence from a STALE feed is not evidence
+     * of a close — a bridge outage would otherwise finalize entries as
+     * "Closed" for positions still open at the broker. Fail-closed default.
+     */
+    feedIsFresh?: boolean;
+  } = {},
 ): Promise<void> {
   try {
     const now = new Date();
@@ -81,7 +91,10 @@ export async function recordScalpBasketsObservation(
       await upsertOpenEntry(userId, accountMode, s, now);
     }
 
-    // 2) Finalize entries that are OPEN in the DB but no longer present live.
+    // 2) Finalize entries that are OPEN in the DB but no longer present live —
+    //    ONLY when the feed is fresh enough for "absent" to mean "closed".
+    //    On a stale feed the entries honestly stay OPEN until evidence returns.
+    if (opts.feedIsFresh !== true) return;
     const dbOpen = await db.select().from(scalpJournalEntriesTable).where(and(
       eq(scalpJournalEntriesTable.userId, userId),
       eq(scalpJournalEntriesTable.accountMode, accountMode),
@@ -180,7 +193,12 @@ async function finalizeClosedEntry(
   now: Date,
 ): Promise<void> {
   // Authoritative realized P/L for LIVE: sum broker-closed positions matched by
-  // ticket. DEMO has no persistent closed store → estimate from last floating.
+  // ticket. KNOWN-grade ONLY when EVERY leg ticket matched a closed row with a
+  // real figure — a partial sum (legs dropped by the staleness filter or never
+  // marked closed) silently vanishing from a "realised" number is exactly the
+  // fabrication this guards against. Anything partial falls through to the
+  // honestly-labelled ESTIMATED path. DEMO has no persistent closed store →
+  // estimate from last floating.
   let realizedPl: number | null = null;
   let exitPrice: number | null = null;
   if (accountMode === "LIVE_SHARED") {
@@ -191,18 +209,21 @@ async function finalizeClosedEntry(
         inArray(arxLivePositionsTable.brokerTicket, tickets),
         isNotNull(arxLivePositionsTable.closedAt),
       ));
-      if (closed.length > 0) {
-        let sum = 0;
-        let any = false;
-        for (const c of closed) {
-          if (c.floatingPl != null && Number.isFinite(Number(c.floatingPl))) {
-            sum += Number(c.floatingPl);
-            any = true;
-          }
-          if (c.currentPrice != null) exitPrice = Number(c.currentPrice);
-        }
-        if (any) realizedPl = sum;
-      }
+      const summed = realizedFromClosedLegs(
+        tickets.length,
+        closed.map((c) => ({
+          floatingPl:
+            c.floatingPl != null && Number.isFinite(Number(c.floatingPl))
+              ? Number(c.floatingPl)
+              : null,
+          currentPrice:
+            c.currentPrice != null && Number.isFinite(Number(c.currentPrice))
+              ? Number(c.currentPrice)
+              : null,
+        })),
+      );
+      realizedPl = summed.realizedPl;
+      exitPrice = summed.exitPrice;
     }
   }
 

@@ -45,6 +45,7 @@ import {
   type ExposurePosition,
   type ExposureBudget,
   type CapitalEfficiencyScore,
+  missionSignalsFromPlatform,
   type ExecHealthBrokerSeverity,
   type ExecHealthFeedStatus,
   type ExecHealthSpread,
@@ -56,7 +57,45 @@ import type { SymbolFeedVerdict } from "@workspace/domain/safety-contracts/synth
 import { getBrokerHealthVerdict } from "../routes/brokerHealth.js";
 import { evaluateEntryDataSufficiency } from "./live/entryDataSufficiency.js";
 import { resolveExpectedMovePips } from "./marketModel/expectedMovePips.js";
+import { getStatus as getSafetyCoreStatus } from "./safetyCore.js";
 import type { MissionLiveSignals } from "./missionRiskService.js";
+
+// ── Honest mission live signals (kill switch / broker / feed truth) ──────────
+//
+// Every production call into the mission risk/emergency read must feed it what
+// the platform ACTUALLY observed — an audit found the callers hardcoding the
+// neutral constants (killSwitchActive:false, brokerConnected:true,
+// feedStatus:"live", quoteFresh:true), which made the Risk Control card's
+// emergency alert and mode escalations structurally unreachable and persisted a
+// riskJson asserting a live feed nobody observed. This resolver reads the real
+// seams and maps them through the PURE `missionSignalsFromPlatform`:
+//   - kill switch: safety_core.kill_switch_engaged — the /emergency page's
+//     ENGAGE KILL SWITCH, the same switch the live command pipeline consults.
+//     An unreadable switch reads as ENGAGED (fail-closed, mirroring the
+//     pipeline: not being able to read the stop button is not an all-clear).
+//   - broker/feed/quote: getBrokerHealthVerdict() — the same seam the Phase 7
+//     pulse health surface trusts. An unreadable verdict maps to
+//     disconnected/unknown/stale (fail-safe: it trips protection, never relaxes).
+// The signals channel stays ADDITIVE + STRICTER-ONLY: Phase 7 still re-derives
+// per-symbol feed truth at dispatch and can only combine toward the stricter
+// value, and the live pipeline re-derives every safety signal server-side.
+export async function resolveMissionLiveSignals(): Promise<MissionLiveSignals> {
+  let killSwitchEngaged: boolean;
+  try {
+    killSwitchEngaged = (await getSafetyCoreStatus()).killSwitchEngaged === true;
+  } catch {
+    // Fail-closed: an unreadable kill switch is reported as engaged.
+    killSwitchEngaged = true;
+  }
+  let brokerStatus: string | null;
+  try {
+    brokerStatus = (await getBrokerHealthVerdict()).status;
+  } catch {
+    // Honest unknown — never fabricates a connected broker or a live feed.
+    brokerStatus = null;
+  }
+  return missionSignalsFromPlatform({ killSwitchEngaged, brokerStatus });
+}
 
 // Net-profit blockers that are fail-closed "we could not verify" states rather
 // than positively-evidenced rejections. These are surfaced as warnings at the

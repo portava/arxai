@@ -15,11 +15,16 @@
 //    append-only trail of when each user viewed their open positions.
 
 import { Router, type Request } from "express";
-import { desc, eq, sql } from "drizzle-orm";
-import { db, mt5StateTable, mt5DemoCommandsTable } from "@workspace/db";
+import { and, desc, eq, isNull, ne, or, sql } from "drizzle-orm";
+import { db, mt5StateTable, mt5DemoCommandsTable, mt5ConnectionTable } from "@workspace/db";
 import { arxLivePositionsTable } from "@workspace/db";
 import { requireUser } from "../lib/auth/middleware.js";
 import { openLiveExposureCondition } from "../lib/live/livePositionExposure.js";
+import {
+  isSnapshotReliable,
+  classifyRow,
+  POSITION_SYNC_INCOMPLETE_WARNING,
+} from "../lib/live/positionFreshness.js";
 import { getUserModeScope, modeScopeEnvelope } from "../lib/modeScope/getUserModeScope.js";
 import { resolveLivePositionVisibility } from "../lib/modeScope/livePositionVisibility.js";
 
@@ -83,16 +88,39 @@ router.get("/me/positions/all", requireUser, async (req, res) => {
     ? await db.select().from(arxLivePositionsTable)
         .where(openLiveExposureCondition(userId))
     : [];
+  // Canonical freshness rule (lib/live/positionFreshness.ts) — shared verbatim
+  // with /api/me/live/positions, the surface this feed claims one truth with.
+  // A stale lastSyncedAt NEVER hides a row on its own: a stale/missing row is
+  // dropped ONLY when a reliable recent snapshot excluded it (broker-confirmed
+  // absent). The old relative "newest row − 90s" floor silently hid lagging
+  // rows with no snapshot-reliability check and no warning, so the same open
+  // broker position could show on OpenLivePositions (flagged "confirming…")
+  // yet vanish from this picker — reading as closed/gone.
   const LIVE_STALE_MS = 90_000;
-  const newestLiveSync = liveRowsAll.reduce((max, r) => {
-    const t = r.lastSyncedAt ? new Date(r.lastSyncedAt).getTime() : 0;
-    return t > max ? t : max;
-  }, 0);
-  const liveFloor = newestLiveSync > 0 ? newestLiveSync - LIVE_STALE_MS : 0;
+  const now = Date.now();
+  // Reliability marker: the bridge's "complete sweep landed" stamp
+  // (last_positions_snapshot_at) across the user's non-revoked, non-demo
+  // bridges — the same query /api/me/live/positions runs.
+  const snapMarkerRows = includeLive
+    ? await db
+        .select({ t: sql<string | null>`max(${mt5ConnectionTable.lastPositionsSnapshotAt})` })
+        .from(mt5ConnectionTable)
+        .where(and(
+          eq(mt5ConnectionTable.userId, userId),
+          ne(mt5ConnectionTable.status, "revoked"),
+          or(isNull(mt5ConnectionTable.accountType), ne(mt5ConnectionTable.accountType, "demo")),
+        ))
+    : [];
+  const snapshotAtMs = snapMarkerRows[0]?.t ? new Date(snapMarkerRows[0].t).getTime() : null;
+  const snapshotReliable = isSnapshotReliable(snapshotAtMs, LIVE_STALE_MS, now);
+  const classifyOf = (r: (typeof liveRowsAll)[number]) =>
+    classifyRow(r.lastSyncedAt ? new Date(r.lastSyncedAt).getTime() : null,
+      { windowMs: LIVE_STALE_MS, now, snapshotReliable });
   const liveRows = liveRowsAll.filter((r) => {
     if (r.closedAt) return false;
-    const t = r.lastSyncedAt ? new Date(r.lastSyncedAt).getTime() : 0;
-    return t >= liveFloor;
+    // Hide ONLY broker-confirmed-absent ghosts; stale rows stay visible
+    // (confirmation pending) while the snapshot is unreliable.
+    return !classifyOf(r).brokerConfirmedAbsent;
   });
   const live = liveRows.map((r) => ({
     scope: "live" as const,
@@ -105,10 +133,18 @@ router.get("/me/positions/all", requireUser, async (req, res) => {
     stopLoss: r.stopLoss != null ? Number(r.stopLoss) : null,
     takeProfit: r.takeProfit != null ? Number(r.takeProfit) : null,
     floatingPnl: r.floatingPl != null ? Number(r.floatingPl) : null,
+    // When this row's prices/P&L were last confirmed by the EA bridge (ISO),
+    // or null when never synced. Lets clients label a stale floating P/L
+    // honestly ("as of Xm ago") instead of rendering it as a live number.
+    lastSyncedAt: r.lastSyncedAt ? new Date(r.lastSyncedAt).toISOString() : null,
     openedAt: r.openedAt instanceof Date ? r.openedAt.toISOString() : String(r.openedAt ?? ""),
     sourceCommandId: r.sourceCommandId ?? null,
     accountMode: "LIVE" as const,
     source: "MT5_LIVE_BRIDGE" as const,
+    // Per-row honesty, same tokens as /api/me/live/positions: STALE/MISSING
+    // rows are kept visible and flagged pending broker confirmation.
+    freshness: classifyOf(r).freshness,
+    confirmation: classifyOf(r).confirmation,
   }));
 
   // DEMO — pull latest mt5_state row for this user, then map positions.
@@ -162,10 +198,18 @@ router.get("/me/positions/all", requireUser, async (req, res) => {
     currentAccountMode: scope.currentAccountMode,
   }, "positions.unified.read");
 
+  // Shared honest banner: live rows exist but the latest EA snapshot is
+  // unreliable, so the open book may not match the broker yet. Same copy the
+  // sibling live surfaces emit.
+  const snapshotWarning: string | null =
+    includeLive && !snapshotReliable && live.length > 0 ? POSITION_SYNC_INCOMPLETE_WARNING : null;
+
   res.json({
     ok: true,
     live, demo,
     liveCount: live.length, demoCount: demo.length,
+    snapshotWarning,
+    snapshotReliable,
     notLiveReason,
     ...modeScopeEnvelope(scope),
   });

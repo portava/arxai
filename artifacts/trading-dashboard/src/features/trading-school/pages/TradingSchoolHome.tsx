@@ -11,6 +11,7 @@ import { RubyAvatar } from "@/components/ruby/RubyAvatar";
 import { buildSteps, BADGES, PRACTICE_LABS, buildSchoolDisclaimer } from "../data/content";
 import { useSchoolProgress, completionPct } from "../lib/progress";
 import { SchoolPageHeader, RubyTeacherCard, SchoolDisclaimer, askRuby } from "../components/SchoolUI";
+import { SchoolSyncNotice } from "../components/SchoolSyncNotice";
 import {
   GraduationCap, BookOpen, Brain, FlaskConical, Trophy, Calculator,
   ScrollText, ArrowRight, Sparkles, ChevronRight, Award,
@@ -43,6 +44,10 @@ export default function TradingSchoolHome() {
           <Sparkles className="h-4 w-4" /> Ask {name} to Explain
         </button>
       </div>
+
+      {/* Failed-sync notice — the progress numbers below are local-cache-only
+          while this renders (see SchoolSyncNotice). */}
+      <SchoolSyncNotice />
 
       {/* Continue learning + progress */}
       <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">

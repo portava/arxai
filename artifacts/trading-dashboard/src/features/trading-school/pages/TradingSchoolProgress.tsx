@@ -8,6 +8,7 @@ import { Progress } from "@/components/ui/progress";
 import { STEPS, BADGES } from "../data/content";
 import { useSchoolProgress, completionPct, bestScore, resetProgress } from "../lib/progress";
 import { SchoolPageHeader } from "../components/SchoolUI";
+import { SchoolSyncNotice } from "../components/SchoolSyncNotice";
 import { Trophy, Award, RotateCcw, CheckCircle2, Circle } from "lucide-react";
 
 function fmtDate(iso: string | null) {
@@ -27,6 +28,10 @@ export default function TradingSchoolProgress() {
   return (
     <div className="mx-auto w-full max-w-[1000px] space-y-4 p-4 md:p-6 pb-32 md:pb-6" data-testid="page-school-progress">
       <SchoolPageHeader title="My Progress" subtitle="Your journey through Trading School." icon={Trophy} />
+
+      {/* Failed-sync notice — completion, "Not attempted" labels and dates
+          below are local-cache-only while this renders. */}
+      <SchoolSyncNotice />
 
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="rounded-2xl border border-border bg-card p-4 sm:col-span-2">

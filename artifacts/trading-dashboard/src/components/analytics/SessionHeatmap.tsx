@@ -1,5 +1,14 @@
 type SessionData = Record<string, { trades: number; pnl: number; wins: number }>;
 
+// Paper P/L is a SYNTHETIC unit — (exit − entry) × lots × 100, matching the
+// paper-execution engine's convention — NOT account currency. Rendering it with
+// a "$" sign would fabricate a dollar figure (a 10-pip EURUSD win at 0.01 lots
+// is 0.001 "units", not $0). Format without a currency sign, keeping small
+// magnitudes visible instead of collapsing them to "0".
+export function fmtSyntheticPnl(p: number): string {
+  return Math.abs(p) < 10 ? p.toFixed(2) : p.toFixed(0);
+}
+
 export function SessionHeatmap({ data, isLoading, isError }: {
   // null = the read did not deliver a usable session dataset (pending body,
   // error body, missing key). Never substitute {} — an empty object renders
@@ -64,7 +73,7 @@ export function SessionHeatmap({ data, isLoading, isError }: {
               style={{ backgroundColor: tone }}>
               <div className="text-[10px] uppercase tracking-wide text-foreground/80">{s}</div>
               <div className={`text-base font-bold ${d.pnl >= 0 ? "text-success" : "text-danger"}`}>
-                ${d.pnl.toFixed(0)}
+                {fmtSyntheticPnl(d.pnl)}
               </div>
               <div className="text-[10px] text-foreground/70">
                 {d.trades} trades · {Math.round((d.wins / d.trades) * 100)}% win
@@ -73,6 +82,14 @@ export function SessionHeatmap({ data, isLoading, isError }: {
           );
         })}
       </div>
+      {/* Honest unit + data-window caption: figures are synthetic units (not
+          account currency) and cover the closed trades within the backend's
+          most-recent-1000-paper-orders window. */}
+      <p className="mt-2 text-[10px] text-txt-muted" data-testid="session-heatmap-caption">
+        P/L in synthetic units — (exit − entry) × lots × 100, not account currency.
+        Window: your {sessions.reduce((n, s) => n + (data[s]?.trades ?? 0), 0)} most recent
+        closed paper trades (up to 1,000 orders scanned).
+      </p>
     </div>
   );
 }

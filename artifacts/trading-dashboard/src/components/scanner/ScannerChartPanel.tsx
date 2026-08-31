@@ -267,7 +267,26 @@ type ChartPosition = {
   takeProfit: number | null;
   floatingPnl: number | null;
   accountMode: "DEMO" | "LIVE";
+  // Live rows only (server-emitted): when the EA bridge last confirmed this
+  // row's prices/P&L, and the server's freshness verdict for it. A STALE /
+  // MISSING row's floating P/L is a last-known value, NOT a live number — the
+  // row must say so instead of rendering green/red as if it were current.
+  lastSyncedAt?: string | null;
+  freshness?: "FRESH" | "STALE" | "MISSING";
 };
+
+/** Human age of a sync timestamp ("just now" / "3m ago" / "2h 5m ago"). */
+function syncAgeLabel(iso: string | null | undefined, nowMs: number): string | null {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return null;
+  const mins = Math.max(0, Math.floor((nowMs - t) / 60_000));
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m > 0 ? `${h}h ${m}m ago` : `${h}h ago`;
+}
 
 type ChartPending = {
   id: number;
@@ -459,6 +478,12 @@ export function ScannerChartPanel() {
 
   const [positions, setPositions] = useState<ChartPosition[]>([]);
   const [pending, setPending] = useState<ChartPending[]>([]);
+  // Server verdict on the position sync itself (envelope `snapshotWarning`):
+  // non-null when live rows exist but the latest EA snapshot is unreliable.
+  const [positionSyncWarning, setPositionSyncWarning] = useState<string | null>(null);
+  // Distinct ERROR state for the positions poll: a failed refresh clears the
+  // rows (safe default) but must not be indistinguishable from "no positions".
+  const [positionsFetchFailed, setPositionsFetchFailed] = useState(false);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   // Chart instance handle, kept so the SEPARATE data effect can push candles +
@@ -1070,12 +1095,22 @@ export function ScannerChartPanel() {
         const live = Array.isArray(posRes?.live) ? (posRes.live as ChartPosition[]) : [];
         const demo = Array.isArray(posRes?.demo) ? (posRes.demo as ChartPosition[]) : [];
         setPositions([...live, ...demo]);
+        // Envelope-level sync verdict: a successful read of STALE data is not
+        // the same as fresh data — surface the server's own warning copy.
+        setPositionSyncWarning(
+          posRes && typeof posRes.snapshotWarning === "string" ? posRes.snapshotWarning : null,
+        );
+        setPositionsFetchFailed(posRes == null);
         const drafts = Array.isArray(penRes?.drafts) ? (penRes.drafts as ChartPending[]) : [];
         setPending(drafts.filter((d) => d.status !== "cancelled" && d.pendingStatus !== "CANCELLED"));
       } catch {
         if (!cancelled) {
           setPositions([]);
           setPending([]);
+          setPositionSyncWarning(null);
+          // Error is NOT an empty book — remember it so the panel can say
+          // "couldn't refresh" instead of silently implying "no positions".
+          setPositionsFetchFailed(true);
         }
       }
     };
@@ -2775,11 +2810,32 @@ export function ScannerChartPanel() {
               </div>
             )}
 
+            {/* Distinct error-vs-empty: a failed positions poll cleared the rows,
+                but that is a refresh failure — NOT proof of an empty book. */}
+            {positionsFetchFailed && (
+              <div className="text-[11px] text-warning/80" data-testid="scanner-chart-positions-error">
+                Open positions couldn't be refreshed just now — this is a temporary sync issue, not an empty book.
+              </div>
+            )}
+
             {/* Phase 5/6 — manage the user's own open positions + pending orders
                 directly from the chart. Every action is backend-gated. */}
             {(symbolPositions.length > 0 || symbolPending.length > 0) && (
               <div className="space-y-1.5 rounded-md border border-border bg-background/40 p-2" data-testid="scanner-chart-manage">
-                {symbolPositions.map((p, i) => (
+                {positionSyncWarning && (
+                  <div className="text-[10px] text-warning/80" data-testid="scanner-chart-pos-sync-warning">
+                    {positionSyncWarning}
+                  </div>
+                )}
+                {symbolPositions.map((p, i) => {
+                  // Server freshness verdict — a STALE/MISSING live row's P/L
+                  // is a last-known value, never rendered as a live number.
+                  const isStaleRow = p.freshness === "STALE" || p.freshness === "MISSING";
+                  const ageLabel = syncAgeLabel(p.lastSyncedAt, Date.now());
+                  const staleActionTitle = isStaleRow
+                    ? `Position data is not confirmed fresh${ageLabel ? ` (last sync ${ageLabel})` : ""} — the broker will act on its CURRENT prices, which may differ from what is shown.`
+                    : undefined;
+                  return (
                   <div key={`pos-${p.brokerTicket ?? i}`} className="flex flex-wrap items-center gap-2 text-[11px]" data-testid={`scanner-chart-pos-${p.brokerTicket ?? i}`}>
                     <Badge variant="outline" className={p.accountMode === "LIVE" ? "border-danger/25 text-danger" : "border-primary/25 text-primary"}>
                       {p.accountMode}
@@ -2787,20 +2843,38 @@ export function ScannerChartPanel() {
                     <span className={p.side === "BUY" ? "font-semibold text-success" : "font-semibold text-danger"}>{p.side}</span>
                     <span className="font-mono text-muted-foreground">{p.lotSize ?? "—"} @ {p.entryPrice != null ? fmt(p.entryPrice) : "—"}</span>
                     {p.floatingPnl != null && (
-                      <span className={`font-mono ${p.floatingPnl >= 0 ? "text-success" : "text-danger"}`}>{p.floatingPnl >= 0 ? "+" : ""}{p.floatingPnl.toFixed(2)}</span>
+                      <span
+                        className={`font-mono ${isStaleRow ? "text-muted-foreground" : p.floatingPnl >= 0 ? "text-success" : "text-danger"}`}
+                        title={isStaleRow ? staleActionTitle : undefined}
+                      >
+                        {p.floatingPnl >= 0 ? "+" : ""}{p.floatingPnl.toFixed(2)}
+                      </span>
+                    )}
+                    {isStaleRow && (
+                      <Badge
+                        variant="outline"
+                        className="border-warning/30 text-[10px] text-warning"
+                        title={staleActionTitle}
+                        data-testid={`scanner-chart-pos-stale-${p.brokerTicket ?? i}`}
+                      >
+                        {ageLabel ? `as of ${ageLabel}` : "awaiting sync"}
+                      </Badge>
                     )}
                     {canTrade && p.brokerTicket && (
                       <div className="ml-auto flex items-center gap-1">
-                        <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" disabled={busy === `close:${p.brokerTicket}:1`} onClick={() => void closePosition(p, 1)} data-testid={`scanner-chart-close-${p.brokerTicket}`}>
+                        {/* On a stale row the actions stay available (the broker
+                            executes on ITS live prices) but each carries the
+                            honest warning that the displayed picture is old. */}
+                        <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" title={staleActionTitle} disabled={busy === `close:${p.brokerTicket}:1`} onClick={() => void closePosition(p, 1)} data-testid={`scanner-chart-close-${p.brokerTicket}`}>
                           Close
                         </Button>
-                        <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" disabled={busy === `close:${p.brokerTicket}:0.5`} onClick={() => void closePosition(p, 0.5)} data-testid={`scanner-chart-close-half-${p.brokerTicket}`}>
+                        <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" title={staleActionTitle} disabled={busy === `close:${p.brokerTicket}:0.5`} onClick={() => void closePosition(p, 0.5)} data-testid={`scanner-chart-close-half-${p.brokerTicket}`}>
                           50%
                         </Button>
-                        <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" disabled={busy === `be:${p.brokerTicket}` || p.entryPrice == null} onClick={() => void breakEven(p)} data-testid={`scanner-chart-be-${p.brokerTicket}`}>
+                        <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" title={staleActionTitle} disabled={busy === `be:${p.brokerTicket}` || p.entryPrice == null} onClick={() => void breakEven(p)} data-testid={`scanner-chart-be-${p.brokerTicket}`}>
                           Break-even
                         </Button>
-                        <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" disabled={busy === `rev:${p.brokerTicket}`} onClick={() => void reversePosition(p)} data-testid={`scanner-chart-reverse-${p.brokerTicket}`}>
+                        <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" title={staleActionTitle} disabled={busy === `rev:${p.brokerTicket}`} onClick={() => void reversePosition(p)} data-testid={`scanner-chart-reverse-${p.brokerTicket}`}>
                           Reverse
                         </Button>
                         {p.accountMode === "LIVE" && (isLiveDisplay ? (
@@ -2822,7 +2896,8 @@ export function ScannerChartPanel() {
                       </div>
                     )}
                   </div>
-                ))}
+                  );
+                })}
                 {symbolPending.map((o) => (
                   <div key={`pen-${o.id}`} className="flex flex-wrap items-center gap-2 text-[11px]" data-testid={`scanner-chart-pending-${o.id}`}>
                     <Badge variant="outline" className="border-warning/25 text-warning">PENDING</Badge>

@@ -100,6 +100,24 @@ export function PreTradeHeatChecklist({ symbol, className }: { symbol: string; c
     );
   }
 
+  // Honest collapse: label "unavailable" means the candle/quote feed is fully
+  // down and every grade/permission/score below would be a clock-derived
+  // default — never render those as market facts on a pre-trade surface.
+  if (r.dataQuality.label === "unavailable") {
+    return (
+      <div className={cn("rounded-xl border border-border bg-card/60 p-4", className)}>
+        <div className="flex items-center gap-2 mb-2">
+          <Flame className="h-4 w-4 text-primary" />
+          <span className="text-sm font-semibold">Timing Check</span>
+          <span className="text-xs text-txt-muted">{symbol}</span>
+        </div>
+        <p className="text-xs text-txt-muted" data-testid="timing-check-unavailable">
+          {r.dataQuality.note || `Not enough live data to produce a timing read for ${symbol}.`}
+        </p>
+      </div>
+    );
+  }
+
   const isEstimate = r.dataQuality.label === "basic_timing_estimate";
   const lowTradeability = r.tradeabilityScore < 40;
   const newsRisk = r.newsOverlay.phase !== "NONE";
@@ -157,7 +175,10 @@ export function PreTradeHeatChecklist({ symbol, className }: { symbol: string; c
       value: r.dangerScore >= 70 ? "High danger" : r.dangerScore >= 45 ? "Moderate risk" : "Normal",
       icon: <ShieldAlert className={cn("h-3.5 w-3.5 shrink-0", r.dangerScore >= 70 ? "text-danger" : r.dangerScore >= 45 ? "text-warning" : "text-success")} />,
       tone: r.dangerScore >= 70 ? "warn" : r.dangerScore >= 45 ? "caution" : "pass",
-      detail: r.trapProbability > 50 ? `Trap probability ${r.trapProbability}%` : undefined,
+      // trapProbability is an additive rule-points heuristic (uncalibrated) —
+      // render it as a score out of 100 like the other pills, never with a "%"
+      // that would present it as a measured probability.
+      detail: r.trapProbability > 50 ? `Trap score ${r.trapProbability}/100` : undefined,
     },
   ];
 

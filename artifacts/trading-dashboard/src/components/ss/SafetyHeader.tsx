@@ -84,9 +84,17 @@ export function SafetyHeader() {
               <FlaskConical className="h-3 w-3" aria-hidden="true" /> Simulator
             </span>
           )}
+          {/* HONESTY: this check only proves the TradingView library object
+              exists on window — script presence, NOT a live data feed. It must
+              not render as a green "Live Chart" pill (it stayed green with a
+              dead or stale feed). Per-symbol feed truth lives in
+              useScannerTruth / feedStatus (see market-health). */}
           {chartLive && (
-            <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-success/15 text-success border border-success/30 px-2 py-0.5 font-semibold">
-              <Activity className="h-3 w-3" aria-hidden="true" /> Live Chart
+            <span
+              className="shrink-0 inline-flex items-center gap-1 rounded-full bg-muted text-txt-muted border border-border/30 px-2 py-0.5 font-semibold"
+              title="TradingView chart library loaded — indicates script presence only, not a live data feed"
+            >
+              <Activity className="h-3 w-3" aria-hidden="true" /> Chart Library Loaded
             </span>
           )}
           {/* Sim Engine is an internal simulated price engine — never a

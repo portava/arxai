@@ -93,24 +93,66 @@ function zeroNumbers<T extends Record<string, number>>(obj: T): T {
   return out as T;
 }
 
+/** Return a copy of a flat numeric record with every value WITHHELD (null). */
+function nullNumbers<T extends Record<string, number>>(obj: T): { [K in keyof T]: null } {
+  const out: Record<string, null> = {};
+  for (const k of Object.keys(obj)) out[k] = null;
+  return out as { [K in keyof T]: null };
+}
+
+/**
+ * A masked simulator row as a NON-privileged viewer receives it. Every
+ * simulator-derived number is a typed null — a withheld measurement, never a
+ * fabricated "0" that the card could render as a measured score or that could
+ * seed a trade ticket with entry/SL/TP of 0. `withheld: true` +
+ * `withheldReason` tell the client WHY the values are absent.
+ */
+export type MaskedScannerOpportunity = Omit<
+  ScannerOpportunity,
+  | "signalStrength" | "confidenceScore" | "riskScore" | "entrySniperScore"
+  | "riskRewardRatio" | "entry" | "stopLoss" | "takeProfit" | "opportunity"
+> & {
+  signalStrength: null;
+  confidenceScore: null;
+  riskScore: null;
+  entrySniperScore: null;
+  riskRewardRatio: null;
+  entry: null;
+  stopLoss: null;
+  takeProfit: null;
+  opportunity: Omit<OpportunityScore, "score" | "factors"> & {
+    score: null;
+    factors: { [K in keyof OpportunityScore["factors"]]: null };
+  };
+  withheld: true;
+  withheldReason: string;
+};
+
 /**
  * Mask a simulator-derived opportunity for a non-privileged viewer: strip every
  * simulator-derived indicator number and present an honest "Waiting for verified
  * feed" state. Non-simulator rows (LIVE_FEED / AWAITING_FEED / HISTORY_READY)
  * are returned unchanged — they are already honest.
+ *
+ * Masked values are typed NULLS, not zeros: a zero is a confident measurement
+ * ("Conf 0 / Risk 0 / entry 0") and used to leak into the results card and the
+ * trade-ticket seed. Null + `withheld` renders as "—" with the waiting-for-feed
+ * reason, and the ticket refuses to seed from a withheld row.
  */
-export function maskSimulatedOpportunity(opp: ScannerOpportunity): ScannerOpportunity {
+export function maskSimulatedOpportunity(
+  opp: ScannerOpportunity,
+): ScannerOpportunity | MaskedScannerOpportunity {
   if (opp.dataSource !== "SIMULATOR") return opp;
   return {
     ...opp,
-    signalStrength: 0, // canonical alias of confidenceScore — masked identically
-    confidenceScore: 0,
-    riskScore: 0,
-    entrySniperScore: 0,
-    riskRewardRatio: 0,
-    entry: 0,
-    stopLoss: 0,
-    takeProfit: 0,
+    signalStrength: null, // canonical alias of confidenceScore — masked identically
+    confidenceScore: null,
+    riskScore: null,
+    entrySniperScore: null,
+    riskRewardRatio: null,
+    entry: null,
+    stopLoss: null,
+    takeProfit: null,
     reasonForTrade: WAITING_FOR_FEED_REASON,
     reasonToAvoid: "Read withheld until a verified live feed is available.",
     rulesPassed: [],
@@ -118,11 +160,13 @@ export function maskSimulatedOpportunity(opp: ScannerOpportunity): ScannerOpport
     statusBadge: "WAIT_FOR_CONFIRMATION",
     opportunity: {
       ...opp.opportunity,
-      score: 0,
-      // Fail-closed: every nested simulator-derived factor number is zeroed too,
-      // so no residual indicator value survives masking.
-      factors: zeroNumbers(opp.opportunity.factors),
+      score: null,
+      // Fail-closed: every nested simulator-derived factor number is withheld
+      // too, so no residual indicator value survives masking.
+      factors: nullNumbers(opp.opportunity.factors),
     },
+    withheld: true,
+    withheldReason: WAITING_FOR_FEED_REASON,
     historicalContext: undefined,
     newsContext: undefined,
     agentAdvisory: undefined,
@@ -152,7 +196,7 @@ export function maskSimulatedOpportunity(opp: ScannerOpportunity): ScannerOpport
 export function projectOpportunitiesForViewer(
   opps: ScannerOpportunity[],
   role: string | null | undefined,
-): ScannerOpportunity[] {
+): Array<ScannerOpportunity | MaskedScannerOpportunity> {
   if (viewerSeesSimulatorDetail(role)) return opps;
   return opps.map(maskSimulatedOpportunity);
 }

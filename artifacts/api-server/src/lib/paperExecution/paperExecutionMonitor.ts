@@ -26,6 +26,11 @@ const SIMULATED_TAG = "Simulated — paper trading does not guarantee live resul
 
 // Exported: the trading-cockpit summary prices open paper trades at read time
 // with this exact formula, so the two surfaces can never disagree on scale.
+//
+// P&L UNIT: "sim points" — dir × (current − entry) × lotSize × 100,
+// symbol-blind. The fixed ×100 corresponds to no real currency amount for ANY
+// instrument (no contract size, pip value, or per-symbol scaling), so every
+// surface that renders this figure must label it sim pts, never dollars/cents.
 export function unrealizedPnl(direction: string, lotSize: number, entry: number, current: number): number {
   const dir = direction === "BUY" ? 1 : -1;
   return dir * (current - entry) * lotSize * 100;
@@ -122,7 +127,7 @@ export async function runPaperMonitor(opts?: {
 
     await db.insert(paperTradeEventsTable).values({
       paperOrderId: order.id, eventType: status,
-      message: `${SIMULATED_TAG} EE-monitor ${hit} hit at ${exitPrice.toFixed(5)}, P&L ${realized.toFixed(2)}`,
+      message: `${SIMULATED_TAG} EE-monitor ${hit} hit at ${exitPrice.toFixed(5)}, P&L ${realized.toFixed(2)} sim pts`,
     }).catch(() => {});
 
     // Session accounting (Build PP): record this close against the owner's
@@ -200,7 +205,7 @@ export async function closePaperManually(orderId: number, opts?: { exitPrice?: n
   }).where(eq(paperOrdersTable.id, orderId));
   await db.insert(paperTradeEventsTable).values({
     paperOrderId: orderId, eventType: "CLOSED_MANUAL",
-    message: `${SIMULATED_TAG} EE manual close @ ${exitPrice.toFixed(5)}, P&L ${pnl.toFixed(2)}`,
+    message: `${SIMULATED_TAG} EE manual close @ ${exitPrice.toFixed(5)}, P&L ${pnl.toFixed(2)} sim pts`,
   }).catch(() => {});
 
   // Session accounting (Build PP) — same contract as the monitor close above.

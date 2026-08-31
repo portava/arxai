@@ -12,7 +12,7 @@ const u = (p: string) => `${BASE}${p}`;
 
 const POLL_MS = 5000;
 
-type Resp = { ok: boolean; live: UnifiedPosition[]; demo: UnifiedPosition[]; liveCount: number; demoCount: number; notLiveReason?: string | null };
+type Resp = { ok: boolean; live: UnifiedPosition[]; demo: UnifiedPosition[]; liveCount: number; demoCount: number; snapshotWarning?: string | null; notLiveReason?: string | null };
 
 // Lightweight in-card confirm dialogs. We do NOT use the existing
 // ClosePositionConfirmModal / StopLossTakeProfitEditor here because those are
@@ -125,6 +125,11 @@ export function PositionPickerPanel() {
         </CardHeader>
         <CardContent className="space-y-2">
           {err && <div className="rounded border border-danger/30 bg-danger/5 p-2 text-xs text-danger">Couldn't load positions: {err}</div>}
+          {!err && data?.snapshotWarning && (
+            <div data-testid="positions-snapshot-warning" className="rounded border border-warning/40 bg-warning/10 p-2 text-xs text-warning">
+              {data.snapshotWarning}
+            </div>
+          )}
           {!err && notLiveMode && !hasLive && (
             <div data-testid="positions-not-live" className="rounded border border-border bg-muted/40 p-2 text-xs text-txt-secondary">
               <div>You are not currently in live trading mode.</div>

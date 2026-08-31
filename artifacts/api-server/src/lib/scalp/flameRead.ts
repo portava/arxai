@@ -89,6 +89,12 @@ export interface FlameReadArgs {
   lateFraction: number;
   inZone: boolean;
   execution: ScalpExecutionInput | null;
+  /**
+   * Broker's typical spread snapshot in points (freshness-gated upstream).
+   * Lets the execution-quality read compare a LIVE spread (execution input)
+   * against typical and downgrade on a spike. Absent/null ⇒ no spike check.
+   */
+  specSpreadPoints?: number | null;
   htfBias: "bullish" | "bearish" | "neutral" | null;
   personality: RiskPersonality;
   scannerReason: string | null;
@@ -539,8 +545,9 @@ function whyNowFor(
 export function readFlame(args: FlameReadArgs): FlameReadCore {
   const prof = PERSONALITY[args.personality];
   const dirSign = args.direction === "BUY" ? 1 : -1;
-  // Spec spread is already folded by the engine; live spread arrives via execution.
-  const execQ = readExecutionQuality(args.execution, null);
+  // Live spread arrives via execution; the broker's typical spread (points)
+  // arrives via specSpreadPoints so the spike guard can actually compare them.
+  const execQ = readExecutionQuality(args.execution, args.specSpreadPoints ?? null);
 
   const candles = args.candles ?? [];
   const blind = candles.length < MIN_FLAME_CANDLES;

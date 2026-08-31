@@ -368,6 +368,15 @@ function RuntimeSummaryCard({ ctx, status }: { ctx: RuntimeContext; status: Retu
   return (
     <div className="rounded-md border border-border bg-background/40 p-4" data-testid="scc-runtime-card">
       <h2 className="font-semibold text-foreground">Runtime Status</h2>
+      {ctx.runtimeDataStale && (
+        <p className="mt-2 rounded border border-warning/40 bg-warning/10 px-2 py-1 text-xs text-warning" data-testid="scc-runtime-stale">
+          Stale / unreachable — the health &amp; bridge endpoints have not refreshed
+          {ctx.lastSuccessfulRefreshAt
+            ? ` since ${new Date(ctx.lastSuccessfulRefreshAt).toLocaleTimeString()}`
+            : " (never loaded)"}
+          . Values below may be out of date.
+        </p>
+      )}
       <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-txt-secondary">
         <dt className="text-txt-muted">Mode</dt><dd>{status.mode}</dd>
         <dt className="text-txt-muted">Demo-only</dt><dd>{String(ctx.paperOnly)}</dd>

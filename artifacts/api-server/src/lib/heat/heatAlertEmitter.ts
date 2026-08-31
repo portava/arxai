@@ -11,7 +11,10 @@
 //     Dedupe is handled by createNotification's UNIQUE conflict + repeatCount bump.
 //   - Per-symbol isolation via a stable djb2 hash → entityId (never collides
 //     across symbols for the same alert type).
-//   - No alert is ever emitted for "unavailable" quality reads (honest absence).
+//   - No alert is ever emitted for "unavailable" OR "basic_timing_estimate"
+//     quality reads. Alerts assert MEASURED market conditions; a session-clock-
+//     only estimate (no candles AND no quotes) has measured nothing, so it may
+//     never push one (honest absence).
 //   - heat_conflict_with_open_trade is emitted only when the user has a live or
 //     demo position open and the heat state is adversarial.
 //   - Runs fire-and-forget (caller awaits void, no throw propagation).
@@ -47,6 +50,18 @@ export const HEAT_ALERT_TYPES = [
 
 export type HeatAlertType = typeof HEAT_ALERT_TYPES[number];
 
+// ── Data-quality gate ────────────────────────────────────────────────────────
+// Every alert asserts a measured market condition (spread, trap risk, pressure,
+// structure). "unavailable" reads have no meaningful data at all, and
+// "basic_timing_estimate" reads are derived from the session clock alone (no
+// candles AND no quotes — resolveDataQuality in marketTimingBrainService), so
+// neither may ever emit an alert. Exported for the QA suite.
+export function isAlertBlockedQuality(
+  label: MarketTimingRead["dataQuality"]["label"],
+): boolean {
+  return label === "unavailable" || label === "basic_timing_estimate";
+}
+
 // ── Stable per-symbol entity id (djb2 hash → positive int32) ─────────────────
 // Ensures EURUSD and XAUUSD don't collapse into the same dedupe bucket for the
 // same alert type within the same hour.
@@ -70,8 +85,9 @@ interface HeatAlertDescriptor {
 }
 
 // ── Per heat-state descriptors ────────────────────────────────────────────────
+// Exported for the QA suite (pure function of the read + open-trade flag).
 
-function buildDescriptors(
+export function buildDescriptors(
   read: MarketTimingRead,
   hasOpenTrade: boolean,
 ): HeatAlertDescriptor[] {
@@ -97,11 +113,26 @@ function buildDescriptors(
 
   // ── 2. DANGER WINDOW (dangerScore ≥ 70 or STAND_DOWN) ────────────────────
   if (dangerScore >= 70 || entryPermission === "STAND_DOWN") {
+    // Honesty: name only the danger drivers actually present in THIS read —
+    // never a blanket "spread, trap risk, or structural breakdown active"
+    // claim that asserts measurements the read may not contain.
+    const drivers: string[] = [];
+    if (newsOverlay.blocksTrade || newsOverlay.phase === "AT_EVENT" || newsOverlay.phase === "PRE_EVENT") {
+      drivers.push("high-impact news window");
+    }
+    if (trapProbability > 65) drivers.push(`trap probability ${Math.round(trapProbability)}%`);
+    if (heatState === "TRAP_HEAT" || heatState === "FALSE_HEAT" || heatState === "EXHAUSTION_HEAT") {
+      drivers.push(`${heatState.toLowerCase().replace(/_/g, " ")} structure`);
+    }
+    if (session.fakeoutRisk > 70) drivers.push("elevated session fakeout risk");
+    const driverText = drivers.length > 0
+      ? `Drivers: ${drivers.join(", ")}.`
+      : "Composite danger score is elevated.";
     descs.push({
       alertType: "heat_danger_window",
       severity: "critical",
       title: `${sym} — Danger window active`,
-      message: `Danger score ${Math.round(dangerScore)}/100 on ${sym}. Conditions hostile — spread, trap risk, or structural breakdown active. ${entryPermission === "STAND_DOWN" ? "Stand down until conditions improve." : "Proceed with maximum caution."}`,
+      message: `Danger score ${Math.round(dangerScore)}/100 on ${sym}. ${driverText} ${entryPermission === "STAND_DOWN" ? "Stand down until conditions improve." : "Proceed with maximum caution."}`,
       actionLabel: "View heat map",
       actionTarget: "/market-heat-map",
       cooldownMs: 30 * 60_000,
@@ -263,7 +294,10 @@ function buildDescriptors(
       alertType: "heat_fakeout_trap",
       severity: "warning",
       title: `${sym} — Trap / fakeout signal`,
-      message: `Trap probability ${Math.round(trapProbability)}% on ${sym} (state: ${heatState}). False breakout or liquidity sweep may be in progress. Wait for confirmation.`,
+      // trapProbability is an additive rule-points heuristic (uncalibrated) —
+      // rendered as a /100 score, never with a "%" that would claim a measured
+      // probability (same honesty rule as liveScanner's signalStrength).
+      message: `Trap score ${Math.round(trapProbability)}/100 on ${sym} (state: ${heatState}). False breakout or liquidity sweep may be in progress. Wait for confirmation.`,
     });
   }
 
@@ -384,10 +418,12 @@ async function resolveStaleHeatAlerts(userId: number, symbol: string, read: Mark
  * Emit heat alerts for a user based on the latest MarketTimingRead.
  * Writes to user_notifications (the same table /api/me/notifications serves).
  * Fire-and-forget: caller should not await the returned promise.
- * Skips emission entirely when data quality is "unavailable".
+ * Skips emission entirely when data quality is "unavailable" OR
+ * "basic_timing_estimate" — a session-clock-only read has measured no market
+ * condition, so it may never push a market-condition alert.
  */
 export async function emitHeatAlerts(userId: number, read: MarketTimingRead): Promise<void> {
-  if (read.dataQuality.label === "unavailable") return;
+  if (isAlertBlockedQuality(read.dataQuality.label)) return;
 
   try {
     const openLive = await hasOpenLivePosition(userId, read.symbol).catch(() => false);

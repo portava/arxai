@@ -377,7 +377,9 @@ export function RubyMarketReadCard({
                       ? "blocked"
                       : level === "limited"
                         ? "delayed / limited"
-                        : "historical"}{" "}
+                        : level == null
+                          ? "unconfirmed"
+                          : "historical"}{" "}
                     read.{reason ? ` ${reason}` : ""}
                   </p>
                 ) : (

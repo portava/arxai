@@ -22,6 +22,7 @@ const summary: BasketSummary = {
   averageEntry: 1.1,
   currentPrice: 1.1005,
   combinedFloatingPl: 50,
+  plKnownLegCount: 1,
   breakEvenPrice: 1.1,
   hasUnprotectedLeg: false,
 };

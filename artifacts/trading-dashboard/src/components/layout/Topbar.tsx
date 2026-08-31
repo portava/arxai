@@ -28,6 +28,10 @@ const MODE_META = {
   DEMO: { tone: "info" as const, icon: Plug, label: "Demo" },
   LIVE_LOCKED: { tone: "warning" as const, icon: Lock, label: "Live Locked" },
   LIVE: { tone: "danger" as const, icon: Zap, label: "LIVE" },
+  // Query failed / not yet loaded / unrecognized mode value: an unknown state
+  // must never render as a confident "Mock" — especially on live-shared
+  // sessions where "Mode: Mock / MT5: OFF" is a false safety claim.
+  UNKNOWN: { tone: "warning" as const, icon: WifiOff, label: "Unknown" },
 } as const;
 
 export function Topbar({ onMobileMenu }: { onMobileMenu?: React.ReactNode }) {
@@ -53,7 +57,8 @@ export function Topbar({ onMobileMenu }: { onMobileMenu?: React.ReactNode }) {
   });
   const session = getCurrentSession();
   const sessionMeta = SESSION_META[session];
-  const modeMeta = (mt5 && MODE_META[mt5.mode as keyof typeof MODE_META]) || MODE_META.MOCK;
+  // No data (error/loading) or an unrecognized mode string → UNKNOWN, not MOCK.
+  const modeMeta = (mt5 && MODE_META[mt5.mode as keyof typeof MODE_META]) || MODE_META.UNKNOWN;
   const SessionIcon = sessionMeta.icon;
   const ModeIcon = modeMeta.icon;
 
@@ -173,9 +178,12 @@ function CompactStatusRow(p: CompactStatusRowProps) {
       tone: p.sessionTone === "bullish" ? "success" : p.sessionTone === "warning" ? "warning" : p.sessionTone === "info" ? "neutral" : "neutral" },
   ];
   if (p.unlocks.mt5) {
-    pills.push({ id: "mt5", label: "MT5", value: p.mt5?.connected ? "ON" : "OFF",
+    // p.mt5 == null means the status query failed or has not loaded — render
+    // "?" (unknown), never a confident "OFF"/disconnected claim.
+    pills.push({ id: "mt5", label: "MT5",
+      value: p.mt5 == null ? "?" : p.mt5.connected ? "ON" : "OFF",
       legacyTestId: "badge-mt5-connection",
-      tone: p.mt5?.connected ? "success" : "neutral" });
+      tone: p.mt5 == null ? "warning" : p.mt5.connected ? "success" : "neutral" });
     pills.push({ id: "mode", label: "Mode", value: p.modeLabel,
       legacyTestId: "badge-mode",
       tone: p.modeTone === "danger" ? "danger" : p.modeTone === "warning" ? "warning" : "neutral" });
@@ -190,7 +198,7 @@ function CompactStatusRow(p: CompactStatusRowProps) {
     <div className="space-y-3 text-xs">
       <DetailRow label="Trading session" value={p.sessionLabel} />
       <DetailRow label="MT5 mode" value={p.modeLabel} />
-      <DetailRow label="MT5 connected" value={p.mt5?.connected ? "yes" : "no"} />
+      <DetailRow label="MT5 connected" value={p.mt5 == null ? "unknown — status unavailable" : p.mt5.connected ? "yes" : "no"} />
       {(p.mt5?.accountSnapshot?.account ?? p.mt5?.account) != null && (
         <DetailRow label="Account" value={String(p.mt5?.accountSnapshot?.account ?? p.mt5?.account)} />
       )}
@@ -252,7 +260,7 @@ function CompactStatusRow(p: CompactStatusRowProps) {
       <span className="sr-only" data-testid="badge-session">{p.sessionLabel}</span>
       {p.unlocks.mt5 && (
         <>
-          <span className="sr-only" data-testid="badge-mt5-connection">{p.mt5?.connected ? "connected" : "disconnected"}</span>
+          <span className="sr-only" data-testid="badge-mt5-connection">{p.mt5 == null ? "unknown" : p.mt5.connected ? "connected" : "disconnected"}</span>
           <span className="sr-only" data-testid="badge-mode">{p.modeLabel}</span>
         </>
       )}

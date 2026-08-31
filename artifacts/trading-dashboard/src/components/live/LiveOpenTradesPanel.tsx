@@ -14,10 +14,12 @@ type SlotPosition = {
   currentPrice: number | null;
   stopLoss: number | null;
   takeProfit: number | null;
-  grossProfit: number;
+  // null = this position's P/L has never synced from the broker — rendered as
+  // "—" via fmtMoney/toneFor, never as a confident "0.00".
+  grossProfit: number | null;
   swap: number | null;
   commission: number | null;
-  netProfit: number;
+  netProfit: number | null;
   profitPercentOfSlot: number | null;
   openedAt: string | null;
   lastUpdated: string | null;
@@ -138,7 +140,7 @@ export function LiveOpenTradesPanel() {
                   <div className="flex items-center justify-between border-t border-border pt-2">
                     <div className="text-xs text-muted-foreground">Current P/L</div>
                     <div className={`text-base font-semibold tabular-nums flex items-center gap-1 ${toneFor(p.netProfit)}`}>
-                      {p.netProfit > 0 ? <TrendingUp className="h-3 w-3" /> : p.netProfit < 0 ? <TrendingDown className="h-3 w-3" /> : null}
+                      {p.netProfit != null && p.netProfit > 0 ? <TrendingUp className="h-3 w-3" /> : p.netProfit != null && p.netProfit < 0 ? <TrendingDown className="h-3 w-3" /> : null}
                       {fmtMoney(p.netProfit, ccy)}
                       {p.profitPercentOfSlot != null && (
                         <span className="text-xs text-muted-foreground ml-1">({p.profitPercentOfSlot >= 0 ? "+" : ""}{p.profitPercentOfSlot.toFixed(2)}%)</span>

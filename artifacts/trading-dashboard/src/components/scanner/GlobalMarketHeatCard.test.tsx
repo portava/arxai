@@ -232,6 +232,70 @@ describe("GlobalMarketHeatCard world-map view", () => {
     expect(screen.getByText("Global")).toBeTruthy();
   });
 
+  it("mutes a stale calm verdict in the GRID view — gray tile, honest status label, never green", () => {
+    // The grid renders exactly the same data as the map, so it must apply the
+    // same honesty mute: a stale/delayed source with a computed "calm"/"low"
+    // intensity may never render in green.
+    const data = buildData();
+    data.countries = [
+      verdict({
+        id: "country:US",
+        key: "US",
+        displayName: "United States",
+        intensity: "calm",
+        sourceStatus: "stale",
+      }),
+    ];
+    data.currencies = [];
+    mockUseGetMarketHeat.mockReturnValue({
+      data, isLoading: false, isFetching: false, isError: false, refetch: vi.fn(),
+    });
+    render(<GlobalMarketHeatCard />);
+    fireEvent.click(screen.getByRole("button", { name: /Grid/ }));
+    const tile = screen.getByText("United States").closest("button")!;
+    expect(tile.className).toContain("text-txt-muted");
+    expect(tile.className).not.toContain("success");
+    // The honest status label replaces the intensity word.
+    expect(tile.textContent).toContain("Stale");
+    expect(tile.textContent).not.toContain("Calm");
+  });
+
+  it("excludes stale/delayed verdicts from the 'Top hot' ranking", () => {
+    // A stale source carries a real computed intensity/heatScore — it must not
+    // outrank live readings in "Top hot" nor render an intensity-colored chip.
+    const data = buildData();
+    data.countries = [
+      verdict({
+        id: "country:US",
+        key: "US",
+        displayName: "United States",
+        intensity: "extreme",
+        heatScore: 99,
+        sourceStatus: "stale",
+      }),
+    ];
+    data.currencies = [
+      verdict({
+        id: "currency:EUR",
+        scope: "currency",
+        key: "EUR",
+        displayName: "Euro",
+        intensity: "high",
+        heatScore: 60,
+        sourceStatus: "confirmed",
+      }),
+    ];
+    mockUseGetMarketHeat.mockReturnValue({
+      data, isLoading: false, isFetching: false, isError: false, refetch: vi.fn(),
+    });
+    render(<GlobalMarketHeatCard />);
+    // Only the live Euro reading is ranked; the stale (but "hotter") US is not.
+    // getByText resolves the section header row; its parent wraps the chips.
+    const strip = screen.getByText(/Top hot countries/).parentElement!;
+    expect(strip.textContent).toContain("Euro");
+    expect(strip.textContent).not.toContain("United States");
+  });
+
   it("the Map/Grid toggle swaps the map for the currency tile grid", () => {
     render(<GlobalMarketHeatCard />);
     expect(screen.getByRole("img", { name: "World market-heat map" })).toBeTruthy();

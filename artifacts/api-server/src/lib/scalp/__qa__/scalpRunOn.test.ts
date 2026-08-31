@@ -436,6 +436,7 @@ describe("PULLBACK_REENTRY and CONTINUATION_REENTRY timing", () => {
       averageEntry: 4596,
       currentPrice: 4600,
       combinedFloatingPl: 50,
+      plKnownLegCount: 1,
       breakEvenPrice: 4596,
       hasUnprotectedLeg: false,
     };
@@ -479,6 +480,7 @@ describe("PULLBACK_REENTRY and CONTINUATION_REENTRY timing", () => {
       averageEntry: 4596,
       currentPrice: 4600,
       combinedFloatingPl: 50,
+      plKnownLegCount: 1,
       breakEvenPrice: 4596,
       hasUnprotectedLeg: false,
     };
@@ -518,6 +520,7 @@ describe("PULLBACK_REENTRY and CONTINUATION_REENTRY timing", () => {
       averageEntry: 4594,
       currentPrice: 4600,
       combinedFloatingPl: 80,
+      plKnownLegCount: 1,
       breakEvenPrice: 4594,
       hasUnprotectedLeg: false,
     };
@@ -557,6 +560,7 @@ describe("PULLBACK_REENTRY and CONTINUATION_REENTRY timing", () => {
       averageEntry: 4605,
       currentPrice: 4600,
       combinedFloatingPl: -30, // losing basket
+      plKnownLegCount: 1,
       breakEvenPrice: 4605,
       hasUnprotectedLeg: false,
     };
@@ -712,6 +716,7 @@ describe("Explicit add-on quality gate for low-quality RUN_ON", () => {
       averageEntry: 4594,
       currentPrice: 4600,
       combinedFloatingPl: 120, // in profit — should not override the gate
+      plKnownLegCount: 1,
       breakEvenPrice: 4594,
       hasUnprotectedLeg: false,
     };
@@ -769,6 +774,7 @@ describe("Explicit add-on quality gate for low-quality RUN_ON", () => {
       averageEntry: 4594,
       currentPrice: 4600,
       combinedFloatingPl: 200,
+      plKnownLegCount: 1,
       breakEvenPrice: 4594,
       hasUnprotectedLeg: false,
     };
@@ -823,6 +829,7 @@ describe("Explicit add-on quality gate for low-quality RUN_ON", () => {
       averageEntry: 4594,
       currentPrice: 4600,
       combinedFloatingPl: 80,
+      plKnownLegCount: 1,
       breakEvenPrice: 4594,
       hasUnprotectedLeg: false,
     };
@@ -863,6 +870,7 @@ describe("Explicit add-on quality gate for low-quality RUN_ON", () => {
       averageEntry: 4594,
       currentPrice: 4600,
       combinedFloatingPl: 80,
+      plKnownLegCount: 1,
       breakEvenPrice: 4594,
       hasUnprotectedLeg: false,
     };

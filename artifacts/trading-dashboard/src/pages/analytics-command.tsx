@@ -75,14 +75,25 @@ export default function AnalyticsCommandCenter() {
       ) : (
         <>
           <section className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
-            <Stat label="Trades"        v={s.totalTrades.toString()} />
-            <Stat label="Net P&L"       v={`$${s.netProfitLoss.toFixed(0)}`} tone={s.netProfitLoss >= 0 ? "emerald" : "red"} />
-            <Stat label="Win rate"      v={`${(s.winRate*100).toFixed(1)}%`} />
-            <Stat label="Avg RR"        v={`${s.averageRr.toFixed(2)}R`} />
-            <Stat label="Expectancy"    v={`$${s.expectancy.toFixed(2)}`} tone={s.expectancy >= 0 ? "emerald" : "red"} />
-            <Stat label="Profit factor" v={s.profitFactor === 999 ? "∞" : s.profitFactor.toFixed(2)} />
-            <Stat label="Max DD"        v={`$${s.maxDrawdown.toFixed(0)}`} tone="red" />
+            {/* P/L figures are synthetic units ((exit − entry) × lots × 100),
+                NOT account currency — never render them with a "$" sign. */}
+            <Stat label="Trades"             v={s.totalTrades.toString()} />
+            <Stat label="Net P&L (units)"    v={s.netProfitLoss.toFixed(0)} tone={s.netProfitLoss >= 0 ? "emerald" : "red"} />
+            <Stat label="Win rate"           v={`${(s.winRate*100).toFixed(1)}%`} />
+            <Stat label="Avg RR"             v={`${s.averageRr.toFixed(2)}R`} />
+            <Stat label="Expectancy (units)" v={s.expectancy.toFixed(2)} tone={s.expectancy >= 0 ? "emerald" : "red"} />
+            <Stat label="Profit factor"      v={s.profitFactor === 999 ? "∞" : s.profitFactor.toFixed(2)} />
+            <Stat label="Max DD (units)"     v={s.maxDrawdown.toFixed(0)} tone="red" />
           </section>
+
+          {/* Freshness: the tiles above come from the latest STORED snapshot —
+              refreshed only on first visit or a manual recompute — so days-old
+              figures must never sit unlabeled next to live-computed charts. */}
+          <p className="text-[10px] text-txt-muted" data-testid="snapshot-freshness">
+            Snapshot computed {new Date(s.createdAt).toLocaleString()} — press “Recompute
+            snapshot” to refresh. P/L “units” are synthetic — (exit − entry) × lots × 100,
+            not account currency.
+          </p>
 
           <div className="grid gap-3 lg:grid-cols-2">
             <EquityCurveChart points={dd.data?.equityCurve ?? []} />

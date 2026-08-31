@@ -40,7 +40,11 @@ export default function LiveManualPage() {
   const [quote, setQuote] = useState<any>(null);
 
   useEffect(() => {
-    void jget("/api/permission/status").then(r => setPerm(r.body));
+    // A failed fetch resolves to {} (not null) so the governor badge can show
+    // a distinct "unavailable" state instead of "checking…" forever.
+    void jget("/api/permission/status")
+      .then(r => setPerm(r.ok ? r.body : {}))
+      .catch(() => setPerm({}));
     void jget("/api/system/mt5-deferred-status").then(r => setDefStatus(r.body));
     // Real master shared-bridge health — the bridge that actually carries
     // live-shared dispatch. The per-user permission flag is NOT the bridge.
@@ -69,9 +73,27 @@ export default function LiveManualPage() {
   const bridgeLoaded = masterBridge != null;
   const bridgeConnected = masterBridge?.detected === true;
   const killSwitch = perm?.killSwitchEngaged === true || defStatus?.simulator?.enforcesKillSwitch;
-  const estLoss = stopLoss !== "" && quote ? Math.abs(quote.mid - Number(stopLoss)) * lotSize * 10000 : 0;
-  const estGain = takeProfit !== "" && quote ? Math.abs(Number(takeProfit) - quote.mid) * lotSize * 10000 : 0;
-  const rr = estLoss > 0 ? (estGain / estLoss) : 0;
+  // Real risk-governor state from /api/permission/status (already fetched
+  // above) — never a hard-coded green "active". Until it resolves we show
+  // "checking…"; a load without a verdict shows an honest "unavailable".
+  const govStatus: string | null = typeof perm?.status === "string" ? perm.status : null;
+  const gov = perm == null
+    ? { text: "checking…", cls: "bg-muted text-txt-muted" }
+    : govStatus === "CLEAR"
+      ? { text: "active", cls: "bg-success/20 text-success" }
+      : govStatus === "CAUTION"
+        ? { text: "caution", cls: "bg-warning/20 text-warning" }
+        : govStatus === "LOCKED"
+          ? { text: "LOCKED", cls: "bg-danger/20 text-danger" }
+          : govStatus === "LIVE_TRADING_DISABLED"
+            ? { text: "live disabled", cls: "bg-warning/20 text-warning" }
+            : { text: "unavailable", cls: "bg-muted text-txt-muted" };
+  // Feature Truth Audit: the old "estimated max loss / gain" multiplied the
+  // SIMULATOR random-walk mid by a blanket ×10000 pip guess — wrong for JPY,
+  // gold and synthetics (see liveScanner's pip-unit contract) and fabricated
+  // dollar facts beside a live-intent submit button. Dollar estimates need
+  // per-symbol pip value + a real routed quote, so — like Risk % below — we
+  // show an honest "—" instead of a fake number.
 
   async function submit() {
     setConfirmOpen(false);
@@ -151,13 +173,13 @@ export default function LiveManualPage() {
             </div>
 
             <div className="rounded border border-border p-2 text-xs space-y-1 bg-background/40">
-              <div className="flex justify-between"><span>Estimated max loss</span><span className="font-mono text-danger">${estLoss.toFixed(2)}</span></div>
-              <div className="flex justify-between"><span>Estimated gain</span><span className="font-mono text-success">${estGain.toFixed(2)}</span></div>
-              <div className="flex justify-between"><span>Risk / Reward</span><span className="font-mono">{rr.toFixed(2)}</span></div>
+              <div className="flex justify-between"><span>Estimated max loss <span className="text-[10px] text-txt-muted">(needs pip spec + broker quote)</span></span><span className="font-mono text-txt-muted">—</span></div>
+              <div className="flex justify-between"><span>Estimated gain <span className="text-[10px] text-txt-muted">(needs pip spec + broker quote)</span></span><span className="font-mono text-txt-muted">—</span></div>
+              <div className="flex justify-between"><span>Risk / Reward <span className="text-[10px] text-txt-muted">(needs execution price)</span></span><span className="font-mono text-txt-muted">—</span></div>
               <div className="flex justify-between"><span>Risk % <span className="text-[10px] text-txt-muted">(needs account equity)</span></span><span className="font-mono text-txt-muted">—</span></div>
               <div className="flex justify-between"><span>Account mode</span><Badge variant="outline" className="text-[10px]">TESTER</Badge></div>
               <div className="flex justify-between"><span>Execution environment</span><Badge className="bg-warning/20 text-warning text-[10px]">SIMULATOR</Badge></div>
-              <div className="flex justify-between"><span>Risk governor</span><Badge className="bg-success/20 text-success text-[10px]">active</Badge></div>
+              <div className="flex justify-between"><span>Risk governor</span><Badge className={`${gov.cls} text-[10px]`} data-testid="ticket-governor">{gov.text}</Badge></div>
               <div className="flex justify-between"><span>Kill switch</span><Badge variant={killSwitch ? "destructive" : "outline"} className="text-[10px]">{killSwitch ? "ENGAGED" : "off"}</Badge></div>
               <div className="flex justify-between"><span>Master bridge</span><Badge className={!bridgeLoaded ? "bg-muted text-txt-muted text-[10px]" : bridgeConnected ? "bg-success/20 text-success text-[10px]" : "bg-warning/20 text-warning text-[10px]"}>{!bridgeLoaded ? "checking…" : bridgeConnected ? "connected" : "not connected"}</Badge></div>
             </div>
@@ -201,7 +223,7 @@ export default function LiveManualPage() {
                     <div><div className="text-txt-muted text-[10px]">Lot</div>{lotSize}</div>
                     <div><div className="text-txt-muted text-[10px]">SL</div>{stopLoss === "" ? "—" : stopLoss}</div>
                     <div><div className="text-txt-muted text-[10px]">TP</div>{takeProfit === "" ? "—" : takeProfit}</div>
-                    <div className="col-span-2"><div className="text-txt-muted text-[10px]">Max loss</div>${maxLoss} · R:R {rr.toFixed(2)}</div>
+                    <div className="col-span-2"><div className="text-txt-muted text-[10px]">Max loss</div>${maxLoss}</div>
                   </div>
                   {(stopLoss === "" || takeProfit === "") && (
                     <p className="mt-2 text-[11px] text-warning">Warning: missing {stopLoss === "" ? "SL" : ""}{stopLoss === "" && takeProfit === "" ? " + " : ""}{takeProfit === "" ? "TP" : ""}. Risk governor may reject this intent.</p>

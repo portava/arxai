@@ -72,6 +72,77 @@ describe("release surfaces derive the broker-lock state", () => {
   });
 });
 
+describe("health probes fail closed instead of defaulting to healthy zeros", () => {
+  it("a failed safety_core read becomes a SAFETY_STATE_UNKNOWN hard block, not an empty list", () => {
+    const src = code(HEALTH);
+    // The old shape: db.select().from(safetyCoreTable).limit(1).catch(() => [])
+    // swallowed a failed read and the page rendered "Hard blocks: none" while
+    // the kill switch might be engaged and unreadable.
+    assert.doesNotMatch(src, /safetyCoreTable\)\.limit\(1\)\.catch/);
+    assert.match(src, /SAFETY_STATE_UNKNOWN/);
+  });
+
+  it("secret-redaction probes degrade to null (unknown), never to 0 leaks / working:true", () => {
+    const src = code(HEALTH);
+    // No catch handler may fabricate a zero count for the secret scans.
+    assert.doesNotMatch(src, /catch\(\(\) => \(\{ rows: \[\{ c: 0 \}\]/);
+    // redactionWorking must be tri-state: null when either probe failed.
+    assert.match(src, /redactionWorking: ff === null \|\| lf === null \? null : ff === 0 && lf === 0/);
+  });
+
+  it("critical-unread and row-count probes report null on failure, not 0", () => {
+    const src = code(HEALTH);
+    assert.doesNotMatch(src, /\.catch\(\(\) => \[\{ c: 0 \}\]\)/);
+    assert.match(src, /latestNotificationCriticalCount: number \| null/);
+  });
+
+  it("a null redactionWorking is surfaced as a warning, and false stays an error", () => {
+    const src = code(HEALTH);
+    assert.match(src, /redactionWorking === false\) errors\.push/);
+    assert.match(src, /redactionWorking === null/);
+  });
+});
+
+const ADMIN_RUNTIME = "artifacts/api-server/src/routes/adminRuntimeHealth.ts";
+
+describe("admin runtime-health distinguishes a failed bridge aggregate from zero bridges", () => {
+  it("the bridge envelope carries an ok flag set only after the query succeeds", () => {
+    const src = code(ADMIN_RUNTIME);
+    assert.match(src, /ok: false/);
+    assert.match(src, /bridge\.ok = true/);
+  });
+});
+
+describe("release gates are probed, never hard-coded green", () => {
+  it("no gate is pushed with a literal pass:true", () => {
+    const src = code(RELEASE);
+    // push("key", "Label", true, ...) — a dead gauge rendered as a PASS pill.
+    assert.doesNotMatch(src, /push\("[a-z0-9_]+", "[^"]*", true[,)]/);
+  });
+
+  it("the arm-switch gate probes readability instead of asserting honesty", () => {
+    const src = code(RELEASE);
+    assert.match(src, /arm_switch_readable/);
+    assert.doesNotMatch(src, /mt5_deferred_honesty_pass/);
+  });
+});
+
+const RELEASE_ROUTES = "artifacts/api-server/src/routes/release.ts";
+
+describe("release notes known issues come from the real tracker", () => {
+  it("the route no longer serves a hard-coded empty knownIssues array", () => {
+    const src = code(RELEASE_ROUTES);
+    assert.doesNotMatch(src, /knownIssues: \[\]/);
+    assert.match(src, /listOpenKnownIssues/);
+  });
+
+  it("lib/release exposes the open-P0/P1 query with a null (unavailable) failure state", () => {
+    const src = code(RELEASE);
+    assert.match(src, /export async function listOpenKnownIssues/);
+    assert.match(src, /"P0", "P1"/);
+  });
+});
+
 describe("onboarding tells the per-user truth", () => {
   it("the envelope no longer hard-codes PAPER_ONLY/DISABLED", () => {
     const src = code(ONBOARDING_ROUTES);
@@ -90,5 +161,25 @@ describe("onboarding tells the per-user truth", () => {
     assert.doesNotMatch(src, /cannot enable live trading/i);
     assert.doesNotMatch(src, /Nothing here can place real trades/i);
     assert.doesNotMatch(src, /badge is always shown/i);
+  });
+
+  it("step routes no longer point at removed pages or admin-only surfaces", () => {
+    // STALE_UNLABELED: the catalogue routed REQUIRED steps at
+    // /trading-cockpit and /paper-testing-launch (routes deleted in Phase 3)
+    // and at admin surfaces on no trader allowlist, so RouteAccessGuard
+    // silently bounced every such "Open …" click home. The trading-dashboard
+    // side (lib/inAppHrefAllowlist.test.ts) proves each surviving route is
+    // declared and trader-allowlisted; this pins the dead targets out of the
+    // server catalogue itself.
+    const src = code(ONBOARDING_STEPS);
+    for (const dead of [
+      "/trading-cockpit", "/paper-testing-launch", "/readiness-checklist",
+      "/risk-settings", "/session-report", "/replay-simulator",
+      "/data-import", "/system-health", "/trader-coach",
+    ]) {
+      assert.doesNotMatch(src, new RegExp(`page_route: "${dead.replaceAll("/", "\\/")}"`), `steps must not route to ${dead}`);
+    }
+    // The completion copy named the removed page as the user's home base.
+    assert.doesNotMatch(src, /Trading Cockpit/);
   });
 });

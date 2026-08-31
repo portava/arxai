@@ -27,7 +27,12 @@ type ShellResponse = {
   allocation: {
     assignedStartingBalance: number | null;
     currentBalance: number;
-    equity: number;
+    // null = the server has no real marked-to-market equity read. It is NOT
+    // the balance: rendering balance under an equity label hid floating
+    // losses on open positions.
+    equity: number | null;
+    equitySource?: "LIVE_SNAPSHOT" | "VIRTUAL_ACCOUNT" | "UNAVAILABLE";
+    equityUnavailableReason?: string | null;
     marginUsed: number;
     totalAllocation?: number | null;
     manualAllocation?: number | null;
@@ -211,6 +216,9 @@ export default function MyAccountPage() {
         </CardHeader>
         <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Stat label="My Balance" value={fmtMoney(s.allocation.currentBalance)} testid="my-balance" />
+          {/* Equity is a real marked-to-market read or "—" — it is never the
+              balance repeated under an equity label (which hid floating
+              losses on open positions from this tile). */}
           <Stat label="My Equity" value={fmtMoney(s.allocation.equity)} testid="my-equity" />
           <Stat label="Margin Used" value={fmtMoney(s.allocation.marginUsed)} testid="my-margin-used" />
           <Stat
@@ -224,6 +232,14 @@ export default function MyAccountPage() {
             }
             testid="my-allocation"
           />
+          {s.allocation.equity == null && s.allocation.equityUnavailableReason && (
+            <p
+              className="col-span-2 md:col-span-4 text-xs text-muted-foreground"
+              data-testid="my-equity-unavailable-note"
+            >
+              Equity: {s.allocation.equityUnavailableReason}
+            </p>
+          )}
         </CardContent>
         {/* Manual / AI sleeve split — shown when the user has any admin
             allocation. AI fields are display-only here; toggles live on

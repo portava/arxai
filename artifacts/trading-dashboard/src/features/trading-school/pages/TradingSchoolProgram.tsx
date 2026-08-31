@@ -8,8 +8,9 @@ import { useMemo } from "react";
 import { Link } from "wouter";
 import { Progress } from "@/components/ui/progress";
 import { STEPS, buildSchoolDisclaimer } from "../data/content";
-import { useSchoolProgress, completionPct, bestScore } from "../lib/progress";
+import { useSchoolProgress, useSchoolSyncStatus, completionPct, bestScore } from "../lib/progress";
 import { SchoolPageHeader, StepStatusPill, SchoolDisclaimer } from "../components/SchoolUI";
+import { SchoolSyncNotice } from "../components/SchoolSyncNotice";
 import { useAssistantName } from "@/lib/assistant-name";
 import { BookOpen, ArrowRight, Lock } from "lucide-react";
 
@@ -17,10 +18,19 @@ export default function TradingSchoolProgram() {
   const { name } = useAssistantName();
   const SCHOOL_DISCLAIMER = useMemo(() => buildSchoolDisclaimer(name), [name]);
   const p = useSchoolProgress();
+  const syncStatus = useSchoolSyncStatus();
   const pct = completionPct(p);
 
+  // Sequential locks are derived from passedLessonIds — which, when the
+  // server read failed (new device / 401 / offline), is only the LOCAL cache.
+  // Confidently re-locking steps the user already passed elsewhere on that
+  // unknown state is the CONFIDENT_ABSENT defect; while the sync has failed we
+  // stop asserting locks (the lock is a pedagogical nudge, not a safety gate)
+  // and the SchoolSyncNotice banner says why.
+  const locksTrustworthy = syncStatus !== "failed";
   const isUnlocked = (index: number): boolean => {
     if (index === 0) return true;
+    if (!locksTrustworthy) return true;
     const prev = STEPS[index - 1];
     return !!p?.passedLessonIds.includes(prev.id);
   };
@@ -28,6 +38,10 @@ export default function TradingSchoolProgram() {
   return (
     <div className="mx-auto w-full max-w-[1100px] space-y-4 p-4 md:p-6 pb-32 md:pb-6" data-testid="page-school-program">
       <SchoolPageHeader title="10-Step Program" subtitle="From complete beginner to building a real trade plan. Take them in order." icon={BookOpen} />
+
+      {/* Failed-sync notice — the statuses below are local-cache-only while
+          this renders, and sequential locks are suspended (see isUnlocked). */}
+      <SchoolSyncNotice />
 
       <div className="rounded-2xl border border-border bg-card p-4">
         <div className="flex items-center justify-between text-xs text-txt-muted">

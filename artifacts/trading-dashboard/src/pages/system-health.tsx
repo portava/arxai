@@ -13,8 +13,10 @@ type Report = {
   databaseStatus: { connected: boolean; missingTables: string[]; rowCounts: Record<string, number> };
   endpointStatus: { totalChecked: number; passed: number; failed: number; degraded: number; results: Array<{ path: string; status: number|null; ok: boolean; latencyMs: number }> };
   safetyStatus: { hardBlocks: Array<{ code: string; severity: string; message: string }>; warnings: string[] };
-  secretSafetyStatus: { secretsDetectedInFrontend: number; secretsDetectedInLogs: number; redactionWorking: boolean };
-  performanceStatus: { failedJobs: number; errorRate: number; latestNotificationCriticalCount: number };
+  // null counts / null redactionWorking = the server-side probe query failed —
+  // rendered as "unavailable"/"unknown", never as 0/true.
+  secretSafetyStatus: { secretsDetectedInFrontend: number | null; secretsDetectedInLogs: number | null; redactionWorking: boolean | null };
+  performanceStatus: { failedJobs: number; errorRate: number; latestNotificationCriticalCount: number | null };
   recommendedAdminActions: string[]; warnings: string[]; errors: string[];
 };
 
@@ -73,7 +75,7 @@ export default function SystemHealthPage() {
             <Card><CardHeader><CardTitle className="text-xs">Mode</CardTitle></CardHeader><CardContent>
               <Badge variant={report.mode === "LIVE_ARMED" ? "destructive" : report.mode === "UNKNOWN" ? "secondary" : "default"} data-testid="badge-mode">{report.mode}</Badge>
             </CardContent></Card>
-            <Card><CardHeader><CardTitle className="text-xs">Critical unread</CardTitle></CardHeader><CardContent>{report.performanceStatus.latestNotificationCriticalCount}</CardContent></Card>
+            <Card><CardHeader><CardTitle className="text-xs">Critical unread</CardTitle></CardHeader><CardContent data-testid="crit-unread-count">{report.performanceStatus.latestNotificationCriticalCount ?? <span className="text-warning">unavailable — count query failed</span>}</CardContent></Card>
           </div>
 
           <Card>
@@ -126,9 +128,11 @@ export default function SystemHealthPage() {
             <Card>
               <CardHeader><CardTitle>Secret redaction</CardTitle></CardHeader>
               <CardContent className="text-sm space-y-1">
-                <div>Frontend leaks: {report.secretSafetyStatus.secretsDetectedInFrontend}</div>
-                <div>Log leaks: {report.secretSafetyStatus.secretsDetectedInLogs}</div>
-                <div>Working: {String(report.secretSafetyStatus.redactionWorking)}</div>
+                <div>Frontend leaks: {report.secretSafetyStatus.secretsDetectedInFrontend ?? <span className="text-warning">unavailable — scan query failed</span>}</div>
+                <div>Log leaks: {report.secretSafetyStatus.secretsDetectedInLogs ?? <span className="text-warning">unavailable — scan query failed</span>}</div>
+                <div data-testid="redaction-working">Working: {report.secretSafetyStatus.redactionWorking === null
+                  ? <span className="text-warning">unknown — probe failed, not confirmed working</span>
+                  : String(report.secretSafetyStatus.redactionWorking)}</div>
               </CardContent>
             </Card>
           </div>

@@ -620,7 +620,17 @@ export function CriticalEventsCard() {
       loading={eventsQ.isLoading}
       data-testid="cockpit-critical-events"
     >
-      {events.length === 0 ? (
+      {eventsQ.isError && !eventsQ.data ? (
+        // A failed calendar read is NOT "no events scheduled" — the empty
+        // copy below asserts an all-clear from no signal at all.
+        <div
+          className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-4 text-center text-sm font-medium text-warning"
+          role="alert"
+          data-testid="cockpit-events-read-failed"
+        >
+          Couldn&apos;t load the event calendar — high-impact events are unknown, not absent. Retrying.
+        </div>
+      ) : events.length === 0 ? (
         <p className="py-4 text-center text-sm text-txt-secondary">No high-impact events in the next 3 days.</p>
       ) : (
         <ul className="space-y-2">
@@ -908,7 +918,17 @@ export function AlertsSummaryCard() {
       loading={alertsQ.isLoading}
       data-testid="cockpit-alerts-summary"
     >
-      {grouped.length === 0 ? (
+      {alertsQ.isError && !alertsQ.data ? (
+        // A failed alert read is NOT "no alerts" — never render the all-clear
+        // copy from a read that produced no signal.
+        <div
+          className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-4 text-center text-sm font-medium text-warning"
+          role="alert"
+          data-testid="cockpit-alerts-summary-read-failed"
+        >
+          Couldn&apos;t read alerts — status is unknown, not all-clear. Retrying.
+        </div>
+      ) : grouped.length === 0 ? (
         <p className="py-4 text-center text-sm text-txt-secondary">No major alerts right now.</p>
       ) : (
         <ul className="space-y-2">

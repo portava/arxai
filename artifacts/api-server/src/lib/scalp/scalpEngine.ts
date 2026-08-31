@@ -153,6 +153,7 @@ function rejectResult(
     confidenceLabel: "Weak",
     entryType: null,
     entryZone: null,
+    entryZoneEstimated: false,
     currentPrice: num(input.currentPrice) ? input.currentPrice : null,
     takeProfit: { quick: null, main: null, stretch: null },
     stopLoss: null,
@@ -167,9 +168,12 @@ function rejectResult(
     estimatedRiskAmount: null,
     rewardToRisk: null,
     estimatedMargin: null,
-    spreadRisk: "LOW",
-    slippageRisk: "LOW",
-    newsRisk: input.scanner?.newsRisk ?? "LOW",
+    // Non-actionable states never evaluated spread/slippage — those bands are
+    // an honest unknown (null), NEVER a fabricated confident "LOW". News is
+    // only carried when the scanner actually supplied a read.
+    spreadRisk: null,
+    slippageRisk: null,
+    newsRisk: input.scanner?.newsRisk ?? null,
     timingStatus: "WAIT_FOR_ENTRY",
     validForSeconds: 0,
     expiresAt: new Date(now).toISOString(),
@@ -286,8 +290,17 @@ export function evaluateScalp(input: ScalpEngineInput): ScalpResult {
   const lotStep = spec.lotStep;
 
   // ── Spread in price terms + spread risk band (relative to the structural stop).
+  //    Spread evidence, best-first: a LIVE quote spread (execution input) beats
+  //    the broker's last spec snapshot (already freshness-gated at load time).
+  //    With NO evidence at all the engine works with 0 for geometry buffers but
+  //    the spread/slippage bands become an honest NULL ("unknown") — never a
+  //    confident LOW read off nothing.
   const structuralStopDist = Math.abs(scanner.entry - scanner.stopLoss);
-  const spreadPrice = num(spec.spreadPoints) ? spec.spreadPoints * point : 0;
+  const liveSpreadPts = input.execution?.liveSpreadPoints;
+  const liveSpreadPrice = num(liveSpreadPts) && liveSpreadPts >= 0 ? liveSpreadPts * point : null;
+  const specSpreadPrice = num(spec.spreadPoints) ? spec.spreadPoints * point : null;
+  const spreadKnown = liveSpreadPrice != null || specSpreadPrice != null;
+  const spreadPrice = liveSpreadPrice ?? specSpreadPrice ?? 0;
   const stopsLevelPrice = num(spec.stopsLevelPoints) ? spec.stopsLevelPoints * point : 0;
 
   // ── Stop loss: start from scanner structure (invalidation), then enforce a
@@ -303,15 +316,19 @@ export function evaluateScalp(input: ScalpEngineInput): ScalpResult {
   const invalidationPrice = stopLoss;
   stopDist = Math.abs(scanner.entry - stopLoss);
 
-  // ── Spread-vs-stop ratio gate.
+  // ── Spread-vs-stop ratio gate. Only evaluable with real spread evidence;
+  //    with none the band stays NULL (unknown) — the gate cannot prove a
+  //    violation and the surface must not claim a low reading either.
   const spreadRatio = stopDist > 0 ? spreadPrice / stopDist : 1;
-  if (spreadRatio > profile.spreadRatioWide) {
+  if (spreadKnown && spreadRatio > profile.spreadRatioWide) {
     return rejectResult(input, "SPREAD_TOO_WIDE", "Spread is too wide for a clean scalp right now.", {
       canWatch: true,
       plain: "The spread is too wide for a clean scalp here right now — it would eat too much of the trade.",
     });
   }
-  const spreadRisk: RiskBand = spreadRatio > profile.spreadRatioWide * 0.6 ? "MEDIUM" : "LOW";
+  const spreadRisk: RiskBand | null = !spreadKnown
+    ? null
+    : spreadRatio > profile.spreadRatioWide * 0.6 ? "MEDIUM" : "LOW";
 
   // ── News gate.
   const newsRisk: RiskBand = scanner.newsRisk ?? "LOW";
@@ -336,6 +353,11 @@ export function evaluateScalp(input: ScalpEngineInput): ScalpResult {
   const rewardToRisk = stopDist > 0 ? roundTo(mainTpDist / stopDist, 2) : 0;
 
   // ── Entry zone + timing (is the price still in a good place to enter?).
+  //    The analyzer's structural zone is used whenever the scanner carried one;
+  //    only when it is genuinely absent do we fall back to a synthesized buffer
+  //    around the entry — and that fallback is FLAGGED (`entryZoneEstimated`)
+  //    so no surface presents an invented band as precise market structure.
+  const entryZoneEstimated = !scanner.entryZone;
   const zoneFrom = scanner.entryZone ? roundTo(scanner.entryZone.low, digits) : roundTo(scanner.entry - spreadPrice * 2 - point * 5, digits);
   const zoneTo = scanner.entryZone ? roundTo(scanner.entryZone.high, digits) : roundTo(scanner.entry + spreadPrice * 2 + point * 5, digits);
   const entryRef = (zoneFrom + zoneTo) / 2;
@@ -382,14 +404,18 @@ export function evaluateScalp(input: ScalpEngineInput): ScalpResult {
 
   // ── Quality score (shared, mode-weighted).
   let quality = 0.5 * scanner.confidenceScore + 0.5 * scanner.entrySniperScore;
-  const trend = num(scanner.trendStrength) ? scanner.trendStrength : 50;
+  // Trend strength is a REAL analyzer reading or an honest null — never a
+  // constant stand-in. With no reading the trend-based mode tilts contribute
+  // exactly nothing and the ANY-mode label stays generic, instead of a dead
+  // gauge silently pinning every read to the same tilt/label.
+  const trend = num(scanner.trendStrength) ? scanner.trendStrength : null;
   // Mode tilts.
   switch (input.mode) {
     case "SNIPER": quality += (scanner.entrySniperScore - 60) * 0.2; break;
     case "SAFER": quality += (rewardToRisk - 1.5) * 6 - (spreadRisk === "MEDIUM" ? 8 : 0); break;
-    case "FAST": quality += (trend - 50) * 0.15; break;
-    case "MOMENTUM": quality += (trend - 50) * 0.25; break;
-    case "REVERSAL": quality += (60 - trend) * 0.15; break;
+    case "FAST": if (trend != null) quality += (trend - 50) * 0.15; break;
+    case "MOMENTUM": if (trend != null) quality += (trend - 50) * 0.25; break;
+    case "REVERSAL": if (trend != null) quality += (60 - trend) * 0.15; break;
     case "ANY": break;
   }
   if (spreadRisk === "MEDIUM") quality -= 5;
@@ -414,6 +440,9 @@ export function evaluateScalp(input: ScalpEngineInput): ScalpResult {
     lateFraction,
     inZone,
     execution: input.execution ?? null,
+    // Broker's typical spread (points) so the live-spread-spike guard inside
+    // the execution-quality read can actually compare live vs typical.
+    specSpreadPoints: num(spec.spreadPoints) ? spec.spreadPoints : null,
     htfBias: input.htfBias ?? null,
     personality,
     scannerReason: scanner.reasonForTrade ?? null,
@@ -645,7 +674,10 @@ export function evaluateScalp(input: ScalpEngineInput): ScalpResult {
   const validForSeconds = status === "LATE" ? Math.round(profile.validForSeconds * 0.3) : profile.validForSeconds;
   const expiresAt = new Date(now + validForSeconds * 1000).toISOString();
   const scalpType = scalpTypeLabel(input.mode, direction, trend, profile.label);
-  const slippageRisk: RiskBand = assetClassFor(spec.category) === "Synthetic/Volatility" ? "MEDIUM" : spreadRisk;
+  // Slippage inherits the spread evidence: unknown spread ⇒ unknown slippage
+  // (synthetics keep their structural MEDIUM — that is asset-class knowledge,
+  // not a live reading).
+  const slippageRisk: RiskBand | null = assetClassFor(spec.category) === "Synthetic/Volatility" ? "MEDIUM" : spreadRisk;
 
   return {
     symbol: input.symbol,
@@ -659,6 +691,7 @@ export function evaluateScalp(input: ScalpEngineInput): ScalpResult {
     confidenceLabel: confidenceLabelFor(qualityScore),
     entryType: canBuildTrade || status === "WAIT_FOR_ENTRY" || status === "LATE" ? entryType : null,
     entryZone: { from: Math.min(zoneFrom, zoneTo), to: Math.max(zoneFrom, zoneTo) },
+    entryZoneEstimated,
     currentPrice: roundTo(price, digits),
     takeProfit,
     stopLoss,
@@ -780,8 +813,11 @@ function assessTargetReality(a: TargetRealityArgs): TargetRealityCheck {
   return "TOO_RISKY";
 }
 
-function scalpTypeLabel(mode: ScalpMode, direction: ScalpDirection, trend: number, fallback: string): string {
+function scalpTypeLabel(mode: ScalpMode, direction: ScalpDirection, trend: number | null, fallback: string): string {
   if (mode !== "ANY") return fallback;
+  // No real trend reading ⇒ the generic label. Classifying a "type" off a
+  // constant fallback would present every read as the same style forever.
+  if (trend == null) return fallback;
   if (trend >= 60) return "Momentum Scalp";
   if (trend <= 40) return "Reversal Scalp";
   return "Sniper Scalp";

@@ -38,7 +38,9 @@ import {
 } from "./scalpManage.js";
 import {
   candleWindowFor,
-  currentPriceFor,
+  currentQuoteFor,
+  liveSpreadPointsFrom,
+  withLiveSpread,
   loadExecutionInput,
   loadSpecInput,
   deriveHtfBias,
@@ -218,12 +220,21 @@ function readManageFlame(
   const sign = direction === "BUY" ? 1 : -1;
 
   const entry = geo.averageEntry;
+  const hasRealTarget = num(geo.takeProfit);
   const stopDist = num(geo.stopLoss) ? Math.abs(entry - geo.stopLoss) : Math.max(point * 100, spreadPrice * 10);
   const mainTpDist = num(geo.takeProfit)
     ? Math.abs(geo.takeProfit - entry)
     : Math.max(stopDist * 1.5, point * 150);
   const movedToward = sign * (geo.currentPrice - entry);
-  const lateFraction = mainTpDist > 0 ? Math.max(-1, Math.min(1.5, movedToward / mainTpDist)) : 0;
+
+  // With NO real take-profit there is no honest "fraction of the way to
+  // target" — the old code measured progress against a constant-synthesized
+  // target and fed that invented lateFraction into chase/timing/exit rungs.
+  // lateFraction 0 leaves chase/timing judged from the candle window's REAL
+  // ATR extension only (the disclosure is appended basket-side).
+  const lateFraction = hasRealTarget && mainTpDist > 0
+    ? Math.max(-1, Math.min(1.5, movedToward / mainTpDist))
+    : 0;
   const invalidationPrice = num(geo.stopLoss) ? geo.stopLoss : entry - sign * stopDist;
   const mainTpPrice = num(geo.takeProfit) ? geo.takeProfit : entry + sign * mainTpDist;
   const quickTpPrice = entry + sign * mainTpDist * 0.5;
@@ -240,6 +251,8 @@ function readManageFlame(
     lateFraction,
     inZone: false,
     execution,
+    // Typical spread (points) so the live-spread-spike guard can compare.
+    specSpreadPoints: num(spec.spreadPoints) ? spec.spreadPoints : null,
     htfBias: deriveHtfBias(candles),
     personality,
     scannerReason: null,
@@ -336,14 +349,19 @@ export async function getScalpBaskets(
   const sync = basketSyncInfo(lastSyncedAtMs, now);
 
   const built = await Promise.all(groups.map(async (g) => {
-    const [spec, candles, livePrice, execution] = await Promise.all([
+    const [spec, candles, liveQuote, executionBase] = await Promise.all([
       loadSpecInput(userId, g.symbol),
       candleWindowFor(g.symbol),
-      currentPriceFor(g.symbol),
+      currentQuoteFor(g.symbol),
       loadExecutionInput(userId),
     ]);
+    // Per-symbol live spread rides on the execution read (spike guard input).
+    const execution = withLiveSpread(
+      executionBase,
+      liveSpreadPointsFrom(liveQuote.spreadPrice, spec),
+    );
     const summary = summarizeBasket(g.legs);
-    const currentPrice = num(livePrice) ? livePrice : summary.currentPrice;
+    const currentPrice = num(liveQuote.price) ? liveQuote.price : summary.currentPrice;
     const flame = readManageFlame(
       g.direction, candles, spec, execution,
       {
@@ -389,7 +407,12 @@ export async function getScalpBaskets(
         legTickets: basket.legs.map((l) => l.ticket).filter((t): t is string => !!t),
       };
     });
-    await recordScalpBasketsObservation(userId, journalMode, snapshots);
+    // A basket may only be finalized "Closed" on evidence: when the feed
+    // itself is stale (bridge down / never synced), positions vanishing from
+    // the snapshot proves nothing — the recorder must NOT close them.
+    await recordScalpBasketsObservation(userId, journalMode, snapshots, {
+      feedIsFresh: !sync.stale,
+    });
   }
 
   return {
@@ -435,14 +458,19 @@ export async function getAddOnCheck(
   ) ?? null;
   const now = Date.now();
 
-  const [spec, candles, livePrice, execution] = await Promise.all([
+  const [spec, candles, liveQuote, executionBase] = await Promise.all([
     loadSpecInput(userId, group?.symbol ?? args.symbol),
     candleWindowFor(group?.symbol ?? args.symbol),
-    currentPriceFor(group?.symbol ?? args.symbol),
+    currentQuoteFor(group?.symbol ?? args.symbol),
     loadExecutionInput(userId),
   ]);
+  const execution = withLiveSpread(
+    executionBase,
+    liveSpreadPointsFrom(liveQuote.spreadPrice, spec),
+  );
 
   const summary = group ? summarizeBasket(group.legs) : summarizeBasket([]);
+  const livePrice = liveQuote.price;
   const refPrice = num(livePrice) ? livePrice : (num(summary.currentPrice) ? summary.currentPrice : summary.averageEntry);
   const flame = readManageFlame(
     args.direction, candles, spec, execution,

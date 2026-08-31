@@ -206,6 +206,44 @@ router.post("/execute-trade", requireUser, async (req, res) => {
       });
       return;
     }
+    // ── TRUTH GUARD — LIVE is refused outright on this route. ────────────────
+    // There is NO broker placement anywhere in /execute-trade: no MT5 command
+    // is queued, no order leaves ARX. Before this guard, LIVE_TRADING mode +
+    // an API-supplied confirmationId inserted a mode='LIVE' OPEN trades row
+    // and replied "LIVE trade executed." — a phantom live position that then
+    // rendered on the Live Trades surface with no position at any venue.
+    // Refusing here preserves the checklist default-deny above (the
+    // confirmationId requirement MUST stay — see components/execution/index.ts)
+    // and makes the honesty structural: this route can never record a LIVE row.
+    // Real live orders go through the Phase-B guided pipeline, which queues a
+    // broker command and only records what the broker confirms.
+    if (isEffectivelyLive) {
+      await logBlockedTrade({
+        symbol: body.symbol, direction: body.direction, lot: body.lot,
+        strategy: body.strategy, confidence: body.confidence,
+        reasons: ["LIVE execution refused: /execute-trade has no broker placement path"],
+        blockers: ["broker placement not implemented on this route — use the guided live execution pipeline"],
+        operationalMode: gate.operationalMode, globalState: gate.globalState,
+        generatedAtIso: new Date().toISOString(),
+      });
+      if (typeof body.confirmationId === "number") {
+        await markConfirmationRejected({
+          confirmationId: body.confirmationId,
+          reason: "LIVE execution refused: /execute-trade has no broker placement path",
+        });
+      }
+      res.status(501).json({
+        error: "LIVE execution is not implemented on this route — no broker placement exists, so no live trade was executed and no trade row was recorded.",
+        decision: "HARD_BLOCK",
+        decisionMode: gate.decisionMode,
+        operationalMode: gate.operationalMode,
+        globalState: gate.globalState,
+        reasons: ["broker placement not implemented on /execute-trade"],
+        blockers: ["Use the guided live execution pipeline for real orders"],
+      });
+      return;
+    }
+
     if (typeof body.confirmationId === "number") {
       claimedConfirmation = await claimConfirmationForExecution({
         confirmationId: body.confirmationId,
@@ -254,7 +292,10 @@ router.post("/execute-trade", requireUser, async (req, res) => {
       strategy: body.strategy,
       confidence: body.confidence,
       status: "OPEN",
-      mode: gate.decisionMode === "LIVE" ? "LIVE" : "DEMO",
+      // Structurally never "LIVE": the truth guard above refuses LIVE before
+      // this insert, because nothing on this route places a broker order. A
+      // mode='LIVE' row here would be a fabricated live position.
+      mode: "DEMO",
       originClass: declaredOrigin ?? "ASSISTED",
       originClassSource: declaredOrigin != null ? "DECLARED" : "DERIVED_DEFAULT",
     }).returning();

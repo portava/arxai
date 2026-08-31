@@ -51,6 +51,7 @@ function summary(over: Partial<BasketSummary> = {}): BasketSummary {
     averageEntry: 100,
     currentPrice: 101,
     combinedFloatingPl: 25,
+    plKnownLegCount: 1,
     breakEvenPrice: 100,
     hasUnprotectedLeg: false,
     ...over,

@@ -10,7 +10,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod/v4";
 import { requireRole, getSessionFromReq } from "../lib/security/session.js";
 import { auditEvent } from "../lib/systemHealth/audit.js";
-import { versionEnvelope, readinessReport, diagnosticsPackage, listFeedback, readLiveBrokerExecutionArmed } from "../lib/release.js";
+import { versionEnvelope, readinessReport, diagnosticsPackage, listFeedback, readLiveBrokerExecutionArmed, listOpenKnownIssues } from "../lib/release.js";
 import { runAcceptance, getLastAcceptance, setLastAcceptance } from "../lib/acceptance.js";
 
 const router = Router();
@@ -44,6 +44,10 @@ router.get("/release/acceptance-last", (_req, res) => {
 
 router.get("/release/notes", async (_req, res) => {
   const armed = await readLiveBrokerExecutionArmed();
+  // Real known issues from the feedback tracker (open P0/P1) — the hard-coded
+  // empty array here claimed "no known issues" while the same table could hold
+  // open P0 bugs. null = the query failed; the page renders "unavailable".
+  const openIssues = await listOpenKnownIssues();
   res.json({
     brand: {
       name: "ARX AI",
@@ -83,7 +87,9 @@ router.get("/release/notes", async (_req, res) => {
       "Real MT5 live positions",
       "Real broker fills",
     ],
-    knownIssues: [],
+    knownIssues: openIssues === null
+      ? null
+      : openIssues.map((i) => `${i.priority} [${i.status}] ${i.title} (${i.feedbackId})`),
     testingInstructions: [
       "Run /qa-checklist before each tester session.",
       "Use /test-session-recorder to capture a session.",

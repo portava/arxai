@@ -97,6 +97,16 @@ export interface RuntimeContext {
 
   health: HealthSummary | null;
   bridge: BridgeDiagnosticSummary | null;
+
+  /**
+   * True when the health/bridge snapshot could not be fully refreshed for at
+   * least ~2 refresh intervals (or has never loaded) — the values above are
+   * frozen/absent and must be rendered with a staleness warning, never as
+   * current "Real app state". Optional for compatibility; absent = false.
+   */
+  runtimeDataStale?: boolean;
+  /** ISO timestamp of the last refresh where BOTH health and bridge loaded; null = never. */
+  lastSuccessfulRefreshAt?: string | null;
 }
 
 export type DoctorIssueCategory =

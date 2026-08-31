@@ -20,6 +20,9 @@ interface RuntimeHealth {
   };
   database: { ok: boolean; latencyMs: number | null };
   bridge: {
+    /** false = the server's aggregate query FAILED — counts are not valid.
+     * Absent (older server) = treated as valid for compatibility. */
+    ok?: boolean;
     total: number;
     healthy: number;
     stale: number;
@@ -148,6 +151,12 @@ export function WorkflowHealthCard() {
 
             <div className="text-xs">
               <div className="text-muted-foreground mb-1">MT5 / EA bridges (aggregate heartbeat)</div>
+              {data.bridge.ok === false ? (
+                // A failed aggregate query must not masquerade as "no bridges".
+                <div className="text-warning font-mono" data-testid="workflow-health-bridge">
+                  unavailable — the bridge heartbeat query failed; counts are unknown, not zero
+                </div>
+              ) : (
               <div className="flex gap-3 font-mono" data-testid="workflow-health-bridge">
                 <span>total {data.bridge.total}</span>
                 <span className="text-success">healthy {data.bridge.healthy}</span>
@@ -160,6 +169,7 @@ export function WorkflowHealthCard() {
                     : `${data.bridge.latestHeartbeatAgeSeconds}s ago`}
                 </span>
               </div>
+              )}
             </div>
 
             <div className="text-[11px] text-muted-foreground space-y-1">

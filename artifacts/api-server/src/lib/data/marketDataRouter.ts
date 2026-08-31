@@ -838,7 +838,7 @@ export interface RouterDiagnostics {
   }>;
   chainsByAssetClass: Record<AssetClass, ProviderId[]>;
   mt5: { configured: boolean; connected: boolean; note: string };
-  deriv: { configured: boolean; connected: boolean; appIdConfigured: boolean; apiTokenConfigured: boolean; subscribedSymbolCount: number; activeSymbolCount: number | null; authorized: boolean; lastTickAt: string | null; reconnectCount: number; errorMessage: string | null };
+  deriv: { configured: boolean; connected: boolean; appIdConfigured: boolean; apiTokenConfigured: boolean; subscribedSymbolCount: number; activeSymbolCount: number | null; authorized: boolean; publicDataOnly: boolean; lastTickAt: string | null; reconnectCount: number; errorMessage: string | null };
   assistant: { name: string; connected: boolean; features: { quotes: boolean; candles: boolean; news: boolean }; notes: string | undefined };
 }
 
@@ -882,7 +882,14 @@ export function getRouterDiagnostics(): RouterDiagnostics {
       apiTokenConfigured: deriv.apiTokenConfigured,
       subscribedSymbolCount: deriv.subscribedSymbols.length,
       activeSymbolCount: deriv.activeSymbolCount,
-      authorized: deriv.healthSummary === "healthy",
+      // The session's REAL authorize state — never inferred from feed health.
+      // Ticks flowing on a public-data-only session (Ruling 15: authorize is
+      // deliberately never sent) used to report authorized=true here, and a
+      // genuinely authorized-but-tickless session reported false. The paired
+      // `publicDataOnly` flag lets the operator read "public data,
+      // unauthorized session (by design)" truthfully.
+      authorized: deriv.authorized,
+      publicDataOnly: deriv.publicDataOnly,
       lastTickAt: deriv.lastTickAt,
       reconnectCount: deriv.reconnectCount,
       errorMessage: deriv.errorMessage,

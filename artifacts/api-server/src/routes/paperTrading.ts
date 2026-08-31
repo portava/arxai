@@ -63,6 +63,12 @@ function getMockPrice(symbol: string, atMs: number): number | null {
   }
 }
 
+// P&L UNIT: "sim points" — dir × (exit − entry) × lotSize × 100, symbol-blind.
+// The fixed ×100 corresponds to no real currency amount for ANY instrument
+// (no contract size, pip value, or per-symbol scaling), so every surface that
+// renders this figure must label it sim pts, never dollars or cents.
+// (Same formula as paperExecutionMonitor.unrealizedPnl — kept identical so the
+// two surfaces can never disagree on scale.)
 function pnlFor(direction: string, lotSize: number, entry: number, exit: number): number {
   const dir = direction === "BUY" ? 1 : -1;
   return dir * (exit - entry) * lotSize * 100;
@@ -112,7 +118,9 @@ async function markToMarket(accountId: number) {
         status, closedAt: new Date(), exitPrice: exitPx,
         profitLoss: pnl, updatedAt: new Date(),
       }).where(eq(paperOrdersTable.id, o.id));
-      await logEvent(o.id, status, `${SIMULATED_TAG} ${hit} hit at ${exitPx.toFixed(5)}, P&L ${pnl.toFixed(2)}`);
+      // The settle was decided by the synthetic price model (a seeded PRNG),
+      // not market data, and the P&L unit is sim points — say both.
+      await logEvent(o.id, status, `${SIMULATED_TAG} ${hit} hit at ${exitPx.toFixed(5)} (synthetic model price), P&L ${pnl.toFixed(2)} sim pts`);
       // Session accounting (Build PP): count this settle against the owner's
       // ACTIVE paper session (netPnl in CENTS). Rows with no user_id — placed
       // before the routes stamped ownership, or by an unauthenticated caller —
@@ -253,7 +261,7 @@ router.post("/paper/orders", async (req, res): Promise<void> => {
       decisionId: b.decisionId ?? null,
     }).returning();
     const order = ins[0]!;
-    await logEvent(order.id, "PLACED", `${SIMULATED_TAG} ${b.direction} ${b.symbol} @ ${px.toFixed(5)} SL ${b.stopLoss} TP ${b.takeProfit} lot ${b.lotSize}`);
+    await logEvent(order.id, "PLACED", `${SIMULATED_TAG} ${b.direction} ${b.symbol} @ ${px.toFixed(5)}${b.entryPrice == null ? " (synthetic model price)" : ""} SL ${b.stopLoss} TP ${b.takeProfit} lot ${b.lotSize}`);
     // Session accounting (Build PP): count this open against the caller's
     // ACTIVE paper session. Best-effort; records nothing without one.
     if (req.authUser) {
@@ -323,7 +331,7 @@ router.post("/paper/orders/:id/close", async (req, res): Promise<void> => {
       status: "CLOSED_MANUAL", closedAt: new Date(), exitPrice: exitPx,
       profitLoss: pnl, updatedAt: new Date(),
     }).where(eq(paperOrdersTable.id, id));
-    await logEvent(id, "CLOSED_MANUAL", `${SIMULATED_TAG} closed @ ${exitPx.toFixed(5)}, P&L ${pnl.toFixed(2)}`);
+    await logEvent(id, "CLOSED_MANUAL", `${SIMULATED_TAG} closed @ ${exitPx.toFixed(5)} (synthetic model price), P&L ${pnl.toFixed(2)} sim pts`);
     await vaultBehavior("PAPER_ORDER_CLOSED", { orderId: id, exitPrice: exitPx, pnl, manual: true });
     // Session accounting (Build PP): attribute the close to the order's owner
     // (or the authenticated caller for legacy rows with no user_id stamp).

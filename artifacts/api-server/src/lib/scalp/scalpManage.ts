@@ -155,7 +155,15 @@ export interface BasketSummary {
   totalVolume: number;
   averageEntry: number;
   currentPrice: number | null;
+  /**
+   * Combined floating P/L — non-null ONLY when EVERY leg reported one. A
+   * 3-leg basket with a single known leg must never present that leg's P/L
+   * as the basket total (and the exit/add-on logic must never reason from
+   * such a partial number as if it were the whole).
+   */
   combinedFloatingPl: number | null;
+  /** How many legs actually reported a floating P/L (vs entryCount total). */
+  plKnownLegCount: number;
   breakEvenPrice: number;
   hasUnprotectedLeg: boolean;
 }
@@ -166,7 +174,7 @@ export function summarizeBasket(legs: ScalpBasketLeg[]): BasketSummary {
   let totalVolume = 0;
   let weighted = 0;
   let pl = 0;
-  let plKnown = false;
+  let plKnownLegCount = 0;
   let currentPrice: number | null = null;
   let hasUnprotectedLeg = false;
   for (const leg of legs) {
@@ -174,7 +182,7 @@ export function summarizeBasket(legs: ScalpBasketLeg[]): BasketSummary {
     weighted += leg.volume * leg.entryPrice;
     if (num(leg.floatingPl)) {
       pl += leg.floatingPl;
-      plKnown = true;
+      plKnownLegCount++;
     }
     if (num(leg.currentPrice)) currentPrice = leg.currentPrice;
     if (!num(leg.stopLoss)) hasUnprotectedLeg = true;
@@ -185,7 +193,9 @@ export function summarizeBasket(legs: ScalpBasketLeg[]): BasketSummary {
     totalVolume,
     averageEntry,
     currentPrice,
-    combinedFloatingPl: plKnown ? pl : null,
+    // A partial sum is honestly withheld (null), never shown as the total.
+    combinedFloatingPl: entryCount > 0 && plKnownLegCount === entryCount ? pl : null,
+    plKnownLegCount,
     breakEvenPrice: averageEntry,
     hasUnprotectedLeg,
   };
@@ -484,6 +494,29 @@ export function assembleBasket(
   const personality = opts.personality ?? "BALANCED";
   const currentPrice = num(opts.currentPrice) ? opts.currentPrice : summary.currentPrice;
   const generatedAt = new Date(opts.now ?? Date.now()).toISOString();
+
+  // Geometry-honesty disclosure: when the basket carries no stop-loss and/or
+  // no take-profit of its own, the manage-side flame judged timing/room against
+  // recent volatility (ATR), not user levels. Say so instead of presenting the
+  // verdict as if it were anchored to the user's own trade plan.
+  let exit = evaluateExitUrgency(flame, summary, personality);
+  if (!flame.blind) {
+    const hasOwnStop = group.legs.some((l) => num(l.stopLoss));
+    const hasOwnTarget = group.legs.some((l) => num(l.takeProfit));
+    if (!hasOwnStop || !hasOwnTarget) {
+      const missing =
+        !hasOwnStop && !hasOwnTarget
+          ? "stop-loss or take-profit"
+          : !hasOwnStop
+          ? "stop-loss"
+          : "take-profit";
+      exit = {
+        ...exit,
+        detail: `${exit.detail} (No ${missing} is set on this basket, so timing and room are judged against recent volatility rather than your own levels.)`,
+      };
+    }
+  }
+
   return {
     symbol: group.symbol,
     displayName: group.displayName,
@@ -494,11 +527,12 @@ export function assembleBasket(
     averageEntry: summary.averageEntry,
     currentPrice,
     combinedFloatingPl: summary.combinedFloatingPl,
+    plKnownLegCount: summary.plKnownLegCount,
     breakEvenPrice: summary.breakEvenPrice,
     hasUnprotectedLeg: summary.hasUnprotectedLeg,
     legs: group.legs,
     flame,
-    exit: evaluateExitUrgency(flame, summary, personality),
+    exit,
     addOn: evaluateAddOn(flame, summary, personality),
     generatedAt,
     sync: opts.sync ?? { syncedAt: null, ageSeconds: null, stale: true },

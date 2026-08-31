@@ -158,9 +158,9 @@ export interface SessionTimingResult {
 
 export type DataQualityLabel =
   | "real"                  // All scores derived from live provider data
-  | "basic_timing_estimate" // No candles/quote data — session+clock only
+  | "basic_timing_estimate" // Legacy session+clock-only label — no longer emitted by the composer (a fully-down feed is "unavailable"); kept for stored heat snapshots
   | "partial"               // Some real data, some estimated
-  | "unavailable";          // Not enough data to produce any meaningful read
+  | "unavailable";          // No candle AND no quote data — no meaningful read; UIs collapse instead of rendering clock-derived scores
 
 export interface TimingDataQuality {
   label: DataQualityLabel;

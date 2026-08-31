@@ -232,6 +232,13 @@ export interface ScalpResult {
   confidenceLabel: ConfidenceLabel;
   entryType: ScalpEntryType | null;
   entryZone: ScalpEntryZone | null;
+  /**
+   * True when `entryZone` was NOT the analyzer's structural zone but a
+   * synthesized buffer around the entry (entry ± spread/point constants).
+   * Surfaces must label such a band as approximate, never as a precise
+   * market-structure range.
+   */
+  entryZoneEstimated: boolean;
   currentPrice: number | null;
   takeProfit: ScalpTakeProfit;
   stopLoss: number | null;
@@ -246,9 +253,14 @@ export interface ScalpResult {
   estimatedRiskAmount: number | null;
   rewardToRisk: number | null;
   estimatedMargin: number | null;
-  spreadRisk: RiskBand;
-  slippageRisk: RiskBand;
-  newsRisk: RiskBand;
+  /**
+   * Risk bands are NULL when the engine never evaluated them (reject/awaiting
+   * states, or no spread evidence at all). A null band means "unknown", and
+   * surfaces must hide the chip — never render a fabricated confident LOW.
+   */
+  spreadRisk: RiskBand | null;
+  slippageRisk: RiskBand | null;
+  newsRisk: RiskBand | null;
   timingStatus: TimingStatus;
   validForSeconds: number;
   expiresAt: string;
@@ -389,7 +401,14 @@ export interface ScalpBasket {
   totalVolume: number;
   averageEntry: number;
   currentPrice: number | null;
+  /**
+   * Combined floating P/L across ALL legs — non-null ONLY when every leg
+   * reported a floating P/L. A partial sum is never presented as the basket
+   * total; see `plKnownLegCount` for how many legs actually reported.
+   */
   combinedFloatingPl: number | null;
+  /** How many legs reported a floating P/L (vs `entryCount` legs total). */
+  plKnownLegCount: number;
   /** Volume-weighted average entry — the basket's break-even price. */
   breakEvenPrice: number;
   /** True when any leg has no protective stop-loss. */

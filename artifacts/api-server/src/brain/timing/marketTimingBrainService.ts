@@ -266,8 +266,11 @@ function resolveBestAction(
   if (moveStage === "EXHAUSTED" || trapProbability > 65) {
     return {
       bestAction: "WATCH_ONLY",
+      // trapProbability is an additive rule-points heuristic (uncalibrated) —
+      // never render it with a "%" as if it were a measured probability
+      // (same honesty rule as liveScanner's signalStrength).
       actionReason: trapProbability > 65
-        ? `High trap probability (${trapProbability}%) — watch for reversal confirmation before entry.`
+        ? `High trap score (${trapProbability}/100) — watch for reversal confirmation before entry.`
         : "Move appears exhausted — wait for reset before next entry.",
     };
   }
@@ -306,7 +309,12 @@ function resolveDataQuality(
 ): TimingDataQuality {
   let label: DataQualityLabel;
   if (!hasCandleData && !hasQuoteData) {
-    label = "basic_timing_estimate";
+    // Feed fully down: the read carries NO market evidence — only the wall
+    // clock/session. That is not a "timing estimate"; it is unavailable, and
+    // this label is exactly what the frontend's honest collapse branch keys
+    // on (it withholds grade/permission/score gauges instead of rendering
+    // clock-derived values as market facts).
+    label = "unavailable";
   } else if (hasCandleData && hasQuoteData) {
     label = "real";
   } else {
@@ -319,9 +327,11 @@ function resolveDataQuality(
   if (!hasNewsData) parts.push("no scheduled news events");
   if (!hasBroadFlowData) parts.push("broad flow unavailable");
 
-  const note = parts.length === 0
-    ? "All data sources available — read is based on real data."
-    : `Partial data: ${parts.join("; ")}.`;
+  const note = label === "unavailable"
+    ? "Candle and quote feeds are both unavailable — not enough live data to produce a timing read."
+    : parts.length === 0
+      ? "All data sources available — read is based on real data."
+      : `Partial data: ${parts.join("; ")}.`;
 
   return {
     label,

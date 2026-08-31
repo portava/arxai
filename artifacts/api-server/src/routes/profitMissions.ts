@@ -59,9 +59,12 @@ import {
   projectDraft,
   type DraftServiceResult,
 } from "../lib/missionDrafts.js";
-import { refreshMissionRisk, type MissionLiveSignals } from "../lib/missionRiskService.js";
+import { refreshMissionRisk } from "../lib/missionRiskService.js";
 import { dispatchApprovedDraft } from "../lib/missionExecution.js";
-import { resolveMissionPulsePhase7 } from "../lib/missionExecutionQuality.js";
+import {
+  resolveMissionPulsePhase7,
+  resolveMissionLiveSignals,
+} from "../lib/missionExecutionQuality.js";
 import {
   refreshMissionProtection,
   manageMissionTradeExit,
@@ -95,19 +98,14 @@ import {
 
 const router = Router();
 
-// Conservative display/recompute signals for a mission's risk read. The
-// `feedStatus`/`quoteFresh` values here are the NEUTRAL element of the additive,
-// stricter-only mission gate (they assert "no extra degradation observed", NOT
-// that a feed is live) — the live execution pipeline re-derives every safety
-// signal server-side, and Phase 7 resolves real per-symbol feed truth on its own
-// from the mt5_broker-aware seam (this channel can only ADD strictness, never
-// upgrade). These only feed the additive mission gate + the display recompute.
-const MISSION_RISK_SIGNALS: MissionLiveSignals = {
-  killSwitchActive: false,
-  brokerConnected: true,
-  feedStatus: "live",
-  quoteFresh: true,
-};
+// Mission risk signals are RESOLVED from the real platform seams on every call
+// (resolveMissionLiveSignals: safety-core kill switch + broker-health verdict),
+// never hardcoded. The constants that used to sit here (killSwitchActive:false,
+// brokerConnected:true, feedStatus:"live", quoteFresh:true) made the Risk
+// Control card's emergency alert structurally unreachable and persisted a
+// riskJson that asserted a live feed nobody observed. The channel remains
+// additive + stricter-only: Phase 7 still re-derives per-symbol feed truth at
+// dispatch and the live pipeline re-derives every safety signal server-side.
 
 async function ownMission(userId: number, id: number): Promise<MissionRow | null> {
   const r = await db
@@ -294,17 +292,21 @@ router.get("/profit-missions/:id/pulse", requireUser, async (req, res): Promise<
   }
   const now = Date.now();
   const { math, feasibility, probability } = assess(row, now);
+  // Honest live signals, resolved from the real platform seams (safety-core
+  // kill switch + broker health) — so the persisted risk read reflects what was
+  // actually observed, and the emergency conditions can genuinely fire.
+  const signals = await resolveMissionLiveSignals();
   // Recompute + persist the additive, stricter-only risk read (riskJson) and
   // surface it for the Battle Room display. Journaling inside is escalation-only
   // and idempotent, so repeated polls never spam mission_events.
   const risk = await refreshMissionRisk({
     userId,
     missionId: id,
-    signals: MISSION_RISK_SIGNALS,
+    signals,
     nowMs: now,
   });
   // Advisory Phase 7 surface: honest broker/feed execution health + open exposure.
-  const phase7 = await resolveMissionPulsePhase7({ userId, signals: MISSION_RISK_SIGNALS });
+  const phase7 = await resolveMissionPulsePhase7({ userId, signals });
   // Phase 8 protection surface: recompute + persist milestones / locked profit /
   // giveback + compounding state (MERGED into progressJson; journaling is
   // change-only + idempotent, so repeated polls never spam mission_events). A
@@ -862,10 +864,13 @@ router.post("/profit-missions/:id/emergency-stop", requireUser, async (req, res)
     return;
   }
   const now = Date.now();
+  // The user's press is a STOP condition on its own; the resolved platform
+  // signals ride along so the persisted read also reflects any real kill-switch
+  // / broker / feed condition present at the moment of the stop.
   const risk = await refreshMissionRisk({
     userId,
     missionId: id,
-    signals: { ...MISSION_RISK_SIGNALS, userEmergencyStop: true },
+    signals: { ...(await resolveMissionLiveSignals()), userEmergencyStop: true },
     nowMs: now,
   });
   let mission = row;
@@ -970,7 +975,10 @@ router.post(
       proposalId,
       ip: req.ip ?? null,
       ua: req.get("user-agent") ?? null,
-      signals: MISSION_RISK_SIGNALS,
+      // Honest platform signals (kill switch / broker / feed), resolved at the
+      // press — the mission gate can now refuse on a REAL engaged switch or a
+      // dead feed instead of a hardcoded all-clear.
+      signals: await resolveMissionLiveSignals(),
     });
     if (!result.ok) {
       sendDispatchFailure(res, result);

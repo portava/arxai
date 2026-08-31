@@ -27,6 +27,13 @@ type DayAgg = {
   bestTrade: number | null;
   worstTrade: number | null;
   winRate: number;          // 0..100
+  /**
+   * Closed trades on this day whose realised P/L was never recorded
+   * (pnl IS NULL). They are excluded from EVERY figure above — a trade
+   * with unknown P/L is not a $0 breakeven — and disclosed here instead,
+   * mirroring the /performance/summary excludedUnknownCount contract.
+   */
+  excludedUnknownPnl: number;
 };
 
 function dayKey(d: Date): string {
@@ -105,13 +112,24 @@ async function loadClosedRows(
   }));
 }
 
-function aggregate(rows: ClosedRow[]): Record<string, DayAgg> {
+// Exported for the offline unit lane (routes/__qa__ — no DB needed).
+export function aggregate(rows: ClosedRow[]): Record<string, DayAgg> {
   const out: Record<string, DayAgg> = {};
   for (const r of rows) {
     if (!r.closedAt) continue;
     const key = dayKey(r.closedAt);
-    const day: DayAgg = out[key] ?? { date: key, tradesCount: 0, wins: 0, losses: 0, breakeven: 0, totalPnl: 0, totalRisk: 0, bestTrade: null, worstTrade: null, winRate: 0 };
-    const pnl = r.pnl ?? 0;
+    const day: DayAgg = out[key] ?? { date: key, tradesCount: 0, wins: 0, losses: 0, breakeven: 0, totalPnl: 0, totalRisk: 0, bestTrade: null, worstTrade: null, winRate: 0, excludedUnknownPnl: 0 };
+    // A closed row with NULL pnl has an UNRECORDED realised P/L. `?? 0`
+    // here used to mint it as a $0 breakeven trade — folded into totalPnl,
+    // winRate, even bestTrade/worstTrade — while /performance/summary
+    // excluded the same class of row and said so. Mirror that contract:
+    // exclude it from every aggregate and disclose the count.
+    if (r.pnl == null) {
+      day.excludedUnknownPnl += 1;
+      out[key] = day;
+      continue;
+    }
+    const pnl = r.pnl;
     day.tradesCount += 1;
     if (pnl > 0) day.wins += 1; else if (pnl < 0) day.losses += 1; else day.breakeven += 1;
     day.totalPnl = Number((day.totalPnl + pnl).toFixed(4));
@@ -165,6 +183,7 @@ router.get("/me/performance-calendar/:date", requireUser, async (req, res): Prom
     res.json({
       date, tradesCount: 0, wins: 0, losses: 0, breakeven: 0,
       totalPnl: 0, totalRisk: 0, bestTrade: null, worstTrade: null, winRate: 0,
+      excludedUnknownPnl: 0,
       trades: [],
       currentAccountMode: scope.currentAccountMode,
       modeScopeApplied: true,
@@ -172,7 +191,7 @@ router.get("/me/performance-calendar/:date", requireUser, async (req, res): Prom
     return;
   }
   const rows = await loadClosedRows(userId, `${date}T00:00:00Z`, `${date}T23:59:59Z`);
-  const agg = aggregate(rows)[date] ?? { date, tradesCount: 0, wins: 0, losses: 0, breakeven: 0, totalPnl: 0, totalRisk: 0, bestTrade: null, worstTrade: null, winRate: 0 };
+  const agg = aggregate(rows)[date] ?? { date, tradesCount: 0, wins: 0, losses: 0, breakeven: 0, totalPnl: 0, totalRisk: 0, bestTrade: null, worstTrade: null, winRate: 0, excludedUnknownPnl: 0 };
   res.json({
     ...agg,
     trades: rows.map((r) => ({
@@ -193,27 +212,40 @@ router.get("/me/performance-summary", requireUser, async (req, res) => {
     res.json({
       totalTrades: 0, totalPnl: 0, wins: 0, losses: 0, breakeven: 0, winRate: 0,
       activeDays: 0, bestDay: null, worstDay: null, isEmpty: true,
+      excludedUnknownCount: 0,
       currentAccountMode: scope.currentAccountMode,
       modeScopeApplied: true,
     });
     return;
   }
   const rows = await loadClosedRows(userId);
-  const totalTrades = rows.length;
-  const totalPnl = Number(rows.reduce((s, r) => s + (r.pnl ?? 0), 0).toFixed(4));
-  const wins = rows.filter((r) => (r.pnl ?? 0) > 0).length;
-  const losses = rows.filter((r) => (r.pnl ?? 0) < 0).length;
+  // Closed rows with NULL pnl carry an unrecorded realised P/L. They are
+  // excluded from every money aggregate below (never minted as $0 breakeven
+  // trades) and the count is disclosed — same contract as
+  // /performance/summary's excludedUnknownCount.
+  const trusted = rows.filter((r) => r.pnl != null);
+  const excludedUnknownCount = rows.length - trusted.length;
+  const totalTrades = trusted.length;
+  const totalPnl = Number(trusted.reduce((s, r) => s + (r.pnl as number), 0).toFixed(4));
+  const wins = trusted.filter((r) => (r.pnl as number) > 0).length;
+  const losses = trusted.filter((r) => (r.pnl as number) < 0).length;
   const breakeven = totalTrades - wins - losses;
   const winRate = totalTrades ? Number(((wins / totalTrades) * 100).toFixed(1)) : 0;
   const days = Object.values(aggregate(rows));
-  const best = days.reduce<DayAgg | null>((b, d) => (b == null || d.totalPnl > b.totalPnl ? d : b), null);
-  const worst = days.reduce<DayAgg | null>((b, d) => (b == null || d.totalPnl < b.totalPnl ? d : b), null);
+  // Best/worst day only over days that have at least one trusted trade — a
+  // day whose every trade was excluded has no known P/L, not a $0 P/L.
+  const moneyDays = days.filter((d) => d.tradesCount > 0);
+  const best = moneyDays.reduce<DayAgg | null>((b, d) => (b == null || d.totalPnl > b.totalPnl ? d : b), null);
+  const worst = moneyDays.reduce<DayAgg | null>((b, d) => (b == null || d.totalPnl < b.totalPnl ? d : b), null);
   res.json({
     totalTrades, totalPnl, wins, losses, breakeven, winRate,
     activeDays: days.length,
     bestDay: best ? { date: best.date, pnl: best.totalPnl } : null,
     worstDay: worst ? { date: worst.date, pnl: worst.totalPnl } : null,
-    isEmpty: totalTrades === 0,
+    // isEmpty means "no closed trades at all" — trades whose P/L is unknown
+    // still exist, so they must not render the pristine empty state.
+    isEmpty: rows.length === 0,
+    excludedUnknownCount,
     currentAccountMode: scope.currentAccountMode,
     modeScopeApplied: true,
   });

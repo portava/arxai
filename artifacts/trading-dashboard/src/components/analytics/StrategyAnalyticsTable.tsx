@@ -11,8 +11,10 @@ export function StrategyAnalyticsTable({ rows }: { rows: StrategyRow[] }) {
             <th className="px-2 py-1.5 text-right">Trades</th>
             <th className="px-2 py-1.5 text-right">Win %</th>
             <th className="px-2 py-1.5 text-right">Avg RR</th>
-            <th className="px-2 py-1.5 text-right">Expectancy</th>
-            <th className="px-2 py-1.5 text-right">Total P&amp;L</th>
+            {/* P/L columns are synthetic units ((exit − entry) × lots × 100),
+                NOT account currency — never rendered with a "$" sign. */}
+            <th className="px-2 py-1.5 text-right">Expectancy (units)</th>
+            <th className="px-2 py-1.5 text-right">Total P&amp;L (units)</th>
           </tr>
         </thead>
         <tbody>
@@ -23,10 +25,10 @@ export function StrategyAnalyticsTable({ rows }: { rows: StrategyRow[] }) {
               <td className="px-2 py-1.5 text-right">{(r.winRate * 100).toFixed(1)}%</td>
               <td className="px-2 py-1.5 text-right">{r.averageRr.toFixed(2)}R</td>
               <td className={`px-2 py-1.5 text-right ${r.expectancy >= 0 ? "text-success" : "text-danger"}`}>
-                ${r.expectancy.toFixed(2)}
+                {r.expectancy.toFixed(2)}
               </td>
               <td className={`px-2 py-1.5 text-right font-semibold ${r.totalPnl >= 0 ? "text-success" : "text-danger"}`}>
-                ${r.totalPnl.toFixed(2)}
+                {r.totalPnl.toFixed(2)}
               </td>
             </tr>
           ))}

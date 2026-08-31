@@ -77,9 +77,16 @@ export interface SafetyStatus {
 }
 
 export interface SecretSafetyStatus {
-  secretsDetectedInFrontend: number;
-  secretsDetectedInLogs: number;
-  redactionWorking: boolean;
+  /** null = the scan query itself failed — leak count UNKNOWN, not 0. */
+  secretsDetectedInFrontend: number | null;
+  /** null = the scan query itself failed — leak count UNKNOWN, not 0. */
+  secretsDetectedInLogs: number | null;
+  /**
+   * true = both probes ran and found 0 leaks; false = a probe found leaks;
+   * null = at least one probe query failed — redaction state is UNKNOWN and
+   * must never be rendered as "working".
+   */
+  redactionWorking: boolean | null;
   warnings: string[];
 }
 
@@ -89,7 +96,8 @@ export interface PerformanceStatus {
   errorRate: number;
   latestAutopilotCycle: { cycleId: string | number; status?: string; startedAt?: string | Date } | null;
   latestRiskGovernorStatus: { overallStatus?: string; createdAt?: string | Date } | null;
-  latestNotificationCriticalCount: number;
+  /** null = the count query failed — UNKNOWN, must render as unavailable, not 0. */
+  latestNotificationCriticalCount: number | null;
 }
 
 export interface HealthCheckReport {
@@ -206,10 +214,13 @@ async function probeDD(): Promise<SubsystemReport> {
 }
 async function probeEE(): Promise<SubsystemReport> {
   const r = await probeEndpoint("/api/paper-execution/status");
-  const cnt = await db.select({ c: sql<number>`count(*)::int` }).from(paperOrdersTable).catch(() => [{ c: 0 }]);
+  // null = the count query failed (unknown), never defaulted to 0.
+  const cnt = await db.select({ c: sql<number>`count(*)::int` }).from(paperOrdersTable).catch(() => null);
+  const paperOrders: number | null = cnt === null ? null : cnt[0]?.c ?? 0;
+  const countNote = cnt === null ? ["paper_orders count unreadable — reported as unknown"] : [];
   return r.ok
-    ? { status: "OK", notes: ["paper execution endpoint reachable", "paper-only enforced"], metrics: { paperOrders: cnt[0]?.c ?? 0 }, paperOnly: true, liveTradingAllowed: false }
-    : { status: "DEGRADED", notes: [`paper execution endpoint http=${r.status ?? "ERR"}`], metrics: { paperOrders: cnt[0]?.c ?? 0 }, paperOnly: true, liveTradingAllowed: false };
+    ? { status: "OK", notes: ["paper execution endpoint reachable", "paper-only enforced", ...countNote], metrics: { paperOrders }, paperOnly: true, liveTradingAllowed: false }
+    : { status: "DEGRADED", notes: [`paper execution endpoint http=${r.status ?? "ERR"}`, ...countNote], metrics: { paperOrders }, paperOnly: true, liveTradingAllowed: false };
 }
 async function probeFF(): Promise<SubsystemReport> {
   const r = await probeEndpoint("/api/paper-autopilot/status");
@@ -263,10 +274,13 @@ async function probeKK(): Promise<SubsystemReport> {
 async function probeLL(): Promise<SubsystemReport> {
   const r1 = await probeEndpoint("/api/notifications");
   const r2 = await probeEndpoint("/api/notifications/digest");
-  const counts = await db.select({ c: sql<number>`count(*) filter (where severity='CRITICAL')::int` }).from(notificationsTable).catch(() => [{ c: 0 }]);
+  // null = the count query failed (unknown), never defaulted to 0.
+  const counts = await db.select({ c: sql<number>`count(*) filter (where severity='CRITICAL')::int` }).from(notificationsTable).catch(() => null);
+  const criticalTotal: number | null = counts === null ? null : counts[0]?.c ?? 0;
+  const countNote = counts === null ? ["critical-notification count unreadable — reported as unknown"] : [];
   return r1.ok
-    ? { status: "OK", notes: ["notifications reachable", `digest http=${r2.status}`, "critical alerts work"], metrics: { criticalTotal: counts[0]?.c ?? 0 } }
-    : { status: "DEGRADED", notes: [`notifications http=${r1.status ?? "ERR"}`] };
+    ? { status: "OK", notes: ["notifications reachable", `digest http=${r2.status}`, ...countNote], metrics: { criticalTotal } }
+    : { status: "DEGRADED", notes: [`notifications http=${r1.status ?? "ERR"}`, ...countNote] };
 }
 
 // ── Database probe ──────────────────────────────────────────────────────────
@@ -310,8 +324,21 @@ async function probeEndpoints(): Promise<EndpointStatus> {
 async function probeSafety(subs: Record<SubsystemBuild, SubsystemReport>): Promise<SafetyStatus> {
   const warnings: string[] = [];
   const hardBlocks: Array<{ code: string; severity: string; message: string }> = [];
-  // Read safetyCore (informational only — MM never writes here)
-  const sc = await db.select().from(safetyCoreTable).limit(1).catch(() => []);
+  // Read safetyCore (informational only — MM never writes here).
+  // FAIL-CLOSED REPORTING: a failed read means the kill switch may be engaged
+  // and unreadable — that is itself a hard block (SAFETY_STATE_UNKNOWN), never
+  // a silent "no hard blocks". Matches the live pipeline, which treats an
+  // unconfirmed kill-switch state as engaged (liveCommandPipeline.ts).
+  let sc: Array<typeof safetyCoreTable.$inferSelect> = [];
+  try {
+    sc = await db.select().from(safetyCoreTable).limit(1);
+  } catch (err) {
+    hardBlocks.push({
+      code: "SAFETY_STATE_UNKNOWN",
+      severity: "CRITICAL",
+      message: `safety_core unreadable: ${String(err).slice(0, 120)} — kill-switch state cannot be confirmed`,
+    });
+  }
   const row = sc[0] as (typeof safetyCoreTable.$inferSelect | undefined);
   if (row?.killSwitchEngaged) hardBlocks.push({ code: "KILL_SWITCH", severity: "CRITICAL", message: row.killSwitchReason ?? "engaged" });
   if (row?.operationalMode && !["OBSERVE_ONLY", "PAPER_ONLY", "RECOVERY_MODE"].includes(row.operationalMode))
@@ -347,19 +374,29 @@ async function probeSafety(subs: Record<SubsystemBuild, SubsystemReport>): Promi
 const SECRET_SHAPED = /AKIA[0-9A-Z]{16}|sk_(?:live|test)_[A-Za-z0-9]{12,}|eyJ[A-Za-z0-9_-]{10,}\.eyJ|ghp_[A-Za-z0-9]{20,}|postgres(?:ql)?:\/\/[^[\s]/;
 async function probeSecretSafety(): Promise<SecretSafetyStatus> {
   const warnings: string[] = [];
+  // A failed probe query must degrade to null (unknown), never default to 0 —
+  // "Working: true with 0 leaks" computed from a failed query is a lie.
+  let ff: number | null = null;
+  let lf: number | null = null;
   // Notification messages (frontend-visible)
-  const inFrontend = await db.execute(sql`select count(*)::int as c from notifications where message ~ ${SECRET_SHAPED.source}`)
-    .catch(() => ({ rows: [{ c: 0 }] as Array<{ c: number }> }));
+  try {
+    const inFrontend = await db.execute(sql`select count(*)::int as c from notifications where message ~ ${SECRET_SHAPED.source}`);
+    ff = (inFrontend.rows[0] as { c: number } | undefined)?.c ?? 0;
+  } catch (err) {
+    warnings.push(`frontend secret-scan query failed: ${String(err).slice(0, 120)} — leak count UNKNOWN`);
+  }
   // Notification logs
-  const inLogs = await db.execute(sql`select count(*)::int as c from notification_logs where message ~ ${SECRET_SHAPED.source}`)
-    .catch(() => ({ rows: [{ c: 0 }] as Array<{ c: number }> }));
-  const ff = (inFrontend.rows[0] as { c: number } | undefined)?.c ?? 0;
-  const lf = (inLogs.rows[0] as { c: number } | undefined)?.c ?? 0;
-  if (ff > 0) warnings.push(`possible secret-shaped strings in ${ff} notification messages`);
-  if (lf > 0) warnings.push(`possible secret-shaped strings in ${lf} notification log messages`);
+  try {
+    const inLogs = await db.execute(sql`select count(*)::int as c from notification_logs where message ~ ${SECRET_SHAPED.source}`);
+    lf = (inLogs.rows[0] as { c: number } | undefined)?.c ?? 0;
+  } catch (err) {
+    warnings.push(`log secret-scan query failed: ${String(err).slice(0, 120)} — leak count UNKNOWN`);
+  }
+  if (ff !== null && ff > 0) warnings.push(`possible secret-shaped strings in ${ff} notification messages`);
+  if (lf !== null && lf > 0) warnings.push(`possible secret-shaped strings in ${lf} notification log messages`);
   return {
     secretsDetectedInFrontend: ff, secretsDetectedInLogs: lf,
-    redactionWorking: ff === 0 && lf === 0,
+    redactionWorking: ff === null || lf === null ? null : ff === 0 && lf === 0,
     warnings,
   };
 }
@@ -371,15 +408,19 @@ async function probePerformance(eps: EndpointStatus): Promise<PerformanceStatus>
   const errorRate = eps.results.length ? failed / eps.results.length : 0;
   const lastCycle = await db.select().from(autopilotCyclesTable).orderBy(desc(autopilotCyclesTable.id)).limit(1).catch(() => []);
   const lastGov = await db.select().from(riskGovernorEvaluationsTable).orderBy(desc(riskGovernorEvaluationsTable.id)).limit(1).catch(() => []);
-  const critUnread = await db.execute(sql`select count(*)::int as c from notifications where severity='CRITICAL' and status='UNREAD'`)
-    .catch(() => ({ rows: [{ c: 0 }] as Array<{ c: number }> }));
+  // Distinct error-vs-zero: a failed count query is null (unknown), never 0.
+  let critUnread: number | null = null;
+  try {
+    const r = await db.execute(sql`select count(*)::int as c from notifications where severity='CRITICAL' and status='UNREAD'`);
+    critUnread = (r.rows[0] as { c: number } | undefined)?.c ?? 0;
+  } catch { /* reported as null below */ }
   return {
     slowEndpoints: slow,
     failedJobs: failed,
     errorRate: Number(errorRate.toFixed(3)),
     latestAutopilotCycle: lastCycle[0] ? { cycleId: lastCycle[0].id, status: (lastCycle[0] as { status?: string }).status, startedAt: (lastCycle[0] as { startedAt?: Date }).startedAt } : null,
     latestRiskGovernorStatus: lastGov[0] ? { overallStatus: (lastGov[0] as { overallStatus?: string }).overallStatus, createdAt: (lastGov[0] as { createdAt?: Date }).createdAt } : null,
-    latestNotificationCriticalCount: (critUnread.rows[0] as { c: number } | undefined)?.c ?? 0,
+    latestNotificationCriticalCount: critUnread,
   };
 }
 
@@ -417,9 +458,13 @@ export async function runHealthCheck(): Promise<HealthCheckReport> {
     warnings.push("live arm switch unreadable — liveTradingStatus reported as UNKNOWN, not DISABLED");
   if (databaseStatus.missingTables.length) warnings.push(`missing tables: ${databaseStatus.missingTables.join(",")}`);
   if (endpointStatus.failed > 0) warnings.push(`${endpointStatus.failed} endpoint(s) failing`);
-  if (!secretSafetyStatus.redactionWorking) errors.push("secret redaction warnings — investigate");
+  if (secretSafetyStatus.redactionWorking === false) errors.push("secret redaction warnings — investigate");
+  if (secretSafetyStatus.redactionWorking === null)
+    warnings.push("secret-redaction probes failed — redaction state UNKNOWN, not confirmed working");
   if (safetyStatus.hardBlocks.length) errors.push(`${safetyStatus.hardBlocks.length} hard safety block(s) active`);
-  if (performanceStatus.latestNotificationCriticalCount > 0)
+  if (performanceStatus.latestNotificationCriticalCount === null)
+    warnings.push("critical-unread notification count unreadable — reported as unavailable, not 0");
+  if ((performanceStatus.latestNotificationCriticalCount ?? 0) > 0)
     recommendedAdminActions.push(`Acknowledge ${performanceStatus.latestNotificationCriticalCount} unread CRITICAL notification(s)`);
   if (subsystemStatus.FF.status === "OK") recommendedAdminActions.push("Stop autopilot before next session if not in use");
   if (warnings.length === 0 && errors.length === 0) recommendedAdminActions.push("System healthy — no admin action required");

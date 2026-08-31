@@ -17,13 +17,10 @@ import { cn } from "@/lib/utils";
 import { useTradingMode } from "@/hooks/useTradingMode";
 import { useAssistantName } from "@/lib/assistant-name";
 
-const RUBY_OPEN_KEY = "arx.assistant.open.v2";
-function openRubyLiveChat() {
-  try {
-    sessionStorage.setItem(RUBY_OPEN_KEY, "1");
-    window.dispatchEvent(new StorageEvent("storage", { key: RUBY_OPEN_KEY }));
-  } catch { /* sessionStorage unavailable — silent */ }
-}
+// Opens the mounted assistant panel NOW via its real open event.
+// (The old body forged a StorageEvent nothing listened to — the button
+// silently no-oped. See lib/assistantPanelBus.)
+import { openAssistantPanel as openRubyLiveChat } from "@/lib/assistantPanelBus";
 
 const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/+$/, "");
 

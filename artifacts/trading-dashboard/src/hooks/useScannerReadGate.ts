@@ -19,7 +19,12 @@ export interface ScannerReadGateState {
   level: ScannerAnalysisLevel | null;
   /** Truth resolved AND fully actionable (analysis.level === "full"). */
   isFull: boolean;
-  /** Truth resolved AND NOT fully actionable — actionable content must downgrade. */
+  /**
+   * NOT fully actionable — actionable content must downgrade. FAIL-CLOSED:
+   * a null truth (fetch failed, still resolving, or never ran) is downgraded
+   * too — a gate that fails open would let confident GO/grade/score gauges
+   * render exactly when the feed-truth check itself is broken.
+   */
   downgraded: boolean;
   reason: string | null;
 }
@@ -33,7 +38,12 @@ export function useScannerReadGate(symbol: string): ScannerReadGateState {
     truth,
     level,
     isFull,
-    downgraded: truth != null && !isFull,
-    reason: truth?.analysis.reason ?? null,
+    // Fail-closed: only a resolved, fully-actionable truth lifts the gate.
+    downgraded: !isFull,
+    reason:
+      truth?.analysis.reason ??
+      (truth == null
+        ? "The live-feed truth check hasn't confirmed this symbol yet."
+        : null),
   };
 }

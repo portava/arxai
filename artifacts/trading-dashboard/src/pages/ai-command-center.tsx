@@ -67,19 +67,11 @@ import {
 // CAN say to Ruby — actual dispatch still goes through Ruby's existing
 // gated pipeline.
 
-const STORAGE_OPEN_KEY = "arx.assistant.open.v2";
-
-function openRubyLiveChat() {
-  try {
-    sessionStorage.setItem(STORAGE_OPEN_KEY, "1");
-    // ArxAssistantLivePanel watches `storage` events to react across tabs;
-    // dispatching one here makes the floating panel open immediately in
-    // the same tab too.
-    window.dispatchEvent(new StorageEvent("storage", { key: STORAGE_OPEN_KEY }));
-  } catch {
-    /* sessionStorage unavailable — silent */
-  }
-}
+// Opens the mounted assistant panel NOW via its real open event.
+// (The old body forged a StorageEvent — and its comment claimed the panel
+// "watches storage events"; it never did, so the button silently no-oped.
+// See lib/assistantPanelBus.)
+import { openAssistantPanel as openRubyLiveChat } from "@/lib/assistantPanelBus";
 
 interface CCResp {
   // The shape comes straight from /api/performance/ai-command-center; using

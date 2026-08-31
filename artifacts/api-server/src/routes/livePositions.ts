@@ -54,6 +54,7 @@ import {
 } from "@workspace/domain/live-position";
 import { queueMt5CommandWithGate } from "./mt5";
 import { PNL_DATA_QUALITY_MISSING_CLOSE_FILL } from "../lib/live/realizedPnl.js";
+import { isSnapshotReliable } from "../lib/live/positionFreshness.js";
 import { requireUser } from "../lib/auth/middleware.js";
 import { readRoleFromRequest } from "../lib/security/middleware.js";
 
@@ -105,10 +106,18 @@ async function resolveOwned(
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
-async function loadMt5Positions(): Promise<Array<Record<string, unknown>>> {
+async function loadMt5Feed(): Promise<{
+  positions: Array<Record<string, unknown>>;
+  /** When the EA last pushed this feed (mt5_state.last_sync_at), ms epoch. */
+  lastSyncAtMs: number | null;
+}> {
   const rows = await db.select().from(mt5StateTable).orderBy(asc(mt5StateTable.id)).limit(1);
   const positions = rows[0]?.positions;
-  return Array.isArray(positions) ? (positions as Array<Record<string, unknown>>) : [];
+  const lastSyncAt = rows[0]?.lastSyncAt ?? null;
+  return {
+    positions: Array.isArray(positions) ? (positions as Array<Record<string, unknown>>) : [],
+    lastSyncAtMs: lastSyncAt ? new Date(lastSyncAt).getTime() : null,
+  };
 }
 async function loadAccountEquity(): Promise<number | null> {
   const rows = await db.select().from(mt5StateTable).orderBy(asc(mt5StateTable.id)).limit(1);
@@ -181,11 +190,24 @@ function serializeLivePosition(row: typeof livePositionsTable.$inferSelect) {
  * Reconcile live_positions against the broker's mt5_state.positions JSONB feed.
  * - Inserts new rows for unseen broker positions.
  * - Updates current_price, uPnL, status, sl/tp on existing rows.
- * - Marks rows CLOSED if they vanish from the feed and were previously OPEN.
+ * - Marks rows MANUALLY_CLOSED when they vanish from a RELIABLE (fresh) feed;
+ *   on a stale/missing feed vanished rows become SYNC_PENDING instead — a
+ *   single lagging or incomplete EA push must never close rows still open at
+ *   the broker (canonical positionFreshness rule).
  * Returns the post-sync rows + accumulated warnings for the caller.
  */
 async function syncFromBroker() {
-  const [feed, equity] = await Promise.all([loadMt5Positions(), loadAccountEquity()]);
+  const [{ positions: feed, lastSyncAtMs }, equity] = await Promise.all([loadMt5Feed(), loadAccountEquity()]);
+  // Canonical positionFreshness rule (see lib/live/positionFreshness.ts, and
+  // meLive/meLiveAccount which enforce it on the newer surfaces): a row missing
+  // from ONE feed read is broker-confirmed-absent ONLY when the feed itself is
+  // a reliable recent snapshot. mt5_state.last_sync_at is this legacy feed's
+  // "sweep landed" marker (stamped by /mt5/sync-positions on every push). When
+  // it is stale/missing — EA offline, bridge lagging, or no state row at all —
+  // a vanished row proves nothing, and confidently stamping it
+  // MANUALLY_CLOSED + closedAt would close positions still open at the broker.
+  const FEED_FRESH_MS = 90_000;
+  const snapshotReliable = isSnapshotReliable(lastSyncAtMs, FEED_FRESH_MS, Date.now());
   // UX9 hardening — this central /positions/sync feed currently inserts rows
   // with user_id=NULL (the single legacy MT5 connection on the server). With
   // the new composite uniqueness on (user_id, broker_position_id), real
@@ -295,20 +317,38 @@ async function syncFromBroker() {
     }).where(eq(livePositionsTable.id, prev.id));
   }
 
-  // Anything OPEN-ish that vanished from the feed → MANUALLY_CLOSED.
+  // Anything OPEN-ish that vanished from the feed:
+  //   • feed snapshot RELIABLE  → broker-confirmed absent → MANUALLY_CLOSED.
+  //   • feed snapshot UNRELIABLE → absence proves nothing → SYNC_PENDING
+  //     (non-terminal, NO closedAt). The row stays visible awaiting broker
+  //     confirmation instead of displaying a fabricated "Closed" with a
+  //     timestamp the broker never produced.
   const openish = existing.filter((r) =>
     r.brokerPositionId &&
     !seenBrokerIds.has(r.brokerPositionId) &&
     !POSITION_STATUS_TERMINAL[r.status as LivePositionStatus],
   );
   for (const row of openish) {
+    if (!snapshotReliable) {
+      if (row.status !== "SYNC_PENDING") {
+        await db.update(livePositionsTable).set({
+          status: "SYNC_PENDING",
+          updatedAt: new Date(),
+        }).where(eq(livePositionsTable.id, row.id));
+        await appendEvent({ livePositionId: row.id, eventType: "SYNC_PENDING",
+          severity: "WARN",
+          message: "Position missing from a stale broker feed — NOT treated as closed (no reliable recent snapshot); awaiting broker confirmation",
+          oldValue: { status: row.status }, newValue: { status: "SYNC_PENDING" } });
+      }
+      continue;
+    }
     await db.update(livePositionsTable).set({
       status: "MANUALLY_CLOSED",
       closedAt: new Date(),
       updatedAt: new Date(),
     }).where(eq(livePositionsTable.id, row.id));
     await appendEvent({ livePositionId: row.id, eventType: "MANUAL_CLOSE",
-      severity: "WARN", message: "Position vanished from broker feed — treated as manual close",
+      severity: "WARN", message: "Position vanished from a fresh broker feed — treated as manual close",
       oldValue: { status: row.status }, newValue: { status: "MANUALLY_CLOSED" } });
     await appendVault("POSITION_MANUAL_CLOSE", "WARN", row.id, { tradeId: row.tradeId });
   }

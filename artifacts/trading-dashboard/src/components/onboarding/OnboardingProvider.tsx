@@ -8,7 +8,23 @@ import { ARXLogoMark, ARXWordmark } from "@/components/brand/ARXLogo";
 import { useTradingMode } from "@/hooks/useTradingMode";
 import { cn } from "@/lib/utils";
 
-type ChipTone = "success" | "warning" | "danger" | "primary" | "muted";
+export type ChipTone = "success" | "warning" | "danger" | "primary" | "muted";
+
+/**
+ * CONFIDENT_ABSENT fixed: the Risk Controls chip used to read
+ * `isFrozen ? "Lock active" : "Active"` with no loaded-envelope guard, and
+ * `isFrozen` is simply `false` while the account-mode envelope is null or its
+ * read failed — so a failed /api/me/account-mode fetch rendered a green
+ * "Risk Controls: Active", asserting a safety control was running when its
+ * state was unknown. Like the approval and bridge chips, an unloaded envelope
+ * must degrade to "Checking", never to a confident "Active".
+ */
+export function deriveRiskChip(envLoaded: boolean, isFrozen: boolean): { label: string; tone: ChipTone } {
+  if (!envLoaded) return { label: "Checking", tone: "muted" };
+  return isFrozen
+    ? { label: "Lock active", tone: "danger" }
+    : { label: "Active", tone: "success" };
+}
 function ChipRow({ icon, label, chip }: { icon: ReactNode; label: string; chip: { label: string; tone: ChipTone } }) {
   const toneCls =
     chip.tone === "success" ? "border-success/40 bg-success/10 text-success"
@@ -217,9 +233,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       : tradingMode.isLiveShared
         ? { label: "Connected", tone: "success" as const }
         : { label: "Checking", tone: "muted" as const };
-  const riskChip = tradingMode.isFrozen
-    ? { label: "Lock active", tone: "danger" as const }
-    : { label: "Active", tone: "success" as const };
+  const riskChip = deriveRiskChip(!!env, tradingMode.isFrozen);
   const tourStatusLabel = (() => {
     const s = (status?.status ?? "").toUpperCase();
     if (s === "COMPLETED") return { label: "Completed", tone: "success" as const };

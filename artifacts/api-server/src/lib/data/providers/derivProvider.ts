@@ -96,6 +96,19 @@ export interface DerivFeedStatus {
   message: string;
   errorMessage: string | null;
   otpLastResult: string | null;
+  /**
+   * The session's REAL authorize state (client.isAuthorized()) — true only
+   * after a successful `authorize` on this connection. NEVER derived from feed
+   * health: ticks flow on unauthorized public sessions too, and an authorized
+   * session can be tickless.
+   */
+  authorized: boolean;
+  /**
+   * True when this is a deliberate public-data-only session (Ruling 15, new
+   * API mode): `authorize` is withheld BY DESIGN, so authorized=false here is
+   * the intended healthy state — not a credential failure.
+   */
+  publicDataOnly: boolean;
   healthSummary: "healthy" | "degraded" | "failed" | "unconfigured" | "warming";
   // Phase 22X — warm-up lifecycle visibility.
   activeSymbolsLoaded: boolean;
@@ -250,6 +263,11 @@ export function getDerivFeedStatus(): DerivFeedStatus {
     message,
     errorMessage: errMsg,
     otpLastResult: mode === "new" ? client.getOtpLastResult() : null,
+    // Truthful authorize state — see the interface docs. `publicDataOnly` is
+    // keyed off the Ruling-15 sentinel the client stamps when it deliberately
+    // withholds `authorize` on a new-mode (public data) session.
+    authorized,
+    publicDataOnly: authErr === DERIV_PUBLIC_DATA_ONLY,
     healthSummary,
     activeSymbolsLoaded,
     activeSymbolsCachedCount: client.getActiveSymbolsCount(),

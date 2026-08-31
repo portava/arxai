@@ -108,20 +108,26 @@ test("viewerSeesSimulatorDetail only for ADMIN/OWNER", () => {
   assert.equal(viewerSeesSimulatorDetail(undefined), false);
 });
 
-test("maskSimulatedOpportunity strips every simulator-derived indicator number", () => {
+test("maskSimulatedOpportunity withholds every simulator-derived indicator number as a typed null", () => {
   const masked = maskSimulatedOpportunity(opp({ dataSource: "SIMULATOR" }));
-  assert.equal(masked.confidenceScore, 0);
-  assert.equal(masked.riskScore, 0);
-  assert.equal(masked.entrySniperScore, 0);
-  assert.equal(masked.riskRewardRatio, 0);
-  assert.equal(masked.entry, 0);
-  assert.equal(masked.stopLoss, 0);
-  assert.equal(masked.takeProfit, 0);
-  assert.equal(masked.opportunity.score, 0);
-  // Fail-closed: every nested simulator-derived factor number is zeroed too.
+  // Typed nulls, NEVER confident zeros: a 0 renders as a measured score
+  // ("Conf 0 / Risk 0") and used to seed the trade ticket with entry/SL/TP = 0.
+  assert.equal(masked.signalStrength, null);
+  assert.equal(masked.confidenceScore, null);
+  assert.equal(masked.riskScore, null);
+  assert.equal(masked.entrySniperScore, null);
+  assert.equal(masked.riskRewardRatio, null);
+  assert.equal(masked.entry, null);
+  assert.equal(masked.stopLoss, null);
+  assert.equal(masked.takeProfit, null);
+  assert.equal(masked.opportunity.score, null);
+  // Fail-closed: every nested simulator-derived factor number is withheld too.
   for (const [k, v] of Object.entries(masked.opportunity.factors)) {
-    assert.equal(v, 0, `factor ${k} must be masked to 0`);
+    assert.equal(v, null, `factor ${k} must be withheld (null)`);
   }
+  // The client is told WHY the values are absent.
+  assert.equal((masked as { withheld?: boolean }).withheld, true);
+  assert.equal(typeof (masked as { withheldReason?: string }).withheldReason, "string");
   assert.equal(masked.statusBadge, "WAIT_FOR_CONFIRMATION");
   assert.equal(masked.finalRead?.analysisOnly, true);
   assert.equal(masked.chartConfirmed, false);
@@ -138,7 +144,7 @@ test("projectOpportunitiesForViewer masks for non-admin, preserves for admin", (
   const rows = [opp({ dataSource: "SIMULATOR", symbol: "EURUSD" }), opp({ dataSource: "LIVE_FEED", symbol: "GBPUSD" })];
 
   const asUser = projectOpportunitiesForViewer(rows, "USER");
-  assert.equal(asUser[0]!.confidenceScore, 0, "user must not see simulator confidence");
+  assert.equal(asUser[0]!.confidenceScore, null, "user must not see simulator confidence");
   assert.equal(asUser[1]!.confidenceScore, 82, "live row unchanged for user");
 
   const asAdmin = projectOpportunitiesForViewer(rows, "ADMIN");

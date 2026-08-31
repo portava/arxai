@@ -308,3 +308,67 @@ export function evaluateEmergencyStop(input: EmergencyStopInput): EmergencyStopR
     primary,
   };
 }
+
+// ── Honest live-signal derivation from observed platform state ───────────────
+//
+// The emergency conditions above can only fire on the signals a caller feeds in.
+// An earlier audit found every production caller hardcoding the neutral values
+// (killSwitchActive:false, brokerConnected:true, feedStatus:"live",
+// quoteFresh:true), which made `kill_switch`, `broker_disconnect`, `stale_feed`
+// and `stale_quote` structurally unreachable — a dead gauge asserting a live
+// feed it never observed. This PURE mapper turns the platform state a caller
+// actually observed into the honest signal set, so the IO seam that resolves
+// the state stays trivial and this mapping stays provable offline.
+
+/** What a caller honestly observed about the platform, before mapping. */
+export interface PlatformSafetyObservation {
+  /** The user-facing safety-core kill switch (the /emergency page's ENGAGE). */
+  killSwitchEngaged: boolean;
+  /**
+   * Broker-health status string (e.g. "CONNECTED", "DEGRADED",
+   * "PRICE_FEED_DELAYED", "DISCONNECTED"), or null when it could not be read.
+   */
+  brokerStatus: string | null;
+}
+
+/** The four core mission live signals, honestly derived. */
+export interface DerivedMissionSignals {
+  killSwitchActive: boolean;
+  brokerConnected: boolean;
+  feedStatus: "live" | "delayed" | "stale" | "unknown";
+  quoteFresh: boolean;
+}
+
+/** Broker statuses on which orders/quotes are still flowing (possibly degraded). */
+const BROKER_CONNECTED_STATUSES: ReadonlySet<string> = new Set([
+  "CONNECTED",
+  "DEGRADED",
+  "PRICE_FEED_DELAYED",
+]);
+
+/**
+ * PURE — map an observed platform-safety snapshot onto the mission live
+ * signals. Fail-safe by construction: an unreadable broker status maps to
+ * `brokerConnected:false` / `feedStatus:"unknown"` / `quoteFresh:false` (all of
+ * which trip protection above), and only a fully CONNECTED broker ever yields
+ * the neutral "live"/fresh read. This can only make a mission stricter — it has
+ * no input that relaxes anything.
+ */
+export function missionSignalsFromPlatform(
+  observed: PlatformSafetyObservation,
+): DerivedMissionSignals {
+  const status = observed.brokerStatus;
+  const brokerConnected = status != null && BROKER_CONNECTED_STATUSES.has(status);
+  const feedStatus: DerivedMissionSignals["feedStatus"] =
+    status === "CONNECTED"
+      ? "live"
+      : status === "DEGRADED" || status === "PRICE_FEED_DELAYED"
+        ? "delayed"
+        : "unknown";
+  return {
+    killSwitchActive: observed.killSwitchEngaged === true,
+    brokerConnected,
+    feedStatus,
+    quoteFresh: status === "CONNECTED",
+  };
+}

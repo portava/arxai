@@ -91,6 +91,10 @@ export interface CollectInputs {
    * unknown, never as "off".
    */
   emergencyStop?: boolean | null;
+  /** See RuntimeContext.runtimeDataStale — set by useRuntimeContext when
+   * refreshes have been failing and the kept snapshot is frozen. */
+  runtimeDataStale?: boolean;
+  lastSuccessfulRefreshAt?: string | null;
 }
 
 export function collectRuntimeContext(input: CollectInputs): RuntimeContext {
@@ -159,6 +163,8 @@ export function collectRuntimeContext(input: CollectInputs): RuntimeContext {
     missingKnowledgeFallbacks: recentMissing.slice(),
     health: input.health ?? null,
     bridge: input.bridge ?? null,
+    runtimeDataStale: input.runtimeDataStale ?? false,
+    lastSuccessfulRefreshAt: input.lastSuccessfulRefreshAt ?? null,
   };
 }
 

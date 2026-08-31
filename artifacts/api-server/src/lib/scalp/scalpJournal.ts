@@ -196,6 +196,41 @@ export interface CloseInputs {
   lastFloatingPl: number | null;
 }
 
+/** One broker-closed row matched by leg ticket (numeric fields pre-coerced). */
+export interface ClosedLegReading {
+  floatingPl: number | null;
+  currentPrice: number | null;
+}
+
+/**
+ * Sum broker-realised P/L across a basket's closed legs — KNOWN-grade ONLY
+ * when EVERY leg ticket matched a closed row AND every matched row carried a
+ * finite P/L. A partial sum (legs dropped by the staleness filter, never
+ * marked closed, or missing a figure) must NOT be presented as the broker's
+ * realised number: it returns null so the caller falls back to the honestly-
+ * labelled ESTIMATED path. `exitPrice` is best-effort from whatever matched.
+ */
+export function realizedFromClosedLegs(
+  legTicketCount: number,
+  closed: ClosedLegReading[],
+): { realizedPl: number | null; exitPrice: number | null } {
+  let exitPrice: number | null = null;
+  let sum = 0;
+  let allHavePl = closed.length > 0;
+  for (const c of closed) {
+    if (typeof c.floatingPl === "number" && Number.isFinite(c.floatingPl)) {
+      sum += c.floatingPl;
+    } else {
+      allHavePl = false;
+    }
+    if (typeof c.currentPrice === "number" && Number.isFinite(c.currentPrice)) {
+      exitPrice = c.currentPrice;
+    }
+  }
+  const complete = legTicketCount > 0 && closed.length === legTicketCount && allHavePl;
+  return { realizedPl: complete ? sum : null, exitPrice };
+}
+
 export function deriveResult(
   close: CloseInputs,
 ): { result: ScalpJournalResult; plQuality: ScalpPlQuality; pl: number | null } {

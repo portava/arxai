@@ -253,8 +253,19 @@ export function buildFeedStatus(inputs: FeedQualityInputs): FeedQualityVerdict {
   // trailing-interval gap) governs the freshness verdict. The tip pins the
   // newest bar to the current interval, so the trailing gap would read 0/clean
   // even after ticks went silent; the forming verdict freezes it to stale.
-  const formingVerdict = formingTipPresent ? classifyFormingFreshness(formingTickAgeMs) : null;
-  const stale = formingTipPresent ? formingVerdict?.stale === true : freshness?.stale === true;
+  //
+  // TRUTH GUARD: the tip may only take over when the CLOSED bars themselves
+  // are within the delayed threshold. Callers pass `trailingIntervals`
+  // computed on the closed bars BEFORE the tip is appended (chartDataService),
+  // so a stalled closed-candle feed (trailing >= STALE_TRAILING_INTERVALS)
+  // with a still-flowing tick stream keeps its honest STALE verdict — a fresh
+  // tick can extend liveness, but it can never paper over a multi-interval
+  // hole between the newest closed bar and the synthesized tip. A frozen tip
+  // can still DOWNGRADE an otherwise-clean feed to stale (unchanged).
+  const closedBarsStale = freshness?.stale === true;
+  const tipGovernsFreshness = formingTipPresent && !closedBarsStale;
+  const formingVerdict = tipGovernsFreshness ? classifyFormingFreshness(formingTickAgeMs) : null;
+  const stale = tipGovernsFreshness ? formingVerdict?.stale === true : freshness?.stale === true;
 
   let quality: FeedQuality;
   let warning: string | null = null;
@@ -271,9 +282,10 @@ export function buildFeedStatus(inputs: FeedQualityInputs): FeedQualityVerdict {
   } else if (missingCandleCount > 0 || duplicateCount > 0 || outOfOrderCount > 0) {
     quality = "partial";
     warning = `Incomplete sequence: ${missingCandleCount} missing, ${duplicateCount} duplicate, ${outOfOrderCount} out-of-order bar(s).`;
-  } else if (formingTipPresent) {
+  } else if (tipGovernsFreshness) {
     // Forming-tip path takes over the freshness verdict (integrity checks above
-    // still run on the closed bars first).
+    // still run on the closed bars first) — but ONLY when the closed bars are
+    // not themselves stale (see the truth guard above).
     if (formingVerdict?.freshness === "stale") {
       quality = "stale";
       warning = "Live tick stream silent — forming bar frozen.";
@@ -283,7 +295,10 @@ export function buildFeedStatus(inputs: FeedQualityInputs): FeedQualityVerdict {
     }
   } else if (freshness?.freshness === "stale") {
     quality = "stale";
-    warning = `Feed is stale — newest bar trails the current bar by ${trailingIntervals} intervals.`;
+    warning = formingTipPresent
+      // Fresh ticks + stalled closed candles: say exactly which half is broken.
+      ? `Feed is stale — closed candles trail the current bar by ${trailingIntervals} intervals (live ticks alone cannot verify the feed).`
+      : `Feed is stale — newest bar trails the current bar by ${trailingIntervals} intervals.`;
   } else if (freshness?.freshness === "delayed") {
     quality = "delayed";
     warning = syntheticAwaitingTick

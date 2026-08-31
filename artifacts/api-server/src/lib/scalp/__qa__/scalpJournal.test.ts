@@ -84,6 +84,7 @@ function basket(over: Partial<ScalpBasket> = {}): ScalpBasket {
     averageEntry: 1.1,
     currentPrice: 1.105,
     combinedFloatingPl: 12,
+    plKnownLegCount: 1,
     breakEvenPrice: 1.1,
     hasUnprotectedLeg: false,
     legs: [

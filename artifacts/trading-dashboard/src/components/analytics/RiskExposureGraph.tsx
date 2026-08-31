@@ -5,7 +5,9 @@ export function RiskExposureGraph({ snapshot }: { snapshot: AnalyticsSnapshot })
     { label: "Profit factor", value: Math.min(snapshot.profitFactor, 3), max: 3, tone: "bg-success", suffix: snapshot.profitFactor === 999 ? "∞" : snapshot.profitFactor.toFixed(2) },
     { label: "Avg R-multiple", value: Math.max(0, Math.min(snapshot.averageRr, 3)), max: 3, tone: "bg-ruby", suffix: snapshot.averageRr.toFixed(2) + "R" },
     { label: "Win rate",       value: snapshot.winRate * 100, max: 100, tone: "bg-premium", suffix: (snapshot.winRate * 100).toFixed(1) + "%" },
-    { label: "Max drawdown $", value: Math.min(snapshot.maxDrawdown, 1000), max: 1000, tone: "bg-danger", suffix: "$" + snapshot.maxDrawdown.toFixed(0) },
+    // Max drawdown is a SYNTHETIC unit ((exit − entry) × lots × 100), not
+    // account currency — never rendered with a "$" sign.
+    { label: "Max drawdown (units)", value: Math.min(snapshot.maxDrawdown, 1000), max: 1000, tone: "bg-danger", suffix: snapshot.maxDrawdown.toFixed(0) },
   ];
   return (
     <div className="rounded-lg border border-border bg-muted/40 p-3">

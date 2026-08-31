@@ -9,13 +9,13 @@ import { useAssistantName } from "@/lib/assistant-name";
 import { RubyAvatar } from "@/components/ruby/RubyAvatar";
 import type { RubyExplanation, RubyMode } from "../data/content";
 import { Sparkles, GraduationCap, Lock, CheckCircle2 } from "lucide-react";
+import { openAssistantPanel } from "@/lib/assistantPanelBus";
 
-const RUBY_OPEN_KEY = "arx.assistant.open.v2";
+// Opens the mounted assistant panel NOW via the panel's real open event.
+// (The old body wrote sessionStorage and forged a StorageEvent nothing
+// listened to — the button silently no-oped. See lib/assistantPanelBus.)
 export function askRuby() {
-  try {
-    sessionStorage.setItem(RUBY_OPEN_KEY, "1");
-    window.dispatchEvent(new StorageEvent("storage", { key: RUBY_OPEN_KEY }));
-  } catch { /* noop */ }
+  openAssistantPanel();
 }
 
 /** Ruby teacher card with the three explanation modes (Simple / Normal / Pro). */

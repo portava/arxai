@@ -198,6 +198,21 @@ function DataQualityBadge({ label }: { label: string }) {
   return <Badge variant="outline" className={cn("text-[10px] font-medium", cls)}>{labels[label] ?? label}</Badge>;
 }
 
+// Non-admin status-card copy for the Data Status tab. Three DISTINCT honest
+// states: no read / unavailable ≠ session-clock-only estimate ≠ live market
+// intelligence. A "basic_timing_estimate" read is derived from the session
+// clock alone (no candles AND no quotes), so it must never be described as
+// active market intelligence. Exported for tests.
+export function timingStatusDescription(label: string | null): string {
+  if (label == null || label === "unavailable") {
+    return "Market timing data is currently unavailable for the selected symbol. Your trading surfaces are unaffected — timing is advisory only.";
+  }
+  if (label === "basic_timing_estimate") {
+    return "Session-clock estimate only — no live market data (candles or quotes) is connected for this symbol. Scores here are timing estimates, not measured market readings.";
+  }
+  return "Market timing intelligence is active for the selected symbol. Scores update automatically.";
+}
+
 // ── Tab: Now ────────────────────────────────────────────────────────────────
 
 function NowTab({ data, isLoading, symbol }: { data: MarketTimingRead | undefined; isLoading: boolean; symbol: string }) {
@@ -1283,7 +1298,6 @@ function AdminDataStatusTab({ data, isLoading }: { data: MarketTimingRead | unde
     !mode.isAdminPreviewingUserMode;
 
   if (!showAdminDiag) {
-    const isActive = !!data && data.dataQuality.label !== "unavailable";
     return (
       <Card className="max-w-xl">
         <CardHeader>
@@ -1294,9 +1308,7 @@ function AdminDataStatusTab({ data, isLoading }: { data: MarketTimingRead | unde
           <CardDescription>
             {mode.isLoading || isLoading
               ? "Checking market timing data availability…"
-              : isActive
-              ? "Market timing intelligence is active for the selected symbol. Scores update automatically."
-              : "Market timing data is currently unavailable for the selected symbol. Your trading surfaces are unaffected — timing is advisory only."}
+              : timingStatusDescription(data?.dataQuality.label ?? null)}
           </CardDescription>
         </CardHeader>
       </Card>

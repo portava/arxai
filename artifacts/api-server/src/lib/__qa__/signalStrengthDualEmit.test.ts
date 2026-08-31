@@ -14,8 +14,8 @@
 //   1. Every dual-emitting builder emits both fields with the SAME value
 //      (runtime where the builder is pure, source-anchored otherwise — the
 //      honestConfidence.test.ts idiom).
-//   2. The simulator mask zeroes the NEW field too — a simulator-derived
-//      signalStrength may never survive masking.
+//   2. The simulator mask withholds (nulls) the NEW field too — a
+//      simulator-derived signalStrength may never survive masking.
 //   3. The UI surfaces in scope read the canonical field.
 //
 // Pure source + pure-function analysis — no network, DB, or provider calls.
@@ -120,11 +120,11 @@ describe("dual-emit: builders emit signalStrength === confidenceScore", () => {
   });
 });
 
-describe("dual-emit: the simulator mask zeroes the new field too", () => {
-  it("SIMULATOR rows: both fields masked to 0 (no residual heuristic survives)", () => {
+describe("dual-emit: the simulator mask withholds the new field too", () => {
+  it("SIMULATOR rows: both fields withheld as null (no residual heuristic survives)", () => {
     const masked = maskSimulatedOpportunity(opp({ dataSource: "SIMULATOR" }));
-    assert.equal(masked.signalStrength, 0);
-    assert.equal(masked.confidenceScore, 0);
+    assert.equal(masked.signalStrength, null);
+    assert.equal(masked.confidenceScore, null);
   });
 
   it("LIVE_FEED rows pass through unchanged with both fields equal", () => {

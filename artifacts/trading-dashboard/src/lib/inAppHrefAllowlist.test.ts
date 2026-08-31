@@ -251,3 +251,67 @@ describe("the Help Center catalogue only advertises reachable pages", () => {
     expect(page).toMatch(/canOpen\(t\.page_route\)/);
   });
 });
+
+describe("the onboarding step catalogue only advertises reachable pages", () => {
+  // The IDENTICAL RANK 51 defect, in the onboarding step catalogue: two
+  // REQUIRED steps linked "Open /trading-cockpit →" and "Open
+  // /paper-testing-launch →" (both routes deleted in Phase 3), REQUIRED steps
+  // pointed at /readiness-checklist and /risk-settings (on no trader
+  // allowlist, so RouteAccessGuard silently bounced the click home), and the
+  // completion alert told the user to "Use the Trading Cockpit as your home
+  // base" about the removed page. The catalogue is server-side data
+  // (lib/onboarding/steps.ts, page_route: string | null with null = no page);
+  // the onboarding page also re-checks each route against the viewer's own
+  // tier before rendering the link.
+  const stepsSrc = read("artifacts/api-server/src/lib/onboarding/steps.ts");
+  const routes = declaredRoutes();
+  const stepRoutes = [...stepsSrc.matchAll(/page_route: "([^"]+)"/g)].map((m) => m[1]);
+
+  it("the catalogue actually has routed steps", () => {
+    expect(stepRoutes.length).toBeGreaterThan(8);
+  });
+
+  it("every step route is a declared route", () => {
+    const missing = stepRoutes.filter((r) => !routeExists(r, routes));
+    expect(missing, `onboarding steps point at undeclared routes: ${missing.join(", ")}`).toEqual([]);
+  });
+
+  it("every step route is on the approved-trader allowlist", () => {
+    const off = stepRoutes.filter((r) => !isNormalUserAllowedPath(r));
+    expect(off, `onboarding steps point off the trader allowlist: ${off.join(", ")}`).toEqual([]);
+  });
+
+  it("every REQUIRED step route is reachable by a PENDING trader or tier-gated in the page", () => {
+    // Required steps a brand-new (pending) trader is told to complete should
+    // land for them; approved-only routes are tolerated ONLY because the page
+    // hides the link for tiers that cannot open it (asserted below).
+    const requiredRoutes = [...stepsSrc.matchAll(/page_route: "([^"]+)"[^\n]*required: true/g)].map((m) => m[1]);
+    expect(requiredRoutes.length).toBeGreaterThan(2);
+    for (const r of requiredRoutes) {
+      expect(isNormalUserAllowedPath(r), `required step route ${r} unreachable by any trader`).toBe(true);
+    }
+  });
+
+  it("the retired dead targets are gone", () => {
+    for (const dead of ["/trading-cockpit", "/paper-testing-launch", "/readiness-checklist", "/risk-settings", "/session-report", "/replay-simulator", "/data-import", "/system-health", "/trader-coach"]) {
+      expect(stepRoutes, `onboarding steps must not point at ${dead}`).not.toContain(dead);
+    }
+  });
+
+  it("the onboarding page re-validates each route for the viewer's tier and drops the removed-page copy", () => {
+    const page = read("artifacts/trading-dashboard/src/pages/onboarding.tsx");
+    expect(page).toMatch(/useCanOpenRoute/);
+    expect(page).toMatch(/canOpen\(s\.page_route\)/);
+    // The completion alert must not send users to the removed page by name.
+    // (Strip comments first — the honesty note quoting the OLD copy is fine.)
+    const rendered = page.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/[^\n]*/gm, "");
+    expect(rendered).not.toMatch(/Use the Trading Cockpit/);
+  });
+
+  it("the step catalogue no longer names the removed Trading Cockpit page", () => {
+    // Strip comments (the honesty note describing the OLD defect is allowed
+    // to name it) and check only the data.
+    const data = stepsSrc.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+    expect(data).not.toMatch(/Trading Cockpit/);
+  });
+});

@@ -24,6 +24,14 @@ import type {
 export const SCALP_TIMEFRAME = "M5";
 /** Candle window length for the flame read. Enough for stage/runway/decay. */
 export const SCALP_CANDLE_LIMIT = 60;
+/**
+ * Max age of the EA's spread snapshot (arx_symbol_specs.reportedAt) before it
+ * is treated as UNKNOWN rather than current. The snapshot is "last known
+ * spread when reported" — during a live spread spike a stale LOW snapshot
+ * would otherwise show "Spread LOW" and let the too-wide gate pass. Old
+ * snapshot ⇒ spreadPoints null ⇒ the engine reports an honest unknown band.
+ */
+export const SPEC_SPREAD_FRESH_MS = 5 * 60 * 1000;
 
 function num(v: unknown): v is number {
   return typeof v === "number" && Number.isFinite(v);
@@ -47,6 +55,12 @@ export async function loadSpecInput(userId: number, symbol: string): Promise<Sca
       displayName: registry?.displayName ?? symbol,
     };
   }
+  // Spread snapshot freshness: `spreadPoints` is only truthfully "the spread"
+  // near the moment the EA reported it. Past the freshness window it is an
+  // honest unknown (null), never served as a current reading.
+  const reportedAtMs = row.reportedAt ? new Date(row.reportedAt).getTime() : NaN;
+  const spreadSnapshotFresh =
+    Number.isFinite(reportedAtMs) && Date.now() - reportedAtMs <= SPEC_SPREAD_FRESH_MS;
   return {
     hasBrokerTruth: true,
     tradeMode: row.tradeMode ?? null,
@@ -62,7 +76,7 @@ export async function loadSpecInput(userId: number, symbol: string): Promise<Sca
     tickSize: num(row.tickSize) ? row.tickSize : null,
     tickValue: num(row.tickValue) ? row.tickValue : null,
     stopsLevelPoints: num(row.stopsLevelPoints) ? row.stopsLevelPoints : null,
-    spreadPoints: num(row.spreadPoints) ? row.spreadPoints : null,
+    spreadPoints: spreadSnapshotFresh && num(row.spreadPoints) ? row.spreadPoints : null,
     category: row.category ?? registry?.category ?? null,
     displayName: row.displaySymbol ?? registry?.displayName ?? symbol,
   };
@@ -136,22 +150,85 @@ export async function loadExecutionInput(userId: number): Promise<ScalpExecution
   }
 }
 
-/** Live current price for a symbol (last trade or bid/ask mid). Null on miss. */
-export async function currentPriceFor(symbol: string): Promise<number | null> {
+/** One live quote read: price + the quote's own spread (price units). */
+export interface LiveQuoteRead {
+  price: number | null;
+  /**
+   * Live spread in PRICE units from the router quote (bid/ask or reported
+   * spread), or null when the quote carries no usable spread. This is the
+   * only truly-current spread evidence; a 0/absent value is treated as
+   * unknown, never as a zero-cost fill.
+   */
+  spreadPrice: number | null;
+}
+
+/**
+ * Live quote for a symbol (last trade or bid/ask mid) PLUS its live spread.
+ * Null fields on any miss — nothing fabricated.
+ */
+export async function currentQuoteFor(symbol: string): Promise<LiveQuoteRead> {
   try {
     const q = await routeQuote(symbol);
     const quote = q.quote;
-    if (!quote) return null;
-    if (num(quote.last) && quote.last > 0) return quote.last;
-    if (num(quote.bid) && num(quote.ask) && quote.bid > 0 && quote.ask > 0) {
-      return (quote.bid + quote.ask) / 2;
+    if (!quote) return { price: null, spreadPrice: null };
+    let price: number | null = null;
+    if (num(quote.last) && quote.last > 0) price = quote.last;
+    else if (num(quote.bid) && num(quote.ask) && quote.bid > 0 && quote.ask > 0) {
+      price = (quote.bid + quote.ask) / 2;
+    } else if (num(quote.bid) && quote.bid > 0) price = quote.bid;
+    else if (num(quote.ask) && quote.ask > 0) price = quote.ask;
+    let spreadPrice: number | null = null;
+    if (num(quote.spread) && quote.spread > 0) spreadPrice = quote.spread;
+    else if (num(quote.bid) && num(quote.ask) && quote.bid > 0 && quote.ask >= quote.bid) {
+      spreadPrice = quote.ask - quote.bid;
     }
-    if (num(quote.bid) && quote.bid > 0) return quote.bid;
-    if (num(quote.ask) && quote.ask > 0) return quote.ask;
-    return null;
+    return { price, spreadPrice };
   } catch {
-    return null;
+    return { price: null, spreadPrice: null };
   }
+}
+
+/** Live current price for a symbol (last trade or bid/ask mid). Null on miss. */
+export async function currentPriceFor(symbol: string): Promise<number | null> {
+  return (await currentQuoteFor(symbol)).price;
+}
+
+/**
+ * Convert a live quote's spread (price units) into POINTS using the broker
+ * spec's point/digits. Null when either side of the conversion is unknown.
+ */
+export function liveSpreadPointsFrom(
+  spreadPrice: number | null,
+  spec: { point: number | null; digits: number | null },
+): number | null {
+  if (!num(spreadPrice) || spreadPrice <= 0) return null;
+  const point = num(spec.point) && spec.point > 0
+    ? spec.point
+    : num(spec.digits) && spec.digits >= 0
+    ? Math.pow(10, -spec.digits)
+    : null;
+  if (point == null) return null;
+  return spreadPrice / point;
+}
+
+/**
+ * Fold a per-symbol LIVE spread reading into the per-user execution signals.
+ * Never invents bridge state: with no live spread the input passes through
+ * untouched; with one, the execution read carries it so the spread-spike
+ * guard and the engine's spread evidence run on the current market, not on
+ * a snapshot.
+ */
+export function withLiveSpread(
+  execution: ScalpExecutionInput | null,
+  liveSpreadPoints: number | null,
+): ScalpExecutionInput | null {
+  if (liveSpreadPoints == null) return execution;
+  return {
+    heartbeatAgeSeconds: execution?.heartbeatAgeSeconds ?? null,
+    bridgeConnected: execution?.bridgeConnected ?? null,
+    latencyMs: execution?.latencyMs ?? null,
+    liveSpreadPoints,
+  };
 }
 
 /**

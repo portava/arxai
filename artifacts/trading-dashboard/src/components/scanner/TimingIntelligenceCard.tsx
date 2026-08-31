@@ -302,7 +302,9 @@ export function TimingIntelligenceCard({ symbol }: { symbol: string }) {
                   ? "blocked"
                   : gate.level === "limited"
                     ? "delayed / limited"
-                    : "historical"}{" "}
+                    : gate.level == null
+                      ? "unconfirmed"
+                      : "historical"}{" "}
                 read — the live feed for {symbol} isn't confirmed, so the timing
                 grade, entry permission, and scores are held back to avoid showing
                 a confident read over unstable data.

@@ -20,7 +20,7 @@ process.env["DATABASE_URL"] ??= "postgres://user:pass@127.0.0.1:1/nonexistent";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-const { priceOpenTrade } = await import("../tradingCockpit.js");
+const { priceOpenTrade, summarizeTodayPerformance, TODAY_PERFORMANCE_READ_FAILED } = await import("../tradingCockpit.js");
 
 const NOW = Date.parse("2026-08-30T12:00:00.000Z");
 
@@ -90,4 +90,59 @@ test("a fresh REAL quote at the entry prices an honest 0 (a real flat, with no r
 test("values are rounded to cents, not floated raw", () => {
   const r = priceOpenTrade({ direction: "BUY", lotSize: 0.01, entryPrice: 100 }, snap({ mid: 100.123456 }), NOW);
   assert.equal(r.value, Number((1 * (100.123456 - 100) * 0.01 * 100).toFixed(2)));
+});
+
+test("every priced (and unpriced) result declares its unit as SIM_POINTS — never implied currency", () => {
+  // The formula dir × Δprice × lot × 100 is symbol-blind and maps to no real
+  // currency amount, so the payload must carry the honest unit for the UI.
+  const priced = priceOpenTrade({ direction: "BUY", lotSize: 0.01, entryPrice: 100 }, snap({ mid: 90 }), NOW);
+  assert.equal(priced.unit, "SIM_POINTS");
+  const unpriced = priceOpenTrade({ direction: "BUY", lotSize: 0.01, entryPrice: 100 }, null, NOW);
+  assert.equal(unpriced.unit, "SIM_POINTS");
+});
+
+// ── Today's performance: failure is typed, never a confident flat day ───────
+
+test("a failed paper-orders read yields typed nulls + reason — NOT the all-zero NO_TRADES shape", () => {
+  const f = TODAY_PERFORMANCE_READ_FAILED;
+  assert.equal(f.readFailed, true);
+  assert.ok(f.readFailedReason && f.readFailedReason.length > 0, "failure must carry a reason");
+  // Every count is null (unknown), never 0 (measured flat).
+  assert.equal(f.totalTrades, null);
+  assert.equal(f.wins, null);
+  assert.equal(f.losses, null);
+  assert.equal(f.breakEven, null);
+  assert.equal(f.netPnl, null);
+  assert.equal(f.winRate, null);
+  // And the rating must not claim a measured empty day.
+  assert.notEqual(f.dayRating, "NO_TRADES");
+  assert.equal(f.dayRating, "UNKNOWN");
+});
+
+test("a genuinely-empty day is a real NO_TRADES zero — distinct from the failed read", () => {
+  const t = summarizeTodayPerformance([]);
+  assert.equal(t.readFailed, false);
+  assert.equal(t.readFailedReason, null);
+  assert.equal(t.totalTrades, 0);
+  assert.equal(t.netPnl, 0);
+  assert.equal(t.dayRating, "NO_TRADES");
+});
+
+test("aggregates sum correctly and count synthetic-model-settled closes (non-EE rows)", () => {
+  const t = summarizeTodayPerformance([
+    { profitLoss: 10, strategyId: null },                          // Build Q → synthetic-settled
+    { profitLoss: -4, strategyId: "some_plan" },                   // Build Q → synthetic-settled
+    { profitLoss: 0, strategyId: "build_ee_paper_execution" },     // EE → DD market data
+  ]);
+  assert.equal(t.totalTrades, 3);
+  assert.equal(t.wins, 1);
+  assert.equal(t.losses, 1);
+  assert.equal(t.breakEven, 1);
+  assert.equal(t.netPnl, 6);
+  assert.equal(t.winRate, 33);
+  assert.equal(t.dayRating, "GREEN");
+  assert.equal(t.pnlUnit, "SIM_POINTS");
+  // 2 of 3 closes were settled by the seeded deterministic candle generator,
+  // not the market — the UI badges the total with this count.
+  assert.equal(t.syntheticPricedTrades, 2);
 });

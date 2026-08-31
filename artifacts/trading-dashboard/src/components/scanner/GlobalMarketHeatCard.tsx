@@ -585,11 +585,13 @@ export function GlobalMarketHeatCard() {
     [data],
   );
 
-  // Top hot — distinct surfaced section. Only ranks cells with a real (non-
-  // unavailable) reading; a disconnected provider can never appear "hot".
+  // Top hot — distinct surfaced section. Only ranks cells that pass the same
+  // honesty gate as the map view: an unavailable intensity OR any degraded
+  // source status (stale/delayed/provider_missing/unavailable) is excluded, so
+  // a disconnected OR stale/delayed provider can never appear "hot".
   const topHot = useMemo<MarketHeatVerdict[]>(() => {
     return macroCells
-      .filter((v) => v.intensity !== "unavailable")
+      .filter((v) => !isHonestyMuted(v))
       .sort((a, b) => Math.abs(b.heatScore) - Math.abs(a.heatScore))
       .slice(0, 6);
   }, [macroCells]);
@@ -656,13 +658,18 @@ export function GlobalMarketHeatCard() {
             ) : (
               <div className="flex flex-wrap gap-1.5">
                 {topHot.map((v) => {
-                  const t = tone(v.intensity);
+                  // Defense-in-depth: mapTone re-applies the honesty mute even
+                  // though honesty-muted verdicts are already excluded above.
+                  const t = mapTone(v);
+                  const tileCls = isHonestyMuted(v)
+                    ? INTENSITY_TILE.unavailable!
+                    : tileTone(v.intensity);
                   return (
                     <button
                       key={v.id}
                       type="button"
                       onClick={() => setSelectedKey(v.id)}
-                      className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] ${tileTone(v.intensity)}`}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] ${tileCls}`}
                     >
                       <span className={`h-1.5 w-1.5 rounded-full ${t.dot}`} />
                       {v.displayName}
@@ -724,16 +731,20 @@ export function GlobalMarketHeatCard() {
               ) : (
                 <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
                   {macroCells.map((v) => {
-                    const t = tone(v.intensity);
+                    // Same honesty mute as the map view: a stale/delayed/
+                    // missing-source verdict renders gray with its status label,
+                    // never in intensity color (low/calm are green).
+                    const t = mapTone(v);
+                    const tileCls = isHonestyMuted(v)
+                      ? INTENSITY_TILE.unavailable!
+                      : tileTone(v.intensity);
                     const active = v.id === selectedKey;
                     return (
                       <button
                         key={v.id}
                         type="button"
                         onClick={() => setSelectedKey(active ? null : v.id)}
-                        className={`flex flex-col items-start gap-0.5 rounded-lg border px-2 py-1.5 text-left transition-colors ${tileTone(
-                          v.intensity,
-                        )} ${active ? "ring-1 ring-primary" : ""}`}
+                        className={`flex flex-col items-start gap-0.5 rounded-lg border px-2 py-1.5 text-left transition-colors ${tileCls} ${active ? "ring-1 ring-primary" : ""}`}
                       >
                         <span className="w-full truncate text-xs font-medium text-txt">
                           {v.displayName}

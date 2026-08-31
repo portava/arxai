@@ -232,15 +232,17 @@ test("non-admin scan response masks the simulator-derived row", async () => {
   assert.ok(sim, "the simulator row must be present");
   assert.ok(live, "the live row must be present");
 
-  // Simulator-derived numbers are stripped to an honest waiting state.
-  assert.equal(sim.confidenceScore, 0, "masked sim row must not leak a confidence score");
-  assert.equal(sim.entry, 0, "masked sim row must not leak an entry price");
-  assert.equal(sim.stopLoss, 0, "masked sim row must not leak a stop-loss");
-  assert.equal(sim.takeProfit, 0, "masked sim row must not leak a take-profit");
-  assert.equal(sim.opportunity.score, 0, "masked sim row must zero its opportunity score");
+  // Simulator-derived numbers are WITHHELD (typed nulls) — never confident
+  // zeros that would render as measured scores or seed a ticket at price 0.
+  assert.equal(sim.confidenceScore, null, "masked sim row must not leak a confidence score");
+  assert.equal(sim.entry, null, "masked sim row must not leak an entry price");
+  assert.equal(sim.stopLoss, null, "masked sim row must not leak a stop-loss");
+  assert.equal(sim.takeProfit, null, "masked sim row must not leak a take-profit");
+  assert.equal(sim.opportunity.score, null, "masked sim row must withhold its opportunity score");
   for (const [k, v] of Object.entries(sim.opportunity.factors)) {
-    assert.equal(v, 0, `masked sim factor ${k} must be zeroed`);
+    assert.equal(v, null, `masked sim factor ${k} must be withheld`);
   }
+  assert.equal((sim as { withheld?: boolean }).withheld, true, "masked sim row must say WHY values are absent");
   assert.equal(sim.statusBadge, "WAIT_FOR_CONFIRMATION", "masked sim row shows the honest waiting badge");
 
   // The genuinely-live row is already honest and passes through unchanged.

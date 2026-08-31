@@ -70,7 +70,11 @@ router.get("/admin/runtime-health", async (req: Request, res: Response): Promise
   }
 
   // Aggregate MT5/EA bridge heartbeat health — COUNTS ONLY.
+  // `ok` distinguishes "query ran, 0 bridges" from "query FAILED" — a failed
+  // aggregate must never render as total:0/healthy:0 (indistinguishable from
+  // an honest empty result).
   const bridge = {
+    ok: false,
     total: 0,
     healthy: 0,
     stale: 0,
@@ -91,8 +95,11 @@ router.get("/admin/runtime-health", async (req: Request, res: Response): Promise
       if (age != null && (latest == null || age < latest)) latest = age;
     }
     bridge.latestHeartbeatAgeSeconds = latest == null ? null : Math.floor(latest / 1000);
+    bridge.ok = true;
   } catch (e) {
     req.log?.error({ err: e }, "runtime-health MT5 aggregate failed");
+    // bridge.ok stays false — counts above are NOT valid and must render as
+    // "unavailable", not as zeros.
   }
 
   res.json({

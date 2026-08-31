@@ -35,13 +35,10 @@ import { useAssistantName } from "@/lib/assistant-name";
 import { LedgerBasisStrip } from "@/components/money/LedgerBasisStrip";
 import { OriginClassCard } from "@/components/analytics/OriginClassCard";
 
-const RUBY_OPEN_KEY = "arx.assistant.open.v2";
-function openRubyLiveChat() {
-  try {
-    sessionStorage.setItem(RUBY_OPEN_KEY, "1");
-    window.dispatchEvent(new StorageEvent("storage", { key: RUBY_OPEN_KEY }));
-  } catch { /* silent */ }
-}
+// Opens the mounted assistant panel NOW via its real open event.
+// (The old body forged a StorageEvent nothing listened to — the button
+// silently no-oped. See lib/assistantPanelBus.)
+import { openAssistantPanel as openRubyLiveChat } from "@/lib/assistantPanelBus";
 
 type Tab = "overview" | "calendar" | "risk" | "allocation" | "timeline" | "origin";
 
@@ -68,16 +65,39 @@ export default function Analytics() {
   const acctQ = useGetMeSharedAccountSummary();
   const posQ = useGetMeSharedAccountPositions();
 
-  const acct = acctQ.data as { balance?: number; equity?: number; pnl?: number } | undefined;
-  const positions = (posQ.data?.rows ?? []) as unknown as Array<{ symbol: string; side: string; lotSize: number; entryPrice: number; pnl: number }>;
+  // The summary response has NO top-level balance/equity/pnl fields — the
+  // caller's money lives in accounts[].virtualBalance / virtualEquity
+  // (MeSharedAccountSummaryRow). The old cast read those non-existent
+  // top-level fields, so Equity / Balance / Open P/L and the whole "Account
+  // Health" card could never populate for any user.
+  const acctRows = acctQ.data?.accounts ?? [];
+  const acctReadFailed = acctQ.isError && acctQ.data == null;
+  const positions = (posQ.data?.rows ?? []) as unknown as Array<{ symbol: string; side: string; lotSize: number; entryPrice: number; pnl?: number | null }>;
   // positions=[] on a FAILED read is not a flat book — every exposure surface
   // below must distinguish "read failed" from "genuinely no open positions".
   const positionsReadFailed = posQ.isError && posQ.data == null;
   const daily: DailyRow[] = useMemo(() => (Array.isArray(dailyPerf) ? (dailyPerf as DailyRow[]) : []), [dailyPerf]);
 
-  const equity = acct?.equity ?? null;
-  const balance = acct?.balance ?? null;
-  const openPnl = acct?.pnl ?? null;
+  const balance = acctRows.length > 0
+    ? acctRows.reduce((s: number, a: { virtualBalance?: number | null }) => s + (a.virtualBalance ?? 0), 0)
+    : null;
+  const equity = acctRows.length > 0
+    ? acctRows.reduce((s: number, a: { virtualEquity?: number | null }) => s + (a.virtualEquity ?? 0), 0)
+    : null;
+  // Open P/L is summed from the caller's own open positions, each of which
+  // carries its synced floating pnl. accounts[].virtualPnl is NOT usable
+  // here — it is realized P/L from closed trades (virtualPnlSync), and
+  // labelling it "Open P/L" would fabricate a different number. A failed
+  // positions read, or any open row missing its pnl, degrades to null (an
+  // incomplete sum is not a figure) — zero open positions is an honest $0.
+  const openPnl =
+    positionsReadFailed || posQ.data == null
+      ? null
+      : positions.length === 0
+        ? 0
+        : positions.some((p) => p.pnl == null)
+          ? null
+          : positions.reduce((s, p) => s + (p.pnl as number), 0);
 
   const tabs: Array<[Tab, string]> = [
     ["overview", "Overview"], ["calendar", "Calendar P/L"], ["risk", "Risk"],
@@ -130,14 +150,14 @@ export default function Analytics() {
         <OverviewTab
           summary={summary} loadingSummary={loadingSummary}
           daily={daily} loadingDaily={loadingDaily}
-          balance={balance} equity={equity} openPnl={openPnl}
+          balance={balance} equity={equity} openPnl={openPnl} acctReadFailed={acctReadFailed}
           positions={positions} positionsReadFailed={positionsReadFailed} navigate={navigate}
           strategiesCount={Array.isArray(strategies) ? strategies.length : 0}
         />
       )}
       {tab === "calendar" && <CalendarPLTab daily={daily} loading={loadingDaily} summary={summary} navigate={navigate} />}
       {tab === "risk" && <RiskTab summary={summary} />}
-      {tab === "allocation" && <AllocationTab balance={balance} equity={equity} openPnl={openPnl} positions={positions} positionsReadFailed={positionsReadFailed} />}
+      {tab === "allocation" && <AllocationTab balance={balance} equity={equity} openPnl={openPnl} acctReadFailed={acctReadFailed} positions={positions} positionsReadFailed={positionsReadFailed} />}
       {tab === "timeline" && <TimelineTab />}
       {tab === "origin" && <OriginClassCard />}
     </div>
@@ -213,7 +233,7 @@ function Chip({ label, value, tone }: { label: string; value: string; tone: stri
 }
 
 // ── Overview tab ────────────────────────────────────────────────────────────
-function OverviewTab({ summary, daily, loadingDaily, balance, equity, openPnl, positions, positionsReadFailed, navigate }: any) {
+function OverviewTab({ summary, daily, loadingDaily, balance, equity, openPnl, acctReadFailed, positions, positionsReadFailed, navigate }: any) {
   const { name } = useAssistantName();
   const realized = summary?.totalPnl ?? null;
   const maxDD = summary?.maxDrawdown ?? null;
@@ -260,9 +280,18 @@ function OverviewTab({ summary, daily, loadingDaily, balance, equity, openPnl, p
           <CardTitle icon={<ShieldCheck className="h-4 w-4 text-primary" />} title="Account Health"
             action={hasAcct
               ? <span className="rounded-md border border-border bg-secondary/40 px-2 py-0.5 text-xs text-txt-secondary">Account data available</span>
-              : <span className="rounded-md border border-border bg-secondary/40 px-2 py-0.5 text-xs text-txt-muted">No account data</span>} />
+              : acctReadFailed
+                ? <span className="rounded-md border border-warning/30 bg-warning/5 px-2 py-0.5 text-xs text-warning">Account read failed</span>
+                : <span className="rounded-md border border-border bg-secondary/40 px-2 py-0.5 text-xs text-txt-muted">No account data</span>} />
           {!hasAcct ? (
-            <p className="mt-3 text-sm text-txt-muted">Account health will appear once MT5/account data is available.</p>
+            acctReadFailed ? (
+              // A failed read is not "no account" — balances are unknown, not zero.
+              <p className="mt-3 rounded-lg border border-warning/30 bg-warning/5 px-2.5 py-2 text-sm text-warning" role="alert">
+                Couldn&apos;t read your account data — balances and equity are unknown right now, not zero.
+              </p>
+            ) : (
+              <p className="mt-3 text-sm text-txt-muted">Account health will appear once MT5/account data is available.</p>
+            )
           ) : (
             <>
               <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -291,7 +320,17 @@ function OverviewTab({ summary, daily, loadingDaily, balance, equity, openPnl, p
             <p className="mt-3 text-sm text-txt-muted">{name} needs more account history before giving a trend read.</p>
           ) : (
             <p className="mt-2 text-sm text-txt-secondary">
-              {openPnl != null && openPnl === 0 ? "No open positions are stressing margin right now." : "Open positions are active — keep an eye on exposure."}{" "}
+              {/* The exposure sentence follows the ACTUAL positions read — it
+                  used to key off a field that could not exist on the response
+                  (always null), so every user with ≥1 all-time trade was told
+                  open positions were active, including users who were flat.
+                  It must also never contradict the Exposure chip below, which
+                  reads the same source. */}
+              {positionsReadFailed
+                ? "Open positions could not be read — exposure is unknown right now."
+                : positions.length === 0
+                  ? "No open positions right now."
+                  : "Open positions are active — keep an eye on exposure."}{" "}
               {realized != null ? (realized >= 0 ? "Realized P/L is positive over the recorded window." : "Realized P/L is negative over the recorded window — focus on quality setups.") : ""}
             </p>
           )}
@@ -669,14 +708,20 @@ function RiskTab({ summary }: any) {
 }
 
 // ── Allocation tab (own data only — no ARX internal capital) ────────────────
-function AllocationTab({ balance, equity, openPnl, positions, positionsReadFailed }: any) {
+function AllocationTab({ balance, equity, openPnl, acctReadFailed, positions, positionsReadFailed }: any) {
   const hasAcct = balance != null || equity != null;
   return (
     <div className="space-y-4">
       <Card>
         <CardTitle icon={<Wallet className="h-4 w-4 text-primary" />} title="Capital Allocation" />
         {!hasAcct ? (
-          <p className="mt-3 text-sm text-txt-muted">Allocation will appear once account data is available.</p>
+          acctReadFailed ? (
+            <p className="mt-3 rounded-lg border border-warning/30 bg-warning/5 px-2.5 py-2 text-sm text-warning" role="alert">
+              Couldn&apos;t read your account data — allocation figures are unknown right now, not zero.
+            </p>
+          ) : (
+            <p className="mt-3 text-sm text-txt-muted">Allocation will appear once account data is available.</p>
+          )
         ) : (
           <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
             <Metric label="Balance" value={balance != null ? plain(balance) : "—"} />

@@ -7,7 +7,7 @@
 
 import { Router, type IRouter } from "express";
 import { db, paperOrdersTable } from "@workspace/db";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { preflight, getActiveSession } from "../lib/paperSession/manager.js";
 import { evaluateGovernor } from "../lib/riskGovernor/governor.js";
 import { getGateStatus } from "../lib/readiness/gate.js";
@@ -38,6 +38,13 @@ export interface OpenTradeUnrealizedPnl {
   quality: string | null;
   /** Set ONLY when value is null — why this trade could not be priced. */
   reason: string | null;
+  /**
+   * Always "SIM_POINTS". The paper P&L formula is dir × (price − entry) ×
+   * lotSize × 100, symbol-blind — no contract size, pip value, or per-symbol
+   * scaling — so the figure corresponds to no real currency amount. Surfaces
+   * rendering it must label it sim pts, never dollars or cents.
+   */
+  unit: "SIM_POINTS";
 }
 
 export function priceOpenTrade(
@@ -46,19 +53,21 @@ export function priceOpenTrade(
   nowMs: number,
 ): OpenTradeUnrealizedPnl {
   if (!snap) {
-    return { value: null, asOf: null, source: null, quality: null, reason: "market data read failed" };
+    return { value: null, asOf: null, source: null, quality: null, reason: "market data read failed", unit: "SIM_POINTS" };
   }
   const quality = snap.dataQuality.status;
   if (!Number.isFinite(snap.mid) || quality === "MISSING") {
     return {
       value: null, asOf: null, source: snap.source, quality,
       reason: snap.dataQuality.warnings[0] ?? "no usable quote for this symbol",
+      unit: "SIM_POINTS",
     };
   }
   if (quality === "SYNTHETIC" || snap.source !== "REAL") {
     return {
       value: null, asOf: snap.timestamp, source: snap.source, quality,
       reason: `quote source is ${snap.source}/${quality}, not a real provider — refusing to price against fabricated data`,
+      unit: "SIM_POINTS",
     };
   }
   const ageMs = nowMs - new Date(snap.timestamp).getTime();
@@ -66,11 +75,71 @@ export function priceOpenTrade(
     return {
       value: null, asOf: snap.timestamp, source: snap.source, quality,
       reason: `quote is ${Math.round(ageMs / 1000)}s old (max ${MAX_PRICING_QUOTE_AGE_MS / 1000}s) — refusing to price against a stale quote`,
+      unit: "SIM_POINTS",
     };
   }
   return {
     value: Number(unrealizedPnl(order.direction, order.lotSize, order.entryPrice, snap.mid).toFixed(2)),
-    asOf: snap.timestamp, source: snap.source, quality, reason: null,
+    asOf: snap.timestamp, source: snap.source, quality, reason: null, unit: "SIM_POINTS",
+  };
+}
+
+// ── Today's performance ─────────────────────────────────────────────────────
+// Build EE-owned orders are settled by the EE monitor against Build DD market
+// data; every OTHER paper order (Build Q sandbox) is entered/settled/closed
+// against the seeded deterministic candle generator — a PRNG, not the market.
+// Those mock-settled closes are counted, but the count is surfaced so the UI
+// can say the total includes synthetic-priced closes instead of presenting a
+// PRNG outcome as a market outcome.
+const EE_STRATEGY_ID = "build_ee_paper_execution";
+
+export interface TodayPerformance {
+  totalTrades: number | null;
+  wins: number | null;
+  losses: number | null;
+  breakEven: number | null;
+  netPnl: number | null;
+  winRate: number | null;
+  dayRating: string;
+  /** See OpenTradeUnrealizedPnl.unit — paper P&L is symbol-blind sim points, not currency. */
+  pnlUnit: "SIM_POINTS";
+  /** How many of today's closes were settled by the synthetic price model (non-EE orders). */
+  syntheticPricedTrades: number | null;
+  readFailed: boolean;
+  readFailedReason: string | null;
+}
+
+// A failed paper_orders read is NOT a flat day. The old fallback was
+// {totalTrades:0, ..., netPnl:0, dayRating:'NO_TRADES'}, which rendered the
+// same confident "No closed paper trades yet today" copy for a DB outage as
+// for genuinely being flat. Counts become typed nulls with the reason instead.
+export const TODAY_PERFORMANCE_READ_FAILED: TodayPerformance = {
+  totalTrades: null, wins: null, losses: null, breakEven: null,
+  netPnl: null, winRate: null,
+  dayRating: "UNKNOWN",
+  pnlUnit: "SIM_POINTS",
+  syntheticPricedTrades: null,
+  readFailed: true,
+  readFailedReason: "The paper-orders read failed — today's results are unknown, not zero.",
+};
+
+export function summarizeTodayPerformance(
+  closedToday: Array<{ profitLoss: number | null; strategyId: string | null }>,
+): TodayPerformance {
+  const wins = closedToday.filter(r => (r.profitLoss ?? 0) > 0).length;
+  const losses = closedToday.filter(r => (r.profitLoss ?? 0) < 0).length;
+  const breakEven = closedToday.filter(r => (r.profitLoss ?? 0) === 0).length;
+  const netPnl = closedToday.reduce((s, r) => s + (r.profitLoss ?? 0), 0);
+  const totalTrades = closedToday.length;
+  const winRate = totalTrades > 0 ? Math.round((wins / totalTrades) * 100) : 0;
+  const dayRating = totalTrades === 0 ? "NO_TRADES" : netPnl > 0 ? "GREEN" : netPnl < 0 ? "RED" : "FLAT";
+  const syntheticPricedTrades = closedToday.filter(r => r.strategyId !== EE_STRATEGY_ID).length;
+  return {
+    totalTrades, wins, losses, breakEven, netPnl, winRate, dayRating,
+    pnlUnit: "SIM_POINTS",
+    syntheticPricedTrades,
+    readFailed: false,
+    readFailedReason: null,
   };
 }
 
@@ -145,8 +214,18 @@ router.get("/trading-cockpit/summary", requireUser, async (req, res) => {
   // NOT selected — for OPEN rows it is the write-at-close column's DB default
   // 0, and rendering it showed every open position as flat. Open rows are
   // priced against a fresh DD quote below instead.
-  const openRows = await safeCall("openPaperTrades", async () => {
-    return db.select({
+  //
+  // Scoped to THIS user (the route's whole claim is per-user isolation):
+  // unscoped, this panel presented every other account's open trades as this
+  // trader's. Legacy rows with a NULL user_id cannot be attributed to anyone
+  // and are honestly excluded — same rule the session accounting applies —
+  // rather than guessed onto whoever is looking.
+  //
+  // A failed read is a typed failure, not an empty list: the old fallback []
+  // made a DB outage render as the confident "No open paper trades" copy.
+  type OpenTradesRead = { ok: boolean; rows: Array<{ id: number; symbol: string; direction: string; lotSize: number; entryPrice: number; stopLoss: number; takeProfit: number; status: string; openedAt: Date }> };
+  const openTradesRead = await safeCall<OpenTradesRead>("openPaperTrades", async () => {
+    const rows = await db.select({
       id: paperOrdersTable.id,
       symbol: paperOrdersTable.symbol,
       direction: paperOrdersTable.direction,
@@ -156,8 +235,12 @@ router.get("/trading-cockpit/summary", requireUser, async (req, res) => {
       takeProfit: paperOrdersTable.takeProfit,
       status: paperOrdersTable.status,
       openedAt: paperOrdersTable.openedAt,
-    }).from(paperOrdersTable).where(eq(paperOrdersTable.status, "OPEN")).orderBy(desc(paperOrdersTable.openedAt)).limit(20);
-  }, []);
+    }).from(paperOrdersTable)
+      .where(and(eq(paperOrdersTable.status, "OPEN"), eq(paperOrdersTable.userId, userId)))
+      .orderBy(desc(paperOrdersTable.openedAt)).limit(20);
+    return { ok: true, rows };
+  }, { ok: false, rows: [] });
+  const openRows = openTradesRead.rows;
 
   // One quote per distinct symbol; each open row is then priced or given a
   // typed null + reason. getMarketData already degrades honestly (empty
@@ -178,20 +261,18 @@ router.get("/trading-cockpit/summary", requireUser, async (req, res) => {
     unrealizedPnl: priceOpenTrade(o, quoteBySymbol.get(o.symbol) ?? null, pricedAtMs),
   }));
 
-  // Today's performance (light aggregate from paper orders closed today).
+  // Today's performance (light aggregate from THIS user's paper orders closed
+  // today — the unscoped select().from() here summed every account's P&L into
+  // one number presented as this trader's). NULL-user legacy rows are excluded
+  // for the same attribution reason as the open-trades read above. A failed
+  // read degrades to typed nulls + reason (TODAY_PERFORMANCE_READ_FAILED),
+  // never the confident all-zero NO_TRADES shape.
   const todayPerformance = await safeCall("todayPerformance", async () => {
     const todayStart = new Date(); todayStart.setUTCHours(0, 0, 0, 0);
-    const rows = await db.select().from(paperOrdersTable);
+    const rows = await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.userId, userId));
     const closedToday = rows.filter(r => r.closedAt && new Date(r.closedAt) >= todayStart);
-    const wins = closedToday.filter(r => (r.profitLoss ?? 0) > 0).length;
-    const losses = closedToday.filter(r => (r.profitLoss ?? 0) < 0).length;
-    const breakEven = closedToday.filter(r => (r.profitLoss ?? 0) === 0).length;
-    const netPnl = closedToday.reduce((s, r) => s + (r.profitLoss ?? 0), 0);
-    const totalTrades = closedToday.length;
-    const winRate = totalTrades > 0 ? Math.round((wins / totalTrades) * 100) : 0;
-    const dayRating = totalTrades === 0 ? "NO_TRADES" : netPnl > 0 ? "GREEN" : netPnl < 0 ? "RED" : "FLAT";
-    return { totalTrades, wins, losses, breakEven, netPnl, winRate, dayRating };
-  }, { totalTrades: 0, wins: 0, losses: 0, breakEven: 0, netPnl: 0, winRate: 0, dayRating: "NO_TRADES" });
+    return summarizeTodayPerformance(closedToday);
+  }, TODAY_PERFORMANCE_READ_FAILED);
 
   // Coach + autopilot derived from active session + risk governor; never live.
   const sessionRules = active?.sessionRules ?? null;
@@ -291,6 +372,12 @@ router.get("/trading-cockpit/summary", requireUser, async (req, res) => {
     } : null,
     todayPerformance,
     openPaperTrades: openTrades,
+    // Typed read failure — distinct from a genuinely-empty list, so the UI
+    // can say "couldn't read" instead of "No open paper trades".
+    openPaperTradesReadFailed: !openTradesRead.ok,
+    openPaperTradesReadFailedReason: openTradesRead.ok
+      ? null
+      : "The paper-orders read failed — open trades are unknown, not zero.",
     coachSummary,
     notifications: {
       // Typed unknown on a failed read: counts become null (never 0) and the
