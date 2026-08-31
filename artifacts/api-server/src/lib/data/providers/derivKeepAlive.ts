@@ -101,6 +101,15 @@ async function runKeepAliveCycle(): Promise<void> {
   try {
     const client = getDerivWsClient();
     client.ensureConnection();
+    // BOOT RACE, observed live 2026-08-31. startDerivKeepAlive fires the first
+    // cycle immediately, but ensureConnection() only STARTS the handshake — so
+    // that cycle used to run its whole symbol sweep against a socket that was
+    // still connecting and log a warning per symbol ("ws_not_connected"), four
+    // alarming lines on every single boot for a condition that heals itself on
+    // the next tick 20s later. Warnings that always fire are warnings nobody
+    // reads. Skip the cycle instead: no work is lost, the interval retries, and
+    // a REAL candle failure keeps its warning.
+    if (!client.isConnected()) return;
     // Narrowed universe (audit collision #5): the keep-alive previously pinned
     // ALL 22 mapped synthetics every cycle. It now pins only the configured
     // universe (default: the four-symbol Phase 2 set). Re-resolved every cycle
