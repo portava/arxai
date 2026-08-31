@@ -14,8 +14,10 @@ import {
   evaluateAddOn,
   evaluateExitUrgency,
   assembleBasket,
+  basketSyncInfo,
   isLockoutActive,
   lockoutDirectionKey,
+  BASKET_SYNC_STALE_MS,
   FAILED_FLAME_LOCKOUT_MS,
   type OpenPositionInput,
 } from "../scalpManage.js";
@@ -223,6 +225,50 @@ test("assembleBasket carries direction, aggregates, flame, exit and add-on", () 
   assert.ok(b.exit);
   assert.ok(b.addOn);
   assert.equal(b.flame.scalpStatus, "STRONG");
+});
+
+// ── basket sync freshness (STALE_UNLABELED fix) ────────────────────────────
+
+test("basketSyncInfo judges freshness against NOW, not the newest row", () => {
+  const now = 1_780_000_000_000;
+  // Fresh: synced inside the liveness window.
+  const fresh = basketSyncInfo(now - 10_000, now);
+  assert.equal(fresh.stale, false);
+  assert.equal(fresh.ageSeconds, 10);
+  assert.equal(fresh.syncedAt, new Date(now - 10_000).toISOString());
+  // Stale: whole feed last synced hours ago (bridge down) — must be flagged
+  // even though every row would pass a newest-row-relative filter.
+  const stale = basketSyncInfo(now - 3 * 60 * 60 * 1000, now);
+  assert.equal(stale.stale, true);
+  assert.equal(stale.ageSeconds, 3 * 60 * 60);
+  // Boundary: exactly at the window edge is still fresh; just past is stale.
+  assert.equal(basketSyncInfo(now - BASKET_SYNC_STALE_MS, now).stale, false);
+  assert.equal(basketSyncInfo(now - BASKET_SYNC_STALE_MS - 1, now).stale, true);
+});
+
+test("basketSyncInfo never claims freshness it cannot evidence", () => {
+  const now = 1_780_000_000_000;
+  for (const v of [null, 0, -1, Number.NaN]) {
+    const s = basketSyncInfo(v as number | null, now);
+    assert.equal(s.stale, true, `sync=${v} must be stale`);
+    assert.equal(s.syncedAt, null);
+    assert.equal(s.ageSeconds, null);
+  }
+});
+
+test("assembleBasket carries the sync block through, and defaults to honest unknown-stale", () => {
+  const [group] = groupLegsIntoBaskets([pos({ ticket: "1", floatingPl: 10 })]);
+  const now = 1_780_000_000_000;
+  const withSync = assembleBasket(group!, strongFlame(), {
+    now,
+    sync: basketSyncInfo(now - 5_000, now),
+  });
+  assert.equal(withSync.sync.stale, false);
+  assert.equal(withSync.sync.ageSeconds, 5);
+  // No sync info supplied → the basket must NOT claim a live read.
+  const withoutSync = assembleBasket(group!, strongFlame(), { now });
+  assert.equal(withoutSync.sync.stale, true);
+  assert.equal(withoutSync.sync.syncedAt, null);
 });
 
 // ── lockout helpers ────────────────────────────────────────────────────────

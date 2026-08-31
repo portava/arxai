@@ -209,8 +209,12 @@ export function buildSetupWizard(ctx: RuntimeContext): WizardStep[] {
       id: "wz-emergency",
       title: "Confirm Emergency Stop behavior",
       shortExplanation: "The kill switch halts everything — demo, simulator, and live. It always wins.",
-      currentStatus: ctx.emergencyStopActive ? "blocked" : "info",
-      statusText: ctx.emergencyStopActive ? "Emergency Stop is ENGAGED." : "Emergency Stop not engaged.",
+      currentStatus: ctx.emergencyStopActive === true ? "blocked" : ctx.emergencyStopActive === false ? "info" : "attention",
+      statusText: ctx.emergencyStopActive === true
+        ? "Emergency Stop is ENGAGED."
+        : ctx.emergencyStopActive === false
+          ? "Emergency Stop not engaged."
+          : "Emergency Stop state could not be read — treat it as unknown, not off.",
       pageRoute: x.route, pageLabel: x.label,
       assistantQuestion: "Explain Emergency Stop",
       completionCondition: "You've read the Emergency procedure for engaging and clearing.",

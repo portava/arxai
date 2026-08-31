@@ -208,3 +208,78 @@ test("the reconciler's response is scoped to the rows it reconciled", () => {
     "the sync response must be scoped to the user_id IS NULL mirror it actually reconciled",
   );
 });
+
+// ── honest-close guards ───────────────────────────────────────────────────────
+//
+// POST /positions/:id/close used to stamp MANUALLY_CLOSED + trades.pnl from the
+// LAST-SYNCED unrealized mark (pnlStatus="COMPUTED") immediately after queueing
+// a CLOSE that queueMt5CommandWithGate stores as BLOCKED — undeliverable by
+// construction (routes/mt5.ts hardcodes status="BLOCKED"; the EA poll delivers
+// only PENDING). The position displayed closed contrary to broker truth and a
+// fabricated realized P/L entered the trades history as a trusted COMPUTED
+// number. Same shape on /stop-loss and /take-profit: the local row claimed a
+// stop/target the venue never received. The fix: inspect the gate's verdict,
+// refuse undelivered commands, and never derive a realized figure from a
+// floating mark.
+
+test("every broker-reaching mutator inspects the gate verdict and refuses undelivered commands", () => {
+  const handlers = CODE.split(/router\.(?:get|post|patch)\(/).slice(1);
+  const brokerHandlers = handlers.filter((h) => h.includes("queueMt5CommandWithGate("));
+  assert.equal(brokerHandlers.length, 3, `expected 3 broker-reaching handlers, found ${brokerHandlers.length}`);
+  for (const h of brokerHandlers) {
+    const gateAt = h.indexOf("queueMt5CommandWithGate(");
+    const verdictAt = h.indexOf('.status !== "PENDING"');
+    assert.ok(
+      verdictAt > gateAt,
+      "the queued command's deliverability must be inspected — a fire-and-forget queue was the fabrication hole",
+    );
+    assert.ok(
+      h.includes("res.status(409)"),
+      "an undeliverable broker command must be refused, not absorbed into a local state claim",
+    );
+    for (const write of ["db.update(livePositionsTable)", "db.update(tradesTable)"]) {
+      const writeAt = h.indexOf(write);
+      if (writeAt >= 0) {
+        assert.ok(
+          verdictAt < writeAt,
+          `${write} must sit BELOW the deliverability refusal — a blocked command must never produce a local write`,
+        );
+      }
+    }
+  }
+});
+
+test("the close handler never manufactures a realized P/L from the floating mark", () => {
+  assert.doesNotMatch(
+    CODE,
+    /realizedProfitLoss\s*\?\?\s*row\.unrealizedProfitLoss/,
+    "falling back to the last-synced unrealized mark fabricates a realized P/L",
+  );
+  assert.match(
+    CODE,
+    /const rawPnl = row\.realizedProfitLoss;/,
+    "trades.pnl may only close from the broker-fill-derived realizedProfitLoss",
+  );
+  assert.match(CODE, /pnlStatus: "UNKNOWN"/, "the no-figure path must degrade to a typed UNKNOWN");
+  assert.match(CODE, /PNL_DATA_QUALITY_MISSING_CLOSE_FILL/, "…with the canonical data-quality reason");
+});
+
+test("MANUALLY_CLOSED can only be stamped after the broker-refusal gate", () => {
+  const handlers = CODE.split(/router\.(?:get|post|patch)\(/).slice(1);
+  const closeHandler = handlers.find((h) => h.includes('"MANUALLY_CLOSED"'));
+  assert.ok(closeHandler, "the close handler no longer stamps MANUALLY_CLOSED — did the route change?");
+  const verdictAt = closeHandler!.indexOf('.status !== "PENDING"');
+  const stampAt = closeHandler!.indexOf('"MANUALLY_CLOSED"');
+  assert.ok(
+    verdictAt >= 0 && verdictAt < stampAt,
+    "the deliverability refusal must be decided before any close is stamped",
+  );
+});
+
+test("an unknown unrealized P/L is never presented as a confident zero", () => {
+  assert.doesNotMatch(
+    CODE,
+    /unrealizedProfitLoss \?\? 0/,
+    "`?? 0` turns a failed sync into a break-even claim",
+  );
+});

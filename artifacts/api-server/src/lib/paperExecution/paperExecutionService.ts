@@ -30,6 +30,7 @@ import { getMarketData } from "../marketData/marketDataService.js";
 import { calculatePositionSize, PAPER_DEFAULTS } from "./positionSizing.js";
 import { checkEligibility } from "./eligibility.js";
 import { gateForPaperTrade } from "../riskGovernor/governor.js";
+import { linkTradeToActiveSession } from "../paperSession/manager.js";
 import type {
   ExecuteFromDecisionOpts,
   PaperExecutionResult,
@@ -293,6 +294,19 @@ export async function executePaperFromDecision(
     eventType: "PLACED",
     message: `${SIMULATED_TAG} EE/${action} ${symbol} @ ${fillPrice} SL ${stopLoss} TP ${takeProfit} lot ${positionSize} (decision=${decisionId ?? "n/a"})`,
   }).catch(() => { /* non-fatal */ });
+
+  // Session accounting (Build PP): count this open against the trader's
+  // ACTIVE paper session so the cockpit's session trade counters move on real
+  // executions. Previously linkTradeToActiveSession had no caller at all, so
+  // the counters never moved. Best-effort: with no ACTIVE session it records
+  // nothing and returns { linked: false } (it never throws).
+  await linkTradeToActiveSession(userId, {
+    tradeId: String(order.id),
+    decisionId: decisionId != null ? String(decisionId) : undefined,
+    symbol,
+    action: "OPEN",
+    result: "OPEN",
+  });
 
   // ── Insert paper_executions (idempotency mapping + audit) ──
   const decisionSnapshot = sanitizeDecisionForJson(decision);

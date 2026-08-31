@@ -39,14 +39,26 @@ interface CockpitSummary {
     activeWarnings: { code: string; message: string }[];
   };
   todayPerformance: { totalTrades: number; wins: number; losses: number; breakEven: number; netPnl: number; winRate: number; dayRating: string };
-  openPaperTrades: { id: number; symbol: string; direction: string; lotSize: number; entryPrice: number; stopLoss: number; takeProfit: number; status: string; openedAt: string; profitLoss: number }[];
+  // `profitLoss` is gone on purpose: for OPEN rows it was the write-at-close
+  // DB column's default 0, so every open position rendered flat forever. The
+  // server now prices each open row against a fresh quote at read time and
+  // sends a typed null + reason when it cannot — rendered as "—", never 0.
+  openPaperTrades: {
+    id: number; symbol: string; direction: string; lotSize: number; entryPrice: number;
+    stopLoss: number; takeProfit: number; status: string; openedAt: string;
+    unrealizedPnl: { value: number | null; asOf: string | null; source: string | null; quality: string | null; reason: string | null };
+  }[];
   coachSummary: { dailyFocus: string; mistakeToAvoid: string[]; setupsToWatch: string[]; setupsToAvoid: string[]; nextBestActions: string[] };
   // Alert text (`title`/`message`) is deliberately absent: the alerts table is
   // not per-user scoped, so the server withholds it rather than hand one
   // account's alert content to another. See tradingCockpit.ts.
   notifications: {
-    unreadAll: number;
-    criticalUnread: number;
+    // null = the alert-store read FAILED — counts are unknown, not zero. The
+    // server also sets alertsReadFailed and blocks session start (fail closed).
+    unreadAll: number | null;
+    criticalUnread: number | null;
+    alertsReadFailed?: boolean;
+    alertsReadFailedReason?: string | null;
     notificationScope?: string;
     criticalSamples: {
       id: number;
@@ -87,7 +99,8 @@ function StatusBadge({ status }: { status?: string }) {
 }
 
 function SafetyHeader({ s }: { s: CockpitSummary }) {
-  const critical = s.notifications.criticalUnread > 0;
+  const critical = (s.notifications.criticalUnread ?? 0) > 0;
+  const alertsUnknown = Boolean(s.notifications.alertsReadFailed);
   const [chartSym] = useChartSymbol();
   return (
     <div className="sticky top-0 z-20 -mx-4 px-4 py-3 bg-background/95 backdrop-blur border-b">
@@ -109,6 +122,11 @@ function SafetyHeader({ s }: { s: CockpitSummary }) {
             <AlertTriangle className="h-3 w-3 mr-1" />{s.notifications.criticalUnread} CRITICAL ALERT{s.notifications.criticalUnread === 1 ? "" : "S"}
           </Badge>
         )}
+        {alertsUnknown && (
+          <Badge className="bg-warning text-black ml-1" variant="default" data-testid="cockpit-alerts-unknown-badge">
+            <AlertTriangle className="h-3 w-3 mr-1" />ALERT STATUS UNKNOWN
+          </Badge>
+        )}
       </div>
       {critical && (
         <Alert variant="destructive" className="mt-2">
@@ -117,6 +135,16 @@ function SafetyHeader({ s }: { s: CockpitSummary }) {
           <AlertDescription className="text-xs">
             Starting a new paper session is disabled until critical alerts are reviewed.
             <Link href="/notifications"><a className="underline ml-1">Open Notifications →</a></Link>
+          </AlertDescription>
+        </Alert>
+      )}
+      {!critical && alertsUnknown && (
+        <Alert className="mt-2 border-warning/50 text-warning" data-testid="cockpit-alerts-unknown-banner">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Alert status could not be read</AlertTitle>
+          <AlertDescription className="text-xs">
+            Treat this as unknown, not as all-clear — a critical alert may exist that we cannot see.
+            Starting a new paper session stays blocked until alerts are readable.
           </AlertDescription>
         </Alert>
       )}
@@ -129,9 +157,16 @@ function PrimaryActionCard({ s, onAction, busy }: { s: CockpitSummary; onAction:
   const blocked = a.severity === "BLOCK";
   const handle = () => {
     if (a.code === "ACK_CRITICAL") { window.location.href = `${BASE}/notifications`; return; }
+    // Failed alert read → fail closed. This must never fall through to
+    // onAction("start"): the whole point of the block is that we cannot know
+    // whether a critical alert exists.
+    if (a.code === "ALERTS_UNREADABLE") { window.location.href = `${BASE}/notifications`; return; }
     if (a.code === "PREFLIGHT_BLOCKED") { onAction("preflight"); return; }
     if (a.code === "RESUME") { onAction("resume"); return; }
     if (a.code === "MONITOR") { window.location.href = `${BASE}/demo-trading`; return; }
+    // Only the START action may start a session; any unrecognized or blocked
+    // code must not accidentally reach onAction("start").
+    if (a.severity === "BLOCK") { window.location.href = `${BASE}/notifications`; return; }
     onAction("start");
   };
   return (
@@ -210,6 +245,8 @@ function ActiveSessionPanel({ s }: { s: CockpitSummary }) {
 
 function OpenTradesPanel({ s }: { s: CockpitSummary }) {
   const t = s.openPaperTrades;
+  const unpriced = t.filter(o => o.unrealizedPnl?.value == null);
+  const firstReason = unpriced[0]?.unrealizedPnl?.reason ?? "no honest quote was available";
   return (
     <Card>
       <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><FlaskConical className="h-4 w-4" />Open paper trades</CardTitle></CardHeader>
@@ -220,22 +257,36 @@ function OpenTradesPanel({ s }: { s: CockpitSummary }) {
           <div className="overflow-x-auto -mx-2">
             <table className="w-full text-xs">
               <thead className="text-[10px] uppercase text-muted-foreground">
-                <tr><th className="text-left px-2 py-1">Symbol</th><th className="text-left px-2 py-1">Side</th><th className="text-right px-2 py-1">Entry</th><th className="text-right px-2 py-1 hidden sm:table-cell">SL</th><th className="text-right px-2 py-1 hidden sm:table-cell">TP</th><th className="text-right px-2 py-1">P&L</th></tr>
+                <tr><th className="text-left px-2 py-1">Symbol</th><th className="text-left px-2 py-1">Side</th><th className="text-right px-2 py-1">Entry</th><th className="text-right px-2 py-1 hidden sm:table-cell">SL</th><th className="text-right px-2 py-1 hidden sm:table-cell">TP</th><th className="text-right px-2 py-1">Unrealized P&L</th></tr>
               </thead>
               <tbody>
-                {t.map(o => (
-                  <tr key={o.id} className="border-t">
-                    <td className="px-2 py-1 font-mono">{o.symbol}</td>
-                    <td className="px-2 py-1"><Badge variant="outline" className="text-[10px]">{o.direction}</Badge></td>
-                    <td className="px-2 py-1 text-right font-mono">{o.entryPrice}</td>
-                    <td className="px-2 py-1 text-right font-mono hidden sm:table-cell">{o.stopLoss}</td>
-                    <td className="px-2 py-1 text-right font-mono hidden sm:table-cell">{o.takeProfit}</td>
-                    <td className={`px-2 py-1 text-right font-mono ${o.profitLoss > 0 ? "text-success" : o.profitLoss < 0 ? "text-danger" : ""}`}>{o.profitLoss}</td>
-                  </tr>
-                ))}
+                {t.map(o => {
+                  const u = o.unrealizedPnl;
+                  return (
+                    <tr key={o.id} className="border-t">
+                      <td className="px-2 py-1 font-mono">{o.symbol}</td>
+                      <td className="px-2 py-1"><Badge variant="outline" className="text-[10px]">{o.direction}</Badge></td>
+                      <td className="px-2 py-1 text-right font-mono">{o.entryPrice}</td>
+                      <td className="px-2 py-1 text-right font-mono hidden sm:table-cell">{o.stopLoss}</td>
+                      <td className="px-2 py-1 text-right font-mono hidden sm:table-cell">{o.takeProfit}</td>
+                      {u?.value != null ? (
+                        <td className={`px-2 py-1 text-right font-mono ${u.value > 0 ? "text-success" : u.value < 0 ? "text-danger" : ""}`} data-testid={`open-trade-pnl-${o.id}`}>{u.value}</td>
+                      ) : (
+                        // Honest unknown, visually distinct from a real 0: muted
+                        // dash with the server's reason — never a confident zero.
+                        <td className="px-2 py-1 text-right font-mono text-warning dark:text-warning" title={u?.reason ?? "unavailable"} data-testid={`open-trade-pnl-unavailable-${o.id}`}>—</td>
+                      )}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
+        )}
+        {unpriced.length > 0 && (
+          <p className="text-xs text-warning dark:text-warning mt-2" data-testid="cockpit-open-trades-unpriced-note">
+            Couldn't price {unpriced.length} open trade{unpriced.length === 1 ? "" : "s"} ({firstReason}) — showing "—" rather than a guessed 0.
+          </p>
         )}
       </CardContent>
     </Card>
@@ -284,15 +335,22 @@ function CoachPanel({ s }: { s: CockpitSummary }) {
 
 function AlertsPanel({ s }: { s: CockpitSummary }) {
   const n = s.notifications;
+  const readFailed = Boolean(n.alertsReadFailed);
   return (
-    <Card>
+    <Card className={readFailed ? "border-warning/50" : undefined}>
       <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><Bell className="h-4 w-4" />Alerts</CardTitle></CardHeader>
       <CardContent className="text-sm space-y-2">
         <div className="flex gap-3 text-xs">
-          <span>Unread: <span className="font-mono">{n.unreadAll}</span></span>
-          <span>Critical: <span className={`font-mono ${n.criticalUnread > 0 ? "text-danger" : ""}`}>{n.criticalUnread}</span></span>
+          {/* null count = read failed → "?" with the reason below, never a 0 */}
+          <span>Unread: <span className={`font-mono ${n.unreadAll == null ? "text-warning" : ""}`}>{n.unreadAll ?? "?"}</span></span>
+          <span>Critical: <span className={`font-mono ${n.criticalUnread == null ? "text-warning" : (n.criticalUnread ?? 0) > 0 ? "text-danger" : ""}`}>{n.criticalUnread ?? "?"}</span></span>
         </div>
-        {n.criticalSamples.length === 0 ? (
+        {readFailed ? (
+          <p className="text-xs font-medium text-warning" data-testid="cockpit-alerts-read-failed">
+            <AlertTriangle className="inline h-3 w-3 mr-1 align-text-bottom" />
+            {n.alertsReadFailedReason ?? "The alert store could not be read — counts are unknown, not zero."}
+          </p>
+        ) : n.criticalSamples.length === 0 ? (
           // NOT "safety status is clean". These counts come from a table that
           // no per-user query scopes and that the removed rule engine never
           // fills; an empty list means nothing has been WRITTEN, not that

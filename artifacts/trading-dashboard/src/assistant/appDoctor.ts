@@ -19,7 +19,7 @@ export function diagnose(ctx: RuntimeContext): DoctorDiagnosis[] {
   const out: DoctorDiagnosis[] = [];
 
   // 1) Emergency Stop active (highest priority)
-  pushIf(out, ctx.emergencyStopActive, {
+  pushIf(out, ctx.emergencyStopActive === true, {
     category: "safety-lock",
     id: "doc-emergency-stop",
     explanation: "The Emergency Stop is engaged. All trading activity is halted by design.",
@@ -161,6 +161,20 @@ export function diagnose(ctx: RuntimeContext): DoctorDiagnosis[] {
     priority: 10,
   });
 
+  // 10.5) Kill-switch state unreadable — reported honestly as unknown, never "off".
+  pushIf(out, ctx.emergencyStopActive === null, {
+    category: "safety-lock",
+    id: "doc-emergency-stop-unknown",
+    explanation: "The Emergency Stop state could not be read, so it is unknown — not confirmed off.",
+    evidence: ["emergencyStopActive=null (read failed)"],
+    likelyCause: "The /api/system/status read failed or has not completed.",
+    safeNextStep: "Open the Emergency page, which reads the kill-switch state directly.",
+    relatedRoute: safeRoute("/emergency"),
+    doNotDo: "Do not treat an unreadable kill switch as disengaged.",
+    liveTradingStillUnavailable: true,
+    priority: 10.5,
+  });
+
   // Always include simulator-mode explanation at low priority so users have it.
   pushIf(out, ctx.simulatorMode || ctx.paperOnly, {
     category: "simulator-mode",
@@ -205,7 +219,7 @@ export function explainAppStatus(ctx: RuntimeContext): {
   if (ctx.brokerReadOnly) cannotDo.push("Modify broker positions");
   if (!ctx.heartbeatPresent) cannotDo.push("Confirm an MT5 EA heartbeat");
 
-  const whyLiveUnavailable = ctx.emergencyStopActive
+  const whyLiveUnavailable = ctx.emergencyStopActive === true
     ? "Emergency Stop is engaged."
     : !ctx.heartbeatPresent
       ? "No confirmed MT5 EA heartbeat yet."
@@ -215,7 +229,9 @@ export function explainAppStatus(ctx: RuntimeContext): {
           ? "Broker is in read-only mode."
           : ctx.liveTradingDisabled
             ? "Server-enforced LIVE TRADING DISABLED lock is in place."
-            : "All gates appear green from the client view, but execution remains server-gated.";
+            : ctx.emergencyStopActive === null
+              ? "Emergency Stop state could not be read — treating it as unknown, not off."
+              : "All gates appear green from the client view, but execution remains server-gated.";
 
   const first = fixFirst(ctx).primary;
   return {

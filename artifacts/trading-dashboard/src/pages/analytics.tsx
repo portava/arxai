@@ -70,6 +70,9 @@ export default function Analytics() {
 
   const acct = acctQ.data as { balance?: number; equity?: number; pnl?: number } | undefined;
   const positions = (posQ.data?.rows ?? []) as unknown as Array<{ symbol: string; side: string; lotSize: number; entryPrice: number; pnl: number }>;
+  // positions=[] on a FAILED read is not a flat book — every exposure surface
+  // below must distinguish "read failed" from "genuinely no open positions".
+  const positionsReadFailed = posQ.isError && posQ.data == null;
   const daily: DailyRow[] = useMemo(() => (Array.isArray(dailyPerf) ? (dailyPerf as DailyRow[]) : []), [dailyPerf]);
 
   const equity = acct?.equity ?? null;
@@ -128,13 +131,13 @@ export default function Analytics() {
           summary={summary} loadingSummary={loadingSummary}
           daily={daily} loadingDaily={loadingDaily}
           balance={balance} equity={equity} openPnl={openPnl}
-          positions={positions} navigate={navigate}
+          positions={positions} positionsReadFailed={positionsReadFailed} navigate={navigate}
           strategiesCount={Array.isArray(strategies) ? strategies.length : 0}
         />
       )}
       {tab === "calendar" && <CalendarPLTab daily={daily} loading={loadingDaily} summary={summary} navigate={navigate} />}
       {tab === "risk" && <RiskTab summary={summary} />}
-      {tab === "allocation" && <AllocationTab balance={balance} equity={equity} openPnl={openPnl} positions={positions} />}
+      {tab === "allocation" && <AllocationTab balance={balance} equity={equity} openPnl={openPnl} positions={positions} positionsReadFailed={positionsReadFailed} />}
       {tab === "timeline" && <TimelineTab />}
       {tab === "origin" && <OriginClassCard />}
     </div>
@@ -210,7 +213,7 @@ function Chip({ label, value, tone }: { label: string; value: string; tone: stri
 }
 
 // ── Overview tab ────────────────────────────────────────────────────────────
-function OverviewTab({ summary, daily, loadingDaily, balance, equity, openPnl, positions, navigate }: any) {
+function OverviewTab({ summary, daily, loadingDaily, balance, equity, openPnl, positions, positionsReadFailed, navigate }: any) {
   const { name } = useAssistantName();
   const realized = summary?.totalPnl ?? null;
   const maxDD = summary?.maxDrawdown ?? null;
@@ -270,7 +273,7 @@ function OverviewTab({ summary, daily, loadingDaily, balance, equity, openPnl, p
                 <Metric label="Max Drawdown" value={maxDD != null ? formatPercent(maxDD) : "—"} tone="text-danger" />
                 <Metric label={`Total Trades${basisSuffix}`} value={String(totalTrades)} />
                 <Metric label="Profit Factor" value={profitFactor != null ? profitFactor.toFixed(2) : "—"} />
-                <Metric label="Open Positions" value={String(positions.length)} />
+                <Metric label="Open Positions" value={positionsReadFailed ? "—" : String(positions.length)} />
               </div>
               {excludedUnknown > 0 && (
                 <p className="mt-2 rounded-lg border border-warning/30 bg-warning/5 px-2.5 py-1.5 text-[11px] text-warning">
@@ -303,7 +306,12 @@ function OverviewTab({ summary, daily, loadingDaily, balance, equity, openPnl, p
               tone={maxDD == null ? "text-txt-muted" : maxDD < 5 ? "text-success" : "text-warning"}
             />
             <Chip label="Margin" value="Not read" tone="text-txt-muted" />
-            <Chip label="Exposure" value={positions.length === 0 ? "Clear" : "Active"} tone={positions.length === 0 ? "text-success" : "text-warning"} />
+            {/* A failed positions read must never show a green "Clear". */}
+            <Chip
+              label="Exposure"
+              value={positionsReadFailed ? "Unknown" : positions.length === 0 ? "Clear" : "Active"}
+              tone={positionsReadFailed ? "text-warning" : positions.length === 0 ? "text-success" : "text-warning"}
+            />
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             <button onClick={openRubyLiveChat} className="inline-flex items-center gap-1.5 rounded-lg border border-ruby/40 bg-ruby/10 px-2.5 py-1.5 text-xs text-ruby"><MessageCircle className="h-3.5 w-3.5" /> Ask {name}</button>
@@ -373,7 +381,12 @@ function OverviewTab({ summary, daily, loadingDaily, balance, equity, openPnl, p
           ) : (
             <div className="mt-3 space-y-3">
               <Bar2 label="Max Drawdown" pct={maxDD ?? 0} right={maxDD != null ? formatPercent(maxDD) : "—"} tone="bg-danger" />
-              <Bar2 label="Open Exposure" pct={positions.length ? 100 : 0} right={positions.length ? `${positions.length} position${positions.length === 1 ? "" : "s"}` : plain(0)} tone="bg-primary" />
+              <Bar2
+                label="Open Exposure"
+                pct={positionsReadFailed ? 0 : positions.length ? 100 : 0}
+                right={positionsReadFailed ? "not read" : positions.length ? `${positions.length} position${positions.length === 1 ? "" : "s"}` : plain(0)}
+                tone="bg-primary"
+              />
               <p className="text-[11px] text-txt-muted">Daily/weekly risk limits appear here once account risk data is available.</p>
             </div>
           )}
@@ -420,7 +433,15 @@ function OverviewTab({ summary, daily, loadingDaily, balance, equity, openPnl, p
       {/* 8: Exposure by Market */}
       <Card>
         <CardTitle icon={<Globe className="h-4 w-4 text-primary" />} title="Exposure by Market" />
-        {positions.length === 0 ? (
+        {positionsReadFailed ? (
+          <p
+            className="mt-3 rounded-lg border border-warning/30 bg-warning/5 px-2.5 py-2 text-sm font-medium text-warning"
+            role="alert"
+            data-testid="exposure-read-failed"
+          >
+            Couldn&apos;t read your open positions — this is not a statement that you are flat.
+          </p>
+        ) : positions.length === 0 ? (
           <p className="mt-3 text-sm text-txt-muted">No open market exposure right now.</p>
         ) : (
           <div className="mt-3 overflow-x-auto">
@@ -648,7 +669,7 @@ function RiskTab({ summary }: any) {
 }
 
 // ── Allocation tab (own data only — no ARX internal capital) ────────────────
-function AllocationTab({ balance, equity, openPnl, positions }: any) {
+function AllocationTab({ balance, equity, openPnl, positions, positionsReadFailed }: any) {
   const hasAcct = balance != null || equity != null;
   return (
     <div className="space-y-4">
@@ -661,7 +682,7 @@ function AllocationTab({ balance, equity, openPnl, positions }: any) {
             <Metric label="Balance" value={balance != null ? plain(balance) : "—"} />
             <Metric label="Equity" value={equity != null ? plain(equity) : "—"} />
             <Metric label="Open P/L" value={openPnl != null ? money(openPnl) : "—"} tone={openPnl != null ? pnlTone(openPnl) : undefined} />
-            <Metric label="Open Positions" value={String(positions.length)} />
+            <Metric label="Open Positions" value={positionsReadFailed ? "—" : String(positions.length)} />
           </div>
         )}
         <p className="mt-3 text-[11px] text-txt-muted">Reserved risk, withdrawable amount, and lock status appear here once allocation data is available.</p>

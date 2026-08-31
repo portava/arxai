@@ -363,3 +363,127 @@ test("stricter-only: a governor block can never be relaxed by mission fields", (
     "the governor block reason is preserved",
   );
 });
+
+// ── DEAD_GAUGE fix — the risk counters read the MISSION'S OWN trade book ─────
+//
+// What was wrong: refreshMissionRisk aggregated `paper_trades` (whose only
+// writer is the manual journal route mePaperTrades.ts), while a mission's real
+// closes land on mission_trade_drafts (sim_* family for paper/demo, the
+// broker-reconciled columns for live). So a mission on a real losing streak
+// showed "Consecutive losses: 0 / Daily budget used: 0%", the behavioral
+// cooldown + protective-mode ladder never fired, and the same wrong-book state
+// gated dispatch via composeMissionGate.
+//
+// These proofs stay OFFLINE: the unroutable DATABASE_URL only satisfies
+// @workspace/db's import-time env check (same pattern as
+// missionTestVerifiedGate.test.ts). Nothing connects, queries, or dispatches —
+// missionOwnTradeHistory and aggregateHistory are pure.
+process.env.DATABASE_URL ??= "postgres://qa:qa@127.0.0.1:1/qa_offline_never_connects";
+
+const { missionOwnTradeHistory } = await import("../missionRiskService.js");
+const { aggregateHistory } = await import("../riskGovernorEngine.js");
+const { readFileSync } = await import("node:fs");
+const { fileURLToPath } = await import("node:url");
+type MissionTradeDraftRow = import("@workspace/db").MissionTradeDraftRow;
+
+const RISK_SERVICE_SRC = readFileSync(
+  fileURLToPath(new URL("../missionRiskService.ts", import.meta.url)),
+  "utf8",
+);
+
+/** Minimal executed-draft row; only the fields the mapper reads are real. */
+function draftRow(partial: Partial<MissionTradeDraftRow>): MissionTradeDraftRow {
+  return {
+    simulated: false,
+    simPnl: null,
+    simOpenedAt: null,
+    simClosedAt: null,
+    pnl: null,
+    closedAt: null,
+    createdAt: new Date("2026-06-20T09:00:00Z"),
+    status: "executed",
+    ...partial,
+  } as MissionTradeDraftRow;
+}
+
+test("own-book: a simulated row reads ONLY the sim_* family", () => {
+  const [t] = missionOwnTradeHistory([
+    draftRow({
+      simulated: true,
+      simPnl: -25,
+      simOpenedAt: new Date("2026-06-20T10:00:00Z"),
+      simClosedAt: new Date("2026-06-20T11:00:00Z"),
+      // Broker columns must be ignored even if (wrongly) populated.
+      pnl: 999,
+      closedAt: new Date("2026-06-19T00:00:00Z"),
+    }),
+  ]);
+  assert.equal(t!.status, "closed");
+  assert.equal(t!.pnl, -25);
+  assert.equal(t!.closedAt?.toISOString(), "2026-06-20T11:00:00.000Z");
+  assert.equal(t!.openedAt?.toISOString(), "2026-06-20T10:00:00.000Z");
+});
+
+test("own-book: a broker row reads ONLY the reconciled family", () => {
+  const [t] = missionOwnTradeHistory([
+    draftRow({
+      simulated: false,
+      pnl: 40,
+      closedAt: new Date("2026-06-20T12:00:00Z"),
+      simPnl: -999,
+      simClosedAt: new Date("2026-06-20T13:00:00Z"),
+    }),
+  ]);
+  assert.equal(t!.status, "closed");
+  assert.equal(t!.pnl, 40);
+  assert.equal(t!.closedAt?.toISOString(), "2026-06-20T12:00:00.000Z");
+});
+
+test("own-book: an executed-but-unclosed draft counts as an OPEN position", () => {
+  const [t] = missionOwnTradeHistory([draftRow({ simulated: true })]);
+  assert.equal(t!.status, "open");
+  assert.equal(t!.closedAt, null);
+});
+
+test("own-book: underivable sim P/L stays null — never a confident zero", () => {
+  const [t] = missionOwnTradeHistory([
+    draftRow({ simulated: true, simPnl: null, simClosedAt: new Date("2026-06-20T11:00:00Z") }),
+  ]);
+  assert.equal(t!.status, "closed");
+  assert.equal(t!.pnl, null);
+});
+
+test("own-book: a mission's simulated losing streak reaches the risk counters", () => {
+  // Local-noon "now" with closes earlier the same LOCAL day, so the engine's
+  // wall-clock day boundary holds in any test-runner timezone.
+  const now = new Date();
+  now.setHours(12, 0, 0, 0);
+  const at = (h: number, m: number) => {
+    const d = new Date(now);
+    d.setHours(h, m, 0, 0);
+    return d;
+  };
+  const losses = [1, 2, 3].map((i) =>
+    draftRow({
+      simulated: true,
+      simPnl: -10 * i,
+      simOpenedAt: at(7 + i, 0),
+      simClosedAt: at(8 + i, 30),
+      createdAt: at(7 + i, 0),
+    }),
+  );
+  const history = aggregateHistory(missionOwnTradeHistory(losses), now);
+  assert.equal(history.consecutiveLosses, 3);
+  assert.equal(history.tradesToday, 3);
+  assert.equal(history.todayPnl, -60);
+});
+
+test("own-book: refreshMissionRisk reads the mission's own drafts, never the paper journal", () => {
+  assert.match(RISK_SERVICE_SRC, /from\(missionTradeDraftsTable\)/);
+  assert.match(RISK_SERVICE_SRC, /eq\(missionTradeDraftsTable\.missionId, args\.missionId\)/);
+  assert.match(RISK_SERVICE_SRC, /eq\(missionTradeDraftsTable\.status, "executed"\)/);
+  assert.ok(
+    !RISK_SERVICE_SRC.includes("paperTradesTable"),
+    "missionRiskService must not aggregate the manual paper-trade journal",
+  );
+});

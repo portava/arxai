@@ -98,3 +98,28 @@ describe("the heat map no longer scales percentages by 100", () => {
     expect(65 >= TRAP_WARNING_THRESHOLD).toBe(true);
   });
 });
+
+describe("no-candle reads are withheld, not rendered as measurements", () => {
+  // With < 10 candles the timing brain returns defaults (buy/sell 50/50,
+  // room 50) and relabels the session's static fakeoutRisk constant as
+  // trapProbability. The Buy/Sell Windows and Danger Windows tabs must never
+  // render those defaults as if they were a measured market.
+
+  it("the buy/sell tab gates its meter on candle data and says why it is withheld", () => {
+    expect(page).toMatch(/const hasCandles = data\.dataQuality\.hasCandleData/);
+    expect(page).toMatch(/Couldn't measure buy\/sell pressure/);
+  });
+
+  it("the danger tab's trap pill degrades to a dash without candle data", () => {
+    expect(page).toMatch(/hasCandleData \? scorePercent\(data\.trapProbability\) : "—"/);
+  });
+
+  it("the cross-symbol Trap badge only fires on candle-backed reads", () => {
+    expect(page).toMatch(/!r\.dataQuality\.hasCandleData \?/);
+  });
+
+  it("the buy/sell and danger tabs carry the data-quality badge like the other tabs", () => {
+    // NowTab, BySymbolTab, BuySellWindowsTab, DangerWindowsTab, AdminDataStatusTab.
+    expect((page.match(/<DataQualityBadge label=/g) ?? []).length).toBeGreaterThanOrEqual(5);
+  });
+});

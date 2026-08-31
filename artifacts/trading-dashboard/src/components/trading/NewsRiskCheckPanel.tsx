@@ -43,6 +43,13 @@ export function NewsRiskCheckPanel({ symbol, defaultOpen = false }: Props) {
   const result = mut.data;
   const failed = mut.isError;
   const gateActive = result && (result.riskLevel === "high" || result.riskLevel === "critical" || result.riskLevel === "medium");
+  // Honest-blindness: a "none" risk read with the economic-calendar feed
+  // disconnected means the system cannot see scheduled events at all — the
+  // collapsed header must read a muted "unknown", never a green "none" (a
+  // real high-impact event could be minutes away).
+  const calendarBlind = Boolean(
+    result && !result.dataSources.calendar.connected && result.riskLevel === "none",
+  );
 
   return (
     <>
@@ -84,11 +91,16 @@ export function NewsRiskCheckPanel({ symbol, defaultOpen = false }: Props) {
           News Risk Check
           {result && (
             <>
-              <span className={`ml-1 font-semibold uppercase ${RISK_TONE[result.riskLevel]}`}>
-                · {result.riskLevel}
+              <span
+                className={`ml-1 font-semibold uppercase ${calendarBlind ? "text-txt-muted" : RISK_TONE[result.riskLevel]}`}
+                data-testid="news-risk-level-badge"
+              >
+                · {calendarBlind ? "unknown" : result.riskLevel}
               </span>
               <span className="ml-1 text-txt-muted">
-                ({REC_LABEL[result.recommendation] ?? result.recommendation})
+                {calendarBlind
+                  ? "(calendar feed unavailable)"
+                  : `(${REC_LABEL[result.recommendation] ?? result.recommendation})`}
               </span>
             </>
           )}
@@ -170,8 +182,11 @@ export function NewsRiskCheckPanel({ symbol, defaultOpen = false }: Props) {
               )}
 
               {!result.dataSources.calendar.connected && (
-                <div className="text-[10px] text-txt-muted">
-                  Live economic-calendar provider not configured.
+                <div className="flex items-start gap-1 text-warning" data-testid="news-risk-calendar-blind">
+                  <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                  <span className="text-[11px]">
+                    Scheduled-event risk is unknown — {result.dataSources.calendar.note}
+                  </span>
                 </div>
               )}
 

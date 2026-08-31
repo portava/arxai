@@ -5243,21 +5243,37 @@ export async function recordLiveCommandResult(args: {
           // mission draft. No-op for non-mission positions; never an execution
           // path and never allowed to disturb the close-confirmation result.
           try {
-            const closedPos = closedRows[0] as { floatingPl?: number | null } | undefined;
-            const realisedPnl =
-              typeof closedPos?.floatingPl === "number" && Number.isFinite(closedPos.floatingPl)
-                ? closedPos.floatingPl
-                : null;
+            // OUTCOME TRUTH: the EA's CLOSE fill result carries a fill PRICE
+            // but NO broker-realised P/L, and the position row's floatingPl is
+            // a last-synced floating mark of unbounded age — the honesty spine
+            // in brokerCloseOutcome.ts forbids recording that mark as the
+            // realised figure ("we never derive it from the last observed
+            // floating P/L"), and handing it over without an outcomeStatus
+            // made the recorder default it to RECONCILED — the label the
+            // completeness read trusts as broker-confirmed. So this close is
+            // recorded honestly: pnl null, UNRECONCILED, typed reason, fill
+            // price kept as evidence only. The broker close report ingest
+            // upgrades it with the venue's own figure when that arrives
+            // (mayUpgradeRecordedOutcome in brokerCloseOutcome.ts).
+            const { resolveBrokerCloseOutcome } = await import("./brokerCloseOutcome.js");
+            const closeOutcome = resolveBrokerCloseOutcome({
+              source: "ARX_CLOSE_FILL",
+              brokerRealisedPnl: null, // the EA close result reports no realised P/L
+              brokerClosePrice: args.fillPrice ?? null,
+            });
             const { recordMissionTradeCloseByBrokerTicket } = await import("../missionExitManager.js");
             await recordMissionTradeCloseByBrokerTicket({
               userId: args.userId,
               brokerTicket: closeTicket,
-              realisedPnl,
-              // OUTCOME TRUTH: stamp the provenance of this close. When the row
-              // carried no P/L we record the close with pnl null and the
-              // recorder marks it UNRECONCILED, so the mission's realised figure
-              // is labelled incomplete instead of quietly omitting the trade.
-              outcomeSource: "ARX_CLOSE_FILL",
+              realisedPnl: closeOutcome.realisedPnl,
+              outcomeSource: closeOutcome.source,
+              outcomeStatus: closeOutcome.status,
+              unreconciledReason: closeOutcome.unreconciledReason,
+              brokerClosePrice: closeOutcome.closePrice,
+              // exitReason is deliberately NOT taken from closeOutcome: the
+              // draft's own last exit trigger (tp / trail / invalidation…) is
+              // what drives protective-exit classification for a close ARX
+              // itself initiated.
               nowMs: now.getTime(),
             });
           } catch (e) {

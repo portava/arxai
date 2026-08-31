@@ -2,8 +2,13 @@
 //
 // SAFETY: Health checks are READ-ONLY diagnostics. This service NEVER places
 // trades, NEVER changes canPlaceTrades, NEVER calls MT5, NEVER enables live
-// trading. liveTradingStatus is always reported as DISABLED. mode is always
-// PAPER_ONLY.
+// trading.
+//
+// HONESTY: liveTradingStatus / mode / safetyStatus are READ from the real
+// Phase B arm switch (resolveLiveBrokerExecutionEnabledAsync — env AND
+// global_trading_settings.liveBrokerExecutionArmed), not asserted as
+// compile-time constants. When that read fails, the report says UNKNOWN with
+// the reason — it never claims live trading is off when it cannot know.
 
 import {
   db, systemHealthChecksTable,
@@ -20,6 +25,7 @@ import { randomUUID } from "node:crypto";
 import { auditEvent } from "./audit.js";
 import { patchConfig, getConfig } from "./config.js";
 import { marketDataHealthCheck } from "../marketData/marketDataService.js";
+import { resolveLiveBrokerExecutionEnabledAsync } from "../live/phaseBConfig.js";
 
 export type SubsystemBuild = "AA"|"BB"|"CC"|"DD"|"EE"|"FF"|"GG"|"HH"|"II"|"JJ"|"KK"|"LL";
 export type SubsystemStatus = "OK" | "DEGRADED" | "UNAVAILABLE" | "UNSAFE";
@@ -56,11 +62,16 @@ export interface EndpointStatus {
 }
 
 export interface SafetyStatus {
-  canPlaceTrades: false;            // hard-locked report
-  liveTradingAllowed: false;
-  brokerMode: "READ_ONLY";
+  /**
+   * Real platform arm state (env AND DB switch). null = the read failed —
+   * reported as unknown with a warning, never as a confident "disarmed".
+   */
+  liveBrokerExecutionArmed: boolean | null;
+  canPlaceTrades: boolean | null;
+  liveTradingAllowed: boolean | null;
+  brokerMode: "READ_ONLY" | "LIVE_ARMED" | "UNKNOWN";
   marketDataMode: "read_only";
-  paperOnly: true;
+  paperOnly: boolean | null;
   hardBlocks: Array<{ code: string; severity: string; message: string }>;
   warnings: string[];
 }
@@ -85,8 +96,9 @@ export interface HealthCheckReport {
   health_check_id: string;
   generated_at: string;
   overallStatus: "HEALTHY" | "DEGRADED" | "UNSAFE" | "FAILED";
-  liveTradingStatus: "DISABLED";
-  mode: "PAPER_ONLY";
+  /** Derived from the real arm switch at check time; UNKNOWN when unreadable. */
+  liveTradingStatus: "ENABLED" | "DISABLED" | "UNKNOWN";
+  mode: "LIVE_ARMED" | "PAPER_ONLY" | "UNKNOWN";
   subsystemStatus: Record<SubsystemBuild, SubsystemReport>;
   databaseStatus: DatabaseStatus;
   endpointStatus: EndpointStatus;
@@ -219,8 +231,11 @@ async function probeGG(): Promise<SubsystemReport> {
 async function probeHH(): Promise<SubsystemReport> {
   const r = await probeEndpoint("/api/risk-governor/status");
   const last = await db.select().from(riskGovernorEvaluationsTable).orderBy(desc(riskGovernorEvaluationsTable.id)).limit(1).catch(() => []);
+  // Note: this probe reads only the risk-governor endpoint — it must not
+  // assert platform live-status constants it never read (the real arm state
+  // is in safetyStatus.liveBrokerExecutionArmed).
   return r.ok
-    ? { status: "OK", notes: ["risk governor status reachable", "liveTradingStatus=DISABLED", "canPlaceLiveTrade=false"], metrics: { lastEval: last[0]?.overallStatus ?? null }, paperOnly: true, liveTradingAllowed: false }
+    ? { status: "OK", notes: ["risk governor status reachable"], metrics: { lastEval: last[0]?.overallStatus ?? null }, paperOnly: true, liveTradingAllowed: false }
     : { status: "DEGRADED", notes: [`risk governor http=${r.status ?? "ERR"}`], paperOnly: true, liveTradingAllowed: false };
 }
 async function probeII(): Promise<SubsystemReport> {
@@ -306,8 +321,24 @@ async function probeSafety(subs: Record<SubsystemBuild, SubsystemReport>): Promi
     if (subs[b]?.status === "UNSAFE") hardBlocks.push({ code: `${b}_UNSAFE`, severity: "CRITICAL", message: subs[b].notes.join("; ") });
     if (subs[b]?.liveTradingAllowed === true) hardBlocks.push({ code: `${b}_LIVE_TRADING_ALLOWED`, severity: "CRITICAL", message: "liveTradingAllowed=true" });
   }
+  // Real arm state — the same switch the live dispatch pipeline gates on
+  // (env ARX_LIVE_BROKER_EXECUTION_ENABLED AND
+  // global_trading_settings.liveBrokerExecutionArmed). These fields used to be
+  // compile-time constants, so this page swore live trading was off even after
+  // an operator armed it.
+  let armed: boolean | null = null;
+  try {
+    armed = await resolveLiveBrokerExecutionEnabledAsync();
+  } catch (err) {
+    warnings.push(`live arm switch unreadable: ${String(err).slice(0, 120)} — reporting UNKNOWN, not DISABLED`);
+  }
   return {
-    canPlaceTrades: false, liveTradingAllowed: false, brokerMode: "READ_ONLY", marketDataMode: "read_only", paperOnly: true,
+    liveBrokerExecutionArmed: armed,
+    canPlaceTrades: armed,
+    liveTradingAllowed: armed,
+    brokerMode: armed === null ? "UNKNOWN" : armed ? "LIVE_ARMED" : "READ_ONLY",
+    marketDataMode: "read_only",
+    paperOnly: armed === null ? null : !armed,
     hardBlocks, warnings,
   };
 }
@@ -382,6 +413,8 @@ export async function runHealthCheck(): Promise<HealthCheckReport> {
     if (s.status === "DEGRADED")    warnings.push(`Subsystem ${b} degraded: ${s.notes.join("; ")}`);
     if (s.status === "UNSAFE")      errors.push(`Subsystem ${b} UNSAFE: ${s.notes.join("; ")}`);
   }
+  if (safetyStatus.liveBrokerExecutionArmed === null)
+    warnings.push("live arm switch unreadable — liveTradingStatus reported as UNKNOWN, not DISABLED");
   if (databaseStatus.missingTables.length) warnings.push(`missing tables: ${databaseStatus.missingTables.join(",")}`);
   if (endpointStatus.failed > 0) warnings.push(`${endpointStatus.failed} endpoint(s) failing`);
   if (!secretSafetyStatus.redactionWorking) errors.push("secret redaction warnings — investigate");
@@ -398,9 +431,16 @@ export async function runHealthCheck(): Promise<HealthCheckReport> {
   if (safetyStatus.hardBlocks.length || Object.values(subsystemStatus).some((s) => s.status === "UNSAFE"))
     overallStatus = "UNSAFE";
 
+  // Derived from the arm switch actually read above — never a constant.
+  const armed = safetyStatus.liveBrokerExecutionArmed;
+  const liveTradingStatus: HealthCheckReport["liveTradingStatus"] =
+    armed === null ? "UNKNOWN" : armed ? "ENABLED" : "DISABLED";
+  const mode: HealthCheckReport["mode"] =
+    armed === null ? "UNKNOWN" : armed ? "LIVE_ARMED" : "PAPER_ONLY";
+
   const report: HealthCheckReport = {
     health_check_id: id, generated_at, overallStatus,
-    liveTradingStatus: "DISABLED", mode: "PAPER_ONLY",
+    liveTradingStatus, mode,
     subsystemStatus, databaseStatus, endpointStatus, safetyStatus, secretSafetyStatus, performanceStatus,
     recommendedAdminActions, warnings, errors,
   };
@@ -408,7 +448,7 @@ export async function runHealthCheck(): Promise<HealthCheckReport> {
   // Persist
   try {
     await db.insert(systemHealthChecksTable).values({
-      healthCheckId: id, overallStatus, liveTradingStatus: "DISABLED", mode: "PAPER_ONLY",
+      healthCheckId: id, overallStatus, liveTradingStatus, mode,
       subsystemStatus: subsystemStatus as unknown as Record<string, unknown>,
       databaseStatus: databaseStatus as unknown as Record<string, unknown>,
       endpointStatus: endpointStatus as unknown as Record<string, unknown>,

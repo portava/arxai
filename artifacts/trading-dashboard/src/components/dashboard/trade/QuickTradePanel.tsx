@@ -8,12 +8,16 @@
 
 import type { ReactNode } from "react";
 import { useLocation } from "wouter";
-import { Zap, TrendingUp, TrendingDown, ShieldCheck, Bot, ShieldQuestion } from "lucide-react";
+import { Zap, TrendingUp, TrendingDown, ShieldCheck, Bot, ShieldQuestion, AlertTriangle } from "lucide-react";
 import { CockpitCard } from "@/components/dashboard/cockpit/primitives";
 import { ChartFeedConfidence } from "@/components/charts/ChartFeedConfidence";
 import { cn } from "@/lib/utils";
 
-export type Quote = { bid: number; ask: number; spread: number; mid: number } | null;
+// executionEnvironment comes straight from the /api/market/quote payload —
+// today its ONLY handler is the in-memory random-walk simulator, which tags
+// every quote "SIMULATOR". The panel must surface that tag: these numbers may
+// never pass as broker pricing on a LIVE surface.
+export type Quote = { bid: number; ask: number; spread: number; mid: number; executionEnvironment?: string } | null;
 
 const ORDER_TYPES = [
   "Market", "Buy Limit", "Sell Limit", "Buy Stop", "Sell Stop", "Buy Stop Limit", "Sell Stop Limit",
@@ -55,6 +59,7 @@ export function QuickTradePanel({
   const sell = quote ? quote.bid : null;
   const buy = quote ? quote.ask : null;
   const spread = quote ? quote.spread : null;
+  const isSimQuote = quote?.executionEnvironment === "SIMULATOR";
 
   // Buy/Sell → existing manual ticket. Symbol is already synced globally
   // (useChartSymbol) by the page, so the ticket opens prefilled. No new path.
@@ -106,6 +111,22 @@ export function QuickTradePanel({
           </select>
         </Field>
       </div>
+
+      {/* Honest source tag — the only wired /api/market/quote handler is the
+          in-memory random-walk simulator (executionEnvironment:"SIMULATOR"),
+          so these numbers must never read as broker pricing while the page
+          banner says LIVE. Real wiring that would retire this tag: serve the
+          strip from the shared chart-truth/marketDataRouter quote (the same
+          source getMarketSnapshot uses) so bid/ask are broker-real. */}
+      {isSimQuote && (
+        <div
+          className="mt-3 flex items-start gap-1.5 rounded-md border border-warning/25 bg-warning/10 px-2.5 py-1.5 text-[11px] font-medium text-warning"
+          data-testid="quick-trade-sim-quote-tag"
+        >
+          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+          Simulated quote — not your broker&apos;s executable price. Confirm real pricing on the order ticket.
+        </div>
+      )}
 
       {/* Price strip — SELL | spread | BUY */}
       <div className="mt-3 grid grid-cols-3 items-center rounded-lg bg-muted/40 px-4 py-3">
@@ -190,7 +211,8 @@ export function QuickTradePanel({
         <div className="mt-4 grid grid-cols-[1fr_auto_1fr] gap-2">
           <button onClick={goTicket} data-testid="trade-action-sell"
             className="flex h-12 items-center justify-center gap-2 rounded-md bg-danger font-semibold text-white shadow-xs hover:bg-danger/90">
-            <TrendingDown className="h-4 w-4" /> SELL {sell ?? ""}
+            {/* No simulator price on the action button — it reads as executable. */}
+            <TrendingDown className="h-4 w-4" /> SELL {isSimQuote ? "" : sell ?? ""}
           </button>
           <button onClick={goTicket} data-testid="trade-action-cancel"
             className="flex h-12 items-center justify-center rounded-md border border-border px-5 font-medium text-txt-secondary hover:bg-secondary/50">
@@ -198,7 +220,7 @@ export function QuickTradePanel({
           </button>
           <button onClick={goTicket} data-testid="trade-action-buy"
             className="flex h-12 items-center justify-center gap-2 rounded-md bg-success font-semibold text-white shadow-xs hover:bg-success/90">
-            <TrendingUp className="h-4 w-4" /> BUY {buy ?? ""}
+            <TrendingUp className="h-4 w-4" /> BUY {isSimQuote ? "" : buy ?? ""}
           </button>
         </div>
       ) : (

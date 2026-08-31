@@ -21,8 +21,8 @@ import {
   sharedTradeAttributionTable,
   userRiskSettingsTable,
   userMasterLiveAccessTable,
-  performanceDailyTable,
   paperTradesTable,
+  tradesTable,
   globalTradingSettingsTable,
   userTradingPermissionsTable,
   mt5ConnectionTable,
@@ -32,6 +32,7 @@ import { and, asc, eq, isNull } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
 import { getEffectiveTradingGovernance } from "../lib/governance/effectiveGovernance.js";
 import { buildInvestorLiveBalanceSnapshot } from "../lib/live/investorLiveBalance.js";
+import { resolveTradeScope, inScope, type ScopeMode, type ScopeModeReason } from "../lib/performance/tradeScope.js";
 
 const router = Router();
 
@@ -83,6 +84,14 @@ export type AccountShellResponse = {
     tradesToday: number;
     winsToday: number;
     lossesToday: number;
+    // Where the closed-P/L figures come from, so the UI can label the basis
+    // and surface exclusions instead of presenting bare dollars as fact.
+    basis: {
+      source: "trades";
+      scopeMode: ScopeMode;
+      scopeModeReason: ScopeModeReason;
+      excludedUnknownPnlCount: number;
+    };
   };
   risk: {
     availableRiskAmount: number | null;
@@ -120,6 +129,65 @@ export type AccountShellResponse = {
     };
   };
 };
+
+// ── Closed-P/L block (pure) ────────────────────────────────────────────────
+// Computes the "My P/L" figures from the user's `trades` rows — the SAME
+// trusted basis as GET /performance/summary: scoped to exactly one execution
+// environment (resolveTradeScope; broker money and simulator money are never
+// summed) and excluding closed rows whose realised P/L is untrusted
+// (pnlStatus="UNKNOWN"). Exported for the offline unit lane.
+//
+// This replaces reads of `performance_daily`, a table with NO production
+// writer (its only insert is a QA fixture) — sourcing from it pinned every
+// user's Today's/7d/total P/L at $0 and reported a permanently full
+// daily-loss allowance, even after real losses.
+export interface ShellPnlBlock {
+  closedPnlToday: number;
+  closedPnlWeek: number;
+  closedPnlTotal: number;
+  tradesToday: number;
+  winsToday: number;
+  lossesToday: number;
+  basis: {
+    source: "trades";
+    scopeMode: ScopeMode;
+    scopeModeReason: ScopeModeReason;
+    excludedUnknownPnlCount: number;
+  };
+}
+
+export function computeClosedPnlFromTrades(
+  rows: Array<{ mode: string | null; status: string | null; pnlStatus: string | null; pnl: number | null; closedAt: Date | null }>,
+  now: Date,
+): ShellPnlBlock {
+  const scope = resolveTradeScope(rows);
+  const scoped = inScope(rows, scope.mode);
+  const closed = scoped.filter((t) => t.status !== "OPEN" && t.status !== "CANCELLED");
+  const excludedUnknownPnlCount = closed.filter((t) => t.pnlStatus === "UNKNOWN").length;
+  const trusted = closed.filter((t) => t.pnlStatus !== "UNKNOWN");
+  const todayKey = now.toISOString().slice(0, 10);
+  const weekAgoKey = new Date(now.getTime() - 7 * 86400_000).toISOString().slice(0, 10);
+  const dayKey = (d: Date | null): string | null => (d ? d.toISOString().slice(0, 10) : null);
+  const todayRows = trusted.filter((t) => dayKey(t.closedAt) === todayKey);
+  const weekRows = trusted.filter((t) => {
+    const k = dayKey(t.closedAt);
+    return k != null && k >= weekAgoKey;
+  });
+  return {
+    closedPnlToday: todayRows.reduce((s, t) => s + (t.pnl ?? 0), 0),
+    closedPnlWeek: weekRows.reduce((s, t) => s + (t.pnl ?? 0), 0),
+    closedPnlTotal: trusted.reduce((s, t) => s + (t.pnl ?? 0), 0),
+    tradesToday: todayRows.length,
+    winsToday: todayRows.filter((t) => t.status === "CLOSED_WIN").length,
+    lossesToday: todayRows.filter((t) => t.status === "CLOSED_LOSS").length,
+    basis: {
+      source: "trades",
+      scopeMode: scope.mode,
+      scopeModeReason: scope.reason,
+      excludedUnknownPnlCount,
+    },
+  };
+}
 
 // Exported so Ruby (the assistant) can call it directly without an HTTP
 // round-trip. Same per-user scoping; same shape; never returns other
@@ -279,29 +347,22 @@ export async function computeAccountShell(
       .where(eq(userRiskSettingsTable.userId, userId))
       .limit(1);
 
-    // 5) Performance — closed P/L today / week / total + counts.
-    const today = new Date().toISOString().slice(0, 10);
-    const weekAgo = new Date(Date.now() - 7 * 86400_000).toISOString().slice(0, 10);
-    const perfRows = await db
+    // 5) Performance — closed P/L today / week / total + counts, computed
+    //    from the user's `trades` rows (same basis as /performance/summary).
+    //    NEVER from `performance_daily`: that table has no production writer,
+    //    so reading it pinned every figure here at a confident $0 forever.
+    const tradeRows = await db
       .select({
-        date: performanceDailyTable.date,
-        pnl: performanceDailyTable.pnl,
-        trades: performanceDailyTable.trades,
-        wins: performanceDailyTable.wins,
-        losses: performanceDailyTable.losses,
+        mode: tradesTable.mode,
+        status: tradesTable.status,
+        pnlStatus: tradesTable.pnlStatus,
+        pnl: tradesTable.pnl,
+        closedAt: tradesTable.closedAt,
       })
-      .from(performanceDailyTable)
-      .where(eq(performanceDailyTable.userId, userId));
-
-    const todayRow = perfRows.find((r) => r.date === today);
-    const closedPnlToday = todayRow ? Number(todayRow.pnl || 0) : 0;
-    const tradesToday = todayRow ? Number(todayRow.trades || 0) : 0;
-    const winsToday = todayRow ? Number(todayRow.wins || 0) : 0;
-    const lossesToday = todayRow ? Number(todayRow.losses || 0) : 0;
-    const closedPnlWeek = perfRows
-      .filter((r) => r.date >= weekAgo)
-      .reduce((s, r) => s + Number(r.pnl || 0), 0);
-    const closedPnlTotal = perfRows.reduce((s, r) => s + Number(r.pnl || 0), 0);
+      .from(tradesTable)
+      .where(eq(tradesTable.userId, userId));
+    const pnlBlock = computeClosedPnlFromTrades(tradeRows, new Date());
+    const closedPnlToday = pnlBlock.closedPnlToday;
 
     // 6) Open exposure & open P/L (per-user). For SHARED_MASTER_MT5 use
     //    open attributions; otherwise use open paper trades. Both already
@@ -402,6 +463,9 @@ export async function computeAccountShell(
       ? gov.requireStopLoss
       : (mla?.requireStopLoss ?? rs?.requireStopLoss ?? true);
 
+    // dailyLossRemaining is derived from the REAL day-P/L read above. When it
+    // was fed by performance_daily's permanent 0, this tile confidently showed
+    // a full allowance after any real loss.
     const dailyLossRemaining = effMaxDailyLossAmount != null
       ? Math.max(0, effMaxDailyLossAmount - Math.max(0, -closedPnlToday))
       : null;
@@ -470,12 +534,7 @@ export async function computeAccountShell(
       },
       pnl: {
         openPnl,
-        closedPnlToday,
-        closedPnlWeek,
-        closedPnlTotal,
-        tradesToday,
-        winsToday,
-        lossesToday,
+        ...pnlBlock,
       },
       risk: {
         availableRiskAmount,

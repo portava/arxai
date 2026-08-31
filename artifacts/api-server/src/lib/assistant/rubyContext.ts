@@ -85,7 +85,9 @@ export interface RubyContext {
     } | null;
     // Every user's own ARX allocation slice.
     allocation: { allocated: number; available: number; reserved: number } | null;
-    openPositions: number;
+    /** Count of the user's open positions. null = the lookup failed — honestly
+     *  unknown, NEVER a confident zero (the account may hold live positions). */
+    openPositions: number | null;
     /** Open floating P/L from the shared buildLiveAccountSnapshot adapter. null = not available. */
     openPL: number | null;
     /** Freshness of the open P/L figure — same bands as the frontend badge. */
@@ -284,7 +286,7 @@ export async function buildRubyContext(
     connected: false,
     message: "Live bridge is not currently available.",
   };
-  let account: RubyContext["account"] = { mt5: null, allocation: null, openPositions: 0, openPL: null, snapshotFreshness: null, live: null };
+  let account: RubyContext["account"] = { mt5: null, allocation: null, openPositions: null, openPL: null, snapshotFreshness: null, live: null };
   try {
     const view = await getUserAllocationView(userId);
     bridge = {
@@ -321,7 +323,10 @@ export async function buildRubyContext(
     const open = await getMyLiveOpenTrades(userId);
     account.openPositions = open.count;
   } catch {
-    account.openPositions = 0;
+    // Honest unknown — a failed lookup must NEVER read as "flat". The briefing
+    // renders null as "I can't verify your open positions right now" (mirrors
+    // the openPL null handling below), never as zero positions.
+    account.openPositions = null;
   }
 
   // ── Open P/L via shared snapshot adapter (LIVE_SHARED users only) ────────
@@ -548,7 +553,11 @@ export function composeRubyBriefing(ctx: RubyContext): RubyBriefing {
   }
 
   // Positions / account.
-  if (ctx.account.openPositions > 0) {
+  if (ctx.account.openPositions == null) {
+    // Honest unknown — the open-trades lookup failed. Never say "no positions"
+    // on a failed read: the account may hold live broker positions right now.
+    lines.push("I can't verify your open positions right now — the lookup didn't come back, so I won't assume you're flat.");
+  } else if (ctx.account.openPositions > 0) {
     lines.push(
       `You have ${ctx.account.openPositions} open position${ctx.account.openPositions === 1 ? "" : "s"} right now.`,
     );
@@ -656,6 +665,8 @@ function buildSuggestions(ctx: RubyContext): Array<{ label: string; prompt: stri
   pool.push({ label: "What changed in the market?", prompt: "What has changed in the market that I should know about?" });
   pool.push({ label: "Check news risk", prompt: "Is there any news risk I should be aware of before trading?" });
   pool.push({ label: "Explain my risk", prompt: "Explain my current risk limits in plain English." });
+  // Strict === 0 on purpose: null means the lookup failed (unknown), and we
+  // don't pitch "find a setup" to someone whose exposure we couldn't read.
   if (ctx.account.openPositions === 0) {
     pool.push({ label: "Find a setup", prompt: "Help me find a high-probability setup to consider." });
   }

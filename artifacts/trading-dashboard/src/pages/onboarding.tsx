@@ -19,6 +19,9 @@ interface Status {
   totalSteps: number; nextStep: string | null;
 }
 
+/** Real per-user account-level live status from the server; UNKNOWN = read failed. */
+interface LiveTradingInfo { status: "ALLOWED" | "BLOCKED" | "UNKNOWN"; reasons: string[] }
+
 const ACK_LABELS: { key: keyof Status; text: string }[] = [
   { key: "paperOnlyAcknowledged", text: "I understand my trading mode (Trading Off / Demo Trading Active / Live Trading Active) is set by my admin." },
   { key: "liveDisabledAcknowledged", text: "I understand live trading is only enabled by admin approval, and I cannot unlock it myself." },
@@ -34,15 +37,16 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 
 export default function OnboardingPage() {
   const [status, setStatus] = useState<Status | null>(null);
+  const [liveTrading, setLiveTrading] = useState<LiveTradingInfo | null>(null);
   const [steps, setSteps] = useState<Step[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
 
   async function refresh() {
     const [s, sd] = await Promise.all([
-      api<{ status: Status }>("/api/onboarding/status"),
+      api<{ status: Status; liveTrading?: LiveTradingInfo }>("/api/onboarding/status"),
       api<{ steps: Step[] }>("/api/onboarding/steps"),
     ]);
-    setStatus(s.status); setSteps(sd.steps);
+    setStatus(s.status); setLiveTrading(s.liveTrading ?? null); setSteps(sd.steps);
   }
   useEffect(() => { refresh(); document.title = "Onboarding — ARX AI"; }, []);
 
@@ -63,6 +67,16 @@ export default function OnboardingPage() {
     <div className="space-y-4 pb-8">
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant="outline" className="bg-primary/15 text-primary border-primary/30"><Lock className="h-3 w-3 mr-1" />ADMIN-CONTROLLED MODE</Badge>
+        {/* Real per-user live status, read server-side — three honest states. */}
+        {liveTrading?.status === "ALLOWED" && (
+          <Badge variant="outline" className="bg-destructive/15 text-destructive border-destructive/30" data-testid="badge-live-allowed"><ShieldOff className="h-3 w-3 mr-1" />LIVE TRADING AVAILABLE — real money risk</Badge>
+        )}
+        {liveTrading?.status === "BLOCKED" && (
+          <Badge variant="outline" data-testid="badge-live-blocked">Live trading blocked for your account</Badge>
+        )}
+        {(!liveTrading || liveTrading.status === "UNKNOWN") && (
+          <Badge variant="outline" className="bg-warning/15 text-warning border-warning/30" data-testid="badge-live-unknown">Live status unknown — couldn't read it</Badge>
+        )}
       </div>
       <div>
         <h1 className="text-xl font-bold flex items-center gap-2"><GraduationCap className="h-5 w-5" />Guided Onboarding</h1>
@@ -83,7 +97,7 @@ export default function OnboardingPage() {
             {status.status !== "NOT_STARTED" && <Button variant="outline" onClick={reset} disabled={busy !== null}><RotateCcw className="h-3 w-3 mr-1" />Reset</Button>}
           </div>
           {status.walkthroughCompleted && (
-            <Alert><AlertTitle>Onboarding complete</AlertTitle><AlertDescription className="text-xs">Live trading remains DISABLED. Use the Trading Cockpit as your home base.</AlertDescription></Alert>
+            <Alert><AlertTitle>Onboarding complete</AlertTitle><AlertDescription className="text-xs">Onboarding never changes your trading mode — check the mode chip for your current mode. Use the Trading Cockpit as your home base.</AlertDescription></Alert>
           )}
         </CardContent>
       </Card>
@@ -138,7 +152,9 @@ export default function OnboardingPage() {
         </CardContent>
       </Card>
 
-      <p className="text-[10px] text-muted-foreground text-center">onboarding_id {status.onboardingId} · DEMO_ONLY · LIVE TRADING DISABLED</p>
+      {/* The old footer stamped "DEMO_ONLY · LIVE TRADING DISABLED" unconditionally —
+          a fabricated claim on a build where live mode is admin-settable. */}
+      <p className="text-[10px] text-muted-foreground text-center">onboarding_id {status.onboardingId} · onboarding never changes your trading mode</p>
     </div>
   );
 }

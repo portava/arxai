@@ -41,6 +41,10 @@ import { PageTabs } from "@/components/ui/PageTabs";
 import { CompactAlert } from "@/components/ui/CompactAlert";
 import { MissionPerformanceView } from "@/components/missions/MissionPerformanceView";
 import {
+  readEvidenceBasis,
+  evidenceBasisMeta,
+} from "@/components/missions/missionPerformanceFormat";
+import {
   Target,
   Gauge,
   TrendingUp,
@@ -2057,6 +2061,9 @@ function MissionRiskPanel({ missionId }: { missionId: number }) {
         <CardDescription>
           Hard, stricter-only protection layered over your Risk Governor. These
           limits can only tighten — never loosen — your account's safety rules.
+          Counters read this mission's own executed trades (simulated closes for
+          paper/demo, broker-reconciled closes for live) — not your manual
+          paper-trade journal.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -2194,6 +2201,11 @@ function errMessage(e: unknown, fallback: string): string {
 
 function MissionTestResultRow({ r }: { r: MissionTestResult }): ReactElement {
   const m = r.metrics;
+  // What the FORWARD closes actually WERE (persisted evidenceBasis) — a
+  // paper/demo mission's forward record is SIMULATED modelled closes and must
+  // never read as real track record. BACKTEST rows are already labelled
+  // historical/simulated by their kind badge.
+  const basis = r.kind === "FORWARD" ? evidenceBasisMeta(readEvidenceBasis(r)) : null;
   return (
     <li className="space-y-1 py-3" data-testid={`test-result-${r.id}`}>
       <div className="flex items-center justify-between gap-2">
@@ -2207,6 +2219,11 @@ function MissionTestResultRow({ r }: { r: MissionTestResult }): ReactElement {
           >
             {r.label}
           </Badge>
+          {basis && (
+            <Badge className={`${basis.cls} px-1.5 py-0`} data-testid={`test-evidence-basis-${r.id}`}>
+              {basis.label}
+            </Badge>
+          )}
           {r.strategyKey} · {r.symbol} · {r.timeframe}
         </span>
         <span className="text-xs text-muted-foreground">
@@ -2214,6 +2231,11 @@ function MissionTestResultRow({ r }: { r: MissionTestResult }): ReactElement {
         </span>
       </div>
       <p className="text-sm text-muted-foreground">{r.headline}</p>
+      {basis && (
+        <p className="text-xs text-muted-foreground" data-testid={`test-evidence-caption-${r.id}`}>
+          {basis.caption}
+        </p>
+      )}
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
         <span>Trades: {m.totalTrades}</span>
         <span>Win rate: {(m.winRate * 100).toFixed(1)}%</span>
@@ -2374,9 +2396,11 @@ export function MissionTestingLab({ mission }: { mission: ProfitMission }): Reac
             <ClipboardCheck className="h-4 w-4" /> Testing Lab
           </CardTitle>
           <CardDescription>
-            Backtest results are historical and simulated; forward results are your
-            mission's real, closed trades. Results are estimates — they never grant
-            live permission or bypass any safety gate.
+            Backtest results are historical and simulated; forward results are
+            aggregated from your mission's own closed trades and labelled with what
+            those closes were — simulated paper/demo fills modelled from real
+            quotes, or broker-reconciled money. Results are estimates — they never
+            grant live permission or bypass any safety gate.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -2435,7 +2459,7 @@ export function MissionTestingLab({ mission }: { mission: ProfitMission }): Reac
               ) : (
                 <Layers className="mr-2 h-4 w-4" />
               )}
-              Aggregate forward (real trades)
+              Aggregate forward (closed trades)
             </Button>
           </div>
 
@@ -2461,15 +2485,16 @@ export function MissionTestingLab({ mission }: { mission: ProfitMission }): Reac
             <ShieldAlert className="h-4 w-4" /> Strategy drift
           </CardTitle>
           <CardDescription>
-            Compares your forward (real) results against the backtest baseline. Severe
-            drift automatically demotes the mission, reduces risk, and pauses promotion.
+            Compares your forward results (your mission's own closed trades — see each
+            result's evidence label) against the backtest baseline. Severe drift
+            automatically demotes the mission, reduces risk, and pauses promotion.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">
           {drift?.insufficientEvidence ? (
             <p className="text-sm text-muted-foreground" data-testid="text-drift-unknown">
-              Not enough evidence yet — run a backtest and gather real forward trades for
-              an honest comparison.
+              Not enough evidence yet — run a backtest and gather forward results from
+              your mission's own closed trades for an honest comparison.
             </p>
           ) : (
             <div className="flex flex-wrap items-center gap-3 text-sm">

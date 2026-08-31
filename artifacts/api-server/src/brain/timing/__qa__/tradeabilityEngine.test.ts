@@ -74,6 +74,21 @@ test("clean momentum + strong session bonus → entryPermission GO", () => {
   assert.equal(out.entryPermission, "GO");
 });
 
+test("GO requires candle evidence — the session clock alone degrades to WAIT_FOR_ENTRY", () => {
+  // With no candles the neutral edge base (50 × 0.6 = 30) plus a strong
+  // session bonus clears the GO bar on its own — the clock, not the market,
+  // would be granting permission. The honesty guard must refuse GO.
+  const out = computeTradeability(baseInput({
+    heatState: "COOL",
+    candleBodyRatio: null,
+    atrRatio: null,
+    candles: [],
+    sessionTradeabilityBonus: 25,
+  }));
+  assert.ok(out.tradeabilityScore >= 50, `tradeabilityScore ${out.tradeabilityScore} should clear the GO bar (proves the guard, not the score, blocked GO)`);
+  assert.equal(out.entryPermission, "WAIT_FOR_ENTRY");
+});
+
 test("move stage EARLY when too few candles", () => {
   const out = computeTradeability(baseInput({ candles: flat(5), atrRatio: null }));
   assert.equal(out.moveStage, "EARLY");

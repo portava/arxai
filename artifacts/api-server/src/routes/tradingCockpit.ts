@@ -16,8 +16,63 @@ import { scrub } from "../lib/security/redact.js";
 import { runHealthCheck } from "../lib/systemHealth/health.js";
 import { logger } from "../lib/logger.js";
 import { requireUser } from "../lib/auth/middleware.js";
+import { getMarketData } from "../lib/marketData/marketDataService.js";
+import type { MarketDataSnapshot } from "../lib/marketData/types.js";
+import { unrealizedPnl } from "../lib/paperExecution/paperExecutionMonitor.js";
 
 const router: IRouter = Router();
+
+// ── Open-trade unrealized P&L ───────────────────────────────────────────────
+// paper_orders.profit_loss is written ONLY at close; for OPEN rows it is the
+// schema default 0, so surfacing it showed every open position — however deep
+// underwater — as flat, in neutral color, for its entire open life. Open rows
+// are instead priced here against a fresh Build DD quote at read time. When no
+// honest quote exists the P&L degrades to a typed null WITH the reason —
+// never a confident 0.
+const MAX_PRICING_QUOTE_AGE_MS = 60_000; // matches Build DD's stale threshold
+
+export interface OpenTradeUnrealizedPnl {
+  value: number | null;
+  asOf: string | null;
+  source: string | null;
+  quality: string | null;
+  /** Set ONLY when value is null — why this trade could not be priced. */
+  reason: string | null;
+}
+
+export function priceOpenTrade(
+  order: { direction: string; lotSize: number; entryPrice: number },
+  snap: Pick<MarketDataSnapshot, "mid" | "source" | "timestamp" | "dataQuality"> | null,
+  nowMs: number,
+): OpenTradeUnrealizedPnl {
+  if (!snap) {
+    return { value: null, asOf: null, source: null, quality: null, reason: "market data read failed" };
+  }
+  const quality = snap.dataQuality.status;
+  if (!Number.isFinite(snap.mid) || quality === "MISSING") {
+    return {
+      value: null, asOf: null, source: snap.source, quality,
+      reason: snap.dataQuality.warnings[0] ?? "no usable quote for this symbol",
+    };
+  }
+  if (quality === "SYNTHETIC" || snap.source !== "REAL") {
+    return {
+      value: null, asOf: snap.timestamp, source: snap.source, quality,
+      reason: `quote source is ${snap.source}/${quality}, not a real provider — refusing to price against fabricated data`,
+    };
+  }
+  const ageMs = nowMs - new Date(snap.timestamp).getTime();
+  if (!Number.isFinite(ageMs) || ageMs > MAX_PRICING_QUOTE_AGE_MS) {
+    return {
+      value: null, asOf: snap.timestamp, source: snap.source, quality,
+      reason: `quote is ${Math.round(ageMs / 1000)}s old (max ${MAX_PRICING_QUOTE_AGE_MS / 1000}s) — refusing to price against a stale quote`,
+    };
+  }
+  return {
+    value: Number(unrealizedPnl(order.direction, order.lotSize, order.entryPrice, snap.mid).toFixed(2)),
+    asOf: snap.timestamp, source: snap.source, quality, reason: null,
+  };
+}
 
 const DISCLAIMER = "Build QQ — Unified Trading Cockpit. Read-only aggregator. Never places trades, never enables live trading, never calls MT5, never modifies canPlaceTrades, never exposes secrets, never recommends live trading.";
 
@@ -46,9 +101,14 @@ function pickNextBestAction(args: {
   hasActive: boolean;
   sessionStatus: string | null;
   criticalUnread: number;
+  alertsReadFailed: boolean;
   paperTestingAllowed: boolean;
 }): { code: string; label: string; cta: string; severity: "INFO" | "WARN" | "BLOCK" } {
   if (args.criticalUnread > 0) return { code: "ACK_CRITICAL", label: "Acknowledge critical safety alert(s)", cta: "Open Notifications", severity: "BLOCK" };
+  // FAIL CLOSED: an unreadable alert store is NOT an all-clear. If we cannot
+  // know whether a critical alert exists, starting a session must stay gated,
+  // exactly as it would be with an unacknowledged critical alert.
+  if (args.alertsReadFailed) return { code: "ALERTS_UNREADABLE", label: "Alert status could not be read — start is blocked until alerts are readable", cta: "Open Notifications", severity: "BLOCK" };
   if (!args.paperTestingAllowed) return { code: "PREFLIGHT_BLOCKED", label: `Preflight blocked: ${args.blockers.slice(0, 2).join("; ") || "see details"}`, cta: "Run Preflight", severity: "BLOCK" };
   if (args.hasActive && args.sessionStatus === "PAUSED") return { code: "RESUME", label: "Resume your paused paper session", cta: "Resume Session", severity: "INFO" };
   if (args.hasActive && args.sessionStatus === "ACTIVE") return { code: "MONITOR", label: "Monitor your active paper session", cta: "Open Active Session", severity: "INFO" };
@@ -63,17 +123,29 @@ router.get("/trading-cockpit/summary", requireUser, async (req, res) => {
   const userId = req.authUser!.id;
 
   const preFallback = { paperTestingAllowed: false, hardBlocks: [{ source: "QQ", code: "PREFLIGHT_ERROR", message: "preflight unavailable" }], warnings: [] as { source: string; code: string; message: string }[], generatedAt } as unknown as Awaited<ReturnType<typeof preflight>>;
-  const [pre, active, gov, gate, criticalUnread, unreadAll] = await Promise.all([
+  // Alert reads must NOT swallow failures into all-clear values ([] / 0):
+  // that made a broken alert store indistinguishable from "no alerts", hid
+  // the critical banner, and let the ACK_CRITICAL gate silently pass. Wrap
+  // them so a failed read stays a typed unknown, never a confident zero.
+  type AlertRead<T> = { ok: boolean; value: T };
+  const criticalFallback: AlertRead<Awaited<ReturnType<typeof getCriticalUnread>>> = { ok: false, value: [] };
+  const unreadFallback: AlertRead<number> = { ok: false, value: 0 };
+  const [pre, active, gov, gate, criticalRead, unreadRead] = await Promise.all([
     safeCall("preflight", () => preflight(userId), preFallback),
     safeCall("activeSession", () => getActiveSession(userId), null),
     safeCall("governor", () => evaluateGovernor({ userId }), null),
     safeCall("readinessGate", () => getGateStatus(), null as Awaited<ReturnType<typeof getGateStatus>> | null),
-    safeCall("criticalUnread", () => getCriticalUnread(), [] as Awaited<ReturnType<typeof getCriticalUnread>>),
-    safeCall("unreadAll", () => getUnreadCount(), 0),
+    safeCall("criticalUnread", async () => ({ ok: true, value: await getCriticalUnread() }), criticalFallback),
+    safeCall("unreadAll", async () => ({ ok: true, value: await getUnreadCount() }), unreadFallback),
   ]);
+  const criticalUnread = criticalRead.value;
+  const alertsReadFailed = !criticalRead.ok || !unreadRead.ok;
 
-  // Open paper trades from EE (read-only).
-  const openTrades = await safeCall("openPaperTrades", async () => {
+  // Open paper trades from EE (read-only). NOTE: profit_loss is deliberately
+  // NOT selected — for OPEN rows it is the write-at-close column's DB default
+  // 0, and rendering it showed every open position as flat. Open rows are
+  // priced against a fresh DD quote below instead.
+  const openRows = await safeCall("openPaperTrades", async () => {
     return db.select({
       id: paperOrdersTable.id,
       symbol: paperOrdersTable.symbol,
@@ -84,9 +156,27 @@ router.get("/trading-cockpit/summary", requireUser, async (req, res) => {
       takeProfit: paperOrdersTable.takeProfit,
       status: paperOrdersTable.status,
       openedAt: paperOrdersTable.openedAt,
-      profitLoss: paperOrdersTable.profitLoss,
     }).from(paperOrdersTable).where(eq(paperOrdersTable.status, "OPEN")).orderBy(desc(paperOrdersTable.openedAt)).limit(20);
   }, []);
+
+  // One quote per distinct symbol; each open row is then priced or given a
+  // typed null + reason. getMarketData already degrades honestly (empty
+  // snapshot with MISSING quality + reason) instead of throwing.
+  const quoteBySymbol = new Map<string, MarketDataSnapshot | null>();
+  for (const sym of new Set(openRows.map(o => o.symbol))) {
+    try {
+      const { snapshot } = await getMarketData({ symbol: sym, timeframe: "M5", limit: 10 });
+      quoteBySymbol.set(sym, snapshot);
+    } catch (e) {
+      logger.warn({ symbol: sym, err: String(e).slice(0, 160) }, "cockpit: open-trade quote read failed");
+      quoteBySymbol.set(sym, null);
+    }
+  }
+  const pricedAtMs = Date.now();
+  const openTrades = openRows.map(o => ({
+    ...o,
+    unrealizedPnl: priceOpenTrade(o, quoteBySymbol.get(o.symbol) ?? null, pricedAtMs),
+  }));
 
   // Today's performance (light aggregate from paper orders closed today).
   const todayPerformance = await safeCall("todayPerformance", async () => {
@@ -142,6 +232,7 @@ router.get("/trading-cockpit/summary", requireUser, async (req, res) => {
     hasActive: !!active,
     sessionStatus: active?.status ?? null,
     criticalUnread: criticalUnread.length,
+    alertsReadFailed,
     paperTestingAllowed: pre.paperTestingAllowed,
   });
 
@@ -202,8 +293,15 @@ router.get("/trading-cockpit/summary", requireUser, async (req, res) => {
     openPaperTrades: openTrades,
     coachSummary,
     notifications: {
-      unreadAll,
-      criticalUnread: criticalUnread.length,
+      // Typed unknown on a failed read: counts become null (never 0) and the
+      // reason travels with them, so the UI can render "?" + why instead of a
+      // clean all-clear it has no evidence for.
+      alertsReadFailed,
+      alertsReadFailedReason: alertsReadFailed
+        ? "The alert store could not be read — counts are unknown, not zero. Starting a session is blocked until this read succeeds."
+        : null,
+      unreadAll: unreadRead.ok ? unreadRead.value : null,
+      criticalUnread: criticalRead.ok ? criticalUnread.length : null,
       // CROSS-USER LEAK, closed at the read surface. getCriticalUnread() filters
       // on read=0 and priority='CRITICAL' only — there is no user scope, because
       // no producer populates alerts.user_id (it exists and is always NULL; see

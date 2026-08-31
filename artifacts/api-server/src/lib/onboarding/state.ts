@@ -1,7 +1,8 @@
 // Build RR — Onboarding state service.
 //
 // SAFETY: Acknowledgements are stored but NEVER unlock live trading.
-// canPlaceTrades is never written. Live trading remains DISABLED.
+// canPlaceTrades is never written. Onboarding never changes trading mode —
+// live trading is a separate, operator/admin-gated chain.
 //
 // PER-USER ISOLATION (fixed): this service used to key the single progress row
 // on a hardcoded `SINGLE_USER_ID = null` and read it back with an unfiltered
@@ -89,7 +90,7 @@ export async function startOnboarding(userId: number): Promise<Progress> {
   }).where(ownRow(userId, p.id)).returning();
   await logEvent(p.onboardingId, "STARTED", "Onboarding started.");
   await audit("onboarding.started", { onboardingId: p.onboardingId, userId });
-  await createAlert({ type: "AI_COACH", priority: "LOW", title: "Onboarding started", message: "Guided onboarding has been started. Live trading remains DISABLED." }).catch(() => {});
+  await createAlert({ type: "AI_COACH", priority: "LOW", title: "Onboarding started", message: "Guided onboarding has been started. Onboarding never changes your trading mode." }).catch(() => {});
   return row!;
 }
 
@@ -112,7 +113,7 @@ export async function completeStep(userId: number, stepId: string): Promise<Prog
   await logEvent(p.onboardingId, "STEP_COMPLETED", `Step '${stepId}' completed.`, { stepId });
   if (!next) {
     await audit("onboarding.completed", { onboardingId: p.onboardingId, userId });
-    await createAlert({ type: "AI_COACH", priority: "LOW", title: "Onboarding completed", message: "Guided onboarding finished. Live trading remains DISABLED." }).catch(() => {});
+    await createAlert({ type: "AI_COACH", priority: "LOW", title: "Onboarding completed", message: "Guided onboarding finished. Onboarding never changes your trading mode — check the mode chip for your current mode." }).catch(() => {});
   }
   return row!;
 }
@@ -177,8 +178,10 @@ export async function acknowledge(userId: number, key: AckKey): Promise<Progress
   const [row] = await db.update(userOnboardingProgressTable)
     .set(patch as Partial<typeof userOnboardingProgressTable.$inferInsert>)
     .where(ownRow(userId, p.id)).returning();
-  await logEvent(p.onboardingId, "ACKNOWLEDGED", `Acknowledgement '${key}' recorded. Live trading remains DISABLED.`, { stepId: key });
-  await audit("onboarding.acknowledged", { onboardingId: p.onboardingId, userId, key, liveTradingStatus: "DISABLED" });
+  // The audit row records what this action DID (nothing, mode-wise) — it does
+  // not assert a platform live-status it never read.
+  await logEvent(p.onboardingId, "ACKNOWLEDGED", `Acknowledgement '${key}' recorded. Acknowledgements never change trading mode.`, { stepId: key });
+  await audit("onboarding.acknowledged", { onboardingId: p.onboardingId, userId, key, tradingModeEffect: "NONE" });
   return row!;
 }
 

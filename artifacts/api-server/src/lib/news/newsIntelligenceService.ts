@@ -108,11 +108,20 @@ function deriveRecommendation(
   return "watch";
 }
 
-function summarizeWarning(
+/**
+ * Exported for the honesty unit test (`__qa__/newsRiskFabrication.test.ts`).
+ *
+ * Honesty contract: a "none" risk read with the economic-calendar feed
+ * DISCONNECTED means the system is blind to scheduled events, not that the
+ * window is quiet — the summary must say "unknown", never assert
+ * "No major scheduled news" (a real high-impact event could be minutes away).
+ */
+export function summarizeWarning(
   symbol: string,
   riskLevel: NewsRiskLevel,
   upcoming: UpcomingEventSummary | null,
   bias: NewsBias,
+  calendarConnected: boolean,
 ): string {
   if (riskLevel === "critical" && upcoming) {
     return `${upcoming.impact.toUpperCase()}-impact ${upcoming.title} window active for ${symbol}. Wait for the dust to settle.`;
@@ -124,6 +133,9 @@ function summarizeWarning(
     return `${upcoming.title} (${upcoming.currency}) ${when} — ${riskLevel} news risk on ${symbol}. Bias from headlines: ${bias}.`;
   }
   if (riskLevel === "none") {
+    if (!calendarConnected) {
+      return `Economic-calendar feed unavailable — scheduled-news risk for ${symbol} is unknown, not confirmed quiet.`;
+    }
     return `No major scheduled news for ${symbol} in the current window.`;
   }
   return `${riskLevel.toUpperCase()} news risk on ${symbol}. Headline bias: ${bias}.`;
@@ -248,7 +260,7 @@ export async function getNewsIntelligence(
   const timing = deriveTiming(newsRisk);
   const bias = deriveBiasFromHeadlines(recentHeadlines);
   const recommendation = deriveRecommendation(riskLevel, timing);
-  const warningSummary = summarizeWarning(symbol, riskLevel, upcoming, bias);
+  const warningSummary = summarizeWarning(symbol, riskLevel, upcoming, bias, calendar.connected);
 
   const pack: NewsIntelligencePack = {
     symbol,

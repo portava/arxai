@@ -103,6 +103,7 @@ function basket(over: Partial<ScalpBasket> = {}): ScalpBasket {
     exit: exitV(),
     addOn: addOnV(),
     generatedAt: "2026-06-03T00:05:00.000Z",
+    sync: { syncedAt: "2026-06-03T00:05:00.000Z", ageSeconds: 0, stale: false },
     ...over,
   };
 }

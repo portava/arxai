@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
-interface Version { version: string; stage: string; fullTesterAccess: boolean; mt5Deferred: boolean; realBrokerExecutionAvailable: boolean; lastUpdated: string; }
+// realBrokerExecutionAvailable is read from the live arming switch server-side:
+// true = ARMED, false = locked, null = the switch could not be read (unknown).
+interface Version { version: string; stage: string; fullTesterAccess: boolean; mt5Deferred: boolean; realBrokerExecutionAvailable: boolean | null; lastUpdated: string; }
 interface Gate { key: string; label: string; pass: boolean; detail?: string; }
 interface Readiness { releaseReady: boolean; readinessScore: number; stage: string; gates: Gate[]; criticalIssues: Array<{ feedbackId: string; title: string }>; mt5Deferred: boolean; }
 
@@ -34,7 +36,10 @@ export default function ReleaseStatus() {
             <Badge className="bg-warning/20 text-warning">{v.stage}</Badge>
             <Pill ok={v.fullTesterAccess} label="Full tester access" />
             <Pill ok={v.mt5Deferred} label="MT5 deferred" />
-            <Pill ok={!v.realBrokerExecutionAvailable} label="Real broker locked" />
+            {/* Three honest states: locked (confirmed), ARMED (confirmed), unknown (read failed). */}
+            {v.realBrokerExecutionAvailable === false && <Pill ok={true} label="Real broker locked" />}
+            {v.realBrokerExecutionAvailable === true && <Badge className="bg-danger/20 text-danger" data-testid="pill-real-broker-armed">Real broker: ARMED — live execution enabled</Badge>}
+            {v.realBrokerExecutionAvailable === null && <Badge className="bg-warning/20 text-warning" data-testid="pill-real-broker-unknown">Real broker lock: UNKNOWN — arm switch unreadable</Badge>}
             <span className="text-xs text-muted-foreground ml-auto">{new Date(v.lastUpdated).toLocaleString()}</span>
           </CardContent>
         </Card>

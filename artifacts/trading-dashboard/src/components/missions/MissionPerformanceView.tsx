@@ -1,16 +1,19 @@
 // ── Profit Mission — "Performance" view (DISPLAY ONLY) ──────────────────────
 //
 // A polished, at-a-glance read of a mission's strategy performance over time.
-// It charts BACKTEST (historical / simulated) vs FORWARD (real closed trades)
-// side by side, with honest labels + sample-size warnings, shows the strategy
-// drift severity and its history, and clearly explains a SEVERE-drift demotion
-// (what was demoted, why, risk reduced, promotion paused).
+// It charts BACKTEST (historical / simulated) vs FORWARD (the mission's own
+// closed trades) side by side, with honest labels + sample-size warnings, shows
+// the strategy drift severity and its history, and clearly explains a
+// SEVERE-drift demotion (what was demoted, why, risk reduced, promotion paused).
 //
 // HONESTY CONTRACT: every number here is read from data the backend already
 // computed (mission test results, the drift decision, journaled mission
-// events). Forward / live figures appear ONLY when real FORWARD test-result
-// rows exist — this view never estimates or implies live performance without
-// real evidence. There is NO execution path anywhere on this surface.
+// events). Forward figures appear ONLY when FORWARD test-result rows exist, and
+// every FORWARD figure is labelled with its persisted evidenceBasis — a
+// paper/demo mission's forward record is built from SIMULATED modelled closes
+// and must never read as real track record. This view never estimates or
+// implies live performance without broker-reconciled evidence. There is NO
+// execution path anywhere on this surface.
 
 import { AlertCircle } from "lucide-react";
 import {
@@ -58,14 +61,17 @@ import {
   readBool,
   readStringArray,
   readSignals,
+  readEvidenceBasis,
+  evidenceBasisMeta,
   shortDateTime,
   type ComparisonRow,
   type DriftHistoryEntry,
+  type EvidenceBasisMeta,
 } from "./missionPerformanceFormat";
 
 const AXIS = "#64748b";
 const GRID = "#1e293b";
-const FORWARD_LINE = "#10b981"; // emerald — real forward results
+const FORWARD_LINE = "#10b981"; // emerald — forward results (see evidence label)
 const BASELINE = "#f59e0b"; // amber — backtest baseline reference
 
 function readTextBlock(obj: unknown): { headline: string | null; lines: string[] } {
@@ -93,6 +99,9 @@ export function MissionPerformanceView({ missionId }: { missionId: number }): Re
 
   const results = testing?.results ?? [];
   const { backtest, forward } = latestByKind(results);
+  // What the latest forward record's closed trades actually WERE. A paper/demo
+  // mission's forward closes are SIMULATED — label them, never call them real.
+  const forwardBasis = forward ? evidenceBasisMeta(readEvidenceBasis(forward)) : null;
   const rows = buildComparisonRows(backtest, forward);
   const trend = buildForwardTrend(results);
   const driftHistory = buildDriftHistory(events ?? []);
@@ -125,13 +134,15 @@ export function MissionPerformanceView({ missionId }: { missionId: number }): Re
         tone="info"
         testId="alert-performance-honesty"
         title="Strategy performance over time"
-        description="Backtest is historical / simulated. Forward numbers come only from real closed trades."
+        description="Backtest is historical / simulated. Forward numbers come from your mission's own closed trades — each result is labelled with what those closes were."
         details={
           <span>
             Backtest results model the strategy against historical data. Forward results are
-            aggregated from your mission's real closed trades, so they may be empty until trades
-            close. This view never estimates or implies live performance — when there is no real
-            evidence, you'll see an honest empty state instead of a number.
+            aggregated from your mission's own closed trades, so they may be empty until trades
+            close. On a paper/demo mission those closes are SIMULATED — modelled from real quotes,
+            not broker-reconciled money — and are labelled as such; only broker-reconciled closes
+            are real track record. This view never estimates or implies live performance — when
+            there is no evidence, you'll see an honest empty state instead of a number.
           </span>
         }
       />
@@ -163,7 +174,13 @@ export function MissionPerformanceView({ missionId }: { missionId: number }): Re
 
           <div className="grid gap-3 sm:grid-cols-2">
             <SideSummary kind="Backtest" sub="Historical / simulated" result={backtest} testId="summary-backtest" />
-            <SideSummary kind="Forward" sub="Real closed trades" result={forward} testId="summary-forward" />
+            <SideSummary
+              kind="Forward"
+              sub="Mission's own closed trades"
+              result={forward}
+              basis={forwardBasis}
+              testId="summary-forward"
+            />
           </div>
         </CardContent>
       </Card>
@@ -173,7 +190,9 @@ export function MissionPerformanceView({ missionId }: { missionId: number }): Re
         <CardHeader>
           <CardTitle>Forward expectancy over time</CardTitle>
           <CardDescription>
-            Each point is a real forward result, compared against the backtest baseline.
+            Each point is a forward result from your mission's own closed trades
+            {forwardBasis ? ` (${forwardBasis.label.toLowerCase()})` : ""}, compared against the
+            backtest baseline.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -182,8 +201,8 @@ export function MissionPerformanceView({ missionId }: { missionId: number }): Re
               className="rounded border border-dashed border-border p-6 text-center text-sm text-muted-foreground"
               data-testid="empty-performance-trend"
             >
-              No real forward trades yet. Forward performance will appear here once your mission closes
-              real trades — nothing is estimated.
+              No forward trades yet. Forward performance will appear here once your mission's trades
+              close — simulated closes are labelled as simulated, and nothing is estimated.
             </p>
           ) : (
             <div className="h-60" data-testid="chart-performance-trend">
@@ -249,7 +268,8 @@ export function MissionPerformanceView({ missionId }: { missionId: number }): Re
           {insufficientEvidence ? (
             <p className="text-sm text-muted-foreground" data-testid="text-drift-insufficient">
               Not enough data on both sides yet for an honest comparison. Drift is undetermined until
-              there are real forward results to compare against the baseline.
+              there are forward results from your mission's closed trades to compare against the
+              baseline.
             </p>
           ) : (
             <>
@@ -385,11 +405,14 @@ function SideSummary({
   kind,
   sub,
   result,
+  basis,
   testId,
 }: {
   kind: string;
   sub: string;
   result: MissionTestResult | null;
+  /** Evidence-basis label for a FORWARD side — what the closed trades WERE. */
+  basis?: EvidenceBasisMeta | null;
   testId: string;
 }): React.ReactElement {
   return (
@@ -401,6 +424,12 @@ function SideSummary({
       {result ? (
         <div className="mt-1 space-y-1">
           <p className="text-xs text-muted-foreground">{result.label}</p>
+          {basis && (
+            <p className="text-xs" data-testid={`${testId}-basis`}>
+              <Badge className={`${basis.cls} px-1.5 py-0`}>{basis.label}</Badge>
+              <span className="ml-1.5 text-muted-foreground">{basis.caption}</span>
+            </p>
+          )}
           <p className="text-xs text-muted-foreground" data-testid={`${testId}-sample`}>
             Sample size: {result.sampleSize} trade{result.sampleSize === 1 ? "" : "s"}
             {result.isVerified ? " · verified" : ""}
@@ -414,7 +443,7 @@ function SideSummary({
       ) : (
         <p className="mt-1 text-xs text-muted-foreground" data-testid={`${testId}-empty`}>
           {kind === "Forward"
-            ? "No real forward results yet — nothing is estimated."
+            ? "No forward results yet — nothing is estimated."
             : "No backtest yet — run one in the Testing Lab to set a baseline."}
         </p>
       )}

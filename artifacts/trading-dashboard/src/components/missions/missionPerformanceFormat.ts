@@ -5,7 +5,9 @@
 // Everything here is DISPLAY-ONLY: it reshapes data the backend already
 // computed (test results, drift decision, mission events) into honest,
 // at-a-glance view models. It never fabricates live performance — forward
-// numbers only ever come from real MissionTestResult rows of kind FORWARD.
+// numbers only ever come from persisted MissionTestResult rows of kind FORWARD,
+// and each row's `evidenceBasis` says what its closed trades actually were
+// (simulated paper/demo fills vs broker-reconciled money).
 
 import type {
   MissionTestResult,
@@ -55,6 +57,78 @@ export function readSignals(drift: MissionDriftResultDrift | null | undefined): 
       return { name: name ?? "", detail: detail ?? "", weight: readNum(o, "weight") };
     })
     .filter((x): x is DriftSignal => x !== null);
+}
+
+// ── Forward evidence basis (what the closed trades behind a result WERE) ────
+//
+// The backend persists `evidenceBasis` on every mission test result
+// (SIMULATED / BROKER_RECONCILED / MIXED / NONE, or UNSTATED for older rows)
+// so a FORWARD record aggregated from modelled paper/demo closes can never be
+// read as broker-proven track record. The generated client type predates the
+// field, so read it defensively off the runtime object and default to
+// UNSTATED — never to a stronger claim.
+
+export type ForwardEvidenceBasis = "NONE" | "SIMULATED" | "BROKER_RECONCILED" | "MIXED" | "UNSTATED";
+
+export interface EvidenceBasisMeta {
+  basis: ForwardEvidenceBasis;
+  /** Short badge text. */
+  label: string;
+  /** Tailwind classes for a badge. */
+  cls: string;
+  /** One-line honest caption. Never overstates. */
+  caption: string;
+}
+
+export function readEvidenceBasis(result: MissionTestResult | null | undefined): ForwardEvidenceBasis {
+  const v = (result as unknown as Record<string, unknown> | null | undefined)?.evidenceBasis;
+  return v === "NONE" || v === "SIMULATED" || v === "BROKER_RECONCILED" || v === "MIXED"
+    ? v
+    : "UNSTATED";
+}
+
+export function evidenceBasisMeta(basis: ForwardEvidenceBasis): EvidenceBasisMeta {
+  switch (basis) {
+    case "SIMULATED":
+      return {
+        basis,
+        label: "Simulated closes",
+        cls: "bg-warning/15 text-warning border border-warning/30",
+        caption:
+          "Simulated paper/demo closes — modelled from real quotes, not broker-reconciled money.",
+      };
+    case "BROKER_RECONCILED":
+      return {
+        basis,
+        label: "Broker-reconciled",
+        cls: "bg-success/15 text-success border border-success/30",
+        caption: "Broker-reconciled closed trades — realised money.",
+      };
+    case "MIXED":
+      return {
+        basis,
+        label: "Mixed evidence",
+        cls: "bg-warning/15 text-warning border border-warning/30",
+        caption:
+          "Mix of broker-reconciled closes and simulated closes modelled from real quotes.",
+      };
+    case "NONE":
+      return {
+        basis,
+        label: "No closed trades",
+        cls: "bg-muted text-muted-foreground border border-border",
+        caption: "No closed trades behind this result.",
+      };
+    case "UNSTATED":
+    default:
+      return {
+        basis: "UNSTATED",
+        label: "Basis unstated",
+        cls: "bg-muted text-muted-foreground border border-border",
+        caption:
+          "This result did not record what its closed trades were — treated as unproven, not as real.",
+      };
+  }
 }
 
 // ── Drift severity presentation ────────────────────────────────────────────

@@ -22,6 +22,7 @@ import type {
   ScalpAddOnVerdict,
   ScalpBasket,
   ScalpBasketLeg,
+  ScalpBasketSync,
   ScalpDirection,
   ScalpExitAction,
   ScalpExitUrgency,
@@ -32,6 +33,34 @@ import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
 
 /** A short cool-down after a failed flame before the same side is suggested again. */
 export const FAILED_FLAME_LOCKOUT_MS = 3 * 60 * 1000;
+
+/**
+ * How old a broker feed sync may be — vs NOW, not vs the newest row — before a
+ * basket's prices/floating-P/L must be labeled stale. Beyond this window the
+ * bridge is not delivering fresh rows (disconnected, or the sync loop died) and
+ * positions may already be closed at the broker without us knowing.
+ */
+export const BASKET_SYNC_STALE_MS = 90_000;
+
+/**
+ * Build the basket sync-freshness block from the feed's newest broker sync time
+ * compared to NOW. Pure. A missing/unreported sync time yields the honest
+ * "unknown ⇒ stale" block — we never claim freshness we cannot evidence.
+ */
+export function basketSyncInfo(
+  lastSyncedAtMs: number | null,
+  now: number = Date.now(),
+): ScalpBasketSync {
+  if (!num(lastSyncedAtMs) || lastSyncedAtMs <= 0) {
+    return { syncedAt: null, ageSeconds: null, stale: true };
+  }
+  const ageMs = Math.max(0, now - lastSyncedAtMs);
+  return {
+    syncedAt: new Date(lastSyncedAtMs).toISOString(),
+    ageSeconds: Math.round(ageMs / 1000),
+    stale: ageMs > BASKET_SYNC_STALE_MS,
+  };
+}
 
 function num(v: number | null | undefined): v is number {
   return typeof v === "number" && Number.isFinite(v);
@@ -443,7 +472,13 @@ export function evaluateExitUrgency(
 export function assembleBasket(
   group: GroupedLegs,
   flame: ScalpFlameRead,
-  opts: { personality?: RiskPersonality; currentPrice?: number | null; now?: number } = {},
+  opts: {
+    personality?: RiskPersonality;
+    currentPrice?: number | null;
+    now?: number;
+    /** Broker-feed sync freshness (from basketSyncInfo). Omitted ⇒ honest unknown-stale, never a fabricated "live". */
+    sync?: ScalpBasketSync;
+  } = {},
 ): ScalpBasket {
   const summary = summarizeBasket(group.legs);
   const personality = opts.personality ?? "BALANCED";
@@ -466,6 +501,7 @@ export function assembleBasket(
     exit: evaluateExitUrgency(flame, summary, personality),
     addOn: evaluateAddOn(flame, summary, personality),
     generatedAt,
+    sync: opts.sync ?? { syncedAt: null, ageSeconds: null, stale: true },
   };
 }
 

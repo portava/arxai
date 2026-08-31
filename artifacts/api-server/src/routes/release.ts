@@ -10,13 +10,14 @@ import { eq } from "drizzle-orm";
 import { z } from "zod/v4";
 import { requireRole, getSessionFromReq } from "../lib/security/session.js";
 import { auditEvent } from "../lib/systemHealth/audit.js";
-import { versionEnvelope, readinessReport, diagnosticsPackage, listFeedback } from "../lib/release.js";
+import { versionEnvelope, readinessReport, diagnosticsPackage, listFeedback, readLiveBrokerExecutionArmed } from "../lib/release.js";
 import { runAcceptance, getLastAcceptance, setLastAcceptance } from "../lib/acceptance.js";
 
 const router = Router();
 
-router.get("/release/version", (_req, res) => {
-  res.json(versionEnvelope());
+router.get("/release/version", async (_req, res) => {
+  // versionEnvelope reads the live arming switch — no fabricated constants.
+  res.json(await versionEnvelope());
 });
 
 router.get("/release/readiness", async (_req, res) => {
@@ -41,7 +42,8 @@ router.get("/release/acceptance-last", (_req, res) => {
   res.json(getLastAcceptance() ?? { scenarios: [], summary: null });
 });
 
-router.get("/release/notes", (_req, res) => {
+router.get("/release/notes", async (_req, res) => {
+  const armed = await readLiveBrokerExecutionArmed();
   res.json({
     brand: {
       name: "ARX AI",
@@ -56,9 +58,11 @@ router.get("/release/notes", (_req, res) => {
       ownerTesterAccess: true,
       mt5Deferred: true,
       simulatorReady: true,
-      realBrokerExecutionLocked: true,
+      // Derived from the live arming switch: true = locked, false = ARMED,
+      // null = the switch could not be read (unknown, not assumed locked).
+      realBrokerExecutionLocked: armed === null ? null : !armed,
     },
-    version: versionEnvelope().version,
+    version: (await versionEnvelope()).version,
     stage: "BETA_TESTER",
     worksNow: [
       "Full tester access",

@@ -228,3 +228,26 @@ describe("instruction prose names the page the item actually links to", () => {
     expect(routes.filter((r) => !isNormalUserAllowedPath(r))).toEqual([]);
   });
 });
+
+describe("Emergency Stop is a real three-state read, never a fabricated 'off'", () => {
+  // emergencyStopActive is now boolean | null: true = engaged, false =
+  // confirmed off (read from /api/system/status), null = the read failed.
+  it("an unreadable Emergency Stop is reported as unknown, never as off", () => {
+    const unknownCtx = baseCtx({ emergencyStopActive: null });
+    const wizard = buildSetupWizard(unknownCtx).find((s) => s.id === "wz-emergency");
+    expect(wizard?.statusText).toMatch(/unknown/i);
+    expect(wizard?.statusText).not.toMatch(/not engaged/i);
+    const cards = buildBlockerCards(unknownCtx, buildSetupChecklist(askLive));
+    expect(cards.some((c) => c.kind === "emergency-stop-unknown")).toBe(true);
+    expect(cards.some((c) => c.kind === "emergency-stop")).toBe(false);
+  });
+
+  it("a confirmed-off Emergency Stop reads as not engaged, and engaged as blocked", () => {
+    const offWizard = buildSetupWizard(baseCtx({ emergencyStopActive: false })).find((s) => s.id === "wz-emergency");
+    expect(offWizard?.statusText).toMatch(/not engaged/i);
+    const onCtx = baseCtx({ emergencyStopActive: true });
+    const onWizard = buildSetupWizard(onCtx).find((s) => s.id === "wz-emergency");
+    expect(onWizard?.currentStatus).toBe("blocked");
+    expect(buildBlockerCards(onCtx, buildSetupChecklist(askLive)).some((c) => c.kind === "emergency-stop")).toBe(true);
+  });
+});

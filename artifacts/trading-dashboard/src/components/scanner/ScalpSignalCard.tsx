@@ -96,6 +96,16 @@ function Tip({
 // would wrongly fall back to "15m").
 export const SCALP_SIGNAL_BUS_TIMEFRAME = "1m";
 
+/** Compact countdown text for the validity window (e.g. "3m 05s", "42s"). */
+function fmtCountdown(totalSeconds: number): string {
+  if (totalSeconds >= 60) {
+    const m = Math.floor(totalSeconds / 60);
+    const s = totalSeconds % 60;
+    return `${m}m ${String(s).padStart(2, "0")}s`;
+  }
+  return `${totalSeconds}s`;
+}
+
 export function ScalpSignalCard({
   result,
   onBuild,
@@ -117,6 +127,43 @@ export function ScalpSignalCard({
 
   const flame = r.flame;
   const flameLive = flame != null && !flame.blind;
+
+  // READ-EXPIRY HONESTY (STALE_UNLABELED fix): the engine stamps every
+  // actionable read with expiresAt/validForSeconds (90–240s by mode), but this
+  // card used to render "Ready to review" / "Valid now" with an enabled Build
+  // button forever. Drive a client-side clock off the engine's OWN expiresAt:
+  // while valid the timing chip counts down; once passed the card flips to an
+  // explicit amber "Read expired" state, Build disables, and the actionability
+  // below degrades (STALE data → FEED_LIMITED) so the lifted header verdict
+  // retracts too. Reject/awaiting reads carry validForSeconds=0 — they never
+  // claimed a validity window, so they are excluded and keep their own honest
+  // terminal state. Server-side, results are computed fresh per request (no
+  // re-serve cache), so expiry is purely a client-clock concern. Display-only:
+  // every action still re-runs all server safety gates.
+  const expiresAtMs =
+    typeof r.validForSeconds === "number" && r.validForSeconds > 0 && r.expiresAt
+      ? Date.parse(r.expiresAt)
+      : NaN;
+  const hasValidityWindow = Number.isFinite(expiresAtMs);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    if (!hasValidityWindow) return;
+    if (Date.now() >= expiresAtMs) {
+      // Already expired on mount (user returned minutes later) — flip once.
+      setNowMs(Date.now());
+      return;
+    }
+    const id = setInterval(() => {
+      setNowMs(Date.now());
+      if (Date.now() >= expiresAtMs) clearInterval(id);
+    }, 1000);
+    return () => clearInterval(id);
+  }, [hasValidityWindow, expiresAtMs]);
+  const readExpired = hasValidityWindow && nowMs >= expiresAtMs;
+  const secondsLeft =
+    hasValidityWindow && !readExpired
+      ? Math.max(0, Math.ceil((expiresAtMs - nowMs) / 1000))
+      : null;
 
   // READABILITY CONTRACT (display-only): route the direction/confidence affordance
   // through the ONE shared data-sufficiency contract instead of hard-coding a
@@ -147,13 +194,16 @@ export function ScalpSignalCard({
   // top of the server's `canBuildTrade` (stricter wins → fail toward NOT trading),
   // guaranteeing the card can never offer an enabled action the unified verdict
   // would deny. Display-only — every action re-runs all server safety gates.
+  // An EXPIRED read degrades the data inputs to STALE (→ FEED_LIMITED): the
+  // engine only vouched for this read inside its validity window, so past it
+  // the card may no longer claim live-confirmed data or an actionable setup.
   const actionability = resolveScannerActionability(
     {
-      quoteStatus: scalpDataReady ? "LIVE" : "UNAVAILABLE",
-      candleStatus: scalpDataReady ? "CONFIRMED" : "UNAVAILABLE",
+      quoteStatus: !scalpDataReady ? "UNAVAILABLE" : readExpired ? "STALE" : "LIVE",
+      candleStatus: !scalpDataReady ? "UNAVAILABLE" : readExpired ? "STALE" : "CONFIRMED",
       chartIntelligenceStatus: scalpDataReady ? "FULL" : "UNAVAILABLE",
     },
-    scalpDataReady ? scalpStatusToSetup(r.status) : "UNKNOWN",
+    scalpDataReady && !readExpired ? scalpStatusToSetup(r.status) : "UNKNOWN",
   );
   const actionUi = SCANNER_ACTIONABILITY_UI[actionability];
 
@@ -187,6 +237,7 @@ export function ScalpSignalCard({
       data-scalp-status={r.status}
       data-scalp-action={r.userAction}
       data-actionability={actionability}
+      data-read-expired={readExpired || undefined}
     >
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between gap-2">
@@ -199,10 +250,10 @@ export function ScalpSignalCard({
             )}
           </CardTitle>
           <Badge
-            className={`${SCALP_STATUS_TONE[r.status]} text-xs shrink-0`}
+            className={`${readExpired ? "bg-amber-500/20 text-amber-300 border-amber-500/40" : SCALP_STATUS_TONE[r.status]} text-xs shrink-0`}
             data-status-token={r.status}
           >
-            {SCALP_STATUS_LABEL[r.status]}
+            {readExpired ? "Read expired" : SCALP_STATUS_LABEL[r.status]}
           </Badge>
         </div>
         <div className="flex flex-wrap items-center gap-1.5 pt-1">
@@ -217,11 +268,12 @@ export function ScalpSignalCard({
             </Tip>
           )}
           <Tip
-            className="ml-auto text-[10px] text-muted-foreground flex items-center gap-1"
-            help="Whether now is a good moment to act on this setup — it flags if the ideal entry window is open, still early, or already passing."
+            className={`ml-auto text-[10px] flex items-center gap-1 ${readExpired ? "text-amber-300" : "text-muted-foreground"}`}
+            help="Whether now is a good moment to act on this setup — it flags if the ideal entry window is open, still early, already passing, or expired. A scalp read is only vouched for by the engine for a short window."
           >
             <Clock className="h-3 w-3" />
-            {SCALP_TIMING_LABEL[r.timingStatus]}
+            {readExpired ? SCALP_TIMING_LABEL.EXPIRED : SCALP_TIMING_LABEL[r.timingStatus]}
+            {secondsLeft != null ? ` · ${fmtCountdown(secondsLeft)} left` : ""}
           </Tip>
         </div>
 
@@ -422,11 +474,31 @@ export function ScalpSignalCard({
           </div>
         )}
 
+        {/* Expired-read banner — amber, distinct from empty/wait states. The
+            plan numbers above are deliberately kept visible but this states
+            they belong to the dead read; Build is disabled below. */}
+        {readExpired && (
+          <div
+            className="flex items-start gap-1.5 rounded border border-amber-500/40 bg-amber-500/10 p-2 text-amber-300"
+            data-testid={`scalp-expired-${r.symbol}`}
+          >
+            <Clock className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+            <span>
+              This read has expired — the engine only vouched for it for{" "}
+              {fmtCountdown(r.validForSeconds)}. The entry, stop and targets above
+              are from the expired read, not a live plan. Refresh for a current read
+              before acting.
+            </span>
+          </div>
+        )}
+
         {/* Actions */}
         <div className="grid grid-cols-2 gap-2 pt-1">
           <Button
             className="h-11 text-sm font-bold bg-success hover:bg-success/90 text-white disabled:opacity-50"
-            disabled={!r.canBuildTrade || !actionUi.canAct || !onBuild}
+            // `readExpired` is redundant with the degraded verdict's canAct but
+            // kept explicit: an expired read may NEVER offer an enabled Build.
+            disabled={!r.canBuildTrade || !actionUi.canAct || !onBuild || readExpired}
             onClick={() => onBuild?.(r)}
             data-testid={`scalp-build-${r.symbol}`}
           >

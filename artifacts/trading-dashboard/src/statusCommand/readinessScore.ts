@@ -211,11 +211,12 @@ export function computeReadinessScore(
 
   const total = sections.reduce((acc, s) => acc + s.score, 0);
   const liveUnavailableReason =
-    ctx.emergencyStopActive ? "Emergency Stop is engaged."
+    ctx.emergencyStopActive === true ? "Emergency Stop is engaged."
     : !ctx.heartbeatPresent ? "No confirmed MT5 heartbeat."
     : ctx.mt5Deferred ? "MT5 bridge is deferred."
     : ctx.brokerReadOnly ? "Broker is in read-only mode."
     : ctx.liveTradingDisabled ? "Server-enforced LIVE TRADING DISABLED lock."
+    : ctx.emergencyStopActive === null ? "Emergency Stop state could not be read (unknown, not off)."
     : "Execution remains server-gated regardless of UI score.";
 
   return {

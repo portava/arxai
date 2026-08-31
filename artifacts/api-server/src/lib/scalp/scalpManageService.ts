@@ -28,9 +28,11 @@ import { readFlame, finalizeScalpVerdict } from "./flameRead.js";
 import { getSymbolInfo } from "../../brain/symbols/symbolRegistry.js";
 import {
   assembleBasket,
+  basketSyncInfo,
   evaluateAddOn,
   groupLegsIntoBaskets,
   summarizeBasket,
+  BASKET_SYNC_STALE_MS,
   FAILED_FLAME_LOCKOUT_MS,
   type OpenPositionInput,
 } from "./scalpManage.js";
@@ -82,12 +84,22 @@ type DemoRaw = {
 /**
  * Load the user's open positions, strictly mode-scoped (mirrors the unified
  * positions feed). Returns the rows already mapped to the pure module's
- * OpenPositionInput shape, plus the resolved account mode for the response.
+ * OpenPositionInput shape, the resolved account mode for the response, and
+ * `lastSyncedAtMs` — the newest broker sync time for the mode's feed (null
+ * when the feed never reported one). Callers MUST judge freshness against
+ * NOW via that value (basketSyncInfo): the intra-feed filter below is only
+ * relative to the newest row, so when the bridge is down ALL rows are
+ * equally old and all pass — the feed-level stamp is what makes that
+ * staleness visible instead of silently rendering hours-old rows as live.
  */
 async function loadOpenPositions(
   userId: number,
   isAdmin: boolean,
-): Promise<{ positions: OpenPositionInput[]; accountMode: ManageAccountMode }> {
+): Promise<{
+  positions: OpenPositionInput[];
+  accountMode: ManageAccountMode;
+  lastSyncedAtMs: number | null;
+}> {
   const scope = await getUserModeScope(userId, { isAdmin });
   const mode = scope.currentAccountMode;
   const includeLive = mode === "LIVE_SHARED";
@@ -102,16 +114,20 @@ async function loadOpenPositions(
     : "NONE";
 
   const positions: OpenPositionInput[] = [];
+  let lastSyncedAtMs: number | null = null;
 
   if (includeLive) {
     const liveRowsAll = await db.select().from(arxLivePositionsTable)
       .where(eq(arxLivePositionsTable.userId, userId));
-    const LIVE_STALE_MS = 90_000;
     const newestLiveSync = liveRowsAll.reduce((max, r) => {
       const t = r.lastSyncedAt ? new Date(r.lastSyncedAt).getTime() : 0;
       return t > max ? t : max;
     }, 0);
-    const liveFloor = newestLiveSync > 0 ? newestLiveSync - LIVE_STALE_MS : 0;
+    if (newestLiveSync > 0) lastSyncedAtMs = newestLiveSync;
+    // Relative straggler filter only: drops rows the bridge stopped refreshing
+    // while OTHERS kept syncing. It says nothing about feed-level freshness —
+    // that is judged against NOW via lastSyncedAtMs above.
+    const liveFloor = newestLiveSync > 0 ? newestLiveSync - BASKET_SYNC_STALE_MS : 0;
     for (const r of liveRowsAll) {
       if (r.closedAt) continue;
       const t = r.lastSyncedAt ? new Date(r.lastSyncedAt).getTime() : 0;
@@ -138,6 +154,11 @@ async function loadOpenPositions(
       .where(eq(mt5StateTable.userId, userId))
       .orderBy(sql`${mt5StateTable.lastSyncAt} DESC NULLS LAST`)
       .limit(1);
+    // The DEMO path previously had NO age signal at all — the newest state row
+    // was served as current however old it was. Surface its sync time so the
+    // caller can label an hours-old snapshot honestly instead of "live".
+    const demoSync = stateRows[0]?.lastSyncAt ? new Date(stateRows[0]!.lastSyncAt).getTime() : NaN;
+    if (Number.isFinite(demoSync) && demoSync > 0) lastSyncedAtMs = demoSync;
     const raw: DemoRaw[] = Array.isArray(stateRows[0]?.positions)
       ? (stateRows[0]!.positions as DemoRaw[]) : [];
     for (const p of raw) {
@@ -160,7 +181,7 @@ async function loadOpenPositions(
     }
   }
 
-  return { positions, accountMode };
+  return { positions, accountMode, lastSyncedAtMs };
 }
 
 /** Point size from broker spec digits when the spec doesn't carry `point`. */
@@ -306,9 +327,13 @@ export async function getScalpBaskets(
   opts: { isAdmin?: boolean; riskPersonality?: RiskPersonality | null } = {},
 ): Promise<GetScalpBasketsResult> {
   const personality = opts.riskPersonality ?? "BALANCED";
-  const { positions, accountMode } = await loadOpenPositions(userId, opts.isAdmin ?? false);
+  const { positions, accountMode, lastSyncedAtMs } = await loadOpenPositions(userId, opts.isAdmin ?? false);
   const groups = groupLegsIntoBaskets(positions);
   const now = Date.now();
+  // Feed-level freshness vs NOW (not vs the newest row) — when the bridge is
+  // down this flags EVERY basket as "as of syncedAt" instead of letting
+  // hours-old open positions and P/L render as current.
+  const sync = basketSyncInfo(lastSyncedAtMs, now);
 
   const built = await Promise.all(groups.map(async (g) => {
     const [spec, candles, livePrice, execution] = await Promise.all([
@@ -329,7 +354,7 @@ export async function getScalpBaskets(
       },
       personality,
     );
-    const basket = assembleBasket(g, flame, { personality, currentPrice, now });
+    const basket = assembleBasket(g, flame, { personality, currentPrice, now, sync });
     return { basket, spec, execution };
   }));
 
@@ -402,7 +427,7 @@ export async function getAddOnCheck(
   opts: { isAdmin?: boolean } = {},
 ): Promise<GetAddOnCheckResult> {
   const personality = args.riskPersonality ?? "BALANCED";
-  const { positions } = await loadOpenPositions(userId, opts.isAdmin ?? false);
+  const { positions, lastSyncedAtMs } = await loadOpenPositions(userId, opts.isAdmin ?? false);
   const groups = groupLegsIntoBaskets(positions);
   const symU = args.symbol.trim().toUpperCase();
   const group = groups.find(
@@ -430,7 +455,14 @@ export async function getAddOnCheck(
     personality,
   );
 
-  const basket = group ? assembleBasket(group, flame, { personality, currentPrice: refPrice, now }) : null;
+  const basket = group
+    ? assembleBasket(group, flame, {
+        personality,
+        currentPrice: refPrice,
+        now,
+        sync: basketSyncInfo(lastSyncedAtMs, now),
+      })
+    : null;
   const addOn = basket ? basket.addOn : evaluateAddOn(flame, summary, personality);
 
   // Populate addOnsBlockedReason on the admin trace when the add-on is blocked

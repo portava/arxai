@@ -362,6 +362,23 @@ export interface ScalpBasketLeg {
   isLatest: boolean;
 }
 
+/**
+ * Broker-sync freshness for the feed rows a basket was built from.
+ * `generatedAt` only says when the SERVER assembled the basket — it says
+ * nothing about how old the underlying broker rows are. This block does:
+ * when the bridge stops syncing, every price/floating-P/L on the basket is
+ * "as of syncedAt", not live, and the surface must say so instead of
+ * rendering hours-old numbers as current.
+ */
+export interface ScalpBasketSync {
+  /** Newest broker sync time for the feed these legs came from (ISO), or null when the feed never reported one. */
+  syncedAt: string | null;
+  /** Whole-second age of that sync vs NOW at assembly time (null when syncedAt is null). */
+  ageSeconds: number | null;
+  /** True when the sync is older than the liveness window — or unreported. Prices/P-L are then "as of syncedAt", never "live". */
+  stale: boolean;
+}
+
 /** A group of open positions on the same symbol AND same direction. */
 export interface ScalpBasket {
   symbol: string;
@@ -383,6 +400,8 @@ export interface ScalpBasket {
   exit: ScalpExitVerdict;
   addOn: ScalpAddOnVerdict;
   generatedAt: string;
+  /** Freshness of the broker rows behind this basket (vs NOW, not vs each other). */
+  sync: ScalpBasketSync;
 }
 
 /** Broker-reported symbol truth, normalized for the engine (from arx_symbol_specs). */

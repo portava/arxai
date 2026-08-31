@@ -23,7 +23,14 @@ export default function AnalyticsCommandCenter() {
   });
   const sess = useQuery<{ session: SessionData }>({
     queryKey: ["analytics-session"],
-    queryFn: async () => (await fetch("/api/analytics/session")).json(),
+    // A 500 error body ({error:...}) parsed as JSON must not resolve
+    // "successfully" — throw on !ok so isError fires and the heatmap can
+    // show an honest failed-read state instead of a fabricated $0 grid.
+    queryFn: async () => {
+      const r = await fetch("/api/analytics/session");
+      if (!r.ok) throw new Error(`/api/analytics/session → ${r.status}`);
+      return r.json();
+    },
   });
   const emo = useQuery<EmotionalResponse>({
     queryKey: ["analytics-emotional"],
@@ -85,7 +92,13 @@ export default function AnalyticsCommandCenter() {
           <div className="grid gap-3 lg:grid-cols-3">
             <RiskExposureGraph snapshot={s} />
             <ConsistencyTrendCard snapshot={s} />
-            <SessionHeatmap data={(sess.data?.session ?? {}) as any} />
+            <SessionHeatmap
+              data={sess.data?.session ?? null}
+              isLoading={sess.isLoading}
+              // A resolved response without a `session` key (error body) is a
+              // failed read too, not an empty result.
+              isError={sess.isError || (sess.isSuccess && sess.data?.session == null)}
+            />
           </div>
 
           <EmotionalTrendGraph trend={emo.data?.trend ?? []} />

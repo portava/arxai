@@ -135,7 +135,12 @@ export function computeTradeability(input: TradeabilityEngineInput): Tradeabilit
   } else if (tradeabilityScore < 50 || moveStage === "EXHAUSTED") {
     entryPermission = "WAIT_FOR_ENTRY";
   } else {
-    entryPermission = "GO";
+    // HONESTY GUARD: "GO" claims all checks passed, but with no real candle
+    // window the neutral edge base (50) × 0.6 plus the session bonus alone can
+    // clear the GO bar — i.e. the clock, not the market, would grant
+    // permission. Without candle evidence (same >= 10 threshold the composer
+    // uses for dataQuality.hasCandleData) degrade to WAIT_FOR_ENTRY.
+    entryPermission = candles.length >= 10 ? "GO" : "WAIT_FOR_ENTRY";
   }
 
   return { tradeabilityScore, edgeScore, dangerScore, timingGrade, entryPermission, moveStage };

@@ -41,6 +41,10 @@ export function NotificationCenter() {
   const mDismiss = useMutation({ mutationFn: (id: number) => postJSON(`/api/me/notifications/${id}/dismiss`), onSuccess: () => qc.invalidateQueries({ queryKey: ["meNotifications"] }) });
   const mAll = useMutation({ mutationFn: () => postJSON("/api/me/notifications/read-all"), onSuccess: () => qc.invalidateQueries({ queryKey: ["meNotifications"] }) });
 
+  // A failed read is UNKNOWN, not zero: the bell must not look clean when we
+  // could not see the queue. (q.data survives a later failed refetch, so the
+  // unknown state only applies when we have never had a successful read.)
+  const readFailed = q.isError && q.data == null;
   const unread = q.data?.unread ?? 0;
   const list = (q.data?.notifications ?? []).filter((n) => filter === "all" ? true : n.source === filter);
 
@@ -48,9 +52,15 @@ export function NotificationCenter() {
     <div className="relative">
       <Button variant="ghost" size="icon" onClick={() => setOpen((v) => !v)} aria-label="Notifications">
         <Bell className="w-5 h-5" />
-        {unread > 0 && (
+        {readFailed ? (
+          <span
+            className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] rounded-full bg-warning text-black"
+            title="Notifications could not be loaded — unread count unknown"
+            data-testid="notif-badge-unknown"
+          >?</span>
+        ) : unread > 0 ? (
           <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] rounded-full bg-danger text-white">{unread}</span>
-        )}
+        ) : null}
       </Button>
       {open && (
         <div className="absolute right-0 mt-2 w-[380px] max-h-[80vh] overflow-y-auto rounded-md border border-border bg-card shadow-xl z-50">
@@ -64,7 +74,22 @@ export function NotificationCenter() {
             ))}
           </div>
           {q.isLoading && <div className="p-4 text-sm text-txt-secondary">Loading…</div>}
-          {!q.isLoading && list.length === 0 && (
+          {/* Failed read ≠ empty queue. "No notifications yet" may only render
+              after a successful response returned an empty list. */}
+          {!q.isLoading && readFailed && (
+            <div className="p-6 text-sm text-center" role="alert" data-testid="notif-panel-error">
+              <div className="font-medium text-warning">Couldn&apos;t load your alerts — treat this as unknown, not as clear.</div>
+              <button
+                type="button"
+                className="mt-2 px-2 py-1 text-xs rounded border border-warning/50 text-warning hover:bg-warning/10"
+                onClick={() => void q.refetch()}
+                disabled={q.isFetching}
+              >
+                {q.isFetching ? "Retrying…" : "Retry"}
+              </button>
+            </div>
+          )}
+          {!q.isLoading && !readFailed && list.length === 0 && (
             <div className="p-6 text-sm text-txt-secondary text-center">
               <div>No notifications yet</div>
               <div className="text-xs mt-1">Important bridge, risk, trade, and AI updates will appear here</div>

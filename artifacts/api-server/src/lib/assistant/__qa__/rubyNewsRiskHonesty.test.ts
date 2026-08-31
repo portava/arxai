@@ -152,6 +152,38 @@ test("briefing: connected provider with ZERO items reads quiet/low, never unavai
   assertNoFalseReassurance(briefing.lines.join(" "));
 });
 
+// ── composeRubyBriefing: open-positions honesty ──────────────────────────────
+// A FAILED open-trades lookup (openPositions: null) must never read as the
+// confident "No positions are currently open." — the account may hold live
+// broker positions the briefing simply couldn't see.
+
+test("briefing: openPositions null (lookup failed) reads as can't-verify, never 'no positions'", () => {
+  const ctx = baseCtx();
+  ctx.account.openPositions = null;
+  const briefing = composeRubyBriefing(ctx);
+  const joined = briefing.lines.join(" ").toLowerCase();
+  assert.ok(
+    !joined.includes("no positions are currently open"),
+    `a failed positions read must NEVER claim flat: ${briefing.lines.join(" | ")}`,
+  );
+  assert.ok(
+    joined.includes("can't verify your open positions"),
+    `a failed positions read must say it can't verify: ${briefing.lines.join(" | ")}`,
+  );
+});
+
+test("briefing: openPositions 0 (successful read) still reads as genuinely flat", () => {
+  const ctx = baseCtx();
+  ctx.account.openPositions = 0;
+  const briefing = composeRubyBriefing(ctx);
+  const joined = briefing.lines.join(" ").toLowerCase();
+  assert.ok(
+    joined.includes("no positions are currently open"),
+    `a real zero must still read as flat: ${briefing.lines.join(" | ")}`,
+  );
+  assert.ok(!joined.includes("can't verify your open positions"));
+});
+
 test("briefing: disconnected news feed reads unavailable, never low/quiet", () => {
   const briefing = composeRubyBriefing(
     baseCtx({

@@ -66,7 +66,7 @@ const forwardResults = [
     strategyKey: "flame_scalp",
     symbol: "EURUSD",
     timeframe: "M15",
-    label: "Forward — real closed trades",
+    label: "Forward — closed trades",
     sampleSize: 6,
     sampleWarning: "Small sample — treat with caution.",
     isVerified: false,
@@ -74,6 +74,7 @@ const forwardResults = [
     headline: "Forward is lagging the baseline.",
     notes: [],
     promotionEligible: false,
+    evidenceBasis: "SIMULATED",
     createdAt: "2026-06-18T00:00:00.000Z",
   },
   {
@@ -83,7 +84,7 @@ const forwardResults = [
     strategyKey: "flame_scalp",
     symbol: "EURUSD",
     timeframe: "M15",
-    label: "Forward — real closed trades",
+    label: "Forward — closed trades",
     sampleSize: 9,
     sampleWarning: "Small sample — treat with caution.",
     isVerified: false,
@@ -91,6 +92,7 @@ const forwardResults = [
     headline: "Forward is lagging the baseline.",
     notes: [],
     promotionEligible: false,
+    evidenceBasis: "SIMULATED",
     createdAt: "2026-06-20T00:00:00.000Z",
   },
 ];
@@ -166,8 +168,24 @@ describe("MissionPerformanceView", () => {
     expect(within(card).getByTestId("cell-delta-expectancyR").className).toMatch(/text-danger/);
     // Honest framing on both sides + the small-sample warning surfaces.
     expect(within(card).getByTestId("summary-backtest").textContent).toMatch(/historical/i);
-    expect(within(card).getByTestId("summary-forward").textContent).toMatch(/real closed trades/i);
+    expect(within(card).getByTestId("summary-forward").textContent).toMatch(/own closed trades/i);
     expect(within(card).getByTestId("summary-forward-warning").textContent).toMatch(/small sample/i);
+    // The persisted evidenceBasis is rendered: these forward closes are
+    // SIMULATED and must never read as real track record.
+    const basis = within(card).getByTestId("summary-forward-basis");
+    expect(basis.textContent).toMatch(/simulated/i);
+    expect(basis.textContent).toMatch(/not broker-reconciled money/i);
+    expect(within(card).getByTestId("summary-forward").textContent).not.toMatch(/real closed trades/i);
+  });
+
+  it("labels a forward result that recorded no evidence basis as unproven, never as real", () => {
+    // An older persisted row that never recorded a basis.
+    const unstatedForward = { ...forwardResults[1]!, evidenceBasis: undefined };
+    testResultsData = { results: [backtestResult, unstatedForward] };
+    render(<MissionPerformanceView missionId={1} />);
+    const basis = screen.getByTestId("summary-forward-basis");
+    expect(basis.textContent).toMatch(/basis unstated/i);
+    expect(basis.textContent).toMatch(/unproven/i);
   });
 
   it("renders the forward-over-time chart with a backtest baseline reference", () => {
@@ -198,7 +216,7 @@ describe("MissionPerformanceView", () => {
     driftData = { drift: { severity: "UNKNOWN", score: 0, signals: [], reasons: [], recommendDemote: false, recommendReduceRisk: false, recommendPausePromotion: false }, demoted: false, promotionPaused: false, insufficientEvidence: true };
     eventsData = [];
     render(<MissionPerformanceView missionId={1} />);
-    expect(screen.getByTestId("empty-performance-trend").textContent).toMatch(/no real forward trades yet/i);
+    expect(screen.getByTestId("empty-performance-trend").textContent).toMatch(/no forward trades yet/i);
     expect(screen.getByTestId("summary-forward-empty").textContent).toMatch(/nothing is estimated/i);
     expect(screen.getByTestId("text-drift-insufficient")).toBeTruthy();
     expect(screen.getByTestId("empty-drift-history").textContent).toMatch(/no drift checks/i);

@@ -36,13 +36,31 @@ function baseInput(over: Partial<TrapRoomInput> = {}): TrapRoomInput {
   };
 }
 
-test("insufficient candles → trap probability falls back to fakeout risk, neutral room/pressure", () => {
-  const out = computeTrapAndRoom(baseInput({ candles: solidSeries(10), fakeoutRisk: 42 }));
+test("insufficient candles → trap falls back to fakeout risk, but pressure still comes from the real candles", () => {
+  const out = computeTrapAndRoom(baseInput({ candles: solidSeries(9), fakeoutRisk: 42 }));
   assert.equal(out.trapProbability, 42);
   assert.deepEqual(out.trapTypes, []);
   assert.equal(out.roomToMove, 50);
+  // 9 real bullish candles exist — pressure is computed from them, never a
+  // fabricated neutral 50/50.
+  assert.equal(out.buyPressure, 100);
+  assert.equal(out.sellPressure, 0);
+});
+
+test("zero candles → the only case where pressure degrades to the neutral default", () => {
+  const out = computeTrapAndRoom(baseInput({ candles: [], fakeoutRisk: 42 }));
+  assert.equal(out.trapProbability, 42);
   assert.equal(out.buyPressure, 50);
   assert.equal(out.sellPressure, 50);
+});
+
+test("analysis threshold matches the composer's hasCandleData line (10) — a 'candle data available' read is never defaulted", () => {
+  // 10 candles = dataQuality.hasCandleData true in marketTimingBrainService;
+  // the engine must run real analysis here, not return the fakeoutRisk fallback.
+  const out = computeTrapAndRoom(baseInput({ candles: solidSeries(10), fakeoutRisk: 42 }));
+  assert.equal(out.trapProbability, 0); // computed (no trap signals in clean solid candles), not the 42 session constant
+  assert.equal(out.buyPressure, 100);
+  assert.equal(out.sellPressure, 0);
 });
 
 test("sweep above prior-day high closing back below → PDH_SWEEP_BEARISH", () => {

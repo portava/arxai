@@ -77,7 +77,12 @@ export interface RuntimeContext {
   mt5BridgeConnected: boolean;
   heartbeatPresent: boolean;
   heartbeatAgeSeconds: number | null;
-  emergencyStopActive: boolean;
+  /**
+   * Real kill-switch state read from /api/system/status (safety_core).
+   * true = engaged, false = confirmed off, null = the read failed or has not
+   * completed — consumers must render null as "unknown", never as "off".
+   */
+  emergencyStopActive: boolean | null;
   /** Free-form readiness label, e.g. "incomplete" / "ready" / "unknown". */
   readiness: "ready" | "incomplete" | "unknown";
 

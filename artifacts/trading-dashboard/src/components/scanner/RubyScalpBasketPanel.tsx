@@ -31,15 +31,77 @@ function pl(v: number | null | undefined): { text: string; tone: string } {
   return { text: fmtMoney(v), tone };
 }
 
+// ── Broker-sync freshness (STALE_UNLABELED fix) ─────────────────────────────
+// The server now stamps every basket with a `sync` block: the newest broker
+// sync time for the feed the legs came from, judged against NOW. When the
+// bridge is down the rows can be hours old — positions may already be closed
+// at the broker — so a stale basket must render "as of HH:MM", never bare
+// live-looking P/L. The generated client type does not yet carry the block
+// (real wiring: add ScalpBasketSync to ScalpBasket in lib/api-spec/openapi.yaml
+// and regenerate the orval clients), so it is read structurally with runtime
+// guards; a missing/garbled block degrades to null and renders nothing new —
+// never a fabricated "live" claim.
+interface BasketSyncInfo {
+  syncedAt: string | null;
+  ageSeconds: number | null;
+  stale: boolean;
+}
+
+function basketSyncOf(b: ScalpBasket): BasketSyncInfo | null {
+  const s = (b as { sync?: unknown }).sync;
+  if (!s || typeof s !== "object") return null;
+  const o = s as Record<string, unknown>;
+  return {
+    syncedAt: typeof o.syncedAt === "string" ? o.syncedAt : null,
+    ageSeconds:
+      typeof o.ageSeconds === "number" && Number.isFinite(o.ageSeconds) ? o.ageSeconds : null,
+    stale: o.stale === true,
+  };
+}
+
+function fmtSyncTime(iso: string): string {
+  const t = new Date(iso);
+  if (!Number.isFinite(t.getTime())) return "an unknown time";
+  return t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function fmtSyncAge(seconds: number): string {
+  if (seconds < 120) return `${seconds}s`;
+  if (seconds < 2 * 60 * 60) return `${Math.round(seconds / 60)}m`;
+  const h = Math.floor(seconds / 3600);
+  const m = Math.round((seconds % 3600) / 60);
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
+
 function BasketRow({ basket, name }: { basket: ScalpBasket; name: string }) {
   const combined = pl(basket.combinedFloatingPl);
+  const sync = basketSyncOf(basket);
+  const syncStale = sync?.stale === true;
   return (
     <div
       className="rounded-lg border border-border/60 bg-card/40 p-3 space-y-2"
       data-testid="scalp-basket-row"
       data-symbol={basket.symbol}
       data-direction={basket.direction}
+      data-sync-stale={syncStale || undefined}
     >
+      {/* Stale-sync banner — amber, distinct from the genuine empty state.
+          Rendered FIRST so the P/L below can never be read as live. */}
+      {syncStale && (
+        <div
+          className="flex items-start gap-1.5 rounded-md border border-warning/40 bg-warning/10 p-2 text-xs text-warning"
+          data-testid="scalp-basket-stale"
+        >
+          <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+          <span>
+            {sync?.syncedAt
+              ? `Position sync is stale — showing broker data as of ${fmtSyncTime(sync.syncedAt)}${
+                  sync.ageSeconds != null ? ` (${fmtSyncAge(sync.ageSeconds)} ago)` : ""
+                }, not live. Some of these positions may already be closed at the broker.`
+              : "The broker feed hasn't reported a sync time — these positions and P/L may not be current, and some may already be closed at the broker."}
+          </span>
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-semibold">{basket.displayName}</span>
         <Badge variant="outline" className={directionTone(basket.direction)}>
@@ -70,6 +132,11 @@ function BasketRow({ basket, name }: { basket: ScalpBasket; name: string }) {
         <div>
           <span className="text-muted-foreground">Open P/L</span>
           <div className={`font-mono ${combined.tone}`}>{combined.text}</div>
+          {syncStale && (
+            <div className="text-[10px] text-warning" data-testid="scalp-basket-pl-asof">
+              as of {sync?.syncedAt ? fmtSyncTime(sync.syncedAt) : "an unknown time"} — not live
+            </div>
+          )}
         </div>
         <div>
           <span className="text-muted-foreground">Protection</span>

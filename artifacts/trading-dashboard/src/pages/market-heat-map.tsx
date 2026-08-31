@@ -602,64 +602,87 @@ function BuySellWindowsTab({ data }: { data: MarketTimingRead | undefined }) {
   const buy = data.buyPressure;
   const sell = data.sellPressure;
   const bias = data.pressureBias;
+  // Without candle data the engine has no volume/candle evidence — its
+  // pressure fields are defaults, not measurements. Withhold them honestly
+  // instead of rendering a fabricated 50/50 meter.
+  const hasCandles = data.dataQuality.hasCandleData;
 
   return (
     <div className="space-y-4">
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm">Buyer vs. Seller Control</CardTitle>
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <CardTitle className="text-sm">Buyer vs. Seller Control</CardTitle>
+            <DataQualityBadge label={data.dataQuality.label} />
+          </div>
           <CardDescription className="text-xs">
             Advisory pressure meter. Higher score = stronger side control. Not a signal; use with full read context.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Visual meter */}
-          <div className="space-y-1">
-            <div className="flex justify-between text-xs font-medium">
-              <span className="text-success">Buyers</span>
-              <span className="text-danger">Sellers</span>
-            </div>
-            <div className="relative h-4 rounded-full overflow-hidden bg-muted flex">
-              <div className="h-full bg-success/70 transition-all" style={{ width: `${buy}%` }} />
-              <div className="h-full bg-danger/70 transition-all" style={{ width: `${sell}%` }} />
-            </div>
-            <div className="flex justify-between text-xs text-muted-foreground font-mono tabular-nums">
-              <span>{Math.round(buy)}</span>
-              <span>{Math.round(sell)}</span>
-            </div>
-          </div>
-
-          {/* Bias verdict */}
-          <div className={cn(
-            "rounded-lg border p-3 flex items-center gap-3",
-            bias === "BUY" ? "bg-success/10 border-success/30"
-            : bias === "SELL" ? "bg-danger/10 border-danger/30"
-            : "bg-muted border-border/20"
-          )}>
-            {bias === "BUY" ? <TrendingUp className="h-5 w-5 text-success shrink-0" />
-              : bias === "SELL" ? <TrendingDown className="h-5 w-5 text-danger shrink-0" />
-              : <Minus className="h-5 w-5 text-txt-secondary shrink-0" />}
-            <div>
-              <div className="text-sm font-semibold">
-                {bias === "BUY" ? "Buyer control" : bias === "SELL" ? "Seller control" : "Neutral pressure"}
+          {!hasCandles ? (
+            <div className="rounded-lg border border-warning/40 bg-warning/10 p-3 flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
+              <div className="text-xs leading-relaxed">
+                <div className="text-sm font-semibold text-warning">
+                  Couldn't measure buy/sell pressure — no candle data for {data.symbol}.
+                </div>
+                <div className="text-muted-foreground mt-0.5">
+                  Pressure is measured from real candle volume. Showing nothing rather than guessing a neutral 50/50.
+                </div>
               </div>
-              <div className="text-xs text-muted-foreground mt-0.5">{data.actionReason}</div>
             </div>
-          </div>
+          ) : (
+            <>
+              {/* Visual meter */}
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs font-medium">
+                  <span className="text-success">Buyers</span>
+                  <span className="text-danger">Sellers</span>
+                </div>
+                <div className="relative h-4 rounded-full overflow-hidden bg-muted flex">
+                  <div className="h-full bg-success/70 transition-all" style={{ width: `${buy}%` }} />
+                  <div className="h-full bg-danger/70 transition-all" style={{ width: `${sell}%` }} />
+                </div>
+                <div className="flex justify-between text-xs text-muted-foreground font-mono tabular-nums">
+                  <span>{Math.round(buy)}</span>
+                  <span>{Math.round(sell)}</span>
+                </div>
+              </div>
 
-          {/* Scores detail */}
-          <div className="grid grid-cols-2 gap-2">
-            <ScorePill
-              label="Buy pressure"
-              value={<span className="text-success">{Math.round(buy)}</span>}
-              cls="border-success/20"
-            />
-            <ScorePill
-              label="Sell pressure"
-              value={<span className="text-danger">{Math.round(sell)}</span>}
-              cls="border-danger/20"
-            />
-          </div>
+              {/* Bias verdict */}
+              <div className={cn(
+                "rounded-lg border p-3 flex items-center gap-3",
+                bias === "BUY" ? "bg-success/10 border-success/30"
+                : bias === "SELL" ? "bg-danger/10 border-danger/30"
+                : "bg-muted border-border/20"
+              )}>
+                {bias === "BUY" ? <TrendingUp className="h-5 w-5 text-success shrink-0" />
+                  : bias === "SELL" ? <TrendingDown className="h-5 w-5 text-danger shrink-0" />
+                  : <Minus className="h-5 w-5 text-txt-secondary shrink-0" />}
+                <div>
+                  <div className="text-sm font-semibold">
+                    {bias === "BUY" ? "Buyer control" : bias === "SELL" ? "Seller control" : "Neutral pressure"}
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-0.5">{data.actionReason}</div>
+                </div>
+              </div>
+
+              {/* Scores detail */}
+              <div className="grid grid-cols-2 gap-2">
+                <ScorePill
+                  label="Buy pressure"
+                  value={<span className="text-success">{Math.round(buy)}</span>}
+                  cls="border-success/20"
+                />
+                <ScorePill
+                  label="Sell pressure"
+                  value={<span className="text-danger">{Math.round(sell)}</span>}
+                  cls="border-danger/20"
+                />
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
 
@@ -680,6 +703,12 @@ function BuySellWindowsTab({ data }: { data: MarketTimingRead | undefined }) {
           {data.actionReason && (
             <p className="text-xs text-muted-foreground leading-relaxed">{data.actionReason}</p>
           )}
+          {!hasCandles && (
+            <p className="text-xs text-warning flex items-center gap-1.5">
+              <AlertTriangle className="h-3 w-3 shrink-0" />
+              Based on session timing only — no candle data behind this verdict.
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>
@@ -699,25 +728,41 @@ function DangerWindowsTab({ data, results }: { data: MarketTimingRead | undefine
                 <AlertTriangle className="h-4 w-4 text-danger" />
                 {data.symbol} — Danger Window
               </CardTitle>
-              <Badge
-                variant="outline"
-                className={cn(
-                  "text-xs",
-                  data.dangerScore >= 70 ? "bg-danger/20 text-danger border-danger/40"
-                  : data.dangerScore >= 40 ? "bg-warning/20 text-warning border-warning/40"
-                  : "bg-muted text-txt-secondary border-border/20"
-                )}
-              >
-                Danger {Math.round(data.dangerScore)}
-              </Badge>
+              <div className="flex items-center gap-1.5">
+                <DataQualityBadge label={data.dataQuality.label} />
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    "text-xs",
+                    data.dangerScore >= 70 ? "bg-danger/20 text-danger border-danger/40"
+                    : data.dangerScore >= 40 ? "bg-warning/20 text-warning border-warning/40"
+                    : "bg-muted text-txt-secondary border-border/20"
+                  )}
+                >
+                  Danger {Math.round(data.dangerScore)}
+                </Badge>
+              </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               <ScorePill label="Danger score" value={Math.round(data.dangerScore)} cls={data.dangerScore >= 60 ? "border-danger/20" : ""} />
-              <ScorePill label="Trap prob." value={scorePercent(data.trapProbability)} cls={data.trapProbability >= TRAP_WARNING_THRESHOLD ? "border-warning/20" : ""} />
+              {/* Without candle data the engine's "trap probability" is just the
+                  session's static fakeout-risk constant — withhold the number
+                  rather than dressing a session default up as a measurement. */}
+              <ScorePill
+                label="Trap prob."
+                value={data.dataQuality.hasCandleData ? scorePercent(data.trapProbability) : "—"}
+                cls={data.dataQuality.hasCandleData && data.trapProbability >= TRAP_WARNING_THRESHOLD ? "border-warning/20" : ""}
+              />
               <ScorePill label="Move stage" value={humanizeMoveStage(data.moveStage)} />
             </div>
+            {!data.dataQuality.hasCandleData && (
+              <p className="text-xs text-warning flex items-center gap-1.5">
+                <AlertTriangle className="h-3 w-3 shrink-0" />
+                No candle data — trap probability can't be measured, and the danger score reflects session timing and news only.
+              </p>
+            )}
             {data.newsOverlay.blocksTrade && (
               <div className="rounded-md border border-danger/30 bg-danger/10 p-2.5 text-xs text-danger flex items-center gap-2">
                 <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
@@ -762,7 +807,13 @@ function DangerWindowsTab({ data, results }: { data: MarketTimingRead | undefine
                     />
                   </div>
                   <span className="text-xs font-mono tabular-nums w-8 text-right">{Math.round(r.dangerScore)}</span>
-                  {r.trapProbability >= TRAP_WARNING_THRESHOLD && (
+                  {/* A trap warning is only real when candles backed the read;
+                      otherwise trapProbability is a session constant. */}
+                  {!r.dataQuality.hasCandleData ? (
+                    <Badge variant="outline" className="text-[9px] px-1 bg-muted text-txt-secondary border-border/20" title="No candle data — danger reflects session timing and news only">
+                      No candles
+                    </Badge>
+                  ) : r.trapProbability >= TRAP_WARNING_THRESHOLD && (
                     <Badge variant="outline" className="text-[9px] px-1 bg-warning/10 text-warning border-warning/30">
                       Trap
                     </Badge>

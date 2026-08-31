@@ -388,12 +388,36 @@ router.patch("/positions/:id/stop-loss", requireUser, async (req, res): Promise<
 
     // Queue MODIFY through the shared MT5 gate so mode/live-lock semantics apply.
     if (row.brokerPositionId) {
-      await queueMt5CommandWithGate("MODIFY", {
+      // Broker-mirrored position: the stop that protects the account lives AT
+      // THE VENUE. The gate stores every command as BLOCKED (paper-only by
+      // construction — routes/mt5.ts queueCommand), so this MODIFY can never
+      // reach the broker; updating the local row anyway would display a stop
+      // the venue does not have. Refuse with the gate's own verdict instead.
+      const gated = await queueMt5CommandWithGate("MODIFY", {
         ticket: Number(row.brokerPositionId) || null,
         sl: body.stopLoss ?? null,
         tp: row.takeProfit ?? null,
       });
+      if (gated.command.status !== "PENDING") {
+        res.status(409).json({
+          error: "Stop-loss change could not be delivered to the broker — the stop at the venue is unchanged, so nothing was updated here either.",
+          commandStatus: gated.command.status,
+          blockedReason: gated.blockedReason ?? gated.command.detail ?? null,
+          mode: gated.mode,
+        });
+        return;
+      }
+      // Deliverable (not producible today — the gate hardcodes BLOCKED):
+      // queued is still not confirmed. The stored stop updates when the EA's
+      // MODIFY result lands (lib/mt5/executionReconciler.ts).
+      res.status(202).json({
+        accepted: true,
+        message: "Stop-loss change queued for the broker. The stored stop updates when the broker confirms the modify.",
+        commandStatus: gated.command.status,
+      });
+      return;
     }
+    // Local-only row (no broker linkage) — the stored stop is the record.
     await db.update(livePositionsTable).set({ stopLoss: body.stopLoss, updatedAt: new Date() })
       .where(ownedRow(id, userId));
     await appendEvent({ livePositionId: id,
@@ -424,12 +448,31 @@ router.patch("/positions/:id/take-profit", requireUser, async (req, res): Promis
     const { id, userId, row } = owned;
 
     if (row.brokerPositionId) {
-      await queueMt5CommandWithGate("MODIFY", {
+      // Same honesty rule as /stop-loss: the take-profit lives at the venue,
+      // and the gate stores every command BLOCKED, so a local update would
+      // display a TP the broker does not have. Refuse with the gate's verdict.
+      const gated = await queueMt5CommandWithGate("MODIFY", {
         ticket: Number(row.brokerPositionId) || null,
         sl: row.stopLoss ?? null,
         tp: body.takeProfit ?? null,
       });
+      if (gated.command.status !== "PENDING") {
+        res.status(409).json({
+          error: "Take-profit change could not be delivered to the broker — the take-profit at the venue is unchanged, so nothing was updated here either.",
+          commandStatus: gated.command.status,
+          blockedReason: gated.blockedReason ?? gated.command.detail ?? null,
+          mode: gated.mode,
+        });
+        return;
+      }
+      res.status(202).json({
+        accepted: true,
+        message: "Take-profit change queued for the broker. The stored take-profit updates when the broker confirms the modify.",
+        commandStatus: gated.command.status,
+      });
+      return;
     }
+    // Local-only row (no broker linkage) — the stored take-profit is the record.
     await db.update(livePositionsTable).set({ takeProfit: body.takeProfit, updatedAt: new Date() })
       .where(ownedRow(id, userId));
     await appendEvent({ livePositionId: id, eventType: "TP_MOVED", severity: "INFO",
@@ -457,7 +500,9 @@ router.post("/positions/:id/close-confirmation", requireUser, async (req, res): 
     }
     res.json({
       requiresConfirmation: true,
-      summary: `Close ${row.direction} ${row.symbol} @ ${row.currentPrice ?? row.entryPrice} (uPnL ${row.unrealizedProfitLoss ?? 0})`,
+      // uPnL degrades to a labeled unknown when the sync never reported one —
+      // "0" would be a confident claim of break-even we cannot make.
+      summary: `Close ${row.direction} ${row.symbol} @ ${row.currentPrice ?? row.entryPrice} (uPnL ${row.unrealizedProfitLoss ?? "unknown — not yet synced"})`,
       blockers: [],
       aiExplanation: "Manual closes lock in current P&L and skip the planned exit. Confirm only if your original setup is truly invalidated.",
     });
@@ -481,10 +526,48 @@ router.post("/positions/:id/close", requireUser, async (req, res): Promise<void>
     }
 
     if (row.brokerPositionId) {
-      await queueMt5CommandWithGate("CLOSE", {
+      // Broker-mirrored position: the only honest close is one the broker
+      // confirms. The gate stores every command as BLOCKED (paper-only by
+      // construction — routes/mt5.ts queueCommand hardcodes status="BLOCKED",
+      // and the EA poll delivers only PENDING), so this CLOSE can never reach
+      // the venue. Stamping MANUALLY_CLOSED + a realized P/L here displayed a
+      // close the broker never performed — the old "Live-Trades Close is a
+      // mock" defect surviving on this legacy route. Refuse instead, surfacing
+      // the gate's own verdict; the row stays exactly as the broker last
+      // reported it. Real wiring that would replace this refusal: a
+      // fill-confirmed close (the meTrades LIVE path dispatches through the
+      // Phase-B pipeline, and lib/mt5/executionReconciler.ts already stamps
+      // this row's status/closedAt/realizedProfitLoss when a real CLOSE
+      // result arrives).
+      const gated = await queueMt5CommandWithGate("CLOSE", {
         ticket: Number(row.brokerPositionId) || null,
       });
+      if (gated.command.status !== "PENDING") {
+        await appendEvent({ livePositionId: id, eventType: "MANUAL_CLOSE_REFUSED", severity: "WARN",
+          message: `Close refused: broker command not deliverable (${gated.command.status}). ${gated.blockedReason ?? gated.command.detail ?? ""}`.trim(),
+          oldValue: { status: row.status }, newValue: { commandStatus: gated.command.status } });
+        res.status(409).json({
+          error: "Close command could not be delivered to the broker — the position was NOT closed and no P/L was recorded.",
+          commandStatus: gated.command.status,
+          blockedReason: gated.blockedReason ?? gated.command.detail ?? null,
+          mode: gated.mode,
+          aiExplanation: "Marking a broker-mirrored position closed while the close command cannot reach the broker would fabricate a close and a realized P/L. The position remains open at the venue and unchanged here.",
+        });
+        return;
+      }
+      // Deliverable (not producible today — the gate hardcodes BLOCKED; kept
+      // honest in case delivery is ever re-enabled): queued is still not
+      // filled. The row is stamped closed with a real P/L only when the EA's
+      // CLOSE result lands (lib/mt5/executionReconciler.ts).
+      res.status(202).json({
+        accepted: true,
+        message: "Close command queued for the broker. The position remains OPEN here until the broker confirms the close — no P/L is recorded until then.",
+        commandStatus: gated.command.status,
+      });
+      return;
     }
+    // Local-only row (no broker linkage) — the mirror itself is the record, so
+    // a manual close of it is real.
     await db.update(livePositionsTable).set({
       status: "MANUALLY_CLOSED", closedAt: new Date(), updatedAt: new Date(),
     }).where(ownedRow(id, userId));
@@ -496,11 +579,16 @@ router.post("/positions/:id/close", requireUser, async (req, res): Promise<void>
     let tradeRecordUpdated: boolean | null = null;
     if (row.tradeId) {
       const ownedTrade = and(eq(tradesTable.id, row.tradeId), eq(tradesTable.userId, userId));
-      // Derive close result from realized/unrealized PnL — never hardcode loss.
-      // If the broker never reported either value, we refuse to invent one:
-      // mark pnlStatus="UNKNOWN" + a data-quality flag so Trade Logs renders
-      // "P/L unavailable" and analytics aggregates exclude the row.
-      const rawPnl = row.realizedProfitLoss ?? row.unrealizedProfitLoss;
+      // Only a REALIZED figure may close the trade as pnlStatus="COMPUTED":
+      // row.realizedProfitLoss is written exclusively from real broker CLOSE
+      // fills (lib/mt5/executionReconciler.ts computes it from the fill price
+      // with established contract size + FX). The old fallback to
+      // row.unrealizedProfitLoss stamped a last-synced FLOATING mark of
+      // unbounded age as a trusted realized P/L — fabrication. Without a
+      // realized figure we refuse to invent one: pnl=null, pnlStatus="UNKNOWN"
+      // + a data-quality flag, so Trade Logs renders "P/L unavailable" and
+      // analytics aggregates exclude the row.
+      const rawPnl = row.realizedProfitLoss;
       const hasTrustedPnl = typeof rawPnl === "number" && Number.isFinite(rawPnl);
       if (hasTrustedPnl) {
         const tradeStatus = rawPnl >= 0 ? "CLOSED_WIN" : "CLOSED_LOSS";

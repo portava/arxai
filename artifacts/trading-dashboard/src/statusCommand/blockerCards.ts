@@ -13,6 +13,7 @@ import type { ChecklistItem } from "@/knowledge/setupChecklist";
 
 export type BlockerKind =
   | "emergency-stop"
+  | "emergency-stop-unknown"
   | "live-trading-disabled"
   | "broker-execution-disabled"
   | "mt5-deferred"
@@ -60,7 +61,7 @@ function withRoute(label: string, route: string | undefined): BlockerCard["relat
 export function buildBlockerCards(ctx: RuntimeContext, checklist: ChecklistItem[]): BlockerCard[] {
   const out: BlockerCard[] = [];
 
-  if (ctx.emergencyStopActive) {
+  if (ctx.emergencyStopActive === true) {
     out.push({
       kind: "emergency-stop",
       title: "Emergency Stop active",
@@ -72,6 +73,21 @@ export function buildBlockerCards(ctx: RuntimeContext, checklist: ChecklistItem[
       doNotDo: "Do not clear the kill switch just to silence the badge.",
       relatedRoute: withRoute("Open Emergency", "/emergency"),
       evidence: ["emergencyStopActive=true"],
+    });
+  } else if (ctx.emergencyStopActive === null) {
+    // Honest degradation: a kill-switch state we could not read is shown as
+    // unknown — never as "off".
+    out.push({
+      kind: "emergency-stop-unknown",
+      title: "Emergency Stop state unknown",
+      severity: "attention", nature: "error",
+      blocks: "Confirming whether the platform kill switch is engaged.",
+      why: "The kill-switch state could not be read from the server, so it is reported as unknown rather than assumed off.",
+      howToCheck: "Open the Emergency page, which reads the state directly.",
+      safeNextStep: "Refresh; if this persists, verify the server is reachable before trading.",
+      doNotDo: "Do not treat an unreadable kill switch as disengaged.",
+      relatedRoute: withRoute("Open Emergency", "/emergency"),
+      evidence: ["emergencyStopActive=null (read failed)"],
     });
   }
 

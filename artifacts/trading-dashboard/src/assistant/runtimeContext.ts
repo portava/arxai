@@ -85,6 +85,12 @@ export interface CollectInputs {
   bridge?: BridgeDiagnosticSummary | null;
   health?: HealthSummary | null;
   serverRoleHint?: RuntimeContext["serverRoleHint"];
+  /**
+   * Kill-switch state from /api/system/status (safety_core.kill_switch_engaged).
+   * Omitted/null = the read failed or has not completed yet → reported as
+   * unknown, never as "off".
+   */
+  emergencyStop?: boolean | null;
 }
 
 export function collectRuntimeContext(input: CollectInputs): RuntimeContext {
@@ -112,7 +118,10 @@ export function collectRuntimeContext(input: CollectInputs): RuntimeContext {
         : simulatorMode ? "simulator"
           : paperOnly ? "paper" : "unknown";
 
+  const emergencyStopActive = input.emergencyStop ?? null;
+
   const activeSafetyLocks: string[] = [];
+  if (emergencyStopActive === true) activeSafetyLocks.push("EMERGENCY STOP ENGAGED");
   if (liveTradingDisabled) activeSafetyLocks.push("LIVE TRADING DISABLED");
   if (brokerExecutionDisabled) activeSafetyLocks.push("BROKER EXECUTION DISABLED");
   if (brokerReadOnly) activeSafetyLocks.push("BROKER READ-ONLY");
@@ -140,7 +149,7 @@ export function collectRuntimeContext(input: CollectInputs): RuntimeContext {
     mt5BridgeConnected,
     heartbeatPresent,
     heartbeatAgeSeconds,
-    emergencyStopActive: false, // surfaced by bridge if/when server exposes it
+    emergencyStopActive, // real read from /api/system/status; null = unknown
     readiness: input.health && input.health.readinessReachable ? "unknown" : "unknown",
     serverRoleHint: input.serverRoleHint ?? "unknown",
     recentErrors: getErrors(),

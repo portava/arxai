@@ -28,6 +28,7 @@ import {
   resolveNewsRiskForSymbol,
 } from "../calendar/newsRiskResolver.js";
 import { __resetEconomicCalendarStateForTests } from "../calendar/economicCalendarService.js";
+import { summarizeWarning } from "../newsIntelligenceService.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SRC = resolve(HERE, "../../..");
@@ -129,6 +130,33 @@ describe("A1 — no provider configured yields an honest unavailable read", () =
     assert.equal(r.blockTrading, false);
     assert.equal(r.calendarAvailable, true);
     assert.equal(r.minutesUntilEvent, null);
+  });
+});
+
+describe("A1 — warningSummary never asserts quiet while the calendar is blind", () => {
+  // A disconnected economic-calendar feed always scores riskLevel "none"
+  // (zero scorable events). Before this fix, summarizeWarning rendered that as
+  // the affirmative "No major scheduled news for <symbol> in the current
+  // window." — asserting calm while the system could not see the calendar at
+  // all. Disconnected must read as UNKNOWN, never as confirmed quiet.
+  it("calendar disconnected + none → unknown, not 'no major scheduled news'", () => {
+    const s = summarizeWarning("EURUSD", "none", null, "unclear", false);
+    assert.ok(/unknown/i.test(s), `must say unknown, got: ${s}`);
+    assert.ok(
+      !/no major scheduled news/i.test(s),
+      `must not assert a quiet window while blind, got: ${s}`,
+    );
+  });
+
+  it("calendar connected + none → genuinely quiet window may be stated", () => {
+    const s = summarizeWarning("EURUSD", "none", null, "unclear", true);
+    assert.ok(/no major scheduled news/i.test(s), `a connected quiet read stays quiet: ${s}`);
+    assert.ok(!/unknown/i.test(s));
+  });
+
+  it("real elevated risk wording is unchanged by the connectivity flag", () => {
+    const s = summarizeWarning("EURUSD", "high", null, "bearish", true);
+    assert.ok(/HIGH news risk on EURUSD/.test(s));
   });
 });
 

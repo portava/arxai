@@ -106,6 +106,13 @@ export function sessionLossLimitBreached(netPnlCents: number, maxSessionLossUsd:
   return netPnlCents <= -usdToCents(maxSessionLossUsd);
 }
 
+/** Map a realized paper P&L (DOLLARS, as stored on paper_orders.profit_loss)
+ *  to the trade-link result label. Single source for every close path so the
+ *  session's win/loss accounting cannot drift between writers. */
+export function closeResultForPnl(pnlUsd: number): "WIN" | "LOSS" | "BREAK_EVEN" {
+  return pnlUsd > 0 ? "WIN" : pnlUsd < 0 ? "LOSS" : "BREAK_EVEN";
+}
+
 export interface PreflightResult {
   paperTestingAllowed: boolean;
   hardBlocks: Array<{ source: string; code: string; message: string }>;
@@ -503,6 +510,16 @@ export interface LinkArgs {
   pnl?: number;
 }
 
+// DEAD-GAUGE FIX: this used to be reachable ONLY via POST
+// /api/paper-sessions/link-trade, which nothing called — so the session row's
+// paperTradesOpened / paperTradesClosed / netPnl / winRate stayed at their
+// DB defaults forever, and the session loss limit (which reads netPnl) could
+// never trip from real trading. It is now called from the real open/close
+// paths: EE execution open (paperExecutionService), EE monitor + manual
+// closes (paperExecutionMonitor), and the Build Q sandbox open/close/SL-TP
+// paths (routes/paperTrading.ts) for orders that carry a user_id.
+// UNITS: args.pnl is CENTS (paper_session_trade_links.pnl / paper_sessions
+// .net_pnl are integer-cents columns) — callers convert via usdToCents().
 export async function linkTradeToActiveSession(userId: number, args: LinkArgs) {
   try {
     const cur = await getActiveSession(userId);
@@ -527,6 +544,18 @@ export async function linkTradeToActiveSession(userId: number, args: LinkArgs) {
           netPnl: sql`${paperSessionsTable.netPnl} + ${delta}`,
           updatedAt: new Date(),
         })
+        .where(and(eq(paperSessionsTable.userId, userId), eq(paperSessionsTable.paperSessionId, cur.paper_session_id)));
+      // win_rate previously had NO writer at all — the row default 0 rendered
+      // forever. Recompute it from the CLOSE links now that this one exists.
+      const closes = await db.select({ result: paperSessionTradeLinksTable.result })
+        .from(paperSessionTradeLinksTable)
+        .where(and(
+          eq(paperSessionTradeLinksTable.paperSessionId, cur.paper_session_id),
+          eq(paperSessionTradeLinksTable.action, "CLOSE"),
+        ));
+      const winCount = closes.filter((c) => c.result === "WIN").length;
+      await db.update(paperSessionsTable)
+        .set({ winRate: closes.length > 0 ? Math.round((winCount / closes.length) * 100) : 0 })
         .where(and(eq(paperSessionsTable.userId, userId), eq(paperSessionsTable.paperSessionId, cur.paper_session_id)));
     }
     await emit(cur.paper_session_id, "TRADE_LINKED", `${args.action ?? "LINK"} linked: trade=${args.tradeId ?? ""} debrief=${args.debriefId ?? ""} learning=${args.learningEventId ?? ""}`, "INFO", args as Record<string, unknown>);

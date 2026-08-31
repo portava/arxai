@@ -49,6 +49,14 @@ type ShellResponse = {
     tradesToday: number;
     winsToday: number;
     lossesToday: number;
+    // Provenance of the closed-P/L figures (now computed from real closed
+    // trades, scoped to one environment, untrusted-P/L rows excluded).
+    basis?: {
+      source: string;
+      scopeMode: "LIVE" | "DEMO";
+      scopeModeReason: string;
+      excludedUnknownPnlCount: number;
+    };
   };
   risk: {
     availableRiskAmount: number | null;
@@ -302,6 +310,23 @@ export default function MyAccountPage() {
           <Stat label="Wins Today" value={String(s.pnl.winsToday)} testid="my-wins-today" />
           <Stat label="Losses Today" value={String(s.pnl.lossesToday)} testid="my-losses-today" />
         </CardContent>
+        {/* Basis of the closed-P/L figures. These come from real closed
+            trades in ONE environment (never broker + simulator summed), and
+            any closed trade whose realised P/L could not be verified is
+            excluded — stated here, never silently dropped. */}
+        {s.pnl.basis && (
+          <CardContent className="pt-0 space-y-1">
+            <p className="text-[11px] text-txt-secondary" data-testid="my-pnl-basis">
+              Basis: closed {s.pnl.basis.scopeMode === "LIVE" ? "live" : "demo"} trades only — environments are never mixed.
+            </p>
+            {s.pnl.basis.excludedUnknownPnlCount > 0 && (
+              <p className="flex items-start gap-1 text-[11px] text-warning dark:text-warning" data-testid="my-pnl-excluded-unknown">
+                <AlertCircle className="h-3 w-3 mt-[1px] shrink-0" />
+                {s.pnl.basis.excludedUnknownPnlCount} closed trade{s.pnl.basis.excludedUnknownPnlCount === 1 ? "" : "s"} excluded — realised P/L could not be verified. Totals show verified amounts only.
+              </p>
+            )}
+          </CardContent>
+        )}
       </Card>
 
       {/* My Risk */}

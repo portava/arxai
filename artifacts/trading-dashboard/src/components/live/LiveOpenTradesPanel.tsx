@@ -47,7 +47,15 @@ function toneFor(v: number | null): string {
 export function LiveOpenTradesPanel() {
   const q = useQuery<SlotSummary>({
     queryKey: ["live", "slot-summary"],
-    queryFn: () => fetch(`${BASE}/api/me/live/slot-summary`, { credentials: "include" }).then((r) => r.json()),
+    // P0-3 pattern (see OpenLivePositions) — a non-OK response MUST throw.
+    // `.then(r => r.json())` with no r.ok check let a 500/401 error body
+    // collapse to positions=[] and render "No open trades right now." — a
+    // failed read presented as "you are flat" on a real-money surface.
+    queryFn: async () => {
+      const r = await fetch(`${BASE}/api/me/live/slot-summary`, { credentials: "include" });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    },
     refetchInterval: 3000,
     refetchOnWindowFocus: false,
     staleTime: 1500,
@@ -55,6 +63,7 @@ export function LiveOpenTradesPanel() {
 
   const ccy = q.data?.accountCurrency ?? "USD";
   const positions = q.data?.positions ?? [];
+  const countKnown = !q.isLoading && !q.isError && q.data != null;
 
   return (
     <Card data-testid="live-open-trades-panel">
@@ -62,7 +71,9 @@ export function LiveOpenTradesPanel() {
         <div>
           <CardTitle className="flex items-center gap-2 text-base">
             <Briefcase className="h-4 w-4" /> Open Trades
-            <span className="text-xs text-muted-foreground font-normal">({positions.length})</span>
+            <span className="text-xs text-muted-foreground font-normal">
+              {countKnown ? `(${positions.length})` : "(count unavailable)"}
+            </span>
           </CardTitle>
           <CardDescription>Live floating P/L per position, refreshed every 3 seconds.</CardDescription>
         </div>
@@ -78,7 +89,32 @@ export function LiveOpenTradesPanel() {
       </CardHeader>
       <CardContent>
         {q.isLoading ? (
-          <div className="text-sm text-muted-foreground py-4 text-center">Loading open trades…</div>
+          <div className="text-sm text-muted-foreground py-4 text-center" data-testid="open-trades-loading">Loading open trades…</div>
+        ) : q.isError ? (
+          // Failed read ≠ flat. Mirror OpenLivePositions' P0-3 error state:
+          // warn against the "I am flat" reading and offer a retry.
+          <div
+            className="flex flex-col items-center gap-2 rounded border border-warning/40 bg-warning/10 px-3 py-4 text-center"
+            role="alert"
+            data-testid="open-trades-error"
+          >
+            <div className="flex items-center gap-2 text-sm font-semibold text-warning">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              Couldn&apos;t load open trades — retrying. Do not assume you are flat.
+            </div>
+            <div className="text-xs text-warning/80">
+              Your broker may still hold open positions. Check MT5 directly before placing or closing anything.
+            </div>
+            <button
+              type="button"
+              className="rounded border border-border px-2 py-1 text-xs hover:bg-muted"
+              onClick={() => void q.refetch()}
+              disabled={q.isFetching}
+              data-testid="btn-retry-open-trades"
+            >
+              {q.isFetching ? "Retrying…" : "Retry"}
+            </button>
+          </div>
         ) : positions.length === 0 ? (
           <div className="text-sm text-muted-foreground py-4 text-center" data-testid="open-trades-empty">
             No open trades right now.

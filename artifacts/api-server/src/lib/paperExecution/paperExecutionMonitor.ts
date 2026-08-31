@@ -20,10 +20,13 @@ import { and, eq } from "drizzle-orm";
 import { logger } from "../logger.js";
 import { getMarketData } from "../marketData/marketDataService.js";
 import { runAutoDebrief } from "../autoDebriefService.js";
+import { linkTradeToActiveSession, usdToCents, closeResultForPnl } from "../paperSession/manager.js";
 
 const SIMULATED_TAG = "Simulated — paper trading does not guarantee live results.";
 
-function unrealizedPnl(direction: string, lotSize: number, entry: number, current: number): number {
+// Exported: the trading-cockpit summary prices open paper trades at read time
+// with this exact formula, so the two surfaces can never disagree on scale.
+export function unrealizedPnl(direction: string, lotSize: number, entry: number, current: number): number {
   const dir = direction === "BUY" ? 1 : -1;
   return dir * (current - entry) * lotSize * 100;
 }
@@ -122,6 +125,22 @@ export async function runPaperMonitor(opts?: {
       message: `${SIMULATED_TAG} EE-monitor ${hit} hit at ${exitPrice.toFixed(5)}, P&L ${realized.toFixed(2)}`,
     }).catch(() => {});
 
+    // Session accounting (Build PP): record this close against the owner's
+    // ACTIVE paper session so the session Net P&L / closed counters and the
+    // session loss-limit guard track real closes. Orders with no user_id
+    // (legacy sandbox rows placed with no authenticated caller) cannot be
+    // attributed to a session and are honestly left uncounted.
+    if (order.userId != null) {
+      await linkTradeToActiveSession(order.userId, {
+        tradeId: String(order.id),
+        decisionId: order.decisionId != null ? String(order.decisionId) : undefined,
+        symbol: order.symbol,
+        action: "CLOSE",
+        result: closeResultForPnl(realized),
+        pnl: usdToCents(realized),
+      });
+    }
+
     // Sync paper_executions row (if one exists for this decision_id).
     if (order.decisionId != null) {
       const eeStatus = hit === "TP" ? "PAPER_CLOSED_WIN"
@@ -183,6 +202,18 @@ export async function closePaperManually(orderId: number, opts?: { exitPrice?: n
     paperOrderId: orderId, eventType: "CLOSED_MANUAL",
     message: `${SIMULATED_TAG} EE manual close @ ${exitPrice.toFixed(5)}, P&L ${pnl.toFixed(2)}`,
   }).catch(() => {});
+
+  // Session accounting (Build PP) — same contract as the monitor close above.
+  if (order.userId != null) {
+    await linkTradeToActiveSession(order.userId, {
+      tradeId: String(order.id),
+      decisionId: order.decisionId != null ? String(order.decisionId) : undefined,
+      symbol: order.symbol,
+      action: "CLOSE",
+      result: closeResultForPnl(pnl),
+      pnl: usdToCents(pnl),
+    });
+  }
 
   if (order.decisionId != null) {
     await db.update(paperExecutionsTable)

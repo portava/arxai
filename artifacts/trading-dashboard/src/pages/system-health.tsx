@@ -7,7 +7,8 @@ type Subsys = { status: string; notes: string[]; metrics?: Record<string, unknow
 type Report = {
   health_check_id: string; generated_at: string;
   overallStatus: "HEALTHY"|"DEGRADED"|"UNSAFE"|"FAILED";
-  liveTradingStatus: "DISABLED"; mode: "PAPER_ONLY";
+  // Read from the real Phase B arm switch at check time; UNKNOWN = read failed.
+  liveTradingStatus: "ENABLED"|"DISABLED"|"UNKNOWN"; mode: "LIVE_ARMED"|"PAPER_ONLY"|"UNKNOWN";
   subsystemStatus: Record<string, Subsys>;
   databaseStatus: { connected: boolean; missingTables: string[]; rowCounts: Record<string, number> };
   endpointStatus: { totalChecked: number; passed: number; failed: number; degraded: number; results: Array<{ path: string; status: number|null; ok: boolean; latencyMs: number }> };
@@ -46,7 +47,7 @@ export default function SystemHealthPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">System Health</h1>
-          <p className="text-sm text-muted-foreground">Build MM — Diagnostics, audit & admin (PAPER_ONLY, live trading DISABLED)</p>
+          <p className="text-sm text-muted-foreground">Build MM — Diagnostics, audit & admin. Live/paper state below is read from the live arming switch at check time.</p>
         </div>
         <Button onClick={run} disabled={loading} data-testid="btn-run-health-check">{loading ? "Running…" : "Run health check"}</Button>
       </div>
@@ -65,8 +66,13 @@ export default function SystemHealthPage() {
         <>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Card><CardHeader><CardTitle className="text-xs">Overall</CardTitle></CardHeader><CardContent><Badge variant={tone(report.overallStatus)}>{report.overallStatus}</Badge></CardContent></Card>
-            <Card><CardHeader><CardTitle className="text-xs">Live trading</CardTitle></CardHeader><CardContent><Badge variant="outline">{report.liveTradingStatus}</Badge></CardContent></Card>
-            <Card><CardHeader><CardTitle className="text-xs">Mode</CardTitle></CardHeader><CardContent><Badge>{report.mode}</Badge></CardContent></Card>
+            <Card><CardHeader><CardTitle className="text-xs">Live trading</CardTitle></CardHeader><CardContent>
+              <Badge variant={report.liveTradingStatus === "ENABLED" ? "destructive" : report.liveTradingStatus === "UNKNOWN" ? "secondary" : "outline"} data-testid="badge-live-trading">{report.liveTradingStatus}</Badge>
+              {report.liveTradingStatus === "UNKNOWN" && <p className="mt-1 text-[10px] text-muted-foreground">Arm-switch read failed — showing unknown rather than guessing.</p>}
+            </CardContent></Card>
+            <Card><CardHeader><CardTitle className="text-xs">Mode</CardTitle></CardHeader><CardContent>
+              <Badge variant={report.mode === "LIVE_ARMED" ? "destructive" : report.mode === "UNKNOWN" ? "secondary" : "default"} data-testid="badge-mode">{report.mode}</Badge>
+            </CardContent></Card>
             <Card><CardHeader><CardTitle className="text-xs">Critical unread</CardTitle></CardHeader><CardContent>{report.performanceStatus.latestNotificationCriticalCount}</CardContent></Card>
           </div>
 

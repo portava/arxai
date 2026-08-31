@@ -126,6 +126,36 @@ export function resolveBrokerCloseOutcome(ev: BrokerCloseEvidence): BrokerCloseO
 }
 
 /**
+ * PURE. May an ALREADY-RECORDED close be re-recorded with new evidence?
+ *
+ * The recorder (`recordMissionTradeCloseByBrokerTicket`) is idempotent: once a
+ * close carries a missed-profit verdict, a repeat offer is a no-op. The ONE
+ * exception is the reconciliation upgrade: a close first recorded WITHOUT a
+ * broker-confirmed P/L (an ARX close fill — the EA result carries no realised
+ * figure — or a numberless broker absence) may be upgraded when broker truth
+ * later arrives carrying the venue's own number. Strictly one-way:
+ *   • the incoming recording must itself be RECONCILED with a real broker P/L;
+ *   • a close already RECONCILED is never rewritten — the first broker figure
+ *     stands, so a second (possibly conflicting) report cannot flap it;
+ *   • a numberless offer never "upgrades" anything — it is the plain no-op.
+ * A legacy record with no `outcome` provenance at all is upgradeable: whatever
+ * number it holds was never broker-labelled, and the broker's own figure is
+ * strictly more truthful.
+ */
+export function mayUpgradeRecordedOutcome(args: {
+  /** `resultJson.outcome.status` on the recorded close (unknown for legacy rows). */
+  recordedStatus: unknown;
+  incomingStatus: MissionOutcomeStatus | null | undefined;
+  incomingRealisedPnl: number | null | undefined;
+}): boolean {
+  return (
+    args.incomingStatus === "RECONCILED" &&
+    isBrokerReportedPnl(args.incomingRealisedPnl) &&
+    args.recordedStatus !== "RECONCILED"
+  );
+}
+
+/**
  * A close the broker explicitly REPORTED for one of our tickets, with whatever
  * numbers it chose to give us. Any of the numbers may legitimately be absent.
  */

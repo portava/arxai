@@ -1,5 +1,13 @@
 // Build RR — Onboarding routes. Read/write onboarding state ONLY.
 // SAFETY: Acknowledgements never unlock live trading. ALL responses scrubbed.
+//
+// HONESTY: this envelope used to stamp appMode:"PAPER_ONLY" /
+// liveTradingStatus:"DISABLED" / canPlaceLiveTrade:false on EVERY response as
+// compile-time constants — on a build where live dispatch really exists and is
+// operator/admin-gated. Those fabricated fields are gone. /onboarding/status
+// now reports the caller's REAL account-level live status through the same
+// chain the Help Center uses (readLiveReadiness), degrading to UNKNOWN with a
+// reason when a read fails — never to a confident "DISABLED".
 
 import { Router, type IRouter } from "express";
 import { z } from "zod/v4";
@@ -8,6 +16,7 @@ import {
   resetOnboarding, acknowledge, listEvents,
 } from "../lib/onboarding/state.js";
 import { ONBOARDING_STEPS, REQUIRED_ACK_KEYS, type AckKey } from "../lib/onboarding/steps.js";
+import { readLiveReadiness } from "../lib/onboarding/whyBlocked.js";
 import { scrub } from "../lib/security/redact.js";
 import { requireUser } from "../lib/auth/middleware.js";
 
@@ -17,15 +26,11 @@ const router: IRouter = Router();
 function uid(req: import("express").Request): number {
   return req.authUser!.id;
 }
-const DISCLAIMER = "Build RR — Guided Onboarding + Smart Help. Education only. Never places trades, never enables live trading, never calls MT5, never modifies canPlaceTrades, never exposes secrets, never recommends live trading.";
+const DISCLAIMER = "Build RR — Guided Onboarding + Smart Help. Education only. Onboarding never places trades, never changes your trading mode, never calls MT5, never modifies canPlaceTrades, never exposes secrets. Live trading is possible on this platform but default-deny and operator/admin-gated; acknowledgements never unlock it.";
 
 function envelope(payload: Record<string, unknown>) {
   return scrub({
     system: "onboarding",
-    appMode: "PAPER_ONLY" as const,
-    liveTradingStatus: "DISABLED" as const,
-    mode: "PAPER_ONLY" as const,
-    canPlaceLiveTrade: false,
     disclaimer: DISCLAIMER,
     ...payload,
   }) as Record<string, unknown>;
@@ -33,7 +38,16 @@ function envelope(payload: Record<string, unknown>) {
 
 router.get("/onboarding/status", requireUser, async (req, res) => {
   const status = await getStatus(uid(req));
-  res.json(envelope({ status: status as unknown as Record<string, unknown> }));
+  // The caller's REAL account-level live status ("ALLOWED"|"BLOCKED"|"UNKNOWN")
+  // via the same chain whyBlocked/help use. A failed read is UNKNOWN with the
+  // reason — never downgraded to a fabricated "DISABLED".
+  const live = await readLiveReadiness(uid(req)).catch(() => null);
+  res.json(envelope({
+    status: status as unknown as Record<string, unknown>,
+    liveTrading: live
+      ? { status: live.status, reasons: live.plain }
+      : { status: "UNKNOWN", reasons: ["Live-trading status could not be read. Treat it as unknown, not as safe."] },
+  }));
 });
 
 // Static catalogue only — the same step list for every caller, no state read.
@@ -93,9 +107,7 @@ router.post("/onboarding/acknowledge", requireUser, async (req, res) => {
         riskDisclaimerAcknowledged: row.riskDisclaimerAcknowledged,
         replaySimulationAcknowledged: row.replaySimulationAcknowledged,
         brokerReadonlyAcknowledged: row.brokerReadonlyAcknowledged,
-        liveTradingStatus: "DISABLED",
-        canPlaceLiveTrade: false,
-        note: "Acknowledgement recorded. Live trading remains DISABLED.",
+        note: "Acknowledgement recorded. Acknowledgements never change your trading mode — live trading stays operator/admin-gated.",
       },
     }));
   } catch (e) {

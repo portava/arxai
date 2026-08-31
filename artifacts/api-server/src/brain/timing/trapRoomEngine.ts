@@ -32,10 +32,28 @@ export interface TrapRoomOutput {
   sellPressure: SellPressure;
 }
 
+// Minimum candles before trap/room analysis runs. MUST stay equal to the
+// `hasCandleData` threshold in marketTimingBrainService (candles >= 10) so a
+// read can never carry dataQuality.hasCandleData=true while these fields are
+// defaulted — the UI withholds the defaulted values exactly when
+// hasCandleData is false.
+const MIN_CANDLES_FOR_ANALYSIS = 10;
+
 export function computeTrapAndRoom(input: TrapRoomInput): TrapRoomOutput {
   const { candles, spread, mid, isSynthetic, killZoneActive, fakeoutRisk, atrRatio, heatState, broadFlowVerdict } = input;
 
-  if (candles.length < 15) {
+  if (candles.length < MIN_CANDLES_FOR_ANALYSIS) {
+    // HONEST LIMITED SURFACE — not enough candles for trap/room analysis:
+    // - trapProbability falls back to the session's static fakeout risk; the
+    //   heat-map UI withholds it as a measured value when
+    //   dataQuality.hasCandleData is false.
+    // - roomToMove stays at the 50 midpoint only because the RoomToMove domain
+    //   type is a non-nullable number; the real fix is a nullable RoomToMove
+    //   (shared domain + generated client change) so the UI's "—" path fires.
+    // - pressure is still computed from whatever real candles exist — a
+    //   fabricated neutral 50/50 is only emitted when there are no candles (or
+    //   no volume) at all, and the UI withholds it in that case too.
+    const { buy, sell } = computePressure(candles);
     return {
       trapProbability: Math.min(100, Math.max(0, fakeoutRisk)),
       trapTypes: [],
@@ -43,8 +61,8 @@ export function computeTrapAndRoom(input: TrapRoomInput): TrapRoomOutput {
       nearestResistance: null,
       nearestSupport: null,
       distanceToTargetPips: null,
-      buyPressure: 50,
-      sellPressure: 50,
+      buyPressure: buy,
+      sellPressure: sell,
     };
   }
 

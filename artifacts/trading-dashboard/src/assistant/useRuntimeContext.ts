@@ -19,6 +19,9 @@ export function useRuntimeContext(): RuntimeContext {
   const [chartSymbol] = useChartSymbol();
   const [health, setHealth] = useState<HealthSummary | null>(null);
   const [bridge, setBridge] = useState<BridgeDiagnosticSummary | null>(null);
+  // null = kill-switch state unknown (read failed / not yet loaded) — the
+  // context reports it as unknown rather than a fabricated "off".
+  const [emergencyStop, setEmergencyStop] = useState<boolean | null>(null);
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
@@ -27,13 +30,17 @@ export function useRuntimeContext(): RuntimeContext {
       // Perf: skip the network round-trip while the tab is backgrounded.
       // The next visibilitychange (or interval tick once visible) resumes it.
       if (typeof document !== "undefined" && document.hidden) return;
-      const [h, b] = await Promise.all([
+      const [h, b, sys] = await Promise.all([
         safeJson<HealthSummary>("/api/app/health-summary"),
         safeJson<BridgeDiagnosticSummary>("/api/mt5/diagnostic-summary"),
+        safeJson<{ killSwitchEngaged?: boolean }>("/api/system/status"),
       ]);
       if (cancelled) return;
       if (h) setHealth(h);
       if (b) setBridge(b);
+      // Unlike health/bridge we do NOT keep a stale value on failure: a
+      // kill-switch state we could not confirm degrades to null (unknown).
+      setEmergencyStop(typeof sys?.killSwitchEngaged === "boolean" ? sys.killSwitchEngaged : null);
       setTick((t) => t + 1);
     };
     void refresh();
@@ -57,5 +64,6 @@ export function useRuntimeContext(): RuntimeContext {
     selectedSymbol: chartSymbol ?? null,
     bridge,
     health,
-  }), [location, chartSymbol, bridge, health, tick]);
+    emergencyStop,
+  }), [location, chartSymbol, bridge, health, emergencyStop, tick]);
 }

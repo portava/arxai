@@ -58,10 +58,11 @@ import {
 } from "./missionRiskService.js";
 import { getRunning } from "./intelligence/mfeTracker.js";
 import type { MissionExitSignalUnavailability } from "./missionExitSignals.js";
-import type {
-  MissionOutcomeSource,
-  MissionOutcomeStatus,
-  MissionOutcomeUnreconciledReason,
+import {
+  mayUpgradeRecordedOutcome,
+  type MissionOutcomeSource,
+  type MissionOutcomeStatus,
+  type MissionOutcomeUnreconciledReason,
 } from "./live/brokerCloseOutcome.js";
 import { brokerCloseObservationPolicy } from "./live/brokerAbsencePolicy.js";
 import {
@@ -1368,7 +1369,22 @@ export async function recordMissionTradeCloseByBrokerTicket(args: {
   if (!draft) return { ok: false, kind: "not_mission_trade" };
 
   // Idempotent: already closed AND already carries a missed-profit verdict.
-  if (draft.closedAt != null && asRecord(draft.resultJson).missedProfit != null) {
+  // ONE exception — the reconciliation upgrade (see mayUpgradeRecordedOutcome):
+  // a close first recorded WITHOUT a broker-confirmed P/L (the ARX close fill
+  // records honestly UNRECONCILED because the EA result carries no realised
+  // figure) is re-recorded when the broker close report later supplies the
+  // venue's own number. Without this seam that RECONCILED report would no-op
+  // here and the mission's realised figure would stay incomplete forever.
+  const alreadyRecorded =
+    draft.closedAt != null && asRecord(draft.resultJson).missedProfit != null;
+  if (
+    alreadyRecorded &&
+    !mayUpgradeRecordedOutcome({
+      recordedStatus: asRecord(asRecord(draft.resultJson).outcome).status,
+      incomingStatus: args.outcomeStatus ?? null,
+      incomingRealisedPnl: args.realisedPnl,
+    })
+  ) {
     return { ok: false, kind: "not_mission_trade" };
   }
 
@@ -1381,7 +1397,11 @@ export async function recordMissionTradeCloseByBrokerTicket(args: {
   const priorResult = asRecord(draft.resultJson);
   const lastTrigger =
     typeof priorResult.lastExitTrigger === "string" ? priorResult.lastExitTrigger : null;
-  const exitReason = args.exitReason ?? lastTrigger ?? null;
+  // On a reconciliation upgrade the exit trigger the FIRST recording
+  // established stands — an ARX-initiated tp/trail close whose P/L the broker
+  // later confirms did not thereby become a "broker_side_close".
+  const exitReason =
+    (alreadyRecorded ? draft.exitReason : null) ?? args.exitReason ?? lastTrigger ?? null;
   const protectiveExit =
     isProtectiveExitTrigger(lastTrigger) || isProtectiveExitTrigger(args.exitReason);
 
@@ -1390,7 +1410,10 @@ export async function recordMissionTradeCloseByBrokerTicket(args: {
     missionId: draft.missionId,
     draftId: draft.draftId,
     realisedPnl: args.realisedPnl,
-    mfeProfit: running.peakPnl,
+    // On a reconciliation upgrade the running MFE tracker may already be gone;
+    // fall back to the MFE the FIRST recording captured while it was alive
+    // rather than degrading the verdict to "unknown" and losing it.
+    mfeProfit: running.peakPnl ?? numOrNull(draft.mfe),
     maeProfit: null,
     brokerTicket: ticket,
     exitReason,

@@ -108,12 +108,18 @@ export function AccountSnapshotCard() {
   const canonicalAvailable = allocationView?.availableAllocation ?? null;
   const hasAllocation = allocationView?.hasAllocation ?? false;
 
-  const alloc = useMemo(() => ({
-    balance: accounts.reduce((s, a) => s + Number(a.virtualBalance || 0), 0),
-    equity: accounts.reduce((s, a) => s + Number(a.virtualEquity || 0), 0),
-    pnl: accounts.reduce((s, a) => s + Number(a.virtualPnl || 0), 0),
-    open: accounts.reduce((s, a) => s + Number(a.openAttributions || 0), 0),
-  }), [accounts]);
+  // No allocation rows = no measurement. Reducing [] to 0 manufactured a
+  // confident "$0.00 / 0 trades" account whenever the summary read failed (or
+  // simply hadn't landed) — indistinguishable from a genuinely empty account.
+  // Typed nulls degrade to "—" tiles instead.
+  const alloc = useMemo(() => (accounts.length === 0
+    ? { balance: null, equity: null, pnl: null, open: null }
+    : {
+        balance: accounts.reduce((s, a) => s + Number(a.virtualBalance || 0), 0),
+        equity: accounts.reduce((s, a) => s + Number(a.virtualEquity || 0), 0),
+        pnl: accounts.reduce((s, a) => s + Number(a.virtualPnl || 0), 0),
+        open: accounts.reduce((s, a) => s + Number(a.openAttributions || 0), 0),
+      }), [accounts]);
 
   // When in live-shared mode (non-admin): prefer the SSE stream's open P/L and
   // count — they come from the same buildLiveAccountSnapshot adapter as the
@@ -259,8 +265,22 @@ export function AccountSnapshotCard() {
           }
           data-testid="cockpit-open-pnl"
         />
-        <StatTile label="Open Trades" value={String(openCount ?? 0)} />
+        {/* null count = not measured (failed/absent read) → "—", never "0". */}
+        <StatTile label="Open Trades" value={openCount != null ? String(openCount) : "—"} />
       </div>
+
+      {/* Failed summary read — every tile above degrades to "—"; say why.
+          This is a read-state warning, distinct from the genuine empty states
+          (no-allocation / allocation-exhausted notes below). */}
+      {summaryQ.isError && !summary && (
+        <p
+          className="mt-2 flex items-center gap-1 text-[11px] font-medium text-warning"
+          data-testid="account-summary-read-failed"
+        >
+          <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden />
+          Couldn&apos;t read your account — figures are withheld rather than guessed. Retrying automatically.
+        </p>
+      )}
 
       {equityStale && (
         <p
@@ -680,6 +700,10 @@ export function OpenPositionsCard() {
     ? (liveCtx.snapshot.openPositionsCount ?? endpointCount)
     : endpointCount;
 
+  // A failed positions read with no SSE snapshot to fall back on is NOT a
+  // flat book. rows=[] in that state came from `?? []`, not from a read.
+  const positionsReadFailed = posQ.isError && liveCtx.snapshot == null;
+
   // Owner/admin master view labels real exposure; regular users only ever get
   // ARX-attributed rows (no `source` field → no badge), isolation unchanged.
   const SOURCE_BADGE: Record<string, { text: string; tone: "success" | "warning" | "info" }> = {
@@ -693,7 +717,7 @@ export function OpenPositionsCard() {
       title="Open Positions"
       icon={<Briefcase className="h-[18px] w-[18px]" />}
       accent="blue"
-      badge={String(count)}
+      badge={positionsReadFailed ? "?" : String(count)}
       loading={posQ.isLoading}
       headerExtra={
         liveCtx.snapshot != null ? (
@@ -712,7 +736,19 @@ export function OpenPositionsCard() {
           Master-account exposure — every real open position, including manual / unattributed.
         </p>
       )}
-      {rows.length === 0 ? (
+      {positionsReadFailed ? (
+        <div
+          className="flex flex-col items-center justify-center rounded-lg border border-warning/40 bg-warning/10 px-3 py-6 text-center"
+          role="alert"
+          data-testid="cockpit-positions-read-failed"
+        >
+          <AlertTriangle className="mb-2 h-6 w-6 text-warning" />
+          <p className="text-sm font-medium text-warning">Positions could not be read</p>
+          <p className="text-xs text-warning/80">
+            This is not a statement that you are flat — the read failed and is retrying.
+          </p>
+        </div>
+      ) : rows.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-6 text-center">
           <Briefcase className="mb-2 h-6 w-6 text-txt-muted" />
           <p className="text-sm font-medium text-foreground">No open positions</p>
@@ -776,7 +812,17 @@ export function TodayPerformanceCard() {
       loading={perfQ.isLoading}
       data-testid="cockpit-today-performance"
     >
-      {empty ? (
+      {perfQ.isError && !p ? (
+        // A failed summary read is NOT "no trade closed today" — that copy
+        // asserts a measured flat day from no measurement at all.
+        <div
+          className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-4 text-center text-sm font-medium text-warning"
+          role="alert"
+          data-testid="cockpit-today-read-failed"
+        >
+          Couldn&apos;t read today&apos;s performance — this is not a statement that you traded flat. Retrying.
+        </div>
+      ) : empty ? (
         <div className="py-4 text-center text-sm text-txt-secondary">
           No trade has closed today yet.
           {p && p.totalTrades > 0

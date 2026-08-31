@@ -1,8 +1,9 @@
 // ── Profit Mission Phase 6 — Mission risk service (state + persistence + journal) ─
 //
 // SAFETY / SCOPE:
-//   - ADDITIVE + STRICTER-ONLY. This service COMPOSES the per-user Risk Governor
-//     history (`aggregateHistory`, never re-derived) with the pure mission-risk
+//   - ADDITIVE + STRICTER-ONLY. This service COMPOSES the Risk Governor's
+//     history aggregation (`aggregateHistory`, never re-derived) — fed with the
+//     mission's own executed trades — with the pure mission-risk
 //     and blow-up engines (`@workspace/domain/profit-mission`). It can only make a
 //     mission stricter (reduce risk / cooldown / pause / stop); it never relaxes a
 //     gate and never places a trade. Execution lives in `missionExecution.ts`.
@@ -10,14 +11,22 @@
 //     `profit_missions.riskJson` and appends an append-only `mission_events` row
 //     when the mission's protective mode ESCALATES (stricter-only) — both inside
 //     ONE `db.transaction` loaded `FOR UPDATE` scoped by (id, userId), fail-closed.
-//   - Strictly per-user / per-mission: the mission row and the paper-trade history
-//     are both filtered by userId; a mission/trade of another user is never read.
+//   - Strictly per-user / per-mission: the mission row and the mission's own
+//     trade history are both filtered by (missionId, userId); a mission/trade of
+//     another user — or of another mission — is never read.
+//   - THE RISK BOOK IS THE MISSION'S OWN EXECUTED TRADES (mission_trade_drafts),
+//     NOT the user's manual paper-trade journal. A paper/demo mission's closes
+//     live in the sim_* column family; a live mission's in the broker-reconciled
+//     columns. Reading the manual journal here made every counter a dead gauge:
+//     a mission on a real losing streak showed "Consecutive losses: 0" and its
+//     cooldown/stop ladder never fired.
 import { and, desc, eq } from "drizzle-orm";
 import {
   db,
   profitMissionsTable,
   missionEventsTable,
-  paperTradesTable,
+  missionTradeDraftsTable,
+  type MissionTradeDraftRow,
   type PaperTrade,
 } from "@workspace/db";
 import {
@@ -104,6 +113,35 @@ function resolvePace(paceRatio: number): MissionPace {
   if (paceRatio >= 1.1) return "ahead";
   if (paceRatio <= 0.9) return "behind";
   return "on_track";
+}
+
+/**
+ * Normalize the mission's OWN executed drafts onto the minimal trade shape
+ * `aggregateHistory` reads (status / openedAt / closedAt / createdAt / pnl).
+ * Pure; exported for the offline QA proof.
+ *
+ * Each row is read from exactly ONE column family — `sim_*` for a simulated
+ * (paper/demo) row, the broker-reconciled columns otherwise — mirroring the
+ * forward test aggregator. An executed row with no close timestamp counts as an
+ * OPEN position (protective: it raises trade counts, never lowers them). A
+ * closed row whose P/L was not derivable keeps `pnl: null` — the engine already
+ * tolerates a null P/L on the manual journal and we never invent a number.
+ */
+export function missionOwnTradeHistory(rows: MissionTradeDraftRow[]): PaperTrade[] {
+  return rows.map((r) => {
+    const useSim = r.simulated === true;
+    const closedAt = useSim ? r.simClosedAt : r.closedAt;
+    const pnl = useSim ? r.simPnl : r.pnl;
+    const openedAt = useSim ? (r.simOpenedAt ?? r.createdAt) : r.createdAt;
+    // aggregateHistory only reads these five fields; the cast documents that.
+    return {
+      status: closedAt != null ? "closed" : "open",
+      openedAt,
+      closedAt,
+      createdAt: r.createdAt,
+      pnl,
+    } as PaperTrade;
+  });
 }
 
 /**
@@ -267,8 +305,10 @@ export type RefreshMissionRiskResult =
  * Recompute a mission's risk read and persist it to `profit_missions.riskJson`,
  * appending a journal event when the protective mode ESCALATES (stricter-only) or
  * an emergency newly triggers. The mission is loaded `FOR UPDATE` scoped by
- * (id, userId) and the read history is the per-user paper-trade history; the
- * update + every journal row land in ONE transaction (fail-closed).
+ * (id, userId) and the read history is the MISSION'S OWN executed trades
+ * (mission_trade_drafts — sim closes for paper/demo, broker-reconciled for
+ * live), never the user's manual paper-trade journal; the update + every
+ * journal row land in ONE transaction (fail-closed).
  */
 export async function refreshMissionRisk(args: {
   userId: number;
@@ -287,13 +327,24 @@ export async function refreshMissionRisk(args: {
     const mission = rows[0];
     if (!mission) return { ok: false, kind: "not_found" };
 
-    const trades = await tx
+    // The mission's OWN book: executed drafts only. `missionOwnTradeHistory`
+    // picks the honest column family per row (sim_* vs broker-reconciled).
+    const drafts = await tx
       .select()
-      .from(paperTradesTable)
-      .where(eq(paperTradesTable.userId, args.userId))
-      .orderBy(desc(paperTradesTable.createdAt))
+      .from(missionTradeDraftsTable)
+      .where(
+        and(
+          eq(missionTradeDraftsTable.missionId, args.missionId),
+          eq(missionTradeDraftsTable.userId, args.userId),
+          eq(missionTradeDraftsTable.status, "executed"),
+        ),
+      )
+      .orderBy(desc(missionTradeDraftsTable.createdAt))
       .limit(500);
-    const history = aggregateHistory(trades as PaperTrade[], new Date(nowMs));
+    const history = aggregateHistory(
+      missionOwnTradeHistory(drafts as MissionTradeDraftRow[]),
+      new Date(nowMs),
+    );
 
     const priorRisk = (mission.riskJson as MissionRiskState | null) ?? null;
     const priorPeak =

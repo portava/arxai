@@ -14,6 +14,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod/v4";
 import { generateDeterministicCandles } from "../lib/backtestStrategyRegistry.js";
 import { runAutoDebrief } from "../lib/autoDebriefService.js";
+import { linkTradeToActiveSession, usdToCents, closeResultForPnl } from "../lib/paperSession/manager.js";
 
 const router = Router();
 const SIMULATED_TAG = "Simulated — paper trading does not guarantee live results.";
@@ -112,6 +113,18 @@ async function markToMarket(accountId: number) {
         profitLoss: pnl, updatedAt: new Date(),
       }).where(eq(paperOrdersTable.id, o.id));
       await logEvent(o.id, status, `${SIMULATED_TAG} ${hit} hit at ${exitPx.toFixed(5)}, P&L ${pnl.toFixed(2)}`);
+      // Session accounting (Build PP): count this settle against the owner's
+      // ACTIVE paper session (netPnl in CENTS). Rows with no user_id — placed
+      // before the routes stamped ownership, or by an unauthenticated caller —
+      // cannot be attributed to a session and are honestly left uncounted.
+      if (o.userId != null) {
+        await linkTradeToActiveSession(o.userId, {
+          tradeId: String(o.id),
+          decisionId: o.decisionId != null ? String(o.decisionId) : undefined,
+          symbol: o.symbol, action: "CLOSE",
+          result: closeResultForPnl(pnl), pnl: usdToCents(pnl),
+        });
+      }
       // (BB) Closed-loop auto-debrief on SL/TP close. Best-effort, idempotent.
       runAutoDebrief(o.id, { triggeredBy: "mark_to_market" })
         .catch(() => { /* non-fatal: never break mark-to-market */ });
@@ -224,6 +237,12 @@ router.post("/paper/orders", async (req, res): Promise<void> => {
       return;
     }
     const ins = await db.insert(paperOrdersTable).values({
+      // Stamp ownership when the caller is authenticated (attachAuthUser runs
+      // app-wide). Without it a close can never be attributed to a paper
+      // session — the REAL wiring this route still lacks is requireUser, so
+      // unauthenticated sandbox orders keep a null user_id and stay honestly
+      // uncounted in session gauges rather than guessed onto someone.
+      userId: req.authUser?.id ?? null,
       paperAccountId: b.paperAccountId,
       symbol: b.symbol, direction: b.direction, orderType: b.orderType,
       lotSize: b.lotSize, entryPrice: px,
@@ -235,6 +254,15 @@ router.post("/paper/orders", async (req, res): Promise<void> => {
     }).returning();
     const order = ins[0]!;
     await logEvent(order.id, "PLACED", `${SIMULATED_TAG} ${b.direction} ${b.symbol} @ ${px.toFixed(5)} SL ${b.stopLoss} TP ${b.takeProfit} lot ${b.lotSize}`);
+    // Session accounting (Build PP): count this open against the caller's
+    // ACTIVE paper session. Best-effort; records nothing without one.
+    if (req.authUser) {
+      await linkTradeToActiveSession(req.authUser.id, {
+        tradeId: String(order.id),
+        decisionId: b.decisionId != null ? String(b.decisionId) : undefined,
+        symbol: b.symbol, action: "OPEN", result: "OPEN",
+      });
+    }
     await vaultBehavior("PAPER_ORDER_PLACED", {
       orderId: order.id, accountId: b.paperAccountId,
       symbol: b.symbol, direction: b.direction, lotSize: b.lotSize,
@@ -297,6 +325,17 @@ router.post("/paper/orders/:id/close", async (req, res): Promise<void> => {
     }).where(eq(paperOrdersTable.id, id));
     await logEvent(id, "CLOSED_MANUAL", `${SIMULATED_TAG} closed @ ${exitPx.toFixed(5)}, P&L ${pnl.toFixed(2)}`);
     await vaultBehavior("PAPER_ORDER_CLOSED", { orderId: id, exitPrice: exitPx, pnl, manual: true });
+    // Session accounting (Build PP): attribute the close to the order's owner
+    // (or the authenticated caller for legacy rows with no user_id stamp).
+    const closeOwnerId = cur.userId ?? req.authUser?.id ?? null;
+    if (closeOwnerId != null) {
+      await linkTradeToActiveSession(closeOwnerId, {
+        tradeId: String(id),
+        decisionId: cur.decisionId != null ? String(cur.decisionId) : undefined,
+        symbol: cur.symbol, action: "CLOSE",
+        result: closeResultForPnl(pnl), pnl: usdToCents(pnl),
+      });
+    }
     // markToMarket recomputes balance from starting + Σ closed-order P&L, so
     // this manual close's P&L is now properly reflected (architect fix #1).
     await markToMarket(cur.paperAccountId);

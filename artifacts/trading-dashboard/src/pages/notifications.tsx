@@ -65,6 +65,10 @@ export default function NotificationsPage() {
   const [search, setSearch] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string>("");
+  // A failed read must never render as a clean, empty alert queue. This page
+  // is where onboarding sends users to check CRITICAL live-risk alerts —
+  // "couldn't load" and "nothing to show" are different safety states.
+  const [loadFailed, setLoadFailed] = useState(false);
 
   async function refresh() {
     const params = new URLSearchParams();
@@ -72,14 +76,23 @@ export default function NotificationsPage() {
     if (filterSev) params.set("severity", filterSev);
     if (filterStatus) params.set("status", filterStatus);
     params.set("limit", "100");
-    const [n, c, d] = await Promise.all([
-      fetch(`/api/notifications?${params.toString()}`).then(r => r.json()),
-      fetch(`/api/notifications/counts`).then(r => r.json()),
-      fetch(`/api/notifications/digest`).then(r => r.json()),
-    ]);
-    setItems(n.notifications ?? []);
-    setCounts(c.counts ?? null);
-    setDigest(d.digest ?? null);
+    try {
+      const [nRes, cRes, dRes] = await Promise.all([
+        fetch(`/api/notifications?${params.toString()}`),
+        fetch(`/api/notifications/counts`),
+        fetch(`/api/notifications/digest`),
+      ]);
+      if (!nRes.ok || !cRes.ok || !dRes.ok) throw new Error("notifications read failed");
+      const [n, c, d] = await Promise.all([nRes.json(), cRes.json(), dRes.json()]);
+      setItems(n.notifications ?? []);
+      setCounts(c.counts ?? null);
+      setDigest(d.digest ?? null);
+      setLoadFailed(false);
+    } catch {
+      // Keep whatever was last successfully loaded (stale beats fabricated-
+      // empty) and flag the failure so the UI never shows a clean inbox.
+      setLoadFailed(true);
+    }
   }
   useEffect(() => { void refresh(); }, [filterType, filterSev, filterStatus]);
 
@@ -128,6 +141,28 @@ export default function NotificationsPage() {
       <p className="text-sm text-txt-muted">Trade, risk, and system alerts for your account. This page never places trades — it only shows what your bot or operator already did.</p>
 
       <PushSettingsCard />
+
+      {/* Failed-read banner — visually distinct from the genuine empty state.
+          An unreadable alert queue is UNKNOWN, not clear. */}
+      {loadFailed && (
+        <div
+          className="border border-warning/50 bg-warning/10 p-3 rounded flex flex-wrap items-center justify-between gap-2"
+          role="alert"
+          data-testid="notifications-load-failed"
+        >
+          <div className="text-sm font-medium text-warning">
+            Couldn&apos;t load your alerts — treat this as unknown, not as clear. A critical alert may exist that we cannot show.
+          </div>
+          <button
+            disabled={busy}
+            onClick={() => void refresh()}
+            className="px-3 py-1.5 rounded text-sm border border-warning/50 text-warning hover:bg-warning/20"
+            data-testid="notifications-retry"
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* Critical safety banner — always visible if any unread CRITICAL exists */}
       {criticalUnread.length > 0 && (
@@ -248,7 +283,14 @@ export default function NotificationsPage() {
               </div>
             </div>
           ))}
-          {visible.length === 0 && (
+          {visible.length === 0 && loadFailed && (
+            <div className="p-6 text-center text-sm font-medium text-warning" data-testid="notifications-list-unavailable">
+              Notifications could not be loaded — nothing is shown rather than guessing that your queue is empty.
+            </div>
+          )}
+          {/* The "no notifications yet" empty state may render ONLY after a
+              successful read returned an empty list — never on a failed one. */}
+          {visible.length === 0 && !loadFailed && (
             <EmptyState
               icon={Bell}
               title="No notifications yet."

@@ -114,6 +114,15 @@ export default function TradeCommandRoom() {
     const sl = Number(stopLoss);
     const ref = quote ? (quote.mid ?? quote.bid ?? quote.ask) : NaN;
     if (!l) return "—";
+    // Honest withhold — the only wired quote source here is the in-memory
+    // market simulator (executionEnvironment:"SIMULATOR"). A dollar risk
+    // figure derived from its random-walk mid would be a fabricated number on
+    // a LIVE surface, so we withhold it with a reason instead. Real wiring
+    // that would restore the figure: feed this page from the shared
+    // chart-truth/marketDataRouter quote (same source getMarketSnapshot uses).
+    if (quote?.executionEnvironment === "SIMULATOR") {
+      return "n/a — sim quote";
+    }
     if (!stopLoss || !Number.isFinite(sl) || !Number.isFinite(ref) || sl <= 0) {
       return "Set SL";
     }

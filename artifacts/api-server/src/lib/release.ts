@@ -1,7 +1,10 @@
 // Build UU — Beta release metadata, gates, and diagnostics aggregator.
-// Honest about MT5: never reports broker execution available; never claims
-// readiness when critical issues are open. Read-only utility module — never
-// places trades, never modifies safety flags.
+// Honest about broker execution: realBrokerExecutionAvailable is READ from the
+// live arming switch (env + global_trading_settings.liveBrokerExecutionArmed)
+// at request time — never asserted as a constant. A failed read reports null
+// (unknown), never a confident "locked". Never claims readiness when critical
+// issues are open. Read-only utility module — never places trades, never
+// modifies safety flags.
 
 import { db, feedbackTable } from "@workspace/db";
 import { and, desc, eq, inArray } from "drizzle-orm";
@@ -10,18 +13,36 @@ import { permissions, listEvents as listRiskEvents } from "./riskGovernor2.js";
 import { listDecisions as autoDecisions, status as autopilotStatus } from "./autopilot.js";
 import { shadowStatus, forwardStatus, readinessScore } from "./shadowMode.js";
 import { omsDashboardSummary, pnlSummary } from "./oms.js";
+import { resolveLiveBrokerExecutionEnabledAsync } from "./live/phaseBConfig.js";
 
 export const APP_VERSION = "0.9.0-beta";
 export const RELEASE_STAGE = "BETA_TESTER" as const;
 
-export function versionEnvelope() {
+/**
+ * Real platform arm state. true = live broker execution is armed (env AND DB
+ * switch), false = locked, null = the read failed — callers must report
+ * unknown, never a fabricated "locked".
+ */
+export async function readLiveBrokerExecutionArmed(): Promise<boolean | null> {
+  try { return await resolveLiveBrokerExecutionEnabledAsync(); } catch { return null; }
+}
+
+export async function versionEnvelope() {
+  const armed = await readLiveBrokerExecutionArmed();
   return {
     version: APP_VERSION,
     stage: RELEASE_STAGE,
     fullTesterAccess: true,
     mt5Deferred: true,
-    realBrokerExecutionAvailable: false,
-    canPlaceTrades: false,
+    // boolean | null — null means the arm switch could not be read.
+    realBrokerExecutionAvailable: armed,
+    // Platform-level: mirrors the arm switch. Per-user approval and per-order
+    // Phase B gates still apply before any specific trade dispatches.
+    canPlaceTrades: armed,
+    realBrokerExecutionSource:
+      armed === null
+        ? "UNKNOWN — live arming switch read failed"
+        : "live arming switch (env + global_trading_settings) at request time",
     lastUpdated: new Date().toISOString(),
   };
 }
@@ -59,8 +80,9 @@ export async function evaluateGates(): Promise<{ gates: Gate[]; criticalIssues: 
   const recent = await listAudit({ limit: 25 });
   push("audit_pass", "Audit pass", Array.isArray(recent));
 
-  // MT5 deferred honesty — must be true
-  push("mt5_deferred_honesty_pass", "MT5 deferred honesty", true, "mt5Connected=false, realBrokerExecutionAvailable=false");
+  // MT5 deferred honesty — realBrokerExecutionAvailable is derived from the
+  // live arming switch, never asserted as a constant.
+  push("mt5_deferred_honesty_pass", "MT5 deferred honesty", true, "realBrokerExecutionAvailable read from the live arming switch at request time");
 
   // No critical open bugs (P0 or severity=critical, not closed/wont_fix/fixed)
   const open = await db.select({ feedbackId: feedbackTable.feedbackId, title: feedbackTable.title })
@@ -79,6 +101,7 @@ export async function evaluateGates(): Promise<{ gates: Gate[]; criticalIssues: 
 
 export async function readinessReport() {
   const { gates, criticalIssues } = await evaluateGates();
+  const armed = await readLiveBrokerExecutionArmed();
   const passed = gates.filter((g) => g.pass).map((g) => g.key);
   const failed = gates.filter((g) => !g.pass).map((g) => g.key);
   const score = Math.round((passed.length / gates.length) * 100);
@@ -91,15 +114,16 @@ export async function readinessReport() {
     failedGates: failed,
     gates,
     criticalIssues,
-    warnings: [],
+    warnings: armed === null ? ["live arming switch unreadable — realBrokerExecutionAvailable reported as unknown"] : [],
     mt5Deferred: true,
-    realBrokerExecutionAvailable: false,
+    realBrokerExecutionAvailable: armed,
   };
 }
 
 export async function diagnosticsPackage() {
   const audit = await listAudit({ limit: 100 });
   const readiness = await readinessReport();
+  const armed = await readLiveBrokerExecutionArmed();
   const issues = await db.select().from(feedbackTable).orderBy(desc(feedbackTable.createdAt)).limit(50);
   return {
     title: "ARX AI System Diagnostics Report",
@@ -110,8 +134,9 @@ export async function diagnosticsPackage() {
     safety: {
       mt5Connected: false,
       mt5Deferred: true,
-      realBrokerExecutionAvailable: false,
-      canPlaceTrades: false,
+      // Derived from the live arming switch; null = read failed (unknown).
+      realBrokerExecutionAvailable: armed,
+      canPlaceTrades: armed,
     },
     permissions: permissions(),
     oms: omsDashboardSummary(),

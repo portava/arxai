@@ -25,6 +25,12 @@
 //      the mission recorder (the observer would otherwise lose it forever).
 //   7. The broker close-report ingest is scoped by BRIDGE, so one bridge's EA
 //      can never write a realised P/L onto another bridge's position.
+//   8. An ARX-issued close fill records an honest UNRECONCILED outcome — the
+//      row's last-synced floating mark is NEVER handed over as a realised P/L
+//      that the recorder would default-label RECONCILED (broker-confirmed).
+//   9. Broker truth arriving later may UPGRADE that honest unknown to the
+//      venue's own figure — strictly one-way, never rewriting a figure the
+//      broker already confirmed.
 //
 // Offline / pure: imports only IO-free modules, so it runs in the root `ci`
 // lane, not the DB-backed integration lane.
@@ -42,6 +48,7 @@ import {
   attributeBrokerCloseReports,
   isBrokerReportedPnl,
   isBrokerReportedClosePrice,
+  mayUpgradeRecordedOutcome,
   OUTCOME_UNRECONCILED_BROKER_ABSENT,
   OUTCOME_UNRECONCILED_NO_BROKER_PNL,
   BROKER_SIDE_EXIT_REASON,
@@ -734,5 +741,109 @@ test("the ingest routes close reports through attribution before they reach the 
     code.includes("reports: closeReports.map("),
     false,
     "the unfiltered report list must never reach the observer",
+  );
+});
+
+// ── 9. THE ARX CLOSE FILL IS AN HONEST UNKNOWN, UPGRADED ONLY BY BROKER TRUTH ─
+
+test("an ARX close fill resolves to a numberless UNRECONCILED outcome — the fill price is evidence only", () => {
+  // The EA's CLOSE result carries a fill PRICE but no realised P/L in account
+  // currency. The pipeline previously handed the position row's last-synced
+  // floating mark to the recorder with no outcomeStatus, and the recorder
+  // defaulted a numeric P/L to RECONCILED — the label the completeness read
+  // defines as "broker-confirmed, the figures you can trust".
+  const out = resolveBrokerCloseOutcome({
+    source: "ARX_CLOSE_FILL",
+    brokerRealisedPnl: null,
+    brokerClosePrice: 1.0955,
+  });
+  assert.equal(out.status, "UNRECONCILED");
+  assert.equal(out.realisedPnl, null, "no P/L was reported, so none may be recorded");
+  assert.equal(out.unreconciledReason, OUTCOME_UNRECONCILED_NO_BROKER_PNL);
+  assert.equal(out.closePrice, 1.0955, "the broker's fill price is carried as evidence, never as math");
+});
+
+test("a later broker-confirmed P/L may upgrade an UNRECONCILED close — and only that", () => {
+  // The genuine upgrade: honest unknown → the venue's own figure. A loss and a
+  // scratch travel the same path as a win.
+  assert.equal(
+    mayUpgradeRecordedOutcome({ recordedStatus: "UNRECONCILED", incomingStatus: "RECONCILED", incomingRealisedPnl: -42.5 }),
+    true,
+  );
+  assert.equal(
+    mayUpgradeRecordedOutcome({ recordedStatus: "UNRECONCILED", incomingStatus: "RECONCILED", incomingRealisedPnl: 0 }),
+    true,
+    "a scratch is a real broker result",
+  );
+  // A legacy record with no outcome provenance is upgradeable by real broker truth.
+  assert.equal(
+    mayUpgradeRecordedOutcome({ recordedStatus: undefined, incomingStatus: "RECONCILED", incomingRealisedPnl: 10 }),
+    true,
+  );
+  // Never rewrite a figure the broker already confirmed — the first figure stands.
+  assert.equal(
+    mayUpgradeRecordedOutcome({ recordedStatus: "RECONCILED", incomingStatus: "RECONCILED", incomingRealisedPnl: 99 }),
+    false,
+  );
+  // A numberless offer upgrades nothing — it stays the recorder's plain no-op.
+  assert.equal(
+    mayUpgradeRecordedOutcome({ recordedStatus: "UNRECONCILED", incomingStatus: "UNRECONCILED", incomingRealisedPnl: null }),
+    false,
+  );
+  assert.equal(
+    mayUpgradeRecordedOutcome({ recordedStatus: "UNRECONCILED", incomingStatus: null, incomingRealisedPnl: 50 }),
+    false,
+    "a recording that does not even claim RECONCILED must never overwrite",
+  );
+  // "RECONCILED" without a real number is a contradiction and must not pass.
+  assert.equal(
+    mayUpgradeRecordedOutcome({ recordedStatus: "UNRECONCILED", incomingStatus: "RECONCILED", incomingRealisedPnl: NaN }),
+    false,
+  );
+});
+
+test("the pipeline's ARX close-fill recording never carries the floating mark and states its outcome", () => {
+  // Structural pin on the live code (comments/strings blanked, same honest
+  // limits as the mt5Live scans above): the mission recorder call inside the
+  // CLOSE_LIVE_POSITION fill branch must pass an explicit outcomeStatus and
+  // must not hand over floatingPl. The ledger's own LOCAL_EXECUTION posting
+  // (realisedPnlForLedger) is labelled honestly and is deliberately allowed.
+  const pipeline = resolve(dirname(fileURLToPath(import.meta.url)), "../liveCommandPipeline.ts");
+  const code = blankNonCode(readFileSync(pipeline, "utf8"));
+
+  const call = code.indexOf("recordMissionTradeCloseByBrokerTicket({");
+  assert.ok(call >= 0, "the pipeline must still record the mission close on an ARX CLOSE fill");
+  const end = code.indexOf(");", call);
+  assert.ok(end > call, "the recorder call must close");
+  const block = code.slice(call, end);
+  assert.ok(
+    block.includes("outcomeStatus:"),
+    "outcomeStatus must be passed explicitly — the recorder's RECONCILED default is only honest for broker-confirmed figures",
+  );
+  assert.equal(
+    block.includes("floatingPl"),
+    false,
+    "the last-synced floating mark must never reach the mission recorder as a realised P/L",
+  );
+  assert.equal(
+    /\bconst\s+realisedPnl\s*=/.test(code),
+    false,
+    "no local `realisedPnl` derived from row state may exist — the outcome comes from resolveBrokerCloseOutcome",
+  );
+  assert.ok(
+    code.includes("resolveBrokerCloseOutcome({"),
+    "the ARX close fill must route through the single honest outcome resolver",
+  );
+});
+
+test("the recorder's idempotence has exactly one exception: the reconciliation upgrade", () => {
+  const mgr = resolve(dirname(fileURLToPath(import.meta.url)), "../../missionExitManager.ts");
+  const code = blankNonCode(readFileSync(mgr, "utf8"));
+  const fn = code.indexOf("export async function recordMissionTradeCloseByBrokerTicket");
+  assert.ok(fn >= 0, "recordMissionTradeCloseByBrokerTicket not found — did it move?");
+  const body = code.slice(fn);
+  assert.ok(
+    body.includes("mayUpgradeRecordedOutcome({"),
+    "the idempotence check must consult the pure upgrade rule — otherwise a broker-confirmed P/L can never complete an honest unknown",
   );
 });

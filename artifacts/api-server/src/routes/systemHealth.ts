@@ -1,8 +1,15 @@
 // Build MM — System Health, Audit, and Admin Control Center routes.
 //
 // SAFETY: All endpoints are READ-ONLY diagnostics or SAFE admin actions.
-// Forbidden admin actions return REJECTED with CRITICAL audit. liveTradingStatus
-// is always DISABLED. mode is always PAPER_ONLY.
+// Forbidden admin actions return REJECTED with CRITICAL audit.
+//
+// HONESTY: this envelope used to stamp liveTradingStatus:"DISABLED" /
+// mode:"PAPER_ONLY" / canPlaceLiveTrade:false on every response as compile-time
+// constants, while the real arm switch lives in env +
+// global_trading_settings.liveBrokerExecutionArmed and live dispatch really
+// exists (lib/live/liveCommandPipeline.ts). Those fabricated fields are gone:
+// the real, read-at-check-time state is in report.liveTradingStatus /
+// report.mode / report.safetyStatus from runHealthCheck().
 
 import { Router, type Request, type Response } from "express";
 import { runHealthCheck, runSubsystemCheck, listHealthChecks, exportHealthReport, type SubsystemBuild } from "../lib/systemHealth/health.js";
@@ -11,13 +18,10 @@ import { getConfig } from "../lib/systemHealth/config.js";
 import { performAdminAction, listAdminActions, ALLOWED_ADMIN_ACTIONS, FORBIDDEN_ADMIN_ACTIONS, seedAdminDemo } from "../lib/systemHealth/admin.js";
 
 const router: Router = Router();
-const TAG = "Build MM — System Health, Audit, and Admin Control Center. Diagnostics + safe admin only. Never places trades, never enables live trading, never calls MT5, never modifies canPlaceTrades, never exposes secrets.";
+const TAG = "Build MM — System Health, Audit, and Admin Control Center. Diagnostics + safe admin only. Never places trades, never enables live trading, never calls MT5, never modifies canPlaceTrades, never exposes secrets. Live/paper state is not asserted here — read report.liveTradingStatus, which reflects the real arm switch at check time.";
 function envelope(body: Record<string, unknown>) {
   return {
     system: "system-health",
-    liveTradingStatus: "DISABLED" as const,
-    mode: "PAPER_ONLY" as const,
-    canPlaceLiveTrade: false as const,
     disclaimer: TAG,
     ...body,
   };

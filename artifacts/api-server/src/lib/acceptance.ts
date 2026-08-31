@@ -179,11 +179,18 @@ async function s10AdminSecurity(): Promise<ScenarioResult> {
     const pkg = await diagnosticsPackage();
     const text = JSON.stringify(pkg);
     const tokenLeak = /MT5_BRIDGE_TOKEN["']?\s*[:=]\s*["']?[A-Za-z0-9_-]{8,}/.test(text);
-    const safety = (pkg as { safety?: { mt5Connected: boolean; realBrokerExecutionAvailable: boolean; mt5Deferred: boolean } }).safety;
-    const safe = !tokenLeak && safety?.mt5Connected === false && safety?.realBrokerExecutionAvailable === false && safety?.mt5Deferred === true;
-    const v = safe
-      ? PASS("Diagnostics package built; secrets absent; safety flags honest.", { mt5Connected: safety!.mt5Connected, mt5Deferred: safety!.mt5Deferred })
-      : FAIL("Diagnostics package failed honesty check.", { tokenLeak, safety });
+    // realBrokerExecutionAvailable is now READ from the live arming switch
+    // (boolean | null, null = read failed) — an armed platform reporting
+    // armed=true is HONEST, not a failure. Only a leak or a missing/renamed
+    // safety block fails this scenario.
+    const safety = (pkg as { safety?: { mt5Connected: boolean; realBrokerExecutionAvailable: boolean | null; mt5Deferred: boolean } }).safety;
+    const armed = safety?.realBrokerExecutionAvailable;
+    const structureOk = !tokenLeak && !!safety && safety.mt5Connected === false && safety.mt5Deferred === true && armed !== undefined;
+    const v = !structureOk
+      ? FAIL("Diagnostics package failed honesty check.", { tokenLeak, safety })
+      : armed === null
+        ? REVIEW("Diagnostics built; secrets absent; live arm switch unreadable — realBrokerExecutionAvailable honestly reported as unknown.", { mt5Connected: safety!.mt5Connected, mt5Deferred: safety!.mt5Deferred })
+        : PASS(`Diagnostics package built; secrets absent; safety flags read from the live arming switch (armed=${armed}).`, { mt5Connected: safety!.mt5Connected, mt5Deferred: safety!.mt5Deferred, realBrokerExecutionAvailable: armed });
     return build("S10", "Admin / security / export",
       "Owner role preserved; secrets hidden; protected actions require permission; audit records admin actions.",
       ["Security Status", "Data Management", "Export diagnostics", "Test reset confirmation"],

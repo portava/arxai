@@ -86,7 +86,7 @@ const COCKPIT_LINK = { label: "Cockpit", href: "/" };
 function rank(s: Severity): number { return ({ INFO: 0, WARN: 1, BLOCK: 2, CRITICAL: 3 } as const)[s]; }
 function highest(a: Severity, b: Severity): Severity { return rank(b) > rank(a) ? b : a; }
 
-interface LiveReadiness {
+export interface LiveReadiness {
   status: LiveTradingStatus;
   plain: string[];
   technical: string[];
@@ -102,8 +102,11 @@ interface LiveReadiness {
  * per-order Phase B gates (symbol allowed, volume within max lot, stop-loss
  * present, EA heartbeat fresh, …) — those are evaluated against a specific
  * command at dispatch time and cannot be answered here, which the copy says.
+ *
+ * Exported so other per-user surfaces (routes/onboarding.ts) can report the
+ * REAL status instead of re-fabricating a "DISABLED" constant.
  */
-async function readLiveReadiness(userId: number): Promise<LiveReadiness> {
+export async function readLiveReadiness(userId: number): Promise<LiveReadiness> {
   const plain: string[] = [];
   const technical: string[] = [];
   const fixes: string[] = [];
