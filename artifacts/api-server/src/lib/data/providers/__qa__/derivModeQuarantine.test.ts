@@ -119,6 +119,34 @@ test("a PAT can never reach legacy authorize — a second barrier guards the cal
   );
 });
 
+test("the legacy DATA token is a separate credential — the PAT is never read for it", () => {
+  // New mode may now authorize the legacy socket, but ONLY with a credential
+  // the operator explicitly declared legacy-generation. Ruling 15's actual
+  // invariant — a PAT must never reach legacy `authorize` — is unchanged, and
+  // is what this pins: the new-mode branch may read DERIV_WS_LEGACY_TOKEN and
+  // must never read DERIV_API_TOKEN.
+  const openIdx = src.indexOf('ws.on("open"');
+  const newModeIdx = src.indexOf('detectMode() === "new"', openIdx);
+  // Bound the slice at where the LEGACY path begins. Slicing to the PAT's
+  // `this.request(...)` call instead would swallow the `const token =
+  // process.env.DERIV_API_TOKEN` declaration that legitimately precedes it,
+  // and the DERIV_API_TOKEN assertion below would fail against correct code.
+  const legacyPathIdx = src.indexOf("const token = (process.env.DERIV_API_TOKEN", newModeIdx);
+  assert.ok(legacyPathIdx > newModeIdx, "the legacy-mode token path must follow the new-mode branch");
+  const newModeBranch = src
+    .slice(newModeIdx, legacyPathIdx)
+    .replace(/\/\/.*$/gm, "")
+    .replace(/\/\*[\s\S]*?\*\//g, "");
+  assert.match(newModeBranch, /DERIV_WS_LEGACY_TOKEN/,
+    "the explicit legacy data token must be the credential this branch uses");
+  assert.ok(!/DERIV_API_TOKEN/.test(newModeBranch),
+    "the new-mode branch read DERIV_API_TOKEN — a PAT must never reach legacy authorize");
+  // Absent that token the session must still be public-data-only, never a
+  // silent fallback to some other credential.
+  assert.match(newModeBranch, /if \(!legacyToken\)[\s\S]*?DERIV_PUBLIC_DATA_ONLY/,
+    "with no legacy token the session must remain public-data-only");
+});
+
 test("the public session reports its own non-error sentinel, never a bad credential", () => {
   const openIdx = src.indexOf('ws.on("open"');
   const authorizeIdx = src.indexOf("this.request({ authorize: token })");

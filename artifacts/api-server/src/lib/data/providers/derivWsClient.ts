@@ -271,14 +271,57 @@ class DerivWsClient {
           // diagnose). The sentinel is deliberately NOT an error code — the
           // session is healthy, just credential-free.
           if (DerivWsClient.detectMode() === "new") {
-            this.authorized = false;
-            this.lastAuthorizeError = DERIV_PUBLIC_DATA_ONLY;
-            this.lastAuthorizeErrorCode = DERIV_PUBLIC_DATA_ONLY;
-            logger.info(
-              { derivSession: DERIV_PUBLIC_DATA_ONLY },
-              "deriv_new_mode_public_data_session_authorize_withheld",
-            );
-            void this.runEagerWarmup();
+            // ONE exception, and it cannot weaken the rule: an explicitly
+            // provided LEGACY-generation token. DERIV_WS_LEGACY_TOKEN exists
+            // solely to be sent here, so using it carries no risk of the
+            // PAT/legacy confusion Ruling 15 prevents — the PAT lives in
+            // DERIV_API_TOKEN and is never read on this path. The env var's
+            // name IS the operator's assertion about which generation the
+            // credential belongs to.
+            //
+            // Why it is worth having: a credential-free session cannot
+            // SUBSCRIBE (the venue refuses `ticks` with InvalidSymbol), so
+            // prices can only be polled. An authorized legacy session streams
+            // tick-by-tick, which is what a scalping surface actually needs —
+            // a two-second-old price is a wrong price.
+            const legacyToken = (process.env.DERIV_WS_LEGACY_TOKEN ?? "").trim();
+            if (!legacyToken) {
+              this.authorized = false;
+              this.lastAuthorizeError = DERIV_PUBLIC_DATA_ONLY;
+              this.lastAuthorizeErrorCode = DERIV_PUBLIC_DATA_ONLY;
+              logger.info(
+                { derivSession: DERIV_PUBLIC_DATA_ONLY },
+                "deriv_new_mode_public_data_session_authorize_withheld",
+              );
+              void this.runEagerWarmup();
+              return;
+            }
+            this.request({ authorize: legacyToken })
+              .then((resp) => {
+                if (resp.authorize) {
+                  this.authorized = true;
+                  this.lastAuthorizeError = null;
+                  this.lastAuthorizeErrorCode = null;
+                  this.retainAccountIdentity(resp.authorize);
+                  logger.info(
+                    { derivSession: "DERIV_LEGACY_TOKEN_AUTHORIZED" },
+                    "deriv_legacy_data_token_authorized — tick subscriptions available",
+                  );
+                }
+                void this.runEagerWarmup();
+              })
+              .catch((err: Error & { derivErrorCode?: string }) => {
+                // A rejected DATA token must never read as a trading-credential
+                // failure: this token buys market data only.
+                this.authorized = false;
+                this.lastAuthorizeError = err.message;
+                this.lastAuthorizeErrorCode = err.derivErrorCode ?? "DERIV_LEGACY_DATA_TOKEN_REJECTED";
+                logger.warn(
+                  { derivErrorCode: this.lastAuthorizeErrorCode },
+                  "deriv_legacy_data_token_rejected — falling back to public polled data",
+                );
+                void this.runEagerWarmup();
+              });
             return;
           }
           // If a token is configured (either mode), authorize and track the response.
