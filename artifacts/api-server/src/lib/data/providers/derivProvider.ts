@@ -244,7 +244,7 @@ export function getDerivFeedStatus(): DerivFeedStatus {
       // newest print (derivKeepAlive.runTickPollCycle). The prices are real and
       // seconds old either way, but the transport is named honestly — a reader
       // deciding whether to trust a fast-moving tip needs to know which it is.
-      ? `Deriv feed connected (${mode} mode) — live ticks ${publicDataOnly ? "polled (~2s; this session cannot subscribe)" : "streaming"}.`
+      ? `Deriv feed connected (${mode} mode) — live ticks ${publicDataOnly ? "polled every 400ms (this session cannot subscribe; these instruments print once every 1-2s, so every tick is captured)" : "streaming"}.`
       : feedReadinessState === "HISTORY_READY_AWAITING_LIVE_TICK"
         ? `Deriv feed connected (${mode} mode). Historical candles ready; waiting for first live tick…`
         : feedReadinessState === "CONNECTED_AWAITING_FEED"
