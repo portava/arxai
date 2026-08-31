@@ -13,8 +13,9 @@
 //     route never re-derives math. Values are honest estimates, never fabricated;
 //     a disconnected/stale feed yields an honest no_trade with no selection.
 //   - A mission is always created as a `draft` (automationLevel 2 / approval).
-//     The feasibility verdict's `canStart` is feed-gated; the feed is not
-//     confirmed for execution, so START stays blocked (drafts still allowed).
+//     The feasibility verdict's `canStart` is feed-gated and is DISPLAY ONLY:
+//     the /start route below does NOT consult it (see its header). Do not
+//     describe it anywhere as a check that holds a mission back.
 import { Router } from "express";
 import { db, profitMissionsTable, missionTradeDraftsTable, oneClickAuditTable } from "@workspace/db";
 import { and, desc, eq } from "drizzle-orm";
@@ -1250,6 +1251,16 @@ router.patch("/profit-missions/:id/execution-mode", requireUser, async (req, res
 // mission places no trade: it only makes the mission eligible for the gated
 // scan/draft/approve/dispatch loop (and, at auto levels, the driver's ticks —
 // which re-check every gate at act time).
+//
+// WHAT THIS ROUTE DOES NOT CHECK, stated so no surface claims otherwise: it does
+// NOT consult `feasibility.canStart` or `resolveFeedReadiness()`. Those are
+// display-only reads (canStart is always false today because no mission feed is
+// wired), and enforcing them here would make every mission permanently
+// unstartable, including the paper/demo missions the simulator and driver
+// legitimately run. The real per-trade safety is re-derived downstream on every
+// dispatch — the mission gate, Phase 7, and for a live mission the per-user
+// governor + 23-gate pipeline. Product copy must therefore say "starting is not
+// offered here", never "starting is blocked until the feed is confirmed".
 router.post("/profit-missions/:id/start", requireUser, async (req, res): Promise<void> => {
   const userId = req.authUser!.id;
   const id = parseId(req, res);

@@ -88,19 +88,26 @@ export type MissionExecutor = (args: {
  * the per-user governor and the 23-gate Phase B evaluator never run for a
  * simulated dispatch.
  *
- * CONSEQUENCE, stated plainly because the product copy depends on it: the
- * default implementation journals + audits the accepted intent and returns a
- * `sim:` command id — nothing else. No row is ever created in
- * `arx_live_positions` with that command id, so the exit manager can never
- * match the draft to a position. The ONLY writer of a draft's `pnl`/`closedAt`
- * is `recordMissionTradeClose` (`missionExitManager.ts`), and its only producer
- * is `recordMissionTradeCloseByBrokerTicket` (same file), called from the live
+ * CONSEQUENCE, stated plainly because the product copy depends on it: whichever
+ * implementation is injected, it returns a `sim:` command id and no row is ever
+ * created in `arx_live_positions` with it, so the exit manager can never match
+ * the draft to a live position. The ONLY writer of a draft's `pnl`/`closedAt` is
+ * `recordMissionTradeClose` (`missionExitManager.ts`), and its only producer is
+ * `recordMissionTradeCloseByBrokerTicket` (same file), called from the live
  * fill/close path in `liveCommandPipeline.ts`. A `sim:` draft never acquires a
- * brokerTicket, so neither function ever fires for it and the draft's `pnl` /
- * `closedAt` stay NULL forever. A paper/demo mission therefore
- * produces NO realised result, NO protective-exit management and NO progress
- * toward its target, and cannot complete. That is the honest degraded state, not
- * a bug to be papered over by inventing an outcome.
+ * brokerTicket, so neither function ever fires for it and the BROKER-RECONCILED
+ * columns `pnl` / `closedAt` stay NULL forever. A paper/demo mission therefore
+ * produces NO broker-reconciled result and NO live protective-exit management,
+ * and nothing is ever estimated into those columns.
+ *
+ * What it DOES produce (the default seam, `simulateMissionFill` in
+ * `missionSimulatedFills.ts`): a SIMULATED fill priced from a real router quote,
+ * closed against later real quotes, written to the separate `sim_*` family
+ * (simEntryPrice / simClosedAt / simPnl). That series drives the mission's
+ * progress, completion and promotion evidence on a SIMULATED accounting basis
+ * (`accountingBasisForMode`) and is never summed with the broker series. The
+ * simulator refuses to fill when no real quote is available rather than invent
+ * a price — the honest degraded state is a refusal, never a fabricated outcome.
  */
 export type MissionSimulatedExecutor = (args: {
   userId: number;

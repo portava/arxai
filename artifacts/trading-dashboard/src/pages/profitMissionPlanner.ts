@@ -25,10 +25,14 @@ export type PlannerActionLabel =
   (typeof PLANNER_ACTION_LABELS)[keyof typeof PLANNER_ACTION_LABELS];
 
 /**
- * Whether the mission may START. This is purely a mirror of the feed-gated
- * `canStart` flag the domain feasibility engine already produced — it adds no
- * new permission and can only ever be as permissive as the engine. In Phase 1
- * the feed is never confirmed, so this is always false.
+ * Whether this planner offers a START. A mirror of the feed-gated `canStart`
+ * flag the domain feasibility engine produced — it adds no new permission and
+ * can only ever be as permissive as the engine. No mission feed is wired, so it
+ * is always false and the planner's second step saves a draft.
+ *
+ * NOT A GATE: `canStart` is enforced nowhere. `POST /profit-missions/:id/start`
+ * checks state-machine legality only, so copy driven by this flag must say the
+ * planner does not offer a start — never that starting is blocked.
  */
 export function canStartMission(feasibility: FeasibilityVerdict | null): boolean {
   return feasibility?.canStart === true;

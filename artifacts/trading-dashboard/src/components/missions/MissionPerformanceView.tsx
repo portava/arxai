@@ -361,14 +361,15 @@ export function MissionPerformanceView({ missionId }: { missionId: number }): Re
 }
 
 // Labels mirror lib/domain missionAutomation AUTOMATION_LEVEL_META. Level 3 is
-// NOT an auto-execute-on-demo level — a non-live mission stops at the simulated
-// recorder and contacts no broker, so the label must not imply a demo account.
+// NOT an auto-execute-on-demo level — a non-live mission dispatches to the fill
+// SIMULATOR and contacts no broker, so the label must not imply a demo account;
+// it does produce simulated fills and outcomes, so it must not claim otherwise.
 // Level 4 carries no size cap of its own (levels 4-6 share one execution path).
 const AUTOMATION_LABELS: Record<number, string> = {
   0: "Off",
   1: "Advisory",
   2: "Approval (default)",
-  3: "Demo auto (records intent only)",
+  3: "Demo auto (simulated fills)",
   4: "Live auto — first step",
   5: "Limited live auto",
   6: "Full live auto",

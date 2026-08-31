@@ -88,13 +88,37 @@ function Tip({
   );
 }
 
-// The scalp engine reads M1 (see `evaluateMarketDataSufficiency` + RubyChartRead
-// below, both timeframe "M1"). Its lifted action verdict is therefore the M1
-// verdict — published under the SCANNER BUS form of M1 ("1m") so it keys
-// identically to what the header reads via `coerceVisibleTimeframe(selectedTf)`.
-// Do NOT pass "M1" through coerceVisibleTimeframe (it isn't a visible chip and
-// would wrongly fall back to "15m").
-export const SCALP_SIGNAL_BUS_TIMEFRAME = "1m";
+/**
+ * Timeframe the scalp engine actually reads on — mirrors SCALP_TIMEFRAME in
+ * api-server/src/lib/scalp/scalpServiceInputs.ts and SCALP_TICKET_TIMEFRAME in
+ * market-scanner.tsx. This card previously claimed M1 in three places (the
+ * readability contract, the bus key, and "Ask Ruby"), so an M5-derived verdict
+ * was published as the 1m verdict, nothing showed on the 5m view, and the
+ * M5-built draft was validated against M1 candles.
+ */
+export const SCALP_ENGINE_TIMEFRAME = "M5";
+
+// The lifted action verdict is therefore the M5 verdict — published under the
+// SCANNER BUS form of M5 ("5m") so it keys identically to what the header reads
+// via `coerceVisibleTimeframe(selectedTf)`. Do NOT pass "M5" through
+// coerceVisibleTimeframe (it isn't a visible chip id and would wrongly fall
+// back to "15m").
+export const SCALP_SIGNAL_BUS_TIMEFRAME = "5m";
+
+// ── Risk-band honesty (CONFIDENT_ABSENT fix) ───────────────────────────────
+// Non-actionable reads (AWAITING_DATA / market closed) never evaluated spread
+// or slippage: the engine now returns `null` for those bands instead of a
+// fabricated confident "LOW". The generated client type still declares them
+// non-nullable (real wiring: make spreadRisk/slippageRisk/newsRisk nullable in
+// lib/api-spec/openapi.yaml and regenerate the orval clients), so the value is
+// narrowed at runtime here. An unevaluated band HIDES its chip — matching the
+// SetupSignalStrip's `nullBehavior="hide"` — rather than rendering a bare
+// "Spread" label or a green LOW the engine never read.
+type RiskBand = "LOW" | "MEDIUM" | "HIGH";
+
+function riskBand(v: unknown): RiskBand | null {
+  return v === "LOW" || v === "MEDIUM" || v === "HIGH" ? v : null;
+}
 
 /** Compact countdown text for the validity window (e.g. "3m 05s", "42s"). */
 function fmtCountdown(totalSeconds: number): string {
@@ -180,7 +204,7 @@ export function ScalpSignalCard({
   const scalpDataReady = r.status !== "AWAITING_DATA";
   const readability = evaluateMarketDataSufficiency({
     symbol: r.symbol,
-    timeframe: "M1",
+    timeframe: SCALP_ENGINE_TIMEFRAME,
     freshnessVerdict: scalpDataReady ? "LIVE" : "AWAITING",
     availableClosedCandles: scalpDataReady ? MIN_SUFFICIENT_CLOSED_BARS : 0,
   });
@@ -210,10 +234,10 @@ export function ScalpSignalCard({
   // Lift the ONE selected-symbol verdict to the page (Task #600): the Focus card
   // passes onActionability so the header's Action cell shows EXACTLY this card's
   // setup-aware verdict instead of its own data-only one. Keyed by r.symbol (the
-  // engine's bare symbol) AND the scalp's bus timeframe ("1m") — matching the
-  // rubyReadStore symbol+timeframe convention — so the header only adopts this
-  // verdict when the user is actually viewing 1m, and a timeframe switch can
-  // never leave a stale M1 verdict showing under another timeframe. MUST sit
+  // engine's bare symbol) AND the scalp's bus timeframe ("5m", the engine's own
+  // M5) — matching the rubyReadStore symbol+timeframe convention — so the header
+  // only adopts this verdict when the user is actually viewing 5m, and a
+  // timeframe switch can never leave a stale verdict showing elsewhere. MUST sit
   // after `actionability` is declared (temporal-dead-zone trap). Other render
   // sites omit the prop, so only the Focus card publishes.
   useEffect(() => {
@@ -223,9 +247,21 @@ export function ScalpSignalCard({
   const borderColor =
     r.direction === "BUY" ? "#10b981" : r.direction === "SELL" ? "#f43f5e" : "#3f3f46";
 
+  // Risk bands the engine may have left unevaluated (see `riskBand` above).
+  const spreadBand = riskBand(r.spreadRisk);
+  const slippageBand = riskBand(r.slippageRisk);
+  const newsBand = riskBand(r.newsRisk);
+
+  // True when the engine could NOT use the analyzer's structural entry zone and
+  // fell back to a spread/point buffer around the entry. The generated client
+  // type does not carry the flag yet (real wiring: add `entryZoneEstimated` to
+  // ScalpResult in lib/api-spec/openapi.yaml and regenerate), so it is read
+  // structurally; absent/garbled degrades to false and nothing new renders.
+  const entryZoneEstimated = (r as { entryZoneEstimated?: unknown }).entryZoneEstimated === true;
+
   const entry =
     r.entryZone != null
-      ? `${fmtPrice(r.entryZone.from, r.digits)} – ${fmtPrice(r.entryZone.to, r.digits)}`
+      ? `${entryZoneEstimated ? "≈ " : ""}${fmtPrice(r.entryZone.from, r.digits)} – ${fmtPrice(r.entryZone.to, r.digits)}`
       : fmtPrice(r.currentPrice, r.digits);
 
   return (
@@ -335,6 +371,11 @@ export function ScalpSignalCard({
           <div className="rounded border border-border bg-background/40 p-2">
             <div className="text-txt-muted">Entry zone</div>
             <div className="font-mono text-foreground">{entry}</div>
+            {entryZoneEstimated && r.entryZone != null && (
+              <div className="text-[10px] text-txt-muted" data-testid={`scalp-entry-zone-estimated-${r.symbol}`}>
+                Approximate — a spread buffer around the entry, not a structural zone.
+              </div>
+            )}
           </div>
           <div className="rounded border border-border bg-background/40 p-2">
             <div className="text-txt-muted">Stop loss</div>
@@ -402,17 +443,30 @@ export function ScalpSignalCard({
           </p>
         )}
 
-        {/* Risk chips */}
-        <div className="flex flex-wrap items-center gap-2 text-[11px]">
-          <Tip className="text-txt-muted" help="How wide the broker's buy/sell price gap is right now — a wider spread costs more to enter and exit, so a higher reading is worse for a quick scalp.">
-            Spread <span className={riskTone(r.spreadRisk)}>{r.spreadRisk}</span>
-          </Tip>
-          <Tip className="text-txt-muted" help="The risk your order fills at a worse price than expected — higher in fast-moving or thin markets, which eats into a scalp's small target.">
-            Slippage <span className={riskTone(r.slippageRisk)}>{r.slippageRisk}</span>
-          </Tip>
-          <Tip className="text-txt-muted" help="The risk of upcoming or recent news shaking this market — a higher reading means more event risk around now, so the move can turn sharply.">
-            News <span className={riskTone(r.newsRisk)}>{r.newsRisk}</span>
-          </Tip>
+        {/* Risk chips — each one renders ONLY when the engine actually read
+            that band. A band it never evaluated is hidden, never shown as a
+            confident LOW. */}
+        <div className="flex flex-wrap items-center gap-2 text-[11px]" data-testid={`scalp-risk-chips-${r.symbol}`}>
+          {spreadBand && (
+            <Tip className="text-txt-muted" help="How wide the broker's buy/sell price gap is right now — a wider spread costs more to enter and exit, so a higher reading is worse for a quick scalp.">
+              Spread <span className={riskTone(spreadBand)} data-testid={`scalp-risk-spread-${r.symbol}`}>{spreadBand}</span>
+            </Tip>
+          )}
+          {slippageBand && (
+            <Tip className="text-txt-muted" help="The risk your order fills at a worse price than expected — higher in fast-moving or thin markets, which eats into a scalp's small target.">
+              Slippage <span className={riskTone(slippageBand)} data-testid={`scalp-risk-slippage-${r.symbol}`}>{slippageBand}</span>
+            </Tip>
+          )}
+          {newsBand && (
+            <Tip className="text-txt-muted" help="The risk of upcoming or recent news shaking this market — a higher reading means more event risk around now, so the move can turn sharply.">
+              News <span className={riskTone(newsBand)} data-testid={`scalp-risk-news-${r.symbol}`}>{newsBand}</span>
+            </Tip>
+          )}
+          {!spreadBand && !slippageBand && !newsBand && (
+            <span className="text-txt-muted" data-testid={`scalp-risk-unread-${r.symbol}`}>
+              Spread, slippage and news conditions were not read for this market.
+            </span>
+          )}
           {r.targetRealityCheck && (
             <Tip className="text-txt-muted ml-auto" help="A sanity check on whether the planned target is realistically reachable in current conditions — not just mathematically possible.">
               Target: {SCALP_TARGET_REALITY_LABEL[r.targetRealityCheck]}
@@ -528,7 +582,7 @@ export function ScalpSignalCard({
         {askRuby && (
           <RubyChartRead
             symbol={r.symbol}
-            timeframe="M1"
+            timeframe={SCALP_ENGINE_TIMEFRAME}
             draft={
               r.direction && r.entryZone && r.stopLoss != null && r.takeProfit.main != null
                 ? {

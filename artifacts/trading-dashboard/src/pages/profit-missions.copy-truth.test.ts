@@ -23,16 +23,22 @@
 //   2. The evaluator has 23 gates, not 18.
 //   3. Gate #20 binds SELF_TRADE_AGENT / SYSTEM actors only. Mission-driver
 //      orders are stamped USER, so #20 does not bind them today.
-//   4. A paper/demo draft can never produce a result: its `sim:` command id
-//      never matches an `arx_live_positions` row, and the only producer of a
-//      mission draft close is the live fill/close path.
+//   4. A paper/demo draft never produces a BROKER-RECONCILED result: its `sim:`
+//      command id never matches an `arx_live_positions` row, and the only
+//      producer of a `pnl`/`closedAt` close is the live fill/close path. It DOES
+//      produce a SIMULATED result in the separate `sim_*` family — see below.
 //   5. Automation level 3 has no demo broker behind it, and self-trade L4 has
 //      no behaviour distinct from L3.
 //
-// INTEGRATOR NOTE: the sibling branch `fix/demo-ladder` may give paper/demo a
-// real execution leg. If it does, truths 1, 4 and 5 change and this suite must
-// be updated in the SAME merge — do not delete an assertion to make a merge go
-// green.
+// UPDATED for the wired fill simulator (`missionSimulatedFills.ts`). The sibling
+// work anticipated in the original INTEGRATOR NOTE landed: paper/demo now get a
+// real simulated execution leg — fills priced from real quotes, closed against
+// later real quotes, SIMULATED P/L that moves currentValue, completes missions
+// and feeds the demo_performance promotion gate. Truths 1 and 5's "no gates" and
+// "no demo broker" halves are unchanged and still pinned; the "produces nothing"
+// half of truths 4 and 5 was FALSE against this code and has been replaced by
+// assertions that the copy states the simulated basis and never blends it with
+// broker money. Do not restore the old denial to make a merge go green.
 
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
@@ -379,10 +385,18 @@ describe("honest copy — comments state which chain each mode runs", () => {
     expect(pipeline).toMatch(/recordMissionTradeCloseByBrokerTicket/);
   });
 
-  it("missionExecution states the no-result consequence at the recorder seam", () => {
-    expect(prose(execution)).toMatch(
-      /produces NO realised result, NO protective-exit management and NO progress toward its target, and cannot complete/,
+  it("missionExecution states the consequence at the simulated seam, on BOTH books", () => {
+    // The seam no longer only records intent: `simulateMissionFill` is the
+    // default, so the comment must say what stays NULL (the broker columns) AND
+    // what is produced (the sim_* series) — the old "no result at all" wording
+    // became false the moment the simulator was wired.
+    const p = prose(execution);
+    expect(p).toMatch(
+      /produces NO broker-reconciled result and NO live protective-exit management/,
     );
+    expect(p).toMatch(/columns `pnl` \/ `closedAt` stay NULL forever/);
+    expect(p).toMatch(/SIMULATED fill priced from a real router quote/);
+    expect(p).toMatch(/never summed with the broker series/);
   });
 
   it("the mode service and boot comment both say the 23 gates are not evaluated for paper/demo", () => {
@@ -435,22 +449,35 @@ describe("honest copy — the page states the paper/demo truth to the user", () 
     expect(renderedFlat).toMatch(/there is no demo broker behind them/i);
   });
 
-  it("it says a paper/demo mission cannot produce a result or complete", () => {
-    expect(renderedFlat).toMatch(/cannot produce a result and cannot complete its target/i);
+  it("it says a paper/demo mission DOES produce simulated fills and P/L, on a simulated basis", () => {
+    // These replace the pre-simulator claims ("produces no fill, no profit or
+    // loss", "cannot progress or complete", "a record of intent, not a
+    // simulated account"). The fill simulator falsified every one of them:
+    // simulateMissionFill prices an entry from the real quote, the exit sweep
+    // closes it against later real quotes, and missionExitManager moves
+    // currentValue and completes the mission on a SIMULATED basis. The page must
+    // now say so — and must NOT carry the old denial back.
+    expect(renderedFlat).toMatch(/prices a SIMULATED fill from the real live quote/i);
     expect(renderedFlat).toMatch(
-      /mission cannot progress toward its target or complete on it/i,
+      /moves this mission's value, progress and completion on a SIMULATED basis/i,
     );
+    expect(renderedFlat).toMatch(/never added to broker-reconciled money/i);
+    expect(renderedFlat).not.toMatch(/cannot produce a result and cannot complete its target/i);
+    expect(renderedFlat).not.toMatch(/produces no fill, no profit or loss/i);
+    expect(renderedFlat).not.toMatch(/a record of intent, not a simulated account/i);
   });
 
-  it("it says protective exits cannot apply to a demo/paper dispatch", () => {
-    expect(renderedFlat).toMatch(/never opens a position, so there is nothing for the exit manager to find/i);
+  it("it says the live exit manager does not manage a simulated position, and names what does", () => {
+    expect(renderedFlat).toMatch(/opens a SIMULATED position only, so this exit manager finds nothing/i);
+    expect(renderedFlat).toMatch(/simulated exit sweep, against later real quotes/i);
+    expect(renderedFlat).not.toMatch(/never opens a position/i);
   });
 
-  it("the ladder copy states the real road — levels are earned on live results", () => {
-    expect(renderedFlat).toMatch(
-      /Automation levels are earned from real closed results on a live mission/i,
-    );
-    expect(renderedFlat).toMatch(/cannot build the track record the promotion gates ask for/i);
+  it("the ladder copy states the real road — simulated evidence earns level 3, never live", () => {
+    expect(renderedFlat).toMatch(/build a track record of SIMULATED closed results/i);
+    expect(renderedFlat).toMatch(/the demo-performance promotion gate reads/i);
+    expect(renderedFlat).toMatch(/capped at level 3/i);
+    expect(renderedFlat).not.toMatch(/because paper and demo produce no realised trades/i);
   });
 
   it("realised figures name which books they came from, and never blend them", () => {
@@ -479,11 +506,16 @@ describe("honest copy — automation level labels match the code", () => {
     expect(codeOnly(automation)).not.toMatch(/Auto-executes on a DEMO account only/);
   });
 
-  it("level 3 says it records intent and that demo execution is not yet available", () => {
+  it("level 3 says it produces SIMULATED fills and that demo execution is not yet available", () => {
     const f = flat(automation);
-    expect(f).toMatch(/Demo auto \(records intent only\)/);
+    expect(f).toMatch(/Demo auto \(simulated fills\)/);
     expect(f).toMatch(/No broker account is contacted — not a live one and not a demo one/);
-    expect(f).toMatch(/Auto-execution against a real demo account is NOT YET AVAILABLE/);
+    expect(f).toMatch(
+      /Auto-execution against a real demo broker account is NOT YET AVAILABLE/,
+    );
+    // ...and it must not go back to claiming the level produces nothing.
+    expect(codeOnly(automation)).not.toMatch(/records intent only/);
+    expect(codeOnly(automation)).not.toMatch(/no profit, loss or result is produced/);
   });
 
   it("level 4 no longer promises micro-size caps it does not apply", () => {
@@ -499,7 +531,7 @@ describe("honest copy — automation level labels match the code", () => {
       "artifacts/trading-dashboard/src/components/missions/MissionPerformanceView.tsx",
     ]) {
       const src = read(rel);
-      expect(src, rel).toMatch(/3: "Demo auto \(records intent only\)"/);
+      expect(src, rel).toMatch(/3: "Demo auto \(simulated fills\)"/);
       expect(src, rel).not.toMatch(/4: "Micro live"/);
     }
   });

@@ -187,6 +187,71 @@ describe("ScalpSignalCard — ONE shared verdict, no contradictory co-render", (
     expect(btn!.disabled).toBe(true);
   });
 
+  // ── Risk-band honesty ────────────────────────────────────────────────────
+  // The engine returns NULL spread/slippage bands on any read it never
+  // evaluated (rejectResult: AWAITING_DATA, MARKET_CLOSED, …). The card must
+  // then HIDE those chips, not print a confident green "LOW" — and not leave a
+  // bare "Spread" label with no reading behind it either.
+  it("hides the spread/slippage/news chips when the engine never read those bands", () => {
+    const { container } = render(
+      <ScalpSignalCard
+        result={makeResult({
+          status: "AWAITING_DATA",
+          // The engine's honest unknown. The generated client type still
+          // declares these non-nullable, hence the cast.
+          spreadRisk: null,
+          slippageRisk: null,
+          newsRisk: null,
+        } as unknown as Partial<ScalpResult>)}
+        onBuild={() => {}}
+      />,
+    );
+    expect(container.querySelector('[data-testid="scalp-risk-spread-EURUSD"]')).toBeNull();
+    expect(container.querySelector('[data-testid="scalp-risk-slippage-EURUSD"]')).toBeNull();
+    expect(container.querySelector('[data-testid="scalp-risk-news-EURUSD"]')).toBeNull();
+    // Distinct, honest copy — never a green LOW band the engine never read.
+    expect(container.querySelector('[data-testid="scalp-risk-unread-EURUSD"]')).toBeTruthy();
+    expect(/spread\s+low/i.test(textOf(container))).toBe(false);
+    expect(/slippage\s+low/i.test(textOf(container))).toBe(false);
+  });
+
+  it("still shows each risk chip when the engine DID read that band", () => {
+    const { container } = render(
+      <ScalpSignalCard result={makeResult({ status: "READY" })} onBuild={() => {}} />,
+    );
+    expect(container.querySelector('[data-testid="scalp-risk-spread-EURUSD"]')?.textContent).toBe("LOW");
+    expect(container.querySelector('[data-testid="scalp-risk-slippage-EURUSD"]')?.textContent).toBe("LOW");
+    expect(container.querySelector('[data-testid="scalp-risk-news-EURUSD"]')?.textContent).toBe("LOW");
+    expect(container.querySelector('[data-testid="scalp-risk-unread-EURUSD"]')).toBeNull();
+  });
+
+  // ── Entry-zone provenance ────────────────────────────────────────────────
+  // A zone the engine synthesized from a spread buffer (entryZoneEstimated)
+  // must not read as the analyzer's precise structural range.
+  it("labels a synthesized entry zone as approximate, and leaves a structural one unqualified", () => {
+    const estimated = render(
+      <ScalpSignalCard
+        result={makeResult({ entryZoneEstimated: true } as unknown as Partial<ScalpResult>)}
+        onBuild={() => {}}
+      />,
+    );
+    expect(
+      estimated.container.querySelector('[data-testid="scalp-entry-zone-estimated-EURUSD"]'),
+    ).toBeTruthy();
+    expect(textOf(estimated.container)).toContain("≈");
+    cleanup();
+
+    const structural = render(
+      <ScalpSignalCard
+        result={makeResult({ entryZoneEstimated: false } as unknown as Partial<ScalpResult>)}
+        onBuild={() => {}}
+      />,
+    );
+    expect(
+      structural.container.querySelector('[data-testid="scalp-entry-zone-estimated-EURUSD"]'),
+    ).toBeNull();
+  });
+
   it("act-ready wording appears ONLY on a READY engine status (never on wait/blocked/stale cards)", () => {
     for (const status of ALL_STATUSES) {
       const { container, unmount } = render(

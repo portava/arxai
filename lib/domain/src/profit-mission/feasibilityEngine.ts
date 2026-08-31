@@ -246,13 +246,18 @@ export function evaluateFeasibility(input: FeasibilityInput): FeasibilityVerdict
     warnings.push("An extreme risk profile increases possible loss on each position.");
   }
 
-  // Feed gate: START is blocked when the feed is not confirmed; the mission can
-  // still be drafted. We NEVER fabricate feasibility from a stale/absent feed —
-  // the math-based estimate stands, but starting is held.
+  // Feed readiness: DISPLAY ONLY. `canStart` says whether a confirmed feed was
+  // observed; it is NOT an enforced gate — no caller consults it at start time
+  // (`POST /profit-missions/:id/start` checks state-machine legality only), and
+  // the planner surface offers no start control at all. So the copy must not
+  // claim a block that nothing performs. We NEVER fabricate feasibility from a
+  // stale/absent feed — the math-based estimate stands, labelled.
   const canStart = feed.ready === true;
   const startBlockReason = canStart ? null : feed.reason ?? "FEED_NOT_READY";
   if (!canStart) {
-    warnings.push("Live feed not confirmed — the mission can be drafted but not started yet.");
+    warnings.push(
+      "Live feed not confirmed — the planner drafts this mission and does not start it.",
+    );
   }
 
   return {

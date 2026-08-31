@@ -60,17 +60,22 @@ export const AUTOMATION_LEVEL_META: Record<MissionAutomationLevel, AutomationLev
     isAuto: false, reachesLive: true, requiresCertificate: false, requiresExplicitLiveEnable: false,
   },
   3: {
-    level: 3, key: "DEMO_AUTO", label: "Demo auto (records intent only)",
-    // HONEST LABEL. The previous wording — "Auto-executes on a DEMO account
-    // only" — was false: there is no demo broker behind this level. A non-live
-    // mission's dispatch stops at `recordSimulatedMissionDispatch`, which
-    // journals + audits the intent and returns a `sim:` command id. No account
-    // of any kind is touched, nothing is filled, and no result is ever produced.
+    level: 3, key: "DEMO_AUTO", label: "Demo auto (simulated fills)",
+    // HONEST LABEL, twice corrected. "Auto-executes on a DEMO account only" was
+    // false — there is no demo broker behind this level. Its replacement,
+    // "records intent only", then went stale: the default non-live executor is
+    // now `simulateMissionFill` (missionSimulatedFills.ts), which prices an
+    // entry from a REAL router quote and closes it against later real quotes,
+    // writing the sim_* family. So this level DOES produce fills and outcomes —
+    // they are modelled, never money, and never broker-reconciled.
+    // NB: each sentence below is kept inside ONE string literal so the copy
+    // guard can pin it without matching across a `+` concatenation.
     description:
-      "Auto-approves and records the trade ARX would have taken, then stops. "
+      "Auto-approves and dispatches to the mission's simulator. "
       + "No broker account is contacted — not a live one and not a demo one — "
-      + "so nothing is filled and no profit, loss or result is produced. "
-      + "Auto-execution against a real demo account is NOT YET AVAILABLE.",
+      + "so the fill and the profit or loss are SIMULATED: priced from real "
+      + "quotes, never money, never added to broker-reconciled results. "
+      + "Auto-execution against a real demo broker account is NOT YET AVAILABLE.",
     isAuto: true, reachesLive: false, requiresCertificate: false, requiresExplicitLiveEnable: false,
   },
   4: {

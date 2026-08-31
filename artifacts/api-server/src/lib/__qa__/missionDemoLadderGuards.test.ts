@@ -139,6 +139,22 @@ test("a mode change that crosses the accounting basis rebases the mission's mone
   );
 });
 
+test("the briefing/EOD/report reads the mission's OWN accounting basis, not the broker book", () => {
+  const svc = read("artifacts/api-server/src/lib/missionBriefingService.ts");
+  assert.ok(
+    svc.includes("accountingBasisForMode"),
+    "the briefing service must resolve the mission's accounting basis before aggregating",
+  );
+  assert.ok(
+    svc.includes("readSimulatedClosedDrafts"),
+    "a paper/demo mission's closes live in the sim_* family — the briefing must read them",
+  );
+  assert.ok(
+    /accountingBasis:\s*accountingBasisForMode\(mission\.executionMode\)/.test(svc),
+    "the basis must travel into the briefing state so every headline states which book it is on",
+  );
+});
+
 test("no realised-money reader sums a simulated row into a broker-reconciled total", () => {
   // Structural spot-check over the readers the review named: wherever a file
   // reads the broker-reconciled pnl column of mission drafts for a realised
@@ -147,6 +163,10 @@ test("no realised-money reader sums a simulated row into a broker-reconciled tot
     "artifacts/api-server/src/lib/missionExitManager.ts",
     "artifacts/api-server/src/lib/missionPromotionService.ts",
     "artifacts/api-server/src/lib/missionDriver.ts",
+    // Added after an audit found the briefing/EOD/report aggregating the broker
+    // family for EVERY mission — on a paper/demo mission that reported a
+    // confident "+0 across 0 trade(s)" over a book it does not trade on.
+    "artifacts/api-server/src/lib/missionBriefingService.ts",
   ]) {
     const src = read(rel);
     assert.ok(

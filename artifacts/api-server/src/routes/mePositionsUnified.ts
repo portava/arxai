@@ -159,6 +159,27 @@ router.get("/me/positions/all", requireUser, async (req, res) => {
   const positionsRaw: DemoRaw[] = Array.isArray(stateRows[0]?.positions)
     ? (stateRows[0]!.positions as DemoRaw[]) : [];
 
+  // Demo freshness — same honesty rule the live rows above already carry.
+  // Every demo row comes from ONE mt5_state blob, so they all share that
+  // blob's `lastSyncAt` stamp. Without it a dead demo EA bridge kept
+  // rendering hours-old floatingPnl/currentPrice as if they were live
+  // numbers (green/red, 2dp) with Close/50%/Break-even/Reverse acting on
+  // that stale picture — exactly the defect the live half was fixed for.
+  // Same 90s window and the same shared classifier; `snapshotReliable` is
+  // deliberately false because the demo path has no per-sweep completeness
+  // marker, so a stale row is flagged BROKER_CONFIRMATION_PENDING and is
+  // NEVER dropped or treated as closed on a timestamp alone.
+  const demoSyncRaw = stateRows[0]?.lastSyncAt ?? null;
+  const demoSyncParsed = demoSyncRaw != null ? new Date(demoSyncRaw).getTime() : null;
+  const demoSyncAtMs =
+    demoSyncParsed != null && Number.isFinite(demoSyncParsed) ? demoSyncParsed : null;
+  const demoSyncIso = demoSyncAtMs != null ? new Date(demoSyncAtMs).toISOString() : null;
+  const demoSync = classifyRow(demoSyncAtMs, {
+    windowMs: LIVE_STALE_MS,
+    now,
+    snapshotReliable: false,
+  });
+
   // Recent demo commands → resolve sourceCommandId per ticket.
   const cmdRows = positionsRaw.length === 0 ? [] : await db.select({
     commandId: mt5DemoCommandsTable.commandId,
@@ -185,10 +206,17 @@ router.get("/me/positions/all", requireUser, async (req, res) => {
       stopLoss: num(p.stopLoss),
       takeProfit: num(p.takeProfit),
       floatingPnl: num(p.profit),
+      // When the demo bridge last confirmed this blob's prices/P&L (ISO), or
+      // null when it never synced — lets clients label a stale floating P/L
+      // honestly ("as of Xm ago") instead of rendering it as a live number.
+      lastSyncedAt: demoSyncIso,
       openedAt: p.openTime ?? null,
       sourceCommandId: matched?.commandId ?? null,
       accountMode: "DEMO" as const,
       source: matched?.sourcePage ?? "MT5_DEMO_BRIDGE",
+      // Same tokens the live rows emit, so one renderer stays honest for both.
+      freshness: demoSync.freshness,
+      confirmation: demoSync.confirmation,
     };
   });
 

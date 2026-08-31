@@ -59,6 +59,20 @@ function basketSyncOf(b: ScalpBasket): BasketSyncInfo | null {
   };
 }
 
+// ── Partial P/L disclosure (CONFIDENT_ABSENT fix) ──────────────────────────
+// The server withholds `combinedFloatingPl` (null) unless EVERY leg reported a
+// floating P/L, so a partial sum can never be shown as the basket total. It
+// also stamps `plKnownLegCount` — how many legs actually reported. A bare "—"
+// is honest but silent; when some-but-not-all legs reported, say which. The
+// generated client type does not carry the count yet (real wiring: add
+// `plKnownLegCount` to ScalpBasket in lib/api-spec/openapi.yaml and regenerate
+// the orval clients), so it is read structurally; absent/garbled degrades to
+// null and nothing new renders — never a fabricated total.
+function plKnownLegCountOf(b: ScalpBasket): number | null {
+  const v = (b as { plKnownLegCount?: unknown }).plKnownLegCount;
+  return typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null;
+}
+
 function fmtSyncTime(iso: string): string {
   const t = new Date(iso);
   if (!Number.isFinite(t.getTime())) return "an unknown time";
@@ -77,6 +91,14 @@ function BasketRow({ basket, name }: { basket: ScalpBasket; name: string }) {
   const combined = pl(basket.combinedFloatingPl);
   const sync = basketSyncOf(basket);
   const syncStale = sync?.stale === true;
+  // Partial reporting: the total is withheld and at least one — but not every —
+  // leg reported. Distinguish that from "no leg reported anything at all".
+  const plKnownLegs = plKnownLegCountOf(basket);
+  const plPartial =
+    basket.combinedFloatingPl == null &&
+    plKnownLegs != null &&
+    plKnownLegs > 0 &&
+    plKnownLegs < basket.entryCount;
   return (
     <div
       className="rounded-lg border border-border/60 bg-card/40 p-3 space-y-2"
@@ -132,6 +154,12 @@ function BasketRow({ basket, name }: { basket: ScalpBasket; name: string }) {
         <div>
           <span className="text-muted-foreground">Open P/L</span>
           <div className={`font-mono ${combined.tone}`}>{combined.text}</div>
+          {plPartial && (
+            <div className="text-[10px] text-warning" data-testid="scalp-basket-pl-partial">
+              P/L incomplete — {plKnownLegs} of {basket.entryCount} legs reporting, so no basket
+              total is shown.
+            </div>
+          )}
           {syncStale && (
             <div className="text-[10px] text-warning" data-testid="scalp-basket-pl-asof">
               as of {sync?.syncedAt ? fmtSyncTime(sync.syncedAt) : "an unknown time"} — not live

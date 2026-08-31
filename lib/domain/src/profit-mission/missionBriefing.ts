@@ -15,6 +15,28 @@ export interface ClosedTradeAggregate {
   worstTradePnl: number;
 }
 
+/**
+ * Which book every money figure in a briefing came from. A live mission is on
+ * broker-reconciled money; a paper/demo mission is on SIMULATED outcomes priced
+ * from real quotes. The two are never blended, and the basis is REQUIRED so no
+ * briefing can present one book's figures as the other's — an audit found the
+ * EOD headline reading a confident "+0 across 0 trade(s)" over the broker book
+ * on a paper mission whose simulated trades had closed that same day.
+ */
+export type BriefingAccountingBasis = "SIMULATED" | "BROKER_RECONCILED";
+
+/** Short, unambiguous label for a basis, for headlines. */
+export function briefingBasisLabel(basis: BriefingAccountingBasis): string {
+  return basis === "SIMULATED" ? "SIMULATED" : "broker-confirmed";
+}
+
+/** One-sentence statement of what the figures on this basis are. */
+export function briefingBasisNote(basis: BriefingAccountingBasis): string {
+  return basis === "SIMULATED"
+    ? "Basis: SIMULATED — this is a paper/demo mission, so every figure above is a modelled outcome priced from real quotes, not money and not a broker-confirmed result."
+    : "Basis: broker-confirmed realised money from this live mission's closed trades.";
+}
+
 export interface MissionBriefingState {
   missionId: number;
   status: string;
@@ -26,6 +48,12 @@ export interface MissionBriefingState {
   daysRemaining: number;
   automationLevel: number;
   promotionPaused: boolean;
+  /**
+   * The book `currentValue` and every aggregate handed to these builders is on.
+   * REQUIRED: a caller that cannot say which book it read must not produce a
+   * briefing at all.
+   */
+  accountingBasis: BriefingAccountingBasis;
 }
 
 export interface DailyBriefing {
@@ -52,6 +80,7 @@ export function buildDailyBriefing(state: MissionBriefingState, nowMs: number): 
     `Status: ${state.status}. Progress: ${pct.toFixed(1)}% toward the goal.`,
     `Account value ${state.currentValue} of target ${state.targetAmount} — ${remainingProfit} still to go.`,
     `Time left: ${state.daysRemaining} day(s). Automation level ${state.automationLevel}.`,
+    briefingBasisNote(state.accountingBasis),
   ];
   const plan: string[] = [];
   const cautions: string[] = [];
@@ -100,6 +129,7 @@ export function buildEndOfDayReview(
     `Net result today: ${today.netPnl}.`,
     `Best: ${today.bestTradePnl}; worst: ${today.worstTradePnl}.`,
     `Progress now: ${progressPct(state).toFixed(1)}% of the goal.`,
+    briefingBasisNote(state.accountingBasis),
   ];
   const observations: string[] = [];
   if (today.totalTrades === 0) observations.push("No trades closed today — patience is a valid result.");
@@ -111,7 +141,7 @@ export function buildEndOfDayReview(
     kind: "eod_review",
     missionId: state.missionId,
     generatedAt: new Date(nowMs).toISOString(),
-    headline: `End-of-day review — ${today.netPnl >= 0 ? "+" : ""}${today.netPnl} across ${today.totalTrades} trade(s)`,
+    headline: `End-of-day review — ${briefingBasisLabel(state.accountingBasis)} ${today.netPnl >= 0 ? "+" : ""}${today.netPnl} across ${today.totalTrades} trade(s)`,
     lines,
     observations,
   };
@@ -142,7 +172,8 @@ export function buildMissionReport(
     `Final status: ${state.status}.`,
     `Account moved from ${state.startingAmount} to ${state.currentValue} (net ${netResult >= 0 ? "+" : ""}${netResult}).`,
     `Trades: ${overall.totalTrades} (${overall.winningTrades}W / ${overall.losingTrades}L, ${winRate.toFixed(0)}% win).`,
-    `Net realised across the mission: ${overall.netPnl}.`,
+    `Net realised across the mission (${briefingBasisLabel(state.accountingBasis)}): ${overall.netPnl}.`,
+    briefingBasisNote(state.accountingBasis),
   ];
   const lessons: string[] = [];
   if (outcome === "reached") lessons.push("Goal reached — record what worked, but do not assume it repeats.");
@@ -156,10 +187,10 @@ export function buildMissionReport(
     generatedAt: new Date(nowMs).toISOString(),
     outcome,
     headline: outcome === "reached"
-      ? "Mission report — goal reached"
+      ? `Mission report (${briefingBasisLabel(state.accountingBasis)}) — goal reached`
       : outcome === "fell_short"
-        ? "Mission report — goal not reached"
-        : "Mission report — in progress",
+        ? `Mission report (${briefingBasisLabel(state.accountingBasis)}) — goal not reached`
+        : `Mission report (${briefingBasisLabel(state.accountingBasis)}) — in progress`,
     lines,
     lessons,
   };

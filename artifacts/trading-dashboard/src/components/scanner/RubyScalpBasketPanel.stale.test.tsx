@@ -145,3 +145,46 @@ describe("RubyScalpBasketPanel — broker-sync staleness is labeled, never silen
     expect(container.querySelector('[data-testid="scalp-basket-pl-asof"]')).toBeNull();
   });
 });
+
+// ── Partial P/L disclosure ───────────────────────────────────────────────────
+// The server withholds `combinedFloatingPl` (null) unless EVERY leg reported a
+// floating figure, so a partial sum can never be shown as the basket total. A
+// bare "—" is honest but silent about WHY, and indistinguishable from "no leg
+// reported at all". The panel now names the shortfall from `plKnownLegCount`.
+describe("RubyScalpBasketPanel — a withheld basket P/L says why", () => {
+  it("names how many legs reported when the total is withheld on a partial read", () => {
+    h.baskets = [
+      makeBasket({ entryCount: 3, combinedFloatingPl: null, plKnownLegCount: 1 }),
+    ];
+    const { container } = render(<RubyScalpBasketPanel />);
+    const note = container.querySelector('[data-testid="scalp-basket-pl-partial"]');
+    expect(note).toBeTruthy();
+    expect(note!.textContent).toMatch(/1 of 3 legs reporting/i);
+    // And no fabricated total anywhere on the row.
+    const row = container.querySelector('[data-testid="scalp-basket-row"]');
+    expect(row!.textContent).toContain("—");
+  });
+
+  it("renders no partial note when every leg reported (a real total is shown)", () => {
+    h.baskets = [
+      makeBasket({ entryCount: 3, combinedFloatingPl: 12.5, plKnownLegCount: 3 }),
+    ];
+    const { container } = render(<RubyScalpBasketPanel />);
+    expect(container.querySelector('[data-testid="scalp-basket-pl-partial"]')).toBeNull();
+  });
+
+  it("renders no partial note when NO leg reported (nothing partial to disclose)", () => {
+    h.baskets = [
+      makeBasket({ entryCount: 3, combinedFloatingPl: null, plKnownLegCount: 0 }),
+    ];
+    const { container } = render(<RubyScalpBasketPanel />);
+    expect(container.querySelector('[data-testid="scalp-basket-pl-partial"]')).toBeNull();
+  });
+
+  it("degrades gracefully when the count is missing entirely (older server)", () => {
+    h.baskets = [makeBasket({ entryCount: 3, combinedFloatingPl: null })];
+    const { container } = render(<RubyScalpBasketPanel />);
+    expect(container.querySelector('[data-testid="scalp-basket-pl-partial"]')).toBeNull();
+    expect(container.querySelector('[data-testid="scalp-basket-row"]')).toBeTruthy();
+  });
+});

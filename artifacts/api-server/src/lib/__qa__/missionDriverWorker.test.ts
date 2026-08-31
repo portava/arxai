@@ -484,3 +484,48 @@ test("emergency stop enforcement: a user-emergency signal pauses the mission wit
   assert.equal(await missionStatus(missionId), "paused");
   assert.ok((await eventTypes(missionId)).includes("risk_stop"));
 });
+
+// ── Honest signals: which observed emergency actually binds which mission ────
+//
+// The driver now resolves the REAL kill-switch / broker-health signals per tick
+// instead of the neutral constants an audit flagged as a dead gauge. These two
+// lock the consequence of that: a broker-path fault does not stop a mission that
+// never routes through the broker, and the kill switch stops everything.
+
+test("a broker/feed-only emergency does NOT pause a paper mission (it has no broker path)", async () => {
+  const missionId = await seedMission({ executionMode: "paper", automationLevel: 2 });
+  const r = await runMissionDriverPass({
+    onlyMissionId: missionId,
+    scan: async () => ({ selectedProposalId: null }),
+    // Exactly what `resolveMissionLiveSignals` returns with no MT5 link: the
+    // observation is honest and IS persisted into riskJson — it just describes
+    // a dependency a simulated mission does not have.
+    signals: {
+      killSwitchActive: false,
+      brokerConnected: false,
+      feedStatus: "unknown",
+      quoteFresh: false,
+    },
+  });
+  const outcome = r.outcomes.find((o) => o.missionId === missionId)!;
+  assert.equal(outcome.transitioned, null, "a broker fault must not pause a simulated mission");
+  assert.equal(await missionStatus(missionId), "running");
+});
+
+test("an engaged kill switch pauses a paper mission — it binds every mode", async () => {
+  const missionId = await seedMission({ executionMode: "paper", automationLevel: 2 });
+  const r = await runMissionDriverPass({
+    onlyMissionId: missionId,
+    scan: async () => ({ selectedProposalId: null }),
+    signals: {
+      killSwitchActive: true,
+      brokerConnected: false,
+      feedStatus: "unknown",
+      quoteFresh: false,
+    },
+  });
+  const outcome = r.outcomes.find((o) => o.missionId === missionId)!;
+  assert.equal(outcome.transitioned, "paused");
+  assert.equal(await missionStatus(missionId), "paused");
+  assert.ok((await eventTypes(missionId)).includes("risk_stop"));
+});

@@ -20,6 +20,12 @@
 //     as "the driver is 23-gate checked in every mode" — it is not. If any gate
 //     that DOES run says no, the mission journals the block honestly and waits;
 //     the driver never retries around a refusal and can never relax anything.
+//   * The risk/emergency read on every tick is fed the REAL platform signals
+//     (`resolveMissionLiveSignals`: safety-core kill switch + broker-health
+//     verdict), never neutral constants — an unattended loop whose kill-switch
+//     gauge cannot fire is the worst place to have one. See
+//     `BROKER_PATH_ONLY_EMERGENCY_CONDITIONS` for the one narrow rule about
+//     which of those conditions bind a simulated mission.
 //   * Auto-approval is decided by the PURE ladder planner (`decideAutoApproval`)
 //     from the CURRENT row state, re-read every tick — level 3 auto-runs only a
 //     non-live mission; levels 4–6 on a live mission additionally require the
@@ -78,7 +84,10 @@ import {
 } from "./missionExitSignals.js";
 import { resolveMissionPromotionStatus } from "./missionPromotionService.js";
 import { applyMissionTransition } from "./profitMissionJournal.js";
-import type { Phase7Evaluator } from "./missionExecutionQuality.js";
+import {
+  resolveMissionLiveSignals,
+  type Phase7Evaluator,
+} from "./missionExecutionQuality.js";
 
 type MissionRow = typeof profitMissionsTable.$inferSelect;
 
@@ -100,16 +109,49 @@ export function missionDriverEnabled(raw: string | undefined): boolean {
   return !DISABLE_VALUES.has(raw.trim().toLowerCase());
 }
 
-/** Conservative signals for unattended ticks: no observed anomaly is claimed —
- * this is the NEUTRAL element of the additive stricter-only mission gate (see
- * missionExecution.ts DEFAULT_SIGNALS); the real live pipeline re-derives every
- * safety signal server-side. */
-const DRIVER_SIGNALS: MissionLiveSignals = {
-  killSwitchActive: false,
-  brokerConnected: true,
-  feedStatus: "live",
-  quoteFresh: true,
-};
+/** Signals for an unattended tick, RESOLVED from the real platform seams
+ * (safety-core kill switch + broker-health verdict) exactly as the mission
+ * routes do — never the neutral constants an audit flagged as a dead gauge
+ * (killSwitchActive:false / brokerConnected:true / feedStatus:"live" /
+ * quoteFresh:true made the risk read's emergency conditions unreachable, and
+ * the unattended path is precisely where nobody is watching the gauge).
+ * `resolveMissionLiveSignals` is fail-closed on an unreadable switch and
+ * fail-safe on an unreadable broker verdict, so this channel can only ADD
+ * strictness; the live pipeline still re-derives every safety signal itself. */
+async function driverSignals(opts: MissionDriverPassOpts): Promise<MissionLiveSignals> {
+  return opts.signals ?? (await resolveMissionLiveSignals());
+}
+
+/**
+ * Emergency conditions that describe the LIVE BROKER path and nothing else.
+ *
+ * A paper/demo mission never routes through the broker: its fills come from the
+ * simulator, priced off router quotes, and that simulator already refuses a fill
+ * per trade when no real quote is available rather than inventing a price. A
+ * broker link fault is therefore not that mission's execution fault, and pausing
+ * it over one would be a stop nobody could explain.
+ *
+ * This rule is deliberately NARROW. The observed signals are still resolved
+ * honestly and persisted in `riskJson`, so the Risk Control card shows exactly
+ * what was seen on every mission; this decides only whether the DRIVER halts a
+ * simulated mission over it. Every other condition — kill switch, user emergency
+ * stop, loss limits, blowup — binds every mission in every mode.
+ */
+const BROKER_PATH_ONLY_EMERGENCY_CONDITIONS: ReadonlySet<string> = new Set([
+  "broker_disconnect",
+  "stale_feed",
+  "stale_quote",
+]);
+
+/** Does this mission's observed emergency bind ITS execution path? */
+function emergencyBindsMission(
+  mission: MissionRow,
+  emergency: { triggered: boolean; conditions: readonly string[] },
+): boolean {
+  if (!emergency.triggered) return false;
+  if ((mission.executionMode ?? "").trim().toLowerCase() === "live") return true;
+  return emergency.conditions.some((c) => !BROKER_PATH_ONLY_EMERGENCY_CONDITIONS.has(c));
+}
 
 /** Every exit signal the assembler can observe — used to report TOTAL blindness
  *  honestly when the assembly itself fails, instead of an empty bundle that
@@ -440,10 +482,13 @@ async function tickMission(
   outcome.exitsManaged = await sweepSimulatedExits(mission, opts);
 
   // ── Honest risk + protection reads (change-only journaling inside). ────────
+  // Resolved ONCE per tick so the risk read and any dispatch in the same tick
+  // are judged against the same observed kill-switch / broker / feed truth.
+  const signals = await driverSignals(opts);
   const risk = await refreshMissionRisk({
     userId: mission.userId,
     missionId: mission.id,
-    signals: opts.signals ?? DRIVER_SIGNALS,
+    signals,
     nowMs,
   });
   const protection = await refreshMissionProtection({
@@ -461,7 +506,7 @@ async function tickMission(
     timeframeEndMs: mission.timeframeEnd.getTime(),
     nowMs,
     targetReached,
-    emergencyTriggered: risk.ok && risk.state.emergency.triggered,
+    emergencyTriggered: risk.ok && emergencyBindsMission(mission, risk.state.emergency),
     riskStopRequired:
       risk.ok &&
       (risk.state.mode === "stop" ||
@@ -526,7 +571,7 @@ async function tickMission(
             userId: mission.userId,
             missionId: mission.id,
             proposalId,
-            signals: opts.signals ?? DRIVER_SIGNALS,
+            signals,
             nowMs,
             // AUTONOMY PROVENANCE — this dispatch is reached on an unattended
             // tick with no human press anywhere in the chain, so the live

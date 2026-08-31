@@ -49,6 +49,31 @@ test("DELAYED/OFFLINE: marker stale => stale row STAYS VISIBLE pending confirmat
   assert.equal(cls.brokerConfirmedAbsent, false);
 });
 
+test("DEMO caller contract: every demo row gets a verdict and is never droppable", () => {
+  // The unified feed classifies DEMO rows off their mt5_state blob's single
+  // `lastSyncAt` stamp with snapshotReliable:false — the demo path has no
+  // per-sweep completeness marker, so it may flag but must never hide. This
+  // pins that call shape: a dead demo bridge (or one that never synced) must
+  // still yield a STALE/MISSING verdict the UI can label, and brokerConfirmedAbsent
+  // must stay false so no demo row is dropped on a timestamp alone.
+  const demoOpts = { windowMs: WINDOW, now: NOW, snapshotReliable: false } as const;
+
+  const fresh = classifyRow(NOW - 5_000, demoOpts);
+  assert.equal(fresh.freshness, "FRESH");
+  assert.equal(fresh.confirmation, "BROKER_CONFIRMED");
+
+  // Bridge died hours ago: the blob's P/L is a last-known value, not a live one.
+  const dead = classifyRow(NOW - 4 * 60 * 60_000, demoOpts);
+  assert.equal(dead.freshness, "STALE");
+  assert.equal(dead.confirmation, "BROKER_CONFIRMATION_PENDING");
+  assert.equal(dead.brokerConfirmedAbsent, false);
+
+  // Never synced at all — still a typed verdict, still visible.
+  const never = classifyRow(null, demoOpts);
+  assert.equal(never.freshness, "MISSING");
+  assert.equal(never.brokerConfirmedAbsent, false);
+});
+
 test("MISSING row (never synced) is only absent under a reliable snapshot", () => {
   const reliable = classifyRow(null, { windowMs: WINDOW, now: NOW, snapshotReliable: true });
   assert.equal(reliable.freshness, "MISSING");

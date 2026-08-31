@@ -267,10 +267,12 @@ type ChartPosition = {
   takeProfit: number | null;
   floatingPnl: number | null;
   accountMode: "DEMO" | "LIVE";
-  // Live rows only (server-emitted): when the EA bridge last confirmed this
-  // row's prices/P&L, and the server's freshness verdict for it. A STALE /
-  // MISSING row's floating P/L is a last-known value, NOT a live number — the
-  // row must say so instead of rendering green/red as if it were current.
+  // Server-emitted on BOTH live and demo rows: when the EA bridge last
+  // confirmed this row's prices/P&L, and the server's freshness verdict for
+  // it. A STALE / MISSING row's floating P/L is a last-known value, NOT a live
+  // number — the row must say so instead of rendering green/red as if it were
+  // current. Demo rows share their mt5_state blob's sync stamp, so a dead demo
+  // bridge flags every one of its rows rather than showing hours-old P/L as live.
   lastSyncedAt?: string | null;
   freshness?: "FRESH" | "STALE" | "MISSING";
 };
@@ -2828,8 +2830,9 @@ export function ScannerChartPanel() {
                   </div>
                 )}
                 {symbolPositions.map((p, i) => {
-                  // Server freshness verdict — a STALE/MISSING live row's P/L
-                  // is a last-known value, never rendered as a live number.
+                  // Server freshness verdict (live AND demo rows) — a
+                  // STALE/MISSING row's P/L is a last-known value, never
+                  // rendered as a live number.
                   const isStaleRow = p.freshness === "STALE" || p.freshness === "MISSING";
                   const ageLabel = syncAgeLabel(p.lastSyncedAt, Date.now());
                   const staleActionTitle = isStaleRow

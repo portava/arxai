@@ -34,9 +34,15 @@ export const VALID_RISK_PROFILES: readonly RiskProfile[] = [
 ];
 
 /**
- * Honest feed readiness for a mission. Phase 1 is planning + display only — no
- * execution feed is wired for missions yet — so START stays blocked and drafts
- * are always allowed. We never fabricate "feed ready" to enable a start.
+ * Honest feed readiness for a mission. No mission-level execution feed is wired
+ * yet, so this always reports NOT ready and we never fabricate "feed ready".
+ *
+ * SCOPE — read this before writing copy against it: the `canStart` it produces
+ * is DISPLAY ONLY. Nothing enforces it. `POST /profit-missions/:id/start`
+ * validates state-machine legality and nothing else, and the planner surface
+ * offers no start control, so a surface must say "starting is not offered here",
+ * never "starting is blocked until the feed is confirmed" — that would describe
+ * a check no code performs.
  */
 export function resolveFeedReadiness(): FeedReadiness {
   return { ready: false, reason: "FEED_NOT_CONFIRMED" };

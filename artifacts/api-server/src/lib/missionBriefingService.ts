@@ -6,6 +6,10 @@
 //     no trade, no gate change, no fabrication. Empty evidence yields honest empty
 //     aggregates (never invented performance).
 //   - Per-user / per-mission isolation: every read is scoped by (userId, missionId).
+//   - ACCOUNTING BASIS: every aggregate is read from the mission's OWN book —
+//     broker-reconciled closes for a live mission, SIMULATED closes for a
+//     paper/demo one — and the basis is carried into the narrative so no figure
+//     is shown unlabelled. The two books are read separately and never summed.
 import { and, eq } from "drizzle-orm";
 import { db, profitMissionsTable, missionTradeDraftsTable } from "@workspace/db";
 import {
@@ -21,6 +25,11 @@ import {
   type ClosedTradeRecord,
   type LearningLoopResult,
 } from "@workspace/domain/profit-mission";
+import {
+  accountingBasisForMode,
+  readSimulatedClosedDrafts,
+  type MissionAccountingBasis,
+} from "./missionSimulatedFills.js";
 
 type MissionRow = typeof profitMissionsTable.$inferSelect;
 
@@ -52,6 +61,7 @@ function toBriefingState(mission: MissionRow, nowMs: number): MissionBriefingSta
     status: mission.status,
     startingAmount: mission.startingAmount,
     targetAmount: mission.targetAmount,
+    accountingBasis: accountingBasisForMode(mission.executionMode),
     currentValue: mission.currentValue,
     requiredProfit: mission.requiredProfit,
     daysRemaining,
@@ -68,7 +78,36 @@ interface ClosedDraftRow {
   agentKey: string | null;
 }
 
-async function readClosedDrafts(userId: number, missionId: number): Promise<ClosedDraftRow[]> {
+/**
+ * The mission's closed trades ON ITS OWN ACCOUNTING BASIS.
+ *
+ * WHY THIS SWITCHES: a paper/demo mission's closes live in the sim_* family
+ * (simPnl / simClosedAt); its `pnl` / `closedAt` stay NULL forever. Reading only
+ * the broker family here made the EOD headline report a confident "+0 across 0
+ * trade(s)" and the report "Net realised: 0" on a mission whose own progress and
+ * currentValue had just moved on those very closes — a confident zero over the
+ * wrong book. The two books are read separately and NEVER summed; the basis is
+ * carried into every headline so no figure is presented unlabelled.
+ */
+async function readClosedDraftsForBasis(
+  userId: number,
+  missionId: number,
+  basis: MissionAccountingBasis,
+): Promise<ClosedDraftRow[]> {
+  if (basis === "SIMULATED") {
+    const sim = await readSimulatedClosedDrafts(userId, missionId);
+    return sim.map((s) => ({
+      pnl: s.pnl,
+      rMultiple: s.rMultiple,
+      closedAt: s.closedAt,
+      symbol: s.symbol,
+      agentKey: s.agentKey,
+    }));
+  }
+  return readBrokerClosedDrafts(userId, missionId);
+}
+
+async function readBrokerClosedDrafts(userId: number, missionId: number): Promise<ClosedDraftRow[]> {
   const rows = await db
     .select({
       pnl: missionTradeDraftsTable.pnl,
@@ -83,6 +122,9 @@ async function readClosedDrafts(userId: number, missionId: number): Promise<Clos
         eq(missionTradeDraftsTable.missionId, missionId),
         eq(missionTradeDraftsTable.userId, userId),
         eq(missionTradeDraftsTable.status, "executed"),
+        // Broker-reconciled series ONLY. A mission promoted demo → live still
+        // carries its simulated rows; they must never enter a broker total.
+        eq(missionTradeDraftsTable.simulated, false),
       ),
     );
   return rows
@@ -140,7 +182,7 @@ export async function buildMissionDailyBriefing(args: {
   return { ok: true, briefing: buildDailyBriefing(toBriefingState(mission, nowMs), nowMs) };
 }
 
-/** End-of-day review for a mission (today's realised closed trades). */
+/** End-of-day review for a mission (today's closed trades ON ITS OWN BASIS). */
 export async function buildMissionEodReview(args: {
   userId: number;
   missionId: number;
@@ -150,7 +192,11 @@ export async function buildMissionEodReview(args: {
   if (!mission) return { ok: false, kind: "not_found" };
   const nowMs = args.nowMs ?? Date.now();
   const dayStart = startOfUtcDayMs(nowMs);
-  const drafts = await readClosedDrafts(args.userId, args.missionId);
+  const drafts = await readClosedDraftsForBasis(
+    args.userId,
+    args.missionId,
+    accountingBasisForMode(mission.executionMode),
+  );
   const today = drafts.filter((d) => d.closedAt.getTime() >= dayStart);
   return {
     ok: true,
@@ -158,7 +204,7 @@ export async function buildMissionEodReview(args: {
   };
 }
 
-/** Post-mission (or in-progress) report over all realised closed trades. */
+/** Post-mission (or in-progress) report over all closed trades ON ITS OWN BASIS. */
 export async function buildMissionReportForUser(args: {
   userId: number;
   missionId: number;
@@ -167,7 +213,11 @@ export async function buildMissionReportForUser(args: {
   const mission = await loadOwnedMission(args.userId, args.missionId);
   if (!mission) return { ok: false, kind: "not_found" };
   const nowMs = args.nowMs ?? Date.now();
-  const drafts = await readClosedDrafts(args.userId, args.missionId);
+  const drafts = await readClosedDraftsForBasis(
+    args.userId,
+    args.missionId,
+    accountingBasisForMode(mission.executionMode),
+  );
   return {
     ok: true,
     report: buildMissionReport(toBriefingState(mission, nowMs), aggregate(drafts), nowMs),
@@ -181,7 +231,14 @@ export async function buildMissionLearningLoop(args: {
 }): Promise<{ ok: true; learning: LearningLoopResult } | { ok: false; kind: "not_found" }> {
   const mission = await loadOwnedMission(args.userId, args.missionId);
   if (!mission) return { ok: false, kind: "not_found" };
-  const drafts = await readClosedDrafts(args.userId, args.missionId);
+  // Same basis switch: a paper/demo mission's learning loop is built from its
+  // SIMULATED closes, which is the only evidence it has — reading the broker
+  // family here returned an empty loop that looked like "no evidence yet".
+  const drafts = await readClosedDraftsForBasis(
+    args.userId,
+    args.missionId,
+    accountingBasisForMode(mission.executionMode),
+  );
   const records: ClosedTradeRecord[] = drafts.map((d) => ({
     agentKey: d.agentKey,
     strategyKey: d.agentKey,

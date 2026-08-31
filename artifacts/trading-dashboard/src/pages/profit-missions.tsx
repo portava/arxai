@@ -226,13 +226,20 @@ function EstimateBanner() {
   );
 }
 
-// ── Feed-not-confirmed banner (planner is draft-only until a feed exists) ─────
+// ── Feed-not-confirmed banner (this planner only ever saves a draft) ─────────
+//
+// HONEST WORDING. This used to read "it cannot start until broker feed is
+// confirmed", which claimed a hard block that does not exist: nothing consults
+// `canStart` at start time — `POST /profit-missions/:id/start` enforces only
+// state-machine legality — and this planner never offers a start at all. The
+// banner now states what is true: no mission feed is wired, so this form saves
+// a draft and stops.
 function FeedNotConfirmedBanner() {
   return (
     <CompactAlert
       tone="warning"
       title="Live feed not confirmed"
-      description="Live feed not confirmed. You can save this mission as a draft, but it cannot start until broker feed is confirmed."
+      description="A mission-level broker feed is not wired yet, so this planner saves the mission as a draft and does not start it. Starting is not offered here; it is not a check that has been run and passed."
       testId="alert-feed-not-confirmed"
     />
   );
@@ -241,8 +248,9 @@ function FeedNotConfirmedBanner() {
 // ── Creation form ────────────────────────────────────────────────────────────
 // Two-step planner: the first click ASSESSES the inputs (pure domain engines,
 // feed hard-coded NOT ready) and reveals the honest read; the second click
-// persists the mission. The feed is never confirmed in Phase 1, so the mission
-// can only ever be saved as a DRAFT — START stays blocked. Editing any input
+// persists the mission. No mission feed is wired, so this form only ever saves a
+// DRAFT — it offers no start control (and `canStart` is display-only: the /start
+// route enforces state-machine legality alone). Editing any input
 // resets the assessment so the read can never get stale.
 function CreateMissionForm({ onCreated }: { onCreated: (m: ProfitMission) => void }) {
   const qc = useQueryClient();
@@ -649,7 +657,7 @@ export function FeasibilityPanel({
         <p className="text-xs text-muted-foreground">
           {f.canStart
             ? "Feed confirmed for assessment."
-            : `Live feed not confirmed${f.startBlockReason ? ` (${f.startBlockReason})` : ""} — drafting allowed, starting held.`}
+            : `Live feed not confirmed${f.startBlockReason ? ` (${f.startBlockReason})` : ""} — this planner saves a draft and does not offer a start.`}
         </p>
       </CardContent>
     </Card>
@@ -1755,23 +1763,24 @@ function TradeDraftRow({ draft, missionId }: { draft: TradeDraft; missionId: num
             ) : (
               <Rocket className="mr-1.5 h-4 w-4" />
             )}
-            Execute (live only)
+            Execute
           </Button>
           <p className="text-[11px] text-muted-foreground">
-            Execution routes only through the standard instant-trade pipeline and
-            the full 23-gate safety check. Demo and paper missions never contact the
-            live broker.
+            On a live mission, execution routes only through the standard
+            instant-trade pipeline and the full 23-gate safety check. Demo and
+            paper missions never contact the live broker.
           </p>
           <p className="text-[11px] text-warning" data-testid={`draft-mode-truth-${draft.proposalId}`}>
             To be exact about what each mode does: the 23-gate safety check runs
             on live dispatch only. A demo or paper mission still passes the
-            mission risk gate and the pre-trade checks, but it then stops at a
-            recorder that writes down the intended trade and goes no further — it
-            reaches no broker, not even a demo one, and the 23 gates are not
-            evaluated for it. Because nothing is ever filled, a demo or paper
-            trade produces no fill, no profit or loss and no result, and the
-            mission cannot progress toward its target or complete on it. Nothing
-            is estimated in their place.
+            mission risk gate and the pre-trade checks, but it then stops at the
+            simulator instead of the live pipeline — it reaches no broker, not
+            even a demo one, and the 23 gates are not evaluated for it. The
+            simulator prices the fill from the real live quote (and refuses to
+            fill at all if no real quote is available — nothing is invented), so
+            the trade does produce a SIMULATED profit or loss that moves this
+            mission's progress. That figure is modelled, never money, and never
+            counts as a broker-confirmed result.
           </p>
         </div>
       ) : draft.effectiveStatus === "executed" ? (
@@ -1826,9 +1835,10 @@ function TradeDraftRow({ draft, missionId }: { draft: TradeDraft; missionId: num
             Protective exits (partial close, break-even, trailing stop, structure /
             news / target close) route only through the standard instant-trade
             pipeline and the full 23-gate safety check. Protective exits apply to
-            live positions. A demo or paper dispatch never opens a position, so
-            there is nothing for the exit manager to find and no exit will be
-            taken for it.
+            live broker positions. A demo or paper dispatch opens a SIMULATED
+            position only, so this exit manager finds nothing for it — those
+            positions are closed instead by the mission's own simulated exit
+            sweep, against later real quotes.
           </p>
         </div>
       ) : draft.effectiveStatus === "expired" ? (
@@ -2170,14 +2180,15 @@ function MissionRiskPanel({ missionId }: { missionId: number }) {
 // through the platform's existing gates.
 
 // Labels mirror lib/domain missionAutomation AUTOMATION_LEVEL_META. Level 3 is
-// NOT an auto-execute-on-demo level — a non-live mission stops at the simulated
-// recorder and contacts no broker, so the label must not imply a demo account.
+// NOT an auto-execute-on-demo level — a non-live mission dispatches to the fill
+// SIMULATOR and contacts no broker, so the label must not imply a demo account;
+// it does produce simulated fills and outcomes, so it must not claim otherwise.
 // Level 4 carries no size cap of its own (levels 4-6 share one execution path).
 const AUTOMATION_LABELS: Record<number, string> = {
   0: "Off",
   1: "Advisory",
   2: "Approval (default)",
-  3: "Demo auto (records intent only)",
+  3: "Demo auto (simulated fills)",
   4: "Live auto — first step",
   5: "Limited live auto",
   6: "Full live auto",
@@ -2525,9 +2536,11 @@ export function MissionTestingLab({ mission }: { mission: ProfitMission }): Reac
           <CardDescription>
             Every gate must pass before a level is allowed. Live automation (level 4+)
             is opt-in and still routes through the platform's existing live safety gates.
-            The evidence these gates read is realised closed live trades; demo and
-            paper produce none, so a level cannot be earned on them. Applying a
-            level records intent only — it never places a trade.
+            The evidence these gates read is closed trades on the mission's own basis:
+            broker-confirmed closes on a live mission, SIMULATED closes on a paper or
+            demo one. Each gate states which basis its evidence came from, and a
+            simulated result never stands in for broker truth. Applying a level
+            records intent only — it never places a trade.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -2846,22 +2859,23 @@ export default function ProfitMissionsPage() {
           around a refusal.
         </p>
         <p className="mt-2 text-sm text-warning" data-testid="text-mission-mode-truth">
-          What paper and demo actually do: they record the trade ARX would have
-          taken and stop there. No broker is contacted in either mode — there is
-          no demo broker behind them — so no order is filled and no profit or
-          loss is produced. A paper or demo mission therefore cannot produce a
-          result and cannot complete its target; it is a record of intent, not a
-          simulated account. The 23-gate live safety check runs on live dispatch
-          only.
+          What paper and demo actually do: no broker is contacted in either mode
+          — there is no demo broker behind them. ARX instead prices a SIMULATED
+          fill from the real live quote at dispatch and closes it against later
+          real quotes, so these modes do produce fills and a profit or loss. That
+          result is modelled, not money: it moves this mission's value, progress
+          and completion on a SIMULATED basis, is labelled simulated everywhere
+          it is shown, and is never added to broker-reconciled money. The 23-gate
+          live safety check runs on live dispatch only.
         </p>
         <p className="mt-2 text-sm text-muted-foreground" data-testid="text-mission-ladder-road">
-          The road to auto levels: because paper and demo produce no realised
-          trades, they cannot build the track record the promotion gates ask for.
-          Automation levels are earned from real closed results on a live
-          mission, and a paper or demo account is capped at level 3. Level 3 does
-          not auto-execute anywhere today — see its label. Live auto (levels 4–6)
-          additionally needs the accepted risk certificate, the platform live
-          gates on, and your explicit opt-in.
+          The road to auto levels: paper and demo build a track record of
+          SIMULATED closed results, and that is the evidence the demo-performance
+          promotion gate reads — so a mission can earn its way to level 3 without
+          risking money. It is not broker truth, and it never stands in for it:
+          live auto (levels 4–6) additionally needs the accepted risk
+          certificate, the platform live gates on, and your explicit opt-in, and
+          a paper or demo account is capped at level 3.
         </p>
       </div>
 

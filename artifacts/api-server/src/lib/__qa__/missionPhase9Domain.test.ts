@@ -306,7 +306,8 @@ function briefState(p: Partial<MissionBriefingState> = {}): MissionBriefingState
   return {
     missionId: 1, status: "active", startingAmount: 1000, targetAmount: 1300,
     currentValue: 1150, requiredProfit: 300, daysRemaining: 4,
-    automationLevel: 2, promotionPaused: false, ...p,
+    automationLevel: 2, promotionPaused: false,
+    accountingBasis: "BROKER_RECONCILED", ...p,
   };
 }
 
@@ -334,6 +335,26 @@ test("briefing/eod/report builders are deterministic and honest", () => {
   }, NOW);
   assert.equal(report.kind, "mission_report");
   assert.equal(report.outcome, "reached");
+
+  // ── Basis labelling: no money figure is ever shown unlabelled, and a
+  // paper/demo (SIMULATED) briefing never reads as broker-confirmed money.
+  assert.match(eod.headline, /broker-confirmed/);
+  assert.ok(eod.lines.some((l) => /Basis: broker-confirmed/.test(l)));
+  assert.match(report.headline, /broker-confirmed/);
+
+  const simState = briefState({ accountingBasis: "SIMULATED" });
+  const simEod = buildEndOfDayReview(simState, today, NOW);
+  assert.match(simEod.headline, /SIMULATED/);
+  assert.ok(simEod.lines.some((l) => /Basis: SIMULATED/.test(l)));
+  assert.ok(!/broker-confirmed/.test(simEod.headline));
+  const simBrief = buildDailyBriefing(simState, NOW);
+  assert.ok(simBrief.lines.some((l) => /Basis: SIMULATED/.test(l)));
+  const simReport = buildMissionReport(simState, {
+    totalTrades: 30, winningTrades: 18, losingTrades: 12, netPnl: 300,
+    bestTradePnl: 80, worstTradePnl: -30,
+  }, NOW);
+  assert.match(simReport.headline, /SIMULATED/);
+  assert.ok(simReport.lines.some((l) => /Net realised across the mission \(SIMULATED\)/.test(l)));
 });
 
 test("learning loop aggregates reliability and never fabricates unknown dimensions", () => {
