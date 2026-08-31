@@ -87,6 +87,8 @@ let started = false;
 let cycleInFlight = false;
 let invalidUniverseWarned = false;
 const lastRefreshBySymbol = new Map<string, number>();
+/** Symbols whose live-tick subscription this session cannot have, logged once each. */
+const tickSubscribeUnavailable = new Set<string>();
 
 function derivConfigured(): boolean {
   return Boolean(process.env.DERIV_APP_ID && process.env.DERIV_APP_ID.trim());
@@ -120,12 +122,38 @@ async function runKeepAliveCycle(): Promise<void> {
     });
     if (due.length === 0) return;
     await mapWithConcurrency(due, KEEP_ALIVE_CONCURRENCY, async (s) => {
+      // TICKS AND CANDLES ARE SEPARATE CAPABILITIES — proven against the live
+      // venue 2026-08-31. On a credential-free public session (Ruling 15 new
+      // mode) `ticks`/`ticks_history subscribe` are refused InvalidSymbol and
+      // `active_symbols` returns an empty list, while historical
+      // `ticks_history` candles are served normally.
+      //
+      // They used to share one try block with the subscribe FIRST, so a
+      // refused subscription threw before getCandles ever ran: the candle
+      // warm-up — the thing the chart actually draws — was skipped entirely,
+      // and because lastRefreshBySymbol was never stamped the symbol stayed
+      // permanently "due" and re-warned every cycle forever. Candles are the
+      // payload; a live tick is an upgrade on top of them.
       try {
         await client.subscribeTicks(s.derivId);
+      } catch (err) {
+        // Log ONCE per symbol per process. A capability this session does not
+        // have is a standing condition, not a recurring incident, and a line
+        // every cycle buries real faults.
+        if (!tickSubscribeUnavailable.has(s.derivId)) {
+          tickSubscribeUnavailable.add(s.derivId);
+          logger.info(
+            { symbol: s.derivId, reason: String(err) },
+            "Deriv live-tick subscription unavailable for this symbol — historical candles continue; " +
+            "an unauthenticated public session serves history but not streaming ticks",
+          );
+        }
+      }
+      try {
         await client.getCandles(s.derivId, KEEP_ALIVE_CANDLE_GRANULARITY, KEEP_ALIVE_CANDLE_COUNT);
         lastRefreshBySymbol.set(s.derivId, Date.now());
       } catch (err) {
-        logger.warn({ err: String(err), symbol: s.derivId }, "Deriv keep-alive symbol refresh failed (non-fatal)");
+        logger.warn({ err: String(err), symbol: s.derivId }, "Deriv keep-alive candle refresh failed (non-fatal)");
       }
     });
   } catch (err) {
