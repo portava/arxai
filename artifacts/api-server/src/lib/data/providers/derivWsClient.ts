@@ -594,6 +594,56 @@ class DerivWsClient {
     return out;
   }
 
+  /**
+   * Fetch the venue's LATEST tick by history read, and publish it exactly as a
+   * streamed tick would be published.
+   *
+   * WHY THIS EXISTS (probed against the live venue 2026-08-31). A
+   * credential-free session cannot STREAM: `ticks` and
+   * `ticks_history ... subscribe:1` are both refused InvalidSymbol for every
+   * synthetic, and `active_symbols` returns an empty list under every
+   * parameter variant and on every host. But the same `ticks_history` read
+   * WITHOUT `subscribe` returns the newest tick, seconds old, for the same
+   * symbols. So the venue will hand over current prices — it just will not
+   * push them.
+   *
+   * HONESTY. This is a PULL wearing no stream's clothing. The tick carries the
+   * venue's own epoch, never a local timestamp, so a stalled venue reads as a
+   * stalled tick rather than a fresh one; freshness is judged on the data's own
+   * age. The caller (derivKeepAlive) owns the interval and the feed status
+   * states that ticks are polled — nothing here claims a subscription exists.
+   * Everything downstream is unchanged: the emit feeds the same onTick
+   * listeners the streaming path fed, so the forming-bar composer, the tick
+   * cache and the chart's SSE tip all behave identically.
+   *
+   * Returns null rather than throwing on a bad or empty reply: a missed poll is
+   * an absent tick, not an error worth unwinding a caller's loop.
+   */
+  async pollLatestTick(derivSymbol: string): Promise<DerivTick | null> {
+    const resp = await this.request({
+      ticks_history: derivSymbol,
+      end: "latest",
+      count: 1,
+      style: "ticks",
+    });
+    const h = resp.history as { prices?: unknown; times?: unknown } | undefined;
+    const prices = Array.isArray(h?.prices) ? (h.prices as unknown[]) : [];
+    const times = Array.isArray(h?.times) ? (h.times as unknown[]) : [];
+    const quote = Number(prices[prices.length - 1]);
+    const epoch = Number(times[times.length - 1]);
+    if (!Number.isFinite(quote) || quote <= 0) return null;
+    if (!Number.isFinite(epoch) || epoch <= 0) return null;
+
+    const tick: DerivTick = { symbol: derivSymbol, epoch, quote };
+    const prev = this.lastTickBySymbol.get(derivSymbol);
+    this.lastTickBySymbol.set(derivSymbol, tick);
+    this.lastTickAt = Date.now();
+    // Only publish genuinely NEW prints. Re-emitting the same epoch would let a
+    // frozen venue look busy to every downstream listener.
+    if (!prev || prev.epoch !== epoch || prev.quote !== quote) this.emitTick(tick);
+    return tick;
+  }
+
   /** Retain the parsed `active_symbols` payload (timestamped) and validate
    *  the static synthetic map against it. Report-only (honesty doctrine):
    *  mismatches are logged and surfaced for operators — NEVER auto-corrected,

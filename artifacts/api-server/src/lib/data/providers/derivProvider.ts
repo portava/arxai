@@ -232,10 +232,19 @@ export function getDerivFeedStatus(): DerivFeedStatus {
     feedReadinessState === "HISTORY_READY_AWAITING_LIVE_TICK"    ? "warming" :
                                                                    "healthy";
 
+  // Named once here so the message below and the returned field can never
+  // disagree about which transport is carrying ticks.
+  const publicDataOnly = authErr === DERIV_PUBLIC_DATA_ONLY;
+
   const message = !appIdConfigured
     ? "Deriv feed not configured. Add DERIV_APP_ID (and DERIV_API_TOKEN for new API mode)."
     : feedReadinessState === "LIVE_FEED"
-      ? `Deriv feed connected (${mode} mode) — live ticks streaming.`
+      // "streaming" would be a claim we cannot back on a public session: the
+      // venue refuses subscriptions there, so ticks arrive by a ~2s poll of the
+      // newest print (derivKeepAlive.runTickPollCycle). The prices are real and
+      // seconds old either way, but the transport is named honestly — a reader
+      // deciding whether to trust a fast-moving tip needs to know which it is.
+      ? `Deriv feed connected (${mode} mode) — live ticks ${publicDataOnly ? "polled (~2s; this session cannot subscribe)" : "streaming"}.`
       : feedReadinessState === "HISTORY_READY_AWAITING_LIVE_TICK"
         ? `Deriv feed connected (${mode} mode). Historical candles ready; waiting for first live tick…`
         : feedReadinessState === "CONNECTED_AWAITING_FEED"
@@ -267,7 +276,7 @@ export function getDerivFeedStatus(): DerivFeedStatus {
     // keyed off the Ruling-15 sentinel the client stamps when it deliberately
     // withholds `authorize` on a new-mode (public data) session.
     authorized,
-    publicDataOnly: authErr === DERIV_PUBLIC_DATA_ONLY,
+    publicDataOnly,
     healthSummary,
     activeSymbolsLoaded,
     activeSymbolsCachedCount: client.getActiveSymbolsCount(),

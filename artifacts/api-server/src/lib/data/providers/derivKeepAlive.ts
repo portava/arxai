@@ -89,6 +89,18 @@ let invalidUniverseWarned = false;
 const lastRefreshBySymbol = new Map<string, number>();
 /** Symbols whose live-tick subscription this session cannot have, logged once each. */
 const tickSubscribeUnavailable = new Set<string>();
+/** Symbols the venue DOES push on this session — they need no polling. */
+const tickStreamingAvailable = new Set<string>();
+
+/**
+ * How often the tick POLLER pulls the newest print for symbols the venue will
+ * not stream. 2s keeps the chart's forming bar visibly alive while staying far
+ * inside Deriv's request budget for a handful of symbols; the poll is skipped
+ * entirely for any symbol whose subscription succeeded, so an authenticated
+ * deployment pays nothing for this.
+ */
+const TICK_POLL_INTERVAL_MS = 2_000;
+let tickPollInFlight = false;
 
 function derivConfigured(): boolean {
   return Boolean(process.env.DERIV_APP_ID && process.env.DERIV_APP_ID.trim());
@@ -145,6 +157,7 @@ async function runKeepAliveCycle(): Promise<void> {
       // payload; a live tick is an upgrade on top of them.
       try {
         await client.subscribeTicks(s.derivId);
+        tickStreamingAvailable.add(s.derivId);
       } catch (err) {
         // Log ONCE per symbol per process. A capability this session does not
         // have is a standing condition, not a recurring incident, and a line
@@ -189,4 +202,52 @@ export function startDerivKeepAlive(): void {
     void runKeepAliveCycle();
   }, KEEP_ALIVE_INTERVAL_MS);
   if (typeof timer.unref === "function") timer.unref();
+
+  // TICK POLLER — the venue will hand over current prices, it just will not
+  // push them on a credential-free session (see pollLatestTick). Polling the
+  // newest print feeds the SAME onTick listeners a subscription would, so the
+  // forming bar and the chart's SSE tip advance on real, seconds-old venue
+  // data instead of standing still until the next closed candle.
+  const pollTimer = setInterval(() => {
+    void runTickPollCycle();
+  }, TICK_POLL_INTERVAL_MS);
+  if (typeof pollTimer.unref === "function") pollTimer.unref();
+}
+
+/**
+ * Pull the newest print for every universe symbol the venue refuses to stream.
+ *
+ * Deliberately narrow: it polls ONLY symbols whose subscription failed, so a
+ * deployment whose session can stream pays nothing; it skips entirely while the
+ * socket is still connecting (the boot race that used to log four warnings);
+ * and it never overlaps itself, so a slow venue cannot pile up requests.
+ * Failures are silent by design — a missed poll is one absent tick, the next
+ * one is 2s away, and a warning per symbol per 2s would bury every real fault
+ * in the log.
+ */
+async function runTickPollCycle(): Promise<void> {
+  if (tickPollInFlight) return;
+  if (!derivConfigured()) return;
+  tickPollInFlight = true;
+  try {
+    const client = getDerivWsClient();
+    if (!client.isConnected()) return;
+    const universe = resolveConfiguredDerivUniverse();
+    const universeIds = new Set(universe.derivIds);
+    const due = DERIV_SYNTHETIC_SYMBOLS.filter(
+      (s) => universeIds.has(s.derivId) && !tickStreamingAvailable.has(s.derivId),
+    );
+    if (due.length === 0) return;
+    await mapWithConcurrency(due, KEEP_ALIVE_CONCURRENCY, async (s) => {
+      try {
+        await client.pollLatestTick(s.derivId);
+      } catch {
+        // Silent per the doc comment above.
+      }
+    });
+  } catch {
+    // Never let a poll cycle disturb the keep-alive or the socket.
+  } finally {
+    tickPollInFlight = false;
+  }
 }
