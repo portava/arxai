@@ -86,13 +86,27 @@ describe("D — the scalp trio is ONE scan surface", () => {
   it("both merged paths ride the live-quote rank inputs (C2) — no o.entry fallback", () => {
     // Server-side: rank AND build share buildRankInputs, which fetches a real
     // quote per symbol and deliberately refuses the old `o.entry` fallback.
+    //
+    // The per-symbol read was widened from currentPriceFor -> currentQuoteFor
+    // (truth wave 2026-08-30): the scalp spread chip needed the LIVE per-symbol
+    // spread from the same quote instead of an unaged spec value, so the helper
+    // now returns a quote object rather than a bare price. The PROPERTY this
+    // pin exists for is unchanged and asserted below: a real per-symbol quote,
+    // an honest null when there is none, and never a price borrowed from the
+    // opportunity's own entry (which made currentPrice == entry, so
+    // `movedToward` was always ~0 and every late/chase gate silently read
+    // "not late").
     const svc = readFileSync(
       resolve(REPO, "artifacts/api-server/src/lib/scalp/scalpService.ts"),
       "utf8",
     );
-    expect(svc).toMatch(/currentPriceFor\(o\.symbol\)/);
-    expect(svc).toMatch(/currentPrice: livePrices\[i\] \?\? null/);
+    // 1. a REAL quote is fetched per symbol …
+    expect(svc).toMatch(/currentQuoteFor\(o\.symbol\)/);
+    // 2. … and its absence degrades to null, never to a substitute number …
+    expect(svc).toMatch(/currentPrice:\s*liveQuotes\[i\]\?\.price \?\? null/);
+    // 3. … and the banned fallback never returns, in any spelling.
     expect(svc).not.toMatch(/currentPrice:\s*o\.entry/);
+    expect(svc).not.toMatch(/currentPrice:\s*[^\n]*\?\?\s*o\.entry/);
   });
 
   it("Scalp Focus remains the deep live-quote surface on the Focus tab", () => {
