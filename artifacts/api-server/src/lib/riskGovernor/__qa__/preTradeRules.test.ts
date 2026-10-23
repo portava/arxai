@@ -16,6 +16,7 @@ import {
   resolveEffectiveLimits,
   RISK_RULE_IDS,
   PLATFORM_RISK_CEILINGS,
+  isStopWidened,
   type RiskContext,
   type TradeIntent,
   type RiskRuleId,
@@ -386,4 +387,13 @@ test("halt: closes and tightened stops stay open under a halt; widened stops and
   assert.deepEqual(evaluatePreTradeRisk(widen, baseCtx({ halt: HALTED })).blockedBy, ["trading_halt"]);
   assert.deepEqual(evaluatePreTradeRisk(baseIntent({ origin: "ruby" }), baseCtx({ halt: HALTED })).blockedBy, ["trading_halt"]);
   assert.equal(evaluatePreTradeRisk(baseIntent(), baseCtx({ halt: { engaged: false, sources: [], reason: null } })).decision, "ALLOW");
+});
+
+test("isStopWidened: further from price or removed is wider; closer or equal is not", () => {
+  assert.equal(isStopWidened("BUY", 1.095, 1.09), true);
+  assert.equal(isStopWidened("BUY", 1.095, 1.098), false);
+  assert.equal(isStopWidened("BUY", 1.095, 1.095), false);
+  assert.equal(isStopWidened("SELL", 1.105, 1.11), true);
+  assert.equal(isStopWidened("SELL", 1.105, 1.1), false);
+  assert.equal(isStopWidened("BUY", 1.095, null), true);
 });

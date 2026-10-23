@@ -326,6 +326,19 @@ test("trade management: another user's or a legacy trade is 404 and is never mod
   assert.equal((await request(`/trade-management/${seed.tradeLegacy}/snapshot`, c.op)).status, 200);
 });
 
+test("trade management: break-even never widens a stop already locked in profit", async () => {
+  const id = await seedTrade(u.a, `${MARK}.GUARD`);
+  await db.update(tradesTable).set({ stopLoss: ENTRY + 5 }).where(eq(tradesTable.id, id));
+  const res = await send("POST", `/trade-management/${id}/breakeven`, c.a, {});
+  assert.equal(res.status, 409);
+  assert.equal((await json<{ error: string }>(res)).error, "STOP_WOULD_WIDEN");
+  const [t] = await db.select().from(tradesTable).where(eq(tradesTable.id, id));
+  assert.equal(t!.stopLoss, ENTRY + 5);
+  await db.update(tradesTable).set({ stopLoss: 90 }).where(eq(tradesTable.id, id));
+  const ok = await send("POST", `/trade-management/${id}/breakeven`, c.a, {});
+  assert.equal(ok.status, 200, "moving a stop below entry up to break-even tightens it");
+});
+
 // ── portfolio risk ─────────────────────────────────────────────────────────
 
 test("portfolio risk: a snapshot counts only the caller's own open positions", async () => {
