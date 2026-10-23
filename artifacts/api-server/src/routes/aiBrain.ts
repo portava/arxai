@@ -5,7 +5,7 @@
 // No code path here calls placeLiveOrderGuarded() or touches live_positions /
 // mt5_commands.
 import { Router, type Request, type Response, type NextFunction } from "express";
-import { readRoleFromRequest } from "../lib/security/middleware.js";
+import { readRoleFromRequest, requireAdmin } from "../lib/security/middleware.js";
 import {
   viewerSeesSimulatorDetail,
   maskSimulatorMarketAnalysis,
@@ -23,15 +23,6 @@ import { requireUser } from "../lib/auth/middleware.js";
 import { eq } from "drizzle-orm";
 
 const router = Router();
-
-function requireAdmin(req: Request, res: Response, next: NextFunction): void {
-  const role = readRoleFromRequest(req);
-  if (role !== "ADMIN" && role !== "OWNER") {
-    res.status(403).json({ error: "Forbidden", requiredRole: "ADMIN" });
-    return;
-  }
-  next();
-}
 
 const SymbolBody = z.object({
   symbol: z.string().min(1),

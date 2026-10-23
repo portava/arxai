@@ -5,7 +5,7 @@
 // are accepted but parked at PENDING_MT5_CONNECTION and never submitted to
 // the simulator engine.
 import { Router, type Request, type Response, type NextFunction } from "express";
-import { readRoleFromRequest } from "../lib/security/middleware.js";
+import { requireAdmin } from "../lib/security/middleware.js";
 
 import { z } from "zod/v4";
 import {
@@ -17,15 +17,6 @@ import {
 } from "../lib/oms.js";
 
 const router = Router();
-
-function requireAdmin(req: Request, res: Response, next: NextFunction): void {
-  const role = readRoleFromRequest(req);
-  if (role !== "ADMIN" && role !== "OWNER") {
-    res.status(403).json({ error: "Forbidden", requiredRole: "ADMIN" });
-    return;
-  }
-  next();
-}
 
 const Env = z.enum(["PAPER", "DEMO_SIMULATOR", "LIVE_TESTER_INTENT", "FUTURE_MT5_DEMO", "FUTURE_MT5_LIVE"]);
 const Source = z.enum(["MANUAL", "AI_ASSIST", "AI_AUTO", "SCANNER", "BACKTEST", "REPLAY"]);

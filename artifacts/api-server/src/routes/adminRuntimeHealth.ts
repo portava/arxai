@@ -18,6 +18,7 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { db, mt5ConnectionTable } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { enforceSensitiveAction } from "../lib/security/handshake.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router: IRouter = Router();
 
@@ -39,8 +40,8 @@ const SAFETY_ENVELOPE = {
 // already the trusted source.
 function requireAdmin(req: Request, res: Response): "ADMIN" | "OWNER" | null {
   const u = (req as Request & { authUser?: { role?: string } }).authUser;
-  const role = String(u?.role ?? "").toUpperCase();
-  if (role !== "ADMIN" && role !== "OWNER") {
+  const role = operatorRoleFromSession(u?.role);
+  if (!role) {
     res.status(403).json({ ok: false, error: "ADMIN_OR_OWNER_REQUIRED" });
     return null;
   }

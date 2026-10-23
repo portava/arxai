@@ -12,14 +12,15 @@
 import { Router, type Request, type Response } from "express";
 import { getDerivFeedStatus } from "../lib/data/providers/derivProvider.js";
 import { getDerivWsClient } from "../lib/data/providers/derivWsClient.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router = Router();
 
 function requireAdmin(req: Request, res: Response): boolean {
   const u = (req as unknown as { authUser?: { id: number; role?: string } }).authUser;
   if (!u) { res.status(401).json({ error: "AUTH_REQUIRED" }); return false; }
-  const role = String(u.role ?? "").toUpperCase();
-  if (role !== "ADMIN" && role !== "OWNER") {
+  const role = operatorRoleFromSession(u.role);
+  if (!role) {
     res.status(403).json({ error: "FORBIDDEN" }); return false;
   }
   return true;

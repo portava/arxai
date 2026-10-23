@@ -33,6 +33,7 @@ import { getGlobalSettings } from "../lib/adminTrading/safetyEnvelope.js";
 import { adminActionAuditLogTable } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 import { isLiveBrokerExecutionEnabledEnv } from "@workspace/domain/safety-contracts/isLiveBrokerExecutionEnabled";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router: IRouter = Router();
 
@@ -43,8 +44,8 @@ function requireAdmin(req: Request, res: Response): { id: number; role: "ADMIN" 
   // populated, so they returned 401 AUTH_REQUIRED for every caller.
   const sess = (req as Request & { authUser?: { id: number; role?: string } }).authUser;
   if (!sess?.id) { res.status(401).json({ ok: false, error: "AUTH_REQUIRED" }); return null; }
-  const role = sess.role ?? null;
-  if (role !== "ADMIN" && role !== "OWNER") {
+  const role = operatorRoleFromSession(sess.role);
+  if (!role) {
     res.status(403).json({ ok: false, error: "ADMIN_REQUIRED" }); return null;
   }
   return { id: sess.id, role };

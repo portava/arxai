@@ -22,6 +22,7 @@ import {
 import { runAllHandshakes } from "../lib/handshake/coordinator.js";
 import { getRecentHandshakeCheckins, logHandshakeResults } from "../lib/handshake/handshakeLog.js";
 import { HANDSHAKE_DEFINITIONS } from "@workspace/domain/handshake";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router: IRouter = Router();
 
@@ -31,8 +32,8 @@ function requireAdmin(req: Request, res: Response): boolean {
     res.status(401).json({ ok: false, error: "AUTH_REQUIRED" });
     return false;
   }
-  const role = sess.role ?? null;
-  if (role !== "ADMIN" && role !== "OWNER") {
+  const role = operatorRoleFromSession(sess.role);
+  if (!role) {
     res.status(403).json({ ok: false, error: "ADMIN_REQUIRED" });
     return false;
   }

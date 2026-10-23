@@ -27,6 +27,7 @@ import {
   getEffectiveTradingGovernance,
   loadOwnerGovernanceRow,
 } from "../lib/governance/effectiveGovernance.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router: IRouter = Router();
 router.use(express.json());
@@ -34,8 +35,8 @@ router.use(express.json());
 function requireAdmin(req: Request, res: Response): { id: number; role: "ADMIN" | "OWNER" } | null {
   const sess = (req as Request & { authUser?: { id: number; role?: string } }).authUser;
   if (!sess?.id) { res.status(401).json({ ok: false, error: "AUTH_REQUIRED" }); return null; }
-  const role = sess.role ?? null;
-  if (role !== "ADMIN" && role !== "OWNER") {
+  const role = operatorRoleFromSession(sess.role);
+  if (!role) {
     res.status(403).json({ ok: false, error: "ADMIN_REQUIRED" });
     return null;
   }

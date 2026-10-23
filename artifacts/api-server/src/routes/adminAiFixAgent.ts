@@ -38,6 +38,7 @@ import {
   type FixAgentCallMeta,
 } from "../lib/ai/backendFixAgent.js";
 import { readRecentPerf, type PerfRow } from "../lib/perf/perfRecorder.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router: IRouter = Router();
 router.use(express.json({ limit: "256kb" }));
@@ -50,8 +51,8 @@ function requireAdmin(req: Request, res: Response): AdminSession | null {
     res.status(401).json({ ok: false, error: "AUTH_REQUIRED" });
     return null;
   }
-  const role = sess.role ?? null;
-  if (role !== "ADMIN" && role !== "OWNER") {
+  const role = operatorRoleFromSession(sess.role);
+  if (!role) {
     res.status(403).json({ ok: false, error: "ADMIN_REQUIRED" });
     return null;
   }

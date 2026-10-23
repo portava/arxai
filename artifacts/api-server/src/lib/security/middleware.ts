@@ -35,6 +35,17 @@ export function readRoleFromRequest(req: Request): RoleKey {
   return normalizeRole(dbRoleFor(session.role));
 }
 
+// The one ADMIN/OWNER route gate for routers that read the role from the
+// signed session. Routers used to carry their own identical copy of this.
+export function requireAdmin(req: Request, res: Response, next: NextFunction): void {
+  const role = readRoleFromRequest(req);
+  if (role !== "ADMIN" && role !== "OWNER") {
+    res.status(403).json({ error: "Forbidden", requiredRole: "ADMIN" });
+    return;
+  }
+  next();
+}
+
 // Exposed for tests + report. Reflects the runtime authority surface.
 export function describeRoleAuthority(): {
   source: "signed_session_cookie";

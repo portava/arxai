@@ -361,3 +361,27 @@ test("guardian: a widened stop whose size cannot be measured is refused", () => 
   const d = evaluatePreTradeRisk(modify({ stopLoss: 1.095 }), ctx);
   assert.ok(d.blockedBy.includes("per_trade_loss_limit"));
 });
+
+// ── Stop switches ───────────────────────────────────────────────────────────
+const HALTED = { engaged: true, sources: ["trader_kill_switch"], reason: "Your kill switch is engaged." };
+
+test("halt: an engaged stop switch blocks an otherwise clean open and is reported first", () => {
+  const d = evaluatePreTradeRisk(baseIntent(), baseCtx({ halt: HALTED }));
+  assert.equal(d.decision, "BLOCK");
+  assert.deepEqual(d.blockedBy, ["trading_halt"]);
+  assert.match(d.primaryReason!, /^Trading is halted: Your kill switch/);
+  assert.equal(d.rules.length, 12, "the 12 rules are still evaluated and recorded");
+  const both = evaluatePreTradeRisk(baseIntent({ stopLoss: null }), baseCtx({ halt: HALTED }));
+  assert.equal(both.blockedBy[0], "trading_halt");
+  assert.ok(both.blockedBy.includes("stop_loss_required"), "rule breaches are still listed after the halt");
+});
+
+test("halt: closes stay open under a halt; stop changes and AI origins do not", () => {
+  for (const action of ["CLOSE", "PARTIAL_CLOSE"] as const) {
+    assert.equal(evaluatePreTradeRisk(baseIntent({ action }), baseCtx({ halt: HALTED })).decision, "ALLOW", action);
+  }
+  const tighten = baseIntent({ action: "MODIFY", stopLoss: 1.098, takeProfit: null, position: { entryPrice: 1.1, stopLoss: 1.0951 } });
+  assert.deepEqual(evaluatePreTradeRisk(tighten, baseCtx({ halt: HALTED })).blockedBy, ["trading_halt"]);
+  assert.deepEqual(evaluatePreTradeRisk(baseIntent({ origin: "ruby" }), baseCtx({ halt: HALTED })).blockedBy, ["trading_halt"]);
+  assert.equal(evaluatePreTradeRisk(baseIntent(), baseCtx({ halt: { engaged: false, sources: [], reason: null } })).decision, "ALLOW");
+});

@@ -26,6 +26,7 @@ import {
 import { and, eq, desc, isNotNull, ne } from "drizzle-orm";
 import { z } from "zod/v4";
 import { getEnvelope } from "../lib/adminTrading/safetyEnvelope.js";
+import { enforcePreTradeRisk } from "../lib/riskGovernor/enforce.js";
 import { resolveClosePolicy } from "../lib/live/closePolicy.js";
 import { placeOrder } from "../lib/adminTrading/placeOrder.js";
 import { getUserModeScope } from "../lib/modeScope/getUserModeScope.js";
@@ -531,6 +532,28 @@ router.post("/me/trades/close", async (req, res) => {
       .where(and(...dupConds)).limit(1);
     if (dup) {
       res.status(409).json({ ok: false, error: "CLOSE_ALREADY_QUEUED", commandId: dup.id });
+      return;
+    }
+  }
+
+  // Pre-trade Risk Governor: a close is risk-reducing, so only the quantity
+  // and a disconnected bridge can refuse it, but it is checked and audited
+  // like every other order. SIMULATED closes never reach a bridge.
+  if (env.tradingMode === "DEMO") {
+    const risk = await enforcePreTradeRisk({
+      userId, venue: "DEMO", origin: "manual", action: "CLOSE",
+      symbol, side, lots: lotSize,
+      intentRef: `me_trades_close:${parsed.data.cardId}`,
+    }, {
+      connectionId: mt5ConnectionId,
+      virtualAccountId: isShared ? virtualAccountId : null,
+      auditContext: { caller: "POST /me/trades/close", cardId: parsed.data.cardId },
+    });
+    if (!risk.allowed) {
+      res.status(409).json({
+        ok: false, error: "RISK_GOVERNOR_BLOCK", reason: risk.primaryReason,
+        blockedBy: risk.blockedBy, auditEventId: risk.auditEventId,
+      });
       return;
     }
   }

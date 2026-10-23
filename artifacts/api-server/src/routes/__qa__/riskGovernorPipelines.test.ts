@@ -28,10 +28,12 @@ import express from "express";
 import cookieParser from "cookie-parser";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import {
+  arxLiveArmingTable,
   arxLivePositionsTable,
   arxSymbolSpecsTable,
   authUserSessionsTable,
   db,
+  globalTradingSettingsTable,
   livePositionsTable,
   mt5CommandsTable,
   mt5ConnectionTable,
@@ -40,6 +42,7 @@ import {
   paperExecutionsTable,
   paperOrdersTable,
   paperTradeEventsTable,
+  safetyCoreTable,
   tradeActionRequestsTable,
   userRiskEventsTable,
   userRiskSettingsTable,
@@ -49,10 +52,14 @@ import { attachAuthUser } from "../../lib/auth/middleware.js";
 import { createUserSession } from "../../lib/auth/userSessions.js";
 import { generateDeterministicCandles } from "../../lib/backtestStrategyRegistry.js";
 import { enforcePreTradeRisk } from "../../lib/riskGovernor/enforce.js";
+import { NO_HALT } from "../../lib/safety/tradingHalt.js";
 import { createActionDraft } from "../../lib/tradeAction/create.js";
 import { confirmAction } from "../../lib/tradeAction/confirm.js";
 import paperTradingRouter from "../paperTrading.js";
 
+// The stop switches have their own tests below; the rule tests run with every
+// switch released (a fresh database engages the platform emergency stop).
+const RELEASED = { facts: { halt: NO_HALT } };
 const EMAIL_A = "qa+risk-gov-a@arx.test";
 const EMAIL_B = "qa+risk-gov-b@arx.test";
 const SYMBOL = "EURUSD";
@@ -77,6 +84,7 @@ async function deleteFixtures(): Promise<void> {
   await db.delete(paperOrdersTable).where(inArray(paperOrdersTable.userId, ids));
   await db.delete(paperAccountsTable).where(inArray(paperAccountsTable.userId, ids));
   await db.delete(arxLivePositionsTable).where(inArray(arxLivePositionsTable.userId, ids));
+  await db.delete(arxLiveArmingTable).where(inArray(arxLiveArmingTable.userId, ids));
   await db.delete(livePositionsTable).where(inArray(livePositionsTable.userId, ids));
   await db.delete(arxSymbolSpecsTable).where(inArray(arxSymbolSpecsTable.userId, ids));
   await db.delete(mt5ConnectionTable).where(inArray(mt5ConnectionTable.userId, ids));
@@ -333,14 +341,14 @@ test("D live sandbox: the live venue reads the trader's own edited limits (per-t
     userId: u.a, venue: "LIVE" as const, origin: "manual" as const, action: "OPEN" as const,
     symbol: SYMBOL, side: "BUY" as const, lots: 0.1, stopLoss: 1.0951, takeProfit: 1.11,
   };
-  const pass = await enforcePreTradeRisk(intent);
+  const pass = await enforcePreTradeRisk(intent, RELEASED);
   assert.equal(pass.decision, "ALLOW", pass.primaryReason ?? "");
   assert.equal(pass.limits?.maxRiskPerTradePercent, 1);
 
   // The trader tightens their own per-trade risk to 0.25% ($25): a $50 loss at stop now blocks.
   await db.insert(userRiskSettingsTable).values({ userId: u.a, maxRiskPerTradePercent: 0.25 })
     .onConflictDoUpdate({ target: userRiskSettingsTable.userId, set: { maxRiskPerTradePercent: 0.25 } });
-  const block = await enforcePreTradeRisk(intent);
+  const block = await enforcePreTradeRisk(intent, RELEASED);
   assert.deepEqual(block.blockedBy, ["per_trade_loss_limit"]);
   assert.equal(block.limits?.sources["maxRiskPerTradePercent"], "user_risk_settings.max_risk_per_trade_percent");
   const ev = await latestEvent(u.a);
@@ -355,10 +363,10 @@ test("D live sandbox: degraded bridge blocks new risk but not a close; a dead br
     symbol: SYMBOL, side: "BUY" as const, lots: 0.1, stopLoss: 1.0951, takeProfit: 1.11,
   };
   await seedBridge(u.a, 60_000);
-  assert.deepEqual((await enforcePreTradeRisk(intent)).blockedBy, ["broker_unavailable"]);
-  assert.equal((await enforcePreTradeRisk({ ...intent, action: "CLOSE" })).decision, "ALLOW");
+  assert.deepEqual((await enforcePreTradeRisk(intent, RELEASED)).blockedBy, ["broker_unavailable"]);
+  assert.equal((await enforcePreTradeRisk({ ...intent, action: "CLOSE" }, RELEASED)).decision, "ALLOW");
   await seedBridge(u.a, 10 * 60_000);
-  assert.deepEqual((await enforcePreTradeRisk({ ...intent, action: "CLOSE" })).blockedBy, ["broker_unavailable"]);
+  assert.deepEqual((await enforcePreTradeRisk({ ...intent, action: "CLOSE" }, RELEASED)).blockedBy, ["broker_unavailable"]);
 });
 
 test("D live sandbox: a stale broker quote blocks the entry", async () => {
@@ -368,7 +376,7 @@ test("D live sandbox: a stale broker quote blocks the entry", async () => {
   const d = await enforcePreTradeRisk({
     userId: u.a, venue: "LIVE", origin: "manual", action: "OPEN",
     symbol: SYMBOL, side: "BUY", lots: 0.1, stopLoss: 1.0951, takeProfit: 1.11,
-  });
+  }, RELEASED);
   assert.deepEqual(d.blockedBy, ["stale_market_data"]);
 });
 
@@ -387,10 +395,16 @@ test("D live dispatch and the demo MT5 queue call the governor before their send
   assert.ok(riskAt > 0 && riskAt < consumer.indexOf("canDispatchToMt5(dispatchInputs)"), "demo queue checks risk before its chokepoint");
   assert.doesNotMatch(consumer, /riskGatePassed:\s*true/, "the demo chokepoint no longer hard-codes a passed risk gate");
 
+  const meTrades = read("../meTrades.ts");
+  const closeGate = meTrades.indexOf('action: "CLOSE",\n      symbol, side, lots: lotSize');
+  assert.ok(closeGate > 0 && closeGate < meTrades.indexOf("// Queue the CLOSE command."), "the demo My Trades close is checked before it is queued");
+
   for (const rel of ["../paperTrading.ts", "../demoExecution.ts", "../../lib/adminTrading/orderGuard.ts",
     "../../lib/paperExecution/paperExecutionService.ts", "../../lib/tradeAction/riskGovernorEnforcement.ts"]) {
     assert.match(read(rel), /enforcePreTradeRisk\(/, `${rel} calls the governor`);
   }
+  assert.match(read("../../lib/riskGovernor/enforce.ts"), /halt: f\.halt !== undefined\s*\? f\.halt\s*: await loadTradingHalt\(/,
+    "every governed order reads the stop switches unless a test supplies them");
   assert.doesNotMatch(read("../../lib/tradeAction/riskGovernorEnforcement.ts"), /rg_skipped_simulated/, "simulated actions no longer skip the governor");
 });
 
@@ -407,7 +421,7 @@ test("demo/live boundary: a stopless live position blocks live entries but not p
   const live = await enforcePreTradeRisk({
     userId: u.a, venue: "LIVE", origin: "manual", action: "OPEN",
     symbol: SYMBOL, side: "BUY", lots: 0.1, stopLoss: 1.0951, takeProfit: 1.11,
-  });
+  }, RELEASED);
   assert.deepEqual(live.blockedBy, ["max_portfolio_exposure"]);
   const px = paperPrice();
   const paper = await enforcePreTradeRisk({
@@ -418,7 +432,7 @@ test("demo/live boundary: a stopless live position blocks live entries but not p
   const demo = await enforcePreTradeRisk({
     userId: u.a, venue: "DEMO", origin: "manual", action: "OPEN",
     symbol: SYMBOL, side: "BUY", lots: 0.1, stopLoss: 1.0951, takeProfit: 1.11,
-  });
+  }, RELEASED);
   assert.equal(demo.decision, "ALLOW", JSON.stringify(demo.rules.filter((r) => r.outcome === "BLOCK")));
   await db.delete(arxLivePositionsTable).where(eq(arxLivePositionsTable.userId, u.a));
 });
@@ -435,7 +449,7 @@ test("isolation: another trader's losses, positions and bridge never decide this
   const live = await enforcePreTradeRisk({
     userId: u.a, venue: "LIVE", origin: "manual", action: "OPEN",
     symbol: SYMBOL, side: "BUY", lots: 0.1, stopLoss: 1.0951, takeProfit: 1.11,
-  });
+  }, RELEASED);
   assert.equal(live.decision, "ALLOW", live.primaryReason ?? "");
   const px = paperPrice();
   const paper = await enforcePreTradeRisk({
@@ -447,6 +461,113 @@ test("isolation: another trader's losses, positions and bridge never decide this
   assert.equal(bEvents.length, 0, "A's checks never write to B's audit trail");
 });
 
+// ── Stop switches (lib/safety/tradingHalt) ────────────────────────────────
+
+async function soundOpen(userId: number, venue: "PAPER" | "DEMO" | "LIVE") {
+  const px = paperPrice();
+  const paper = venue === "PAPER";
+  return enforcePreTradeRisk({
+    userId, venue, origin: "manual", action: "OPEN", symbol: SYMBOL, side: "BUY", lots: 0.1,
+    stopLoss: paper ? px * 0.98 : 1.0951, takeProfit: paper ? px * 1.04 : 1.11,
+  }, paper ? { facts: { quote: { bid: px, ask: px, at: new Date(), source: "qa" } } } : {});
+}
+
+/** Run with a singleton switch set, then put back what was there. */
+async function withSingleton<T>(table: "platform" | "safety_core", on: boolean, fn: () => Promise<T>): Promise<T> {
+  const t = table === "platform" ? globalTradingSettingsTable : safetyCoreTable;
+  const col = table === "platform" ? "emergencyKillSwitch" : "killSwitchEngaged";
+  const rows = await db.select().from(t).orderBy(t.id).limit(1);
+  let id = rows[0]?.id;
+  const prev = rows[0] ? (rows[0] as Record<string, unknown>)[col] as boolean : null;
+  if (id == null) id = (await db.insert(t).values({}).returning({ id: t.id }))[0]!.id;
+  await db.update(t).set({ [col]: on } as never).where(eq(t.id, id));
+  try { return await fn(); } finally {
+    if (prev == null) await db.delete(t).where(eq(t.id, id));
+    else await db.update(t).set({ [col]: prev } as never).where(eq(t.id, id));
+  }
+}
+
+test("halt: a trader's own kill switch stops their new risk on paper, demo and live, but never a close, and never another trader", async () => {
+  await seedBridge(u.a);
+  await seedBridge(u.b);
+  await resetPaper(u.a);
+  await resetPaper(u.b);
+  await db.insert(arxLiveArmingTable).values({ userId: u.a, killSwitchEngaged: true, killSwitchReason: "qa stop" });
+  try {
+    await withSingleton("platform", false, async () => {
+      for (const venue of ["PAPER", "DEMO", "LIVE"] as const) {
+        const d = await soundOpen(u.a, venue);
+        assert.equal(d.decision, "BLOCK", venue);
+        assert.equal(d.blockedBy[0], "trading_halt", venue);
+        assert.deepEqual(d.halt?.sources, ["trader_kill_switch"], venue);
+        assert.match(d.primaryReason!, /Your kill switch is engaged.*qa stop/);
+        const ev = await latestEvent(u.a);
+        assert.equal(ev.row.id, d.auditEventId);
+        assert.deepEqual((ev.details["halt"] as { sources: string[] }).sources, ["trader_kill_switch"]);
+      }
+      const close = await enforcePreTradeRisk({
+        userId: u.a, venue: "LIVE", origin: "manual", action: "CLOSE", symbol: SYMBOL, side: "BUY", lots: 0.1,
+      });
+      assert.equal(close.decision, "ALLOW", "closing is never halted by a kill switch");
+      const stop = await enforcePreTradeRisk({
+        userId: u.a, venue: "LIVE", origin: "manual", action: "MODIFY", symbol: SYMBOL, side: "BUY", lots: 0.1,
+        stopLoss: 1.098, position: { entryPrice: 1.1, stopLoss: 1.0951 },
+      });
+      assert.equal(stop.blockedBy[0], "trading_halt", "stop changes are halted too");
+      const other = await soundOpen(u.b, "LIVE");
+      assert.equal(other.decision, "ALLOW", other.primaryReason ?? "");
+    });
+  } finally {
+    await db.delete(arxLiveArmingTable).where(eq(arxLiveArmingTable.userId, u.a));
+  }
+});
+
+test("halt: the platform emergency stop halts demo and live for everyone; the paper simulator keeps running", async () => {
+  await seedBridge(u.a);
+  await resetPaper(u.a);
+  await withSingleton("platform", true, async () => {
+    for (const venue of ["DEMO", "LIVE"] as const) {
+      const d = await soundOpen(u.a, venue);
+      assert.deepEqual(d.blockedBy, ["trading_halt"], venue);
+      assert.deepEqual(d.halt?.sources, ["platform_emergency_stop"]);
+    }
+    const paper = await soundOpen(u.a, "PAPER");
+    assert.equal(paper.decision, "ALLOW", paper.primaryReason ?? "");
+  });
+  await withSingleton("platform", false, async () => {
+    assert.equal((await soundOpen(u.a, "LIVE")).decision, "ALLOW");
+  });
+});
+
+test("halt: the safety-core kill switch halts every venue, paper included", async () => {
+  await seedBridge(u.a);
+  await resetPaper(u.a);
+  await withSingleton("platform", false, () => withSingleton("safety_core", true, async () => {
+    for (const venue of ["PAPER", "DEMO", "LIVE"] as const) {
+      const d = await soundOpen(u.a, venue);
+      assert.deepEqual(d.blockedBy, ["trading_halt"], venue);
+      assert.deepEqual(d.halt?.sources, ["safety_core_kill_switch"]);
+    }
+  }));
+});
+
+test("halt: paper POST /paper/orders refuses with the halt named while the trader's switch is engaged", async () => {
+  const acct = await resetPaper(u.a);
+  await db.insert(arxLiveArmingTable).values({ userId: u.a, killSwitchEngaged: true });
+  try {
+    const px = paperPrice();
+    const res = await request("POST", "/paper/orders", c.a, {
+      paperAccountId: acct, symbol: SYMBOL, direction: "BUY", lotSize: 0.1, stopLoss: px * 0.98, takeProfit: px * 1.04,
+    });
+    assert.equal(res.status, 422);
+    const body = await res.json() as { blockedBy: string[] };
+    assert.equal(body.blockedBy[0], "trading_halt");
+    assert.equal((await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.paperAccountId, acct))).length, 0);
+  } finally {
+    await db.delete(arxLiveArmingTable).where(eq(arxLiveArmingTable.userId, u.a));
+  }
+});
+
 test("preview evaluates without writing an audit row; a real check writes exactly one", async () => {
   await seedBridge(u.a);
   const before = (await riskEvents(u.a)).length;
@@ -454,10 +575,10 @@ test("preview evaluates without writing an audit row; a real check writes exactl
     userId: u.a, venue: "LIVE" as const, origin: "manual" as const, action: "OPEN" as const,
     symbol: SYMBOL, side: "BUY" as const, lots: 0.1, stopLoss: 1.0951, takeProfit: 1.11,
   };
-  const p = await enforcePreTradeRisk(intent, { preview: true });
+  const p = await enforcePreTradeRisk(intent, { ...RELEASED, preview: true });
   assert.equal(p.auditEventId, null);
   assert.equal((await riskEvents(u.a)).length, before);
-  const r = await enforcePreTradeRisk(intent);
+  const r = await enforcePreTradeRisk(intent, RELEASED);
   assert.ok(r.auditEventId);
   assert.equal((await riskEvents(u.a)).length, before + 1);
 });

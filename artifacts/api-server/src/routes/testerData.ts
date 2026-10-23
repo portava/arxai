@@ -4,7 +4,7 @@
 // trade_journal). NEVER writes to live_positions, mt5_commands, or any real
 // broker table. NEVER calls placeLiveOrderGuarded().
 import { Router, type Request, type Response, type NextFunction } from "express";
-import { readRoleFromRequest } from "../lib/security/middleware.js";
+import { requireAdmin } from "../lib/security/middleware.js";
 import { db, liveIntentsTable, vaultEventsTable, tradeJournalTable } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
@@ -14,15 +14,6 @@ const TESTER_TAG = "TESTER_DEMO_SEED";
 
 // Admin-only gate. Both seed and clear mutate DB state, so they require
 // elevated role per the same access-control model used by liveTrading routes.
-function requireAdmin(req: Request, res: Response, next: NextFunction): void {
-  const role = readRoleFromRequest(req);
-  if (role !== "ADMIN" && role !== "OWNER") {
-    res.status(403).json({ error: "Forbidden", requiredRole: "ADMIN" });
-    return;
-  }
-  next();
-}
-
 router.use("/tester-data", requireAdmin);
 
 router.post("/tester-data/seed", async (req, res) => {

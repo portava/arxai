@@ -19,6 +19,7 @@ import {
   userSlotAllocationTable,
   arxMasterAccountConfigTable,
 } from "@workspace/db";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router = Router();
 
@@ -28,8 +29,8 @@ function requireAdmin(req: Request, res: Response): { id: number; role: "ADMIN" 
     res.status(401).json({ error: "AUTH_REQUIRED" });
     return null;
   }
-  const role = u.role;
-  if (role !== "ADMIN" && role !== "OWNER") {
+  const role = operatorRoleFromSession(u.role);
+  if (!role) {
     res.status(403).json({ error: "ADMIN_REQUIRED" });
     return null;
   }

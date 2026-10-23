@@ -55,6 +55,7 @@ import {
 import {
   generateHouseholdReport, listHouseholdReports, getHouseholdReport,
 } from "../lib/agentEcosystem/householdReport.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 function parseAgentId(req: Request): number | undefined {
   const raw = (req.query.agentId as string | undefined) ?? undefined;
@@ -73,8 +74,8 @@ router.use(express.json());
 function requireAdmin(req: Request, res: Response): { id: number; role: "ADMIN" | "OWNER" } | null {
   const sess = (req as Request & { authUser?: { id: number; role?: string } }).authUser;
   if (!sess?.id) { res.status(401).json({ ok: false, error: "AUTH_REQUIRED" }); return null; }
-  const role = sess.role ?? null;
-  if (role !== "ADMIN" && role !== "OWNER") {
+  const role = operatorRoleFromSession(sess.role);
+  if (!role) {
     res.status(403).json({ ok: false, error: "ADMIN_REQUIRED" });
     return null;
   }

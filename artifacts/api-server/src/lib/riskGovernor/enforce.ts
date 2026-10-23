@@ -33,6 +33,7 @@ import {
 import { and, desc, eq, gte, inArray, isNull, ne, notInArray, sql } from "drizzle-orm";
 import { logRiskEvent } from "../../routes/meRiskGovernor.js";
 import { decideContractSize, resolveQuoteToAccountFx } from "../mt5/contractSize.js";
+import { loadTradingHalt } from "../safety/tradingHalt.js";
 import {
   evaluatePreTradeRisk,
   resolveEffectiveLimits,
@@ -86,6 +87,7 @@ export interface RiskFacts {
   extraInFlight?: RiskInFlight[];
   broker?: RiskContext["broker"];
   daily?: RiskContext["daily"];
+  halt?: RiskContext["halt"];
 }
 
 export interface EnforceOptions {
@@ -377,6 +379,9 @@ export async function buildRiskContext(intent: TradeIntent, opts: EnforceOptions
     inFlight: [...loaded.inFlight, ...(f.extraInFlight ?? [])],
     broker: f.broker ?? loaded.broker,
     daily: f.daily ?? loaded.daily,
+    halt: f.halt !== undefined
+      ? f.halt
+      : await loadTradingHalt({ userId: intent.userId, venue: intent.venue, virtualAccountId: opts.virtualAccountId ?? null }),
   };
 }
 
@@ -407,6 +412,7 @@ export async function enforcePreTradeRisk(intent: TradeIntent, opts: EnforceOpti
           source: "pre_trade_risk_governor",
           intent,
           blockedBy: decision.blockedBy,
+          halt: decision.halt ?? null,
           rules: decision.rules,
           limits,
           facts: ctx ? {

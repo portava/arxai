@@ -6,7 +6,7 @@
 // here touches live_positions, mt5_commands, or placeLiveOrderGuarded().
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { z } from "zod/v4";
-import { readRoleFromRequest } from "../lib/security/middleware.js";
+import { readRoleFromRequest, requireAdmin } from "../lib/security/middleware.js";
 import {
   scanOnce, scannerStart, scannerStop, scannerStatus, scannerOpportunities,
   opportunityScore, sessionPlan, decisionStream, listAlerts, alertAction, alertCount,
@@ -37,15 +37,6 @@ import { getSelectedMarketSnapshot } from "../lib/scannerSelected/selectedMarket
 import { ALL_SUPPORTED_SYMBOLS, normalizeSymbol } from "../lib/scannerSelected/symbolNormalize.js";
 
 const router = Router();
-
-function requireAdmin(req: Request, res: Response, next: NextFunction): void {
-  const role = readRoleFromRequest(req);
-  if (role !== "ADMIN" && role !== "OWNER") {
-    res.status(403).json({ error: "Forbidden", requiredRole: "ADMIN" });
-    return;
-  }
-  next();
-}
 
 // ── Scanner ────────────────────────────────────────────────────────────────
 // Dev-only outage injection. When armed (non-production only), the two
