@@ -71,6 +71,12 @@ export async function confirmAction(opts: { userId: number; actionId: number; li
     symbol: row.symbol,
     side: row.side,
     lotSize: row.lotSize,
+    // Market drafts are priced from the live quote at confirm time; only a
+    // pending order carries its own price.
+    requestedPrice: row.orderType && !row.orderType.endsWith("_MARKET") ? row.requestedPrice ?? null : null,
+    stopLoss: row.stopLoss ?? null,
+    takeProfit: row.takeProfit ?? null,
+    origin: row.source === "ai_suggested" ? "ruby" : row.source === "decision_engine" ? "automation" : "manual",
     tradeKey: row.tradeKey,
     confirmedByUser: true,
     expiresAt: row.expiresAt,

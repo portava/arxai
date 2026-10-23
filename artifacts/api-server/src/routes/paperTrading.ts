@@ -19,6 +19,7 @@ import { z } from "zod/v4";
 import { requireUser } from "../lib/auth/middleware.js";
 import { generateDeterministicCandles } from "../lib/backtestStrategyRegistry.js";
 import { runAutoDebrief } from "../lib/autoDebriefService.js";
+import { enforcePreTradeRisk } from "../lib/riskGovernor/enforce.js";
 
 const router = Router();
 const SIMULATED_TAG = "Simulated — paper trading does not guarantee live results.";
@@ -225,12 +226,31 @@ router.post("/paper/orders", requireUser, async (req, res): Promise<void> => {
     const userId = req.authUser!.id;
     const b = PlaceOrderBody.parse(req.body ?? {});
     if (!(await ownAccount(b.paperAccountId, userId))) { fail(res, 404, "Paper account not found"); return; }
-    const px = b.entryPrice ?? getMockPrice(b.symbol, Date.now());
+    const nowMs = Date.now();
+    const marketPx = getMockPrice(b.symbol, nowMs);
+    const px = b.entryPrice ?? marketPx;
     // Validate SL/TP geometry to refuse malformed paper orders.
     const slOk = b.direction === "BUY" ? b.stopLoss < px   : b.stopLoss > px;
     const tpOk = b.direction === "BUY" ? b.takeProfit > px : b.takeProfit < px;
     if (!slOk || !tpOk) {
       fail(res, 400, "Invalid SL/TP geometry for direction", { entryPrice: px });
+      return;
+    }
+    // Pre-trade Risk Governor: the same 12 rules a live order faces, priced
+    // against the paper simulator's market.
+    const risk = await enforcePreTradeRisk({
+      userId, venue: "PAPER", origin: "manual", action: "OPEN",
+      symbol: b.symbol, side: b.direction, lots: b.lotSize,
+      entryPrice: b.entryPrice ?? null, stopLoss: b.stopLoss, takeProfit: b.takeProfit,
+    }, {
+      paperAccountId: b.paperAccountId,
+      facts: { quote: { bid: marketPx, ask: marketPx, at: new Date(nowMs), source: "paper_simulator_price" } },
+      auditContext: { caller: "POST /paper/orders" },
+    });
+    if (!risk.allowed) {
+      fail(res, 422, risk.primaryReason ?? "Blocked by Risk Governor", {
+        code: "RISK_GOVERNOR_BLOCK", blockedBy: risk.blockedBy, auditEventId: risk.auditEventId,
+      });
       return;
     }
     const ins = await db.insert(paperOrdersTable).values({

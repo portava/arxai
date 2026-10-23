@@ -34,6 +34,7 @@ import {
 import { and, desc, eq, gte, isNull, ne, sql } from "drizzle-orm";
 import { logRiskEvent } from "../../routes/meRiskGovernor.js";
 import { isAllocationBlown } from "../live/allocationBlown.js";
+import { enforcePreTradeRisk, type IntentAction, type IntentOrigin } from "../riskGovernor/enforce.js";
 
 // ── Action classification ───────────────────────────────────────────────────
 const OPENS_NEW_RISK = new Set(["OPEN"]);
@@ -48,7 +49,15 @@ export interface RiskEnforcementInput {
   symbol: string;
   side: string | null;             // "BUY" | "SELL" | null
   lotSize: number | null;
+  /** Order prices, so the 12 pre-trade rules can measure loss at stop. */
+  requestedPrice?: number | null;
+  stopLoss?: number | null;
+  takeProfit?: number | null;
+  /** Who originated the draft (user, Ruby, decision engine). */
+  origin?: IntentOrigin;
   routingMode: string | null;      // "USER_OWNED_MT5" | "SHARED_MASTER_MT5"
+  /** Bridge the action routes to (routingResolver); null = the user's own. */
+  connectionId?: number | null;
   virtualAccountId: number | null; // populated by routingResolver in SHARED mode
   /**
    * Phase OR2 — when called from the Opportunity Radar preview path, the
@@ -144,10 +153,39 @@ async function sumTodayRealizedPnl(userId: number): Promise<number> {
 export async function enforceRiskGovernor(input: RiskEnforcementInput): Promise<RiskEnforcementResult> {
   const { userId, actionType, requestedMode, symbol, side, lotSize, routingMode, virtualAccountId } = input;
 
-  // SIMULATED actions never touch the broker — skip enforcement (still
-  // advisory through evaluateRiskCheck on the precheck route).
-  if (requestedMode === "SIMULATED") {
-    return ok("rg_skipped_simulated");
+  // 0. The 12 mandatory pre-trade rules (lib/riskGovernor) run for EVERY
+  //    mode, SIMULATED included: demo exercises the same rules as live.
+  //    enforcePreTradeRisk writes its own user_risk_events row. A radar
+  //    preview with no lot size yet cannot be sized, so it is checked when
+  //    the real draft is confirmed instead.
+  const intentAction = toIntentAction(actionType);
+  if (intentAction && !(input.previewMode && lotSize == null)) {
+    const pre = await enforcePreTradeRisk({
+      userId,
+      venue: requestedMode === "SIMULATED" ? "PAPER" : requestedMode,
+      origin: input.origin ?? "manual",
+      action: intentAction,
+      symbol,
+      side: side === "BUY" || side === "SELL" ? side : null,
+      lots: lotSize,
+      entryPrice: input.requestedPrice ?? null,
+      stopLoss: input.stopLoss ?? null,
+      takeProfit: input.takeProfit ?? null,
+      intentRef: `trade_action:${input.actionId}`,
+    }, {
+      preview: input.previewMode,
+      connectionId: input.connectionId ?? null,
+      virtualAccountId: routingMode === "SHARED_MASTER_MT5" ? virtualAccountId : null,
+      auditContext: { caller: "trade_action_guards", actionId: input.actionId, requestedMode },
+    });
+    if (!pre.allowed) {
+      return {
+        passed: false,
+        checkId: `rg_${pre.blockedBy[0] ?? "audit_unavailable"}`,
+        reason: pre.primaryReason ?? "Blocked by Risk Governor.",
+        details: { blockedBy: pre.blockedBy, auditEventId: pre.auditEventId, rules: pre.rules },
+      };
+    }
   }
 
   // 1. Load per-user risk settings (advisory caps) and admin-set hard limits.
@@ -200,6 +238,13 @@ export async function enforceRiskGovernor(input: RiskEnforcementInput): Promise<
           { allowedDirection, requestedSide: side }, input.actionId, input.previewMode);
       }
     }
+  }
+
+  // SIMULATED actions never reach a broker account: the account-level caps
+  // below read live positions and shared-master allocations, which do not
+  // apply to the paper ledger. The 12 pre-trade rules above already ran.
+  if (requestedMode === "SIMULATED") {
+    return ok("rg_passed_simulated");
   }
 
   // 4. Daily loss limit (drives close-only mode).
@@ -408,6 +453,13 @@ export async function enforceRiskGovernor(input: RiskEnforcementInput): Promise<
       ? Math.min(maxTradesPerDayAdmin, maxTradesPerDaySettings)
       : maxTradesPerDaySettings,
   });
+}
+
+function toIntentAction(actionType: string): IntentAction | null {
+  if (actionType === "OPEN") return "OPEN";
+  if (actionType === "CLOSE" || actionType === "PARTIAL_CLOSE") return actionType;
+  if (MODIFIES.has(actionType)) return "MODIFY";
+  return null; // CANCEL_ORDER removes a pending order; it adds no risk.
 }
 
 // Re-exports for callers that want classification without re-importing.

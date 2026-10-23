@@ -274,7 +274,7 @@ export async function runOneCycle(opts?: { settingsOverride?: Partial<AutopilotS
           // 4e. EE paper execute.
           await logCycle({ cycleId, symbol, timeframe, step: "EE_EXEC", status: "INFO",
             message: `Calling Build EE paper execution for decisionId=${decisionId}` });
-          const eeResult = await executePaperFromDecision(decision, decisionId, { allowConflicts: false, ownerUserId });
+          const eeResult = await executePaperFromDecision(decision, decisionId, { allowConflicts: false, ownerUserId, origin: "automation" });
           perSym.eePaperResult = eeResult.status;
           perSym.paperTradeId = eeResult.trade_id;
 

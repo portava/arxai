@@ -137,7 +137,11 @@ router.post("/me/pending-order-draft", async (req, res): Promise<void> => {
     symbol: body.symbol,
     side: directionOf(orderType),
     lotSize: body.lotSize,
+    requestedPrice: body.entryPrice ?? body.stopLimitPrice ?? null,
+    stopLoss: body.stopLoss ?? null,
+    takeProfit: body.takeProfit ?? null,
     routingMode: routing?.effectiveRoutingMode ?? null,
+    connectionId: routing?.connectionId ?? null,
     virtualAccountId: routing?.virtualAccountId ?? null,
     previewMode: true,
   });

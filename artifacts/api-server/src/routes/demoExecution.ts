@@ -21,6 +21,7 @@ import { z } from "zod/v4";
 import { db } from "@workspace/db";
 import { mt5StateTable, mt5CommandsTable } from "@workspace/db";
 import { denyInvestorExecution } from "../lib/auth/productRole.js";
+import { enforcePreTradeRisk } from "../lib/riskGovernor/enforce.js";
 
 const router = Router();
 // Task #71 — investor accounts cannot reach demo execution either.
@@ -91,7 +92,7 @@ const demoBody = z.object({
   executionMode: z.enum(["DEMO_ONLY", "READ_ONLY_WITH_DEMO_EXECUTION"]),
 });
 
-async function validateAndQueueDemo(input: z.infer<typeof demoBody>, source: string) {
+async function validateAndQueueDemo(input: z.infer<typeof demoBody>, source: string, userId: number | null) {
   // 1. Server enablement. Default OFF — must be explicitly turned on per env.
   if (!isDemoExecutionAllowedOnServer()) {
     return {
@@ -140,6 +141,25 @@ async function validateAndQueueDemo(input: z.infer<typeof demoBody>, source: str
     return { ok: false as const, http: 400, body: blockedDemo("side must be BUY or SELL.") };
   }
 
+  // 3b. Pre-trade Risk Governor: a demo order faces the same 12 rules as a
+  //     live one, and is attributed to the signed-in user.
+  if (userId == null) {
+    return { ok: false as const, http: 401, body: blockedDemo("Sign in required to queue a demo order.") };
+  }
+  const risk = await enforcePreTradeRisk({
+    userId, venue: "DEMO", origin: "manual", action: "OPEN",
+    symbol: input.symbol, side: input.side, lots: input.volume,
+    stopLoss: input.stopLoss ? input.stopLoss : null,
+    takeProfit: input.takeProfit ? input.takeProfit : null,
+  }, { auditContext: { caller: `demo_execution:${source}` } });
+  if (!risk.allowed) {
+    return {
+      ok: false as const,
+      http: 422,
+      body: { ...blockedDemo(risk.primaryReason ?? "Blocked by Risk Governor."), code: "RISK_GOVERNOR_BLOCK", blockedBy: risk.blockedBy, auditEventId: risk.auditEventId },
+    };
+  }
+
   // 4. Insert directly into mt5_commands with action="DEMO_MARKET_ORDER".
   //    NOTE: we deliberately do NOT route through queueMt5CommandWithGate /
   //    queueCommand — those are typed for OPEN/CLOSE/MODIFY/CLOSE_ALL and
@@ -157,6 +177,8 @@ async function validateAndQueueDemo(input: z.infer<typeof demoBody>, source: str
   const inserted = await db
     .insert(mt5CommandsTable)
     .values({
+      userId,
+      requestedByUserId: userId,
       action: "DEMO_MARKET_ORDER",
       symbol: input.symbol,
       side: input.side,
@@ -199,7 +221,7 @@ router.post("/queue", async (req: Request, res: Response) => {
     );
     return;
   }
-  const result = await validateAndQueueDemo(parsed.data, "api:queue");
+  const result = await validateAndQueueDemo(parsed.data, "api:queue", req.authUser?.id ?? null);
   res.status(result.http).json(result.body);
 });
 
@@ -225,7 +247,8 @@ router.post("/test", async (req: Request, res: Response) => {
       demoOnly: true,
       executionMode: "READ_ONLY_WITH_DEMO_EXECUTION",
     },
-    "api:test"
+    "api:test",
+    req.authUser?.id ?? null,
   );
   res.status(result.http).json(result.body);
 });

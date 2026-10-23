@@ -124,6 +124,7 @@ import { getEffectiveTradingGovernance } from "../governance/effectiveGovernance
 import { getSymbolTradability } from "../data/symbolTradability.js";
 import { recomputeMasterPool, loadMasterPool, getUserAllocationView, resolveActiveMasterConnectionId } from "./masterBridgePool.js";
 import { resolveAllocationGate } from "./allocationGate.js";
+import { enforcePreTradeRisk, type IntentAction } from "../riskGovernor/enforce.js";
 import {
   claimLiveCommandForConfirm,
   claimLiveCommandForDispatch,
@@ -3263,6 +3264,82 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
           command: blocked,
         };
       }
+    }
+  }
+
+  // ── PRE-TRADE RISK GOVERNOR PRE-GATE (the 12 mandatory rules) ──────────
+  // The same evaluator every demo and paper path calls (lib/riskGovernor):
+  // the trader's OWN limits (user_risk_settings, risk_settings, admin
+  // user_risk_limits — strictest wins) are read here at dispatch, against the
+  // bridge this command is bound to. Entries face all 12 rules; a close is
+  // held back only by an invalid quantity or a disconnected bridge, so open
+  // exposure is never trapped. Writes a user_risk_events row either way.
+  {
+    const rgAction: IntentAction = row.commandType === "CLOSE_LIVE_POSITION" ? "CLOSE"
+      : row.commandType === "MODIFY_LIVE_SLTP" ? "MODIFY" : "OPEN";
+    let rgVirtualAccountId: number | null = null;
+    if (routingMode === "SHARED_MASTER_MT5") {
+      const { virtualTradingAccountsTable: _rgVta } = await import("@workspace/db");
+      const [va] = await db.select({ id: _rgVta.id }).from(_rgVta)
+        .where(and(eq(_rgVta.userId, args.userId), eq(_rgVta.status, "active"))).limit(1);
+      rgVirtualAccountId = va?.id ?? null;
+    }
+    const isPendingEntry = row.commandType === "PLACE_LIVE_PENDING_ORDER";
+    const pendingPriceRaw = (row.payload as Record<string, unknown> | null)?.["price"];
+    const risk = await enforcePreTradeRisk({
+      userId: args.userId,
+      venue: "LIVE",
+      origin: /RUBY|ASSISTANT/i.test(row.sourcePage ?? "") ? "ruby"
+        : /SELF_TRADE|MISSION|AUTOPILOT|AUTOMATION/i.test(row.sourcePage ?? "") ? "automation" : "manual",
+      action: rgAction,
+      symbol: row.symbol,
+      side: row.side === "BUY" || row.side === "SELL" ? row.side : null,
+      lots: Number(row.requestedVolume),
+      entryPrice: isPendingEntry && typeof pendingPriceRaw === "number" ? pendingPriceRaw : null,
+      stopLoss: row.stopLoss ?? null,
+      takeProfit: row.takeProfit ?? null,
+      intentRef: `live_command:${args.commandId}`,
+    }, {
+      connectionId: bridge?.id ?? null,
+      virtualAccountId: rgVirtualAccountId,
+      auditContext: { caller: "live_dispatch", commandId: args.commandId, commandType: row.commandType },
+    });
+    if (!risk.allowed) {
+      const reason = `RISK_GOVERNOR_BLOCK:${risk.blockedBy.join(",") || "audit_unavailable"}`;
+      const [blocked] = await db.update(arxLiveCommandsTable).set({
+        status: "LIVE_BLOCKED",
+        rejectionReason: reason,
+        rejectedAt: new Date(),
+        brokerMessage: risk.primaryReason,
+        dispatchGateSnapshot: {
+          decision: "BLOCKED",
+          primaryReason: reason,
+          blockReasons: [reason, "BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED"],
+          preTradeRiskGate: true,
+          riskBlockedBy: risk.blockedBy,
+          riskAuditEventId: risk.auditEventId,
+          riskRules: risk.rules,
+          at: new Date().toISOString(),
+        } as unknown as Record<string, unknown>,
+      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      await audit({
+        eventType: "PRE_TRADE_RISK_BLOCKED", severity: "HIGH",
+        userId: args.userId, symbol: row.symbol,
+        message: `Live dispatch BLOCKED by the pre-trade Risk Governor: ${risk.primaryReason ?? reason}`,
+        metadata: { commandId: args.commandId, commandType: row.commandType, riskBlockedBy: risk.blockedBy, riskAuditEventId: risk.auditEventId },
+      });
+      logger.warn({
+        [PHASE_B_LIVE_LOG_PREFIX]: true,
+        event: "PRE_TRADE_RISK_BLOCKED",
+        commandId: args.commandId, userId: args.userId, primaryReason: reason,
+      }, "Pre-trade Risk Governor blocked live dispatch");
+      return {
+        ok: false as const,
+        reason: "LIVE_BLOCKED" as const,
+        primaryReason: reason,
+        blockReasons: [reason, "BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED"],
+        command: blocked,
+      };
     }
   }
 
