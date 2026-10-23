@@ -223,6 +223,14 @@ export const INTEGRATION_LANE_TESTS: readonly IntegrationLaneTest[] = [
   // proves no cross-user read, mutation or aggregation, operator-only
   // singletons, and per-user alerts/notifications.
   { pkg: "@workspace/api-server", script: "test:account-ownership-route" },
+  // Pre-trade Risk Governor: the 12 mandatory rules one by one and in
+  // combination (pure), then end to end on a real DB through the manual paper
+  // route, Ruby Trade Action drafts, paper automation and the live venue
+  // against a sandbox bridge — decision, enforcement, rejection and the
+  // user_risk_events audit row for each.
+  { pkg: "@workspace/api-server", script: "test:risk-governor-rules" },
+  { pkg: "@workspace/api-server", script: "test:risk-governor-pipelines" },
+  { pkg: "@workspace/api-server", script: "test:risk-governor-automation" },
   // Task #660 — Profit Mission Phase 1 route per-user isolation + no-secret-leak
   // proof. Boots the REAL profitMissions router on loopback, seeds two real users
   // with genuine sessions, and proves anonymous 401s, a feed-gated estimate-

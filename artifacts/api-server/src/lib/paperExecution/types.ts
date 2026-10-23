@@ -58,4 +58,6 @@ export interface ExecuteFromDecisionOpts {
   // If true, allow taking the trade even with a same-symbol+direction
   // already open. Default false (conservative).
   allowConflicts?: boolean;
+  // Who asked for the trade, recorded on the Risk Governor audit row.
+  origin?: "manual" | "ruby" | "automation" | "strategy";
 }

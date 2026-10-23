@@ -43,6 +43,12 @@ export interface ActionGuardInput {
   symbol: string;
   side: string | null;
   lotSize: number | null;
+  /** Order prices for the pre-trade rules (loss at stop, price sanity). */
+  requestedPrice?: number | null;
+  stopLoss?: number | null;
+  takeProfit?: number | null;
+  /** Who originated the draft: the trader, Ruby, or the decision engine. */
+  origin?: "manual" | "ruby" | "automation";
   tradeKey: string | null;
   confirmedByUser: boolean;
   expiresAt: Date | null;
@@ -95,8 +101,9 @@ export async function runActionGuards(input: ActionGuardInput): Promise<GuardCha
   pass("auth", "authenticated user");
 
   // 2. Ownership — re-check trade belongs to user (skip for OPEN with no tradeKey).
+  let trade: Awaited<ReturnType<typeof resolveUserTrade>> = null;
   if (input.tradeKey) {
-    const trade = await resolveUserTrade(input.userId, input.tradeKey);
+    trade = await resolveUserTrade(input.userId, input.tradeKey);
     if (!trade) return fail("ownership", "user owns or is attributed to the trade", "Trade not found or not attributed to you.");
     pass("ownership", "user owns or is attributed to the trade");
   } else {
@@ -157,7 +164,8 @@ export async function runActionGuards(input: ActionGuardInput): Promise<GuardCha
   // 8b. Central Risk Governor enforcement — max open trades, max trades/day,
   //     daily loss cap, close-only mode, allowed symbols/direction,
   //     shared-master allocation. Fail-closed; every block is logged to
-  //     user_risk_events. Only applied to non-SIMULATED actions.
+  //     user_risk_events. The 12 pre-trade rules (lib/riskGovernor) run
+  //     for every mode; the account-level caps for DEMO/LIVE only.
   const rg = await enforceRiskGovernor({
     userId: input.userId,
     actionId: input.actionId,
@@ -166,7 +174,15 @@ export async function runActionGuards(input: ActionGuardInput): Promise<GuardCha
     symbol: input.symbol,
     side: input.side,
     lotSize: input.lotSize,
+    requestedPrice: input.requestedPrice ?? null,
+    stopLoss: input.stopLoss ?? null,
+    takeProfit: input.takeProfit ?? null,
+    origin: input.origin,
+    position: trade
+      ? { side: trade.side, entryPrice: trade.entryPrice, stopLoss: trade.stopLoss, lotSize: trade.lotSize }
+      : null,
     routingMode: routing.effectiveRoutingMode,
+    connectionId: routing.connectionId ?? null,
     virtualAccountId: routing.virtualAccountId,
     previewMode: input.previewMode,
     prefetched: input.prefetched ? {

@@ -1,4 +1,4 @@
-// 10-step order guard chain.
+// 10-step order guard chain (plus 9b, the pre-trade Risk Governor).
 //
 // SAFETY (inviolable):
 // - The ONLY path that may insert status='APPROVED' into trade_command_audit_log.
@@ -17,6 +17,7 @@ import { eq, and, gte, sql } from "drizzle-orm";
 import { getEnvelope } from "./safetyEnvelope.js";
 import { resolveRouting, type RoutingDecision } from "./routingResolver.js";
 import { logger } from "../logger.js";
+import { enforcePreTradeRisk } from "../riskGovernor/enforce.js";
 
 export interface OrderRequest {
   userId: number;
@@ -190,6 +191,25 @@ export async function runOrderGuards(req: OrderRequest): Promise<OrderGuardResul
         if (req.mode === "SIMULATED") return null;
         if (!BROKER_PLACEMENT_LAYER_ENABLED) return BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED;
         return null;
+      } },
+
+    // 9b. Pre-trade Risk Governor — the 12 mandatory rules (lib/riskGovernor),
+    // last so only an order that would otherwise dispatch is evaluated. It
+    // writes its own user_risk_events row.
+    { name: "pre_trade_risk", test: async () => {
+        const risk = await enforcePreTradeRisk({
+          userId: req.userId,
+          venue: req.mode === "SIMULATED" ? "PAPER" : req.mode,
+          origin: req.requestedBy === "ai-assistant" ? "ruby" : req.requestedBy === "system" ? "automation" : "manual",
+          action: "OPEN",
+          symbol: req.symbol, side: req.side, lots: req.lotSize,
+          stopLoss: req.stopLoss ?? null, takeProfit: req.takeProfit ?? null,
+        }, {
+          connectionId: routing.connectionId,
+          virtualAccountId: routing.virtualAccountId,
+          auditContext: { caller: "admin_trading_order_guard" },
+        });
+        return risk.allowed ? null : `RISK_GOVERNOR_BLOCK:${risk.blockedBy.join(",") || "audit_unavailable"}`;
       } },
   ];
 

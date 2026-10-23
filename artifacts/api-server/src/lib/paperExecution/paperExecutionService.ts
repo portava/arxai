@@ -30,6 +30,7 @@ import { getMarketData } from "../marketData/marketDataService.js";
 import { calculatePositionSize, PAPER_DEFAULTS } from "./positionSizing.js";
 import { checkEligibility } from "./eligibility.js";
 import { gateForPaperTrade } from "../riskGovernor/governor.js";
+import { enforcePreTradeRisk, loadEffectiveLimits } from "../riskGovernor/enforce.js";
 import type {
   ExecuteFromDecisionOpts,
   PaperExecutionResult,
@@ -222,10 +223,22 @@ export async function executePaperFromDecision(
   }
 
   // ── Position sizing ──
+  // The Risk Governor's limits bound the size before it is checked: the lot
+  // cap and per-trade risk come from the owner's effective (strictest) limits.
+  if (acct.userId == null) {
+    return persistRejection({ ownerUserId: opts.ownerUserId ?? null,
+      executionId, decisionId, symbol, action, decision,
+      reason: "RISK_GOVERNOR_BLOCK[no_owner]: paper account has no owner, so risk limits cannot be resolved",
+      warnings: eligibility.warnings, mdSnapshot: snapshot,
+    });
+  }
+  const limits = await loadEffectiveLimits(acct.userId);
   const sizing = calculatePositionSize({
     accountEquity: acct.equity,
     entryPrice: fillPrice,
     stopLoss,
+    maxLotSizeOverride: Math.min(PAPER_DEFAULTS.maxLotSize, limits.maxLotSize),
+    riskPercentOverride: Math.min(PAPER_DEFAULTS.riskPercent, limits.maxRiskPerTradePercent / 100),
   });
   const positionSize = sizing.capped_position_size;
   log.info({ sizing }, "Build EE: position sizing computed");
@@ -235,6 +248,30 @@ export async function executePaperFromDecision(
       executionId, decisionId, symbol, action, decision,
       reason: `Position sizing returned zero: ${sizing.reason}`,
       warnings: eligibility.warnings, mdSnapshot: snapshot,
+    });
+  }
+
+  // ── Pre-trade Risk Governor: the 12 mandatory rules, against the quote
+  //    this order fills at. Writes its own user_risk_events row.
+  const risk = await enforcePreTradeRisk({
+    userId: acct.userId, venue: "PAPER", origin: opts.origin ?? "manual", action: "OPEN",
+    symbol, side: dir, lots: positionSize, entryPrice: null, stopLoss, takeProfit,
+  }, {
+    paperAccountId: acct.id,
+    facts: { quote: {
+      bid: snapshot.bid, ask: snapshot.ask,
+      at: snapshot.timestamp ? new Date(snapshot.timestamp) : null,
+      source: `${snapshot.source}:${snapshot.provider}`,
+    } },
+    auditContext: { caller: "paper_execution", executionId, decisionId },
+  });
+  if (!risk.allowed) {
+    log.warn({ blockedBy: risk.blockedBy, auditEventId: risk.auditEventId }, "Build EE: paper trade BLOCKED by pre-trade Risk Governor");
+    return persistRejection({ ownerUserId: opts.ownerUserId ?? null,
+      executionId, decisionId, symbol, action, decision,
+      reason: `RISK_GOVERNOR_BLOCK[${risk.blockedBy.join(",") || "audit_unavailable"}]: ${risk.primaryReason ?? "blocked"}`,
+      warnings: [...eligibility.warnings, ...risk.rules.filter((r) => r.outcome === "BLOCK").map((r) => `${r.rule}: ${r.reason}`)],
+      mdSnapshot: snapshot,
     });
   }
 
