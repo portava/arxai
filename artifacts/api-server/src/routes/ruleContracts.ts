@@ -5,6 +5,10 @@
 // the Risk Lock system. Reads paper_orders (Build Q) only — never references
 // live trades, mt5_*, /execute-trade, or canPlaceTrades.
 //
+// OWNERSHIP: contracts, commitments and violations belong to req.authUser.
+// Evaluation only walks the caller's own paper orders. Another user's id
+// answers 404.
+//
 // No guaranteed-profit claims. Accountability framing, not punishment.
 
 import { Router } from "express";
@@ -14,6 +18,7 @@ import {
 } from "@workspace/db";
 import { and, asc, desc, eq, gte } from "drizzle-orm";
 import { z } from "zod/v4";
+import { requireUser } from "../lib/auth/middleware.js";
 
 const router = Router();
 const ACCOUNTABILITY_TAG = "Accountability layer — soft warnings to support discipline. Does not enforce hard trade locks or guarantee profits.";
@@ -64,17 +69,31 @@ function sessionOf(d: Date): "ASIA"|"LONDON"|"NEWYORK"|"OFF" {
   return "OFF";
 }
 
+async function ownContract(id: number, userId: number) {
+  return (await db.select().from(tradingRuleContractsTable)
+    .where(and(eq(tradingRuleContractsTable.id, id), eq(tradingRuleContractsTable.userId, userId)))
+    .limit(1))[0] ?? null;
+}
+
+async function ownCommitment(id: number, userId: number) {
+  return (await db.select().from(sessionCommitmentsTable)
+    .where(and(eq(sessionCommitmentsTable.id, id), eq(sessionCommitmentsTable.userId, userId)))
+    .limit(1))[0] ?? null;
+}
+
 // ── POST /rule-contracts ───────────────────────────────────────────────────
-router.post("/rule-contracts", async (req, res): Promise<void> => {
+router.post("/rule-contracts", requireUser, async (req, res): Promise<void> => {
   try {
+    const userId = req.authUser!.id;
     const b = ContractBody.parse(req.body ?? {});
     if (b.isActive) {
-      // Single-active invariant.
+      // Single-active invariant, per user.
       await db.update(tradingRuleContractsTable)
         .set({ isActive: 0, updatedAt: new Date() })
-        .where(eq(tradingRuleContractsTable.isActive, 1));
+        .where(and(eq(tradingRuleContractsTable.userId, userId), eq(tradingRuleContractsTable.isActive, 1)));
     }
     const ins = await db.insert(tradingRuleContractsTable).values({
+      userId,
       contractName: b.contractName,
       maxTradesPerDay: b.maxTradesPerDay ?? null,
       maxDailyLossPercent: b.maxDailyLossPercent ?? null,
@@ -96,33 +115,35 @@ router.post("/rule-contracts", async (req, res): Promise<void> => {
 });
 
 // ── GET /rule-contracts ────────────────────────────────────────────────────
-router.get("/rule-contracts", async (_req, res): Promise<void> => {
+router.get("/rule-contracts", requireUser, async (req, res): Promise<void> => {
   const rows = await db.select().from(tradingRuleContractsTable)
+    .where(eq(tradingRuleContractsTable.userId, req.authUser!.id))
     .orderBy(desc(tradingRuleContractsTable.createdAt)).limit(100);
   ok(res, { contracts: rows });
 });
 
 // ── GET /rule-contracts/active ─────────────────────────────────────────────
-router.get("/rule-contracts/active", async (_req, res): Promise<void> => {
+router.get("/rule-contracts/active", requireUser, async (req, res): Promise<void> => {
   const rows = await db.select().from(tradingRuleContractsTable)
-    .where(eq(tradingRuleContractsTable.isActive, 1)).limit(1);
+    .where(and(eq(tradingRuleContractsTable.userId, req.authUser!.id), eq(tradingRuleContractsTable.isActive, 1)))
+    .orderBy(desc(tradingRuleContractsTable.createdAt)).limit(1);
   if (!rows[0]) { fail(res, 404, "No active contract"); return; }
   ok(res, { contract: rows[0] });
 });
 
 // ── PATCH /rule-contracts/:id ──────────────────────────────────────────────
-router.patch("/rule-contracts/:id", async (req, res): Promise<void> => {
+router.patch("/rule-contracts/:id", requireUser, async (req, res): Promise<void> => {
   try {
+    const userId = req.authUser!.id;
     const id = Number(req.params["id"]);
     if (!Number.isFinite(id)) { fail(res, 400, "Invalid id"); return; }
     const b = ContractBody.partial().parse(req.body ?? {});
-    const cur = (await db.select().from(tradingRuleContractsTable)
-      .where(eq(tradingRuleContractsTable.id, id)).limit(1))[0];
+    const cur = await ownContract(id, userId);
     if (!cur) { fail(res, 404, "Not found"); return; }
     if (b.isActive === true) {
       await db.update(tradingRuleContractsTable)
         .set({ isActive: 0, updatedAt: new Date() })
-        .where(eq(tradingRuleContractsTable.isActive, 1));
+        .where(and(eq(tradingRuleContractsTable.userId, userId), eq(tradingRuleContractsTable.isActive, 1)));
     }
     const patch: Record<string, unknown> = { updatedAt: new Date() };
     if (b.contractName !== undefined) patch["contractName"] = b.contractName;
@@ -135,9 +156,9 @@ router.patch("/rule-contracts/:id", async (req, res): Promise<void> => {
     if (b.cooldownAfterLosses !== undefined) patch["cooldownAfterLosses"] = b.cooldownAfterLosses;
     if (b.noTradeConditions !== undefined) patch["noTradeConditions"] = b.noTradeConditions;
     if (b.isActive !== undefined) patch["isActive"] = b.isActive ? 1 : 0;
-    await db.update(tradingRuleContractsTable).set(patch).where(eq(tradingRuleContractsTable.id, id));
-    const refreshed = (await db.select().from(tradingRuleContractsTable)
-      .where(eq(tradingRuleContractsTable.id, id)).limit(1))[0];
+    await db.update(tradingRuleContractsTable).set(patch)
+      .where(and(eq(tradingRuleContractsTable.id, id), eq(tradingRuleContractsTable.userId, userId)));
+    const refreshed = await ownContract(id, userId);
     await vaultBehavior("RULE_CONTRACT_UPDATED", "INFO", { contractId: id });
     ok(res, { contract: refreshed });
   } catch (err) {
@@ -148,18 +169,20 @@ router.patch("/rule-contracts/:id", async (req, res): Promise<void> => {
 });
 
 // ── POST /session-commitments ──────────────────────────────────────────────
-router.post("/session-commitments", async (req, res): Promise<void> => {
+router.post("/session-commitments", requireUser, async (req, res): Promise<void> => {
   try {
+    const userId = req.authUser!.id;
     const b = CommitmentBody.parse(req.body ?? {});
-    const ct = (await db.select().from(tradingRuleContractsTable)
-      .where(eq(tradingRuleContractsTable.id, b.contractId)).limit(1))[0];
+    const ct = await ownContract(b.contractId, userId);
     if (!ct) { fail(res, 404, "Contract not found"); return; }
     // End any prior ACTIVE commitment for this contract (single-active).
     await db.update(sessionCommitmentsTable)
       .set({ status: "ABANDONED", endedAt: new Date() })
       .where(and(eq(sessionCommitmentsTable.contractId, b.contractId),
+                 eq(sessionCommitmentsTable.userId, userId),
                  eq(sessionCommitmentsTable.status, "ACTIVE")));
     const ins = await db.insert(sessionCommitmentsTable).values({
+      userId,
       contractId: b.contractId,
       sessionDate: new Date().toISOString().slice(0, 10),
       commitmentText: b.commitmentText,
@@ -177,21 +200,20 @@ router.post("/session-commitments", async (req, res): Promise<void> => {
 });
 
 // ── POST /session-commitments/:id/end ──────────────────────────────────────
-router.post("/session-commitments/:id/end", async (req, res): Promise<void> => {
+router.post("/session-commitments/:id/end", requireUser, async (req, res): Promise<void> => {
   try {
+    const userId = req.authUser!.id;
     const id = Number(req.params["id"]);
     if (!Number.isFinite(id)) { fail(res, 400, "Invalid id"); return; }
     const b = EndCommitmentBody.parse(req.body ?? {});
-    const cur = (await db.select().from(sessionCommitmentsTable)
-      .where(eq(sessionCommitmentsTable.id, id)).limit(1))[0];
+    const cur = await ownCommitment(id, userId);
     if (!cur) { fail(res, 404, "Not found"); return; }
     if (cur.status !== "ACTIVE") { fail(res, 409, `Commitment is ${cur.status}`); return; }
     await db.update(sessionCommitmentsTable)
       .set({ status: b.status, endedAt: new Date() })
-      .where(eq(sessionCommitmentsTable.id, id));
+      .where(and(eq(sessionCommitmentsTable.id, id), eq(sessionCommitmentsTable.userId, userId)));
     await vaultBehavior("SESSION_COMMITMENT_ENDED", "INFO", { commitmentId: id, status: b.status });
-    const r = (await db.select().from(sessionCommitmentsTable)
-      .where(eq(sessionCommitmentsTable.id, id)).limit(1))[0];
+    const r = await ownCommitment(id, userId);
     ok(res, { commitment: r });
   } catch (err) {
     if (err instanceof z.ZodError) { fail(res, 400, "Invalid", { issues: err.issues }); return; }
@@ -201,9 +223,9 @@ router.post("/session-commitments/:id/end", async (req, res): Promise<void> => {
 });
 
 // ── GET /session-commitments/active ────────────────────────────────────────
-router.get("/session-commitments/active", async (_req, res): Promise<void> => {
+router.get("/session-commitments/active", requireUser, async (req, res): Promise<void> => {
   const rows = await db.select().from(sessionCommitmentsTable)
-    .where(eq(sessionCommitmentsTable.status, "ACTIVE"))
+    .where(and(eq(sessionCommitmentsTable.userId, req.authUser!.id), eq(sessionCommitmentsTable.status, "ACTIVE")))
     .orderBy(desc(sessionCommitmentsTable.startedAt)).limit(1);
   if (!rows[0]) { fail(res, 404, "No active commitment"); return; }
   ok(res, { commitment: rows[0] });
@@ -213,19 +235,19 @@ router.get("/session-commitments/active", async (_req, res): Promise<void> => {
 // Walks today's paper_orders against the contract rules. Returns compliance
 // summary + violations. Idempotent: replaces today's violation rows for this
 // contract on each call.
-router.post("/rule-contracts/:id/evaluate", async (req, res): Promise<void> => {
+router.post("/rule-contracts/:id/evaluate", requireUser, async (req, res): Promise<void> => {
   try {
+    const userId = req.authUser!.id;
     const id = Number(req.params["id"]);
     if (!Number.isFinite(id)) { fail(res, 400, "Invalid id"); return; }
-    const ct = (await db.select().from(tradingRuleContractsTable)
-      .where(eq(tradingRuleContractsTable.id, id)).limit(1))[0];
+    const ct = await ownContract(id, userId);
     if (!ct) { fail(res, 404, "Not found"); return; }
 
     // Today's orders only (UTC-day window).
     const startOfDay = new Date();
     startOfDay.setUTCHours(0, 0, 0, 0);
     const todays = await db.select().from(paperOrdersTable)
-      .where(gte(paperOrdersTable.openedAt, startOfDay))
+      .where(and(eq(paperOrdersTable.userId, userId), gte(paperOrdersTable.openedAt, startOfDay)))
       .orderBy(asc(paperOrdersTable.openedAt));
 
     interface V { type: string; severity: "INFO"|"WARN"|"HARD"; message: string; tradeId?: number }
@@ -329,10 +351,11 @@ router.post("/rule-contracts/:id/evaluate", async (req, res): Promise<void> => {
     const today = new Date().toISOString().slice(0, 10);
     await db.delete(tradingRuleViolationsTable)
       .where(and(eq(tradingRuleViolationsTable.contractId, id),
+                 eq(tradingRuleViolationsTable.userId, userId),
                  gte(tradingRuleViolationsTable.createdAt, startOfDay)));
     if (violations.length > 0) {
       await db.insert(tradingRuleViolationsTable).values(violations.map((v) => ({
-        contractId: id, tradeId: v.tradeId ?? null,
+        userId, contractId: id, tradeId: v.tradeId ?? null,
         violationType: v.type, severity: v.severity, message: v.message,
       })));
     }
@@ -364,11 +387,11 @@ router.post("/rule-contracts/:id/evaluate", async (req, res): Promise<void> => {
 });
 
 // ── GET /rule-contracts/:id/violations ─────────────────────────────────────
-router.get("/rule-contracts/:id/violations", async (req, res): Promise<void> => {
+router.get("/rule-contracts/:id/violations", requireUser, async (req, res): Promise<void> => {
   const id = Number(req.params["id"]);
   if (!Number.isFinite(id)) { fail(res, 400, "Invalid id"); return; }
   const rows = await db.select().from(tradingRuleViolationsTable)
-    .where(eq(tradingRuleViolationsTable.contractId, id))
+    .where(and(eq(tradingRuleViolationsTable.contractId, id), eq(tradingRuleViolationsTable.userId, req.authUser!.id)))
     .orderBy(desc(tradingRuleViolationsTable.createdAt)).limit(200);
   ok(res, { violations: rows });
 });

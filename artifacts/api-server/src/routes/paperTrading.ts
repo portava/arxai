@@ -4,14 +4,19 @@
 // trades.ts, live_positions, or safetyCore. It only mutates paper_* tables.
 // Every order/event is labeled "Simulated" in payloads. This is the ONLY
 // surface that may write to paper_* tables.
+//
+// OWNERSHIP: every account and order is scoped to req.authUser. A caller can
+// only see or mutate rows whose user_id is their own; another user's row (or
+// a legacy ownerless row) answers 404, never 403, so ids cannot be probed.
 
 import { Router } from "express";
 import {
   db, paperAccountsTable, paperOrdersTable, paperTradeEventsTable,
   vaultEventsTable,
 } from "@workspace/db";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { z } from "zod/v4";
+import { requireUser } from "../lib/auth/middleware.js";
 import { generateDeterministicCandles } from "../lib/backtestStrategyRegistry.js";
 import { runAutoDebrief } from "../lib/autoDebriefService.js";
 
@@ -35,10 +40,22 @@ async function vaultBehavior(kind: string, payload: Record<string, unknown>) {
   }).catch(() => { /* non-fatal */ });
 }
 
-async function logEvent(orderId: number, eventType: string, message: string) {
+async function logEvent(userId: number, orderId: number, eventType: string, message: string) {
   await db.insert(paperTradeEventsTable).values({
-    paperOrderId: orderId, eventType, message,
+    userId, paperOrderId: orderId, eventType, message,
   }).catch(() => { /* non-fatal */ });
+}
+
+async function ownAccount(id: number, userId: number) {
+  return (await db.select().from(paperAccountsTable)
+    .where(and(eq(paperAccountsTable.id, id), eq(paperAccountsTable.userId, userId)))
+    .limit(1))[0] ?? null;
+}
+
+async function ownOrder(id: number, userId: number) {
+  return (await db.select().from(paperOrdersTable)
+    .where(and(eq(paperOrdersTable.id, id), eq(paperOrdersTable.userId, userId)))
+    .limit(1))[0] ?? null;
 }
 
 // ── Synthetic mark-to-market price ─────────────────────────────────────────
@@ -69,8 +86,13 @@ async function markToMarket(accountId: number) {
   const account = (await db.select().from(paperAccountsTable)
     .where(eq(paperAccountsTable.id, accountId)).limit(1))[0];
   if (!account) return null;
+  // Only the account owner's orders count toward its balance, so a stray row
+  // stamped with another user id can never move this account's equity.
+  const ownedBy = account.userId == null
+    ? isNull(paperOrdersTable.userId)
+    : eq(paperOrdersTable.userId, account.userId);
   const open = await db.select().from(paperOrdersTable)
-    .where(and(eq(paperOrdersTable.paperAccountId, accountId),
+    .where(and(eq(paperOrdersTable.paperAccountId, accountId), ownedBy,
                eq(paperOrdersTable.status, "OPEN")));
   const now = Date.now();
   let unrealized = 0;
@@ -100,7 +122,7 @@ async function markToMarket(accountId: number) {
         status, closedAt: new Date(), exitPrice: exitPx,
         profitLoss: pnl, updatedAt: new Date(),
       }).where(eq(paperOrdersTable.id, o.id));
-      await logEvent(o.id, status, `${SIMULATED_TAG} ${hit} hit at ${exitPx.toFixed(5)}, P&L ${pnl.toFixed(2)}`);
+      if (o.userId != null) await logEvent(o.userId, o.id, status, `${SIMULATED_TAG} ${hit} hit at ${exitPx.toFixed(5)}, P&L ${pnl.toFixed(2)}`);
       // (BB) Closed-loop auto-debrief on SL/TP close. Best-effort, idempotent.
       runAutoDebrief(o.id, { triggeredBy: "mark_to_market" })
         .catch(() => { /* non-fatal: never break mark-to-market */ });
@@ -112,7 +134,7 @@ async function markToMarket(accountId: number) {
 
   // Authoritative balance: starting + Σ realized P&L from EVERY closed order.
   const closed = await db.select().from(paperOrdersTable)
-    .where(and(eq(paperOrdersTable.paperAccountId, accountId)));
+    .where(and(eq(paperOrdersTable.paperAccountId, accountId), ownedBy));
   const realizedTotal = closed
     .filter((o) => o.status !== "OPEN")
     .reduce((s, o) => s + o.profitLoss, 0);
@@ -153,13 +175,15 @@ const UpdateOrderBody = z.object({
 });
 
 // ── POST /paper/accounts ───────────────────────────────────────────────────
-router.post("/paper/accounts", async (req, res): Promise<void> => {
+router.post("/paper/accounts", requireUser, async (req, res): Promise<void> => {
   try {
+    const userId = req.authUser!.id;
     const b = CreateAccountBody.parse(req.body ?? {});
-    // Deactivate prior active accounts so "active" is single-tenant.
+    // Deactivate this user's prior active accounts so each user has one active.
     await db.update(paperAccountsTable).set({ isActive: 0 })
-      .where(eq(paperAccountsTable.isActive, 1));
+      .where(and(eq(paperAccountsTable.userId, userId), eq(paperAccountsTable.isActive, 1)));
     const ins = await db.insert(paperAccountsTable).values({
+      userId,
       accountName: b.accountName,
       startingBalance: b.startingBalance,
       currentBalance: b.startingBalance,
@@ -176,30 +200,31 @@ router.post("/paper/accounts", async (req, res): Promise<void> => {
 });
 
 // ── GET /paper/accounts ────────────────────────────────────────────────────
-router.get("/paper/accounts", async (_req, res): Promise<void> => {
-  const rows = await db.select().from(paperAccountsTable).orderBy(desc(paperAccountsTable.createdAt));
+router.get("/paper/accounts", requireUser, async (req, res): Promise<void> => {
+  const mine = eq(paperAccountsTable.userId, req.authUser!.id);
+  const rows = await db.select().from(paperAccountsTable).where(mine).orderBy(desc(paperAccountsTable.createdAt));
   // Refresh every account so list state is consistent (architect fix #3).
   for (const r of rows) await markToMarket(r.id);
-  const refreshed = await db.select().from(paperAccountsTable).orderBy(desc(paperAccountsTable.createdAt));
+  const refreshed = await db.select().from(paperAccountsTable).where(mine).orderBy(desc(paperAccountsTable.createdAt));
   ok(res, { accounts: refreshed });
 });
 
 // ── GET /paper/accounts/active ─────────────────────────────────────────────
-router.get("/paper/accounts/active", async (_req, res): Promise<void> => {
+router.get("/paper/accounts/active", requireUser, async (req, res): Promise<void> => {
   const rows = await db.select().from(paperAccountsTable)
-    .where(eq(paperAccountsTable.isActive, 1)).limit(1);
+    .where(and(eq(paperAccountsTable.userId, req.authUser!.id), eq(paperAccountsTable.isActive, 1)))
+    .orderBy(desc(paperAccountsTable.createdAt)).limit(1);
   if (!rows[0]) { fail(res, 404, "No active paper account"); return; }
   const refreshed = await markToMarket(rows[0].id);
   ok(res, { account: refreshed ?? rows[0] });
 });
 
 // ── POST /paper/orders ─────────────────────────────────────────────────────
-router.post("/paper/orders", async (req, res): Promise<void> => {
+router.post("/paper/orders", requireUser, async (req, res): Promise<void> => {
   try {
+    const userId = req.authUser!.id;
     const b = PlaceOrderBody.parse(req.body ?? {});
-    const accs = await db.select().from(paperAccountsTable)
-      .where(eq(paperAccountsTable.id, b.paperAccountId)).limit(1);
-    if (!accs[0]) { fail(res, 404, "Paper account not found"); return; }
+    if (!(await ownAccount(b.paperAccountId, userId))) { fail(res, 404, "Paper account not found"); return; }
     const px = b.entryPrice ?? getMockPrice(b.symbol, Date.now());
     // Validate SL/TP geometry to refuse malformed paper orders.
     const slOk = b.direction === "BUY" ? b.stopLoss < px   : b.stopLoss > px;
@@ -209,6 +234,7 @@ router.post("/paper/orders", async (req, res): Promise<void> => {
       return;
     }
     const ins = await db.insert(paperOrdersTable).values({
+      userId,
       paperAccountId: b.paperAccountId,
       symbol: b.symbol, direction: b.direction, orderType: b.orderType,
       lotSize: b.lotSize, entryPrice: px,
@@ -219,7 +245,7 @@ router.post("/paper/orders", async (req, res): Promise<void> => {
       decisionId: b.decisionId ?? null,
     }).returning();
     const order = ins[0]!;
-    await logEvent(order.id, "PLACED", `${SIMULATED_TAG} ${b.direction} ${b.symbol} @ ${px.toFixed(5)} SL ${b.stopLoss} TP ${b.takeProfit} lot ${b.lotSize}`);
+    await logEvent(userId, order.id, "PLACED", `${SIMULATED_TAG} ${b.direction} ${b.symbol} @ ${px.toFixed(5)} SL ${b.stopLoss} TP ${b.takeProfit} lot ${b.lotSize}`);
     await vaultBehavior("PAPER_ORDER_PLACED", {
       orderId: order.id, accountId: b.paperAccountId,
       symbol: b.symbol, direction: b.direction, lotSize: b.lotSize,
@@ -234,12 +260,13 @@ router.post("/paper/orders", async (req, res): Promise<void> => {
 });
 
 // ── PATCH /paper/orders/:id ────────────────────────────────────────────────
-router.patch("/paper/orders/:id", async (req, res): Promise<void> => {
+router.patch("/paper/orders/:id", requireUser, async (req, res): Promise<void> => {
   try {
+    const userId = req.authUser!.id;
     const id = Number(req.params["id"]);
     if (!Number.isFinite(id)) { fail(res, 400, "Invalid id"); return; }
     const b = UpdateOrderBody.parse(req.body ?? {});
-    const cur = (await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.id, id)).limit(1))[0];
+    const cur = await ownOrder(id, userId);
     if (!cur) { fail(res, 404, "Not found"); return; }
     if (cur.status !== "OPEN") { fail(res, 409, "Order not open"); return; }
     const next = {
@@ -250,11 +277,11 @@ router.patch("/paper/orders/:id", async (req, res): Promise<void> => {
     const slOk = cur.direction === "BUY" ? next.stopLoss < cur.entryPrice   : next.stopLoss > cur.entryPrice;
     const tpOk = cur.direction === "BUY" ? next.takeProfit > cur.entryPrice : next.takeProfit < cur.entryPrice;
     if (!slOk || !tpOk) { fail(res, 400, "Invalid SL/TP geometry for direction"); return; }
-    await db.update(paperOrdersTable).set(next).where(eq(paperOrdersTable.id, id));
-    await logEvent(id, "UPDATED", `${SIMULATED_TAG} SL→${next.stopLoss} TP→${next.takeProfit}`);
+    await db.update(paperOrdersTable).set(next)
+      .where(and(eq(paperOrdersTable.id, id), eq(paperOrdersTable.userId, userId)));
+    await logEvent(userId, id, "UPDATED", `${SIMULATED_TAG} SL→${next.stopLoss} TP→${next.takeProfit}`);
     await markToMarket(cur.paperAccountId);
-    const refreshed = (await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.id, id)).limit(1))[0];
-    ok(res, { order: refreshed });
+    ok(res, { order: await ownOrder(id, userId) });
   } catch (err) {
     if (err instanceof z.ZodError) { fail(res, 400, "Invalid", { issues: err.issues }); return; }
     req.log.error({ err: String(err) }, "PATCH /paper/orders/:id failed");
@@ -263,11 +290,12 @@ router.patch("/paper/orders/:id", async (req, res): Promise<void> => {
 });
 
 // ── POST /paper/orders/:id/close ───────────────────────────────────────────
-router.post("/paper/orders/:id/close", async (req, res): Promise<void> => {
+router.post("/paper/orders/:id/close", requireUser, async (req, res): Promise<void> => {
   try {
+    const userId = req.authUser!.id;
     const id = Number(req.params["id"]);
     if (!Number.isFinite(id)) { fail(res, 400, "Invalid id"); return; }
-    const cur = (await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.id, id)).limit(1))[0];
+    const cur = await ownOrder(id, userId);
     if (!cur) { fail(res, 404, "Not found"); return; }
     if (cur.status !== "OPEN") { fail(res, 409, "Order not open"); return; }
     const exitPx = getMockPrice(cur.symbol, Date.now());
@@ -275,8 +303,8 @@ router.post("/paper/orders/:id/close", async (req, res): Promise<void> => {
     await db.update(paperOrdersTable).set({
       status: "CLOSED_MANUAL", closedAt: new Date(), exitPrice: exitPx,
       profitLoss: pnl, updatedAt: new Date(),
-    }).where(eq(paperOrdersTable.id, id));
-    await logEvent(id, "CLOSED_MANUAL", `${SIMULATED_TAG} closed @ ${exitPx.toFixed(5)}, P&L ${pnl.toFixed(2)}`);
+    }).where(and(eq(paperOrdersTable.id, id), eq(paperOrdersTable.userId, userId)));
+    await logEvent(userId, id, "CLOSED_MANUAL", `${SIMULATED_TAG} closed @ ${exitPx.toFixed(5)}, P&L ${pnl.toFixed(2)}`);
     await vaultBehavior("PAPER_ORDER_CLOSED", { orderId: id, exitPrice: exitPx, pnl, manual: true });
     // markToMarket recomputes balance from starting + Σ closed-order P&L, so
     // this manual close's P&L is now properly reflected (architect fix #1).
@@ -284,8 +312,7 @@ router.post("/paper/orders/:id/close", async (req, res): Promise<void> => {
     // (BB) Closed-loop auto-debrief on manual close. Best-effort, idempotent.
     runAutoDebrief(id, { triggeredBy: "manual_close" })
       .catch(() => { /* non-fatal */ });
-    const refreshed = (await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.id, id)).limit(1))[0];
-    ok(res, { order: refreshed });
+    ok(res, { order: await ownOrder(id, userId) });
   } catch (err) {
     req.log.error({ err: String(err) }, "POST /paper/orders/:id/close failed");
     fail(res, 500, "Failed to close order");
@@ -293,15 +320,15 @@ router.post("/paper/orders/:id/close", async (req, res): Promise<void> => {
 });
 
 // ── GET /paper/orders ──────────────────────────────────────────────────────
-router.get("/paper/orders", async (req, res): Promise<void> => {
+router.get("/paper/orders", requireUser, async (req, res): Promise<void> => {
   try {
     const accountId = Number(req.query["accountId"]);
     const status = String(req.query["status"] ?? "");
     if (!Number.isFinite(accountId)) { fail(res, 400, "accountId required"); return; }
+    if (!(await ownAccount(accountId, req.authUser!.id))) { fail(res, 404, "Paper account not found"); return; }
     await markToMarket(accountId);
-    const where = status === "OPEN"
-      ? and(eq(paperOrdersTable.paperAccountId, accountId), eq(paperOrdersTable.status, "OPEN"))
-      : eq(paperOrdersTable.paperAccountId, accountId);
+    const mine = and(eq(paperOrdersTable.paperAccountId, accountId), eq(paperOrdersTable.userId, req.authUser!.id));
+    const where = status === "OPEN" ? and(mine, eq(paperOrdersTable.status, "OPEN")) : mine;
     const rows = await db.select().from(paperOrdersTable)
       .where(where).orderBy(desc(paperOrdersTable.openedAt)).limit(200);
     ok(res, { orders: rows });
@@ -312,14 +339,15 @@ router.get("/paper/orders", async (req, res): Promise<void> => {
 });
 
 // ── GET /paper/history ─────────────────────────────────────────────────────
-router.get("/paper/history", async (req, res): Promise<void> => {
+router.get("/paper/history", requireUser, async (req, res): Promise<void> => {
   try {
     const accountId = Number(req.query["accountId"]);
     if (!Number.isFinite(accountId)) { fail(res, 400, "accountId required"); return; }
+    if (!(await ownAccount(accountId, req.authUser!.id))) { fail(res, 404, "Paper account not found"); return; }
     // Refresh state before computing history (architect fix #3).
     await markToMarket(accountId);
     const orders = await db.select().from(paperOrdersTable)
-      .where(eq(paperOrdersTable.paperAccountId, accountId))
+      .where(and(eq(paperOrdersTable.paperAccountId, accountId), eq(paperOrdersTable.userId, req.authUser!.id)))
       .orderBy(desc(paperOrdersTable.openedAt)).limit(500);
     const closed = orders.filter((o) => o.status !== "OPEN");
     const wins = closed.filter((o) => o.profitLoss > 0).length;

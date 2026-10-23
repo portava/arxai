@@ -78,9 +78,9 @@ async function getActivePaperAccount(explicitId?: number) {
   return rows[0] ?? null;
 }
 
-async function ensurePaperAccount(): Promise<{ id: number; equity: number }> {
+async function ensurePaperAccount(): Promise<{ id: number; equity: number; userId: number | null }> {
   const existing = await getActivePaperAccount();
-  if (existing) return { id: existing.id, equity: existing.equity };
+  if (existing) return { id: existing.id, equity: existing.equity, userId: existing.userId };
   // Create a default sandbox account so EE can always run.
   const ins = await db.insert(paperAccountsTable).values({
     accountName: "Build EE Sandbox",
@@ -89,7 +89,7 @@ async function ensurePaperAccount(): Promise<{ id: number; equity: number }> {
     equity: PAPER_DEFAULTS.defaultEquity,
     isActive: 1,
   }).returning();
-  return { id: ins[0]!.id, equity: ins[0]!.equity };
+  return { id: ins[0]!.id, equity: ins[0]!.equity, userId: ins[0]!.userId };
 }
 
 function applySimulatedFill(action: "BUY" | "SELL", md: {
@@ -238,7 +238,10 @@ export async function executePaperFromDecision(
   }
 
   // ── Insert paper_orders (Build Q table — single source of truth for open positions) ──
+  // Orders inherit the account owner so the owner-scoped paper sandbox,
+  // analytics and debriefs see them.
   const orderIns = await db.insert(paperOrdersTable).values({
+    userId: acct.userId,
     paperAccountId: acct.id,
     symbol, direction: action, orderType: "MARKET",
     lotSize: positionSize,
@@ -252,6 +255,7 @@ export async function executePaperFromDecision(
 
   // Order event
   await db.insert(paperTradeEventsTable).values({
+    userId: acct.userId,
     paperOrderId: order.id,
     eventType: "PLACED",
     message: `${SIMULATED_TAG} EE/${action} ${symbol} @ ${fillPrice} SL ${stopLoss} TP ${takeProfit} lot ${positionSize} (decision=${decisionId ?? "n/a"})`,

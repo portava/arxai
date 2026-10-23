@@ -208,7 +208,7 @@ export async function runOneCycle(opts?: { settingsOverride?: Partial<AutopilotS
           await logCycle({ cycleId, symbol, timeframe, step: "AA_DECISION", status: "INFO",
             message: `Calling Build AA orchestrator for ${symbol} ${timeframe}` });
           const decision: TradeDecision = await orchestrate({ symbol, proposedAction: "AUTO", injectMarketIssue: "NONE" }, ownerUserId);
-          const decisionId = await persistDecision(decision);
+          const decisionId = await persistDecision(decision, ownerUserId);
           summary.decisions_created += 1;
           perSym.decisionId = decisionId;
           perSym.aaAction = decision.action;

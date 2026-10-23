@@ -107,7 +107,7 @@ router.post("/paper-execution/demo", async (req, res): Promise<void> => {
     };
 
     const decisionId = parse.data.decisionId
-      ?? await persistSyntheticDecisionLog(decision);
+      ?? await persistSyntheticDecisionLog(decision, req.authUser?.id ?? null);
 
     const result = await executePaperFromDecision(decision, decisionId, { allowConflicts: false });
     ok(res, { decisionIdUsed: decisionId, execution: result, marketData: md.snapshot });
@@ -117,9 +117,10 @@ router.post("/paper-execution/demo", async (req, res): Promise<void> => {
   }
 });
 
-async function persistSyntheticDecisionLog(d: TradeDecision): Promise<number> {
+async function persistSyntheticDecisionLog(d: TradeDecision, userId: number | null): Promise<number> {
   const { tradeDecisionLogsTable } = await import("@workspace/db");
   const ins = await db.insert(tradeDecisionLogsTable).values({
+    userId,
     symbol: d.symbol, action: d.action, shouldTrade: d.shouldTrade,
     confidence: d.confidence, riskScore: d.riskScore,
     invalidationReason: d.invalidationReason,
