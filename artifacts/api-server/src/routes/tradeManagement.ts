@@ -5,6 +5,7 @@ import { z } from "zod/v4";
 import { evaluateTrade } from "../lib/tradeManagement/tradeManager.js";
 import { createAlert } from "../lib/alerts/alertManager.js";
 import { ownerScope } from "../lib/auth/ownerScope.js";
+import { isStopWidened } from "../lib/riskGovernor/preTrade.js";
 
 const router = Router();
 
@@ -31,6 +32,18 @@ async function getTrade(id: number, req: Request) {
   return rows[0] ?? null;
 }
 
+// Position Guardian: break-even and trailing only ever tighten a stop. A
+// break-even below a stop already locked in profit would widen it.
+function refuseWidening(res: Response, trade: { direction: string; stopLoss: number }, next: number): boolean {
+  const side = trade.direction === "SELL" ? "SELL" : "BUY";
+  if (!isStopWidened(side, trade.stopLoss, next)) return false;
+  res.status(409).json({
+    error: "STOP_WOULD_WIDEN",
+    message: `Moving the stop from ${trade.stopLoss} to ${next} would add risk; break-even and trailing only tighten.`,
+  });
+  return true;
+}
+
 router.get("/trade-management/:id/snapshot", async (req, res) => {
   const id = parseId(req, res); if (id == null) return;
   const trade = await getTrade(id, req);
@@ -42,6 +55,7 @@ router.post("/trade-management/:id/breakeven", async (req, res) => {
   const id = parseId(req, res); if (id == null) return;
   const trade = await getTrade(id, req);
   if (!trade) { res.status(404).json({ error: "Trade not found" }); return; }
+  if (refuseWidening(res, trade, trade.entryPrice)) return;
   const updated = await db.update(tradesTable).set({ stopLoss: trade.entryPrice }).where(eq(tradesTable.id, id)).returning();
   res.json({
     success: true,
@@ -56,6 +70,7 @@ router.post("/trade-management/:id/trail", async (req, res) => {
   if (!trade) { res.status(404).json({ error: "Trade not found" }); return; }
   const snap = await evaluateTrade(trade);
   const newStop = snap.suggestions.trail.newStop ?? trade.stopLoss;
+  if (refuseWidening(res, trade, newStop)) return;
   const updated = await db.update(tradesTable).set({ stopLoss: newStop }).where(eq(tradesTable.id, id)).returning();
   res.json({
     success: true,

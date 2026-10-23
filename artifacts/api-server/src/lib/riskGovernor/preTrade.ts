@@ -320,6 +320,12 @@ export function evaluatePreTradeRisk(intent: TradeIntent, ctx: RiskContext): Ris
   };
 }
 
+/** True when moving a stop from `current` to `next` adds risk (further from price, or removed). */
+export function isStopWidened(side: "BUY" | "SELL", current: number, next: number | null): boolean {
+  if (next == null) return true;
+  return side === "BUY" ? next < current - 1e-12 : next > current + 1e-12;
+}
+
 function tightensKnownStop(intent: TradeIntent): boolean {
   const pos = intent.position;
   const sl = intent.stopLoss;
