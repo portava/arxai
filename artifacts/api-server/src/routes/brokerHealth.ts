@@ -23,6 +23,7 @@ import { asc, desc, eq } from "drizzle-orm";
 import { z } from "zod/v4";
 import { evaluateBrokerHealth, type BrokerHealthVerdict } from "@workspace/domain/broker-health";
 import { getStatus } from "../lib/safetyCore.js";
+import { canSeeLegacyRows, requireOperator } from "../lib/auth/ownerScope.js";
 
 const router = Router();
 
@@ -161,7 +162,10 @@ function verdictToResponse(
 router.get("/broker/health", async (req, res) => {
   try {
     const { verdict, state, mt5State, coreLink } = await evaluateNow();
-    res.json(verdictToResponse(verdict, state, mt5State, coreLink));
+    const body = verdictToResponse(verdict, state, mt5State, coreLink);
+    // The server-wide MT5 account belongs to the operator, not to the caller.
+    if (!canSeeLegacyRows(req.authUser)) body.accountNumber = null;
+    res.json(body);
   } catch (err) {
     req.log.error({ err: String(err) }, "GET /broker/health failed");
     res.status(500).json({ error: "Failed to evaluate broker health" });
@@ -169,7 +173,7 @@ router.get("/broker/health", async (req, res) => {
 });
 
 // POST /broker/health-check — force re-evaluation, persist log, vault event.
-router.post("/broker/health-check", async (req, res) => {
+router.post("/broker/health-check", requireOperator, async (req, res) => {
   try {
     const { verdict, state, mt5State, coreLink } = await evaluateNow();
     await persistSnapshot(verdict, state, mt5State);
@@ -218,7 +222,7 @@ router.get("/broker/health-logs", async (req, res) => {
 
 // POST /broker/reconnect — queue a RECONNECT command for the EA + bump counter.
 const ReconnectBody = z.object({ reason: z.string().max(500).optional() });
-router.post("/broker/reconnect", async (req, res): Promise<void> => {
+router.post("/broker/reconnect", requireOperator, async (req, res): Promise<void> => {
   try {
     const body = ReconnectBody.parse(req.body ?? {});
     // SAFETY: Only enqueue a deliverable PENDING RECONNECT when the system is
@@ -272,7 +276,7 @@ router.post("/broker/reconnect", async (req, res): Promise<void> => {
 
 // POST /broker/disable-execution — operator toggle off.
 const DisableBody = z.object({ reason: z.string().max(500).optional() });
-router.post("/broker/disable-execution", async (req, res): Promise<void> => {
+router.post("/broker/disable-execution", requireOperator, async (req, res): Promise<void> => {
   try {
     const body = DisableBody.parse(req.body ?? {});
     const state = await loadOrCreateBrokerState();
@@ -303,7 +307,7 @@ router.post("/broker/disable-execution", async (req, res): Promise<void> => {
 
 // POST /broker/enable-execution — operator toggle on, but only if link is healthy.
 const EnableBody = z.object({ reason: z.string().max(500).optional() });
-router.post("/broker/enable-execution", async (req, res): Promise<void> => {
+router.post("/broker/enable-execution", requireOperator, async (req, res): Promise<void> => {
   try {
     const body = EnableBody.parse(req.body ?? {});
 

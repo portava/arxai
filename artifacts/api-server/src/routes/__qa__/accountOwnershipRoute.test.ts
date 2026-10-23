@@ -25,6 +25,7 @@ import { and, eq, inArray, isNull, like } from "drizzle-orm";
 import {
   alertsTable,
   authUserSessionsTable,
+  brokerHealthStateTable,
   backtestRunsTable,
   db,
   livePositionsTable,
@@ -53,6 +54,7 @@ import livePositionsRouter from "../livePositions.js";
 import tradeManagementRouter from "../tradeManagement.js";
 import portfolioRiskRouter from "../portfolioRisk.js";
 import brokerRouter from "../broker.js";
+import brokerHealthRouter from "../brokerHealth.js";
 import paperExecutionRouter from "../paperExecution.js";
 import paperAutopilotRouter from "../paperAutopilot.js";
 import performanceRouter from "../performanceCommandCenter.js";
@@ -253,7 +255,7 @@ before(async () => {
   for (const r of [
     // Same order as routes/index.ts: broker before live positions, so
     // /positions/live is not read as /positions/:id.
-    brokerRouter, livePositionsRouter, tradeManagementRouter, portfolioRiskRouter,
+    brokerHealthRouter, brokerRouter, livePositionsRouter, tradeManagementRouter, portfolioRiskRouter,
     paperExecutionRouter, paperAutopilotRouter, performanceRouter, traderCoachRouter,
     paperSessionsRouter, tradingCockpitRouter, tradingPlaybooksRouter, backtestRunsRouter,
   ]) app.use("/api", r);
@@ -504,4 +506,21 @@ test("notifications: the same event for two users creates two notifications, not
   const [na] = await db.select().from(notificationsTable)
     .where(and(eq(notificationsTable.userId, u.a), like(notificationsTable.dedupeKey, `%${MARK}:evt`)));
   assert.equal(na!.message, "A detail");
+});
+
+// ── broker health (server-wide MT5 feed) ───────────────────────────────────
+
+test("broker health: a trader can read the status but not the operator's account number, and cannot flip operator toggles", async () => {
+  const before = await db.select().from(brokerHealthStateTable).limit(1);
+  const read = await request("/broker/health", c.a);
+  assert.equal(read.status, 200);
+  assert.equal((await json<{ accountNumber: unknown }>(read)).accountNumber, null);
+  for (const path of ["/broker/health-check", "/broker/reconnect", "/broker/disable-execution", "/broker/enable-execution"]) {
+    const res = await send("POST", path, c.a, {});
+    assert.equal(res.status, 403, `${path} is operator-only`);
+  }
+  const afterRows = await db.select().from(brokerHealthStateTable).limit(1);
+  assert.equal(afterRows[0]?.executionEnabled, before[0]?.executionEnabled, "a trader's disable attempt changed nothing");
+  const op = await send("POST", "/broker/health-check", c.op, {});
+  assert.equal(op.status, 200, await op.clone().text());
 });

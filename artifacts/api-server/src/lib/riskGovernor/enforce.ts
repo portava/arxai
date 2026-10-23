@@ -34,6 +34,8 @@ import { and, desc, eq, gte, inArray, isNull, ne, notInArray, sql } from "drizzl
 import { logRiskEvent } from "../../routes/meRiskGovernor.js";
 import { decideContractSize, resolveQuoteToAccountFx } from "../mt5/contractSize.js";
 import { loadTradingHalt } from "../safety/tradingHalt.js";
+import { Mt5ReadOnlyAdapter } from "../brokerHub/mt5ReadOnlyAdapter.js";
+import { mt5ProjectionReader } from "../brokerHub/mt5ProjectionReader.js";
 import {
   evaluatePreTradeRisk,
   resolveEffectiveLimits,
@@ -234,9 +236,15 @@ async function loadBrokerFacts(intent: TradeIntent, opts: EnforceOptions, now: D
       account = { equity: eq0, freeMargin: eq0 - v.virtualMarginUsed, leverage: conn?.leverage ?? null,
         currency: currency || "USD", source: `virtual_account:${v.id}` };
     }
-  } else if (conn && conn.accountSyncedAt) {
-    account = { equity: conn.accountEquity, freeMargin: conn.freeMargin, leverage: conn.leverage,
-      currency, source: `mt5_connection:${conn.id}` };
+  } else if (conn && conn.userId === userId) {
+    // The Broker Hub owns account snapshots. It only reads a connection the
+    // trader owns, so another account's equity can never size this order.
+    const snap = await new Mt5ReadOnlyAdapter(mt5ProjectionReader, userId, conn.id).readAccount();
+    if (snap && snap.snapshotStatus !== "MISSING" && snap.equity != null) {
+      account = { equity: snap.equity, freeMargin: snap.freeMargin, leverage: snap.leverage,
+        currency: (snap.currency ?? "").trim().toUpperCase(),
+        source: `broker_hub:mt5:${conn.id}:${snap.snapshotStatus.toLowerCase()}` };
+    }
   }
 
   // Open positions: LIVE reads the live pipeline's own ledger

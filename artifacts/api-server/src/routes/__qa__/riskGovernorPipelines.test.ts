@@ -354,6 +354,8 @@ test("D live sandbox: the live venue reads the trader's own edited limits (per-t
   const ev = await latestEvent(u.a);
   assert.equal(ev.row.id, block.auditEventId);
   assert.equal(ev.intent["venue"], "LIVE");
+  const facts = ev.details["facts"] as { account: { source: string } | null };
+  assert.match(facts.account?.source ?? "", /^broker_hub:mt5:\d+:fresh$/, "the account snapshot comes from the Broker Hub");
   await db.delete(userRiskSettingsTable).where(eq(userRiskSettingsTable.userId, u.a));
 });
 
