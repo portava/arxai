@@ -42,6 +42,7 @@ import {
   paperExecutionsTable,
   paperOrdersTable,
   paperTradeEventsTable,
+  positionEventsTable,
   safetyCoreTable,
   tradeActionRequestsTable,
   userRiskEventsTable,
@@ -56,6 +57,7 @@ import { NO_HALT } from "../../lib/safety/tradingHalt.js";
 import { createActionDraft } from "../../lib/tradeAction/create.js";
 import { confirmAction } from "../../lib/tradeAction/confirm.js";
 import paperTradingRouter from "../paperTrading.js";
+import livePositionsRouter from "../livePositions.js";
 
 // The stop switches have their own tests below; the rule tests run with every
 // switch released (a fresh database engages the platform emergency stop).
@@ -171,6 +173,7 @@ before(async () => {
   });
   app.use(attachAuthUser);
   app.use("/api", paperTradingRouter);
+  app.use("/api", livePositionsRouter);
   server = await new Promise<Server>((resolve) => {
     const s = app.listen(0, () => resolve(s));
   });
@@ -283,12 +286,38 @@ test("Position Guardian (paper): a stop tightens freely; widening past the per-t
   }
 });
 
+test("Position Guardian (demo positions): removing a stop or widening it past the limit is refused; tightening goes through", async () => {
+  await seedBridge(u.a);
+  const [pos] = await db.insert(livePositionsTable).values({
+    userId: u.a, symbol: SYMBOL, direction: "BUY", lotSize: 0.1, entryPrice: 1.1, stopLoss: 1.0951, status: "OPEN",
+  }).returning({ id: livePositionsTable.id });
+  try {
+    await withSingleton("platform", false, async () => {
+      const removed = await request("PATCH", `/positions/${pos!.id}/stop-loss`, c.a, { stopLoss: null, removeConfirmed: true });
+      assert.equal(removed.status, 422);
+      assert.deepEqual((await removed.json() as { blockedBy: string[] }).blockedBy, ["stop_loss_required"]);
+      // 1.0850 puts $150 at risk against the $100 per-trade limit.
+      const widened = await request("PATCH", `/positions/${pos!.id}/stop-loss`, c.a, { stopLoss: 1.085 });
+      assert.equal(widened.status, 422);
+      assert.deepEqual((await widened.json() as { blockedBy: string[] }).blockedBy, ["per_trade_loss_limit"]);
+      const [still] = await db.select().from(livePositionsTable).where(eq(livePositionsTable.id, pos!.id));
+      assert.equal(still!.stopLoss, 1.0951, "refused changes leave the stop where it was");
+      const tightened = await request("PATCH", `/positions/${pos!.id}/stop-loss`, c.a, { stopLoss: 1.098 });
+      assert.equal(tightened.status, 200, await tightened.clone().text());
+    });
+  } finally {
+    await db.delete(positionEventsTable).where(eq(positionEventsTable.livePositionId, pos!.id));
+    await db.delete(livePositionsTable).where(eq(livePositionsTable.id, pos!.id));
+  }
+});
+
 test("Position Guardian: live, demo and trade-action modifies hand the governor the position being changed", () => {
   const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
   assert.match(read("../../lib/live/liveCommandPipeline.ts"), /position: rgPosition/);
   assert.match(read("../../lib/mt5/demoCommandConsumer.ts"), /intentRef: `demo_command:\$\{row\.commandId\}`,\s*position,/);
   assert.match(read("../../lib/tradeAction/guards.ts"), /position: trade\s*\?/);
   assert.match(read("../paperTrading.ts"), /action: "MODIFY"/);
+  assert.match(read("../livePositions.ts"), /action: "MODIFY"/);
 });
 
 test("B demo Ruby: a Ruby-suggested draft with no stop is rejected at confirm and audited as origin ruby", async () => {
@@ -489,7 +518,7 @@ async function withSingleton<T>(table: "platform" | "safety_core", on: boolean, 
   }
 }
 
-test("halt: a trader's own kill switch stops their new risk on paper, demo and live, but never a close, and never another trader", async () => {
+test("halt: a trader's own kill switch stops their new risk on paper, demo and live, but never a close or a tightened stop, and never another trader", async () => {
   await seedBridge(u.a);
   await seedBridge(u.b);
   await resetPaper(u.a);
@@ -515,7 +544,12 @@ test("halt: a trader's own kill switch stops their new risk on paper, demo and l
         userId: u.a, venue: "LIVE", origin: "manual", action: "MODIFY", symbol: SYMBOL, side: "BUY", lots: 0.1,
         stopLoss: 1.098, position: { entryPrice: 1.1, stopLoss: 1.0951 },
       });
-      assert.equal(stop.blockedBy[0], "trading_halt", "stop changes are halted too");
+      assert.equal(stop.decision, "ALLOW", "tightening a stop is never halted");
+      const widen = await enforcePreTradeRisk({
+        userId: u.a, venue: "LIVE", origin: "manual", action: "MODIFY", symbol: SYMBOL, side: "BUY", lots: 0.1,
+        stopLoss: 1.095, position: { entryPrice: 1.1, stopLoss: 1.0951 },
+      });
+      assert.equal(widen.blockedBy[0], "trading_halt", "a widened stop is halted");
       const other = await soundOpen(u.b, "LIVE");
       assert.equal(other.decision, "ALLOW", other.primaryReason ?? "");
     });

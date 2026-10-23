@@ -306,9 +306,10 @@ function moneyPerPriceUnit(lots: number, inst: InstrumentModel | undefined): num
 export function evaluatePreTradeRisk(intent: TradeIntent, ctx: RiskContext): RiskDecision {
   const d = evaluateRules(intent, ctx);
   const halt = ctx.halt ?? null;
-  // A kill switch halts new risk and stop changes; closing stays possible so a
-  // trader can always get flat. Paths with stricter close rules keep them.
-  const reduces = intent.action === "CLOSE" || intent.action === "PARTIAL_CLOSE";
+  // A kill switch halts new risk and any stop that moves away; closing and
+  // tightening a known stop stay possible so a trader can always cut risk.
+  // Paths with stricter close rules keep them.
+  const reduces = intent.action === "CLOSE" || intent.action === "PARTIAL_CLOSE" || tightensKnownStop(intent);
   if (!halt?.engaged || reduces) return { ...d, halt };
   return {
     ...d,
@@ -317,6 +318,13 @@ export function evaluatePreTradeRisk(intent: TradeIntent, ctx: RiskContext): Ris
     primaryReason: `Trading is halted: ${halt.reason ?? halt.sources.join(", ")}`,
     halt,
   };
+}
+
+function tightensKnownStop(intent: TradeIntent): boolean {
+  const pos = intent.position;
+  const sl = intent.stopLoss;
+  if (intent.action !== "MODIFY" || !pos || pos.stopLoss == null || sl == null || !intent.side) return false;
+  return intent.side === "BUY" ? sl >= pos.stopLoss : sl <= pos.stopLoss;
 }
 
 function evaluateRules(intent: TradeIntent, ctx: RiskContext): RiskDecision {
