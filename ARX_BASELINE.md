@@ -175,8 +175,34 @@ Nothing was published. Artifact eligibility is not a readiness claim. Production
 
 The repository import, provenance audit, dependency installation, build, API wiring, and baseline checks are complete. The baseline is **red/blocked** by:
 
-1. Shared frontend preview forwarding.
+1. Shared frontend preview forwarding (resolved by the preview-routing update below).
 2. Four Ruby risk-governance assertions.
 3. Three database fixture/setup assumptions.
 
 No redesign, restructuring, strategy changes, risk-rule changes, test weakening, or live-trading enablement was undertaken to hide these issues.
+
+## 13. Preview-routing resolution — 2026-10-23
+
+The shared preview now serves the original ARX sign-in UI. The earlier runtime
+results above describe the import baseline, not the current preview state.
+
+- The nested artifact's managed workflow was healthy, but the shared router did
+  not forward its routes. Moving its sole `.replit-artifact` directory to
+  `artifacts/trading-dashboard` resolved forwarding.
+- Artifact ID `artifacts/trading-dashboard`, preview path `/`, and port 24210 are
+  unchanged. The manifest update passed the artifact schema validator.
+- `scripts/run-arx-web.sh` launches the original dashboard inside `arxai/`.
+  Application source, dependencies, design, and authentication were not changed.
+- The platform replaced the nested managed workflow with
+  `artifacts/trading-dashboard: web`; there is only one dashboard workflow.
+- Through the shared router, `/`, `/login`, `/market-scanner`, `/src/main.tsx`,
+  `/api/healthz`, and `/api/auth/session` returned HTTP 200.
+- A screenshot of the actual routed `/` showed ARX's sign-in page with Vite
+  connected, not the router's error page. A protected request returned 401 for the
+  unsigned-in browser; authenticated journeys were not tested.
+- Backend startup confirmed `liveMasterSwitchEnabled: false`. The existing API
+  launcher continues excluding broker credentials and privileged bootstrap
+  settings. No publication or real execution was performed.
+
+The safety assertions and database fixture failures remain separate unresolved
+work; this preview fix does not make the full baseline green or publish-ready.
